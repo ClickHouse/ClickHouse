@@ -9,6 +9,7 @@ add_headers_and_sources(clickhouse_parsers ./Polyglot)
 add_headers_and_sources(clickhouse_parsers ./Trino)
 add_headers_and_sources(clickhouse_parsers ./Prometheus)
 add_headers_and_sources(clickhouse_parsers ./LogsQL)
+add_headers_and_sources(clickhouse_parsers ./Q)
 add_headers_and_sources(clickhouse_parsers ./WhatIf)
 
 add_library(clickhouse_parsers ${clickhouse_parsers_headers} ${clickhouse_parsers_sources})

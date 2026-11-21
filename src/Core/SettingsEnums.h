@@ -355,6 +355,7 @@ enum class Dialect : uint8_t
     clickhouse_json,
     logsql,
     trino,
+    q,
 };
 
 DECLARE_SETTING_ENUM(Dialect)

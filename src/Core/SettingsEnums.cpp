@@ -228,7 +228,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"polyglot", Dialect::polyglot},
      {"clickhouse_json", Dialect::clickhouse_json},
      {"logsql", Dialect::logsql},
-     {"trino", Dialect::trino}})
+     {"trino", Dialect::trino},
+     {"q", Dialect::q}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},

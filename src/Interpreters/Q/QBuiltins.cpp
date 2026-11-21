@@ -1,0 +1,2197 @@
+#include <Interpreters/Q/QCompiler.h>
+
+#include <Interpreters/Context.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Core/Settings.h>
+
+#include <Common/Exception.h>
+
+#include <functional>
+#include <unordered_map>
+#include <unordered_set>
+
+
+namespace DB
+{
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+}
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+    extern const int TYPE_MISMATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_IDENTIFIER;
+}
+
+namespace QCompilerInternals
+{
+
+namespace
+{
+
+struct Call
+{
+    QCompiler & compiler;
+    const String & name;
+    QValues & args;
+    QEnvironment & env;
+    QScope * scope;
+    size_t offset;
+
+    [[noreturn]] void fail(int code, const String & message) const
+    {
+        throwQError(code, offset, fmt::format("'{}': {}", name, message));
+    }
+
+    [[noreturn]] void unsupported(const String & what) const
+    {
+        fail(ErrorCodes::NOT_IMPLEMENTED, what + " is not supported");
+    }
+
+    void expectArgs(size_t count) const
+    {
+        if (args.size() != count)
+            fail(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, fmt::format("expected {} arguments, got {}", count, args.size()));
+    }
+
+    QValue & arg(size_t i) { return args.at(i); }
+
+    QValue scalarArg(size_t i) { return compiler.toScalar(args.at(i), offset); }
+
+    const QTable & tableArg(size_t i)
+    {
+        if (args.at(i).kind != QValueKind::Table)
+            fail(ErrorCodes::TYPE_MISMATCH, "expected a table");
+        return *args.at(i).table;
+    }
+};
+
+using Handler = std::function<QValue(Call &)>;
+
+ASTPtr lit(Field value)
+{
+    return makeLiteral(std::move(value));
+}
+
+ASTPtr one()
+{
+    return lit(Field(static_cast<UInt64>(1)));
+}
+
+ASTPtr fn(const String & name, ASTs args)
+{
+    auto function = make_intrusive<ASTFunction>();
+    function->name = name;
+    function->arguments = makeExpressionList(std::move(args));
+    function->children.push_back(function->arguments);
+    return function;
+}
+
+ASTPtr fn(const String & name, ASTPtr a)
+{
+    return fn(name, ASTs{std::move(a)});
+}
+
+ASTPtr fn(const String & name, ASTPtr a, ASTPtr b)
+{
+    return fn(name, ASTs{std::move(a), std::move(b)});
+}
+
+ASTPtr fn(const String & name, ASTPtr a, ASTPtr b, ASTPtr c)
+{
+    return fn(name, ASTs{std::move(a), std::move(b), std::move(c)});
+}
+
+ASTPtr ident(const String & name)
+{
+    return makeIdentifier(name);
+}
+
+ASTPtr qualified(const String & table, const String & column)
+{
+    return make_intrusive<ASTIdentifier>(std::vector<String>{table, column});
+}
+
+/// An integer literal value of an atom, like `3` in `3 mavg x`.
+std::optional<Int64> constantInt(const QValue & value)
+{
+    const IAST * ast = value.ast.get();
+    if (!ast || value.depth != 0)
+        return std::nullopt;
+    bool negate = false;
+    if (const auto * function = ast->as<ASTFunction>(); function && function->arguments && function->arguments->children.size() == 1)
+    {
+        if (function->name == "negate")
+        {
+            negate = true;
+            ast = function->arguments->children[0].get();
+        }
+        else if (function->name == "toInt16" || function->name == "toInt32" || function->name == "toUInt8")
+            ast = function->arguments->children[0].get();
+    }
+    const auto * literal = ast->as<ASTLiteral>();
+    if (!literal)
+        return std::nullopt;
+    Int64 result = 0;
+    if (literal->value.getType() == Field::Types::Int64)
+        result = literal->value.safeGet<Int64>();
+    else if (literal->value.getType() == Field::Types::UInt64)
+        result = static_cast<Int64>(literal->value.safeGet<UInt64>());
+    else
+        return std::nullopt;
+    return negate ? -result : result;
+}
+
+/// The string value of a literal symbol or string.
+std::optional<String> constantString(const QValue & value)
+{
+    if (value.depth != 0 || !value.ast)
+        return std::nullopt;
+    const auto * literal = value.ast->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return std::nullopt;
+    return literal->value.safeGet<String>();
+}
+
+/// The symbols of a symbol atom or a symbol list literal.
+std::optional<Strings> constantSymbols(const QValue & value)
+{
+    if (auto single = constantString(value))
+        return Strings{*single};
+    if (value.depth != 1 || !value.ast)
+        return std::nullopt;
+    const auto * array = value.ast->as<ASTFunction>();
+    if (!array || array->name != "array")
+        return std::nullopt;
+    Strings result;
+    for (const auto & item : array->arguments->children)
+    {
+        const auto * literal = item->as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return std::nullopt;
+        result.push_back(literal->value.safeGet<String>());
+    }
+    return result;
+}
+
+/// An atomic function of one argument.
+QValue unary(Call & call, const String & function, std::optional<QType> qtype = std::nullopt, bool keep_qtype = false, bool string_result = false)
+{
+    call.expectArgs(1);
+    QValue result = call.compiler.atomic(call.name, {call.scalarArg(0)},
+        [&](const ASTs & asts) { return fn(function, asts[0]); }, call.scope);
+    if (keep_qtype)
+        result.qtype = call.args[0].qtype;
+    else
+        result.qtype = qtype;
+    result.is_string = string_result || (keep_qtype && call.args[0].is_string);
+    return result;
+}
+
+/// An atomic function of two arguments.
+QValue binary(Call & call, const std::function<ASTPtr(ASTPtr, ASTPtr)> & make, std::optional<QType> qtype = std::nullopt)
+{
+    call.expectArgs(2);
+    QValue left = call.scalarArg(0);
+    QValue right = call.scalarArg(1);
+    QValue result = call.compiler.atomic(call.name, {left, right},
+        [&](const ASTs & asts) { return make(asts[0], asts[1]); }, call.scope);
+    if (qtype)
+        result.qtype = qtype;
+    else if (left.qtype == right.qtype)
+        result.qtype = left.qtype;
+    else
+        result.qtype = std::nullopt;
+    return result;
+}
+
+QValue binaryFunction(Call & call, const String & function, std::optional<QType> qtype = std::nullopt)
+{
+    return binary(call, [&](ASTPtr a, ASTPtr b) { return fn(function, std::move(a), std::move(b)); }, qtype);
+}
+
+/// An aggregate: a column folds into a scalar per group, a list into an atom, an atom stays as is.
+QValue aggregate(Call & call, const std::function<ASTPtr(ASTPtr)> & over_column, const std::function<ASTPtr(ASTPtr)> & over_list,
+    bool atom_is_one = false, std::optional<QType> qtype = std::nullopt)
+{
+    call.expectArgs(1);
+    QValue value = call.scalarArg(0);
+    QValue result;
+    if (value.kind == QValueKind::Column)
+    {
+        if (value.depth > 0)
+            call.unsupported("Aggregating a column of lists");
+        result = QCompiler::scalar(over_column(call.compiler.columnForAggregation(value, call.scope)));
+        result.aggregated = true;
+        if (call.scope && !call.scope->grouped && !call.scope->pre_aggregation)
+            call.unsupported("Aggregating outside a q-sql template");
+    }
+    else if (value.depth > 0 && !(value.is_string && value.depth == 0))
+    {
+        result = QCompiler::scalar(over_list(value.ast), value.depth - 1);
+        result.aggregated = value.aggregated;
+    }
+    else if (atom_is_one)
+    {
+        result = QCompiler::scalar(value.is_string ? fn("length", value.ast) : one());
+        result.aggregated = value.aggregated;
+    }
+    else
+        result = value;
+    result.qtype = qtype ? qtype : value.qtype;
+    if (qtype)
+        result.is_string = false;
+    return result;
+}
+
+QValue simpleAggregate(Call & call, const String & function, const String & list_function, std::optional<QType> qtype = std::nullopt)
+{
+    return aggregate(call,
+        [&](ASTPtr column) { return fn(function, std::move(column)); },
+        [&](ASTPtr list) { return list_function.empty() ? fn("arrayReduce", lit(Field(function)), std::move(list)) : fn(list_function, std::move(list)); },
+        false, qtype);
+}
+
+/// A uniform function: a column becomes a window function, a list an array function.
+QValue uniform(Call & call, const std::function<ASTPtr(ASTPtr)> & over_column, const std::function<ASTPtr(ASTPtr)> & over_list)
+{
+    QValue value = call.scalarArg(call.args.size() - 1);
+    if (value.kind == QValueKind::Column)
+    {
+        if (value.depth > 0)
+            call.unsupported("A uniform function of a column of lists");
+        QValue result = value;
+        result.ast = over_column(value.ast);
+        result.windowed = true;
+        return result;
+    }
+    if (value.depth == 0)
+        return value;
+    QValue result = value;
+    result.ast = over_list(value.ast);
+    return result;
+}
+
+/// `arrayMap((v, i) -> body, list, arrayEnumerate(list))`: a function of the items and their 1-based indices.
+ASTPtr mapWithIndex(QCompiler & compiler, const ASTPtr & list, const std::function<ASTPtr(ASTPtr, ASTPtr)> & body)
+{
+    String item = compiler.newLambdaParameter();
+    String index = compiler.newLambdaParameter();
+    return fn("arrayMap", makeLambda({item, index}, body(ident(item), ident(index))), list, fn("arrayEnumerate", list));
+}
+
+ASTPtr previousItem(const ASTPtr & list, const ASTPtr & index)
+{
+    return fn("if", fn("equals", index, one()), lit(Field()), fn("arrayElement", list, fn("minus", index, one())));
+}
+
+/// Converts a q `like` pattern into a regular expression.
+String likePatternToRegexp(const String & pattern)
+{
+    String result = "^";
+    for (size_t i = 0; i < pattern.size(); ++i)
+    {
+        char c = pattern[i];
+        switch (c)
+        {
+            case '*': result += ".*"; break;
+            case '?': result += "."; break;
+            case '[':
+            {
+                size_t close = pattern.find(']', i + 1);
+                if (close == String::npos)
+                {
+                    result += "\\[";
+                    break;
+                }
+                String set = pattern.substr(i + 1, close - i - 1);
+                if (!set.empty() && set[0] == '^')
+                    result += "[^" + set.substr(1) + "]";
+                else
+                    result += "[" + set + "]";
+                i = close;
+                break;
+            }
+            case '.': case '+': case '(': case ')': case '{': case '}': case '|': case '\\': case '$': case '^':
+                result += '\\';
+                result += c;
+                break;
+            default:
+                result += c;
+        }
+    }
+    result += "$";
+    return result;
+}
+
+/// The ClickHouse type for a q cast name: a type name (`` `int ``) or a type char (`"i"`).
+std::optional<String> castTypeName(const String & name)
+{
+    static const std::unordered_map<String, String> names = {
+        {"boolean", "b"}, {"guid", "g"}, {"byte", "x"}, {"short", "h"}, {"int", "i"}, {"long", "j"}, {"real", "e"},
+        {"float", "f"}, {"char", "c"}, {"symbol", "s"}, {"timestamp", "p"}, {"month", "m"}, {"date", "d"},
+        {"datetime", "z"}, {"timespan", "n"}, {"minute", "u"}, {"second", "v"}, {"time", "t"},
+    };
+    String code = name;
+    if (auto it = names.find(name); it != names.end())
+        code = it->second;
+    if (code.size() != 1)
+        return std::nullopt;
+    switch (code[0])
+    {
+        case 'b': return "Bool";
+        case 'g': return "UUID";
+        case 'x': return "UInt8";
+        case 'h': return "Int16";
+        case 'i': return "Int32";
+        case 'j': return "Int64";
+        case 'e': return "Float32";
+        case 'f': return "Float64";
+        case 'c': case 's': return "String";
+        case 'p': return "DateTime64(9)";
+        case 'm': case 'd': return "Date32";
+        case 'z': return "DateTime64(3)";
+        case 'n': return "Time64(9)";
+        case 'u': case 'v': return "Time";
+        case 't': return "Time64(3)";
+        default: return std::nullopt;
+    }
+}
+
+/// The q type of a cast name.
+std::optional<QType> castQType(const String & name)
+{
+    static const std::unordered_map<String, QType> types = {
+        {"b", QType::Boolean}, {"x", QType::Byte}, {"h", QType::Short}, {"i", QType::Int}, {"j", QType::Long}, {"e", QType::Real},
+        {"f", QType::Float}, {"s", QType::Symbol}, {"p", QType::Timestamp}, {"m", QType::Month}, {"d", QType::Date},
+        {"z", QType::Datetime}, {"n", QType::Timespan}, {"u", QType::Minute}, {"v", QType::Second}, {"t", QType::Time},
+        {"boolean", QType::Boolean}, {"byte", QType::Byte}, {"short", QType::Short}, {"int", QType::Int}, {"long", QType::Long},
+        {"real", QType::Real}, {"float", QType::Float}, {"symbol", QType::Symbol}, {"timestamp", QType::Timestamp},
+        {"month", QType::Month}, {"date", QType::Date}, {"datetime", QType::Datetime}, {"timespan", QType::Timespan},
+        {"minute", QType::Minute}, {"second", QType::Second}, {"time", QType::Time},
+    };
+    if (auto it = types.find(name); it != types.end())
+        return it->second;
+    return std::nullopt;
+}
+
+/// A temporal accessor: `x.hh`, `` `hh$x ``.
+std::optional<std::pair<std::function<ASTPtr(ASTPtr)>, QType>> accessor(const String & name)
+{
+    using Make = std::function<ASTPtr(ASTPtr)>;
+    static const std::unordered_map<String, std::pair<Make, QType>> accessors = {
+        {"year", {[](ASTPtr x) { return fn("toYear", x); }, QType::Int}},
+        {"mm", {[](ASTPtr x) { return fn("toMonth", x); }, QType::Int}},
+        {"dd", {[](ASTPtr x) { return fn("toDayOfMonth", x); }, QType::Int}},
+        {"hh", {[](ASTPtr x) { return fn("toHour", x); }, QType::Int}},
+        {"uu", {[](ASTPtr x) { return fn("toMinute", x); }, QType::Int}},
+        {"ss", {[](ASTPtr x) { return fn("toSecond", x); }, QType::Int}},
+        {"date", {[](ASTPtr x) { return fn("toDate32", x); }, QType::Date}},
+        {"month", {[](ASTPtr x) { return fn("toStartOfMonth", fn("toDate32", x)); }, QType::Month}},
+        {"week", {[](ASTPtr x) { return fn("toMonday", fn("toDate32", x)); }, QType::Date}},
+        {"minute", {[](ASTPtr x) { return fn("toTime", fn("toStartOfMinute", x)); }, QType::Minute}},
+        {"second", {[](ASTPtr x) { return fn("toTime", x); }, QType::Second}},
+        {"time", {[](ASTPtr x) { return fn("toTime64", x, lit(Field(static_cast<UInt64>(3)))); }, QType::Time}},
+    };
+    if (auto it = accessors.find(name); it != accessors.end())
+        return it->second;
+    return std::nullopt;
+}
+
+QValue castValue(Call & call, const String & type_name, QValue value)
+{
+    if (auto access = accessor(type_name))
+    {
+        QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return access->first(asts[0]); }, call.scope);
+        result.qtype = access->second;
+        return result;
+    }
+
+    /// `` `$"abc" ``: a symbol from a string.
+    if (type_name.empty() || type_name == "s" || type_name == "symbol" || type_name == "S" || type_name == "*")
+    {
+        QValue result = call.compiler.atomic(call.name, {value}, [](const ASTs & asts) { return fn("toString", asts[0]); }, call.scope);
+        result.qtype = QType::Symbol;
+        return result;
+    }
+
+    /// Parsing from strings: `"J"$"42"`, `"D"$"2024.01.15"`.
+    if (type_name.size() == 1 && type_name[0] >= 'A' && type_name[0] <= 'Z')
+    {
+        char code = static_cast<char>(type_name[0] - 'A' + 'a');
+        std::function<ASTPtr(ASTPtr)> parse;
+        auto q_date = [](ASTPtr x)
+        {
+            return fn("replaceRegexpOne", std::move(x), lit(Field(String(R"(^(\d{4})\.(\d{2})\.(\d{2})[DT]?)"))), lit(Field(String(R"(\1-\2-\3 )"))));
+        };
+        switch (code)
+        {
+            case 'b': parse = [](ASTPtr x) { return fn("in", x, fn("tuple", ASTs{lit(Field(String("1"))), lit(Field(String("t"))), lit(Field(String("T")))})); }; break;
+            case 'h': parse = [](ASTPtr x) { return fn("toInt16OrNull", x); }; break;
+            case 'i': parse = [](ASTPtr x) { return fn("toInt32OrNull", x); }; break;
+            case 'j': parse = [](ASTPtr x) { return fn("toInt64OrNull", x); }; break;
+            case 'e': parse = [](ASTPtr x) { return fn("toFloat32OrNull", x); }; break;
+            case 'f': parse = [](ASTPtr x) { return fn("toFloat64OrNull", x); }; break;
+            case 'd': parse = [=](ASTPtr x) { return fn("toDate32OrNull", fn("trimBoth", q_date(x))); }; break;
+            case 'p': parse = [=](ASTPtr x) { return fn("toDateTime64OrNull", fn("trimBoth", q_date(x)), lit(Field(static_cast<UInt64>(9)))); }; break;
+            case 'z': parse = [=](ASTPtr x) { return fn("toDateTime64OrNull", fn("trimBoth", q_date(x)), lit(Field(static_cast<UInt64>(3)))); }; break;
+            case 'n': parse = [](ASTPtr x) { return fn("toTime64OrNull", fn("replaceRegexpOne", x, lit(Field(String("^0D"))), lit(Field(String("")))), lit(Field(static_cast<UInt64>(9)))); }; break;
+            case 't': parse = [](ASTPtr x) { return fn("toTime64OrNull", x, lit(Field(static_cast<UInt64>(3)))); }; break;
+            case 'u': case 'v': parse = [](ASTPtr x) { return fn("toTimeOrNull", x); }; break;
+            case 'g': parse = [](ASTPtr x) { return fn("toUUIDOrNull", x); }; break;
+            default: call.unsupported(fmt::format("Parsing strings as '{}'", type_name));
+        }
+        QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return parse(asts[0]); }, call.scope);
+        result.is_string = false;
+        result.qtype = castQType(String(1, code));
+        return result;
+    }
+
+    auto type = castTypeName(type_name);
+    if (!type)
+        call.fail(ErrorCodes::BAD_ARGUMENTS, fmt::format("unknown type '{}'", type_name));
+    if (*type == "String")
+    {
+        QValue result = call.compiler.atomic(call.name, {value}, [](const ASTs & asts) { return fn("toString", asts[0]); }, call.scope);
+        result.qtype = QType::Symbol;
+        return result;
+    }
+    String target = *type;
+    QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return fn("CAST", asts[0], lit(Field(target))); }, call.scope);
+    result.is_string = false;
+    result.qtype = castQType(type_name);
+    return result;
+}
+
+QValue tableValue(QCompiler & compiler, ASTPtr query, Names keys = {})
+{
+    return compiler.makeTable(std::move(query), std::move(keys));
+}
+
+/// A select of all the columns of a table, with the given changes.
+QSelectBuilder selectColumns(const QTable & table)
+{
+    QSelectBuilder builder;
+    builder.from = table.table_expression;
+    for (const auto & column : table.columns)
+        builder.select.push_back(ident(column.name));
+    return builder;
+}
+
+bool hasColumn(const QTable & table, const String & name)
+{
+    for (const auto & column : table.columns)
+        if (column.name == name)
+            return true;
+    return false;
+}
+
+/// The first `count` rows of a table (or the last ones, if `count` is negative).
+QValue takeRows(Call & call, const QValue & count, const QTable & table)
+{
+    auto n = constantInt(count);
+    if (n && *n < 0)
+    {
+        QSelectBuilder numbered;
+        numbered.from = table.table_expression;
+        numbered.select.push_back(make_intrusive<ASTAsterisk>());
+        numbered.select.push_back(withAlias(fn("rowNumberInAllBlocks", ASTs{}), "__qrow"));
+        QSelectBuilder counted;
+        counted.from = makeSubqueryTableExpression(numbered.build());
+        counted.select.push_back(make_intrusive<ASTAsterisk>());
+        auto total = make_intrusive<ASTFunction>();
+        total->name = "count";
+        total->arguments = makeExpressionList({});
+        total->children.push_back(total->arguments);
+        call.compiler.windowize(total, {}, nullptr);
+        counted.select.push_back(withAlias(call.compiler.windowize(total, {}, nullptr), "__qcount"));
+        counted.order_by.emplace_back(ident("__qrow"), false);
+        QSelectBuilder result;
+        result.from = makeSubqueryTableExpression(counted.build());
+        for (const auto & column : table.columns)
+            result.select.push_back(ident(column.name));
+        result.where = fn("greaterOrEquals", ident("__qrow"), fn("minus", ident("__qcount"), lit(Field(-*n))));
+        result.order_by.emplace_back(ident("__qrow"), false);
+        return tableValue(call.compiler, result.build(), table.keys);
+    }
+
+    const QValue & limit = count;
+    if (limit.depth == 1)
+    {
+        /// `select[10 20]` or `10 20#t`: the offset and the count.
+        QSelectBuilder builder = selectColumns(table);
+        builder.offset = fn("arrayElement", limit.ast, one());
+        builder.limit = fn("arrayElement", limit.ast, lit(Field(static_cast<UInt64>(2))));
+        return tableValue(call.compiler, builder.build(), table.keys);
+    }
+    QSelectBuilder builder = selectColumns(table);
+    builder.limit = limit.ast;
+    return tableValue(call.compiler, builder.build(), table.keys);
+}
+
+QValue sortTable(Call & call, const Strings & columns, const QTable & table, bool descending)
+{
+    QSelectBuilder builder = selectColumns(table);
+    for (const auto & column : columns)
+    {
+        if (!hasColumn(table, column))
+            call.fail(ErrorCodes::UNKNOWN_IDENTIFIER, fmt::format("unknown column '{}'", column));
+        builder.order_by.emplace_back(ident(column), descending);
+    }
+    return tableValue(call.compiler, builder.build(), table.keys);
+}
+
+ASTPtr unionAll(const ASTs & selects)
+{
+    auto result = make_intrusive<ASTSelectWithUnionQuery>();
+    ASTs list;
+    for (const auto & select : selects)
+    {
+        const auto & union_query = select->as<ASTSelectWithUnionQuery &>();
+        for (const auto & child : union_query.list_of_selects->children)
+            list.push_back(child);
+    }
+    result->list_of_selects = makeExpressionList(std::move(list));
+    result->children.push_back(result->list_of_selects);
+    result->union_mode = SelectUnionMode::UNION_ALL;
+    for (size_t i = 1; i < result->list_of_selects->children.size(); ++i)
+        result->list_of_modes.push_back(SelectUnionMode::UNION_ALL);
+    return result;
+}
+
+/// `t1,t2`: the rows of both tables.
+QValue appendTables(Call & call, const QTable & left, const QTable & right)
+{
+    QSelectBuilder first = selectColumns(left);
+    QSelectBuilder second;
+    second.from = right.table_expression;
+    for (const auto & column : left.columns)
+    {
+        if (!hasColumn(right, column.name))
+            call.fail(ErrorCodes::TYPE_MISMATCH, fmt::format("the tables have different columns ('{}')", column.name));
+        second.select.push_back(ident(column.name));
+    }
+    if (left.columns.size() != right.columns.size())
+        call.fail(ErrorCodes::TYPE_MISMATCH, "the tables have different columns");
+    return tableValue(call.compiler, unionAll({first.build(), second.build()}), left.keys);
+}
+
+/// `t1 uj t2`: the rows of both tables, with the union of the columns.
+QValue unionJoin(Call & call, const QTable & left, const QTable & right)
+{
+    Names names;
+    for (const auto & column : left.columns)
+        names.push_back(column.name);
+    for (const auto & column : right.columns)
+        if (!hasColumn(left, column.name))
+            names.push_back(column.name);
+
+    QSelectBuilder first;
+    first.from = left.table_expression;
+    QSelectBuilder second;
+    second.from = right.table_expression;
+    for (const auto & name : names)
+    {
+        first.select.push_back(hasColumn(left, name) ? ident(name) : withAlias(lit(Field()), name));
+        second.select.push_back(hasColumn(right, name) ? ident(name) : withAlias(lit(Field()), name));
+    }
+    QSelectBuilder outer;
+    outer.from = makeSubqueryTableExpression(unionAll({first.build(), second.build()}));
+    for (const auto & name : names)
+        outer.select.push_back(ident(name));
+    return tableValue(call.compiler, outer.build(), left.keys);
+}
+
+enum class QJoinKind : uint8_t
+{
+    Left,
+    Inner,
+    Equi,
+    AsOf,
+};
+
+/// Joins two tables on the key columns. The columns of the right table that are also in the left one replace them where the rows match.
+QValue joinTables(Call & call, QJoinKind kind, const QTable & left, const QTable & right, const Names & keys)
+{
+    if (keys.empty())
+        call.fail(ErrorCodes::BAD_ARGUMENTS, "the right table must be a keyed table");
+    for (const auto & key : keys)
+    {
+        if (!hasColumn(left, key) || !hasColumn(right, key))
+            call.fail(ErrorCodes::UNKNOWN_IDENTIFIER, fmt::format("the key column '{}' is not in both tables", key));
+    }
+
+    const String left_alias = "__ql";
+    const String right_alias = "__qr";
+    const String match = "__qmatch";
+
+    QSelectBuilder right_marked = selectColumns(right);
+    right_marked.select.push_back(withAlias(lit(Field(static_cast<UInt64>(1))), match));
+
+    QSelectBuilder builder;
+    builder.from = makeSubqueryTableExpression(selectColumns(left).build(), left_alias);
+
+    auto table_join = make_intrusive<ASTTableJoin>();
+    switch (kind)
+    {
+        case QJoinKind::Left:
+            table_join->kind = JoinKind::Left;
+            table_join->strictness = JoinStrictness::Any;
+            break;
+        case QJoinKind::Inner:
+            table_join->kind = JoinKind::Inner;
+            table_join->strictness = JoinStrictness::Any;
+            break;
+        case QJoinKind::Equi:
+            table_join->kind = JoinKind::Inner;
+            table_join->strictness = JoinStrictness::All;
+            break;
+        case QJoinKind::AsOf:
+            table_join->kind = JoinKind::Left;
+            table_join->strictness = JoinStrictness::Asof;
+            break;
+    }
+
+    ASTs conditions;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        bool asof_key = kind == QJoinKind::AsOf && i + 1 == keys.size();
+        conditions.push_back(fn(asof_key ? "greaterOrEquals" : "equals", qualified(left_alias, keys[i]), qualified(right_alias, keys[i])));
+    }
+    ASTPtr condition = conditions.size() == 1 ? conditions[0] : fn("and", conditions);
+    table_join->on_expression = condition;
+    table_join->children.push_back(condition);
+    builder.joins.emplace_back(makeSubqueryTableExpression(right_marked.build(), right_alias), table_join);
+
+    std::unordered_set<String> key_set(keys.begin(), keys.end());
+    ASTPtr matched = fn("equals", qualified(right_alias, match), one());
+    for (const auto & column : left.columns)
+    {
+        if (!key_set.contains(column.name) && hasColumn(right, column.name))
+            builder.select.push_back(withAlias(fn("if", matched, qualified(right_alias, column.name), qualified(left_alias, column.name)), column.name));
+        else
+            builder.select.push_back(withAlias(qualified(left_alias, column.name), column.name));
+    }
+    for (const auto & column : right.columns)
+    {
+        if (hasColumn(left, column.name))
+            continue;
+        if (kind == QJoinKind::Left || kind == QJoinKind::AsOf)
+            builder.select.push_back(withAlias(fn("if", matched, qualified(right_alias, column.name), lit(Field())), column.name));
+        else
+            builder.select.push_back(withAlias(qualified(right_alias, column.name), column.name));
+    }
+    return tableValue(call.compiler, builder.build(), left.keys);
+}
+
+/// The values of a table literal for `meta`.
+QValue metaTable(Call & call, const QTable & table)
+{
+    ASTs names;
+    ASTs types;
+    ASTs foreign;
+    ASTs attributes;
+    for (const auto & column : table.columns)
+    {
+        names.push_back(lit(Field(column.name)));
+        bool is_string = false;
+        size_t depth = arrayDepth(column.type, is_string);
+        auto qtype = dataTypeToQType(column.type);
+        char code = qtype ? qTypeChar(*qtype) : ' ';
+        if (is_string && depth == 0 && qtype == QType::Symbol)
+            code = 's';
+        if (depth == 1)
+            code = static_cast<char>(toupper(code));
+        types.push_back(lit(Field(String(1, code))));
+        foreign.push_back(lit(Field(String())));
+        attributes.push_back(lit(Field(String())));
+    }
+    QSelectBuilder inner;
+    inner.select.push_back(withAlias(fn("array", names), "c"));
+    inner.select.push_back(withAlias(fn("array", types), "t"));
+    inner.select.push_back(withAlias(fn("array", foreign), "f"));
+    inner.select.push_back(withAlias(fn("array", attributes), "a"));
+    QSelectBuilder outer;
+    outer.from = makeSubqueryTableExpression(inner.build());
+    outer.select = {ident("c"), ident("t"), ident("f"), ident("a")};
+    outer.array_join = {ident("c"), ident("t"), ident("f"), ident("a")};
+    return tableValue(call.compiler, outer.build(), {"c"});
+}
+
+QValue countValue(Call & call)
+{
+    call.expectArgs(1);
+    if (call.arg(0).kind == QValueKind::Table)
+    {
+        QSelectBuilder builder;
+        builder.from = call.arg(0).table->table_expression;
+        builder.select.push_back(fn("count", ASTs{}));
+        QValue result = QCompiler::scalar(make_intrusive<ASTSubquery>(builder.build()));
+        result.qtype = QType::Long;
+        return result;
+    }
+    if (call.arg(0).kind == QValueKind::Dictionary)
+        return QCompiler::scalar(fn("length", call.arg(0).dictionary->first.ast));
+    return aggregate(call, [](ASTPtr) { return fn("count", ASTs{}); }, [](ASTPtr list) { return fn("length", std::move(list)); }, true, QType::Long);
+}
+
+QValue firstOrLast(Call & call, bool first)
+{
+    call.expectArgs(1);
+    if (call.arg(0).kind == QValueKind::Table)
+        return takeRows(call, QCompiler::scalar(lit(Field(static_cast<Int64>(first ? 1 : -1)))), *call.arg(0).table);
+    QValue value = call.scalarArg(0);
+    if (value.kind == QValueKind::Scalar && value.is_string && value.depth == 0)
+    {
+        QValue result = value;
+        result.ast = first ? fn("substring", value.ast, one(), one()) : fn("substring", value.ast, lit(Field(static_cast<Int64>(-1))), one());
+        return result;
+    }
+    if (value.kind == QValueKind::Column && call.scope)
+        call.scope->uses_row_number = true;
+    QValue result = aggregate(call,
+        [&](ASTPtr column) { return fn(first ? "argMin" : "argMax", std::move(column), ident("__qrow")); },
+        [&](ASTPtr list) { return fn("arrayElement", std::move(list), lit(Field(static_cast<Int64>(first ? 1 : -1)))); });
+    result.is_string = value.is_string;
+    return result;
+}
+
+/// The list functions that make a list per group from a column (`distinct`, `asc`, ...).
+QValue listFunction(Call & call, const std::function<ASTPtr(ASTPtr)> & over_list)
+{
+    call.expectArgs(1);
+    QValue value = call.scalarArg(0);
+    if (value.kind == QValueKind::Column)
+    {
+        if (value.depth > 0)
+            call.unsupported("This function of a column of lists");
+        QValue result = QCompiler::scalar(over_list(fn("groupArray", call.compiler.columnForAggregation(value, call.scope))), 1);
+        result.aggregated = true;
+        result.qtype = value.qtype;
+        return result;
+    }
+    if (value.depth == 0)
+        return value;
+    QValue result = value;
+    result.ast = over_list(value.ast);
+    return result;
+}
+
+QValue joinValues(Call & call)
+{
+    call.expectArgs(2);
+    QValue & left = call.arg(0);
+    QValue & right = call.arg(1);
+    if (left.kind == QValueKind::Table && right.kind == QValueKind::Table)
+        return appendTables(call, *left.table, *right.table);
+
+    QValue a = call.scalarArg(0);
+    QValue b = call.scalarArg(1);
+    if (a.kind == QValueKind::Column || b.kind == QValueKind::Column)
+        call.unsupported("Joining columns (use a list per row with 'enlist' or join tables)");
+
+    if (a.is_string && b.is_string && a.depth == 0 && b.depth == 0)
+    {
+        QValue result = a;
+        result.ast = fn("concat", a.ast, b.ast);
+        result.aggregated = a.aggregated || b.aggregated;
+        return result;
+    }
+
+    size_t depth = std::max<size_t>({1, a.depth, b.depth});
+    auto lift = [&](QValue value)
+    {
+        while (value.depth + 1 < depth + (value.depth == 0 ? 0 : 1) && value.depth < depth)
+        {
+            if (value.depth + 1 == depth || value.depth == 0)
+            {
+                value.ast = fn("array", value.ast);
+                value.depth += 1;
+                if (value.depth == depth)
+                    break;
+            }
+            else
+                break;
+        }
+        if (value.depth < depth)
+        {
+            value.ast = fn("array", value.ast);
+            value.depth += 1;
+        }
+        return value;
+    };
+    a = lift(a);
+    b = lift(b);
+    if (a.depth != b.depth)
+        call.unsupported("Joining lists of different depths");
+    QValue result = QCompiler::scalar(fn("arrayConcat", a.ast, b.ast), depth);
+    result.aggregated = a.aggregated || b.aggregated;
+    result.qtype = a.qtype == b.qtype ? a.qtype : std::nullopt;
+    return result;
+}
+
+QValue takeValue(Call & call)
+{
+    call.expectArgs(2);
+    if (call.arg(1).kind == QValueKind::Table)
+    {
+        if (auto columns = constantSymbols(call.arg(0)); columns && call.arg(0).qtype == QType::Symbol)
+        {
+            /// `` `a`b#t ``: the columns of a table.
+            const QTable & table = *call.arg(1).table;
+            QSelectBuilder builder;
+            builder.from = table.table_expression;
+            for (const auto & column : *columns)
+            {
+                if (!hasColumn(table, column))
+                    call.fail(ErrorCodes::UNKNOWN_IDENTIFIER, fmt::format("unknown column '{}'", column));
+                builder.select.push_back(ident(column));
+            }
+            return tableValue(call.compiler, builder.build());
+        }
+        return takeRows(call, call.scalarArg(0), *call.arg(1).table);
+    }
+
+    QValue count = call.scalarArg(0);
+    QValue value = call.scalarArg(1);
+    if (count.depth != 0)
+        call.unsupported("Reshaping");
+    auto n = constantInt(count);
+
+    if (value.kind == QValueKind::Column)
+    {
+        QValue list = listFunction(call, [](ASTPtr items) { return items; });
+        call.args = {count, list};
+        return takeValue(call);
+    }
+
+    if (value.is_string && value.depth == 0)
+    {
+        QValue result = value;
+        if (n && *n < 0)
+            result.ast = fn("substring", value.ast, lit(Field(*n)));
+        else
+            result.ast = fn("substring", value.ast, one(), count.ast);
+        return result;
+    }
+
+    if (value.depth == 0)
+    {
+        QValue result = QCompiler::scalar(fn("arrayWithConstant", count.ast, value.ast), 1);
+        result.qtype = value.qtype;
+        result.aggregated = value.aggregated;
+        return result;
+    }
+
+    QValue result = value;
+    if (n && *n < 0)
+        result.ast = fn("arraySlice", value.ast, lit(Field(*n)));
+    else
+    {
+        /// The items repeat when there are fewer of them than taken.
+        String index = call.compiler.newLambdaParameter();
+        result.ast = fn("arrayMap",
+            makeLambda({index}, fn("arrayElement", value.ast, fn("plus", fn("modulo", ident(index), fn("length", value.ast)), one()))),
+            fn("range", count.ast));
+    }
+    result.aggregated |= count.aggregated;
+    return result;
+}
+
+QValue dropValue(Call & call)
+{
+    call.expectArgs(2);
+    if (call.arg(1).kind == QValueKind::Table)
+    {
+        const QTable & table = *call.arg(1).table;
+        QSelectBuilder builder = selectColumns(table);
+        builder.offset = call.scalarArg(0).ast;
+        builder.limit = lit(Field(std::numeric_limits<UInt64>::max() / 2));
+        return tableValue(call.compiler, builder.build(), table.keys);
+    }
+    QValue count = call.scalarArg(0);
+    QValue value = call.scalarArg(1);
+    if (count.depth != 0 || value.kind == QValueKind::Column)
+        call.unsupported("This form of drop");
+    auto n = constantInt(count);
+    QValue result = value;
+    if (value.is_string && value.depth == 0)
+    {
+        if (n && *n < 0)
+            result.ast = fn("substring", value.ast, one(), fn("greatest", fn("minus", fn("length", value.ast), lit(Field(-*n))), lit(Field(static_cast<Int64>(0)))));
+        else
+            result.ast = fn("substring", value.ast, fn("plus", count.ast, one()));
+        return result;
+    }
+    if (value.depth == 0)
+        call.unsupported("Dropping from an atom");
+    if (n && *n < 0)
+        result.ast = fn("arraySlice", value.ast, one(), fn("greatest", fn("minus", fn("length", value.ast), lit(Field(-*n))), lit(Field(static_cast<Int64>(0)))));
+    else
+        result.ast = fn("arraySlice", value.ast, fn("plus", count.ast, one()));
+    return result;
+}
+
+QValue keyTable(Call & call, const Strings & keys, const QTable & table)
+{
+    /// The key columns move to the front.
+    QSelectBuilder builder;
+    builder.from = table.table_expression;
+    for (const auto & key : keys)
+    {
+        if (!hasColumn(table, key))
+            call.fail(ErrorCodes::UNKNOWN_IDENTIFIER, fmt::format("unknown column '{}'", key));
+        builder.select.push_back(ident(key));
+    }
+    std::unordered_set<String> key_set(keys.begin(), keys.end());
+    for (const auto & column : table.columns)
+        if (!key_set.contains(column.name))
+            builder.select.push_back(ident(column.name));
+    return tableValue(call.compiler, builder.build(), Names(keys.begin(), keys.end()));
+}
+
+QValue bangValue(Call & call)
+{
+    call.expectArgs(2);
+    if (call.arg(1).kind == QValueKind::Table)
+    {
+        auto n = constantInt(call.arg(0));
+        if (!n || *n < 0)
+            call.unsupported("This form of '!' with a table");
+        const QTable & table = *call.arg(1).table;
+        if (static_cast<size_t>(*n) > table.columns.size())
+            call.fail(ErrorCodes::BAD_ARGUMENTS, "too many key columns");
+        Strings keys;
+        size_t i = 0;
+        for (const auto & column : table.columns)
+            if (i++ < static_cast<size_t>(*n))
+                keys.push_back(column.name);
+        auto result = std::make_shared<QTable>(table);
+        result->keys = Names(keys.begin(), keys.end());
+        QValue value = call.arg(1);
+        value.table = std::move(result);
+        return value;
+    }
+
+    QValue keys = call.scalarArg(0);
+    QValue values = call.scalarArg(1);
+    if (keys.kind != QValueKind::Scalar || values.kind != QValueKind::Scalar || keys.depth == 0)
+    {
+        if (keys.depth == 0 && values.depth == 0 && keys.kind == QValueKind::Scalar && values.kind == QValueKind::Scalar)
+        {
+            /// `` `a!1 ``: a dictionary of one item.
+            keys.ast = fn("array", keys.ast);
+            keys.depth = 1;
+            values.ast = fn("array", values.ast);
+            values.depth = 1;
+        }
+        else
+            call.unsupported("This form of '!'");
+    }
+    if (values.depth == 0)
+    {
+        values.ast = fn("arrayWithConstant", fn("length", keys.ast), values.ast);
+        values.depth = 1;
+    }
+    QValue result;
+    result.kind = QValueKind::Dictionary;
+    result.dictionary = std::make_shared<std::pair<QValue, QValue>>(keys, values);
+    return result;
+}
+
+QValue castOrCond(Call & call)
+{
+    if (call.args.size() >= 3)
+    {
+        /// `$[c;a;b]`, `$[c1;a1;c2;a2;else]`.
+        ASTs asts;
+        QValues values;
+        for (size_t i = 0; i < call.args.size(); ++i)
+            values.push_back(call.scalarArg(i));
+        return call.compiler.atomic(call.name, values, [](const ASTs & items) { return fn("multiIf", items); }, call.scope);
+    }
+
+    call.expectArgs(2);
+    QValue target = call.scalarArg(0);
+    QValue value = call.scalarArg(1);
+    if (auto name = constantString(target); name && (target.qtype == QType::Symbol || target.qtype == QType::Char))
+        return castValue(call, *name, value);
+    if (auto n = constantInt(target); n && value.is_string)
+    {
+        /// `5$"abc"`: pad or truncate a string.
+        QValue result = value;
+        if (*n >= 0)
+            result.ast = fn("rightPad", value.ast, lit(Field(*n)), lit(Field(String(" "))));
+        else
+            result.ast = fn("leftPad", value.ast, lit(Field(-*n)), lit(Field(String(" "))));
+        return result;
+    }
+    call.unsupported("This form of '$'");
+}
+
+QValue movingWindow(Call & call, const String & function, const String & list_function)
+{
+    call.expectArgs(2);
+    auto n = constantInt(call.arg(0));
+    if (!n || *n <= 0)
+        call.fail(ErrorCodes::BAD_ARGUMENTS, "the window size must be a positive integer literal");
+    UInt64 size = static_cast<UInt64>(*n);
+    return uniform(call,
+        [&](ASTPtr column)
+        {
+            return call.compiler.makeWindowFunction(function, {column}, call.scope, size - 1, 0);
+        },
+        [&](ASTPtr list)
+        {
+            return mapWithIndex(call.compiler, list,
+                [&](ASTPtr, ASTPtr index)
+                {
+                    ASTPtr start = fn("greatest", one(), fn("minus", index, lit(Field(size - 1))));
+                    ASTPtr window = fn("arraySlice", list, start, fn("plus", fn("minus", index, start), one()));
+                    if (list_function.empty())
+                        return fn("arrayReduce", lit(Field(function)), window);
+                    return fn(list_function, window);
+                });
+        });
+}
+
+QValue xbar(Call & call)
+{
+    call.expectArgs(2);
+    QValue step = call.scalarArg(0);
+    QValue value = call.scalarArg(1);
+    bool temporal = value.qtype == QType::Timestamp || value.qtype == QType::Datetime || value.qtype == QType::Date || value.qtype == QType::Month;
+    bool clock = value.qtype == QType::Minute || value.qtype == QType::Second || value.qtype == QType::Time || value.qtype == QType::Timespan;
+
+    if (temporal)
+    {
+        ASTPtr interval;
+        if (step.qtype == QType::Timespan || step.qtype == QType::Minute || step.qtype == QType::Second || step.qtype == QType::Time)
+            interval = fn("toIntervalNanosecond", fn("toInt64", fn("multiply", fn("toFloat64", step.ast), lit(Field(static_cast<UInt64>(1'000'000'000))))));
+        else if (value.qtype == QType::Month)
+            interval = fn("toIntervalMonth", step.ast);
+        else if (value.qtype == QType::Date)
+            interval = fn("toIntervalDay", step.ast);
+        else
+            interval = fn("toIntervalNanosecond", step.ast);
+        QValue result = value;
+        result.ast = fn("toStartOfInterval", value.ast, interval);
+        result.aggregated |= step.aggregated;
+        return result;
+    }
+
+    if (clock)
+    {
+        /// Times of day are compiled into `Time` and `Time64`: round the seconds.
+        Int64 unit_seconds_numerator = value.qtype == QType::Minute ? 60 : 1;
+        Int64 unit_seconds_divisor = value.qtype == QType::Time ? 1000 : (value.qtype == QType::Timespan ? 1'000'000'000 : 1);
+        ASTPtr step_seconds;
+        if (step.qtype == QType::Timespan || step.qtype == QType::Minute || step.qtype == QType::Second || step.qtype == QType::Time)
+            step_seconds = fn("toFloat64", step.ast);
+        else
+            step_seconds = fn("divide", fn("multiply", step.ast, lit(Field(unit_seconds_numerator))), lit(Field(unit_seconds_divisor)));
+        ASTPtr seconds = fn("toFloat64", value.ast);
+        ASTPtr rounded = fn("multiply", fn("floor", fn("divide", seconds, step_seconds)), step_seconds);
+        QValue result = value;
+        String type = value.qtype == QType::Time ? "Time64(3)" : (value.qtype == QType::Timespan ? "Time64(9)" : "Time");
+        result.ast = fn("CAST", rounded, lit(Field(type)));
+        return result;
+    }
+
+    return binary(call, [](ASTPtr n, ASTPtr x) { return fn("minus", x, fn("positiveModulo", x, n)); });
+}
+
+QValue inValue(Call & call)
+{
+    call.expectArgs(2);
+    QValue value = call.scalarArg(0);
+    if (call.arg(1).kind == QValueKind::Table)
+    {
+        const QTable & table = *call.arg(1).table;
+        if (table.columns.size() != 1)
+            call.fail(ErrorCodes::TYPE_MISMATCH, "the table must have one column");
+        QSelectBuilder builder = selectColumns(table);
+        auto subquery = make_intrusive<ASTSubquery>(builder.build());
+        QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return fn("in", asts[0], subquery); }, call.scope);
+        result.qtype = QType::Boolean;
+        return result;
+    }
+    QValue list = call.scalarArg(1);
+    if (list.depth == 0)
+        return binaryFunction(call, "equals", QType::Boolean);
+    if (list.kind == QValueKind::Column)
+        call.unsupported("'in' with a column on the right");
+    QValue result = call.compiler.atomic(call.name, {value}, [&](const ASTs & asts) { return fn("has", list.ast, asts[0]); }, call.scope);
+    result.aggregated |= list.aggregated;
+    result.qtype = QType::Boolean;
+    return result;
+}
+
+QValue sqlTable(Call & call)
+{
+    call.expectArgs(1);
+    auto text = constantString(call.arg(0));
+    if (!text)
+        call.fail(ErrorCodes::BAD_ARGUMENTS, "expected a string with a ClickHouse query");
+    const auto & settings = call.compiler.getContext()->getSettingsRef();
+    ParserQuery parser(text->data() + text->size());
+    ASTPtr query = parseQuery(parser, text->data(), text->data() + text->size(), "", settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    if (!query->as<ASTSelectWithUnionQuery>())
+        call.fail(ErrorCodes::BAD_ARGUMENTS, "expected a SELECT query");
+    return tableValue(call.compiler, query);
+}
+
+/// `where` of a boolean list: the indices of the true items.
+QValue h_where(Call & c)
+{
+    c.expectArgs(1);
+    QValue value = c.scalarArg(0);
+    if (value.kind == QValueKind::Column)
+        c.unsupported("where of a column (use the where phrase)");
+    if (value.depth != 1)
+        c.fail(ErrorCodes::TYPE_MISMATCH, "expected a boolean list");
+    String index = c.compiler.newLambdaParameter();
+    String item = c.compiler.newLambdaParameter();
+    String position = c.compiler.newLambdaParameter();
+    ASTPtr selected = fn("arrayFilter", makeLambda({index, item}, ident(item)), fn("arrayEnumerate", value.ast), value.ast);
+    QValue result = value;
+    result.ast = fn("arrayMap", makeLambda({position}, fn("minus", ident(position), one())), selected);
+    result.qtype = QType::Long;
+    return result;
+}
+
+bool isClockType(std::optional<QType> type)
+{
+    return type == QType::Timespan || type == QType::Time || type == QType::Second || type == QType::Minute;
+}
+
+bool isDateTimeType(std::optional<QType> type)
+{
+    return type == QType::Timestamp || type == QType::Datetime;
+}
+
+/// Arithmetic of times of day and durations, which ClickHouse does not have for `Time` and `Time64`:
+/// `10:30:00.000 + 00:00:01.500`, and the difference of two timestamps, which is a timespan.
+std::optional<QValue> clockArithmetic(Call & call, const String & function)
+{
+    if (call.args.size() != 2)
+        return std::nullopt;
+    std::optional<QType> left = call.args[0].qtype;
+    std::optional<QType> right = call.args[1].qtype;
+    std::optional<QType> result_type;
+    if (isClockType(left) && isClockType(right))
+        result_type = left == QType::Timespan || right == QType::Timespan ? QType::Timespan : (left == QType::Time || right == QType::Time ? QType::Time : *left);
+    else if (function == "minus" && isDateTimeType(left) && isDateTimeType(right))
+        result_type = QType::Timespan;
+    else
+        return std::nullopt;
+    String type = qTypeToClickHouseType(*result_type);
+    QValue result = binary(call,
+        [&](ASTPtr a, ASTPtr b) { return fn("CAST", fn(function, fn("toFloat64", a), fn("toFloat64", b)), lit(Field(type))); },
+        result_type);
+    return result;
+}
+
+const std::unordered_map<String, Handler> & handlers()
+{
+    static const std::unordered_map<String, Handler> map = []
+    {
+        std::unordered_map<String, Handler> h;
+
+        /// Arithmetic and comparison.
+        h["+"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                c.unsupported("flip");
+            if (auto result = clockArithmetic(c, "plus"))
+                return *result;
+            return binaryFunction(c, "plus");
+        };
+        h["-"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return unary(c, "negate", std::nullopt, true);
+            if (auto result = clockArithmetic(c, "minus"))
+                return *result;
+            return binaryFunction(c, "minus");
+        };
+        h["*"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return firstOrLast(c, true);
+            return binaryFunction(c, "multiply");
+        };
+        h["%"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("reciprocal")(c);
+            return binaryFunction(c, "divide", QType::Float);
+        };
+        h["&"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return h_where(c);
+            if (c.arg(0).qtype == QType::Boolean && c.arg(1).qtype == QType::Boolean)
+                return binaryFunction(c, "and", QType::Boolean);
+            return binaryFunction(c, "least");
+        };
+        h["|"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return listFunction(c, [](ASTPtr list) { return fn("arrayReverse", list); });
+            if (c.arg(0).qtype == QType::Boolean && c.arg(1).qtype == QType::Boolean)
+                return binaryFunction(c, "or", QType::Boolean);
+            return binaryFunction(c, "greatest");
+        };
+        h["="] = [](Call & c) { return binaryFunction(c, "equals", QType::Boolean); };
+        h["<>"] = [](Call & c) { return binaryFunction(c, "notEquals", QType::Boolean); };
+        h["<"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("iasc")(c);
+            return binaryFunction(c, "less", QType::Boolean);
+        };
+        h[">"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("idesc")(c);
+            return binaryFunction(c, "greater", QType::Boolean);
+        };
+        h["<="] = [](Call & c) { return binaryFunction(c, "lessOrEquals", QType::Boolean); };
+        h[">="] = [](Call & c) { return binaryFunction(c, "greaterOrEquals", QType::Boolean); };
+        h["~"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return unary(c, "not", QType::Boolean);
+            c.expectArgs(2);
+            QValue a = c.scalarArg(0);
+            QValue b = c.scalarArg(1);
+            if (a.kind == QValueKind::Column || b.kind == QValueKind::Column)
+            {
+                ASTPtr left = a.kind == QValueKind::Column ? fn("groupArray", c.compiler.columnForAggregation(a, c.scope)) : a.ast;
+                ASTPtr right = b.kind == QValueKind::Column ? fn("groupArray", c.compiler.columnForAggregation(b, c.scope)) : b.ast;
+                QValue result = QCompiler::scalar(fn("equals", left, right));
+                result.aggregated = true;
+                result.qtype = QType::Boolean;
+                return result;
+            }
+            QValue result = QCompiler::scalar(fn("equals", a.ast, b.ast));
+            result.aggregated = a.aggregated || b.aggregated;
+            result.qtype = QType::Boolean;
+            return result;
+        };
+        h["^"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("null")(c);
+            return binary(c, [](ASTPtr fill, ASTPtr x) { return fn("ifNull", x, fill); });
+        };
+        h[","] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("enlist")(c);
+            return joinValues(c);
+        };
+        h["#"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return countValue(c);
+            return takeValue(c);
+        };
+        h["_"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return unary(c, "floor", QType::Long);
+            return dropValue(c);
+        };
+        h["!"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("til")(c);
+            return bangValue(c);
+        };
+        h["$"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("string")(c);
+            return castOrCond(c);
+        };
+        h["?"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                return handlers().at("distinct")(c);
+            if (c.args.size() == 3)
+                return c.compiler.atomic(c.name, {c.scalarArg(0), c.scalarArg(1), c.scalarArg(2)},
+                    [](const ASTs & asts) { return fn("if", asts[0], asts[1], asts[2]); }, c.scope);
+            c.expectArgs(2);
+            QValue list = c.scalarArg(0);
+            QValue item = c.scalarArg(1);
+            if (list.depth == 0 || list.kind == QValueKind::Column)
+                c.unsupported("This form of '?' (random numbers or find in a column)");
+            QValue result = c.compiler.atomic(c.name, {item},
+                [&](const ASTs & asts)
+                {
+                    ASTPtr position = fn("indexOf", list.ast, asts[0]);
+                    return fn("if", fn("equals", position, lit(Field(static_cast<UInt64>(0)))), fn("length", list.ast), fn("minus", position, one()));
+                },
+                c.scope);
+            result.qtype = QType::Long;
+            return result;
+        };
+        h["@"] = [](Call & c)
+        {
+            if (c.args.size() == 1)
+                c.unsupported("type");
+            c.expectArgs(2);
+            return c.compiler.applyValue(c.arg(0), {c.arg(1)}, c.env, c.scope, c.offset);
+        };
+        h["."] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue list = c.scalarArg(1);
+            const auto * array = list.ast->as<ASTFunction>();
+            if (!array || array->name != "array" || list.depth == 0)
+                c.unsupported("Applying a function to a list that is not a literal");
+            QValues items;
+            for (const auto & item : array->arguments->children)
+            {
+                QValue value = list;
+                value.ast = item;
+                value.depth -= 1;
+                items.push_back(std::move(value));
+            }
+            return c.compiler.applyValue(c.arg(0), std::move(items), c.env, c.scope, c.offset);
+        };
+        h[":"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            return c.arg(0);
+        };
+        h["::"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            return c.arg(0);
+        };
+
+        /// Monadic forms with a colon: `-:x`, `#:x`, ...
+        static constexpr std::string_view glyphs = "+-*%&|<>=~,^#_!$?@.";
+        for (char glyph : glyphs)
+        {
+            String name = String(1, glyph) + ":";
+            String base(1, glyph);
+            h[name] = [base](Call & c)
+            {
+                c.expectArgs(1);
+                return handlers().at(base)(c);
+            };
+        }
+
+        h["neg"] = [](Call & c) { return unary(c, "negate", std::nullopt, true); };
+        h["not"] = [](Call & c) { return unary(c, "not", QType::Boolean); };
+        h["abs"] = [](Call & c) { return unary(c, "abs", std::nullopt, true); };
+        h["sqrt"] = [](Call & c) { return unary(c, "sqrt", QType::Float); };
+        h["exp"] = [](Call & c) { return unary(c, "exp", QType::Float); };
+        h["log"] = [](Call & c) { return unary(c, "log", QType::Float); };
+        h["sin"] = [](Call & c) { return unary(c, "sin", QType::Float); };
+        h["cos"] = [](Call & c) { return unary(c, "cos", QType::Float); };
+        h["tan"] = [](Call & c) { return unary(c, "tan", QType::Float); };
+        h["asin"] = [](Call & c) { return unary(c, "asin", QType::Float); };
+        h["acos"] = [](Call & c) { return unary(c, "acos", QType::Float); };
+        h["atan"] = [](Call & c) { return unary(c, "atan", QType::Float); };
+        h["floor"] = [](Call & c) { return unary(c, "floor", QType::Long); };
+        h["ceiling"] = [](Call & c) { return unary(c, "ceil", QType::Long); };
+        h["signum"] = [](Call & c) { return unary(c, "sign", QType::Int); };
+        h["reciprocal"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            QValue result = c.compiler.atomic(c.name, {c.scalarArg(0)}, [](const ASTs & asts) { return fn("divide", lit(Field(1.0)), asts[0]); }, c.scope);
+            result.qtype = QType::Float;
+            return result;
+        };
+        h["null"] = [](Call & c) { return unary(c, "isNull", QType::Boolean); };
+        h["upper"] = [](Call & c) { return unary(c, "upper", std::nullopt, true, true); };
+        h["lower"] = [](Call & c) { return unary(c, "lower", std::nullopt, true, true); };
+        h["trim"] = [](Call & c) { return unary(c, "trimBoth", std::nullopt, true, true); };
+        h["ltrim"] = [](Call & c) { return unary(c, "trimLeft", std::nullopt, true, true); };
+        h["rtrim"] = [](Call & c) { return unary(c, "trimRight", std::nullopt, true, true); };
+        h["string"] = [](Call & c) { return unary(c, "toString", QType::Char, false, true); };
+
+        h["and"] = [](Call & c) { return binaryFunction(c, "and", QType::Boolean); };
+        h["or"] = [](Call & c) { return binaryFunction(c, "or", QType::Boolean); };
+        h["mod"] = [](Call & c) { return binaryFunction(c, "positiveModulo"); };
+        h["div"] = [](Call & c)
+        {
+            return binary(c, [](ASTPtr x, ASTPtr y) { return fn("toInt64", fn("floor", fn("divide", x, y))); }, QType::Long);
+        };
+        h["xexp"] = [](Call & c) { return binaryFunction(c, "pow", QType::Float); };
+        h["xlog"] = [](Call & c)
+        {
+            return binary(c, [](ASTPtr base, ASTPtr x) { return fn("divide", fn("log", x), fn("log", base)); }, QType::Float);
+        };
+        h["xbar"] = [](Call & c) { return xbar(c); };
+        h["in"] = [](Call & c) { return inValue(c); };
+        h["within"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue value = c.scalarArg(0);
+            QValue range = c.scalarArg(1);
+            if (range.depth != 1 || range.kind != QValueKind::Scalar)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the right argument must be a pair (low; high)");
+            QValue result = c.compiler.atomic(c.name, {value},
+                [&](const ASTs & asts)
+                {
+                    return fn("and", fn("greaterOrEquals", asts[0], fn("arrayElement", range.ast, one())),
+                        fn("lessOrEquals", asts[0], fn("arrayElement", range.ast, lit(Field(static_cast<UInt64>(2))))));
+                },
+                c.scope);
+            result.qtype = QType::Boolean;
+            return result;
+        };
+        h["like"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            auto pattern = constantString(c.arg(1));
+            if (!pattern)
+                c.unsupported("A pattern that is not a string literal");
+            String regexp = likePatternToRegexp(*pattern);
+            QValue result = c.compiler.atomic(c.name, {c.scalarArg(0)},
+                [&](const ASTs & asts) { return fn("match", asts[0], lit(Field(regexp))); }, c.scope);
+            result.qtype = QType::Boolean;
+            result.is_string = false;
+            return result;
+        };
+        h["ssr"] = [](Call & c)
+        {
+            c.expectArgs(3);
+            QValue result = c.compiler.atomic(c.name, {c.scalarArg(0), c.scalarArg(1), c.scalarArg(2)},
+                [](const ASTs & asts) { return fn("replaceAll", asts[0], asts[1], asts[2]); }, c.scope);
+            result.is_string = true;
+            return result;
+        };
+        h["sv"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue separator = c.scalarArg(0);
+            QValue list = c.scalarArg(1);
+            if (list.depth == 0 || !separator.is_string)
+                c.unsupported("This form of 'sv'");
+            QValue result = QCompiler::scalar(fn("arrayStringConcat", list.ast, separator.ast), list.depth - 1);
+            result.is_string = true;
+            result.kind = list.kind;
+            return result;
+        };
+        h["vs"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue separator = c.scalarArg(0);
+            QValue value = c.scalarArg(1);
+            if (!separator.is_string)
+                c.unsupported("This form of 'vs'");
+            QValue result = c.compiler.atomic(c.name, {value}, [&](const ASTs & asts) { return fn("splitByString", separator.ast, asts[0]); }, c.scope);
+            result.depth += 1;
+            result.is_string = true;
+            return result;
+        };
+        h["bin"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue list = c.scalarArg(0);
+            if (list.depth != 1 || list.kind != QValueKind::Scalar)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the left argument must be a sorted list");
+            QValue result = c.compiler.atomic(c.name, {c.scalarArg(1)},
+                [&](const ASTs & asts)
+                {
+                    String item = c.compiler.newLambdaParameter();
+                    return fn("minus", fn("arrayCount", makeLambda({item}, fn("lessOrEquals", ident(item), asts[0])), list.ast), one());
+                },
+                c.scope);
+            result.qtype = QType::Long;
+            return result;
+        };
+        h["except"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue left = c.scalarArg(0);
+            QValue right = c.scalarArg(1);
+            if (left.kind == QValueKind::Column)
+                left = listFunction(c, [](ASTPtr items) { return items; });
+            if (right.depth == 0)
+                right = QCompiler::scalar(fn("array", right.ast), 1);
+            String item = c.compiler.newLambdaParameter();
+            QValue result = left;
+            result.ast = fn("arrayFilter", makeLambda({item}, fn("not", fn("has", right.ast, ident(item)))), left.ast);
+            result.aggregated |= right.aggregated;
+            return result;
+        };
+        h["inter"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue left = c.scalarArg(0);
+            QValue right = c.scalarArg(1);
+            if (left.kind == QValueKind::Column)
+                left = listFunction(c, [](ASTPtr items) { return items; });
+            String item = c.compiler.newLambdaParameter();
+            QValue result = left;
+            result.ast = fn("arrayFilter", makeLambda({item}, fn("has", right.ast, ident(item))), left.ast);
+            result.aggregated |= right.aggregated;
+            return result;
+        };
+        h["union"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue result = joinValues(c);
+            result.ast = fn("arrayDistinct", result.ast);
+            return result;
+        };
+
+        /// Aggregates.
+        h["sum"] = [](Call & c) { return simpleAggregate(c, "sum", "arraySum"); };
+        h["avg"] = [](Call & c) { return simpleAggregate(c, "avg", "arrayAvg", QType::Float); };
+        h["min"] = [](Call & c) { return simpleAggregate(c, "min", "arrayMin"); };
+        h["max"] = [](Call & c) { return simpleAggregate(c, "max", "arrayMax"); };
+        h["med"] = [](Call & c) { return simpleAggregate(c, "medianExact", "", QType::Float); };
+        h["dev"] = [](Call & c) { return simpleAggregate(c, "stddevPop", "", QType::Float); };
+        h["sdev"] = [](Call & c) { return simpleAggregate(c, "stddevSamp", "", QType::Float); };
+        h["var"] = [](Call & c) { return simpleAggregate(c, "varPop", "", QType::Float); };
+        h["svar"] = [](Call & c) { return simpleAggregate(c, "varSamp", "", QType::Float); };
+        h["prd"] = [](Call & c)
+        {
+            return aggregate(c, [](ASTPtr column) { return fn("arrayProduct", fn("groupArray", column)); },
+                [](ASTPtr list) { return fn("arrayProduct", list); });
+        };
+        h["all"] = [](Call & c)
+        {
+            return aggregate(c, [](ASTPtr column) { return fn("toBool", fn("min", fn("toUInt8", column))); },
+                [&](ASTPtr list)
+                {
+                    String item = c.compiler.newLambdaParameter();
+                    return fn("arrayAll", makeLambda({item}, ident(item)), list);
+                }, false, QType::Boolean);
+        };
+        h["any"] = [](Call & c)
+        {
+            return aggregate(c, [](ASTPtr column) { return fn("toBool", fn("max", fn("toUInt8", column))); },
+                [&](ASTPtr list)
+                {
+                    String item = c.compiler.newLambdaParameter();
+                    return fn("arrayExists", makeLambda({item}, ident(item)), list);
+                }, false, QType::Boolean);
+        };
+        h["count"] = [](Call & c) { return countValue(c); };
+        h["first"] = [](Call & c) { return firstOrLast(c, true); };
+        h["last"] = [](Call & c) { return firstOrLast(c, false); };
+        h["wavg"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue weights = c.scalarArg(0);
+            QValue values = c.scalarArg(1);
+            QValue product = c.compiler.atomic(c.name, {weights, values}, [](const ASTs & asts) { return fn("multiply", asts[0], asts[1]); }, c.scope);
+            QValues numerator_args{product};
+            Call numerator_call{c.compiler, c.name, numerator_args, c.env, c.scope, c.offset};
+            QValue numerator = simpleAggregate(numerator_call, "sum", "arraySum");
+            QValues denominator_args{weights};
+            Call denominator_call{c.compiler, c.name, denominator_args, c.env, c.scope, c.offset};
+            QValue denominator = simpleAggregate(denominator_call, "sum", "arraySum");
+            QValue result = QCompiler::scalar(fn("divide", numerator.ast, denominator.ast), numerator.depth);
+            result.aggregated = numerator.aggregated || denominator.aggregated;
+            result.qtype = QType::Float;
+            return result;
+        };
+        h["wsum"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue product = c.compiler.atomic(c.name, {c.scalarArg(0), c.scalarArg(1)},
+                [](const ASTs & asts) { return fn("multiply", asts[0], asts[1]); }, c.scope);
+            QValues sum_args{product};
+            Call sum_call{c.compiler, c.name, sum_args, c.env, c.scope, c.offset};
+            return simpleAggregate(sum_call, "sum", "arraySum");
+        };
+        auto pair_aggregate = [](const String & function)
+        {
+            return [function](Call & c)
+            {
+                c.expectArgs(2);
+                QValue x = c.scalarArg(0);
+                QValue y = c.scalarArg(1);
+                if (x.kind == QValueKind::Column && y.kind == QValueKind::Column)
+                {
+                    QValue result = QCompiler::scalar(fn(function, c.compiler.columnForAggregation(x, c.scope), c.compiler.columnForAggregation(y, c.scope)));
+                    result.aggregated = true;
+                    result.qtype = QType::Float;
+                    return result;
+                }
+                if (x.isList() && y.isList())
+                {
+                    QValue result = QCompiler::scalar(fn("arrayReduce", ASTs{lit(Field(function)), x.ast, y.ast}), x.depth - 1);
+                    result.aggregated = x.aggregated || y.aggregated;
+                    result.qtype = QType::Float;
+                    return result;
+                }
+                c.fail(ErrorCodes::TYPE_MISMATCH, "expected two columns or two lists");
+            };
+        };
+        h["cor"] = pair_aggregate("corr");
+        h["cov"] = pair_aggregate("covarPop");
+        h["scov"] = pair_aggregate("covarSamp");
+
+        /// Lists.
+        h["til"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            QValue result = c.compiler.atomic(c.name, {c.scalarArg(0)}, [](const ASTs & asts) { return fn("range", asts[0]); }, c.scope);
+            result.depth += 1;
+            result.qtype = QType::Long;
+            return result;
+        };
+        h["distinct"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            if (c.arg(0).kind == QValueKind::Table)
+            {
+                QSelectBuilder builder = selectColumns(*c.arg(0).table);
+                builder.distinct = true;
+                return tableValue(c.compiler, builder.build());
+            }
+            return listFunction(c, [](ASTPtr list) { return fn("arrayDistinct", list); });
+        };
+        h["asc"] = [](Call & c) { return listFunction(c, [](ASTPtr list) { return fn("arraySort", list); }); };
+        h["desc"] = [](Call & c) { return listFunction(c, [](ASTPtr list) { return fn("arrayReverseSort", list); }); };
+        h["reverse"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            QValue value = c.scalarArg(0);
+            if (value.is_string && value.depth == 0)
+                return unary(c, "reverseUTF8", std::nullopt, true, true);
+            return listFunction(c, [](ASTPtr list) { return fn("arrayReverse", list); });
+        };
+        auto grade = [](bool descending)
+        {
+            return [descending](Call & c)
+            {
+                return listFunction(c,
+                    [&](ASTPtr list)
+                    {
+                        String index = c.compiler.newLambdaParameter();
+                        String item = c.compiler.newLambdaParameter();
+                        ASTPtr sorted = fn(descending ? "arrayReverseSort" : "arraySort",
+                            makeLambda({index, item}, ident(item)), fn("arrayEnumerate", list), list);
+                        String position = c.compiler.newLambdaParameter();
+                        return fn("arrayMap", makeLambda({position}, fn("minus", ident(position), one())), sorted);
+                    });
+            };
+        };
+        h["iasc"] = grade(false);
+        h["idesc"] = grade(true);
+        h["where"] = [](Call & c) { return h_where(c); };
+        h["enlist"] = [](Call & c)
+        {
+            QValues values;
+            for (size_t i = 0; i < c.args.size(); ++i)
+                values.push_back(c.scalarArg(i));
+            if (values.empty())
+                c.fail(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "expected an argument");
+            QValue result = values[0];
+            ASTs items;
+            for (auto & value : values)
+            {
+                if (value.depth != values[0].depth || value.kind != values[0].kind)
+                    c.unsupported("Lists of items of different shapes");
+                result.aggregated |= value.aggregated;
+                result.windowed |= value.windowed;
+                items.push_back(value.ast);
+            }
+            result.ast = fn("array", items);
+            result.depth += 1;
+            result.is_string = values[0].is_string;
+            return result;
+        };
+        h["raze"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            QValue value = c.scalarArg(0);
+            if (value.kind == QValueKind::Column)
+            {
+                if (value.depth != 1)
+                    c.unsupported("raze of a column of atoms");
+                QValue result = QCompiler::scalar(fn("groupArrayArray", c.compiler.columnForAggregation(value, c.scope)), 1);
+                result.aggregated = true;
+                result.qtype = value.qtype;
+                return result;
+            }
+            if (value.depth < 2)
+                return value;
+            if (value.depth > 2)
+                c.unsupported("raze of lists nested deeper than two levels");
+            QValue result = value;
+            result.ast = fn("arrayFlatten", value.ast);
+            result.depth = 1;
+            return result;
+        };
+
+        /// Uniform functions.
+        auto running = [](const String & window_function, const String & list_function)
+        {
+            return [window_function, list_function](Call & c)
+            {
+                c.expectArgs(1);
+                return uniform(c,
+                    [&](ASTPtr column) { return c.compiler.makeWindowFunction(window_function, {column}, c.scope, std::nullopt, 0); },
+                    [&](ASTPtr list)
+                    {
+                        if (list_function == "arrayCumSum")
+                            return fn("arrayCumSum", list);
+                        return mapWithIndex(c.compiler, list,
+                            [&](ASTPtr, ASTPtr index) { return fn(list_function, fn("arraySlice", list, one(), index)); });
+                    });
+            };
+        };
+        h["sums"] = running("sum", "arrayCumSum");
+        h["maxs"] = running("max", "arrayMax");
+        h["mins"] = running("min", "arrayMin");
+        h["prds"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            return uniform(c,
+                [&](ASTPtr column)
+                {
+                    return fn("arrayProduct", c.compiler.makeWindowFunction("groupArray", {column}, c.scope, std::nullopt, 0));
+                },
+                [&](ASTPtr list)
+                {
+                    return mapWithIndex(c.compiler, list, [&](ASTPtr, ASTPtr index) { return fn("arrayProduct", fn("arraySlice", list, one(), index)); });
+                });
+        };
+        auto lag = [](Call & c, ASTPtr column, UInt64 n)
+        {
+            return c.compiler.makeWindowFunction("lagInFrame", {fn("toNullable", column), lit(Field(n))}, c.scope, n, 0);
+        };
+        h["prev"] = [lag](Call & c)
+        {
+            c.expectArgs(1);
+            return uniform(c, [&](ASTPtr column) { return lag(c, column, 1); },
+                [&](ASTPtr list) { return mapWithIndex(c.compiler, list, [&](ASTPtr, ASTPtr index) { return previousItem(list, index); }); });
+        };
+        h["next"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            return uniform(c,
+                [&](ASTPtr column) { return c.compiler.makeWindowFunction("leadInFrame", {fn("toNullable", column), one()}, c.scope, 0, 1); },
+                [&](ASTPtr list)
+                {
+                    return mapWithIndex(c.compiler, list,
+                        [&](ASTPtr, ASTPtr index)
+                        {
+                            return fn("if", fn("equals", index, fn("length", list)), lit(Field()), fn("arrayElement", list, fn("plus", index, one())));
+                        });
+                });
+        };
+        h["xprev"] = [lag](Call & c)
+        {
+            c.expectArgs(2);
+            auto n = constantInt(c.arg(0));
+            if (!n || *n < 0)
+                c.fail(ErrorCodes::BAD_ARGUMENTS, "the shift must be a non-negative integer literal");
+            UInt64 shift = static_cast<UInt64>(*n);
+            return uniform(c, [&](ASTPtr column) { return lag(c, column, shift); },
+                [&](ASTPtr list)
+                {
+                    return mapWithIndex(c.compiler, list,
+                        [&](ASTPtr, ASTPtr index)
+                        {
+                            return fn("if", fn("lessOrEquals", index, lit(Field(shift))), lit(Field()),
+                                fn("arrayElement", list, fn("minus", index, lit(Field(shift)))));
+                        });
+                });
+        };
+        h["deltas"] = [lag](Call & c)
+        {
+            c.expectArgs(1);
+            return uniform(c, [&](ASTPtr column) { return fn("minus", column, fn("ifNull", lag(c, column, 1), lit(Field(static_cast<UInt64>(0))))); },
+                [&](ASTPtr list)
+                {
+                    return mapWithIndex(c.compiler, list,
+                        [&](ASTPtr item, ASTPtr index) { return fn("minus", item, fn("ifNull", previousItem(list, index), lit(Field(static_cast<UInt64>(0))))); });
+                });
+        };
+        h["ratios"] = [lag](Call & c)
+        {
+            c.expectArgs(1);
+            return uniform(c, [&](ASTPtr column) { return fn("divide", column, fn("ifNull", lag(c, column, 1), one())); },
+                [&](ASTPtr list)
+                {
+                    return mapWithIndex(c.compiler, list,
+                        [&](ASTPtr item, ASTPtr index) { return fn("divide", item, fn("ifNull", previousItem(list, index), one())); });
+                });
+        };
+        h["differ"] = [lag](Call & c)
+        {
+            c.expectArgs(1);
+            QValue result = uniform(c, [&](ASTPtr column) { return fn("ifNull", fn("notEquals", column, lag(c, column, 1)), lit(Field(true))); },
+                [&](ASTPtr list)
+                {
+                    return mapWithIndex(c.compiler, list,
+                        [&](ASTPtr item, ASTPtr index) { return fn("ifNull", fn("notEquals", item, previousItem(list, index)), lit(Field(true))); });
+                });
+            result.qtype = QType::Boolean;
+            return result;
+        };
+        h["fills"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            return uniform(c, [&](ASTPtr column) { return c.compiler.makeWindowFunction("anyLast", {column}, c.scope, std::nullopt, 0); },
+                [&](ASTPtr list)
+                {
+                    String item = c.compiler.newLambdaParameter();
+                    return fn("arrayFill", makeLambda({item}, fn("isNotNull", ident(item))), list);
+                });
+        };
+        h["mavg"] = [](Call & c) { return movingWindow(c, "avg", "arrayAvg"); };
+        h["msum"] = [](Call & c) { return movingWindow(c, "sum", "arraySum"); };
+        h["mmax"] = [](Call & c) { return movingWindow(c, "max", "arrayMax"); };
+        h["mmin"] = [](Call & c) { return movingWindow(c, "min", "arrayMin"); };
+        h["mcount"] = [](Call & c) { return movingWindow(c, "count", "length"); };
+        h["mdev"] = [](Call & c)
+        {
+            return movingWindow(c, "stddevPop", "");
+        };
+
+        /// Adverbs as keywords.
+        auto adverb = [](const String & name)
+        {
+            return [name](Call & c)
+            {
+                c.expectArgs(2);
+                if (c.arg(0).kind != QValueKind::Function)
+                    c.fail(ErrorCodes::TYPE_MISMATCH, "the left argument must be a function");
+                QFunction derived;
+                derived.adverb = name;
+                derived.operand = c.arg(0).function;
+                return c.compiler.applyDerived(derived, {c.arg(1)}, c.env, c.scope, c.offset);
+            };
+        };
+        h["each"] = adverb("'");
+        h["peach"] = adverb("'");
+        h["over"] = adverb("/");
+        h["scan"] = adverb("\\");
+        h["prior"] = adverb("':");
+
+        /// Tables.
+        h["cols"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            const QTable & table = c.tableArg(0);
+            ASTs names;
+            for (const auto & column : table.columns)
+                names.push_back(lit(Field(column.name)));
+            QValue result = QCompiler::scalar(fn("array", names), 1);
+            result.qtype = QType::Symbol;
+            return result;
+        };
+        h["meta"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            return metaTable(c, c.tableArg(0));
+        };
+        h["keys"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            const QTable & table = c.tableArg(0);
+            ASTs names;
+            for (const auto & key : table.keys)
+                names.push_back(lit(Field(key)));
+            QValue result = QCompiler::scalar(fn("array", names), 1);
+            result.qtype = QType::Symbol;
+            return result;
+        };
+        h["key"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            if (c.arg(0).kind == QValueKind::Dictionary)
+                return c.arg(0).dictionary->first;
+            const QTable & table = c.tableArg(0);
+            if (table.keys.empty())
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the table is not keyed");
+            QSelectBuilder builder;
+            builder.from = table.table_expression;
+            for (const auto & key : table.keys)
+                builder.select.push_back(ident(key));
+            return tableValue(c.compiler, builder.build());
+        };
+        h["value"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            if (c.arg(0).kind == QValueKind::Dictionary)
+                return c.arg(0).dictionary->second;
+            const QTable & table = c.tableArg(0);
+            std::unordered_set<String> keys(table.keys.begin(), table.keys.end());
+            QSelectBuilder builder;
+            builder.from = table.table_expression;
+            for (const auto & column : table.columns)
+                if (!keys.contains(column.name))
+                    builder.select.push_back(ident(column.name));
+            return tableValue(c.compiler, builder.build());
+        };
+        h["flip"] = [](Call & c)
+        {
+            c.expectArgs(1);
+            if (c.arg(0).kind != QValueKind::Dictionary)
+                c.unsupported("flip of a value that is not a dictionary of symbols to lists");
+            const auto & [keys, values] = *c.arg(0).dictionary;
+            auto names = constantSymbols(keys);
+            const auto * array = values.ast->as<ASTFunction>();
+            if (!names || !array || array->name != "array" || array->arguments->children.size() != names->size())
+                c.unsupported("flip of a dictionary that is not a literal");
+            QSelectBuilder inner;
+            QSelectBuilder outer;
+            for (size_t i = 0; i < names->size(); ++i)
+            {
+                inner.select.push_back(withAlias(array->arguments->children[i], (*names)[i]));
+                outer.select.push_back(ident((*names)[i]));
+                if (values.depth > 1)
+                    outer.array_join.push_back(ident((*names)[i]));
+            }
+            if (outer.array_join.empty())
+                return tableValue(c.compiler, inner.build());
+            outer.from = makeSubqueryTableExpression(inner.build());
+            return tableValue(c.compiler, outer.build());
+        };
+        h["xasc"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            auto columns = constantSymbols(c.arg(0));
+            if (!columns)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the left argument must be the symbols of the columns");
+            return sortTable(c, *columns, c.tableArg(1), false);
+        };
+        h["xdesc"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            auto columns = constantSymbols(c.arg(0));
+            if (!columns)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the left argument must be the symbols of the columns");
+            return sortTable(c, *columns, c.tableArg(1), true);
+        };
+        h["xkey"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            const QTable & table = c.tableArg(1);
+            Strings keys;
+            if (const auto * array = c.arg(0).ast ? c.arg(0).ast->as<ASTFunction>() : nullptr; array && array->name == "array" && array->arguments->children.empty())
+                keys = {};
+            else if (auto columns = constantSymbols(c.arg(0)))
+                keys = *columns;
+            else
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the left argument must be the symbols of the key columns");
+            return keyTable(c, keys, table);
+        };
+        h["xcol"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            auto names = constantSymbols(c.arg(0));
+            if (!names)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the left argument must be the symbols of the new names");
+            const QTable & table = c.tableArg(1);
+            if (names->size() > table.columns.size())
+                c.fail(ErrorCodes::BAD_ARGUMENTS, "too many names");
+            QSelectBuilder builder;
+            builder.from = table.table_expression;
+            Names keys;
+            size_t i = 0;
+            for (const auto & column : table.columns)
+            {
+                String name = i < names->size() ? (*names)[i] : column.name;
+                builder.select.push_back(withAlias(ident(column.name), name));
+                if (std::find(table.keys.begin(), table.keys.end(), column.name) != table.keys.end())
+                    keys.push_back(name);
+                ++i;
+            }
+            return tableValue(c.compiler, builder.build(), keys);
+        };
+        h["xcols"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            auto names = constantSymbols(c.arg(0));
+            if (!names)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the left argument must be the symbols of the columns");
+            const QTable & table = c.tableArg(1);
+            QSelectBuilder builder;
+            builder.from = table.table_expression;
+            std::unordered_set<String> first(names->begin(), names->end());
+            for (const auto & name : *names)
+            {
+                if (!hasColumn(table, name))
+                    c.fail(ErrorCodes::UNKNOWN_IDENTIFIER, fmt::format("unknown column '{}'", name));
+                builder.select.push_back(ident(name));
+            }
+            for (const auto & column : table.columns)
+                if (!first.contains(column.name))
+                    builder.select.push_back(ident(column.name));
+            return tableValue(c.compiler, builder.build());
+        };
+        h["lj"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            return joinTables(c, QJoinKind::Left, c.tableArg(0), c.tableArg(1), c.tableArg(1).keys);
+        };
+        h["ljf"] = h["lj"];
+        h["ij"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            return joinTables(c, QJoinKind::Inner, c.tableArg(0), c.tableArg(1), c.tableArg(1).keys);
+        };
+        h["ijf"] = h["ij"];
+        h["ej"] = [](Call & c)
+        {
+            c.expectArgs(3);
+            auto keys = constantSymbols(c.arg(0));
+            if (!keys)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the first argument must be the symbols of the key columns");
+            return joinTables(c, QJoinKind::Equi, c.tableArg(1), c.tableArg(2), Names(keys->begin(), keys->end()));
+        };
+        h["aj"] = [](Call & c)
+        {
+            c.expectArgs(3);
+            auto keys = constantSymbols(c.arg(0));
+            if (!keys)
+                c.fail(ErrorCodes::TYPE_MISMATCH, "the first argument must be the symbols of the key columns");
+            return joinTables(c, QJoinKind::AsOf, c.tableArg(1), c.tableArg(2), Names(keys->begin(), keys->end()));
+        };
+        h["aj0"] = h["aj"];
+        h["uj"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            return unionJoin(c, c.tableArg(0), c.tableArg(1));
+        };
+        h["ujf"] = h["uj"];
+        h["cross"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            if (c.arg(0).kind != QValueKind::Table || c.arg(1).kind != QValueKind::Table)
+            {
+                QValue left = c.scalarArg(0);
+                QValue right = c.scalarArg(1);
+                if (!left.isList() || !right.isList())
+                    c.unsupported("cross of values that are not lists");
+                String a = c.compiler.newLambdaParameter();
+                String b = c.compiler.newLambdaParameter();
+                ASTPtr pairs = fn("arrayFlatten",
+                    fn("arrayMap", makeLambda({a}, fn("arrayMap", makeLambda({b}, fn("array", ident(a), ident(b))), right.ast)), left.ast));
+                QValue result = QCompiler::scalar(pairs, left.depth + 1);
+                result.qtype = left.qtype;
+                return result;
+            }
+            const QTable & left = c.tableArg(0);
+            const QTable & right = c.tableArg(1);
+            QSelectBuilder builder;
+            builder.from = makeSubqueryTableExpression(selectColumns(left).build(), "__ql");
+            auto table_join = make_intrusive<ASTTableJoin>();
+            table_join->kind = JoinKind::Cross;
+            builder.joins.emplace_back(makeSubqueryTableExpression(selectColumns(right).build(), "__qr"), table_join);
+            for (const auto & column : left.columns)
+                builder.select.push_back(withAlias(qualified("__ql", column.name), column.name));
+            for (const auto & column : right.columns)
+            {
+                if (hasColumn(left, column.name))
+                    c.fail(ErrorCodes::BAD_ARGUMENTS, fmt::format("both tables have the column '{}'", column.name));
+                builder.select.push_back(withAlias(qualified("__qr", column.name), column.name));
+            }
+            return tableValue(c.compiler, builder.build());
+        };
+        h["sublist"] = [](Call & c)
+        {
+            c.expectArgs(2);
+            QValue range = c.scalarArg(0);
+            QValue list = c.scalarArg(1);
+            if (list.kind == QValueKind::Table || list.depth == 0)
+                c.unsupported("sublist of a value that is not a list");
+            QValue result = list;
+            if (range.depth == 1)
+                result.ast = fn("arraySlice", list.ast, fn("plus", fn("arrayElement", range.ast, one()), one()),
+                    fn("arrayElement", range.ast, lit(Field(static_cast<UInt64>(2)))));
+            else if (auto n = constantInt(range); n && *n < 0)
+                result.ast = fn("arraySlice", list.ast, lit(Field(*n)));
+            else
+                result.ast = fn("arraySlice", list.ast, one(), range.ast);
+            return result;
+        };
+        h[".ch.sql"] = [](Call & c) { return sqlTable(c); };
+
+        for (const char * name : {"insert", "upsert", "set", "group", "type", "value_unsupported", "ss", "rank", "ema", "cut", "rotate",
+                 "lsq", "mmu", "inv", "xgroup", "xrank", "pj", "wj", "wj1", "binr", "dsave", "fkeys", "tables", "views", "gtime", "ltime",
+                 "parse", "eval", "value_of", "get", "hopen", "hclose", "read0", "read1", "exit", "show", "system"})
+        {
+            String keyword = name;
+            if (!h.contains(keyword))
+                h[keyword] = [](Call & c) -> QValue { c.unsupported(fmt::format("The function '{}'", c.name)); };
+        }
+        return h;
+    }();
+    return map;
+}
+
+}
+
+bool QCompiler::isBuiltin(const String & name)
+{
+    return handlers().contains(name);
+}
+
+size_t QCompiler::builtinArity(const String & name)
+{
+    static const std::unordered_set<String> binary = {
+        "and", "or", "mod", "div", "xbar", "xexp", "xlog", "in", "within", "like", "sv", "vs", "bin", "except", "inter", "union",
+        "wavg", "wsum", "cor", "cov", "scov", "xprev", "mavg", "msum", "mmax", "mmin", "mcount", "mdev", "each", "peach", "over",
+        "scan", "prior", "xasc", "xdesc", "xkey", "xcol", "xcols", "lj", "ljf", "ij", "ijf", "uj", "ujf", "cross", "sublist",
+    };
+    static const std::unordered_set<String> ternary = {"aj", "aj0", "ej", "ssr"};
+    if (binary.contains(name))
+        return 2;
+    if (ternary.contains(name))
+        return 3;
+    if (name.empty() || !isAlphaASCII(name[0]))
+        return 0;
+    return 1;
+}
+
+QValue QCompiler::callBuiltin(const String & name, QValues args, QEnvironment & env, QScope * scope, size_t offset)
+{
+    Call call{*this, name, args, env, scope, offset};
+
+    /// Temporal accessors of columns: `time.hh`.
+    if (!name.empty() && name[0] == '.' && !handlers().contains(name))
+    {
+        auto access = accessor(name.substr(1));
+        if (!access)
+            throwQError(ErrorCodes::UNKNOWN_IDENTIFIER, offset, fmt::format("Unknown field '{}' of a column", name.substr(1)));
+        QValue result = atomic(name, {call.scalarArg(0)}, [&](const ASTs & asts) { return access->first(asts[0]); }, scope);
+        result.qtype = access->second;
+        result.is_string = false;
+        return result;
+    }
+
+    auto it = handlers().find(name);
+    if (it == handlers().end())
+        throwQError(ErrorCodes::UNKNOWN_IDENTIFIER, offset, fmt::format("Unknown function '{}'", name));
+    return it->second(call);
+}
+
+}
+
+}

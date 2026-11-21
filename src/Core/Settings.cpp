@@ -143,6 +143,7 @@ Supported values:
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `enable_logsql_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the beta setting `enable_trino_dialect`.
+- `q` — the q language of kdb+: q-sql templates (`select`, `exec`, `update`, `delete`), joins (`aj`, `lj`, `ij`, ...) and array expressions are compiled into ClickHouse queries over ClickHouse tables. Requires the experimental setting `enable_q_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -11434,6 +11435,22 @@ An explicit `SETTINGS` clause in the query still takes precedence.
 )", BETA, \
         {"26.10", false, false, "The `trino` dialect was moved to Beta."}, \
         {"26.9", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}) \
+    DECLARE(Bool, enable_q_dialect, false, R"(
+Enable the `q` value of the `dialect` setting.
+
+When `dialect` is set to `q`, queries are written in q, the language of kdb+. A q expression
+is compiled into an ordinary ClickHouse query: q-sql templates (`select`, `exec`, `update`, `delete`)
+run over ClickHouse tables, joins (`aj`, `lj`, `ij`, `uj`, ...) become ClickHouse joins, and q lists
+become arrays. The `SET` query is still parsed as plain SQL so that the dialect can be switched back.
+
+Usage:
+```sql
+SET enable_q_dialect = 1;
+SET dialect = 'q';
+select vwap: size wavg price, n: count i by sym from trades where size > 100
+```
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the `q` dialect (the language of kdb+)."}) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
 Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.

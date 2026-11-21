@@ -67,6 +67,8 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Q/ASTQQuery.h>
+#include <Parsers/Q/parseQQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
@@ -757,6 +759,13 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             }
             throw;
         }
+    }
+    else if (dialect == Dialect::q && !is_set_escape)
+    {
+        /// q is lexically a different language as well (backticks are symbols, `/` starts comments).
+        /// The program is only parsed here: it is compiled into a ClickHouse query on the server.
+        res = parseQQuery(
+            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
     else if (dialect == Dialect::kusto && !is_set_escape)
     {
@@ -3512,6 +3521,11 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 /// Malformed input (e.g. an unterminated string): let the parser report it properly.
             }
         }
+        if (client_context->getSettingsRef()[Setting::dialect] == Dialect::q)
+        {
+            /// q queries routinely contain tokens that are erroneous for the ClickHouse lexer (`` `a`b ``, `2024.01m`).
+            only_comments_left = isQQueryTextEmpty(this_query_begin, all_queries_end);
+        }
         if (only_comments_left)
             return MultiQueryProcessingStage::QUERIES_END;
     }
@@ -3533,7 +3547,11 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (ignore_error)
         {
-            if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+            if (client_context->getSettingsRef()[Setting::dialect] == Dialect::q)
+            {
+                this_query_begin = skipQQuery(this_query_begin, all_queries_end);
+            }
+            else if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
             {
                 /// The ClickHouse lexer stops at the first LogsQL-only token (`~`, `!`, ...)
                 /// as at an erroneous one, which would resume parsing in the middle of the
@@ -3838,6 +3856,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // after we have processed the query. But even this guess is
                 // beneficial so that we see proper trailing comments in "echo" and
                 // server log.
+                const char * parsed_query_end = this_query_end;
                 {
                     unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
                     unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
@@ -3866,7 +3885,16 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // Look for the hint in the text of query + insert data + trailing
                 // comments, e.g. insert into t format CSV 'a' -- { serverError 123 }.
                 // Use the updated query boundaries we just calculated.
-                TestHint test_hint(full_query);
+                /// The text of a q query cannot be scanned with the ClickHouse lexer (a backtick starts a symbol in q,
+                /// but a quoted identifier in SQL, which would swallow the hint), so only its trailing comment is used.
+                std::string_view hint_text = full_query;
+                if (parsed_query->as<ASTQQuery>() && parsed_query_end > this_query_begin && parsed_query_end <= this_query_end)
+                {
+                    /// Start at the terminating `;`, so that the comment after it is not a leading comment (which cannot hold error hints).
+                    const char * hint_begin = parsed_query_end[-1] == ';' ? parsed_query_end - 1 : parsed_query_end;
+                    hint_text = std::string_view(hint_begin, this_query_end - hint_begin);
+                }
+                TestHint test_hint(hint_text);
 
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);

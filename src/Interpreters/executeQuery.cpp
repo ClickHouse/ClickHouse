@@ -59,6 +59,9 @@
 #include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Q/ASTQQuery.h>
+#include <Parsers/Q/parseQQuery.h>
+#include <Interpreters/Q/compileQProgram.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
@@ -186,6 +189,7 @@ namespace Setting
     extern const SettingsBool enable_kusto_dialect;
     extern const SettingsBool enable_prql_dialect;
     extern const SettingsBool enable_trino_dialect;
+    extern const SettingsBool enable_q_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -2826,6 +2830,26 @@ static BlockIO executeQueryImpl(
             {
                 context->setSetting("join_use_nulls", true);
                 context->setSetting("use_variant_as_common_type", false);
+            }
+        }
+        else if (settings[Setting::dialect] == Dialect::q && use_request_dialect)
+        {
+            const char * q_pos = begin;
+            if (!settings[Setting::enable_q_dialect])
+            {
+                /// A plain `SET` passes even when the gate is off, so that a session in `dialect = 'q'` can switch back.
+                out_ast = tryParseQSetQuery(
+                    q_pos, end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+                if (!out_ast)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the q dialect is disabled (turn on setting 'enable_q_dialect')");
+            }
+            else
+            {
+                out_ast = parseQQuery(
+                    q_pos, end, /*allow_multi_statements=*/false, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+                /// The q program is compiled into a ClickHouse query here, because the compilation depends on the structure of the tables.
+                if (const auto * q_query = out_ast->as<ASTQQuery>())
+                    out_ast = compileQProgram(*q_query, context);
             }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && use_request_dialect)

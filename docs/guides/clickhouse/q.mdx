@@ -1,0 +1,88 @@
+---
+title: 'q dialect in ClickHouse'
+description: 'How to enable the experimental q dialect (the language of kdb+) and what it supports'
+keywords: ['q', 'kdb+', 'k', 'array language', 'dialect']
+sidebarTitle: 'q'
+slug: /guides/clickhouse/q
+doc_type: 'guide'
+---
+
+## Overview {#overview}
+
+ClickHouse provides an experimental `q` dialect: queries are written in
+[q](https://code.kx.com/q/), the language of kdb+. A q program is compiled into an
+ordinary ClickHouse query, so it runs over ClickHouse tables with the usual query
+pipeline (parallel processing, indexes, and so on). There is no q interpreter in the server.
+
+```sql
+SET enable_q_dialect = 1;
+SET dialect = 'q';
+```
+
+```q
+select vwap: size wavg price, n: count i by sym from trades where size > 100
+```
+
+A plain `SET` query is still parsed as SQL, so `SET dialect = 'clickhouse'` switches back.
+
+## Queries and statements {#queries-and-statements}
+
+In q, `;` separates the statements of a program, so `a: 1; a + 1` is one query.
+A query ends at a `;` that is the last character of its line (or at the end of the text):
+
+```q
+t: ([] sym: `a`b`a; px: 1 2 3); select sum px by sym from t;
+select from trades where sym = `IBM;
+```
+
+The assignments of a program are visible to the following statements of the same query,
+but not to the following queries. The value of the last statement is the result of the query.
+Comments start with `/` after whitespace; `--` comments are accepted as well.
+
+## What is supported {#what-is-supported}
+
+- Evaluation from right to left without operator precedence: `2*3+4` is `14`.
+- Literals: numbers with type suffixes, booleans (`101b`), symbols (`` `a`b ``), strings, dates (`2024.01.15`),
+  months, timestamps (`2024.01.15D10:30:00`), timespans (`0D01:15:00`), times (`10:30:00.000`), minutes,
+  seconds, nulls (`0N`, `0Nd`) and infinities (`0w`).
+- Lambdas (`{x*y}`, `{[a;b] a+b}`), which are inlined where they are applied, and projections (`f[;2]`).
+- Adverbs: each (`'`, `each`), each-left (`\:`), each-right (`/:`), each-prior (`':`, `prior`), over (`/`, `over`), and scan (`\`, `scan`).
+- The q-sql templates `select`, `exec`, `update`, and `delete`, with the `by` and `where` phrases,
+  `select[n]`, `select[>col]`, and `select distinct`.
+- Aggregates (`sum`, `avg`, `count`, `first`, `last`, `med`, `dev`, `var`, `wavg`, `wsum`, `cor`, ...),
+  uniform functions (`sums`, `deltas`, `prev`, `next`, `fills`, `mavg`, `msum`, `xprev`, ...),
+  `fby`, `xbar`, `within`, `in`, `like`, casts with `$`.
+- Tables: table literals (`([] a: 1 2; b: `x`y)`), keyed tables (`([k: 1 2] v: 3 4)`, `` `k xkey t ``, `1!t`),
+  `xasc`, `xdesc`, `xcol`, `xcols`, `cols`, `meta`, `count`, `n#t`, `t1,t2`.
+- Joins: `lj`, `ij`, `ej`, `uj`, `aj` (an `ASOF JOIN`), and `cross`.
+- `.ch.sql "SELECT ..."` uses the result of a ClickHouse query as a table.
+
+## How q values map to ClickHouse {#mapping}
+
+| q | ClickHouse |
+|---|------------|
+| atom | a value of a single row |
+| list | `Array` |
+| column of a table in q-sql | column |
+| aggregate of a column (`sum x`) | aggregate function; a window function when it is combined with a column |
+| uniform function of a column (`sums x`) | window function over the rows in their order |
+| symbol, string | `String` |
+| boolean, byte, short, int, long, real, float | `Bool`, `UInt8`, `Int16`, `Int32`, `Int64`, `Float32`, `Float64` |
+| date, month | `Date32` |
+| timestamp, datetime | `DateTime64(9)`, `DateTime64(3)` |
+| timespan, time, second, minute | `Time64(9)`, `Time64(3)`, `Time`, `Time` |
+| null | `NULL` |
+
+A grouped `select` returns the groups sorted by the keys, like q. A non-aggregated column in a grouped
+`select` becomes a list per group (`groupArray`).
+
+## Differences from q {#differences-from-q}
+
+- A ClickHouse table has no intrinsic row order: uniform functions (`sums`, `prev`, ...), `first`, `last`, and the
+  virtual column `i` use the order in which the rows are read. Sort explicitly (`` `time xasc t ``) or use a
+  single thread to make it deterministic for `MergeTree` tables.
+- Strings are atoms of type `String`, not lists of chars. `count`, `reverse`, `first`, `#`, `_`, and `,` work on them as on
+  strings, but atomic functions (`=`, `<`) compare whole strings.
+- The values of a program are compiled, not evaluated: recursion, control statements (`if`, `do`, `while`),
+  system commands, IPC, files, and the modification of tables in place (`` `t insert ... ``) are not supported.
+- General lists must consist of items of the same shape; dictionaries are supported in simple forms.
