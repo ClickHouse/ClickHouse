@@ -5,6 +5,7 @@
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/UniqueLock.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
@@ -231,7 +232,23 @@ public:
     /// Specify how we allocate connections on a shard.
     void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }
 
-    void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
+    /// Only the replicas that have this table are used. It is also a table of the shard, see `addShardTable`.
+    void setMainTable(StorageID main_table_)
+    {
+        main_table = std::move(main_table_);
+        addShardTable(main_table);
+    }
+
+    /// The tables the query is distributed over, as opposed to the other tables it uses (in `IN`, in `JOIN`, inside a view).
+    /// `skip_unavailable_shards_mode = unavailable_or_table_missing` skips the shard only when one of them is missing.
+    void addShardTable(const StorageID & table)
+    {
+        if (table)
+            shard_tables.push_back(table);
+    }
+
+    /// Where the shard looks for a table without a database.
+    void setShardDefaultDatabase(String database) { shard_default_database = std::move(database); }
 
     /// Must be called before sending the query.
     void setShardScope(ShardScope shard_scope_) { chassert(!sent_query); shard_scope = std::move(shard_scope_); }
@@ -379,7 +396,7 @@ private:
     /** Returns true if an exception packet received from the shard should be silently
       * ignored according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
       */
-    bool shouldIgnoreShardException(int exception_code) const;
+    bool shouldIgnoreShardException(const Exception & e) const;
 
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
@@ -392,6 +409,8 @@ private:
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
+    VectorWithMemoryTracking<StorageID> shard_tables;
+    String shard_default_database;
 
     LoggerPtr log = getLogger("RemoteQueryExecutor");
 

@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -91,6 +92,15 @@ String dumpQueryPlanShape(const QueryPlan & query_plan)
     WriteBufferFromOwnString buffer;
     query_plan.explainPlan(buffer, ExplainPlanOptions{.header = true, .description = true, .actions = false, .indexes = false});
     return buffer.str();
+}
+
+void addCoordinatedTables(const QueryPlan::Node & node, RemoteQueryExecutor & remote_query_executor)
+{
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node.step.get()); reading && reading->isParallelReadingFromReplicas())
+        remote_query_executor.addShardTable(reading->getStorageID());
+
+    for (const auto * child : node.children)
+        addCoordinatedTables(*child, remote_query_executor);
 }
 }
 
@@ -260,6 +270,7 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
         query_plan);
 
     remote_query_executor->setLogger(log);
+    addCoordinatedTables(*query_plan->getRootNode(), *remote_query_executor);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 
     return createRemoteSourcePipe(

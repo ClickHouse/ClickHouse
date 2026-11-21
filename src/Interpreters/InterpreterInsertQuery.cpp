@@ -1498,6 +1498,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         remote_query_executor->setLogger(logger);
         /// check if destination table exists on nodes
         remote_query_executor->setMainTable(dst_storage->getStorageID());
+        remote_query_executor->addShardTable(src_storage_cluster->getStorageID());
 
         Pipe pipe{std::make_shared<RemoteSource>(
             remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote])};
