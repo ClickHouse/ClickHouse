@@ -36,6 +36,13 @@ inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out
     return detail::bulkDecode<T>(in, count, mode, out, end, prev);
 }
 
+/// Skips without decoding bytes `decodeBlocks` would consume for `count` values. Has the same `end` contract.
+template <typename T>
+inline size_t skipBlocks(const uint8_t * in, size_t count, const uint8_t * end = nullptr) noexcept
+{
+    return detail::bulkSkip<T>(in, count, end);
+}
+
 /// Header of a block of zeros.
 inline constexpr uint8_t ZERO_BLOCK = 0x80;
 

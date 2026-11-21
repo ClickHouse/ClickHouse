@@ -1,0 +1,11 @@
+temporary segments	8
+-- postings of `common`
+4000	7999	0	3999
+4000	7999	0	3999
+-- all postings match the rows
+0
+0
+4000
+-- filtering with the indexes
+4000
+1	3210
