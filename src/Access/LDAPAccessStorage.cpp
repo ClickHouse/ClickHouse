@@ -8,10 +8,12 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <sstream>
+#include <unordered_set>
 
 
 namespace DB
@@ -60,7 +62,10 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
         config.keys(prefix_str + "roles", role_names);
 
         // Currently, we only extract names of roles from the section names and assign them directly and unconditionally.
-        common_roles_cfg.insert(role_names.begin(), role_names.end());
+        // A dot in a section name is escaped with a backslash by `Poco::Util::XMLConfiguration`, so remove the backslash
+        // to get the real name of the role (roles defined in `users.xml` are also stored under the un-escaped names).
+        for (const auto & role_name : role_names)
+            common_roles_cfg.insert(Poco::replace(role_name, "\\.", "."));
     }
 
     LDAPClient::RoleSearchParamsList role_search_params_cfg;
@@ -82,113 +87,158 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     users_external_roles.clear();
     users_per_roles.clear();
     roles_per_users.clear();
-    granted_role_names.clear();
     granted_role_ids.clear();
 
     role_change_subscription = access_control.subscribeForChanges<Role>(
         [this] (const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            for (const auto & change : changes)
-                this->processRoleChange(change.id, change.entity);
+            this->processRoleChanges(changes);
         }
     );
 }
 
 
-void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr & entity)
+void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifier::Change> & changes)
 {
+    if (changes.empty())
+        return;
+
+    // The whole batch of changes is reconciled at once, so that a reload changing many roles resolves every configured
+    // or mapped name only once instead of once per changed role.
+    std::unordered_set<UUID> batch_role_ids;
+    bool any_role_exists = false;
+    for (const auto & change : changes)
+    {
+        batch_role_ids.insert(change.id);
+        if (typeid_cast<std::shared_ptr<const Role>>(change.entity))
+            any_role_exists = true;
+    }
+
+    auto is_in_batch = [&batch_role_ids] (const std::optional<UUID> & role_id)
+    {
+        return role_id && batch_role_ids.contains(*role_id);
+    };
+
     std::lock_guard lock(mutex);
-    const auto role = typeid_cast<std::shared_ptr<const Role>>(entity);
-    const auto it = granted_role_names.find(id);
 
-    if (role) // Added or renamed a role.
+    // The mappings are keyed by the role names as they are configured or mapped from LDAP, and these names are resolved
+    // to the IDs of roles with `access_control.find<Role>`. A name can be resolved to a role with another name, e.g.
+    // `UsersConfigAccessStorage` resolves the legacy escaped name `my\.role` to the role `my.role` defined in `users.xml`.
+    // So the name from the notification is not compared with the configured or mapped names: instead, every name which
+    // is or may become related to the changed role is resolved again, and the resolved ID is granted without any
+    // further lookups by name.
+    std::set<String> role_names(common_role_names.begin(), common_role_names.end());
+    for (const auto & [role_name, user_names] : users_per_roles)
+        role_names.insert(role_name);
+    for (const auto & [role_name, role_id] : granted_role_ids)
+        role_names.insert(role_name);
+
+    std::set<UUID> changed_role_ids;
+    std::set<String> changed_role_names;
+    for (const auto & role_name : role_names)
     {
-        const auto & new_role_name = role->getName();
-        if (it != granted_role_names.end()) // Renamed a granted role.
-        {
-            const auto & old_role_name = it->second;
-            if (new_role_name != old_role_name)
-            {
-                // Revoke the old role first, then grant the new role.
-                applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
-                applyRoleChangeNoLock(true /* grant */, id, new_role_name);
-            }
-        }
-        else // Added a role.
-        {
-            applyRoleChangeNoLock(true /* grant */, id, new_role_name);
-        }
-    }
-    else // Removed a role.
-    {
-        if (it != granted_role_names.end()) // Removed a granted role.
-        {
-            const auto & old_role_name = it->second;
-            applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
-        }
-    }
-}
+        std::optional<UUID> old_role_id;
+        if (auto it = granted_role_ids.find(role_name); it != granted_role_ids.end())
+            old_role_id = it->second;
 
+        // The removal of a role cannot change the resolution of a name which was not resolved to that role.
+        if (!any_role_exists && !is_in_batch(old_role_id))
+            continue;
 
-void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name)
-{
-    std::vector<UUID> user_ids;
+        // A name already resolved to a changed role is processed too: it could have been resolved during the login
+        // of another user after the role had been added but before this notification was delivered, so some users
+        // of this name may still lack the role.
+        const auto new_role_id = access_control.find<Role>(role_name);
+        if (!is_in_batch(old_role_id) && !is_in_batch(new_role_id))
+            continue;
+
+        if (new_role_id)
+            granted_role_ids.insert_or_assign(role_name, *new_role_id);
+        else
+            granted_role_ids.erase(role_name);
+
+        if (old_role_id)
+            changed_role_ids.insert(*old_role_id);
+        if (new_role_id)
+            changed_role_ids.insert(*new_role_id);
+        changed_role_names.insert(role_name);
+    }
+
+    if (changed_role_names.empty())
+        return;
 
     // Build a list of ids of the relevant users.
-    if (common_role_names.contains(role_name))
+    std::vector<UUID> user_ids;
+    const bool common_role_changed = std::any_of(changed_role_names.begin(), changed_role_names.end(),
+        [this] (const String & role_name) { return common_role_names.contains(role_name); });
+
+    if (common_role_changed)
     {
         user_ids = memory_storage.findAll<User>();
     }
     else
     {
-        const auto it = users_per_roles.find(role_name);
-        if (it != users_per_roles.end())
+        std::set<String> relevant_user_names;
+        for (const auto & role_name : changed_role_names)
         {
-            const auto & user_names = it->second;
-            user_ids.reserve(user_names.size());
+            if (const auto it = users_per_roles.find(role_name); it != users_per_roles.end())
+                relevant_user_names.insert(it->second.begin(), it->second.end());
+        }
 
-            for (const auto & user_name : user_names)
-            {
-                if (const auto user_id = memory_storage.find<User>(user_name))
-                    user_ids.emplace_back(*user_id);
-            }
+        for (const auto & user_name : relevant_user_names)
+        {
+            if (const auto user_id = memory_storage.find<User>(user_name))
+                user_ids.emplace_back(*user_id);
         }
     }
 
-    // Update the granted roles of the relevant users.
-    if (!user_ids.empty())
+    if (user_ids.empty())
+        return;
+
+    // Update the granted roles of the relevant users. A user keeps a role if any of its configured or mapped names
+    // is still resolved to that role.
+    auto update_func = [this, &changed_role_ids] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
     {
-        auto update_func = [&role_id, &grant] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
+        if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
         {
-            if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
+            auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
+
+            std::set<UUID> resolved_role_ids;
+            auto add_resolved_role_id = [&] (const String & role_name)
             {
-                auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
-                if (grant)
+                if (const auto it = granted_role_ids.find(role_name); it != granted_role_ids.end())
+                    resolved_role_ids.insert(it->second);
+            };
+
+            for (const auto & role_name : common_role_names)
+                add_resolved_role_id(role_name);
+            if (const auto it = roles_per_users.find(user->getName()); it != roles_per_users.end())
+            {
+                for (const auto & role_name : it->second)
+                    add_resolved_role_id(role_name);
+            }
+
+            // Only the roles of this user are visited, not the whole batch of changed roles: otherwise reloading many
+            // roles mapped to different users would perform a quadratic number of grants and revokes.
+            std::vector<UUID> role_ids_to_revoke;
+            for (const auto & role_id : user->granted_roles.getGranted())
+            {
+                if (changed_role_ids.contains(role_id) && !resolved_role_ids.contains(role_id))
+                    role_ids_to_revoke.push_back(role_id);
+            }
+            changed_user->granted_roles.revoke(role_ids_to_revoke);
+
+            for (const auto & role_id : resolved_role_ids)
+            {
+                if (changed_role_ids.contains(role_id))
                     changed_user->granted_roles.grant(role_id);
-                else
-                    changed_user->granted_roles.revoke(role_id);
-                return changed_user;
             }
-            return entity_;
-        };
-
-        memory_storage.update(user_ids, update_func);
-    }
-
-    // Actualize granted_role_* mappings.
-    if (grant)
-    {
-        if (!user_ids.empty())
-        {
-            granted_role_names.insert_or_assign(role_id, role_name);
-            granted_role_ids.insert_or_assign(role_name, role_id);
+            return changed_user;
         }
-    }
-    else
-    {
-        granted_role_ids.erase(role_name);
-        granted_role_names.erase(role_id);
-    }
+        return entity_;
+    };
+
+    memory_storage.update(user_ids, update_func);
 }
 
 
@@ -204,10 +254,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
         if (it == granted_role_ids.end())
         {
             if (const auto role_id = access_control.find<Role>(role_name))
-            {
-                granted_role_names.insert_or_assign(*role_id, role_name);
                 it = granted_role_ids.insert_or_assign(role_name, *role_id).first;
-            }
         }
 
         if (it != granted_role_ids.end())
@@ -260,13 +307,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
         if (common_role_names.contains(old_role_name))
             continue;
 
-        const auto iit = granted_role_ids.find(old_role_name);
-        if (iit == granted_role_ids.end())
-            continue;
-
-        const auto old_role_id = iit->second;
-        granted_role_names.erase(old_role_id);
-        granted_role_ids.erase(iit);
+        granted_role_ids.erase(old_role_name);
     }
 
     // Actualize roles_per_users mapping and users_external_roles cache.
