@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-ordinary-database
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-ordinary-database, no-parallel
 # Tag no-replicated-database: the test creates its own `Replicated` database and drops its replica.
 # Tag no-shared-merge-tree: the table engine is replaced.
 # Tag no-ordinary-database: tables of a `Replicated` database are restored by their UUID.
+# Tag no-parallel: `SYSTEM DROP DATABASE REPLICA ... FROM ZKPATH` inspects the metadata of all databases of the server.
 
 # `SYSTEM DROP DATABASE REPLICA ... FROM ZKPATH ... WITH TABLES` re-creates the tables of the dropped replica
 # from the definitions stored in Keeper. `force_primary_key_reverse_order` must not rewrite those definitions,
@@ -25,7 +26,9 @@ TABLE_ZK_PATH=$($CLICKHOUSE_CLIENT -q "SELECT zookeeper_path FROM system.replica
 
 # Another replica of the table keeps its metadata in Keeper after the database is dropped.
 $CLICKHOUSE_CLIENT --force_primary_key_reverse_order=0 -q "
-    CREATE TABLE t_keep (k UInt64) ENGINE = ReplicatedMergeTree('$TABLE_ZK_PATH', 'r_keep') ORDER BY k;
+    -- The path is the default one of the table above. It contains the UUID of the table, so it is unique
+    -- and does not need the prefix, which is mentioned only as the name of this replica.
+    CREATE TABLE t_keep (k UInt64) ENGINE = ReplicatedMergeTree('$TABLE_ZK_PATH', 'r_keep_$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX') ORDER BY k;
 "
 
 # A replica of the database on another server, which has gone away.
@@ -41,7 +44,7 @@ $CLICKHOUSE_CLIENT --force_primary_key_reverse_order=1 -q "
 "
 
 $CLICKHOUSE_CLIENT -q "SELECT 'database replicas', count() FROM system.zookeeper WHERE path = '$DB_ZK_PATH/replicas'"
-$CLICKHOUSE_CLIENT -q "SELECT 'table replicas', groupArray(name) FROM system.zookeeper WHERE path = '$TABLE_ZK_PATH/replicas'"
+$CLICKHOUSE_CLIENT -q "SELECT 'table replicas', groupArray(replaceOne(name, '_$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '')) FROM system.zookeeper WHERE path = '$TABLE_ZK_PATH/replicas'"
 $CLICKHOUSE_CLIENT -q "SELECT 'sorting key', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_keep'"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_keep SYNC"
