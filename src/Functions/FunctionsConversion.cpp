@@ -2916,7 +2916,7 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper(bool requested
             }
             else
             {
-                FieldType converted_value;
+                FieldType converted_value{};
                 const bool converted = isFinite(in_data[i])
                     && (strict
                         ? accurate::convertNumeric(in_data[i], converted_value)
