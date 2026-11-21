@@ -1149,12 +1149,12 @@ static bool isNullKeyword(std::string_view text)
 }
 
 /// Scans an array or a tuple of numbers, strings and `NULL`s, and of nested arrays and tuples of them,
-/// leaving `pos` right after it, and appends its text to `literal.text` token by token (if `build_text`): without
+/// leaving `pos` right after it, and appends its text to `literal.text` token by token: without
 /// whatever the query holds between the tokens - a comment, or a space between a minus and its
 /// digits - which the text readers of the types do not skip, except for a single space after a
 /// comma when the query has one, which they do. Returns false if there is no such collection ahead,
 /// in which case `pos` is left somewhere inside what was scanned.
-static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal, bool build_text = true)
+static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & literal)
 {
     using enum TokenType;
 
@@ -1171,97 +1171,87 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
     std::vector<TokenType> stack;
     while (pos.isValid())
     {
-        const Token token = *pos;
-        const std::string_view token_text(token.begin, token.end - token.begin);
-
         /// Whether this token sits directly inside the outermost bracket.
         const bool own = stack.size() == 1;
 
-        if (build_text && last_token == Comma && token.begin != last_token_end)
+        if (last_token == Comma && pos->begin != last_token_end)
             literal.text += ' ';
 
-        if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(token.type))
+        if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
         {
-            stack.push_back(token.type);
+            stack.push_back(pos->type);
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                 return false;
-            if (build_text)
-                literal.text += token_text;
+            literal.text += tokenText(pos);
         }
-        else if (token.type == ClosingSquareBracket)
+        else if (pos->type == ClosingSquareBracket)
         {
             if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
                 return false;
             if (stack.empty() || stack.back() != OpeningSquareBracket)
                 return false;
             stack.pop_back();
-            if (build_text)
-                literal.text += token_text;
+            literal.text += tokenText(pos);
         }
-        else if (token.type == ClosingRoundBracket)
+        else if (pos->type == ClosingRoundBracket)
         {
             if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
                 return false;
             if (stack.empty() || stack.back() != OpeningRoundBracket)
                 return false;
             stack.pop_back();
-            if (build_text)
-                literal.text += token_text;
+            literal.text += tokenText(pos);
         }
-        else if (token.type == Comma)
+        else if (pos->type == Comma)
         {
             if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
                 return false;
             holds_own_comma |= own;
-            if (build_text)
-                literal.text += ',';
+            literal.text += ',';
         }
-        else if (token.type == Number)
+        else if (pos->type == Number)
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
                 return false;
-            if (!isPlainDecimalNumeral(token_text))
+            const std::string_view text = tokenText(pos);
+            if (!isPlainDecimalNumeral(text))
                 return false;
-            literal.all_integers &= isIntegerNumeral(token_text);
+            literal.all_integers &= isIntegerNumeral(text);
             holds_own_scalar |= own;
-            if (last_token == Minus && !isIntegerZeroNumeral(token_text))
+            if (last_token == Minus && !isIntegerZeroNumeral(text))
             {
                 literal.all_non_negative = false;
-                if (build_text)
-                    literal.text += '-';
+                literal.text += '-';
             }
-            if (build_text)
-                literal.text += token_text;
+            literal.text += text;
         }
-        else if (isOneOf<StringLiteral, Minus>(token.type))
+        else if (isOneOf<StringLiteral, Minus>(pos->type))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                 return false;
-            if (token.type == StringLiteral)
+            if (pos->type == StringLiteral)
             {
                 literal.all_numbers = false;
                 holds_own_scalar |= own;
-                if (build_text)
-                    literal.text += token_text;
+                literal.text += tokenText(pos);
             }
             /// A minus is written together with the number that follows it.
         }
-        else if (token.type == BareWord && isNullKeyword(token_text))
+        else if (pos->type == BareWord && isNullKeyword(tokenText(pos)))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                 return false;
             literal.has_null = true;
             holds_own_scalar |= own;
-            if (build_text)
-                literal.text += "NULL";
+            literal.text += "NULL";
         }
         else
         {
             break;
         }
 
-        last_token = token.type;
-        last_token_end = token.end;
+        last_token = pos->type;
+        last_token_end = pos->end;
         ++pos;
 
         if (stack.empty())
@@ -1462,24 +1452,12 @@ ASTPtr exactCastArgument(
 
 bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    const Pos literal_begin = pos;
-    const bool is_collection = isOneOf<TokenType::OpeningSquareBracket, TokenType::OpeningRoundBracket>(pos->type);
-
-    /// A collection is rarely followed by `::` (an `IN` list is not), so its text is built only once `::` is found.
     LiteralAsText literal;
-    if (is_collection ? !scanCollectionOfLiteralsAsText(pos, literal, /* build_text = */ false) : !parseLiteralAsText(pos, literal))
+    if (!parseLiteralAsText(pos, literal))
         return false;
 
     if (!ParserToken(TokenType::DoubleColon).ignore(pos, expected))
         return false;
-
-    if (is_collection)
-    {
-        Pos text_pos = literal_begin;
-        literal = {};
-        [[maybe_unused]] const bool rescanned = scanCollectionOfLiteralsAsText(text_pos, literal);
-        chassert(rescanned);
-    }
 
     std::optional<String> type_text = parseDataTypeAsText(pos, expected);
     if (!type_text)
