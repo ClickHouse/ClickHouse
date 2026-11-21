@@ -2462,6 +2462,47 @@ void Aggregator::addBatch(
 }
 
 
+void Aggregator::addBatchSkippingRepeatedRows(
+    size_t row_begin, size_t row_end,
+    const AggregateFunctionInstruction * inst,
+    const AggregateDataPtr * places,
+    Arena * arena)
+{
+    const auto & argument = assert_cast<const ColumnReplicated &>(*inst->batch_arguments[0]);
+
+    /// The place of the last row of the batch at each position, and the places of the rows, null for a skipped one.
+    PaddedPODArray<AggregateDataPtr> last_places(argument.getNestedColumn()->size(), nullptr);
+    PaddedPODArray<AggregateDataPtr> distinct_places(row_end);
+    const auto skip_repeated = [&]<typename T>(const PaddedPODArray<T> & indexes)
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            AggregateDataPtr & last = last_places[indexes[i]];
+            if (places[i] == last)
+            {
+                distinct_places[i] = nullptr;
+            }
+            else
+            {
+                distinct_places[i] = places[i];
+                last = places[i];
+            }
+        }
+    };
+
+    const IColumn & indexes = *argument.getIndexesColumn();
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
+        skip_repeated(indexes_uint8->getData());
+    else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
+        skip_repeated(indexes_uint16->getData());
+    else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
+        skip_repeated(indexes_uint32->getData());
+    else
+        skip_repeated(assert_cast<const ColumnUInt64 &>(indexes).getData());
+
+    inst->batch_that->addBatch(row_begin, row_end, distinct_places.data(), inst->state_offset, inst->batch_arguments, arena);
+}
+
 void Aggregator::addBatchSinglePlace(
     size_t row_begin, size_t row_end,
     const AggregateFunctionInstruction * inst,

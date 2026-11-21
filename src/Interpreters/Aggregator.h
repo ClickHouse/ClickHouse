@@ -602,6 +602,8 @@ public:
         bool has_replicated_argument = false;
         /// The only argument is a replicated `String` column that the function reads as it is, and the function ignores
         /// repeated values (aggregation with keys): a row whose position in the argument's nested column and whose place
+        /// repeat those of an earlier row of the batch is skipped (see `addBatchSkippingRepeatedRows`).
+        bool skips_repeated_rows = false;
         /// The arguments are copies of constants with this many rows, added repeatedly to cover the rows (aggregation without keys); 0 otherwise.
         size_t constant_argument_rows = 0;
     };
@@ -2073,6 +2075,14 @@ private:
         AggregateDataPtr * places,
         Arena * arena,
         bool all_places_are_non_null);
+
+    /// `addBatch` of an instruction with `skips_repeated_rows`: a row whose position in the argument's nested column and
+    /// whose place equal those of the last earlier row at that position adds nothing new to the state, so it is skipped.
+    static void addBatchSkippingRepeatedRows(
+        size_t row_begin, size_t row_end,
+        const AggregateFunctionInstruction * inst,
+        const AggregateDataPtr * places,
+        Arena * arena);
 
     static void addBatchSinglePlace(
         size_t row_begin, size_t row_end,
