@@ -20,6 +20,8 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return String(shared ? "ObjectSharedTypedPath" : "ObjectTypedPath") + delim + path; }
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -42,6 +44,8 @@ public:
     /** Get the text that identifies this element. */
     String getID(char) const override { return "ASTObjectTypeArgument"; }
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

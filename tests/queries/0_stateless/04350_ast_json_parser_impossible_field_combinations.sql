@@ -77,11 +77,11 @@ SELECT formatQueryFromJSON('{"type":"ProjectionDeclaration","name":"p","index":{
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'), '"base_snapshot_name":', '"elements":[{}],"base_snapshot_name":')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- TTL GROUP BY: `group_by_key`/`group_by_assignments` are produced only by `ParserTTLElement` in the
--- `GROUP BY` branch, after at least one grouping key. A `GROUP_BY` mode with an empty `group_by_key`
--- would format `GROUP BY ` with no expressions, and these fields on a `DELETE` TTL are silently dropped.
+-- TTL GROUP BY: `group_by_key`/`group_by_assignments` on a non-`GROUP_BY` (e.g. `DELETE`) TTL are
+-- silently dropped by the formatter, so those combinations must be rejected on read.
+-- (An empty `group_by_key` in `GROUP_BY` mode is a valid parser-produced shape:
+-- `MergeTree` accepts `TTL d GROUP BY` with an empty key list, aggregating the whole part.)
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'), '"group_by_key":[{"type":"Identifier","name":"x"}]', '"group_by_key":[]')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d'), '"mode":"DELETE"', '"mode":"DELETE","group_by_key":[{"type":"Identifier","name":"x"}]')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
@@ -257,3 +257,34 @@ SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO TABLE u'));
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PART \'all_1_1_0\' TO DISK \'d1\''), '"move_destination_type":"DISK","move_destination_name":"d1"', '"move_destination_type":"TABLE","to_table":"u"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MOVE PARTITION 1 TO VOLUME \'v\''), '"move_destination_type":"VOLUME"', '"move_destination_type":"SHARD"')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTObjectTypedPathArgument` `data_type`: `ObjectArgumentParser` fills this slot through
+-- `ParserDataType`, whose top-level node is always a data type -- `ASTDataType` or one of its
+-- specialized subclasses (`ASTTupleDataType`, `ASTEnumDataType`). `IAST::as<ASTDataType>()` matches
+-- `typeid` exactly and would reject the subclasses, which breaks the round-trip of typed `Tuple` /
+-- `Enum8` paths inside a JSON type argument; `readJSON` uses `dynamic_cast` so the full hierarchy
+-- is accepted.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (j JSON(a Tuple(UInt64, String))) ENGINE = Memory'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (j JSON(a Enum8(\'a\'=1))) ENGINE = Memory'));
+
+-- ---------------------------------------------------------------------------
+-- `DESCRIBE TEMPORARY TABLE <name>` is the only form `ParserDescribeTableQuery` sets
+-- `temporary = true` for, and only after confirming the table expression is a bare name (not a
+-- subquery or table function). A payload that sets `temporary = true` alongside a subquery /
+-- table-function `table_expression` is parser-impossible: `formatImpl` would emit
+-- `DESCRIBE TEMPORARY TABLE (SELECT ...)`, which the SQL parser cannot read back.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('DESCRIBE (SELECT 1)'), '"temporary":false', '"temporary":true')); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- `ASTObjectTypeArgument` shape invariants from `ObjectArgumentParser`:
+--   * `skip_path_regexp` is parsed with `ParserStringLiteral`, so the literal is always a `String`
+--     field. A non-string literal would format as `SKIP REGEXP 42` (parser-impossible).
+--   * `parameter` is built with `makeASTOperator("equals", identifier, number)`, i.e. an `equals`
+--     operator-function whose arguments are exactly an identifier followed by a numeric literal.
+--     Any other function shape would format as `JSON(x + 1)` or similar (parser-impossible).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"ObjectTypeArgument","skip_path_regexp":{"type":"Literal","value":{"field_type":"UInt64","value":42}}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ObjectTypeArgument","parameter":{"type":"Function","name":"plus","is_operator":true,"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}}'); -- { serverError BAD_ARGUMENTS }
