@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <DataTypes/TypeTree.h>
 
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 
 #include <Common/FieldAccurateComparison.h>
@@ -259,6 +260,21 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
 {
     ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
+}
+
+bool MergeTreeIndexMinMax::mayBeUsefulForFilter(const NameSet & filter_leaf_names) const
+{
+    if (!index.expression)
+        return true;
+    /// `KeyCondition` matches a filter node to a key subexpression by name: a leaf is named by its result name,
+    /// any other node `f(...)`. Without a match the condition has no key atom and is never useful.
+    for (const auto & action : index.expression->getActions())
+    {
+        const auto & name = action.node->result_name;
+        if (name.ends_with(')') || filter_leaf_names.contains(name))
+            return true;
+    }
+    return false;
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(
