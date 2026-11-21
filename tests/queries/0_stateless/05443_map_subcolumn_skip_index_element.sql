@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 -- A skip index declared on the `keys` / `values` subcolumn of a Map is used for `m['key']` and `mapContains*`
 -- like an index on `mapKeys(m)` / `mapValues(m)`. With optimize_functions_to_subcolumns = 1 `m['key']` reads
--- the subcolumn `m.key_<key>`, with 0 it is `arrayElement(m, 'key')`.
+-- the subcolumn `m.key_<key>` (bucketed Map serialization only), with 0 it is `arrayElement(m, 'key')`.
 
 SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;
@@ -21,7 +21,7 @@ CREATE TABLE t_bloom
     INDEX iv m.values TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, map_serialization_version = 'with_buckets';
 INSERT INTO t_bloom SELECT number, map('a', toString(number), concat('k', toString(intDiv(number, 64))), 'x') FROM numbers(6400);
 OPTIMIZE TABLE t_bloom FINAL;
 SELECT 'bloom_filter parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_bloom' AND active;
@@ -39,6 +39,8 @@ SELECT count() FROM t_bloom WHERE mapContains(m, 'k7') SETTINGS force_data_skipp
 SELECT count() FROM t_bloom WHERE mapContainsValue(m, '100') SETTINGS force_data_skipping_indices = 'iv', optimize_functions_to_subcolumns = 0;
 -- An absent key reads the default value, so the index must not prune.
 SELECT count() FROM t_bloom WHERE m['zz'] = '';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_bloom WHERE m['k7'] = 'x' SETTINGS optimize_functions_to_subcolumns = 1)
+WHERE explain ILIKE '%m.key_k7%';
 SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_bloom WHERE m['k7'] = 'x' SETTINGS ignore_data_skipping_indices = 'iv')
 WHERE explain ILIKE '%Granules:%';
 SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_bloom WHERE m['a'] = '100' SETTINGS ignore_data_skipping_indices = 'ik')
@@ -52,7 +54,7 @@ CREATE TABLE t_text
     INDEX iv m.values TYPE text(tokenizer = 'array')
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, map_serialization_version = 'with_buckets';
 INSERT INTO t_text SELECT number, map('a', toString(number), concat('k', toString(intDiv(number, 64))), 'x') FROM numbers(6400);
 OPTIMIZE TABLE t_text FINAL;
 SELECT 'text parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_text' AND active;
@@ -71,7 +73,7 @@ CREATE TABLE t_tokenbf
     INDEX ik m.keys TYPE tokenbf_v1(4096, 3, 0) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, map_serialization_version = 'with_buckets';
 INSERT INTO t_tokenbf SELECT number, map('a', toString(number), concat('k', toString(intDiv(number, 64))), 'x') FROM numbers(6400);
 OPTIMIZE TABLE t_tokenbf FINAL;
 SELECT 'tokenbf_v1 parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_tokenbf' AND active;
@@ -88,7 +90,7 @@ CREATE TABLE t_nullable
     INDEX iv m.values TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, map_serialization_version = 'with_buckets';
 INSERT INTO t_nullable SELECT number, map('a', toString(number), 'b', if(number % 64 = 0, NULL, 'v')) FROM numbers(6400);
 OPTIMIZE TABLE t_nullable FINAL;
 SELECT 'nullable parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_nullable' AND active;
@@ -107,7 +109,7 @@ CREATE TABLE t_json
     INDEX i j.m.keys TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, map_serialization_version = 'with_buckets';
 INSERT INTO t_json SELECT number, map('a', toString(number), concat('k', toString(intDiv(number, 64))), 'x'),
     concat('{"m.keys":["zzz', toString(intDiv(number, 64)), '"]}') FROM numbers(6400);
 OPTIMIZE TABLE t_json FINAL;
