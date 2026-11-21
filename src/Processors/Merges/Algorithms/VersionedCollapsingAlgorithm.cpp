@@ -40,6 +40,9 @@ void VersionedCollapsingAlgorithm::insertGap(size_t gap_size)
     {
         for (size_t i = 0; i < gap_size; ++i)
         {
+            /// In a gap only the sources of buffered invalid-sign rows are unskipped.
+            if (!current_row_sources.front().getSkipFlag())
+                insertBufferedInvalidSignRow();
             writeRowSourcePart(*out_row_sources_buf, current_row_sources.front());
             current_row_sources.pop();
         }
@@ -48,12 +51,12 @@ void VersionedCollapsingAlgorithm::insertGap(size_t gap_size)
 
 void VersionedCollapsingAlgorithm::insertRow(size_t skip_rows, const RowRef & row)
 {
+    insertGap(skip_rows);
+
     const bool filtered = isRowFiltered(row);
 
     if (!filtered)
         merged_data->insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
-
-    insertGap(skip_rows);
 
     if (out_row_sources_buf)
     {
@@ -61,6 +64,40 @@ void VersionedCollapsingAlgorithm::insertRow(size_t skip_rows, const RowRef & ro
             current_row_sources.front().setSkipFlag(false);
         writeRowSourcePart(*out_row_sources_buf, current_row_sources.front());
         current_row_sources.pop();
+    }
+}
+
+void VersionedCollapsingAlgorithm::bufferInvalidSignRow(const RowRef & row)
+{
+    const auto & columns = *row.all_columns;
+
+    if (invalid_sign_columns.empty())
+    {
+        invalid_sign_columns.reserve(columns.size());
+        for (const auto * column : columns)
+            invalid_sign_columns.push_back(column->cloneEmpty());
+    }
+
+    for (size_t i = 0, size = columns.size(); i < size; ++i)
+        invalid_sign_columns[i]->insertFrom(*columns[i], row.row_num);
+
+    invalid_sign_block_sizes.push_back(row.owned_chunk->getNumRows());
+}
+
+void VersionedCollapsingAlgorithm::insertBufferedInvalidSignRow()
+{
+    ColumnRawPtrs raw_columns;
+    raw_columns.reserve(invalid_sign_columns.size());
+    for (const auto & column : invalid_sign_columns)
+        raw_columns.push_back(column.get());
+
+    merged_data->insertRow(raw_columns, next_invalid_sign_row, invalid_sign_block_sizes[next_invalid_sign_row]);
+
+    if (++next_invalid_sign_row == invalid_sign_block_sizes.size())
+    {
+        invalid_sign_columns.clear();
+        invalid_sign_block_sizes.clear();
+        next_invalid_sign_row = 0;
     }
 }
 
@@ -113,7 +150,32 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
                 return Status(merged_data->pull());
         }
 
-        if (current_keys.empty())
+        bool inserted_rows = false;
+
+        /// With the queue empty, every row read before the buffered ones is already resolved.
+        if (current_keys.empty() && !invalid_sign_block_sizes.empty())
+        {
+            insertGap(current_keys.frontGap());
+            current_keys.frontGap() = 0;
+            inserted_rows = true;
+        }
+
+        const bool valid_sign = sign == 1 || sign == -1;
+        const bool keep_invalid_sign_row = !valid_sign && !isRowFiltered(current_row);
+
+        if (!valid_sign)
+        {
+            /// Only 1 and -1 cancel each other: a row with another sign is kept as is.
+            if (keep_invalid_sign_row && out_row_sources_buf)
+                bufferInvalidSignRow(current_row);
+            else if (keep_invalid_sign_row)
+            {
+                merged_data->insertRow(*current_row.all_columns, current_row.row_num, current_row.owned_chunk->getNumRows());
+                inserted_rows = true;
+            }
+            current_keys.pushGap(1);
+        }
+        else if (current_keys.empty())
         {
             sign_in_queue = sign;
             current_keys.pushBack(current_row);
@@ -130,17 +192,22 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
         }
 
         if (out_row_sources_buf)
-            current_row_sources.emplace(current->order, true);
+            current_row_sources.emplace(current->order, /*skip_flag=*/ !keep_invalid_sign_row);
 
         if (!current->isLast())
         {
             queue.next(1);
+            if (inserted_rows && merged_data->hasEnoughRows())
+                return Status(merged_data->pull());
         }
         else
         {
             /// We take next block from the corresponding source, if there is one.
             queue.removeTop();
-            return Status(current.impl->order);
+            Status status(current.impl->order);
+            if (inserted_rows && merged_data->hasEnoughRows())
+                status.chunk = merged_data->pull();
+            return status;
         }
     }
 
