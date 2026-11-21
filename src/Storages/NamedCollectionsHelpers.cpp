@@ -35,6 +35,9 @@ std::optional<String> tryNormalizeNamedCollectionKey(std::string_view key)
             if (end == std::string_view::npos)
                 return std::nullopt;
             i = end;
+            /// `XMLConfiguration` starts the next key name right after `]`, also without a dot.
+            if (!normalized.empty() && normalized.back() != '.')
+                normalized += '.';
         }
         else if (key[i] == '\\' && i + 1 < key.size())
             normalized += key[++i];

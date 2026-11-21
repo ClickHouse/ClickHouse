@@ -32,7 +32,8 @@ namespace ErrorCodes
 SecretArgumentsSpec mysqlPostgreSQLSecretArguments(size_t password_slot);
 
 /// The key names that `XMLConfiguration` resolves a named collection key to, without indexes, escapes and redundant dots
-/// (`.kafka[0]..consumer.sasl_password` is `kafka.consumer.sasl_password`), or `nullopt` if a `[` is not closed.
+/// (`.kafka[0]..consumer.sasl_password` and `kafka[0]consumer.sasl_password` are `kafka.consumer.sasl_password`),
+/// or `nullopt` if a `[` is not closed.
 std::optional<String> tryNormalizeNamedCollectionKey(std::string_view key);
 
 /// Throws `BAD_ARGUMENTS` if `key` replaces a stored key (including an alias) that is `NOT OVERRIDABLE`.

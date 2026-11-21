@@ -68,6 +68,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE kafka_secret (x UInt64) ENGINE = Kafka($collection,
         \`kafka.consumer.sasl_password\` = 'secret_05621',
         \`kafka[0].producer.sasl_password\` = 'secret_05621',
+        \`kafka[0]consumer.sasl_password\` = 'secret_05621',
         \`.kafka..kafka_topic.sasl_password\` = 'secret_05621')
 "
 echo "secret shown: $($CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE kafka_secret" | grep -c 'secret_05621')"
