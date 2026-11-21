@@ -1,0 +1,4 @@
+jit_rows_1_compiled	3000	0
+jit_rows_2_interpreted	0	3000
+jit_rows_3_mixed	3000	1000
+jit_rows_4_short_circuit	0	2300
