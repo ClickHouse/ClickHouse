@@ -1,0 +1,10 @@
+aligned	1	6
+corner	2	8
+diagonal	1	7
+edge	1	8
+gap	2	8
+nested	1	4
+vertical	1	6
+corner_chain	128	128
+crossbars	16	16	1
+thin_overlap	1

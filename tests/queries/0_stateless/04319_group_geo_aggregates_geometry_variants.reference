@@ -1,0 +1,22 @@
+convex_hull_mixed_geometry
+100
+union_geometry_polygons
+14
+intersect_geometry_polygons
+4
+convex_hull_geometry_polygon
+25
+union_single_geometry
+9
+intersect_single_geometry
+16
+union_three_geometry
+8
+intersect_three_geometry
+4
+convex_hull_mixed_geometry_runtime_types
+400	80
+union_mixed_polygon_multipolygon
+1
+intersect_mixed_polygon_multipolygon
+1

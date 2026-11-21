@@ -1,0 +1,53 @@
+<test iceberg="0">
+    <!-- Not on Iceberg tables: Iceberg has no type for the geometry columns (`Point`, `Ring`, `Polygon`, `MultiPolygon`); the test measures the aggregate functions, not the storage. -->
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_dense</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_circle</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_carriers</drop_query>
+
+    <!-- Dense pseudo-random points: almost every point is interior, so the hull stays small. -->
+    <create_query>CREATE TABLE bench_convex_hull_dense (pt Point, group_id UInt32) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_convex_hull_dense SELECT
+            (toFloat64((number * 1103515245 + 12345) % 100000) / 100,
+             toFloat64((number * 6364136223 + 1) % 100000) / 100),
+            number % 200000
+        FROM numbers(4000000)
+        SETTINGS max_threads = 1
+    </fill_query>
+
+    <!-- Every point is a hull vertex: the worst case for compression. -->
+    <create_query>CREATE TABLE bench_convex_hull_circle (pt Point) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_convex_hull_circle
+        SELECT (cos(number * 2 * pi() / 1600000), sin(number * 2 * pi() / 1600000)) FROM numbers(1600000)
+        SETTINGS max_threads = 1
+    </fill_query>
+
+    <!-- Non-point carriers: rings, polygons (outer ring only) and line strings. -->
+    <create_query>CREATE TABLE bench_convex_hull_carriers (r Ring, p Polygon, m MultiLineString) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_convex_hull_carriers
+        WITH toFloat64(number % 1024) AS x, [(x, 0.), (x + 2, 0.), (x, 2.), (x, 0.)] AS ring
+        SELECT ring, [ring], [[ring[1], ring[2]], [ring[3], ring[4]]]
+        FROM numbers(2000000)
+        SETTINGS max_threads = 1
+    </fill_query>
+
+    <query>SELECT groupConvexHull(pt) FROM bench_convex_hull_dense FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT intDiv(group_id, 1563) AS g, groupConvexHull(pt) FROM bench_convex_hull_dense GROUP BY g FORMAT Null SETTINGS max_threads = 1</query>
+    <!-- Many small groups: per-group state growth and finalization dominate. -->
+    <query>SELECT group_id, groupConvexHull(pt) FROM bench_convex_hull_dense GROUP BY group_id FORMAT Null SETTINGS max_threads = 1</query>
+    <query>
+        SELECT groupConvexHullMerge(s)
+        FROM (SELECT groupConvexHullState(pt) AS s FROM bench_convex_hull_dense GROUP BY intDiv(group_id, 1563))
+        FORMAT Null SETTINGS max_threads = 1
+    </query>
+    <query>SELECT groupConvexHull(pt) FROM bench_convex_hull_circle FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(r) FROM bench_convex_hull_carriers FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(p) FROM bench_convex_hull_carriers FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(m) FROM bench_convex_hull_carriers FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_dense</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_circle</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_carriers</drop_query>
+</test>
