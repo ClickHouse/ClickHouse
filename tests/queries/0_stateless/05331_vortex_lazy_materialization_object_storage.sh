@@ -46,7 +46,6 @@ run()
     local enabled=$1
     local query=$2
     ${CLICKHOUSE_LOCAL} \
-        --enable_analyzer=1 \
         --s3_validate_etag_on_read=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \

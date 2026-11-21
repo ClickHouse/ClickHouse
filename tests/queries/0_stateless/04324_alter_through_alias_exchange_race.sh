@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine 1"
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT}"
 
 # ALTER through an Alias forwards the metadata change to the target table. The forwarded ALTER must
 # serialize with EXCHANGE TABLES of the target, otherwise a concurrent EXCHANGE can slip in between

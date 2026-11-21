@@ -43,7 +43,6 @@ for roaring in 0 1; do
         echo "roaring=${roaring} parquet_v3=${v3}:"
         ${CLICKHOUSE_CLIENT} \
             --use_roaring_bitmap_iceberg_positional_deletes=${roaring} \
-            --input_format_parquet_use_native_reader_v3=${v3} \
             --query "SELECT count(), sum(a), groupArray(a) FROM (SELECT a FROM ${TABLE} ORDER BY a)"
     done
 done

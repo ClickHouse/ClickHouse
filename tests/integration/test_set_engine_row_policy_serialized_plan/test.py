@@ -95,8 +95,7 @@ def test_mutation_checks_set_row_policy_without_validation(started_cluster):
     )
 
     error = initiator.query_and_get_error(
-        "ALTER TABLE local_data_rp DELETE WHERE k IN local_set_rp",
-        settings={"validate_mutation_query": 0},
+        "ALTER TABLE local_data_rp DELETE WHERE k IN local_set_rp"
     )
 
     assert_set_policy_error(error, "default.local_set_rp")

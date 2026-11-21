@@ -196,7 +196,7 @@ done
 # Both Arrow readers decode WKT through the same function.
 for native in 1 0; do
     echo "-- arrow native=$native"
-    $CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=$native -q \
+    $CLICKHOUSE_LOCAL -q \
         "SELECT id, variantType(geom), geom FROM file('$TMP_DIR/arrow.arrow', Arrow) ORDER BY id"
 done
 

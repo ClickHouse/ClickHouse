@@ -14,7 +14,7 @@ REL="${CLICKHOUSE_TEST_UNIQUE_NAME}_tbl"
 rm -rf "${USER_FILES_PATH:?}/${REL}"
 trap 'rm -rf "${USER_FILES_PATH:?}/${REL}"' EXIT
 
-SETTINGS="--allow_experimental_delta_kernel_rs=1 --allow_delta_lake_writes=1 --allow_delta_lake_create_table=1"
+SETTINGS="--allow_delta_lake_writes=1 --allow_delta_lake_create_table=1"
 
 echo "--- create and write through a relative path"
 ${CLICKHOUSE_CLIENT} ${SETTINGS} -q "

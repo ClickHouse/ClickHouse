@@ -1,20 +1,19 @@
 #!/usr/bin/expect -f
 
 # The client loads the server warnings with a plain-SQL probe of its own (`Client::loadWarningMessages`).
-# That probe has two requirements which pull in opposite directions, and this test pins both:
+# The probe sends the session settings, because `system.warnings` is partly derived from the settings
+# the server sees for the query. It must still parse under a session-level `dialect`, because the probe
+# is ClickHouse SQL while `Connection::sendQuery` serializes every changed setting, so the server would
+# otherwise try to parse it as Kusto.
 #
-# 1. It must send the session settings, because `system.warnings` is partly derived from the settings
-#    the server sees for the query - a changed obsolete setting produces a warning of its own.
-# 2. It must still parse under a session-level `dialect`, because the probe is ClickHouse SQL while
-#    `Connection::sendQuery` serializes every changed setting, so the server would otherwise try to
-#    parse it as Kusto.
+# `showWarnings` swallows any exception from the probe, so a regression is silent: the warnings simply
+# stop being displayed.
 #
-# `showWarnings` swallows any exception from the probe, so a regression in either direction is silent:
-# the warnings simply stop being displayed.
-#
-# Requirement 2 has two halves: the session-level `SET dialect` / `--dialect` case, and the case where
-# the session never changes `dialect` but the authenticated user's profile defaults to a foreign one -
+# There are two halves: the session-level `SET dialect` / `--dialect` case, and the case where the
+# session never changes `dialect` but the authenticated user's profile defaults to a foreign one -
 # only changed settings are serialized, so the override has to be unconditional. Both are pinned here.
+#
+# The warning to display: a query that changes an obsolete setting adds a server-wide warning.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -38,10 +37,12 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --enable_kusto_dialect 1 --dialect kusto --max_memory_usage_for_all_queries=123 --history_file=$history_file"
+exec bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT -q 'SELECT 1 SETTINGS max_memory_usage_for_all_queries = 123' > /dev/null"
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --enable_kusto_dialect 1 --dialect kusto --history_file=$history_file"
 
 expect "Warnings:"
-expect " * Obsolete setting"
+expect " * Queries or settings profiles changed obsolete settings"
 expect ":) "
 
 send -- "\4"
@@ -74,10 +75,10 @@ expect ":) "
 send -- "\4"
 expect eof
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --user $user --max_memory_usage_for_all_queries=123 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --user $user --history_file=$history_file"
 
 expect "Warnings:"
-expect " * Obsolete setting"
+expect " * Queries or settings profiles changed obsolete settings"
 expect ":) "
 
 send -- "\4"

@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE_PATH="${CLICKHOUSE_TEST_UNIQUE_NAME}/t0"
 Q="${CLICKHOUSE_TEST_UNIQUE_NAME}_"
-DELTA_SETTINGS="--allow_experimental_delta_kernel_rs 1 --allow_delta_lake_writes 1 --allow_delta_lake_create_table 1"
+DELTA_SETTINGS="--allow_delta_lake_writes 1 --allow_delta_lake_create_table 1"
 
 ${CLICKHOUSE_CLIENT} $DELTA_SETTINGS --query "CREATE TABLE t0 (c0 Int32, c1 String) ENGINE = DeltaLakeS3(s3_conn, filename = '${TABLE_PATH}')"
 
@@ -27,7 +27,7 @@ insert()
 
 read_all()
 {
-    local settings="--allow_experimental_delta_kernel_rs 1 --s3_validate_etag_on_read 1"
+    local settings="--s3_validate_etag_on_read 1"
     ${CLICKHOUSE_CLIENT} $settings --query_id "${Q}a_$1" --query "SELECT sum(c0) FROM t0"
     ${CLICKHOUSE_CLIENT} $settings --query_id "${Q}b_$1" --query "SELECT sum(c0) FROM deltaLakeS3(s3_conn, filename = '${TABLE_PATH}')"
     ${CLICKHOUSE_CLIENT} $settings --query_id "${Q}c_$1" --query "SELECT countIf(_etag = '') FROM t0"
@@ -38,10 +38,10 @@ read_all 3
 insert 4 5 6
 read_all 6
 
-${CLICKHOUSE_CLIENT} --allow_experimental_delta_kernel_rs 1 --query "SELECT countIf(_time IS NULL) FROM t0"
+${CLICKHOUSE_CLIENT} --query "SELECT countIf(_time IS NULL) FROM t0"
 
 # The filesystem cache and the Parquet metadata cache keep serving the data files without the requests.
-CACHE_SETTINGS="--allow_experimental_delta_kernel_rs 1 --filesystem_cache_name cache_for_readbigat --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0 --use_columns_cache 0 --use_parquet_metadata_cache 1 --enable_filesystem_cache 1"
+CACHE_SETTINGS="--filesystem_cache_name cache_for_readbigat --read_from_filesystem_cache_if_exists_otherwise_bypass_cache 0 --use_columns_cache 0 --use_parquet_metadata_cache 1 --enable_filesystem_cache 1"
 ${CLICKHOUSE_CLIENT} $CACHE_SETTINGS --query_id "${Q}r1" --query "SELECT sum(c0) FROM t0"
 ${CLICKHOUSE_CLIENT} $CACHE_SETTINGS --query_id "${Q}r2" --query "SELECT sum(c0) FROM t0"
 

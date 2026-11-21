@@ -33,7 +33,7 @@ EVENTS="
     FROM system.events"
 
 echo "-- an IN over a Set table is not pushed down"
-"${LOCAL[@]}" --enable_analyzer=1 --query "
+"${LOCAL[@]}" --query "
     CREATE TABLE keys (k UInt64) ENGINE = Set;
     INSERT INTO keys VALUES (1), (5), (7);
     SELECT count() FROM file('${DATA_DIR}/data.vortex', Vortex) WHERE n IN keys;
@@ -41,7 +41,7 @@ echo "-- an IN over a Set table is not pushed down"
 "
 
 echo "-- an IN over a literal set is pushed down"
-"${LOCAL[@]}" --enable_analyzer=1 --query "
+"${LOCAL[@]}" --query "
     SELECT count() FROM file('${DATA_DIR}/data.vortex', Vortex) WHERE n IN (1, 5, 7);
     ${EVENTS};
 "

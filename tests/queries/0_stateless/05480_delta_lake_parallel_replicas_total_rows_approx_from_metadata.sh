@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 TABLE="t_${CLICKHOUSE_DATABASE}"
 TABLE_PATH="${CLICKHOUSE_DATABASE}_${RANDOM}_delta/"
 
-DELTA_SETTINGS="--allow_experimental_delta_kernel_rs 1 --allow_delta_lake_writes 1 --allow_delta_lake_create_table 1"
+DELTA_SETTINGS="--allow_delta_lake_writes 1 --allow_delta_lake_create_table 1"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 # shellcheck disable=SC2086
