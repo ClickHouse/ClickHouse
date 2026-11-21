@@ -259,6 +259,20 @@ SELECT 'modulo over Array answers', (SELECT count() FROM t_key_arr64_04652 WHERE
 -- `multiply` over a compound key answered correctly before the fix and must keep doing so.
 SELECT 'multiply(Array key, scalar const) answers', (SELECT count() FROM t_key_arr64_04652 WHERE multiply(a, toInt64(3)) = [toInt64(33), toInt64(15)]) AS keyed, (SELECT count() FROM t_mem_arr64_04652 WHERE multiply(a, toInt64(3)) = [toInt64(33), toInt64(15)]) AS oracle;
 
+-- At `index_granularity = 1` the last granule holds one row, so the key range the index search checks
+-- there spans a single point. A non-numeric constant operand used to be compared against zero at such
+-- a point under every arithmetic function instead of only under division, which rejected a valid query
+-- with `BAD_TYPE_OF_FIELD`. What matters is that the search reaches that granule, not the sort
+-- direction: a descending key holds the earliest value there, and an ascending key is reached by
+-- matching its last value.
+DROP TABLE IF EXISTS t_key_datedesc_04652;
+CREATE TABLE t_key_datedesc_04652 (a Date) ENGINE = MergeTree ORDER BY a DESC SETTINGS index_granularity = 1;
+INSERT INTO t_key_datedesc_04652 SELECT toDate('2020-01-01') + number FROM numbers(100);
+SELECT 'Date DESC + Tuple(Interval) answers', (SELECT count() FROM t_key_datedesc_04652 WHERE a + (INTERVAL 1 DAY, INTERVAL 1 MONTH) = toDateTime('2020-02-02 00:00:00')) AS keyed, (SELECT count() FROM t_mem_date_04652 WHERE a + (INTERVAL 1 DAY, INTERVAL 1 MONTH) = toDateTime('2020-02-02 00:00:00')) AS oracle;
+SELECT 'Date DESC + Tuple(Interval) still prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_key_datedesc_04652 WHERE a + (INTERVAL 1 DAY, INTERVAL 1 MONTH) = toDateTime('2020-02-02 00:00:00')) WHERE explain ILIKE '%Granules: 2/100%';
+SELECT 'Date DESC - Tuple(Interval) answers', (SELECT count() FROM t_key_datedesc_04652 WHERE a - (INTERVAL 1 DAY, INTERVAL 1 MONTH) = toDateTime('2019-11-30 00:00:00')) AS keyed, (SELECT count() FROM t_mem_date_04652 WHERE a - (INTERVAL 1 DAY, INTERVAL 1 MONTH) = toDateTime('2019-11-30 00:00:00')) AS oracle;
+SELECT 'Date + Tuple(Interval) at the last granule answers', (SELECT count() FROM t_key_date_04652 WHERE a + (INTERVAL 1 DAY, INTERVAL 1 MONTH) = toDateTime('2020-05-10 00:00:00')) AS keyed, (SELECT count() FROM t_mem_date_04652 WHERE a + (INTERVAL 1 DAY, INTERVAL 1 MONTH) = toDateTime('2020-05-10 00:00:00')) AS oracle;
+
 DROP TABLE t_key_arr64_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_mem_arr64_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_key_tup64_04652 SETTINGS ignore_drop_queries_probability = 0;
@@ -299,3 +313,4 @@ DROP TABLE t_key_dt_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_key_date32_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_key_dt64_04652 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_mem_date_04652 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_key_datedesc_04652;
