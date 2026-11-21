@@ -1104,19 +1104,18 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     /// The value may continue in the next buffer, so copy it and parse the copy.
     if (token_end == buf_end && !buf.isMemoryBuffer())
     {
-        /// hhh:mm:ss and one more byte, so the copy does not end at the buffer end
-        char token[10];
+        /// hhh:mm:ss
+        char token[9];
         size_t token_size = 0;
-        while (token_size + 1 < sizeof(token) && !buf.eof()
+        while (token_size < sizeof(token) && !buf.eof()
                && (isNumericASCII(*buf.position()) || isSymbolIn(*buf.position(), allowed_time_delimiters)))
         {
             token[token_size] = *buf.position();
             ++token_size;
             ++buf.position();
         }
-        token[token_size] = '\0';
 
-        ReadBufferFromMemory token_buf(token, token_size + 1);
+        ReadBufferFromMemory token_buf(token, token_size);
         if constexpr (throw_exception)
             readTimeTextImpl<ReturnType, t64_mode>(time, token_buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
         else if (!readTimeTextImpl<ReturnType, t64_mode>(time, token_buf, date_lut, allowed_date_delimiters, allowed_time_delimiters))
