@@ -57,6 +57,9 @@ public:
         }
     }
 
+    /// Only a new definition, never replayed stored metadata, qualifies the dictionary name of `assignCentroid`.
+    void setIsNewDefinition(bool value) { is_new_definition = value; }
+
     void visitDDL(ASTPtr & ast) const
     {
         visitDDLWithParent(nullptr, ast);
@@ -149,6 +152,7 @@ private:
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+    bool is_new_definition = false;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -451,6 +455,7 @@ private:
     {
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
+        auto dictionary_name_position = getDictionaryNameArgumentPosition(function.name);
 
         for (auto & child : function.children)
         {
@@ -458,7 +463,7 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
-                    if (is_dict_get && i == 0)
+                    if (dictionary_name_position == i && (is_dict_get || (is_new_definition && child->children[i]->as<ASTLiteral>())))
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
@@ -482,7 +487,11 @@ private:
                                 continue;
 
                             auto dictionary_name = literal_value.safeGet<String>();
-                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+                            /// Unlike `dictGet`, `assignCentroid` is not validated against the current database, so it binds to `database_name`.
+                            const auto & loader = context->getExternalDictionariesLoader();
+                            auto qualified_dictionary_name = is_dict_get
+                                ? loader.qualifyDictionaryNameWithDatabase(dictionary_name, context)
+                                : loader.qualifyDictionaryNameWithDatabase(dictionary_name, database_name);
                             literal_value = qualified_dictionary_name.getFullName();
                         }
                     }
