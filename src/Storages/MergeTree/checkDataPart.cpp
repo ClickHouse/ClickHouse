@@ -342,9 +342,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             for (const auto & column : columns_list)
             {
                 auto serialization = get_serialization(column);
-                auto data = ISerialization::SubstreamData(serialization)
-                    .withType(column.type)
-                    .withColumn(data_part->getColumnSample(column));
+                auto data = ISerialization::SubstreamData(serialization).withType(column.type);
                 serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                 {
                     if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
