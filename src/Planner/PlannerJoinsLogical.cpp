@@ -9,6 +9,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -33,6 +35,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -194,6 +197,21 @@ struct JoinCondition
     }
 };
 
+/// Whether the default of `from` converted to `to` is the default of `to`, which is not the case for `0` and `Nullable`.
+static bool conversionKeepsDefault(const DataTypePtr & from, const DataTypePtr & to)
+{
+    return castColumn({from->createColumnConstWithDefaultValue(1), from, ""}, to)->isDefaultAt(0);
+}
+
+/// Whether a join fills a not-matched row with the column default; not so for an `Enum` whose smallest value is not 0.
+static bool fillIsColumnDefault(const DataTypePtr & type)
+{
+    const auto nested = removeLowCardinality(type);
+    auto column = nested->createColumn();
+    nested->insertDefaultInto(*column);
+    return column->isDefaultAt(0);
+}
+
 static UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>
 buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context)
 {
@@ -245,6 +263,39 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             return arg;
         };
 
+        /// A default component under a non-default merged key is a lower FULL JOIN fill and must stay the default.
+        auto cast_filled_component = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
+        {
+            const auto * component = nodes.at(0);
+            const auto * merged = nodes.at(1);
+            const auto & context = builder_context.planner_context->getQueryContext();
+            /// The column default, which `firstNonDefault` skips; the type default is not one for `Date32`.
+            auto add_default = [&dag](const DataTypePtr & type)
+            {
+                auto column = type->createColumn();
+                column->insertDefault();
+                const auto value = (*column)[0];
+                return &dag.addColumn(type->createColumnConst(0, value), type, calculateConstantActionNodeName(value, type));
+            };
+            auto add_function = [&dag, &context](const String & name, ActionsDAG::NodeRawConstPtrs children)
+            {
+                return &dag.addFunction(FunctionFactory::instance().get(name, context), std::move(children), {});
+            };
+
+            /// `firstNonDefault` tells a default by `isDefaultAt`, which `equals` does not do for `-0.0`.
+            auto is_default = [&](const ActionsDAG::Node * key)
+            {
+                return add_function("isNull", {add_function("firstNonDefault", {key, add_default(makeNullable(removeLowCardinality(key->result_type)))})});
+            };
+            const auto * is_fill = add_function("and", {is_default(component), add_function("not", {is_default(merged)})});
+            const auto * value = add_function("if", {is_fill, add_default(result_type), &dag.addCast(*component, result_type, {}, context)});
+            if (!value->result_type->equals(*result_type))
+                value = &dag.addCast(*value, result_type, {}, context);
+            changed_types[component->result_name] = &dag.addAlias(*value, component->result_name);
+            return component;
+        };
+
+        std::vector<size_t> args_to_cast;
         for (size_t inner_column_index = 0; inner_column_index < inner_columns.size(); ++inner_column_index)
         {
             const auto & inner_column = inner_columns[inner_column_index];
@@ -254,19 +305,30 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             const bool keep_original_type = preserved_side == inner_column_side;
 
             auto & arg = args.emplace_back(builder_context.addExpression(inner_column));
-            if (!arg.getType()->equals(*result_type) && !keep_original_type)
-            {
-                arg = JoinActionRef::transform({arg}, cast_to_super);
-            }
-
             if (arg.fromNone())
                 arg.setSourceRelations(BitSet().set(0));
+
+            if (!arg.getType()->equals(*result_type) && !keep_original_type)
+                args_to_cast.push_back(inner_column_index);
         }
 
         auto rhs = args.back();
-        args.pop_back();
+        VectorWithMemoryTracking<JoinActionRef> left_args(args.begin(), std::prev(args.end()));
+        auto lhs = left_args.size() == 1 ? left_args.front() : JoinActionRef::transform(left_args, using_concat_function);
 
-        auto lhs = args.size() == 1 ? args.front() : JoinActionRef::transform(args, using_concat_function);
+        for (size_t index : args_to_cast)
+        {
+            const auto & arg = args[index];
+            const auto & arg_type = arg.getType();
+            const bool is_merged_key_component = left_args.size() > 1 && index < left_args.size();
+            if (is_merged_key_component
+                && removeLowCardinality(arg_type)->canBeInsideNullable() && removeLowCardinality(lhs.getType())->canBeInsideNullable()
+                && fillIsColumnDefault(arg_type) && fillIsColumnDefault(lhs.getType())
+                && !conversionKeepsDefault(arg_type, result_type))
+                JoinActionRef::transform({arg, lhs}, cast_filled_component);
+            else
+                JoinActionRef::transform({arg}, cast_to_super);
+        }
 
         /// For ASOF join, the last column in USING list is the ASOF column
         if (join_operator.strictness == JoinStrictness::Asof && i == num_nodes - 1)
