@@ -205,6 +205,10 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
+    /// Shapes of `nullable_group_by_keys` that contain a lambda, with their key. Bottom-up resolution derives the lambda
+    /// argument types from Nullable arguments, so these are matched up to the types that depend on lambda arguments.
+    std::vector<std::pair<QueryTreeNodePtr, QueryTreeNodePtr>> nullable_group_by_keys_with_lambdas;
+
     /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
     QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;
 
