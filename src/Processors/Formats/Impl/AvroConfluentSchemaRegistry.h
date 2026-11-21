@@ -14,6 +14,10 @@
 
 #include <ValidSchema.hh>
 
+#if USE_AVRO_RUST
+#include <Processors/Formats/Impl/Avro/AvroRustSchema.h>
+#endif
+
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPRequest.h>
 
@@ -27,10 +31,20 @@ namespace DB
 class ConfluentSchemaRegistry
 {
 public:
+#if USE_AVRO_RUST
+    using ReadSchema = AvroRust::Schema;
+    using ReadSchemaResult = std::shared_ptr<const ReadSchema>;
+    using FetchedReadSchema = std::shared_ptr<ReadSchema>;
+#else
+    using ReadSchema = avro::ValidSchema;
+    using ReadSchemaResult = ReadSchema;
+    using FetchedReadSchema = ReadSchema;
+#endif
+
     explicit ConfluentSchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size = 1000);
 
     /// Fetch a schema by ID (GET /schemas/ids/{id}). Results are cached.
-    avro::ValidSchema getSchema(
+    ReadSchemaResult getSchema(
         uint32_t id,
         const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
         const FormatSettings::AvroSchemaRegistryRetryConfig & retry);
@@ -45,7 +59,7 @@ public:
         const FormatSettings::AvroSchemaRegistryRetryConfig & retry);
 
 private:
-    avro::ValidSchema fetchSchema(
+    FetchedReadSchema fetchSchema(
         uint32_t id,
         const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
         const FormatSettings::AvroSchemaRegistryRetryConfig & retry);
@@ -63,7 +77,7 @@ private:
     };
 
     Poco::URI base_url;
-    CacheBase<uint32_t, avro::ValidSchema> schema_cache;
+    CacheBase<uint32_t, ReadSchema> schema_cache;
     /// Cache keyed on `subject + hash(schema_json)`, populated on successful
     /// registration. The cached value carries the full schema string so we can
     /// verify equality on hit before trusting the id.

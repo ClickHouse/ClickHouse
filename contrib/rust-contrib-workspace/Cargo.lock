@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "_ch_rust_avro"
+version = "0.1.0"
+
+[[package]]
 name = "_ch_rust_chdig"
 version = "0.1.0"
 dependencies = [
@@ -66,6 +70,7 @@ dependencies = [
 name = "_ch_rust_workspace"
 version = "0.1.0"
 dependencies = [
+ "_ch_rust_avro",
  "_ch_rust_chdig",
  "_ch_rust_delta_kernel",
  "_ch_rust_pco",

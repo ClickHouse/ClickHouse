@@ -1,0 +1,28 @@
+null, pos: one block of 1000 rows
+1000	499500	5000
+null, pos: blocks of 50 rows
+1000	499500	5000
+null, pos: one block, batches of one row
+1000	499500	5000
+null, neg: one block of 1000 rows
+1000	499500	5000
+null, neg: blocks of 50 rows
+1000	499500	5000
+null, neg: one block, batches of one row
+1000	499500	5000
+null: two rows of the whole budget each
+2	1	10
+deflate, pos: one block of 1000 rows
+1000	499500	5000
+deflate, pos: blocks of 50 rows
+1000	499500	5000
+deflate, pos: one block, batches of one row
+1000	499500	5000
+deflate, neg: one block of 1000 rows
+1000	499500	5000
+deflate, neg: blocks of 50 rows
+1000	499500	5000
+deflate, neg: one block, batches of one row
+1000	499500	5000
+deflate: two rows of the whole budget each
+2	1	10

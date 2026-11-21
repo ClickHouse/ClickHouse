@@ -1,5 +1,7 @@
 // Re-exports the enabled members, so that rustc links them, with the C functions they export, into the archive of
 // this crate, the one static library of the workspace.
+#[cfg(feature = "avro")]
+pub use _ch_rust_avro;
 #[cfg(feature = "chdig")]
 pub use _ch_rust_chdig;
 #[cfg(feature = "delta_kernel")]

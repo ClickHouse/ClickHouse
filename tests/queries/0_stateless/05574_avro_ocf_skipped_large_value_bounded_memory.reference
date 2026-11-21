@@ -1,0 +1,34 @@
+null: bytes, narrow projection
+1
+3
+42
+null: bytes, value after the skipped one
+1	first
+3	last
+42	middle
+null: bytes, count
+3
+null: fixed, narrow projection
+42	tail
+null: fixed, count
+1
+null: truncated
+rejected
+rejected
+deflate: bytes, narrow projection
+1
+3
+42
+deflate: bytes, value after the skipped one
+1	first
+3	last
+42	middle
+deflate: bytes, count
+3
+deflate: fixed, narrow projection
+42	tail
+deflate: fixed, count
+1
+deflate: truncated
+rejected
+rejected

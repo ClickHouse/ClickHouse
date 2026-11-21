@@ -1,0 +1,1 @@
+{"name":"com.clickhouse.clickpipes.complex_types","type":"record","fields":[{"name":"str_array","type":{"type":"array","items":"string"}}]}

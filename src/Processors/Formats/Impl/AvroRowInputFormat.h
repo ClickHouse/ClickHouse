@@ -17,6 +17,11 @@
 #include <Schema.hh>
 #include <ValidSchema.hh>
 
+#if USE_AVRO_RUST
+#include <Processors/Formats/Impl/Avro/AvroOcfReader.h>
+#include <Processors/Formats/Impl/Avro/AvroRustPlan.h>
+#endif
+
 namespace DB
 {
 
@@ -179,16 +184,53 @@ private:
     const FormatSettings & settings;
 };
 
-class AvroRowInputFormat final : public IRowInputFormat
+/// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose field (the field that has
+/// it, for a subcolumn) is proven absent from the file with the Avro schema `schema_json`: the record that would have it
+/// identifies all its fields by id and none of them has its id, or the struct, list or map that would have it is absent itself.
+/// Those of them in a struct that is absent too and has no struct default are NULL whatever their `initial-default`: they are
+/// also added to `columns_without_default`.
+NameSet getColumnsAbsentFromIcebergAvroFile(
+    const Block & header, const ColumnMapper & column_mapper, std::string_view schema_json, NameSet & columns_without_default);
+
+/// The Rust OCF path builds chunks directly so leaf sinks can bind to C++ column storage.
+/// Confluent retains `IRowInputFormat` for its per-message error recovery.
+class AvroRowInputFormat final
+#if USE_AVRO_RUST
+    : public IInputFormat
+#else
+    : public IRowInputFormat
+#endif
 {
 public:
+    using Params = RowInputFormatParams;
     AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "AvroRowInputFormat"; }
 
     void setColumnMapper(const ColumnMapperPtr & column_mapper_) override { column_mapper = column_mapper_; }
 
+#if USE_AVRO_RUST
+    Chunk read() override;
+    void resetParser() override;
+    void setRowsReadBefore(size_t rows) override { total_rows = rows; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+#endif
+
 private:
+#if USE_AVRO_RUST
+    void readPrefix();
+    Params params;
+    std::unique_ptr<AvroRust::OcfReader> file_reader_ptr;
+    std::unique_ptr<AvroRust::Plan> deserializer_ptr;
+    size_t total_rows = 0;
+    size_t approx_bytes_read_for_chunk = 0;
+    BlockMissingValues block_missing_values;
+    /// Per-batch "column not present in the file" flags, reused by every `OcfReader::decodeRows` instead of allocated per call.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> missing_scratch;
+    /// Same as `IRowInputFormat::got_connection_exception`: a connection error ended the input; later reads are empty.
+    bool got_connection_exception = false;
+#else
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
     /// The `Avro` segmentation engine prepends the OCF header to every segment.
@@ -199,6 +241,7 @@ private:
 
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
+#endif
     FormatSettings format_settings;
     ColumnMapperPtr column_mapper;
 };
@@ -215,6 +258,12 @@ public:
     AvroConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
+#if USE_AVRO_RUST
+    /// The bytes held in `carry` belong to the stream that is being replaced or reset, so they are dropped.
+    void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
+#endif
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
@@ -224,11 +273,28 @@ private:
 
     std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
-    UnorderedMapWithMemoryTracking<SchemaId, AvroDeserializer> deserializer_cache;
-    const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
+#if USE_AVRO_RUST
+    UnorderedMapWithMemoryTracking<SchemaId, std::unique_ptr<AvroRust::Plan>> deserializer_cache;
+    AvroRust::Plan & getOrCreateDeserializer(SchemaId schema_id);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> missing_values;
+    SchemaId readSchemaId();
+    void dropCarry();
 
+    /// Bytes of the input that were taken from `in` (which was advanced past them) and not decoded yet. They are
+    /// the oldest unread bytes of the stream: `in` continues after them, so the next `readRow` starts from them.
+    /// `carry[carry_begin, carry.size())` is not decoded yet, `carry[0, carry_begin)` is. See `readRow`.
+    PaddedPODArray<UInt8> carry;
+    size_t carry_begin = 0;
+#else
+    UnorderedMapWithMemoryTracking<SchemaId, AvroDeserializer> deserializer_cache;
+
+    const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
+#endif
+
+#if !USE_AVRO_RUST
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
+#endif
     FormatSettings format_settings;
 };
 

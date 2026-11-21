@@ -1,0 +1,30 @@
+null: array, narrow projection
+42	tail
+null: array, count
+1
+null: map, narrow projection
+42	tail
+null: map, count
+1
+null: longs, narrow projection
+42	tail
+null: longs, count
+1
+null: truncated
+rejected
+rejected
+deflate: array, narrow projection
+42	tail
+deflate: array, count
+1
+deflate: map, narrow projection
+42	tail
+deflate: map, count
+1
+deflate: longs, narrow projection
+42	tail
+deflate: longs, count
+1
+deflate: truncated
+rejected
+rejected
