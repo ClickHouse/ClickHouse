@@ -2714,7 +2714,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
             const auto & single_mutation_commands = it->second.commands;
 
-            if (single_mutation_commands->containBarrierCommand())
+            if (single_mutation_commands->containGroupingBarrierCommand())
             {
                 if (commands->empty())
                 {
