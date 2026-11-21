@@ -468,6 +468,7 @@ enum class AccessType : uint16_t
     M(aiFilter, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiFilter() */\
     M(aiGenerate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiGenerate() */\
     M(aiRedact, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiRedact() */\
+    M(aiRelevance, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function `aiRelevance` */\
     M(aiSimilarity, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiSimilarity() */\
     M(aiTranslate, "", GLOBAL, AI_FUNCTIONS) /* allows to execute function aiTranslate() */\
     M(AI_FUNCTIONS, "", GROUP, ALL) /* allows to execute all AI functions */\

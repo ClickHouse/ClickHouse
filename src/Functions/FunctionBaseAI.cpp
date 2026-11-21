@@ -183,18 +183,6 @@ AIParamSpecs FunctionBaseAI::allParams() const
 namespace
 {
 
-constexpr auto cancellation_check_interval = std::chrono::milliseconds(100);
-
-/// Waits for a submitted request. Throws once the query is killed or exceeds its time limit,
-/// so a request queued behind other queries' requests does not hold the query.
-template <typename Response>
-std::optional<Response> waitForRequest(std::future<std::optional<Response>> & request, const AIQuotaTracker & quota)
-{
-    while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
-        quota.throwIfCancelled();
-    return request.get();
-}
-
 /// Waits for the submitted requests to finish, until the query is killed or exceeds its time limit.
 /// The tasks own everything they use, so they may outlive the query.
 template <typename Response>
@@ -204,7 +192,7 @@ void drainRequests(VectorWithMemoryTracking<std::future<std::optional<Response>>
     {
         if (!request.valid())
             continue;
-        while (request.wait_for(cancellation_check_interval) != std::future_status::ready)
+        while (request.wait_for(ai_request_cancellation_check_interval) != std::future_status::ready)
             if (quota.isCancelled())
                 return;
     }
@@ -492,7 +480,7 @@ void FunctionBaseAI::embedTexts(
             /// `ai_function_throw_on_error` is disabled; either way its inputs stay empty.
             std::optional<AIEmbeddingResponse> ai_embedding_response;
             if (wave[k].valid())
-                ai_embedding_response = waitForRequest(wave[k], *quota);
+                ai_embedding_response = waitForAIRequest(wave[k], *quota);
 
             if (!ai_embedding_response)
             {
@@ -534,6 +522,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// if this call stops waiting for a future it handed out.
     std::shared_ptr<IAIProvider> provider = createAIProvider(
         getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+    if (!provider->supportsChat())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "AI provider '{}' does not support chat completions", params.collection.provider);
 
     if (input_rows_count == 0)
         return result_type->createColumn();
@@ -629,7 +619,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             /// keeps its default value.
             std::optional<AIResponse> ai_response;
             if (wave[k].valid())
-                ai_response = waitForRequest(wave[k], *quota_tracker);
+                ai_response = waitForAIRequest(wave[k], *quota_tracker);
 
             if (!ai_response)
             {

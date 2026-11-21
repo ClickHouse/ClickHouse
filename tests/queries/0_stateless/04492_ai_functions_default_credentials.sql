@@ -4,9 +4,9 @@
 
 -- =============================================================================
 -- Default-credentials resolution for AI functions.
--- The text functions (aiGenerate/aiClassify/aiExtract/aiTranslate) and aiEmbed
--- use separate default-credentials settings, because a chat-completions endpoint
--- differs from an embeddings one. A per-call `credentials` map key
+-- The text functions (aiGenerate/aiClassify/aiExtract/aiTranslate), aiEmbed and
+-- aiRelevance use separate default-credentials settings, because chat-completions,
+-- embeddings and rerank endpoints differ. A per-call `credentials` map key
 -- overrides the default. All tests run without a real AI provider.
 -- =============================================================================
 
@@ -15,6 +15,7 @@ CREATE TABLE tab (x String) ENGINE = Memory;
 
 DROP NAMED COLLECTION IF EXISTS ai_text_nc;
 DROP NAMED COLLECTION IF EXISTS ai_embed_nc;
+DROP NAMED COLLECTION IF EXISTS ai_rerank_nc;
 CREATE NAMED COLLECTION ai_text_nc AS
     provider = 'openai',
     endpoint = 'http://localhost:1/v1/chat/completions',
@@ -25,15 +26,25 @@ CREATE NAMED COLLECTION ai_embed_nc AS
     provider = 'openai',
     endpoint = 'http://localhost:1/v1/embeddings',
     api_key = 'fake-key';
+CREATE NAMED COLLECTION ai_rerank_nc AS
+    provider = 'cohere',
+    endpoint = 'http://localhost:1/v2/rerank',
+    model = 'rerank-model',
+    api_key = 'fake-key';
+
+SET allow_experimental_ai_relevance_function = 1;
 
 -- Start with no defaults set: bare calls must fail with a clear error.
 SET ai_function_text_default_credentials = '';
 SET ai_function_embedding_default_credentials = '';
+SET ai_function_rerank_default_credentials = '';
 
 SELECT '-- No defaults: text function fails';
 SELECT aiGenerate('hi'); -- { serverError BAD_ARGUMENTS }
 SELECT '-- No defaults: aiEmbed fails';
 SELECT aiEmbed('hi', 'embed-model'); -- { serverError BAD_ARGUMENTS }
+SELECT '-- No defaults: aiRelevance fails';
+SELECT aiRelevance('q', 'd'); -- { serverError BAD_ARGUMENTS }
 
 -- Set only the text default. aiGenerate resolves; aiEmbed still has no default.
 SET ai_function_text_default_credentials = 'ai_text_nc';
@@ -41,8 +52,9 @@ SET ai_function_text_default_credentials = 'ai_text_nc';
 SELECT '-- Text default set: aiGenerate resolves via default';
 SELECT count() FROM (SELECT aiGenerate(x) AS r FROM tab);
 
-SELECT '-- Text default does not leak into aiEmbed';
+SELECT '-- Text default does not leak into aiEmbed or aiRelevance';
 SELECT aiEmbed('hi', 'embed-model'); -- { serverError BAD_ARGUMENTS }
+SELECT aiRelevance('q', 'd'); -- { serverError BAD_ARGUMENTS }
 
 -- Set only the embedding default (clear the text one). aiEmbed resolves; text fails.
 SET ai_function_text_default_credentials = '';
@@ -52,8 +64,22 @@ SET ai_function_embedding_default_credentials = 'ai_embed_nc';
 SELECT '-- Embedding default set: aiEmbed resolves via default';
 SELECT count() FROM (SELECT aiEmbed(x, 'embed-model') AS r FROM tab);
 
-SELECT '-- Embedding default does not leak into text functions';
+SELECT '-- Embedding default does not leak into text functions or aiRelevance';
 SELECT aiGenerate('hi'); -- { serverError BAD_ARGUMENTS }
+SELECT aiRelevance('q', 'd'); -- { serverError BAD_ARGUMENTS }
+
+-- Set only the rerank default (clear the embedding one). aiRelevance resolves; the others fail.
+SET ai_function_embedding_default_credentials = '';
+SET ai_function_rerank_default_credentials = 'ai_rerank_nc';
+
+SELECT '-- Rerank default set: aiRelevance resolves via default';
+SELECT count() FROM (SELECT aiRelevance(x, x) AS r FROM tab);
+
+SELECT '-- Rerank default does not leak into text or embedding functions';
+SELECT aiGenerate('hi'); -- { serverError BAD_ARGUMENTS }
+SELECT aiEmbed('hi', 'embed-model'); -- { serverError BAD_ARGUMENTS }
+
+SET ai_function_rerank_default_credentials = '';
 
 -- The per-call `credentials` map key overrides the default (and works with no default set).
 SELECT '-- Map credentials override with no text default';
@@ -71,6 +97,8 @@ SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_embed_nc', 'mod
 
 SET ai_function_text_default_credentials = '';
 SET ai_function_embedding_default_credentials = '';
+SET ai_function_rerank_default_credentials = '';
 DROP NAMED COLLECTION ai_text_nc;
 DROP NAMED COLLECTION ai_embed_nc;
+DROP NAMED COLLECTION ai_rerank_nc;
 DROP TABLE tab;

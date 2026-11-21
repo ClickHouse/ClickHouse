@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/AI/IAIProvider.h>
 #include <IO/ConnectionTimeouts.h>
 
+#include <chrono>
 #include <future>
 #include <memory>
 #include <optional>
@@ -10,7 +12,6 @@
 namespace DB
 {
 
-class AIQuotaTracker;
 using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
 
 /// How one AI provider request is executed. Resolved once per query from the `ai_function_*`
@@ -37,5 +38,23 @@ std::future<std::optional<AIResponse>> submitAIRequest(
 /// The same, for one batch of texts sent to an embeddings endpoint.
 std::future<std::optional<AIEmbeddingResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIEmbeddingRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
+
+/// The same, for one batch of documents sent to a reranking endpoint.
+std::future<std::optional<AIRerankResponse>> submitAIRequest(
+    std::shared_ptr<IAIProvider> provider, AIRerankRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
+
+/// How often a wait for a submitted request checks whether the query was cancelled.
+constexpr auto ai_request_cancellation_check_interval = std::chrono::milliseconds(100);
+
+/// Waits for a submitted request. Throws once the query is killed or exceeds its time limit, so a
+/// request queued behind other queries' requests, or stalled at the provider, does not hold the query.
+/// The task owns everything it uses, so it may outlive the caller after the throw.
+template <typename Response>
+std::optional<Response> waitForAIRequest(std::future<std::optional<Response>> & request, const AIQuotaTracker & quota)
+{
+    while (request.wait_for(ai_request_cancellation_check_interval) != std::future_status::ready)
+        quota.throwIfCancelled();
+    return request.get();
+}
 
 }

@@ -18,6 +18,7 @@ SELECT aiTranslate('x', 'de'); -- { serverError SUPPORT_IS_DISABLED }
 SELECT aiRedact('x'); -- { serverError SUPPORT_IS_DISABLED }
 SELECT aiEmbed('x', 'm'); -- { serverError SUPPORT_IS_DISABLED }
 SELECT aiSimilarity('x', 'y', 'm'); -- { serverError SUPPORT_IS_DISABLED }
+SELECT aiRelevance('x', 'y') SETTINGS allow_experimental_ai_relevance_function = 1; -- { serverError SUPPORT_IS_DISABLED }
 
 -- Enabled: the function is created and fails later, on the missing credentials.
 SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) SETTINGS allow_ai_functions = 1; -- { serverError BAD_ARGUMENTS }

@@ -8,10 +8,11 @@ Endpoints:
       `aiTranslate`'s `instructions` argument is forwarded in the prompt, or that the
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
-  GET  /concurrency                  — returns JSON `{"requests": N, "max_concurrency": M}` describing
-      the requests the slow endpoints below have served since the last `/reset-concurrency`, where
-      `max_concurrency` is the highest number that were ever being served at the same moment. Used
-      to assert that `ai_function_max_concurrent_requests_per_thread` controls how many requests are in flight.
+  GET  /concurrency                  — returns JSON `{"requests": N, "in_flight": F, "max_concurrency": M}`
+      describing the requests the slow endpoints below have served since the last `/reset-concurrency`,
+      where `in_flight` is the number being served right now and `max_concurrency` is the highest number
+      that were ever being served at the same moment. Used to assert that
+      `ai_function_max_concurrent_requests_per_thread` controls how many requests are in flight.
   GET  /reset-concurrency            — zeroes the counters above
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
       before answering, so overlapping requests are observable in `/concurrency`.
@@ -76,6 +77,23 @@ Endpoints:
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
       the url table function never retries, used to assert AI functions do not retry it either.
   POST /v1/embeddings_error          — always returns HTTP 500 (used for embedding errors)
+  POST /v2/rerank                    — Cohere-shaped rerank response. Scores each document against
+      the query with a deterministic word-overlap (Jaccard) formula, independently of the other
+      documents (like a real cross-encoder), and sorts by descending score.
+      `meta.billed_units.search_units` is fixed at 1.0.
+  POST /v2/rerank_dup_index          — like `/v2/rerank` but every result reuses `index` 0,
+      exercising the duplicate-index rejection path.
+  POST /v2/rerank_error              — always returns HTTP 500 (used for rerank errors)
+  POST /v2/rerank_hang               — like `/v2/rerank`, but sleeps HANG_RESPONSE_SECONDS first, so a
+      request is still in flight when the query that sent it is cancelled.
+  POST /v2/rerank_tokens             — like `/v2/rerank`, for a Cohere-compatible endpoint that bills by
+      tokens: `meta.billed_units` also carries `input_tokens` (`len(query) + sum(len(documents))`)
+      and `output_tokens` (the number of results).
+  POST /v2/rerank_drop_last          — like `/v2/rerank` but drops the last result, so the response
+      has fewer entries than requested.
+  POST /v2/rerank_no_score           — like `/v2/rerank` but omits `relevance_score` from every result.
+  POST /v2/rerank_tokens_dup_index   — `/v2/rerank_tokens` with every result reusing `index` 0, so a
+      billed response still fails validation.
 """
 
 import http.server
@@ -83,7 +101,7 @@ import json
 import random
 import threading
 import time
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
@@ -266,6 +284,59 @@ def make_embeddings_response(body, *, duplicate_index=False, drop_last=False):
     }
 
 
+def rerank_score(query, document):
+    """Deterministic Jaccard similarity over lowercase word sets. Documents sharing more words with
+    the query score higher, giving a natural, testable ranking. Mirrored in test.py's
+    `expected_rerank_score` so tests can compute the expected order/scores independently.
+    """
+    q_words = set(query.lower().split())
+    d_words = set(document.lower().split())
+    if not q_words or not d_words:
+        return 0.0
+    union = q_words | d_words
+    if not union:
+        return 0.0
+    return round(len(q_words & d_words) / len(union), 4)
+
+
+def make_rerank_response(
+    body,
+    *,
+    duplicate_index=False,
+    bill_tokens=False,
+    drop_last=False,
+    omit_score=False,
+):
+    data = json.loads(body)
+    query = data.get("query", "")
+    documents = data.get("documents", [])
+
+    scored = [(i, rerank_score(query, doc)) for i, doc in enumerate(documents)]
+    # Sort by descending score, breaking ties by index for a deterministic order.
+    scored.sort(key=lambda item: (-item[1], item[0]))
+    if drop_last:
+        scored = scored[:-1]
+
+    results = [
+        {"index": 0 if duplicate_index else i, "relevance_score": score}
+        for i, score in scored
+    ]
+    if omit_score:
+        for result in results:
+            del result["relevance_score"]
+
+    billed_units = {"search_units": 1.0}
+    if bill_tokens:
+        billed_units["input_tokens"] = len(query) + sum(len(doc) for doc in documents)
+        billed_units["output_tokens"] = len(results)
+
+    return {
+        "id": "rerank-mock",
+        "results": results,
+        "meta": {"api_version": {"version": "2"}, "billed_units": billed_units},
+    }
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -287,6 +358,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with _LOCK:
                 snapshot = {
                     "requests": CONCURRENCY["requests"],
+                    "in_flight": CONCURRENCY["in_flight"],
                     "max_concurrency": CONCURRENCY["max_concurrency"],
                 }
             self._send_json(200, snapshot)
@@ -571,6 +643,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v1/embeddings_error":
             self._send_json(500, make_error_response("embedding failure"))
+            return
+
+        if parsed.path == "/v2/rerank":
+            self._send_json(200, make_rerank_response(body))
+            return
+
+        if parsed.path == "/v2/rerank_hang":
+            self._serve_slowly(lambda: make_rerank_response(body), HANG_RESPONSE_SECONDS)
+            return
+
+        if parsed.path == "/v2/rerank_dup_index":
+            self._send_json(200, make_rerank_response(body, duplicate_index=True))
+            return
+
+        if parsed.path == "/v2/rerank_tokens":
+            self._send_json(200, make_rerank_response(body, bill_tokens=True))
+            return
+
+        if parsed.path == "/v2/rerank_drop_last":
+            self._send_json(200, make_rerank_response(body, drop_last=True))
+            return
+
+        if parsed.path == "/v2/rerank_no_score":
+            self._send_json(200, make_rerank_response(body, omit_score=True))
+            return
+
+        if parsed.path == "/v2/rerank_tokens_dup_index":
+            self._send_json(
+                200, make_rerank_response(body, duplicate_index=True, bill_tokens=True)
+            )
+            return
+
+        if parsed.path == "/v2/rerank_error":
+            self._send_json(500, make_error_response("rerank failure"))
             return
 
         self.send_response(404)

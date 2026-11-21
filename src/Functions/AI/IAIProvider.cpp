@@ -1,9 +1,10 @@
+#include <Functions/AI/AnthropicProvider.h>
+#include <Functions/AI/CohereProvider.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/OpenAIProvider.h>
-#include <Functions/AI/AnthropicProvider.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Interpreters/Context.h>
 
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
@@ -64,10 +65,21 @@ AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPSt
 {
 }
 
+void IAIProvider::call(const AIChatRequest & /*ai_request*/, const ConnectionTimeouts & /*timeouts*/, AIResponse & /*response*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support chat completions");
+}
+
 void IAIProvider::embed(
     const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/, AIEmbeddingResponse & /*response*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
+}
+
+void IAIProvider::rerank(
+    const AIRerankRequest & /*ai_rerank_request*/, const ConnectionTimeouts & /*timeouts*/, AIRerankResponse & /*response*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support reranking");
 }
 
 AIProviderPtr createAIProvider(
@@ -78,9 +90,13 @@ AIProviderPtr createAIProvider(
         provider = std::make_unique<OpenAIProvider>(endpoint, api_key);
     else if (provider_name == "anthropic")
         provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
+    else if (provider_name == "cohere")
+        provider = std::make_unique<CohereProvider>(endpoint, api_key);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'cohere', 'huggingface', 'tei'",
+            provider_name);
 
     /// Rejects forbidden headers and CR/LF in values (the key comes from a named collection).
     auto headers = provider->getHeaders();
