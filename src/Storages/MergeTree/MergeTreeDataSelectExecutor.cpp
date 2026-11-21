@@ -145,6 +145,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char slowdown_index_analysis_per_part[];
+    extern const char pause_before_primary_key_exclusion_search[];
 }
 
 namespace ErrorCodes
@@ -1425,7 +1426,8 @@ bool MergeTreeDataSelectExecutor::analyzeSinglePart(
             params.pk_to_minmax_slot,
             params.settings,
             log,
-            params.stop_at_first_match);
+            params.stop_at_first_match,
+            params.query_status);
 
         stats.primary_key.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
         stats.primary_key.granules_dropped.fetch_add(total_marks_count - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1730,6 +1732,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .keep_ranges_after_primary_key = is_final_query && use_skip_indexes_if_final_exact_mode_,
             /// The primary key decides part emptiness only when no skip index filters its ranges afterwards.
             .stop_at_first_match = filter_context.stop_at_first_match && skip_indexes.empty(),
+            .query_status = query_status.get(),
             .skip_indexes = skip_indexes,
             .key_condition_rpn_template = key_condition_rpn_template.get(),
             .use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions,
@@ -2743,7 +2746,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
     LoggerPtr log,
-    bool stop_at_first_match)
+    bool stop_at_first_match,
+    QueryStatus * query_status)
 {
     MarkRanges res;
 
@@ -3228,6 +3232,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             .stop_at_first_match = stop_at_first_match,
         };
 
+        FailPointInjection::pauseFailPoint(FailPoints::pause_before_primary_key_exclusion_search);
+
+        /// A single part can take a long time to analyze. Check the cancellation flag at each probe,
+        /// but amortize the clock and mutex in `checkTimeLimit` when the query is still running.
+        static constexpr size_t probes_per_time_limit_check = 256;
+        size_t probes = 0;
+        auto check_range_with_cancellation = [&](const MarkRange & mark_range)
+        {
+            if (query_status && (query_status->isKilled() || probes++ % probes_per_time_limit_check == 0))
+                query_status->checkTimeLimit();
+            return check_in_range(mark_range, BoolMask());
+        };
+
         GenericExclusionSearchResult search_result;
         std::list<KeyCondition> substituted_conditions;
 
@@ -3235,7 +3252,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             search_result = genericExclusionSearch(
                 part_ranges,
-                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                check_range_with_cancellation,
                 search_settings,
                 /*collect_exact_ranges=*/ true);
 
@@ -3265,7 +3282,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             search_result = genericExclusionSearch(
                 part_ranges,
-                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                check_range_with_cancellation,
                 search_settings,
                 /*collect_exact_ranges=*/ false);
         }
@@ -3282,6 +3299,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part_name,
             search_result.num_steps,
             search_result.reached_step_limit ? " (step limit reached, remaining ranges were accepted without further splitting)" : "");
+
+        if (query_status)
+            query_status->checkTimeLimit();
     }
     else
     {

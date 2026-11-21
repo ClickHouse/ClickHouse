@@ -22,6 +22,7 @@ namespace DB
 {
 
 class KeyCondition;
+class QueryStatus;
 class VectorSimilarityIndexCache;
 struct ProjectionDescription;
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
@@ -126,7 +127,8 @@ public:
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
         LoggerPtr log,
-        bool stop_at_first_match = false);
+        bool stop_at_first_match = false,
+        QueryStatus * query_status = nullptr);
 
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
@@ -383,6 +385,7 @@ public:
         /// `FINAL` exact mode.
         bool keep_ranges_after_primary_key = false;
         bool stop_at_first_match = false;
+        QueryStatus * query_status = nullptr;
 
         const UsefulSkipIndexes & skip_indexes;
         const ConditionTemplate<KeyCondition> * key_condition_rpn_template = nullptr;
