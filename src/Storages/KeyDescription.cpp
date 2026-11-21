@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 
+#include <Columns/ColumnConst.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -178,6 +180,80 @@ static bool callsAnyOf(const IFunctionBase & function, const std::function<bool(
     return false;
 }
 
+/// Whether the session sets any of the settings that change the result TYPE of a key expression differently
+/// from the server baseline. The same list as in createKeyExpressionContext, without the two value-only ones.
+static bool typeAffectingSettingsDeviate(const Settings & settings, const Settings & baseline)
+{
+    return settings[Setting::enable_extended_results_for_datetime_functions] != baseline[Setting::enable_extended_results_for_datetime_functions]
+        || settings[Setting::cast_keep_nullable] != baseline[Setting::cast_keep_nullable]
+        || settings[Setting::geo_distance_returns_float64_on_float64_arguments] != baseline[Setting::geo_distance_returns_float64_on_float64_arguments]
+        || settings[Setting::function_json_value_return_type_allow_nullable] != baseline[Setting::function_json_value_return_type_allow_nullable]
+        || settings[Setting::least_greatest_legacy_null_behavior] != baseline[Setting::least_greatest_legacy_null_behavior]
+        || settings[Setting::allow_lossy_numeric_supertype] != baseline[Setting::allow_lossy_numeric_supertype]
+        || settings[Setting::use_variant_as_common_type] != baseline[Setting::use_variant_as_common_type]
+        || settings[Setting::array_count_legacy_uint32_result] != baseline[Setting::array_count_legacy_uint32_result]
+        || settings[Setting::to_start_of_interval_preserves_argument_type] != baseline[Setting::to_start_of_interval_preserves_argument_type]
+        || settings[Setting::function_date_trunc_return_type_behavior] != baseline[Setting::function_date_trunc_return_type_behavior];
+}
+
+static bool resultTypeFollowsSession(const ActionsDAG::Node & node, const ContextPtr & context);
+
+/// The same for the body of a lambda, which is a separate DAG (see callsAnyOf).
+static bool lambdaBodyTypeFollowsSession(const IFunctionBase & function, const ContextPtr & context)
+{
+    const ActionsDAG * body = nullptr;
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        body = &capture->getAcionsDAG();
+    else if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        body = &expression->getAcionsDAG();
+    if (!body)
+        return false;
+
+    return std::ranges::any_of(body->getNodes(), [&](const ActionsDAG::Node & node) { return resultTypeFollowsSession(node, context); });
+}
+
+/// Whether the function of a key expression node, resolved again in the query session over the very same
+/// (stored) argument types, returns another type than the one the key was built with. This is what a
+/// type-affecting setting does: with `cast_keep_nullable = 1` the session's `toUInt32OrDefault(x)` over a
+/// Nullable(UInt32) column is Nullable(UInt32) and NULL for a NULL row, while the stored key is UInt32 and 0.
+/// Such functions cannot be listed by name (every CAST-like function, `JSON_VALUE`, `least`, `if`, ...),
+/// so the type itself is compared. Only the node's own function is checked here: a divergence in an
+/// argument is found on the argument's node and propagated by the caller.
+static bool resultTypeFollowsSession(const ActionsDAG::Node & node, const ContextPtr & context)
+{
+    if (!allNodeFunctions(node, [&](const IFunctionBase & function) { return !lambdaBodyTypeFollowsSession(function, context); }))
+        return true;
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+
+    /// A function that is not in the factory (a lambda capture, an internal function) takes no session setting.
+    auto resolver = FunctionFactory::instance().tryGet(node.function_base->getName(), context);
+    if (!resolver)
+        return false;
+
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto * child : node.children)
+    {
+        /// Only constants take part in type deduction (e.g. the type name argument of CAST).
+        ColumnPtr column = child->column && isColumnConst(*child->column) ? child->column : nullptr;
+        arguments.emplace_back(std::move(column), child->result_type, child->result_name);
+    }
+
+    try
+    {
+        return !resolver->build(arguments)->getResultType()->equals(*node.result_type);
+    }
+    catch (const Exception &)
+    {
+        /// The session cannot resolve the function over these types at all (e.g. NO_COMMON_TYPE once
+        /// allow_lossy_numeric_supertype is turned off), so it certainly does not mean the stored key.
+        /// The error belongs to a query that uses this expression, not to every query over the table.
+        return true;
+    }
+}
+
 NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context)
 {
     NameSet result;
@@ -200,7 +276,11 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
     /// narrower type. Without a Float64 argument both values of the setting compute in Float32.
     const bool geo_distance_deviates = settings[Setting::geo_distance_returns_float64_on_float64_arguments]
         != baseline[Setting::geo_distance_returns_float64_on_float64_arguments];
-    if (deviating_functions.empty() && !geo_distance_deviates)
+    /// The settings that change the result type of a key function: the session's expression then has
+    /// another type than the stored key, and with it another value for some rows (NULL instead of a
+    /// default, a non-truncated date instead of a truncated one).
+    const bool types_may_deviate = typeAffectingSettingsDeviate(settings, baseline);
+    if (deviating_functions.empty() && !geo_distance_deviates && !types_may_deviate)
         return result;
 
     auto is_carrier = [&](const IFunctionBase & function)
@@ -224,7 +304,7 @@ NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions &
     for (const auto & action : key_expr.getActions())
     {
         const auto * node = action.node;
-        bool is_tainted = !allNodeFunctions(*node, calls_none);
+        bool is_tainted = !allNodeFunctions(*node, calls_none) || (types_may_deviate && resultTypeFollowsSession(*node, context));
         for (const auto * child : node->children)
             is_tainted = is_tainted || tainted.contains(child);
 

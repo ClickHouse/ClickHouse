@@ -1,0 +1,24 @@
+-- baseline session: the key and the skip indexes are used
+1
+1
+1
+1
+0	5
+4
+0
+-- cast_keep_nullable = 1: the NULL row is found, the same as without a key
+2
+2
+2
+2
+1
+5	5
+5	5
+-- the two halves of a sample still cover every row
+4
+0
+-- a key that does not depend on the setting stays usable
+1
+-- function_json_value_return_type_allow_nullable = 1: the row without the path is found
+2
+1

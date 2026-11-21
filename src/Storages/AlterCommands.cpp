@@ -1021,11 +1021,6 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_SAMPLE_BY)
     {
-        /// The sampling key is not canonicalized: its runtime filter is re-analyzed in the query context.
-        /// `AlterCommands::apply` re-derives the stored key in the global context afterwards, like the other keys.
-        /// Set explicitly in case MODIFY SAMPLE BY adds a sampling key to a table that had none
-        /// (default-constructed key is true).
-        metadata.sampling_key.canonicalize_key_types = false;
         metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, metadata.virtuals, context);
     }
     else if (type == REMOVE_SAMPLE_BY)

@@ -118,7 +118,8 @@ CREATE TABLE ti (ts DateTime64(3), x UInt32, INDEX idx toStartOfTenMinutes(ts) T
 INSERT INTO ti VALUES ('2020-01-01 00:00:00', 5), ('2020-01-01 01:00:00', 6);
 ALTER TABLE ti CLEAR COLUMN x SETTINGS mutations_sync = 1;
 SELECT count() FROM ti;
-SELECT count() FROM ti WHERE toStartOfTenMinutes(ts) = toStartOfTenMinutes(toDateTime64('2020-01-01 01:00:00', 3)) SETTINGS force_data_skipping_indices = 'idx';
+-- Read under the server settings: a session that changes the type of the index expression must not use the index.
+SELECT count() FROM ti WHERE toStartOfTenMinutes(ts) = toStartOfTenMinutes(toDateTime64('2020-01-01 01:00:00', 3)) SETTINGS force_data_skipping_indices = 'idx', enable_extended_results_for_datetime_functions = 0;
 
 DROP TABLE ti;
 

@@ -36,7 +36,13 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context);
 /// filter keeps, or announce an order the parts do not have. Returns the names of every subexpression of
 /// `key_expr` (including the key columns themselves) that depends on such a function while the session
 /// deviates from the baseline for its setting; the consumers must not match those names. Empty when the
-/// session agrees with the baseline. Only the functions listed above are covered.
+/// session agrees with the baseline.
+/// The settings that change the result TYPE of a key function (cast_keep_nullable and the others pinned by
+/// createKeyExpressionContext) are covered as well, since another type means another value for some rows:
+/// with cast_keep_nullable = 1 the session's `toUInt32OrDefault(x)` is NULL for a NULL row, while the stored
+/// key holds 0, and `IS NULL` over a non-nullable key prunes everything. Those functions cannot be listed,
+/// so every function of the key is resolved again in the session over the stored argument types, and a
+/// subexpression is returned when the resulting type differs from the stored one.
 NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context);
 
 /// Common structure for primary, partition and other storage keys
@@ -91,8 +97,9 @@ struct KeyDescription
     /// settings. This is what persisted MergeTree primary/partition/skip-index key metadata needs.
     /// Callers whose key AST is later re-analyzed in the caller's own (unpinned) context at query time
     /// must pass false, otherwise the validated type diverges from the type the expression actually
-    /// produces at runtime. This applies to query-time validators (parallel_replicas_custom_key) and to
-    /// the sampling key, whose read-time filter (MergeTreeDataSelectExecutor) is built in the query context.
+    /// produces at runtime. This applies to query-time validators (parallel_replicas_custom_key).
+    /// The sampling key is canonicalized: its read-time filter (MergeTreeDataSelectExecutor) is analyzed
+    /// with createKeyExpressionContext too.
     ///
     /// `hint_columns` restricts the `maybe you meant` suggestions for an unknown identifier in the key to
     /// these names, for a caller whose subsequent check accepts only a part of the columns (@sa
