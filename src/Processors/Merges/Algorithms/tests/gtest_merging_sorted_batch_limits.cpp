@@ -7,6 +7,7 @@
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -219,6 +220,69 @@ size_t getFirstAggregateFunctionChunkSize(SortingQueueStrategy strategy)
     return status.chunk.getNumRows();
 }
 
+/// `runs` runs of 10 keys starting at `first_key`, 20 apart, with JSON objects that have the paths `a`, `b`
+/// and, if it is not empty, `extra_path`.
+Chunk makeJsonChunk(UInt64 first_key, size_t runs, const String & extra_path)
+{
+    auto key = ColumnUInt64::create();
+    auto json = DataTypeFactory::instance().get("JSON")->createColumn();
+    for (size_t run = 0; run != runs; ++run)
+    {
+        for (size_t row = 0; row != 10; ++row)
+        {
+            const UInt64 value = first_key + run * 20 + row;
+            key->insertValue(value);
+            Object object{{"a", Field(value)}, {"b", Field("value " + std::to_string(value))}};
+            if (!extra_path.empty())
+                object[extra_path] = Field(value);
+            json->insert(object);
+        }
+    }
+    return Chunk(Columns{std::move(key), std::move(json)}, runs * 10);
+}
+
+/// The sizes of all output chunks of a merge of two interleaved sources; the second chunk of source 0 arrives
+/// through `consume`, after the structure of the merged JSON column is fixed from the paths `a` and `b`.
+std::vector<size_t> getJsonChunkSizes(SortingQueueStrategy strategy, const String & extra_path_of_second_chunk)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON");
+    auto header = std::make_shared<const Block>(Block{
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "key"},
+        {json_type->createColumn(), json_type, "j"},
+    });
+
+    SortDescription description;
+    description.emplace_back("key");
+
+    MergingSortedAlgorithm algorithm(header, 2, description, 1000, 2048, std::nullopt, strategy, 0, nullptr, std::nullopt, false);
+
+    IMergingAlgorithm::Inputs inputs(2);
+    inputs[0].chunk = makeJsonChunk(0, 3, "");
+    inputs[1].chunk = makeJsonChunk(10, 6, "");
+    algorithm.initialize(std::move(inputs));
+
+    std::optional<Chunk> second_chunk = makeJsonChunk(60, 3, extra_path_of_second_chunk);
+    std::vector<size_t> chunk_sizes;
+    for (size_t guard = 0; guard != 1000; ++guard)
+    {
+        auto status = algorithm.merge();
+        if (status.chunk && status.chunk.hasRows())
+            chunk_sizes.push_back(status.chunk.getNumRows());
+        if (status.is_finished)
+            return chunk_sizes;
+
+        if (status.required_source == 0 && second_chunk)
+        {
+            IMergingAlgorithm::Input input;
+            input.chunk = std::move(*second_chunk);
+            second_chunk.reset();
+            algorithm.consume(input, 0);
+        }
+    }
+    ADD_FAILURE() << "The merge did not finish";
+    return chunk_sizes;
+}
+
 }
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytes)
@@ -260,4 +324,14 @@ TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithAggregateFunctionState)
     /// (otherwise the comparison above would be vacuous).
     EXPECT_GT(default_chunk_size, 0uz);
     EXPECT_LT(default_chunk_size, aggregate_function_input_rows);
+}
+
+/// A later chunk of a source can have a path the merged column does not have (its values go to the shared data, so
+/// there is no bound): the batch queue must not size it with the bound of the source's previous chunk.
+TEST(MergingSortedBatchLimits, JsonBoundIsRecomputedForEveryChunk)
+{
+    const String extra_path(60, 'p');
+    const auto default_chunk_sizes = getJsonChunkSizes(SortingQueueStrategy::Default, extra_path);
+    EXPECT_EQ(default_chunk_sizes, getJsonChunkSizes(SortingQueueStrategy::Batch, extra_path));
+    EXPECT_GT(default_chunk_sizes.size(), 2uz);
 }

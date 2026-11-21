@@ -33,17 +33,24 @@ public:
 
     [[nodiscard]] bool hasEnoughRows() const;
 
+    /// An upper bound of how much more than the rows' `byteSizeAt` inserting rows of `raw_columns` grows the block, per row,
+    /// or nullopt. Depends only on the structure of the columns, so callers compute it once per source chunk.
+    [[nodiscard]] std::optional<size_t> extraBytesPerRow(const ColumnRawPtrs & raw_columns) const;
+
+    /// `extra_bytes_per_row` is `extraBytesPerRow(raw_columns)`.
     [[nodiscard]] size_t rowsToInsertBeforeFlush(
         const ColumnRawPtrs & raw_columns,
         size_t start_index,
         size_t max_rows,
-        size_t block_size) const;
+        size_t block_size,
+        std::optional<size_t> extra_bytes_per_row) const;
 
     [[nodiscard]] UInt64 mergedRows() const { return merged_rows; }
     [[nodiscard]] UInt64 totalMergedRows() const { return total_merged_rows; }
     [[nodiscard]] UInt64 totalChunks() const { return total_chunks; }
     [[nodiscard]] UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
     [[nodiscard]] UInt64 maxBlockSize() const { return max_block_size; }
+    [[nodiscard]] UInt64 maxBlockSizeBytes() const { return max_block_size_bytes; }
 
     [[nodiscard]] IMergingAlgorithm::MergedStats getMergedStats() const { return {.bytes = total_allocated_bytes, .rows = total_merged_rows, .blocks = total_chunks}; }
 
