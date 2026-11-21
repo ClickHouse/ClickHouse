@@ -270,6 +270,13 @@ protected:
     /// spelled the same way is a regular column, and not caching it costs nothing but the caching.
     static bool isColumnNotCacheable(const NameAndTypePair & column);
 
+    /// The distinct-paths subcolumn of a `JSON` column, see `isColumnNotCacheable`.
+    static bool isDistinctPathsSubcolumn(const NameAndTypePair & column);
+
+    /// Whether the subcolumn holds the value of a block in its first row and nothing in the other rows, as the
+    /// distinct-paths subcolumn does: a frozen default of it is padded with empty rows instead of being replicated.
+    static bool isOncePerBlockSubcolumn(const NameAndTypePair & column);
+
     bool columns_cache_reads_possible = false;
     bool columns_cache_writes_possible = false;
 
@@ -313,6 +320,7 @@ private:
     {
         NameAndTypePair column;
         SerializationPtr serialization;
+        bool frozen = false; /// absent from the part, with a marker of the type whose default the values are
     };
 
     /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
@@ -337,6 +345,19 @@ private:
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    /// A requested column that the part omits with a frozen default (see `SerializationInfoByName::MissingColumnInfo`).
+    struct FrozenColumn
+    {
+        size_t index; /// position in `converted_requested_columns`
+        String name_in_storage; /// the current name of the column
+        ColumnPtr default_row; /// one row of the default of the requested column or subcolumn
+        bool once_per_block; /// the row is the value of a whole block, the other rows stay empty (see `isOncePerBlockSubcolumn`)
+    };
+
+    /// Resolved once per reader, from the lookup of the columns in the part: `fillMissingColumns` only replicates the
+    /// one-row defaults on every read step.
+    VectorWithMemoryTracking<FrozenColumn> frozen_columns;
 
     mutable std::optional<bool> may_evaluate_missing_defaults;
 
