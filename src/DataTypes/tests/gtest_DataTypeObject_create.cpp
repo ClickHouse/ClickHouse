@@ -336,3 +336,11 @@ TEST(DataTypeObject, CloneWithChildrenKeepsSharedPaths)
     EXPECT_EQ(clone->getName(), type->getName());
     EXPECT_TRUE(clone->equals(*type));
 }
+
+TEST(DataTypeObject, CloneWithChildrenKeepsSource)
+{
+    auto type = DataTypeFactory::instance().get("JSON(with_source=1, a UInt64, SHARED b String)");
+    auto clone = type->cloneWithChildren(type->getChildren());
+    EXPECT_EQ(clone->getName(), type->getName());
+    EXPECT_TRUE(clone->equals(*type));
+}

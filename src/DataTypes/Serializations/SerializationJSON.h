@@ -20,6 +20,7 @@ private:
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
         const SerializationPtr & dynamic_serialization_,
+        const SerializationPtr & source_serialization_,
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_);
 
 public:
@@ -39,6 +40,7 @@ public:
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
         const SerializationPtr & dynamic_serialization_,
+        const SerializationPtr & source_serialization_,
         std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
     {
         /// We intentionally do NOT pool SerializationJSON objects. The json_extract_tree
@@ -46,7 +48,7 @@ public:
         /// that accumulate state per-use. Sharing these across queries via the cache leads to
         /// incorrect behaviour (e.g. timezone mismatches in cached DateTimeNode objects).
         /// FIXME: Get rid of this mutable state inside the serialization and move it to parser.
-        return std::shared_ptr<ISerialization>(new SerializationJSON(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_, std::move(json_extract_tree_)));
+        return std::shared_ptr<ISerialization>(new SerializationJSON(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_, source_serialization_, std::move(json_extract_tree_)));
     }
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

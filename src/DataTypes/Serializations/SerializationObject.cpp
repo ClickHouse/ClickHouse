@@ -63,12 +63,14 @@ SerializationObject::SerializationObject(
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_)
+    const SerializationPtr & dynamic_serialization_,
+    const SerializationPtr & source_serialization_)
     : typed_paths_types(typed_paths_types_)
     , typed_paths_serializations(typed_paths_serializations_)
     , paths_to_skip(paths_to_skip_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , source_serialization(source_serialization_)
 {
     /// We will need sorted order of typed paths to serialize them in order for consistency.
     sorted_typed_paths.reserve(typed_paths_serializations.size());
@@ -91,6 +93,43 @@ SerializationObject::SerializationObject(
     std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
+}
+
+void SerializationObject::checkPathIsNotReserved(const String & path) const
+{
+    if (source_serialization && DataTypeObject::isSourceSubcolumnPath(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+            path,
+            DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+}
+
+void SerializationObject::checkSharedDataPathsAreNotReserved(const ColumnObject & column_object, size_t prev_size) const
+{
+    if (!source_serialization)
+        return;
+
+    const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
+    const auto & offsets = column_object.getSharedDataOffsets();
+    for (size_t row = prev_size; row != offsets.size(); ++row)
+    {
+        /// The paths of a row are sorted, so the first path that is not smaller than the reserved name is
+        /// the only one that can be reserved.
+        size_t lo = offsets[row - 1];
+        size_t hi = offsets[row];
+        const std::string_view reserved_name = DataTypeObject::SOURCE_SUBCOLUMN_NAME;
+        while (lo != hi)
+        {
+            size_t mid = lo + (hi - lo) / 2;
+            if (shared_data_paths->getDataAt(mid) < reserved_name)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        if (lo != static_cast<size_t>(offsets[row]))
+            checkPathIsNotReserved(String(shared_data_paths->getDataAt(lo)));
+    }
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const
@@ -163,6 +202,7 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> dynamic_path_states;
     ISerialization::SerializeBinaryBulkStatePtr shared_data_state;
     SerializationPtr shared_data_serialization;
+    ISerialization::SerializeBinaryBulkStatePtr source_state;
     /// The shared typed paths go into the typed shared data only inside data parts.
     bool use_typed_shared_data = false;
     ISerialization::SerializeBinaryBulkStatePtr typed_shared_data_state;
@@ -188,6 +228,7 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
+    ISerialization::DeserializeBinaryBulkStatePtr source_state;
     /// The shared typed paths are read from the typed shared data only inside data parts.
     bool use_typed_shared_data = false;
     ISerialization::DeserializeBinaryBulkStatePtr typed_shared_data_state;
@@ -206,6 +247,7 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
 
         new_state->shared_data_state = shared_data_state ? shared_data_state->clone(context) : nullptr;
         new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
+        new_state->source_state = source_state ? source_state->clone(context) : nullptr;
         new_state->typed_shared_data_state = typed_shared_data_state ? typed_shared_data_state->clone(context) : nullptr;
 
         return new_state;
@@ -222,6 +264,18 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObject>(data.deserialize_state) : nullptr;
     const auto * structure_state = deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(deserialize_state->structure_state) : nullptr;
+
+    /// The source subcolumn is not a path, it's a separate String column that is enumerated
+    /// (and serialized) before the object data.
+    if (source_serialization)
+    {
+        auto source_data = SubstreamData(source_serialization)
+                               .withType(DataTypeObject::getTypeOfSource())
+                               .withColumn(column_object ? column_object->getSourcePtr() : nullptr)
+                               .withSerializationInfo(data.serialization_info)
+                               .withDeserializeState(deserialize_state ? deserialize_state->source_state : nullptr);
+        source_serialization->enumerateStreams(settings, callback, source_data);
+    }
 
     settings.path.push_back(Substream::ObjectData);
 
@@ -362,6 +416,13 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     {
         state = std::move(object_state);
         return;
+    }
+
+    if (source_serialization)
+    {
+        if (!column_object.hasSource())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object column {} doesn't have the source column", column_object.getName());
+        source_serialization->serializeBinaryBulkStatePrefix(*column_object.getSourcePtr(), settings, object_state->source_state);
     }
 
     if (serialization_version.value == SerializationVersion::FLATTENED)
@@ -565,6 +626,25 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     {
         for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
             checkPathIsNotTyped(path, settings.native_format);
+    }
+
+    if (source_serialization)
+    {
+        /// Reject a reserved path only in a Native block from a client. A data part is read without this
+        /// check to keep reads fast, and a part that carries a reserved path is harmless: the source is a
+        /// separate stream, so the path is only shadowed by the source subcolumn.
+        if (settings.native_format)
+        {
+            if (structure_state_concrete->sorted_dynamic_paths)
+            {
+                for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
+                    checkPathIsNotReserved(path);
+            }
+            for (const auto & path : structure_state_concrete->flattened_paths)
+                checkPathIsNotReserved(path);
+        }
+
+        source_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->source_state, cache);
     }
 
     settings.path.push_back(Substream::ObjectData);
@@ -903,6 +983,9 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     const auto & column_object = assert_cast<const ColumnObject &>(column);
     const auto & typed_paths = column_object.getTypedPaths();
 
+    if (source_serialization)
+        source_serialization->serializeBinaryBulkWithMultipleStreams(*column_object.getSourcePtr(), offset, limit, settings, object_state->source_state);
+
     if (object_state->serialization_version.value == SerializationVersion::FLATTENED)
     {
         settings.path.push_back(Substream::ObjectData);
@@ -927,7 +1010,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
-    column_object.validateDynamicPathsSizes();
+    column_object.validateSubcolumnsSizes();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
@@ -1001,6 +1084,9 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
     auto * object_state = checkAndGetState<SerializeBinaryBulkStateObject>(state);
     if (object_state->serialization_version.value == SerializationVersion::STRING)
         return;
+
+    if (source_serialization)
+        source_serialization->serializeBinaryBulkStateSuffix(settings, object_state->source_state);
 
     /// Write statistics in suffix if needed.
     if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::SUFFIX)
@@ -1112,6 +1198,13 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     auto & column_object = assert_cast<ColumnObject &>(column);
     auto & typed_paths = column_object.getTypedPaths();
 
+    if (source_serialization)
+    {
+        if (!column_object.hasSource())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object column {} doesn't have the source column", column_object.getName());
+        source_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSourceColumn(), limit, settings, object_state->source_state, cache);
+    }
+
     if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
     {
         const size_t prev_num_rows = column_object.size();
@@ -1152,6 +1245,13 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
                     limit);
         }
 
+        if (column_object.hasSource() && column_object.getSourceColumn().size() != prev_num_rows + limit)
+            throw Exception(
+                settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                "Unexpected size of the source column in flattened Object column: {}. Expected size {}",
+                column_object.getSourceColumn().size() - prev_num_rows,
+                limit);
+
         settings.path.pop_back();
         unflattenAndInsertPaths(structure_state->flattened_paths, std::move(flattened_paths_columns), column_object, limit);
         return;
@@ -1190,6 +1290,11 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSharedDataColumn(), limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
 
+    /// A Native block can carry a reserved path in the shared data, where the prefix check cannot see it.
+    /// Data parts are read without this check to keep reads fast.
+    if (settings.native_format && source_serialization)
+        checkSharedDataPathsAreNotReserved(column_object, shared_data_previous_size);
+
     if (object_state->use_typed_shared_data)
     {
         settings.path.push_back(Substream::ObjectTypedSharedData);
@@ -1212,6 +1317,9 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         if (path_column->size() != expected_size)
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
     }
+
+    if (column_object.hasSource() && column_object.getSourceColumn().size() != expected_size)
+        throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of the source column: {}. Expected size {}", column_object.getSourceColumn().size(), expected_size);
 
     column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
@@ -1314,6 +1422,7 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     {
         String path;
         readStringBinaryGrowing(path, istr);
+        checkPathIsNotReserved(path);
         if (!shouldSkipPath(path))
         {
             if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
@@ -1387,6 +1496,9 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
             column->popBack(column->size() - prev_size);
     }
 
+    if (column_object.hasSource() && column_object.getSourceColumn().size() > prev_size)
+        column_object.getSourceColumn().popBack(column_object.getSourceColumn().size() - prev_size);
+
     if (shared_data_offsets.size() > prev_size)
         shared_data_offsets.resize(prev_size);
     size_t prev_shared_data_offset = shared_data_offsets.back();
@@ -1425,6 +1537,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         {
             String path;
             readStringBinaryGrowing(path, istr);
+            checkPathIsNotReserved(path);
             if (!shouldSkipPath(path))
             {
                 /// Check if we have this path in typed paths.
@@ -1522,6 +1635,17 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         {
             if (column->size() == prev_size)
                 column->insertDefault();
+        }
+
+        /// The binary representation has no JSON text, so create it from the object,
+        /// after every path got the value for this row.
+        if (column_object.hasSource())
+        {
+            FormatSettings format_settings_without_source = settings;
+            format_settings_without_source.json.json_type_use_source = false;
+            WriteBufferFromOwnString buf;
+            serializeText(column_object, prev_size, buf, format_settings_without_source);
+            column_object.insertSource(buf.str(), settings.json_max_string_column_growth_step);
         }
     }
     catch (...)

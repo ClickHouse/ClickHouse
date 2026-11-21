@@ -743,6 +743,12 @@ void insertObjectPaths(
         if (context.escape_dots_in_json_keys)
             name = escapeDotInJSONKey(name);
         String path = is_root ? std::move(name) : prefix + "." + name;
+        if (is_root && column.hasSource() && DataTypeObject::isSourceSubcolumnPath(path))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+                path,
+                DataTypeObject::SOURCE_SUBCOLUMN_NAME);
         if (filter && filter->shouldSkip(path))
             continue;
 
@@ -854,6 +860,10 @@ void decodeObjectIntoJSON(
         if (dynamic_column->size() == prev_size)
             dynamic_column->insertDefault();
     }
+
+    /// There is no original text, so the source is created from the decoded object.
+    if (column.hasSource())
+        column.materializeSourceForLastRow();
 }
 
 void decodeArrayIntoColumn(

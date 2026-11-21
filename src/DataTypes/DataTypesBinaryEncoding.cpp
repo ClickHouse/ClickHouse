@@ -66,10 +66,17 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
-/// Version 1 adds a flags byte after each typed path name. It is written only for types with SHARED paths.
+/// A type is encoded with the oldest version that can represent it: encoded types are stored inside
+/// Dynamic columns on disk and sent over the Native protocol, so encodings of types without new
+/// arguments must stay readable by older servers.
+/// Version 1 adds a flags byte after each typed path name; it is written for types with SHARED paths.
+/// Version 2 additionally writes a bool with the `with_source` argument right after the version byte;
+/// it is written for types declared with `with_source=1` and also carries the version 1 per-path flags.
 const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
 const UInt8 TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS = 1;
-/// Flags of a typed path in version 1. Other bits are reserved.
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE = 2;
+const UInt8 TYPE_JSON_MAX_SERIALIZATION_VERSION = TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE;
+/// Flags of a typed path in version >= 1. Other bits are reserved.
 const UInt8 TYPED_PATH_FLAG_SHARED = 0x1;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
@@ -524,8 +531,14 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
             /// Write version of the serialization because we can add new arguments in the JSON type.
-            UInt8 serialization_version = object_type.hasSharedTypedPaths() ? TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS : TYPE_JSON_SERIALIZATION_VERSION;
+            UInt8 serialization_version = TYPE_JSON_SERIALIZATION_VERSION;
+            if (object_type.hasSource())
+                serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE;
+            else if (object_type.hasSharedTypedPaths())
+                serialization_version = TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS;
             writeBinary(serialization_version, buf);
+            if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE)
+                writeBinary(object_type.hasSource(), buf);
             writeVarUInt(object_type.getMaxDynamicPaths(), buf);
             writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
             const auto & typed_paths = object_type.getTypedPaths();
@@ -818,8 +831,13 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         {
             UInt8 serialization_version = 0;
             readBinary(serialization_version, buf);
-            if (serialization_version > TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS)
+            if (serialization_version > TYPE_JSON_MAX_SERIALIZATION_VERSION)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected version of JSON type binary encoding");
+
+            bool with_source = false;
+            if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_SOURCE)
+                readBinary(with_source, buf);
+
             size_t max_dynamic_paths = 0;
             readVarUInt(max_dynamic_paths, buf);
             if (max_dynamic_paths > DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT)
@@ -886,7 +904,8 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 path_regexps_to_skip,
                 max_dynamic_paths,
                 max_dynamic_types,
-                shared_typed_paths);
+                shared_typed_paths,
+                with_source);
         }
     }
 

@@ -625,6 +625,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
             size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
             size_t merged_max_dynamic_types = first.getMaxDynamicTypes();
+            /// The JSON text is kept only if all types have it.
+            bool merged_with_source = first.hasSource();
 
             for (size_t i = 1; i < types.size(); ++i)
             {
@@ -673,6 +675,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
                 merged_max_dynamic_paths = std::max(merged_max_dynamic_paths, current.getMaxDynamicPaths());
                 merged_max_dynamic_types = std::max(merged_max_dynamic_types, current.getMaxDynamicTypes());
+                merged_with_source = merged_with_source && current.hasSource();
             }
 
             /// A dropped typed path takes its SHARED mark with it.
@@ -685,7 +688,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
                 merged_max_dynamic_paths,
                 merged_max_dynamic_types,
-                std::move(merged_shared_typed_paths));
+                std::move(merged_shared_typed_paths),
+                merged_with_source);
         }
     }
 

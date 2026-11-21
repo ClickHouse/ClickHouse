@@ -23,6 +23,10 @@ public:
     /// Don't change this constant, it can break backward compatibility.
     static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
     static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
+    /// Reserved subcolumn with the JSON text of the row, present only with `with_source=1`.
+    static constexpr const char * SOURCE_SUBCOLUMN_NAME = "__source";
+    /// True for the source subcolumn name and the paths nested in it, which are reserved with `with_source=1`.
+    static bool isSourceSubcolumnPath(std::string_view path);
 
     /// Prefix character for sub-object subcolumns, e.g. "^`some`.path.path".
     static constexpr char SUB_OBJECT_SUBCOLUMN_PREFIX = '^';
@@ -43,7 +47,8 @@ public:
         std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
-        std::unordered_set<String> shared_typed_paths_ = {});
+        std::unordered_set<String> shared_typed_paths_ = {},
+        bool with_source_ = false);
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
@@ -104,6 +109,8 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
+    bool hasSource() const { return with_source; }
+
     DataTypePtr getTypeOfNestedObjects() const;
     DataTypePtr getDynamicType() const;
 
@@ -116,6 +123,9 @@ public:
 
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();
+
+    /// The JSON text of a row is stored as String.
+    static DataTypePtr getTypeOfSource();
 
 private:
     DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
@@ -141,6 +151,8 @@ private:
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
+    /// If true, the JSON text of each row is stored in a separate String subcolumn.
+    bool with_source;
 };
 
 

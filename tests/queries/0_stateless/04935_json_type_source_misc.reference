@@ -1,0 +1,52 @@
+subcolumn of the source
+10
+the source is listed in subcolumns
+json	JSON(with_source=1)						0
+json.__source	String						1
+json.__source.size	UInt64						1
+['__source','__source.size']
+inserting into a type without the source does not create a path
+['a']
+inserting from a type without the source creates the text
+{"a" :  42}
+{"a":42}
+the text of a default row contains typed paths
+{"a":0}	{"a":0}
+{}	{}
+the text of a default row has the defaults of the types
+{"e":"minus"}	{"e":"minus"}
+{"e":"ok"}	{"e":"ok"}
+{"e":"minus"}	{"e":"minus"}
+hidden default rows of a typed path whose column zero is not a value of its type
+{"e":"a"}	{"e" : "a"}
+\N
+{"e":"ok"}
+\N
+\N
+the common type keeps the source only if all types have it
+JSON(with_source=1)
+JSON(with_source=1, max_dynamic_paths=16)
+JSON
+inside Nullable and Array
+{"x" :  1}	['{"y" :  2}']
+\N	[]
+ALTER to the type with the source creates the text from existing data
+{"a":42,"b":"x"}	{"a":42,"b":"x"}
+CAST between the types with and without the source
+{"a":1}	{"a":1}
+JSON	{"a":1}
+a conversion keeps the parsed object, not the stored source, under either output setting
+[]
+[]
+{"a":0}
+[]
+skip indexes on paths and values are not used for the source
+1
+1
+2
+a column with only default paths is stored if its source is not the default text
+{}	{ "secret" : "original" }	{ "secret" : "nested" }
+generateRandom creates the source from the generated objects
+100	100
+100	100
+a reserved path from a reinterpreted aggregate state is rejected

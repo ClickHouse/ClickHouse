@@ -2025,6 +2025,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             format_settings.json.quote_64bit_integers = false;
             /// JSON has no number for inf and nan, unquoted they would be written as null.
             format_settings.json.quote_denormals = true;
+            /// A conversion reparses the serialized object, so it must serialize the object, not the stored source.
+            format_settings.json.json_type_use_source = false;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
