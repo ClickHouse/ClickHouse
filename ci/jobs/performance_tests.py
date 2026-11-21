@@ -2462,11 +2462,13 @@ def _parse_query_run(fields):
     return (int(fields[1]), int(fields[3]), int(run.group(1)), float(fields[4])) if run else None
 
 
-def find_run_trends(query_runs_path, test_names):
+def find_run_trends(query_runs_path, test_names, read_only_path):
     """The queries of `test_names` that get slower run over run on the tested server (`version` 1).
 
-    Reads compare.sh's `test, query_index, query_id, version, time` rows. Returns a dict per
-    flagged query in (test, query_index) order; raises on a row of `test_names` that does not parse.
+    Reads compare.sh's `test, query_index, query_id, version, time` rows. Queries perf.py marks
+    read-only (`test, query_index` rows of `read_only_path`) are skipped: their runs cannot change
+    what the next run reads. Returns a dict per flagged query in (test, query_index) order; raises
+    on a row of `test_names` that does not parse.
     """
     series = {}
     with open(query_runs_path, encoding="utf-8", newline="") as f:
@@ -2479,9 +2481,19 @@ def find_run_trends(query_runs_path, test_names):
             query_index, version, run, time_s = row
             series.setdefault((fields[0], query_index), ([], []))[version].append((run, time_s))
 
+    read_only = set()
+    if os.path.exists(read_only_path):
+        with open(read_only_path, encoding="utf-8", newline="") as f:
+            for fields in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+                if not fields or fields[0] not in test_names:
+                    continue
+                if len(fields) != 2 or not _TSV_UINT_RE.fullmatch(fields[1]):
+                    raise ValueError(f"unexpected row in [{read_only_path}]: {fields!r}")
+                read_only.add((fields[0], int(fields[1])))
+
     trends = []
     for (test, query_index), (reference, tested) in sorted(series.items()):
-        if len(tested) < RUN_TREND_MIN_RUNS:
+        if (test, query_index) in read_only or len(tested) < RUN_TREND_MIN_RUNS:
             continue
         runs, times = zip(*sorted(tested))
         if times[0] <= 0 or len(set(times)) == 1 or len(set(runs)) == 1:
@@ -2519,7 +2531,8 @@ def run_trend_gate(info, test_files, workdir):
             for name in test_discovery.changed_tests(changed_files, "./tests/performance/")
             if name in test_files
         }
-        trends = find_run_trends(f"{workdir}/analyze/query-runs.tsv", names) if names else []
+        read_only_path = f"{workdir}/analyze/read-only-queries.tsv"
+        trends = find_run_trends(f"{workdir}/analyze/query-runs.tsv", names, read_only_path) if names else []
     except Exception as e:
         traceback.print_exc()
         return True, f"; could not check whether query times of the tests this PR adds or changes keep growing: {e}", []
