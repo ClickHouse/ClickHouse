@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: input_format_parquet_memory_high_watermark=(67108864, None)
 
 # Row group pruning by the Parquet dictionary filter when the WHERE clause has one or many conditions
 # on the same column: every condition checks the dictionary of the same row group again, so a row
