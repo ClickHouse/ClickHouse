@@ -81,8 +81,8 @@ DataTypePtr rawByteLeafType(const IColumn & column)
 /// A binary leaf declared by the schema as `String` or `FixedString` can be decoded as `IPv6`, `UUID` or a big
 /// integer, when its type hint asks for it. The hint can come from a header column other than the one the
 /// field is read for: a dotted name such as `t.s` also reaches the child `s` of a field `t` read as `String`.
-/// So declare the decoded type of the leaf: each consumer of the field must see a type that describes its
-/// column.
+/// So declare the decoded type of the leaf (including the leaves of dictionary values): each requested column
+/// taken from this decoded column (the whole column or any of its subcolumns) must see a type that describes it.
 DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & column)
 {
     const bool is_nullable = column->isNullable();
@@ -112,6 +112,17 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
         nested_type = std::make_shared<DataTypeMap>(
             matchColumnNullability(map_type->getKeyType(), entries.getColumnPtr(0)),
             matchColumnNullability(map_type->getValueType(), entries.getColumnPtr(1)));
+    }
+    else if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(nested_type.get()))
+    {
+        /// A dictionary's values are decoded under the hint of the field that references them.
+        if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(&nested_column))
+        {
+            const DataTypePtr & dictionary_type = low_cardinality_type->getDictionaryType();
+            if (isStringOrFixedString(removeNullable(dictionary_type)))
+                if (DataTypePtr leaf = rawByteLeafType(*low_cardinality_column->getDictionary().getNestedNotNullableColumn()))
+                    nested_type = std::make_shared<DataTypeLowCardinality>(dictionary_type->isNullable() ? makeNullable(leaf) : leaf);
+        }
     }
     else if (isStringOrFixedString(nested_type))
     {
@@ -245,6 +256,146 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
     return nullptr;
 }
 
+/// Whether the requested column `name` is a subcolumn below the field at the dotted `path`. The paths of
+/// map entries already use the names of the exposed subcolumns `keys` / `values` (see `structFieldPath`).
+bool isRequestedBelow(std::string_view path, std::string_view name)
+{
+    return name.size() > path.size() + 1 && name.starts_with(path) && name[path.size()] == '.';
+}
+
+/// Whether the requested column `name` is a dynamic subcolumn `key_<serialized key>` of the map at the dotted
+/// `map_path` (or a subcolumn of one, e.g. `t.key_1.s`): it is extracted from the keys and the values of the map.
+bool isMapKeyLookup(std::string_view map_path, std::string_view name)
+{
+    constexpr std::string_view key_lookup = ".key_";
+    return name.size() > map_path.size() + key_lookup.size() && name.starts_with(map_path)
+        && name.substr(map_path.size()).starts_with(key_lookup);
+}
+
+/// Whether the field at the dotted `path` is decoded for more than one requested column: its own name, those
+/// of the enclosing fields (`t` and `t.s` for the field `t.s`), and the dynamic key lookups of an enclosing map
+/// (`t` and `t.key_1` for the field `t.values`). A name requested several times with different types
+/// (`RequestedType::shared`) counts as several requests.
+bool isDecodedForSeveralRequests(const String & path, const RequestedTypes * types)
+{
+    if (!types || path.empty())
+        return false;
+    size_t requests = 0;
+    auto count = [&](const String & name)
+    {
+        if (auto it = types->find(name); it != types->end())
+            requests += it->second.shared ? 2 : 1;
+    };
+    count(path);
+    for (size_t pos = path.find('.'); pos != String::npos && requests < 2; pos = path.find('.', pos + 1))
+    {
+        const String prefix = path.substr(0, pos);
+        count(prefix);
+        /// The paths of map entries use the names `keys` / `values` (see `structFieldPath`).
+        const std::string_view component = std::string_view(path).substr(pos + 1, path.find('.', pos + 1) - pos - 1);
+        if (component == "keys" || component == "values")
+            for (const auto & [name, requested] : *types)
+                if (isMapKeyLookup(prefix, name))
+                    ++requests;
+    }
+    return requests >= 2;
+}
+
+/// Whether `type` has a leaf whose raw bytes are reinterpreted, either while decoding (`rawByteTargetType`:
+/// `IPv6` or a big integer) or by the post-decode rewrite (`reinterpretRawByteColumns`, which also covers
+/// `UUID`, and is applied to the shared values of a dictionary when it is registered).
+bool hasRawByteLeaf(const DataTypePtr & type)
+{
+    const DataTypePtr stripped = stripHint(type);
+    const WhichDataType which(stripped);
+    if (which.isUUID() || rawByteWidth(which) != 0)
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
+        return hasRawByteLeaf(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
+        return std::ranges::any_of(tuple->getElements(), hasRawByteLeaf);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
+        return hasRawByteLeaf(map->getKeyType()) || hasRawByteLeaf(map->getValueType());
+    return false;
+}
+
+/// A name requested several times with different types (see `isDecodedForSeveralRequests`) counts as asking
+/// for a raw-byte conversion: its columns can read the same bytes differently.
+bool asksForRawBytes(const RequestedType & requested)
+{
+    return requested.shared || hasRawByteLeaf(requested.type);
+}
+
+/// Whether the field at the dotted `path` carries a requested subcolumn below it together with a requested
+/// column that encloses that subcolumn (e.g. `t` and `t.s` for the struct `t`, or `t.u` and `t.u.s` for the
+/// struct `t`, where `t` itself is not requested, or `t.values.s` and the key lookup `t.key_1` for the values
+/// of the map `t`), or a subcolumn below it requested several times with
+/// different types (`t.s String` and `T.S IPv6`), and one of these columns asks for a raw-byte conversion.
+/// Each such column is taken from the one decoded column, whose leaves then keep their bytes (see
+/// `RecordBatchDecoder::rawByteTarget`) and are converted after decoding.
+bool carriesNestedRequests(const String & path, const RequestedTypes * types)
+{
+    if (!types || path.empty())
+        return false;
+    for (const auto & [name, requested] : *types)
+    {
+        if (!isRequestedBelow(path, name))
+            continue;
+        /// A name requested several times with different types (`t.s String` and `T.S IPv6`) is taken by
+        /// several columns from the one decoded field, as a subcolumn and its enclosing column are.
+        bool enclosed = requested.shared;
+        bool converts = asksForRawBytes(requested);
+        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+        {
+            const String prefix = name.substr(0, pos);
+            if (auto it = types->find(prefix); it != types->end())
+            {
+                enclosed = true;
+                converts = converts || asksForRawBytes(it->second);
+            }
+            /// A dynamic key lookup of an enclosing map (`t.key_1` for `t.values.s`) is taken from the entries
+            /// of the map too (see `isDecodedForSeveralRequests`).
+            const std::string_view component = std::string_view(name).substr(pos + 1, name.find('.', pos + 1) - pos - 1);
+            if (component == "keys" || component == "values")
+            {
+                for (const auto & [other_name, other] : *types)
+                {
+                    if (isMapKeyLookup(prefix, other_name))
+                    {
+                        enclosed = true;
+                        converts = converts || asksForRawBytes(other);
+                    }
+                }
+            }
+        }
+        if (enclosed && converts)
+            return true;
+    }
+    return false;
+}
+
+/// Whether the field at the dotted `path` is decoded for several requested columns (see
+/// `isDecodedForSeveralRequests`), and one of the columns taken from it asks for a raw-byte conversion: the
+/// field's own name, an enclosing field, a dynamic key lookup of an enclosing map, or a subcolumn below it.
+/// Its leaves then keep their bytes and are converted after decoding, which needs the rows hidden by the
+/// nulls of the field (see `RecordBatchDecoder::wrapsInNullable`).
+bool isSharedWithRawByteRequest(const String & path, const RequestedTypes * types)
+{
+    if (!isDecodedForSeveralRequests(path, types))
+        return false;
+    for (const auto & [name, requested] : *types)
+    {
+        if (!asksForRawBytes(requested))
+            continue;
+        if (name == path || isRequestedBelow(path, name) || isRequestedBelow(name, path))
+            return true;
+        for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
+            if (isMapKeyLookup(std::string_view(path).substr(0, pos), name))
+                return true;
+    }
+    return false;
+}
+
 String hintName(const DataTypePtr & hint)
 {
     return hint ? hint->getName() : String{};
@@ -254,7 +405,7 @@ String hintName(const DataTypePtr & hint)
 
 bool DictionaryUse::operator==(const DictionaryUse & other) const
 {
-    return position == other.position && hintName(hint) == hintName(other.hint);
+    return position == other.position && hintName(hint) == hintName(other.hint) && keep_raw_bytes == other.keep_raw_bytes;
 }
 
 String DictionaryRegistry::useKey(const DictionaryUse & use)
@@ -510,7 +661,7 @@ FieldDictionaryValues dictionaryValuesFor(const ArrowField & field, const Dictio
 /// layers does not describe this field: no hint.
 DataTypePtr resolveHint(
     const DataTypePtr & parent_hint, const String & path, size_t list_depth,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * types)
+    const RequestedTypes * types)
 {
     if (parent_hint)
         return parent_hint;
@@ -519,7 +670,7 @@ DataTypePtr resolveHint(
     auto it = types->find(path);
     if (it == types->end())
         return nullptr;
-    DataTypePtr hint = it->second;
+    DataTypePtr hint = it->second.type;
     for (size_t i = 0; i < list_depth && hint; ++i)
         hint = arrayElementHint(hint);
     return hint;
@@ -1186,7 +1337,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// A type hint can request the raw bytes as an IPv6 or big integer (how the ClickHouse
             /// writer stores those types); convert here, where the invisible-rows mask still exempts
             /// hidden bytes from the width sniff (see `rawByteTargetType`).
-            if (const DataTypePtr raw_target = rawByteTargetType(effective_hint))
+            if (const DataTypePtr raw_target = rawByteTarget(target_hint, path, list_depth))
                 if (MutableColumnPtr typed = reinterpretStringLeaf(string_column, invisible_rows, raw_target))
                     return typed;
             break;
@@ -1238,7 +1389,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 }
             }
             /// Same raw-byte type-hint conversion as the Utf8/Binary branch above.
-            if (const DataTypePtr raw_target = rawByteTargetType(effective_hint))
+            if (const DataTypePtr raw_target = rawByteTarget(target_hint, path, list_depth))
                 if (MutableColumnPtr typed = reinterpretStringLeaf(string_column, invisible_rows, raw_target))
                     return typed;
             break;
@@ -1696,7 +1847,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
     /// Every row is valid: the same wrapper decision as `decodeField`, with an all-zero null map.
-    if (wrapsInNullable(field, *inner, effective_hint))
+    if (wrapsInNullable(field, *inner, effective_hint, path))
         return ColumnNullable::create(inner, ColumnUInt8::create(rows, UInt8{0}));
     return inner;
 }
@@ -2065,7 +2216,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
         return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible, dictionaryUse(target_hint, path, list_depth));
 
     ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
-    if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth)))
+    if (wrapsInNullable(field, *inner, resolveTargetHint(target_hint, path, list_depth), path))
     {
         ColumnUInt8::Ptr null_map = own_null_map ? own_null_map : buildNullMap(validity, rows, node.null_count());
         return ColumnNullable::create(inner, null_map);
@@ -2169,15 +2320,28 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
     return values->index(*indexes, 0);
 }
 
-bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const
+bool RecordBatchDecoder::wrapsInNullable(
+    const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint, const String & path) const
 {
-    const bool preserve_struct_nulls = settings.schema_inference_allow_nullable_tuple_type
-        || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
-            || isTuple(stripHint(effective_hint))));
+    if (!field.nullable || !inner.canBeInsideNullable())
+        return false;
     /// A DAY_TIME or MONTH_DAY_NANO interval is also a `Tuple` (see `fieldToCHType`), with the same rule.
     const bool is_tuple = field.type.kind == TypeKind::Struct
         || (field.type.kind == TypeKind::Interval && field.type.unit != flatbuf::IntervalUnit_YEAR_MONTH);
-    return field.nullable && inner.canBeInsideNullable() && (!is_tuple || preserve_struct_nulls);
+    if (!is_tuple || settings.schema_inference_allow_nullable_tuple_type)
+        return true;
+    if (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
+            || isTuple(stripHint(effective_hint))))
+        return true;
+    if (field.type.kind != TypeKind::Struct)
+        return false;
+    /// The leaves of a struct that is decoded for several requested columns, or that carries a requested
+    /// subcolumn together with a column enclosing it, keep their bytes for the post-decode conversion, which
+    /// must see the rows hidden by the struct's nulls. This holds also when the struct is itself the inner
+    /// request (`t Tuple(u String), t.u Tuple(s IPv6)`), a map entry (`t.values`, `t.key_1`), or a name
+    /// requested several times with different types.
+    const RequestedTypes * types = decoding_below_union ? nullptr : target_types;
+    return carriesNestedRequests(path, types) || isSharedWithRawByteRequest(path, types);
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)
@@ -2375,7 +2539,7 @@ void RecordBatchDecoder::convertBuffersFromBigEndian(const ArrowField * fields, 
 RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body,
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_,
+    const RequestedTypes * target_types_,
     const VectorWithMemoryTracking<char> * reachable_buffers)
 {
     beginBatch(batch, body, reachable_buffers, target_types_);
@@ -2384,11 +2548,13 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
 
     DecodedColumns result;
     result.reserve(schema.fields.size());
-    for (const ArrowField & field : schema.fields)
+    const auto shadowed = keep_top_level_fields ? shadowedTopLevelFields() : VectorWithMemoryTracking<char>(schema.fields.size(), 0);
+    for (size_t i = 0; i < schema.fields.size(); ++i)
     {
+        const ArrowField & field = schema.fields[i];
         expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", field.name));
         const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (shadowed[i] || (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name)))
         {
             /// Skip unrequested values after validating the column's root row count.
             advanceField(field);
@@ -2406,7 +2572,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
 
 DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field, const DictionaryUse & use,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const RequestedTypes * target_types_)
 {
     beginBatch(batch, body, /*reachable_buffers=*/nullptr, target_types_);
     if (!schema.little_endian)
@@ -2429,7 +2595,7 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
 void RecordBatchDecoder::beginBatch(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body,
     const VectorWithMemoryTracking<char> * reachable_buffers,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const RequestedTypes * target_types_)
 {
     if (batch.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has a negative length {}", batch.length());
@@ -2553,6 +2719,15 @@ String RecordBatchDecoder::normalizedName(const String & name) const
     return normalized;
 }
 
+VectorWithMemoryTracking<char> RecordBatchDecoder::shadowedTopLevelFields() const
+{
+    VectorWithMemoryTracking<char> shadowed(schema.fields.size(), 0);
+    UnorderedSetWithMemoryTracking<String> later_names;
+    for (size_t i = schema.fields.size(); i > 0; --i)
+        shadowed[i - 1] = !later_names.insert(normalizedName(schema.fields[i - 1].name)).second;
+    return shadowed;
+}
+
 String RecordBatchDecoder::childPath(const String & path, const String & child_name) const
 {
     const String seg = normalizedName(child_name);
@@ -2568,6 +2743,10 @@ DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const 
 
 String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
 {
+    /// The key and the value of a map are identified by position, under the names of the subcolumns that
+    /// expose them, so a requested `t.keys` or `t.values.s` names the field it is decoded from.
+    if (type.map_entries)
+        return childPath(path, i == 0 ? "keys" : "values");
     return childPath(path, type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
 }
 
@@ -2885,16 +3064,26 @@ DictionaryUse RecordBatchDecoder::dictionaryUse(const DataTypePtr & target_hint,
     return {FieldPosition{path, list_depth, decoding_below_union}, resolveTargetHint(target_hint, path, list_depth)};
 }
 
+DataTypePtr RecordBatchDecoder::rawByteTarget(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
+{
+    DataTypePtr raw_target = rawByteTargetType(resolveTargetHint(parent_hint, path, list_depth));
+    if (!raw_target || isDecodedForSeveralRequests(path, decoding_below_union ? nullptr : target_types))
+        return nullptr;
+    return raw_target;
+}
+
 UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collectDictionaryUses(
     const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_) const
+    const RequestedTypes * target_types_) const
 {
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> uses;
-    for (const ArrowField & field : schema.fields)
+    const auto shadowed = keep_top_level_fields ? shadowedTopLevelFields() : VectorWithMemoryTracking<char>(schema.fields.size(), 0);
+    for (size_t i = 0; i < schema.fields.size(); ++i)
     {
+        const ArrowField & field = schema.fields[i];
         /// The same kept-field test and starting position as `decodeBatch`.
         const String normalized_name = normalizedName(field.name);
-        if (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name))
+        if (shadowed[i] || (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name)))
             continue;
         collectDictionaryUses(
             field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*below_union=*/false, target_types_, uses);
@@ -2904,14 +3093,18 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
 
 void RecordBatchDecoder::collectDictionaryUses(
     const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool below_union,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
+    const RequestedTypes * lookup_types,
     UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const
 {
     const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, below_union ? nullptr : lookup_types);
     if (field.dictionary)
     {
         /// Fields with equal uses decode the values the same way, so one decoding serves them all.
-        const DictionaryUse use{FieldPosition{path, list_depth, below_union}, effective_hint};
+        /// The values can be a struct, an array or a map whose descendants are shared (`t Tuple(s IPv6)`
+        /// with `t.s String` for a dictionary of structs), so the whole subtree counts, not only the field.
+        const RequestedTypes * types = below_union ? nullptr : lookup_types;
+        const bool shared = isDecodedForSeveralRequests(path, types) || carriesNestedRequests(path, types);
+        const DictionaryUse use{FieldPosition{path, list_depth, below_union}, effective_hint, /*keep_raw_bytes=*/effective_hint && shared};
         DictionaryUses & id_uses = uses[field.dictionary->id];
         if (std::ranges::find(id_uses, use) == id_uses.end())
             id_uses.push_back(use);

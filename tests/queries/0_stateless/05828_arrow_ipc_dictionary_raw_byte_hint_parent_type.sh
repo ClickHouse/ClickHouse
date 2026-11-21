@@ -8,7 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # such as `t.u UUID` requests a raw-byte type for it. When the parent `t` is requested too, with a type that
 # does not describe `u` (here `String`), the decoded `t` must declare its child with the converted type: before
 # the fix a `UUID` child was still declared as `FixedString(16)`, and the cast of `t` read the `UUID` column as a
-# `FixedString` one.
+# `FixedString` one. Since the field is decoded for two requested columns, the dictionary values keep their bytes,
+# and each column is converted by its own type: `t` reads the raw bytes of `u`, as it does when requested alone.
 
 DATA="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.arrow"
 

@@ -6,8 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A dotted header column such as `t.s IPv6` makes the Arrow IPC reader decode the 16-byte binary child `s`
 # of the struct `t` as `IPv6`. When the parent `t` is requested too, with a type that does not describe `s`
-# (here `String`), the decoded `t` must declare its child as `IPv6` as well: before the fix it still
-# declared `String`, and the cast of `t` read the `IPv6` column as a `String` one.
+# (here `String`), the decoded `t` must declare its child with the type of its column: before the fix it still
+# declared `String`, and the cast of `t` read the `IPv6` column as a `String` one. Since the field is decoded for
+# two requested columns, its bytes are kept, and each column is converted by its own type: `t` reads the raw
+# bytes of `s`, as it does when requested alone.
 
 DATA="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 

@@ -283,6 +283,7 @@ ArrowType parseType(const flatbuf::Field & field)
             /// `Nullable` by the decoder) does not match its declared non-nullable key type.
             if (type.children[0].type.children[0].nullable)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC Map key must not be nullable");
+            type.children[0].type.map_entries = true;
             break;
         case flatbuf::Type_Union:
         {

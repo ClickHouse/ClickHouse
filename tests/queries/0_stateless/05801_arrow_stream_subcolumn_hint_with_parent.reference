@@ -1,0 +1,167 @@
+(false,\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false,\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false,\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false)	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false)	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false)	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false,'abcdefghijklmnop')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+reverse direction
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	149452120213688298009235146691947225697
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+dictionary
+(false,\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+nested
+(('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'))	(\'abcdefghijklmnop\')
+((\'abcdefghijklmnop\'))	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+date range of a subcolumn
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+(false)	1970-01-01
+dictionary of 16-byte values only
+(false,'6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+(false,\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+map keys and values
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':1}	['abcdefghijklmnop']
+{'abcdefghijklmnop':1}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	['abcdefghijklmnop']
+{1:'abcdefghijklmnop'}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+nested map keys and values
+{('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'):1}	['abcdefghijklmnop']
+{('abcdefghijklmnop'):1}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+{1:('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')}	['abcdefghijklmnop']
+{1:('abcdefghijklmnop')}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+null struct row
+(\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\')	::
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+('::')	
+null outer struct row
+(\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\')	::
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+('::')	
+null struct row with string subcolumns only
+(\'abcdefghijklmnop\')	abcdefghijklmnop
+(\'\')	
+(\'abcdefghijklmnop\')
+(\'\')
+dictionary of structs
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	abcdefghijklmnop
+('abcdefghijklmnop')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+dictionary of arrays of structs
+[('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')]	['abcdefghijklmnop']
+[('abcdefghijklmnop')]	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+map with custom entry names
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':'abcdefghijklmnop'}	['abcdefghijklmnop']
+{'abcdefghijklmnop':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	['abcdefghijklmnop']
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	[149452120213688298009235146691947225697]
+dictionary of structs with a UUID leaf
+('61626364-6566-6768-696a-6b6c6d6e6f70')	abcdefghijklmnop
+('abcdefghijklmnop')	61626364-6566-6768-696a-6b6c6d6e6f70
+map key lookups
+{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	abcdefghijklmnop
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	abcdefghijklmnop
+{1:'abcdefghijklmnop'}	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+case-insensitive names
+(\'abcdefghijklmnop\')	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	(\'abcdefghijklmnop\')
+abcdefghijklmnop	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	abcdefghijklmnop
+case-insensitive names with a numeric date
+3000000	3000000
+3000000	3000000
+case-insensitive names with a null struct row
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	(\'abcdefghijklmnop\')
+('::')	(\'\')
+(\'abcdefghijklmnop\')	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+(\'\')	('::')
+case-insensitive names with a top-level dictionary
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	abcdefghijklmnop
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	abcdefghijklmnop
+abcdefghijklmnop	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+abcdefghijklmnop	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+null struct row with a valid nullable child
+(\'abcdefghijklmnop\')
+(\'\')
+(\'abcdefghijklmnop\')	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\')	::
+null inner struct row requested as a column and inside its parent
+('(\'abcdefghijklmnop\')')	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+('(\'\')')	('::')
+('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')	('(\'abcdefghijklmnop\')')
+('::')	('(\'\')')
+('(\'abcdefghijklmnop\')')	(('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'))
+('(\'\')')	(('::'))
+(('6162:6364:6566:6768:696a:6b6c:6d6e:6f70'))	('(\'abcdefghijklmnop\')')
+(('::'))	('(\'\')')
+null struct row of map values
+{1:'(\'abcdefghijklmnop\')'}	[('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')]
+{1:'(\'\')'}	[('::')]
+{1:'(\'abcdefghijklmnop\')'}	('6162:6364:6566:6768:696a:6b6c:6d6e:6f70')
+{1:'(\'\')'}	('::')
+map row without the requested key
+{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+::	{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+{1:'abcdefghijklmnop'}	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+{2:'abcdefghijklmnop'}	::
+case-insensitive names with a dictionary of dates read as decimals
+19724	19724
+case-insensitive names with a date inside structs
+('9999-12-31')	(3000000)
+(3000000)	('9999-12-31')
+array of maps without the requested key
+[{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+[{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]	['::']
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	[{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]
+['::']	[{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}]
+map lookup of a raw-byte key
+{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}	7
+7	{'6162:6364:6566:6768:696a:6b6c:6d6e:6f70':7}
+case-insensitive names of a subcolumn of a null struct row
+abcdefghijklmnop	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	abcdefghijklmnop
+::	
+case-insensitive names with a date inside named and unnamed structs
+('9999-12-31')	(3000000)
+(3000000)	('9999-12-31')
+(3000000)	('9999-12-31')
+map of maps without the requested key
+{1:{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+{1:{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}	['::']
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	{1:{1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}
+['::']	{1:{2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}}
+map lookup of a dotted key
+{'a.b':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+{'c.d':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	{'a.b':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+::	{'c.d':'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'}
+map lookup of a raw-byte key requested through the keys
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	7
+7	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+null struct row of map values with a key lookup
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	('abcdefghijklmnop')
+['::']	('')
+('abcdefghijklmnop')	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+('')	['::']
+map without the requested key below a dotted struct field
+({1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+({2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	({1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})
+::	({2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})
+map without the requested key below an unnamed struct
+({1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+({2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})	::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70	({1:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})
+::	({2:'6162:6364:6566:6768:696a:6b6c:6d6e:6f70'})
+map lookup of a raw-byte key requested through a subcolumn of the keys
+['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']	7
+7	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+case-insensitive names of structs with different field names
+('9999-12-31')	(3000000)
+(3000000)	('9999-12-31')

@@ -18,6 +18,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -38,8 +39,11 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <algorithm>
+#include <functional>
+#include <ranges>
 #include <Common/assert_cast.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -292,6 +296,15 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
                 return nested;
             }
         }
+        else if (isTuple(nested.type) && !settings.schema_inference_allow_nullable_tuple_type && !to->isNullable()
+            && !to->isLowCardinalityNullable())
+        {
+            /// A struct the decoder keeps nullable only because a subcolumn is taken from it too (see
+            /// `RecordBatchDecoder::wrapsInNullable`), requested as a non-tuple type: without nullable tuples,
+            /// the struct alone is decoded without its null map, and its null rows read as the values the
+            /// decoder has already materialized for them. Drop the null map, keeping these values.
+            return prepareArrowColumnForCast(std::move(nested), to, settings);
+        }
         else
             nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
         from.column = ColumnNullable::create(nested.column, from_null_column.getNullMapColumnPtr());
@@ -390,6 +403,266 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
 
 }
 
+namespace
+{
+
+/// How much decoding a field depends on a requested type, to choose the type kept for a normalized name that
+/// several header columns with different types share (see `ArrowIPC::RequestedType::shared`), where
+/// `mergeDecodingRequirements` cannot merge the types. A `Tuple` keeps the null map of a struct and the hints
+/// of its fields, another composite the hints of its elements, a date or time type and a number decide how a
+/// `date32` is read, and `Nullable` keeps the null map of a struct. The remaining types (`String`, `IPv6`) only
+/// ask for raw-byte conversions, which are deferred for a shared name anyway.
+int decodingRequirementRank(const DataTypePtr & type)
+{
+    const DataTypePtr stripped = ArrowIPC::stripHint(type);
+    int rank = 0;
+    if (isTuple(stripped))
+        rank = 4;
+    else if (isArray(stripped) || isMap(stripped))
+        rank = 3;
+    else if (isDateOrDate32(stripped) || isDateTimeOrDateTime64(stripped))
+        rank = 2;
+    else if (isNumber(stripped) || isDecimal(stripped))
+        rank = 1;
+    return rank * 2 + (type->isNullable() || type->isLowCardinalityNullable() ? 1 : 0);
+}
+
+/// The type kept for a normalized name requested with the types `kept` and `other` (see `prepareReader`). The
+/// requirements of both are retained recursively: the elements of two named tuples are merged by name (the
+/// elements only one of them has are kept as well), those of two unnamed tuples of the same size by position,
+/// and the elements of two arrays and the keys and values of two maps likewise. So `Tuple(d String)` and
+/// `Tuple(d Int32)` keep `Tuple(d Int32)`, which reads a `date32` as the day number. Elsewhere, the type that
+/// decoding depends on more is kept (see `decodingRequirementRank`).
+DataTypePtr mergeDecodingRequirements(const DataTypePtr & kept, const DataTypePtr & other, bool case_insensitive)
+{
+    if (kept->equals(*other))
+        return kept;
+
+    const DataTypePtr kept_stripped = ArrowIPC::stripHint(kept);
+    const DataTypePtr other_stripped = ArrowIPC::stripHint(other);
+    DataTypePtr merged;
+    if (const auto * kept_array = typeid_cast<const DataTypeArray *>(kept_stripped.get()))
+    {
+        if (const auto * other_array = typeid_cast<const DataTypeArray *>(other_stripped.get()))
+            merged = std::make_shared<DataTypeArray>(
+                mergeDecodingRequirements(kept_array->getNestedType(), other_array->getNestedType(), case_insensitive));
+    }
+    else if (const auto * kept_map = typeid_cast<const DataTypeMap *>(kept_stripped.get()))
+    {
+        if (const auto * other_map = typeid_cast<const DataTypeMap *>(other_stripped.get()))
+            merged = std::make_shared<DataTypeMap>(
+                mergeDecodingRequirements(kept_map->getKeyType(), other_map->getKeyType(), case_insensitive),
+                mergeDecodingRequirements(kept_map->getValueType(), other_map->getValueType(), case_insensitive));
+    }
+    else if (const auto * kept_tuple = typeid_cast<const DataTypeTuple *>(kept_stripped.get()))
+    {
+        const auto * other_tuple = typeid_cast<const DataTypeTuple *>(other_stripped.get());
+        if (other_tuple && kept_tuple->hasExplicitNames() && other_tuple->hasExplicitNames())
+        {
+            DataTypes elements = kept_tuple->getElements();
+            Strings names = kept_tuple->getElementNames();
+            for (size_t i = 0; i < other_tuple->getElements().size(); ++i)
+            {
+                const auto & other_element = other_tuple->getElement(i);
+                const auto & other_name = other_tuple->getElementNames()[i];
+                if (const auto position = kept_tuple->tryGetPositionByName(other_name, case_insensitive))
+                {
+                    elements[*position] = mergeDecodingRequirements(elements[*position], other_element, case_insensitive);
+                }
+                else
+                {
+                    elements.push_back(other_element);
+                    names.push_back(other_name);
+                }
+            }
+            merged = std::make_shared<DataTypeTuple>(std::move(elements), std::move(names));
+        }
+        else if (other_tuple && !kept_tuple->hasExplicitNames() && !other_tuple->hasExplicitNames()
+            && kept_tuple->getElements().size() == other_tuple->getElements().size())
+        {
+            DataTypes elements(kept_tuple->getElements().size());
+            for (size_t i = 0; i < elements.size(); ++i)
+                elements[i] = mergeDecodingRequirements(kept_tuple->getElement(i), other_tuple->getElement(i), case_insensitive);
+            merged = std::make_shared<DataTypeTuple>(std::move(elements));
+        }
+        /// A `Nullable` tuple keeps the null map of the struct.
+        if (merged && (kept->isNullable() || other->isNullable()))
+            merged = std::make_shared<DataTypeNullable>(merged);
+    }
+
+    if (merged)
+        return merged;
+    return decodingRequirementRank(other) > decodingRequirementRank(kept) ? other : kept;
+}
+
+/// The field the decoder decodes at the dotted `path` (see `RecordBatchDecoder::structFieldPath`), and the
+/// number of lists above it, searched below `field` decoded at `field_path`. Null if there is none.
+const ArrowIPC::ArrowField * findDecodedField(
+    const ArrowIPC::ArrowField & field, const String & field_path, size_t list_depth, const String & path,
+    bool case_insensitive, size_t & found_list_depth)
+{
+    using ArrowIPC::TypeKind;
+    if (field_path == path)
+    {
+        found_list_depth = list_depth;
+        return &field;
+    }
+    if (!path.starts_with(field_path))
+        return nullptr;
+    const ArrowIPC::ArrowType & type = field.type;
+    switch (type.kind)
+    {
+        case TypeKind::List:
+        case TypeKind::LargeList:
+        case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
+        case TypeKind::Map:
+            return findDecodedField(type.children.at(0), field_path, list_depth + 1, path, case_insensitive, found_list_depth);
+        case TypeKind::RunEndEncoded:
+            return findDecodedField(type.children.at(1), field_path, list_depth, path, case_insensitive, found_list_depth);
+        case TypeKind::Struct:
+            for (size_t i = 0; i < type.children.size(); ++i)
+            {
+                String child_name = type.map_entries ? (i == 0 ? "keys" : "values")
+                    : (type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
+                if (case_insensitive)
+                    boost::to_lower(child_name);
+                if (const auto * found = findDecodedField(
+                        type.children[i], field_path + "." + child_name, list_depth, path, case_insensitive, found_list_depth))
+                    return found;
+            }
+            return nullptr;
+        default:
+            return nullptr;
+    }
+}
+
+/// `hint`, a requested type of `field`, with each unnamed `Tuple` of a struct with named fields given the names
+/// of the fields it is matched with by position, and each named `Tuple` of a struct with positional fields
+/// stripped of its names, recursively. The decoder matches the elements of a `Tuple` with the fields of a struct
+/// in the same way (see `RecordBatchDecoder::structFieldHint`), so `mergeDecodingRequirements` can then merge
+/// a named and an unnamed `Tuple` element by element.
+DataTypePtr nameTuplesAsDecoded(const DataTypePtr & hint, const ArrowIPC::ArrowField & field, bool case_insensitive)
+{
+    using ArrowIPC::TypeKind;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(hint.get()))
+        return std::make_shared<DataTypeNullable>(nameTuplesAsDecoded(nullable->getNestedType(), field, case_insensitive));
+
+    const ArrowIPC::ArrowType & type = field.type;
+    switch (type.kind)
+    {
+        case TypeKind::List:
+        case TypeKind::LargeList:
+        case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
+            if (const auto * array = typeid_cast<const DataTypeArray *>(hint.get()))
+                return std::make_shared<DataTypeArray>(nameTuplesAsDecoded(array->getNestedType(), type.children.at(0), case_insensitive));
+            return hint;
+        case TypeKind::Map:
+        {
+            const auto * map = typeid_cast<const DataTypeMap *>(hint.get());
+            const auto & entries = type.children.at(0).type.children;
+            if (!map || entries.size() != 2)
+                return hint;
+            return std::make_shared<DataTypeMap>(
+                nameTuplesAsDecoded(map->getKeyType(), entries[0], case_insensitive),
+                nameTuplesAsDecoded(map->getValueType(), entries[1], case_insensitive));
+        }
+        case TypeKind::RunEndEncoded:
+            return nameTuplesAsDecoded(hint, type.children.at(1), case_insensitive);
+        case TypeKind::Struct:
+        {
+            const auto * tuple = typeid_cast<const DataTypeTuple *>(hint.get());
+            if (!tuple)
+                return hint;
+            const auto & children = type.children;
+            if (type.positional_fields || type.map_entries)
+            {
+                DataTypes elements = tuple->getElements();
+                for (size_t i = 0; i < elements.size() && i < children.size(); ++i)
+                    elements[i] = nameTuplesAsDecoded(elements[i], children[i], case_insensitive);
+                return std::make_shared<DataTypeTuple>(std::move(elements));
+            }
+            if (tuple->hasExplicitNames())
+            {
+                DataTypes elements = tuple->getElements();
+                for (const auto & child : children)
+                    if (const auto position = tuple->tryGetPositionByName(child.name, case_insensitive))
+                        elements[*position] = nameTuplesAsDecoded(elements[*position], child, case_insensitive);
+                return std::make_shared<DataTypeTuple>(std::move(elements), tuple->getElementNames());
+            }
+            /// The elements past the fields of the struct are matched with none, and do not affect decoding.
+            const size_t size = std::min(tuple->getElements().size(), children.size());
+            if (size == 0)
+                return hint;
+            DataTypes elements;
+            Strings names;
+            for (size_t i = 0; i < size; ++i)
+            {
+                elements.push_back(nameTuplesAsDecoded(tuple->getElement(i), children[i], case_insensitive));
+                names.push_back(children[i].name);
+            }
+            return std::make_shared<DataTypeTuple>(std::move(elements), std::move(names));
+        }
+        default:
+            return hint;
+    }
+}
+
+}
+
+void ArrowIPCBlockInputFormat::resolveSharedRequestedTypes()
+{
+    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    for (const auto & [name, header_types] : shared_requested_header_types)
+    {
+        const ArrowIPC::ArrowField * field = nullptr;
+        size_t list_depth = 0;
+        /// Of the top-level fields with the same normalized name, the reader decodes and takes only the last
+        /// (see `RecordBatchDecoder::shadowedTopLevelFields`), so the requested types are resolved against it.
+        for (const auto & top_level : arrow_schema->fields | std::views::reverse)
+        {
+            String top_level_name = top_level.name;
+            if (case_insensitive)
+                boost::to_lower(top_level_name);
+            field = findDecodedField(top_level, top_level_name, 0, name, case_insensitive, list_depth);
+            if (field)
+                break;
+        }
+        if (!field)
+            continue;
+
+        /// The requested type of a field below lists has an `Array` per list (see `ArrowIPC::resolveHint`).
+        auto name_tuples = [&](const DataTypePtr & type) -> DataTypePtr
+        {
+            if (list_depth == 0)
+                return nameTuplesAsDecoded(type, *field, case_insensitive);
+            const auto * array = typeid_cast<const DataTypeArray *>(type.get());
+            if (!array)
+                return type;
+            DataTypePtr element = array->getNestedType();
+            for (size_t i = 1; i < list_depth; ++i)
+            {
+                const auto * nested_array = typeid_cast<const DataTypeArray *>(element.get());
+                if (!nested_array)
+                    return type;
+                element = nested_array->getNestedType();
+            }
+            DataTypePtr named = nameTuplesAsDecoded(element, *field, case_insensitive);
+            for (size_t i = 0; i < list_depth; ++i)
+                named = std::make_shared<DataTypeArray>(named);
+            return named;
+        };
+
+        DataTypePtr merged = name_tuples(header_types.front());
+        for (size_t i = 1; i < header_types.size(); ++i)
+            merged = mergeDecodingRequirements(merged, name_tuples(header_types[i]), case_insensitive);
+        requested_field_target_types.at(name).type = merged;
+    }
+}
+
 void ArrowIPCBlockInputFormat::prepareReader()
 {
     /// Determine which top-level Arrow fields the requested header needs, so the reader can skip the rest
@@ -402,6 +675,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     auto normalize = [&](String s) -> String { if (case_insensitive) boost::to_lower(s); return s; };
     requested_top_level_fields.clear();
     requested_field_target_types.clear();
+    shared_requested_header_types.clear();
     for (const auto & header_column : getPort().getHeader())
     {
         requested_top_level_fields.insert(normalize(header_column.name));
@@ -410,7 +684,25 @@ void ArrowIPCBlockInputFormat::prepareReader()
         /// `date32` mapped to a numeric target as the raw day number — recursively for a `date32` nested in
         /// an Array/Tuple/Map, and for one addressed as a subcolumn (e.g. `t.d`). Mirrors the Apache Arrow
         /// library reader's recursive numeric type-hint handling.
-        requested_field_target_types[normalize(header_column.name)] = header_column.type;
+        ///
+        /// With case-insensitive matching, several header columns can share a normalized name (`T String` and
+        /// `t Tuple(s IPv6)`). They are all taken from the one decoded field, so its raw bytes must not follow
+        /// any one of them: the name is marked as shared, and each column is converted by its own type after
+        /// decoding. The type that decoding depends on the most is kept (`T Tuple(s IPv6)` keeps the null map
+        /// of the struct for `t String`, `T Int32` reads a `date32` as the day number for `t Int64` too), recursively
+        /// for the elements of composites (see `mergeDecodingRequirements`).
+        auto [it, inserted] = requested_field_target_types.try_emplace(
+            normalize(header_column.name), ArrowIPC::RequestedType{.type = header_column.type});
+        if (!inserted && !it->second.type->equals(*header_column.type))
+        {
+            auto & header_types = shared_requested_header_types[it->first];
+            if (header_types.empty())
+                header_types.push_back(it->second.type);
+            if (std::ranges::none_of(header_types, [&](const auto & type) { return type->equals(*header_column.type); }))
+                header_types.push_back(header_column.type);
+            it->second.shared = true;
+            it->second.type = mergeDecodingRequirements(it->second.type, header_column.type, case_insensitive);
+        }
     }
 
     if (stream)
@@ -457,6 +749,7 @@ void ArrowIPCBlockInputFormat::prepareStreamReader()
         throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
 
     arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema(), msg.header->version());
+    resolveSharedRequestedTypes();
     /// The schema message has no body, but be defensive in case a producer emits a (zero-length) one.
     message_reader->skipBody(msg.body_length);
 }
@@ -509,6 +802,8 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
 
     ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
     arrow_schema = std::move(footer.schema);
+    /// Before the dictionaries are decoded below with the requested types.
+    resolveSharedRequestedTypes();
     for (const auto & block : footer.record_batch_blocks)
         record_batch_blocks.push_back({block.offset, block.metadata_length, block.body_length});
 
@@ -595,7 +890,7 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
         /// No field: a dictionary is how a `LowCardinality` is written, and that wraps only numbers, strings,
         /// `Date` and `DateTime`, each of which has an Arrow type of its own. So a dictionary's values are
         /// never an opaque column, and the rewrite has no field metadata to act on here.
-        if (use.hint)
+        if (use.hint && !use.keep_raw_bytes)
             reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr);
 
         /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`
@@ -826,6 +1121,19 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     /// `Int32` so the ordinary Int -> Decimal cast finishes the conversion.
     if (WhichDataType(from_no_null).isDate32() && isDecimal(to_leaf))
         return {col, with_source_nullability(std::make_shared<DataTypeInt32>())};
+    /// The same for the values of a dictionary, which are registered without the post-decode rewrite when the
+    /// field is decoded for several requested columns (see `DictionaryUse::keep_raw_bytes`). The values of a
+    /// `LowCardinality(Date32)` are physically `Int32` too, so only the declared type changes.
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(from_no_null.get()))
+    {
+        const DataTypePtr & dictionary_type = low_cardinality_type->getDictionaryType();
+        if (WhichDataType(removeNullable(dictionary_type)).isDate32() && isDecimal(to_leaf))
+        {
+            const DataTypePtr int_type = std::make_shared<DataTypeInt32>();
+            return {col, with_source_nullability(std::make_shared<DataTypeLowCardinality>(
+                dictionary_type->isNullable() ? makeNullable(int_type) : int_type))};
+        }
+    }
 
     /// The leaf's undefined rows are those null at its own level or at any enclosing level; both must be
     /// exempt from the width sniff and decode as defaults.
@@ -869,6 +1177,21 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         return {col, with_source_nullability(to_leaf)};
     }
 
+    /// A top-level dictionary is decoded as `LowCardinality` (see `RecordBatchDecoder::decodeDictionary`). Its
+    /// values keep their raw bytes when the field is decoded for several requested columns (see
+    /// `DictionaryUse::keep_raw_bytes`); convert them for this column through the full column, which keeps
+    /// the nulls of the rows. The later cast restores a requested `LowCardinality`.
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&nested))
+    {
+        const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(from_no_null.get());
+        if (!low_cardinality_type
+            || low_cardinality->getDictionary().getNestedNotNullableColumn()->getDataType() == to_leaf->getTypeId())
+            return {col, from_type};
+        return reinterpretRawBytes(
+            low_cardinality->convertToFullColumn(), low_cardinality_type->getDictionaryType(), to_type, ancestor_nulls,
+            case_insensitive, field, format_settings);
+    }
+
     MutableColumnPtr typed;
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
         typed = reinterpretFixedStringLeaf(*fixed, to_leaf);
@@ -881,6 +1204,186 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     if (nullable)
         result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
     return {std::move(result), with_source_nullability(to_leaf)};
+}
+
+/// The type requested for the dotted normalized name of a subcolumn, if it is requested (null otherwise).
+using FindRequestedType = std::function<DataTypePtr(const String &)>;
+
+/// `type` without its `levels` outer `Array` layers (see `ArrowIPC::arrayElementHint`), or null.
+DataTypePtr peelArrays(DataTypePtr type, size_t levels)
+{
+    for (size_t i = 0; i < levels && type; ++i)
+        type = ArrowIPC::arrayElementHint(type);
+    return type;
+}
+
+/// The dotted name of the subcolumn `name` of the column at the dotted `path`, normalized as the requested names are.
+String childRequestPath(const String & path, std::string_view name, bool case_insensitive)
+{
+    String child = path + "." + String(name);
+    if (case_insensitive)
+        boost::to_lower(child);
+    return child;
+}
+
+/// The type requested for the decoded column of type `type` at the dotted `path` (below `array_depth` arrays)
+/// by the requested column of that name, or else assembled from the requested subcolumns below it, with the
+/// decoded types of the parts no request mentions (`Tuple(s IPv6)` for the keys `Tuple(s String)` of a map `t`
+/// with `t.keys.s Array(IPv6)` requested). Null when neither the column nor a subcolumn of it is requested.
+DataTypePtr requestedTypeOrSubcolumns(
+    const DataTypePtr & type, const String & path, size_t array_depth, const FindRequestedType & find_requested,
+    bool case_insensitive)
+{
+    if (DataTypePtr requested = peelArrays(find_requested(path), array_depth))
+        return requested;
+    const DataTypePtr stripped = removeNullable(type);
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
+    {
+        DataTypePtr element = requestedTypeOrSubcolumns(array->getNestedType(), path, array_depth + 1, find_requested, case_insensitive);
+        return element ? std::make_shared<DataTypeArray>(element) : nullptr;
+    }
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
+    {
+        DataTypes elements = tuple->getElements();
+        bool found = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (DataTypePtr element = requestedTypeOrSubcolumns(
+                    elements[i], childRequestPath(path, tuple->getNameByPosition(i + 1), case_insensitive), array_depth,
+                    find_requested, case_insensitive))
+            {
+                elements[i] = std::move(element);
+                found = true;
+            }
+        }
+        if (!found)
+            return nullptr;
+        if (tuple->hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(std::move(elements), tuple->getElementNames());
+        return std::make_shared<DataTypeTuple>(std::move(elements));
+    }
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
+    {
+        DataTypePtr key = requestedTypeOrSubcolumns(
+            map->getKeyType(), childRequestPath(path, "keys", case_insensitive), array_depth + 1, find_requested, case_insensitive);
+        DataTypePtr value = requestedTypeOrSubcolumns(
+            map->getValueType(), childRequestPath(path, "values", case_insensitive), array_depth + 1, find_requested, case_insensitive);
+        if (!key && !value)
+            return nullptr;
+        return std::make_shared<DataTypeMap>(key ? key : map->getKeyType(), value ? value : map->getValueType());
+    }
+    return nullptr;
+}
+
+/// The requested type of the whole decoded column of type `type` implied by a requested subcolumn of it:
+/// `subcolumn` is the dotted name below the column (`key_1`, `u.key_1`, `values.key_1`) and `subcolumn_type`
+/// is its requested type. Returns null unless the path goes through a dynamic key lookup of a map (`key_1`).
+/// A key lookup synthesizes a default for every row without the key, and that default has the type of the
+/// decoded values: when they keep their raw bytes (see `RecordBatchDecoder::rawByteTarget`), it is an empty
+/// string, which cannot be reinterpreted after the extraction. So the values are converted before it, and
+/// the defaults are then created in the requested type, as when the values are converted while decoding.
+/// The path is resolved as `IDataType::getSubcolumnInfo` resolves it: a key lookup takes the whole rest of the
+/// name as the serialized key (`key_a.b` looks up `a.b`), and `keys` / `values` of a map are arrays of its keys
+/// and values, below which a lookup applies to each element (`t.values.key_1` for a map of maps).
+/// `requested` (may be null) is the type requested for the column at this level, when it is requested too
+/// (otherwise it is looked up by its dotted name `path` with `find_requested`, which has an `Array` for each of
+/// the `array_depth` arrays above): the keys of a map are converted to the key type of the map or of its `keys`
+/// subcolumn, so that the lookup parses the key in the representation it is requested with
+/// (`t Map(IPv6, UInt8)` or `t.keys Array(IPv6)`, and `t.key_6162:...:6f70`). Arrays are transparent: a key
+/// lookup below an array (`t Array(Map(UInt8, IPv6))` and `t.key_1`) has the type `Array(IPv6)`, and is converted
+/// element-wise.
+DataTypePtr keyLookupSourceHint(
+    const DataTypePtr & type, std::string_view subcolumn, const DataTypePtr & subcolumn_type,
+    DataTypePtr requested, const String & path, size_t array_depth, const FindRequestedType & find_requested,
+    bool case_insensitive)
+{
+    if (!requested)
+        requested = peelArrays(find_requested(path), array_depth);
+    const DataTypePtr stripped = removeNullable(type);
+    const DataTypePtr requested_stripped = ArrowIPC::stripHint(requested);
+    const size_t dot = subcolumn.find('.');
+    const std::string_view component = subcolumn.substr(0, dot);
+    const std::string_view rest = dot == std::string_view::npos ? std::string_view{} : subcolumn.substr(dot + 1);
+    if (component.empty())
+        return nullptr;
+    auto child_path = [&](std::string_view name) { return childRequestPath(path, name, case_insensitive); };
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
+    {
+        const auto * subcolumn_array = typeid_cast<const DataTypeArray *>(removeNullable(subcolumn_type).get());
+        if (!subcolumn_array)
+            return nullptr;
+        DataTypePtr element_hint = keyLookupSourceHint(
+            array->getNestedType(), subcolumn, subcolumn_array->getNestedType(), ArrowIPC::arrayElementHint(requested_stripped),
+            path, array_depth + 1, find_requested, case_insensitive);
+        if (!element_hint)
+            return nullptr;
+        return std::make_shared<DataTypeArray>(element_hint);
+    }
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
+    {
+        /// The name of an element can contain dots (`u.m`), and the elements of an unnamed tuple are named by
+        /// their positions (`1`), as the subcolumns of a tuple are.
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+        {
+            const String element_name = tuple->getNameByPosition(i + 1);
+            if (subcolumn.size() <= element_name.size() + 1 || subcolumn[element_name.size()] != '.')
+                continue;
+            const std::string_view prefix = subcolumn.substr(0, element_name.size());
+            if (case_insensitive ? !boost::iequals(prefix, element_name) : prefix != element_name)
+                continue;
+            DataTypePtr element_hint = keyLookupSourceHint(
+                tuple->getElement(i), subcolumn.substr(element_name.size() + 1), subcolumn_type,
+                tuple->hasExplicitNames() ? ArrowIPC::tupleElementHint(requested_stripped, element_name, i, case_insensitive)
+                                          : ArrowIPC::tupleElementHintByPosition(requested_stripped, i),
+                child_path(element_name), array_depth, find_requested, case_insensitive);
+            if (!element_hint)
+                continue;
+            /// A named tuple hint with only this element: `reinterpretRawBytes` leaves the other elements as
+            /// decoded. An unnamed tuple is matched by position, so the other elements get their decoded types,
+            /// which keep them as they are.
+            if (tuple->hasExplicitNames())
+                return std::make_shared<DataTypeTuple>(DataTypes{element_hint}, Strings{element_name});
+            DataTypes elements = tuple->getElements();
+            elements[i] = std::move(element_hint);
+            return std::make_shared<DataTypeTuple>(std::move(elements));
+        }
+        return nullptr;
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
+    {
+        const auto * requested_map = typeid_cast<const DataTypeMap *>(requested_stripped.get());
+        if (component.starts_with("key_"))
+        {
+            DataTypePtr key_hint = map->getKeyType();
+            if (requested_map)
+                key_hint = requested_map->getKeyType();
+            else if (DataTypePtr requested_keys = requestedTypeOrSubcolumns(
+                         map->getKeyType(), child_path("keys"), array_depth + 1, find_requested, case_insensitive))
+                key_hint = requested_keys;
+            /// The whole rest of the name is the serialized key, so the looked-up value has the requested type.
+            return std::make_shared<DataTypeMap>(key_hint, subcolumn_type);
+        }
+        if ((component == "keys" || component == "values") && !rest.empty())
+        {
+            const bool keys = component == "keys";
+            const DataTypePtr & element_type = keys ? map->getKeyType() : map->getValueType();
+            DataTypePtr requested_elements;
+            if (requested_map)
+                requested_elements = std::make_shared<DataTypeArray>(keys ? requested_map->getKeyType() : requested_map->getValueType());
+            DataTypePtr elements_hint = keyLookupSourceHint(
+                std::make_shared<DataTypeArray>(element_type), rest, subcolumn_type, requested_elements, child_path(component),
+                array_depth, find_requested, case_insensitive);
+            if (!elements_hint)
+                return nullptr;
+            const DataTypePtr element_hint = assert_cast<const DataTypeArray &>(*elements_hint).getNestedType();
+            return std::make_shared<DataTypeMap>(keys ? element_hint : map->getKeyType(), keys ? map->getValueType() : element_hint);
+        }
+    }
+
+    return nullptr;
 }
 
 }
@@ -988,7 +1491,38 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 boost::to_lower(search_nested);
 
             auto nested_it = name_to_index.find(search_nested);
-            if (nested_it != name_to_index.end())
+            DataTypePtr key_lookup_hint;
+            if (nested_it != name_to_index.end() && header_column.name.size() > nested_table_name.size() + 1)
+            {
+                /// The types requested for the column and its subcolumns (see `keyLookupSourceHint`).
+                auto find_requested = [&](const String & name) -> DataTypePtr
+                {
+                    if (auto requested_it = requested_field_target_types.find(name); requested_it != requested_field_target_types.end())
+                        return requested_it->second.type;
+                    return nullptr;
+                };
+                key_lookup_hint = keyLookupSourceHint(
+                    decoded[nested_it->second].type, std::string_view(header_column.name).substr(nested_table_name.size() + 1),
+                    header_column.type, /*requested=*/nullptr, search_nested, /*array_depth=*/0, find_requested, case_insensitive);
+            }
+            if (key_lookup_hint)
+            {
+                /// Convert the map values for this column before the key lookup (see `keyLookupSourceHint`).
+                /// The conversion is specific to this column, so the extractor is not cached.
+                const auto & source = decoded[nested_it->second];
+                ColumnWithTypeAndName source_column(source.column, source.type, nested_table_name);
+                reinterpretRawByteColumns(source_column, key_lookup_hint, /*field=*/nullptr);
+                const Block block({std::move(source_column)});
+                NestedColumnExtractHelper helper(block, case_insensitive);
+                if (auto nested_column = helper.extractColumn(header_column.name))
+                {
+                    column = *nested_column;
+                    if (case_insensitive)
+                        column.name = header_column.name;
+                    read_from_nested = true;
+                }
+            }
+            else if (nested_it != name_to_index.end())
             {
                 auto extractor_it = nested_extractors.find(search_nested);
                 if (extractor_it == nested_extractors.end())
