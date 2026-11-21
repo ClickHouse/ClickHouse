@@ -895,6 +895,38 @@ def test_postgresql_database_engine_quoted_remote_table_name(started_cluster):
         cursor.execute('DROP TABLE "quoted""table"')
 
 
+def test_postgresql_database_engine_lists_tables_after_unreadable_one(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute("CREATE TABLE a_ok (x integer)")
+    cursor.execute("INSERT INTO a_ok VALUES (1)")
+    # `CREATE TABLE AS` leaves `attndims` at 0 and the table is empty, so its structure cannot be fetched.
+    cursor.execute("CREATE TABLE m_bad AS SELECT 1 AS x, ARRAY[1] AS arr WHERE false")
+    cursor.execute("CREATE TABLE z_ok (x integer)")
+    cursor.execute("INSERT INTO z_ok VALUES (2)")
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    try:
+        node1.query(
+            f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
+        )
+        assert "cannot be empty" in node1.query_and_get_error(
+            "SELECT * FROM postgres_database.m_bad"
+        )
+        assert node1.query("SHOW TABLES FROM postgres_database") == "a_ok\nz_ok\n"
+        assert (
+            node1.query(
+                "SELECT _table, x FROM merge('postgres_database', '^(a_ok|m_bad|z_ok)$') ORDER BY x"
+            )
+            == "a_ok\t1\nz_ok\t2\n"
+        )
+    finally:
+        node1.query("DROP DATABASE IF EXISTS postgres_database")
+        cursor.execute("DROP TABLE a_ok, m_bad, z_ok")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
