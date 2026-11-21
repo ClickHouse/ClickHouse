@@ -32,3 +32,20 @@ INSERT INTO t_vf_last SELECT number * 2 + 1, 1 FROM numbers(2500);
 INSERT INTO t_vf_last VALUES (0, 2);
 SELECT count(), sum(k), sum(ver) FROM t_vf_last FINAL SETTINGS enable_vertical_final = 1, max_threads = 1, max_block_size = 64, preferred_block_size_bytes = 1000000;
 DROP TABLE t_vf_last;
+
+-- The rows of a merged part taken in whole batches count towards the wait of the small part's selection.
+DROP TABLE IF EXISTS t_vf_batches;
+CREATE TABLE t_vf_batches (k UInt64, v String, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 1024;
+INSERT INTO t_vf_batches SELECT number, 'x', 1 FROM numbers(100000);
+INSERT INTO t_vf_batches SELECT number + 100000, 'x', 1 FROM numbers(100000);
+OPTIMIZE TABLE t_vf_batches FINAL;
+SYSTEM STOP MERGES t_vf_batches;
+INSERT INTO t_vf_batches SELECT number * 500, if(number = 0, 'target', 'z'), 2 FROM numbers(400);
+SELECT k FROM t_vf_batches FINAL WHERE v = 'target' LIMIT 1
+SETTINGS enable_vertical_final = 1, max_threads = 1, max_block_size = 1024, query_plan_optimize_lazy_final = 0, enable_parallel_replicas = 0, log_comment = 'vf_limit_batches';
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows < 15000 FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'vf_limit_batches';
+SELECT count(), sum(cityHash64(k, v, ver)) FROM t_vf_batches FINAL SETTINGS enable_vertical_final = 0, max_threads = 1;
+SELECT count(), sum(cityHash64(k, v, ver)) FROM t_vf_batches FINAL SETTINGS enable_vertical_final = 1, max_threads = 1, max_block_size = 1024;
+DROP TABLE t_vf_batches;
