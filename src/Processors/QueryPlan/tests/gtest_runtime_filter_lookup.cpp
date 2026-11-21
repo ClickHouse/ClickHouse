@@ -299,7 +299,7 @@ TEST(RuntimeFilterLookup, DenseBitsetFindsExactlyTheKeys)
 TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesAtTheFirstNewKeyPastTheLimit)
 {
     /// Duplicates at the limit stay in the exact set. The first new key switches it to a dense bitset, which takes the
-    /// whole block.
+    /// rows after that key.
     tryRegisterFunctions();
     const auto type = std::make_shared<DataTypeUInt16>();
     auto make_keys = [](std::initializer_list<UInt16> keys)
@@ -318,7 +318,7 @@ TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesAtTheFirstNewKeyPastTheLimit)
     filter.insert(make_keys({0}));
     filter.insert(make_keys({0, 5, 0, 5}));
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 0);
-    filter.insert(make_keys({5, 0, 7, 5, 8, 0}));
+    filter.insert(make_keys({5, 0, 7, 8, 5, 0}));
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::RuntimeFilterDenseBitsetsBuilt] - bitsets_before, 1);
     filter.finishInsert();
 
@@ -373,6 +373,33 @@ TEST(RuntimeFilterLookup, AdaptiveFilterKeepsTheRowsUpToTheFirstNewKeyWhenItsSwi
     expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 1, 0});
     EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
     EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterSwitchesToABloomFilterAtTheFirstNewKeyPastTheLimit)
+{
+    /// The new key 7 fills the exact set, and the Bloom filter that replaces it takes the rows after 7.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({0}));
+    filter.insert(makeUInt64Column({0, 5, 0, 7, 8, 5}));
+    filter.finishInsert();
+
+    EXPECT_EQ(filter.describe().kind, RuntimeFilterKind::BloomFilter);
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 7, 8}, type)), {1, 1, 1, 1});
+}
+
+TEST(RuntimeFilterLookup, ExactSetReportsTheRowsItTookUntilItIsFull)
+{
+    /// With a limit of 2 keys, the second block is taken up to the new key 7, which fills the set.
+    const auto type = makeUInt64Type();
+    ExactSetRuntimeFilter<false> filter(type, /*bytes_limit_=*/1_MiB, /*exact_values_limit_=*/2);
+    EXPECT_EQ(filter.insertUntilFull(makeUInt64Column({0, 5, 0})), 3);
+    EXPECT_FALSE(filter.isFull());
+    EXPECT_EQ(filter.insertUntilFull(makeUInt64Column({5, 7, 8, 0})), 2);
+    EXPECT_TRUE(filter.isFull());
 }
 
 TEST(RuntimeFilterLookup, AdaptiveFilterKeepsItsExactSetWhenMergingABloomFilterThrows)

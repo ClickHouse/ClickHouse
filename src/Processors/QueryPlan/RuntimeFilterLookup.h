@@ -205,7 +205,8 @@ public:
 
     void insert(ColumnPtr values);
     /// Like insert, but stops after the row whose key makes the set full, so it holds at most exact_values_limit + 1 keys.
-    void insertUntilFull(const ColumnPtr & values);
+    /// Returns the number of rows it took.
+    size_t insertUntilFull(const ColumnPtr & values);
     void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
     /// `rows_passed` is set only when the probe can count the passed rows for free while producing
@@ -239,7 +240,7 @@ private:
     Set & getExactValues();
     [[nodiscard]] const Set & getExactValues() const;
     [[nodiscard]] ColumnPtr toFilterColumnType(const ColumnPtr & set_elements) const;
-    void insertKeys(const ColumnPtr & values, size_t max_keys);
+    size_t insertKeys(const ColumnPtr & values, size_t max_keys);
 
     const DataTypePtr filter_column_target_type;
     const bool argument_can_have_nulls;
@@ -268,7 +269,7 @@ public:
 
     ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_);
 
-    void insert(ColumnPtr values);
+    void insert(ColumnPtr values, size_t first_row = 0);
     /// Sets `rows_passed` to the number of rows that passed the filter: the bloom probe counts the
     /// matches while filling the mask, so the caller must not rescan the mask to collect stats.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
@@ -284,7 +285,7 @@ public:
     static ApproximateSetRuntimeFilter deserialize(ReadBuffer & in, const RuntimeFilterGeometry & geometry);
 
 private:
-    void insertIntoBloomFilter(const ColumnPtr & values);
+    void insertIntoBloomFilter(const ColumnPtr & values, size_t first_row);
 
     BloomFilter bloom_filter;
 };
@@ -297,7 +298,7 @@ public:
 
     explicit DenseBitsetRuntimeFilter(const DataTypePtr & filter_column_target_type_);
 
-    void insert(const ColumnPtr & values);
+    void insert(const ColumnPtr & values, size_t first_row = 0);
     void mergeFrom(const DenseBitsetRuntimeFilter & source);
     /// Sets `rows_passed`.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
@@ -375,9 +376,10 @@ private:
 
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter, RuntimeFilterDisabledReason reason);
-    void switchFromExactFilter(Filter & filter, const ColumnPtr & block);
-    void switchToDenseBitset(Filter & filter, const ColumnPtr & block);
-    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter, const ColumnPtr & block = nullptr);
+    /// The replacement also takes the rows of `block` from `first_row` on.
+    void switchFromExactFilter(Filter & filter, const ColumnPtr & block = nullptr, size_t first_row = 0);
+    void switchToDenseBitset(Filter & filter, const ColumnPtr & block, size_t first_row);
+    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter, const ColumnPtr & block = nullptr, size_t first_row = 0);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
     void checkApproximateFilterWorthiness(
