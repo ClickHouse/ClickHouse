@@ -717,6 +717,7 @@ FillingTransform::FillingTransform(
     , interpolate_description(interpolate_description_)
     , filling_row(fill_description_)
     , next_row(fill_description_)
+    , filling_row_in_result(fill_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
     , process_list_element(std::move(process_list_element_))
 {
@@ -750,7 +751,10 @@ FillingTransform::FillingTransform(
         running_with_staleness |= !descr.fill_staleness.isNull();
 
         const Block & output_header = getOutputPort().getHeader();
+        fill_column_defaults.push_back(output_header.getByPosition(block_position).type->getDefault());
         const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
+        const WhichDataType which_type(type);
+        fill_column_rounding.push_back(which_type.isFloat32() || which_type.isBFloat16() ? type->createColumn() : MutableColumnPtr{});
 
         if (!tryConvertFields(descr, type))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
@@ -1001,6 +1005,45 @@ void FillingTransform::insertFromFillingRow(
         other_column->insertDefault();
 
     filling_row_inserted = true;
+    last_result_row_not_remembered = true;
+}
+
+/// Whether the filling row, as it is inserted into the result, has the values of `other`.
+bool FillingTransform::fillingRowEquals(const FillingRow & other)
+{
+    for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+    {
+        const Field & value = filling_row[i];
+        if (value.isNull())
+        {
+            if (!equals(fill_column_defaults[i], other[i]))
+                return false;
+        }
+        else if (!equals(value, other[i]))
+        {
+            if (!fill_column_rounding[i])
+                return false;
+
+            /// A Float32 or BFloat16 column rounds the Float64 value of the filling row.
+            IColumn & column = *fill_column_rounding[i];
+            column.insert(value);
+            const bool equal = equals(column[0], other[i]);
+            column.popBack(1);
+            if (!equal)
+                return false;
+        }
+    }
+    return true;
+}
+
+void FillingTransform::rememberLastResultRow(const MutableColumnRawPtrs & filling_columns)
+{
+    if (!last_result_row_not_remembered)
+        return;
+
+    last_result_row_not_remembered = false;
+    for (size_t i = 0, size = filling_columns.size(); i < size; ++i)
+        filling_columns[i]->get(filling_columns[i]->size() - 1, filling_row_in_result[i]);
 }
 
 static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns & source, size_t row_num)
@@ -1106,6 +1149,14 @@ bool FillingTransform::generateSuffixIfNeeded(
 
     filling_row.checkFillingTowardsConstraintsFitsColumnTypes();
 
+    /// A filling row that is already in the result is not inserted again.
+    rememberLastResultRow(res_fill_columns);
+    if (should_insert_first && fillingRowEquals(filling_row_in_result))
+    {
+        should_insert_first = false;
+        filling_row_inserted = true;
+    }
+
     Block interpolate_block;
     if (should_insert_first)
     {
@@ -1146,6 +1197,7 @@ bool FillingTransform::generateSuffixIfNeeded(
     if (filling_row_changed)
         filling_row_inserted = false;
 
+    rememberLastResultRow(res_fill_columns);
     return true;
 }
 
@@ -1238,6 +1290,10 @@ void FillingTransform::transformRange(
     if (new_sorting_prefix)
     {
         logDebug("--- new range ---", range_end);
+        for (size_t i = 0, size = filling_row_in_result.size(); i < size; ++i)
+            filling_row_in_result[i] = Field();
+        last_result_row_not_remembered = false;
+
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
             const auto current_value = (*input_fill_columns[i])[range_begin];
@@ -1293,9 +1349,16 @@ void FillingTransform::transformRange(
         /// It can happen only once for a range.
         if (should_insert_first && filling_row < next_row && filling_row.isConstraintsSatisfied())
         {
-            interpolate(result_columns, interpolate_block);
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
-            copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+            /// A filling row that is already in the result is not inserted again.
+            rememberLastResultRow(res_fill_columns);
+            if (fillingRowEquals(filling_row_in_result))
+                filling_row_inserted = true;
+            else
+            {
+                interpolate(result_columns, interpolate_block);
+                insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, interpolate_block);
+                copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
+            }
         }
 
         bool filling_row_changed = false;
@@ -1355,6 +1418,12 @@ void FillingTransform::transformRange(
         if (filling_row_changed)
             filling_row_inserted = false;
 
+        /// The original row copied below holds the values of the filling row, so the filling row is in the result.
+        if (fillingRowEquals(next_row))
+            last_result_row_not_remembered = true;
+        else
+            rememberLastResultRow(res_fill_columns);
+
         logDebug("filling_row after", filling_row);
 
         copyRowFromColumns(res_fill_columns, input_fill_columns, row_ind);
@@ -1362,6 +1431,8 @@ void FillingTransform::transformRange(
         copyRowFromColumns(res_sort_prefix_columns, input_sort_prefix_columns, row_ind);
         copyRowFromColumns(res_other_columns, input_other_columns, row_ind);
     }
+
+    rememberLastResultRow(res_fill_columns);
 
     /// save sort prefix of last row in the range, it's used to generate suffix
     last_range_sort_prefix.clear();
@@ -1394,6 +1465,9 @@ void FillingTransform::transformImpl(Chunk & chunk)
     /// Note: ExpressionTransform can return chunk with no rows, see 02579_fill_empty_chunk.sql for example
     if (!chunk.hasRows() && !all_chunks_processed)
         return;
+
+    /// The result columns are new: the last row of a previous call that threw is not in them.
+    last_result_row_not_remembered = false;
 
     Columns input_fill_columns;
     Columns input_interpolate_columns;
