@@ -52,5 +52,37 @@ SELECT pointInPolygon((9e149, 5e149), materialize([(0., 0.), (1e150, 0.), (0., 1
 SELECT pointInPolygon((-0.9623 * 1e150, -0.9571 * 1e150), [(-1e150, -9e149), (8e149, -1e150), (3e149, 9.5e149)], [(-1e149, -2e149), (1e149, -2.5e149), (5e148, -5e148)]),
        pointInPolygon((0.3 * 1e150, 0.5 * 1e150), [(-1e150, -9e149), (8e149, -1e150), (3e149, 9.5e149)], [(-1e149, -2e149), (1e149, -2.5e149), (5e148, -5e148)]);
 
+-- A vertex far away but within the limit: points next to its long edge are classified exactly, so primary key analysis agrees.
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0.9999, 3.4028234663852886e38), (0., 0.), (1.0001, 0.), (10000000000., 1000.0001)]) SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 0, use_query_condition_cache = 0;
+SELECT count() FROM pip_pk WHERE pointInPolygon((x, y), [(0.9999, 3.4028234663852886e38), (0., 0.), (1.0001, 0.), (10000000000., 1000.0001)]) SETTINGS force_primary_key = 1, use_lightweight_primary_key_index_analysis = 1, use_query_condition_cache = 0;
+SELECT count() FROM pip_nopk WHERE pointInPolygon((x, y), [(0.9999, 3.4028234663852886e38), (0., 0.), (1.0001, 0.), (10000000000., 1000.0001)]);
+-- Points at x = 0 are outside, points at 1.5 times the edge's distance from x = 0 are inside: constant and non-constant polygons,
+-- both vertex orders, and complex grid cells (a coordinate below 2^-300).
+SELECT
+    countIf(pointInPolygon((0., y), [(0.5, 1e20), (0., 0.), (0.9, 0.)])),
+    countIf(pointInPolygon((0., -y), [(-0.5, -1e20), (0., 0.), (-0.9, 0.)])),
+    countIf(pointInPolygon((0., y), materialize([(0., 0.), (0.5, 1e20), (0.9, 0.)]))),
+    countIf(pointInPolygon((0., -y), materialize([(0., 0.), (0.5, -1e20), (0.9, 0.)]))),
+    countIf(pointInPolygon((0., -y), [(0.5, -1e20), (0., 0.), (0.9, -1e-305)])),
+    countIf(pointInPolygon((0.75e-20 * y, y), [(0.5, 1e20), (0., 0.), (0.9, 0.)])),
+    countIf(pointInPolygon((0.75e-20 * y, y), materialize([(0., 0.), (0.5, 1e20), (0.9, 0.)])))
+FROM (SELECT (number + 1) * 0.1 AS y FROM numbers(99));
+-- Both endpoints of the edge are far from the points: (0.45, y) is inside for y > 0 and outside for y < 0.
+SELECT
+    countIf(pointInPolygon((0.45, y), [(0.4, -1e20), (0.5, 1e20), (-1., 0.)])),
+    countIf(pointInPolygon((0.45, -y), [(0.4, -1e20), (0.5, 1e20), (-1., 0.)])),
+    countIf(pointInPolygon((0.45, y), materialize([(0.4, -1e20), (0.5, 1e20), (-1., 0.)]))),
+    countIf(pointInPolygon((0.45, -y), materialize([(0.4, -1e20), (0.5, 1e20), (-1., 0.)])))
+FROM (SELECT (number + 1) * 0.1 AS y FROM numbers(99));
+-- Non-constant polygons with coordinates so small that products of their differences underflow: both points are inside.
+SELECT
+    pointInPolygon((1e-200, 0.3e-200), materialize([(0., 0.), (3e-200, 0.), (3e-200, 1e-200), (0., 1e-200)])),
+    pointInPolygon((2e-201, 3e-201), materialize([(0., 0.), (0., 1e-200), (1e-200, 0.)]));
+SELECT pointInPolygon((nan, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)])), pointInPolygon((-inf, 0.5), materialize([(0., 0.), (1., 0.), (0., 1.)]));
+-- A vertex at 1e150 and coordinates near 1e-170: the point is outside in both vertex orders.
+SELECT
+    pointInPolygon((1e-170, 2e-170), materialize([(1e150, 1e150), (0., 1e-170), (0., 0.)])),
+    pointInPolygon((1e-170, 2e-170), materialize([(0., 0.), (0., 1e-170), (1e150, 1e150)]));
+
 DROP TABLE pip_pk;
 DROP TABLE pip_nopk;

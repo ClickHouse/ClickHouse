@@ -652,7 +652,7 @@ private:
         while (vertex1_idx < ring_end)
         {
             /// First condition checks that the point is inside horizontal row between edge top and bottom y-coordinate.
-            /// Second condition checks for intersection with the edge.
+            /// Second condition checks that the point is left of the edge directed upwards.
 
             if ((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
             {
@@ -662,9 +662,8 @@ private:
                     || std::abs(ring_y_data[vertex2_idx]) > max_abs_polygon_coordinate)
                     throwPolygonCoordinateIsTooLarge();
 
-                if (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
-                        * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
-                        + ring_x_data[vertex1_idx])
+                if (isLeftOfUpwardEdge(ring_x_data[vertex1_idx], ring_y_data[vertex1_idx],
+                        ring_x_data[vertex2_idx], ring_y_data[vertex2_idx], point_x, point_y))
                     res = !res;
             }
 
