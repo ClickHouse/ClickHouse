@@ -40,6 +40,9 @@ void registerTableFunctions()
     registerTableFunctionMergeTreeAnalyzeIndexes(factory);
     registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionMergeTreeTextIndex(factory);
+#if USE_GPU
+    registerTableFunctionVectorSearch(factory);
+#endif
     registerTableFunctionMergeTreeCodecBlockCounts(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
