@@ -571,8 +571,12 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
 
 ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type)
 {
+    if (!argument.type->isNullable() || !isEnum(removeNullable(argument.type)))
+        return argument;
+
+    /// Not computed earlier: `Nullable` cannot wrap a `SimpleAggregateFunction` result type.
     const auto target_type = makeNullableSafe(removeLowCardinality(result_type));
-    if (!argument.type->isNullable() || !isEnum(removeNullable(argument.type)) || !target_type->isNullable())
+    if (!target_type->isNullable())
         return argument;
 
     return {castColumn(argument, target_type), target_type, argument.name};

@@ -19,6 +19,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -178,19 +179,21 @@ DataTypePtr stripHint(const DataTypePtr & type)
 {
     if (!type)
         return nullptr;
-    return removeLowCardinalityAndNullable(type);
+    return removeSimpleAggregateFunction(removeLowCardinalityAndNullable(type));
 }
 
 DataTypePtr arrayElementHint(const DataTypePtr & hint)
 {
-    if (const auto * array = typeid_cast<const DataTypeArray *>(stripHint(hint).get()))
+    const DataTypePtr stripped = stripHint(hint);
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripped.get()))
         return array->getNestedType();
     return nullptr;
 }
 
 DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive)
 {
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    const DataTypePtr stripped = stripHint(hint);
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get());
     if (!tuple)
         return nullptr;
     if (tuple->hasExplicitNames())
@@ -204,7 +207,8 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
 
 DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
 {
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    const DataTypePtr stripped = stripHint(hint);
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get());
     if (tuple && pos < tuple->getElements().size())
         return tuple->getElements()[pos];
     return nullptr;
@@ -212,7 +216,8 @@ DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
 
 DataTypePtr mapEntriesHint(const DataTypePtr & hint)
 {
-    if (const auto * map = typeid_cast<const DataTypeMap *>(stripHint(hint).get()))
+    const DataTypePtr stripped = stripHint(hint);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripped.get()))
         return std::make_shared<DataTypeTuple>(DataTypes{map->getKeyType(), map->getValueType()});
     return nullptr;
 }

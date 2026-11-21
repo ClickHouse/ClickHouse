@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -202,6 +203,16 @@ DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & funct
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }
 
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
+{
+    DataTypePtr result = type;
+    while (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(result->getCustomName()))
+        result = DataTypeFactory::instance().get(simple->getArgumentsDataTypes()[0]->getName());
+    if (result != type && isBool(result) && !isSimpleAggregateFunctionOfBool(*type))
+        return std::make_shared<DataTypeUInt8>();
+    return result;
+}
+
 bool isSimpleAggregateFunctionOfBool(const IDataType & type)
 {
     const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName());
@@ -276,6 +287,9 @@ so unlike with the `AggregateFunction` type there is no need to apply
 
 The `SimpleAggregateFunction` type has better performance than the `AggregateFunction`
 for the same aggregate functions.
+
+Like `AggregateFunction`, a `SimpleAggregateFunction` cannot be inside `Nullable` or `LowCardinality`. To store `NULL`
+values, use a `Nullable` argument type, for example `SimpleAggregateFunction(sum, Nullable(UInt64))`.
 </Note>
 
 ## Example {#example}

@@ -9,7 +9,7 @@ SELECT CAST(toDecimal32(0.5, 2) AS SimpleAggregateFunction(any, Bool)) AS x, toU
 SELECT CAST(0 AS SimpleAggregateFunction(any, Bool)) AS x, toUInt8(x), x = true;
 SELECT CAST(2 AS SimpleAggregateFunction(max, Bool)) AS x, toUInt8(x), x = true;
 SELECT accurateCast(2, 'SimpleAggregateFunction(any, Bool)') AS x, toUInt8(x), x = true;
-SELECT accurateCastOrNull(300, 'SimpleAggregateFunction(any, Bool)') AS x, toUInt8(x), x = true;
+SELECT accurateCastOrNull(300, 'SimpleAggregateFunction(any, Nullable(Bool))') AS x, toUInt8(x), x = true;
 
 -- The aggregate result of these is not Bool, so their values keep the UInt8 range.
 SELECT 'not bool';
@@ -90,7 +90,7 @@ DROP TABLE IF EXISTS jb;
 DROP TABLE IF EXISTS js;
 DROP TABLE IF EXISTS ju;
 CREATE TABLE jb (v Nullable(Bool)) ENGINE = Memory;
-CREATE TABLE js (v Nullable(SimpleAggregateFunction(any, Bool))) ENGINE = Memory;
+CREATE TABLE js (v SimpleAggregateFunction(any, Nullable(Bool))) ENGINE = Memory;
 CREATE TABLE ju (v UInt8) ENGINE = Memory;
 INSERT INTO jb VALUES (true);
 INSERT INTO js VALUES (true);
@@ -103,7 +103,7 @@ DROP TABLE jb;
 DROP TABLE js;
 DROP TABLE ju;
 SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'Bool')), toUInt8(JSONExtract('{"a":2}', 'a', 'SimpleAggregateFunction(any, Bool)'));
-SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(Bool)')), toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(SimpleAggregateFunction(any, Bool))'));
+SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(Bool)')), toUInt8(JSONExtract('{"a":2}', 'a', 'SimpleAggregateFunction(any, LowCardinality(Bool))'));
 
 -- An INSERT from UInt8 stores 2 as is; the correlated equality must not depend on the substitution.
 SELECT 'correlated';

@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -29,7 +30,9 @@ namespace ErrorCodes
 DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
     : nested_data_type{nested_data_type_}
 {
-    if (!nested_data_type->canBeInsideNullable())
+    /// Merges apply a `SimpleAggregateFunction` only to a column whose outermost type it is.
+    if (!nested_data_type->canBeInsideNullable()
+        || typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested_data_type->getCustomName()))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Nested type {} cannot be inside Nullable type", nested_data_type->getName());
 }
 
