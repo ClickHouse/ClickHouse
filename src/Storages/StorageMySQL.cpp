@@ -649,8 +649,9 @@ void registerStorageMySQL(StorageFactory & factory)
         /// (and freeze it into the table definition) so that it is honored during schema inference,
         /// the same way the MySQL database engine does. An explicit per-engine SETTINGS value, loaded
         /// right after, takes precedence over it. On `RESTORE` we don't use the session context: it may contain a
-        /// conflicting `mysql_datatypes_support_level` setting and make the `RESTORE` fail.
-        if (!args.is_restore_from_backup)
+        /// conflicting `mysql_datatypes_support_level` setting and make the `RESTORE` fail. The same for a short
+        /// `ATTACH` in a `MySQL` database, which `DatabaseMySQL::createTable` rejects if the definition differs.
+        if (!args.is_restore_from_backup && !args.query.attach_short_syntax)
             mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
