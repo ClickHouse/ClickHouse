@@ -28,11 +28,12 @@
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
+#include <Storages/RabbitMQ/RabbitMQStreamSource.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
@@ -51,6 +52,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
@@ -97,6 +99,7 @@ static const auto PUBLISHER_CLEANUP_INTERVAL_MS = 5000;
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -914,6 +917,54 @@ void StorageRabbitMQ::unbindExchange()
 }
 
 
+bool StorageRabbitMQ::hasStreamQueues() const
+{
+    return std::any_of(queue_settings_list.begin(), queue_settings_list.end(), [](const String & setting)
+    {
+        auto [key, value] = std::pair{setting.substr(0, setting.find('=')), setting.substr(std::min(setting.size(), setting.find('=') + 1))};
+        boost::trim(key);
+        boost::trim(value);
+        return key == "x-queue-type" && value == "stream";
+    });
+}
+
+void StorageRabbitMQ::readStream(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr local_context)
+{
+    const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+    if (stream_settings.watermark)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine RabbitMQ");
+
+    auto modified_context = addSettings(local_context);
+
+    RabbitMQStreamSource::Params params{
+        .configuration = configuration,
+        .queues = queues,
+        .exchange_name = exchange_name,
+        .format_name = format_name,
+        .handle_error_mode = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
+        .max_block_size = getMaxBlockSize(),
+        .poll_timeout_ms = std::max<size_t>(100, modified_context->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()),
+        .flush_interval_ms = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_flush_interval_ms].changed
+            ? (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_flush_interval_ms]
+            : static_cast<UInt64>(modified_context->getSettingsRef()[Setting::stream_flush_interval_ms].totalMilliseconds()),
+        .storage_id = getStorageID(),
+    };
+
+    auto source = std::make_shared<RabbitMQStreamSource>(
+        std::move(params), storage_snapshot, modified_context, column_names, stream_settings, log);
+    source->setStorageLimits(query_info.storage_limits);
+
+    auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    step->setStepDescription("Read from RabbitMQ STREAM");
+    query_plan.addStep(std::move(step));
+    query_plan.addInterpreterContext(modified_context);
+}
+
 void StorageRabbitMQ::read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -926,6 +977,12 @@ void StorageRabbitMQ::read(
 {
     if (!initialized)
         throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "RabbitMQ setup not finished. Connection might be lost");
+
+    if (query_info.isStream())
+    {
+        readStream(query_plan, column_names, storage_snapshot, query_info, local_context);
+        return;
+    }
 
     if (num_created_consumers == 0)
     {
@@ -1866,6 +1923,16 @@ CREATE MATERIALIZED VIEW consumer TO daily
 
 SELECT key, value FROM daily ORDER BY key;
 ```
+
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM rabbitmq_table STREAM`, an experimental feature enabled by `enable_streaming_queries`) is supported for a table with stream queues (`rabbitmq_queue_settings_list = 'x-queue-type=stream'`), which keep their messages after they are consumed. It reads the queues with its own connection, starting at the offsets of the cursor. The cursor is a map from the queue name to the offset of the last read message (a queue name may contain dots):
+
+```sql
+SELECT * FROM rabbitmq_table STREAM CURSOR {'1_events': 41}
+```
+
+A queue without an entry in the cursor is read from the beginning. RabbitMQ does not report the end of a stream queue, so `STREAM BOUNDED` finishes once no message arrives during `stream_poll_timeout_ms`. A table with stream queues can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`): a message that arrives later is appended by the next refresh. A classic queue does not keep its messages, so a table without stream queues does not support `STREAM`. `WATERMARK` is not supported.
 
 ## Virtual columns {#virtual-columns}
 
