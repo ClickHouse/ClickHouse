@@ -1,11 +1,14 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
 class Block;
+class CaseAwareBlockNameMap;
+struct FormatSettings;
 
 /// Builds the names and type names for a CSV-family WithNames(AndTypes) header.
 /// When `flatten` is true, every (named or unnamed) Tuple column is expanded recursively into
@@ -22,5 +25,19 @@ void getCSVHeaderNamesAndTypes(const Block & sample, bool flatten, Names & names
 /// non-UTF-8 element name (a dotted leaf name that never appears in the top-level block names) is
 /// detected. Used as a `may_produce_raw_bytes` checker for the CSV-family text output formats.
 bool csvHeaderNamesMayProduceRawBytes(const Block & sample, bool flatten, bool with_names, bool with_types);
+
+/// The input side of `getCSVHeaderNamesAndTypes` with `flatten`: each run of `names` that spells the flattened element
+/// names of a bare Tuple column of `header`, none of them a column name, is replaced by that column's name, and
+/// `type_names` of the same size is collapsed in step to its type name (with `check_types`, a different element type
+/// throws). Names are compared like column names (`input_format_column_name_matching_mode`); with `header_detection`
+/// (the row may be data) element names are compared exactly and a run two Tuple columns can claim is left as is: it never throws.
+void collapseCSVHeaderTupleNames(
+    const Block & header,
+    const CaseAwareBlockNameMap & column_indexes_by_names,
+    const FormatSettings & format_settings,
+    VectorWithMemoryTracking<String> & names,
+    VectorWithMemoryTracking<String> & type_names,
+    bool check_types,
+    bool header_detection);
 
 }
