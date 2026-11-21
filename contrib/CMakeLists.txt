@@ -147,7 +147,6 @@ if (ENABLE_RUST AND OS_FREEBSD)
     message(STATUS "Rust build is disabled for FreeBSD because we use old sysroot files")
 elseif (ENABLE_RUST)
     add_contrib (prql-cmake)
-    add_contrib (skim-cmake)
     add_contrib (polyglot-cmake)
     add_contrib (pcodec-cmake)
     add_contrib (vortex-cmake)
@@ -353,6 +352,9 @@ add_contrib (librtcx-cmake librtcx)
 # No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
 add_contrib (nvcomp-cmake)
 add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
+
+# Must come after every member of the Rust workspace.
+add_contrib (rust-contrib-workspace)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

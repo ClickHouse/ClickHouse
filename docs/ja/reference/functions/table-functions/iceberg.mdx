@@ -131,13 +131,13 @@ ClickHouse は [削除ベクター](https://iceberg.apache.org/spec/#deletion-ve
 ### 基本的な使い方 {#basic-usage}
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_timestamp_ms = 1714636800000
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_timestamp_ms = 1714636800000
 ```
 
 ```sql
- SELECT * FROM example_table ORDER BY 1 
- SETTINGS iceberg_snapshot_id = 3547395809148285433
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
 注: 同じクエリ内で `iceberg_timestamp_ms` と `iceberg_snapshot_id` の両方のパラメータを指定することはできません。
@@ -161,47 +161,47 @@ ClickHouse は [削除ベクター](https://iceberg.apache.org/spec/#deletion-ve
 次の一連の操作を考えてみましょう。
 
 ```sql
- -- 2つのカラムを持つテーブルを作成する
-  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-  order_number bigint, 
-  product_code string
-  ) 
-  USING iceberg 
-  OPTIONS ('format-version'='2')
+-- Create a table with two columns
+ CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+ order_number bigint, 
+ product_code string
+ ) 
+ USING iceberg 
+ OPTIONS ('format-version'='2')
 
-- - テーブルにデータを挿入する
-  INSERT INTO spark_catalog.db.time_travel_example VALUES 
-    (1, 'Mars')
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES 
+   (1, 'Mars')
 
-  ts1 = now() // 擬似コードの一例
+ ts1 = now() // A piece of pseudo code
 
-- - テーブルに新しいカラムを追加する
-  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
- 
-  ts2 = now()
+- - Alter table to add a new column
+ ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
-- - テーブルにデータを挿入する
-  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+ ts2 = now()
 
-   ts3 = now()
+- - Insert data into the table
+ INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-- - 各タイムスタンプ時点のテーブルをクエリする
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+  ts3 = now()
 
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-|           1|        Mars|
-+------------+------------+
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+- - Query the table at each timestamp
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
 |order_number|product_code|
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+ SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
 
 +------------+------------+-----+
 |order_number|product_code|price|
@@ -296,7 +296,9 @@ ClickHouseで`iceberg`テーブル関数を使用する場合、システムはI
    * 指定した UUID と一致する `table-uuid` フィールドを含むファイルに絞り込みます (大文字と小文字は区別されません)
 
 3. **デフォルト検索**:
-   *上記のいずれの設定も指定されていない場合、`metadata` ディレクトリ内のすべての `.metadata.json` ファイルが候補になります
+
+* 上記のいずれの設定も指定されていない場合、`metadata` ディレクトリ内のすべての `.metadata.json` ファイルが候補になります
+* S3 および Azure では、クエリレベルの設定 `iceberg_list_only_v_prefixed_metadata_files` が有効、かつ `iceberg_use_version_hint` が無効の場合、これらのファイルの中に名前が `v` で始まるもの (ClickHouse カタログおよび Hadoop カタログはこの形式で命名します) があれば、そのファイルのみが候補となり、一覧取得の対象もそのファイルのみになります (キープレフィックス `metadata/v` で一覧取得するため、同じディレクトリに保存されているマニフェストは一覧取得されません)。この設定は、メタデータファイルがすべてこの形式で命名されているテーブルに限って有効化してください。両方の命名規則が混在するディレクトリでは、`<N>-<uuid>.metadata.json` ファイルが候補になることはありません
 
 ### 最新のファイルを選択する {#most-recent-file}
 
@@ -312,7 +314,7 @@ ClickHouseで`iceberg`テーブル関数を使用する場合、システムはI
 
 * (バージョンは、`V.metadata.json` または `V-uuid.metadata.json` 形式のファイル名では `V` として表されます)
 
-**注**: ここで言及している設定はすべてテーブル関数の設定 (グローバル設定やクエリレベルの設定ではありません) であり、以下に示すとおりに指定する必要があります。
+**注**: ここで言及している設定は、`iceberg_list_only_v_prefixed_metadata_files` を除きすべてテーブル関数の設定 (グローバル設定やクエリレベルの設定ではありません) であり、以下に示すとおりに指定する必要があります。
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
@@ -414,11 +416,11 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` は、指定したパーティションに属するすべてのデータファイルを削除し、それらを参照しない新しいスナップショットを作成します。現在、ローカルおよびオブジェクトストレージ上の Iceberg テーブルでサポートされていますが、カタログで管理されるテーブルではサポートされていません。
+`ALTER TABLE ... DROP PARTITION <value>` は、指定したパーティションに属するすべてのデータファイルを削除し、それらを参照しない新しいスナップショットを作成します。ローカルおよびオブジェクトストレージ上の Iceberg テーブルに加え、カタログ種別が `rest`、`onelake`、`biglake`、`delta_sharing`、`horizon`、`s3tables`、または `unity` (`use_unity_catalog_v2 = 1` の場合) である `DataLakeCatalog` データベース内のテーブルでサポートされています。
 
 この操作を使用するには、`allow_insert_into_iceberg` を有効にしてください。
 
-この操作は、パーティション仕様が 1 つだけで、その仕様が変更されていない Iceberg `format-version` 2 のテーブルでのみサポートされます。対象のパーティションを含む各マニフェストには、ほかのパーティションのファイルが含まれていてはなりません。対象のパーティションと別のパーティションでマニフェストが共有されている場合、テーブルは変更されず、操作は失敗します。また、対象のマニフェストにequality delete ファイルが含まれている場合も、操作は拒否されます。
+この操作は、パーティション仕様が 1 つだけで、その仕様が変更されていない Iceberg形式 `format-version` 2 のテーブルでのみサポートされます。対象のパーティションを含む各マニフェストには、ほかのパーティションのファイルが含まれていてはなりません。対象のパーティションと別のパーティションでマニフェストが共有されている場合、テーブルは変更されず、操作は失敗します。また、対象のマニフェストにequality delete ファイルが含まれている場合も、操作は拒否されます。
 
 パーティションの値には、`MergeTree` と同じ規則が適用されます。単一カラムのパーティションにはスカラーリテラルを、複数カラムのパーティションには値のタプルを指定します:
 
@@ -607,15 +609,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 
 このコマンドは、2 つのカラム (`metric_name String`、`metric_value Int64`) を持つテーブルを返します。このテーブルには、メトリクスごとに 1 行が含まれます。メトリクス名は [Iceberg spec](https://iceberg.apache.org/docs/latest/spark-procedures/#output) に従います。
 
-| metric&#95;name                       | 説明                           |
-| ------------------------------------- | ---------------------------- |
-| `deleted_data_files_count`            | 削除されたデータファイルの数               |
-| `deleted_position_delete_files_count` | 削除された position delete ファイルの数 |
-| `deleted_equality_delete_files_count` | 削除された equality delete ファイルの数 |
-| `deleted_manifest_files_count`        | 削除されたマニフェストファイルの数            |
-| `deleted_manifest_lists_count`        | 削除されたマニフェストリストファイルの数         |
-| `deleted_statistics_files_count`      | 削除された統計ファイルの数 (現時点では常に 0)    |
-| `dry_run`                             | ドライランモードでは `1`、通常実行では `0`    |
+| metric&#95;name                       | 説明                                                                               |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| `deleted_data_files_count`            | 削除されたデータファイルの数                                                                   |
+| `deleted_position_delete_files_count` | 削除された position delete ファイルの数                                                     |
+| `deleted_equality_delete_files_count` | 削除された equality delete ファイルの数                                                     |
+| `deleted_manifest_files_count`        | 削除されたマニフェストファイルの数                                                                |
+| `deleted_manifest_lists_count`        | 削除されたマニフェストリストファイルの数                                                             |
+| `deleted_statistics_files_count`      | 削除された統計ファイルの数 (現時点では常に 0)                                                        |
+| `dry_run`                             | ドライランモードでは `1`、通常実行では `0`                                                        |
+| `failed_deletions_count`              | 削除時にエラーが返されたファイルの数。こうしたファイルはストレージに残る場合がありますが、後で `remove_orphan_files` を使って削除できます |
 
 このコマンドは次の手順を実行します。
 
@@ -624,24 +627,24 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 3. ポリシーによって保持されず、タイムスタンプによる保護も受けていないスナップショットを期限切れにします
 4. 期限切れになったスナップショットにのみ関連付けられているファイルを特定します
 5. 通常モード: 期限切れになったスナップショットを除外した新しいメタデータを生成します
-6. 通常モード: 到達不能になったマニフェストリスト、マニフェストファイル、データファイルを物理的に削除します
+6. 通常モード: 到達不能になったマニフェストリスト、マニフェストファイル、データファイルを物理的に削除します。削除時にエラーが返されたファイルは削除されず、`failed_deletions_count` にカウントされます
 7. `dry_run = 1` モード: 手順 5 と 6 をスキップし、計算されたメトリクスのみを返します
 
 #### スナップショット保持ポリシー {#iceberg-snapshot-retention-policy}
 
-`expire_snapshots` コマンドは、[Iceberg snapshot retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy) に従います。保持設定は、Iceberg テーブルのプロパティと参照ごとのオーバーライドで構成します。
+`expire_snapshots` コマンドは、[Iceberg スナップショット保持ポリシー](https://iceberg.apache.org/spec/#snapshot-retention-policy) に従います。保持設定は、Iceberg テーブルのプロパティと参照ごとのオーバーライドで構成します。
 
-| プロパティ                                  | 範囲   | デフォルト                                                                | 説明                                              |
-| -------------------------------------- | ---- | -------------------------------------------------------------------- | ----------------------------------------------- |
-| `history.expire.min-snapshots-to-keep` | テーブル | `iceberg_expire_default_min_snapshots_to_keep` (デフォルト `1`)           | 各ブランチの祖先チェーンで保持するスナップショットの最小数                   |
-| `history.expire.max-snapshot-age-ms`   | テーブル | `iceberg_expire_default_max_snapshot_age_ms` (デフォルト `432000000`、5 日) | ブランチで保持するスナップショットの最大保持期間 (ミリ秒)                  |
-| `history.expire.max-ref-age-ms`        | テーブル | `iceberg_expire_default_max_ref_age_ms` (デフォルト `∞`)                  | スナップショット参照 (ブランチまたはタグ) 自体が削除されるまでの最大経過時間 (ミリ秒)  |
+| プロパティ                                  | 範囲   | デフォルト                                                                | 説明                                             |
+| -------------------------------------- | ---- | -------------------------------------------------------------------- | ---------------------------------------------- |
+| `history.expire.min-snapshots-to-keep` | テーブル | `iceberg_expire_default_min_snapshots_to_keep` (デフォルト `1`)           | 各ブランチの祖先チェーンで保持するスナップショットの最小数                  |
+| `history.expire.max-snapshot-age-ms`   | テーブル | `iceberg_expire_default_max_snapshot_age_ms` (デフォルト `432000000`、5 日) | ブランチで保持するスナップショットの最大保持期間 (ミリ秒)                 |
+| `history.expire.max-ref-age-ms`        | テーブル | `iceberg_expire_default_max_ref_age_ms` (デフォルト `∞`)                  | スナップショット参照 (ブランチまたはタグ) 自体が削除されるまでの最大経過時間 (ミリ秒) |
 
 各スナップショット参照 (Iceberg メタデータ内の `refs`) では、参照ごとのフィールド `min-snapshots-to-keep`、`max-snapshot-age-ms`、`max-ref-age-ms` を使ってこれらの値を上書きできます。
 
 **保持の評価:**
 
-* **各ブランチ** (`main` を含む) について: ブランチの先頭から祖先チェーンをたどります。次のいずれかの条件を満たす間、スナップショットは保持されます。
+* **各ブランチ** (`main` を含む) について: ブランチの先頭は常に保持されます。ブランチの先頭から祖先チェーンをたどり、次のいずれかの条件を満たす間、スナップショットは保持されます。
   * そのスナップショットが、チェーン内の先頭 `min-snapshots-to-keep` 個に含まれている
   * そのスナップショットの経過時間が `max-snapshot-age-ms` 以内である (つまり `now - timestamp-ms <= max-snapshot-age-ms`)
 * **タグ**について: タグ付けされたスナップショットは、タグが `max-ref-age-ms` を超過しない限り保持されます。超過した場合は、タグ参照が削除されます
@@ -654,16 +657,16 @@ ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_
 `ALTER TABLE EXECUTE` 権限が必要です。これは ClickHouse のアクセス制御階層では `ALTER TABLE` の子権限です。個別に付与することも、親権限を通じて付与することもできます。
 
 ```sql
--- EXECUTE権限のみを付与する
+-- Grant only EXECUTE permission
 GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
 
--- またはすべてのALTER TABLE権限を付与する（ALTER TABLE EXECUTEを含む）
+-- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
 GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 ```
 
 <Note>
-  * サポートされるのは Iceberg format version 2 のテーブルのみです (v1 の snapshot では `manifest-list` が保証されず、クリーンアップ対象のファイルを安全に特定するためにこれが必要です)
-  * 指定した timestamp より古い場合でも、現在の snapshot は常に保持されます
+  * サポートされるのは Iceberg format version 2 のテーブルのみです (v1 の スナップショット では `manifest-list` が保証されず、クリーンアップ対象のファイルを安全に特定するためにこれが必要です)
+  * 指定した timestamp より古い場合でも、現在の スナップショット は常に保持されます
   * `allow_insert_into_iceberg` 設定を有効にする必要があります
   * `allow_experimental_expire_snapshots` 設定を有効にする必要があります
   * ClickHouse がメタデータを更新する際は、カタログ自体の認可 (REST カタログ認証、AWS Glue IAM など) が別途適用されます
@@ -676,44 +679,44 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 **構文:**
 
 ```sql
--- 位置指定形式: 名前なしの older_than 引数を1つ指定
+-- Positional form: single unnamed older_than argument
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
 
--- 名前付き形式
+-- Named form
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = 'timestamp',
     location = 'path',
     dry_run = 0|1
 )
 
--- 引数なし: すべてデフォルト値を使用 (older_than = 3日前)
+-- No arguments: use all defaults (older_than = 3 days ago)
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
 ```
 
 **パラメータ:**
 
-| パラメータ        | 型                    | デフォルト                                                  | 説明                                                                            |
-| ------------ | -------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| `older_than` | `String` (timestamp) | 3日前 (`iceberg_orphan_files_older_than_seconds` で設定可能)  | 最終更新時刻がこのタイムスタンプより古いファイルのみを、孤立ファイル候補として扱います。処理中の書き込みで作成されたファイルを削除しないための安全策です。 |
-| `location`   | `String`             | テーブルの格納場所                                              | スキャン対象を、テーブルの格納場所配下の特定のサブディレクトリ (例: `'data/'` または `'metadata/'`) に限定します。      |
-| `dry_run`    | `UInt64`             | `0`                                                    | `1` の場合、孤立ファイルを特定して結果のサマリーを返しますが、実際には何も削除しません。                                |
+| パラメータ        | 型                    | デフォルト                                                 | 説明                                                                                                                                                      |
+| ------------ | -------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `older_than` | `String` (timestamp) | 3日前 (`iceberg_orphan_files_older_than_seconds` で設定可能) | 最終更新時刻がこのタイムスタンプより古いファイルのみを、孤立ファイル候補として扱います。処理中の書き込みで作成されたファイルを削除しないための安全策です。現在時刻から少なくとも `iceberg_orphan_files_min_retention_seconds` (1日) 前である必要があります。 |
+| `location`   | `String`             | テーブルの格納場所                                             | スキャン対象を、テーブルの格納場所配下の特定のサブディレクトリ (例: `'data/'` または `'metadata/'`) に限定します。                                                                                |
+| `dry_run`    | `UInt64`             | `0`                                                   | `1` の場合、孤立ファイルを特定して結果のサマリーを返しますが、実際には何も削除しません。                                                                                                          |
 
 **例:**
 
 ```sql
--- 特定のタイムスタンプより古い孤立ファイルを削除する
+-- Remove orphan files older than a specific timestamp
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
 
--- ドライラン: 削除対象のファイルをプレビューする
+-- Dry run: preview which files would be deleted
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
 
--- データディレクトリのみをスキャンする
+-- Scan only the data directory
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     older_than = '2026-03-01 00:00:00',
     location = 'data/'
 );
 
--- 位置引数の older_than と名前付き引数を組み合わせる
+-- Combine positional older_than with named arguments
 ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
     '2026-03-01 00:00:00',
     dry_run = 1
@@ -738,17 +741,18 @@ ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
 
 **設定:**
 
-| 設定                                        | 型        | デフォルト             | 説明                                         |
-| ----------------------------------------- | -------- | ----------------- | ------------------------------------------ |
-| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`           | この機能を有効にするためのゲート設定 (Experimental) 。        |
-| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | 引数を省略した場合の `older_than` のデフォルトしきい値 (秒単位) 。 |
+| 設定                                           | 型        | デフォルト             | 説明                                                                                                |
+| -------------------------------------------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------- |
+| `allow_iceberg_remove_orphan_files`          | `Bool`   | `false`           | この機能を有効にするためのゲート設定 (Experimental) 。                                                               |
+| `iceberg_orphan_files_older_than_seconds`    | `UInt64` | `259200` (3 days) | 引数を省略した場合の `older_than` のデフォルトしきい値 (秒単位) 。                                                        |
+| `iceberg_orphan_files_min_retention_seconds` | `UInt64` | `86400` (1 day)   | `older_than` と現在時刻との間に必要な最小間隔 (秒単位) 。これより新しい `older_than` を指定すると拒否されます。`0` を指定すると、このチェックは無効になります。 |
 
 <Note>
   * **Iceberg format version 2 (またはそれ以上) が必要です。** version 1 のテーブルは、到達可能なファイル集合を安全に判定するために必要な、snapshot 内の `manifest-list` ポインタを持たないため拒否されます。v1 テーブルでこのコマンドを実行すると、`BAD_ARGUMENTS` エラーが返されます。
   * `allow_insert_into_iceberg` と `allow_iceberg_remove_orphan_files` の両方の設定を有効にする必要があります
   * 期限切れの snapshot だけが参照しているファイルを先にクリーンアップできるよう、`remove_orphan_files` の前に `expire_snapshots` を実行することを推奨します
   * 削除前に孤立ファイルを確認するには、`dry_run = 1` を使用します
-  * `older_than` のしきい値は、進行中の書き込みに由来するファイルが削除されるのを防ぎます。デフォルトの 3 日というしきい値には、十分な安全マージンがあります
+  * 現在時刻からの差が `iceberg_orphan_files_min_retention_seconds` より短い `older_than` を指定すると拒否されます。まだコミットされていない書き込みのファイルはテーブルのメタデータから参照されていないため、孤立ファイルのように見えてしまうからです。この設定には、テーブルへの書き込みがコミットされるまでにかかり得る最長時間よりも大きな値を指定してください
 </Note>
 
 ## 関連項目 {#see-also}

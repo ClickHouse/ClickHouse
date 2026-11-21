@@ -39,6 +39,16 @@ El tamaño de memoria a partir del cual el agregador adaptativo congela la tabla
 
 Escribe el encabezado HTTP CORS adicional.
 
+## analyze_index_with_multiple_key_columns_per_condition {#analyze_index_with_multiple_key_columns_per_condition}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración que permite que una sola condición restrinja varias columnas de clave durante el análisis de índices."}]}]} />
+
+Permite que una única condición atómica de la expresión `WHERE`/`PREWHERE` (una sola comparación, `IN`, `has`, etc.) restrinja varias columnas de clave durante el análisis de índices.
+
+Por ejemplo, si una tabla tiene `ORDER BY (toDate(ts), ts)` y la consulta incluye `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, la primera de las dos condiciones restringe ambas columnas de clave: se analiza como si se hubiera escrito `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'`. Si el parámetro de configuración está deshabilitado, este predicado solo restringe `ts`. Los predicados de pertenencia a tuplas, como `(a, b) IN ((1, 2), (3, 4))`, pueden seguir restringiendo varias columnas de clave.
+
 ## analyze_index_with_space_filling_curves {#analyze_index_with_space_filling_curves}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -137,6 +147,14 @@ Posibles valores:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "300"},{"label": "Nueva configuración que limita la duración de una única solicitud de Arrow Flight. Antes no había ningún tiempo de espera, por lo que un servidor de Flight que aceptaba una solicitud y nunca respondía bloqueaba la consulta indefinidamente; el valor 0 restaura ese comportamiento."}]}]} />
 
 Tiempo de espera, en segundos, para una única solicitud de Arrow Flight. Se aplica a la solicitud completa: en una lectura, abarca todo el stream de resultados y no solo la espera del primer lote de registros. El valor cero desactiva el tiempo de espera; en ese caso, un servidor de Flight que acepte una solicitud y nunca responda bloqueará la consulta hasta que se cierre la conexión.
+
+## backup_s3_expired_token_retry_timeout_ms {#backup_s3_expired_token_retry_timeout_ms}
+
+<SettingsInfoBlock type="UInt64" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "Reintenta las solicitudes a S3 de copia de seguridad y restauración tras un token expirado; 0 restablece el comportamiento anterior."}]}]} />
+
+Tiempo máximo, en milisegundos, durante el que se reintenta una solicitud a S3 cuya respuesta indica `ExpiredToken` durante una copia de seguridad o una restauración. Los reintentos también se detienen al alcanzar `backup_restore_s3_retry_attempts`. Un valor de cero deshabilita estos reintentos. Las respuestas `HEAD` de AWS S3 solo devuelven un código de estado HTTP genérico, por lo que este reintento no se aplica a las solicitudes de metadata `HEAD`.
 
 ## backup_slow_all_threads_after_retryable_s3_error {#backup_slow_all_threads_after_retryable_s3_error}
 
@@ -316,6 +334,7 @@ Usa inner join en lugar de comma join/cross join si hay expresiones de join en l
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Permite que los tipos de datos sin modificadores explícitos [NULL o NOT NULL](/es/reference/statements/create/table#null-or-not-null-modifiers) en la definición de columnas sean [Nullable](/es/reference/data-types/nullable).
+Se aplica a `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN` y `ALTER TABLE ... MODIFY COLUMN`.
 
 Valores posibles:
 
@@ -389,14 +408,14 @@ El dialecto que se utilizará para analizar la consulta.
 Valores admitidos:
 
 * `clickhouse` (predeterminado) — SQL estándar de ClickHouse.
-* `kusto` — Kusto Query Language. Requiere la configuración experimental `allow_experimental_kusto_dialect`.
+* `kusto` — Kusto Query Language. Requiere la configuración Beta `allow_experimental_kusto_dialect`.
 * `prql` — PRQL. Requiere la configuración experimental `allow_experimental_prql_dialect`.
 * `polyglot` — transpila SQL de otros dialectos (MySQL, PostgreSQL, etc.) a ClickHouse SQL. Requiere la configuración experimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language) evaluado sobre una tabla TimeSeries, configurada mediante las opciones `promql_database`, `promql_table` y `promql_evaluation_time`.
 * `clickhouse_json` — en lugar de texto SQL, la consulta se interpreta como un AST JSON (la salida de `parseQueryToJSON`). La consulta `SET` se sigue reconociendo en formato sin procesar para poder volver a cambiar el dialecto. Requiere la configuración experimental `enable_json_ast_dialect`.
 * `logsql` — LogsQL, el lenguaje de consulta de logs de VictoriaLogs, traducido a consultas `SELECT` sobre la tabla de logs configurada mediante las opciones `logsql_database` y `logsql_table`. Requiere la configuración experimental `enable_logsql_dialect`.
 
-- `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración experimental `enable_trino_dialect`.
+- `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración Beta `enable_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -817,10 +836,10 @@ La función &#39;geoToH3&#39; acepta (lon, lat) si se establece en &#39;lon&#95;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "nueva configuración"}]}]} />
 
-Define cuántos milisegundos espera un Client de Keeper para adquirir el mutex de `Context` correspondiente antes de fallar.
+Define cuántos milisegundos espera una consulta por un Client de Keeper: por el mutex de `Context` del Client y por un intento de conexión que otro thread está realizando en su nombre. Cuando se supera este tiempo, la consulta falla con `TIMEOUT_EXCEEDED`. La consulta también deja de esperar si se cancela.
 
-El valor se obtiene del `Context` que realiza la adquisición. Una sobrescritura a nivel de consulta solo se aplica cuando la operación utiliza el contexto de la consulta, como en las lecturas de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` y el acceso a Keeper auxiliar desde el contexto de la consulta.
-Las operaciones que utilizan un contexto global o en segundo plano, como la coordinación de `BACKUP` y `RESTORE` y la actividad de las bases de datos `Replicated`, utilizan en su lugar el valor de ese contexto y reciben el tiempo de espera agotado como un error de Keeper (`ZOPERATIONTIMEOUT`), que gestionan como cualquier otro error de Keeper.
+El valor se obtiene del contexto de la consulta, por lo que se aplica a las operaciones que lo utilizan, como en las lecturas de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` y el acceso a Keeper auxiliar desde el contexto de la consulta.
+Las operaciones que utilizan un contexto global o en segundo plano, como la coordinación de `BACKUP` y `RESTORE` y la actividad de las bases de datos `Replicated`, esperan hasta que finaliza el intento de conexión y obtienen su Client o su error de Keeper.
 `SYSTEM RELOAD CONFIG` y `SYSTEM RELOAD ASYNCHRONOUS METRICS` quedan excluidos, ya que utilizan rutas de recarga serializadas de forma independiente.
 
 Valores posibles:
@@ -923,15 +942,27 @@ El intervalo, en microsegundos, para comprobar si se ha cancelado la ejecución 
 
 Establece el modo predeterminado en la consulta INTERSECT. Valores posibles: cadena vacía, &#39;ALL&#39;, &#39;DISTINCT&#39;. Si está vacío, una consulta sin modo generará una excepción.
 
-## kill_throw_if_noop {#kill_throw_if_noop}
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para que la familia `JSONExtract` rellene las tuplas con nombre únicamente a partir de objetos JSON, en lugar del relleno posicional histórico a partir de arrays. Las tuplas sin nombre siempre se rellenan de forma posicional, y la extracción desde una columna del tipo de datos `JSON` no se ve afectada."}]}]} />
+
+Rellena las tuplas con nombre únicamente a partir de objetos JSON en la familia de funciones `JSONExtract`. Cuando está deshabilitado, un array JSON rellena una tupla con nombre de forma posicional (el comportamiento histórico), por lo que el campo con nombre en el que termina cada elemento del array depende del orden en que se declaró la tupla. Las tuplas sin nombre siempre se rellenan de forma posicional a partir de arrays, independientemente de este parámetro de configuración.
+
+Este parámetro de configuración se aplica al JSON que se pasa como cadena. No afecta a la extracción desde una columna del tipo de datos `JSON`, ni para rutas tipadas ni para rutas no tipadas: en ese caso se leen las subcolumnas de la columna en lugar de analizar un documento JSON, por lo que nunca se llega al código que controla este parámetro. Las *columnas* de tupla con nombre en los formatos de entrada JSON se rigen por otro parámetro de configuración, [input&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects](/es/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects); este parámetro solo abarca las funciones de extracción.
+
+Deshabilitado de forma predeterminada.
+
+## kill_throw_if_noop {#kill_throw_if_noop}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Se habilita `kill_throw_if_noop` de forma predeterminada para que `KILL QUERY` y `KILL MUTATION` informen cuando no hay coincidencias."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "nueva configuración"}]}]} />
 
 Controla si [`KILL QUERY`](/es/reference/statements/kill#kill-query) y [`KILL MUTATION`](/es/reference/statements/kill#kill-mutation) lanzan una excepción cuando sus cláusulas `WHERE` no coinciden con ninguna fila.
 
-Si se establece en true, `KILL QUERY` lanza una excepción cuando no hay filas aptas en `system.processes` tras excluir la propia sentencia `KILL`, y `KILL MUTATION` lanza una excepción cuando ninguna fila de `system.mutations` coincide. De forma predeterminada, si no hay coincidencias, la sentencia finaliza sin lanzar ninguna excepción. Con `ON CLUSTER`, no se lanzan excepciones aunque no haya coincidencias, ya que los resultados no se agregan entre hosts.
+Habilitado de forma predeterminada. `KILL QUERY` lanza una excepción cuando no hay filas aptas en `system.processes` tras excluir la propia sentencia `KILL`, y `KILL MUTATION` lanza una excepción cuando ninguna fila de `system.mutations` coincide. Establézcalo en `false` para que la sentencia finalice sin lanzar ninguna excepción cuando no haya coincidencias. Las ejecuciones de prueba con `TEST` devuelven una vista previa vacía sin lanzar ninguna excepción. Con `ON CLUSTER`, no se lanzan excepciones aunque no haya coincidencias, ya que los resultados no se agregan entre hosts.
 
 Valores posibles:
 
@@ -1008,11 +1039,11 @@ Carga las marks de MergeTree de forma asíncrona en un thread pool en segundo pl
 
 ## lock_acquire_timeout {#lock_acquire_timeout}
 
-<SettingsInfoBlock type="Segundos" default_value="120" />
+<SettingsInfoBlock type="Seconds" default_value="120" />
 
 Define cuántos segundos espera una solicitud de bloqueo antes de fallar.
 
-El tiempo de espera de bloqueo se usa para proteger frente a interbloqueos al ejecutar operaciones de lectura/escritura con tablas. Cuando el tiempo de espera expira y la solicitud de bloqueo falla, el servidor de ClickHouse lanza una excepción &quot;¡El intento de bloqueo excedió el tiempo de espera! Se evitó un posible interbloqueo. El cliente debería reintentar.&quot; con el código de error `DEADLOCK_AVOIDED`.
+El tiempo de espera de bloqueo se usa para proteger frente a interbloqueos al ejecutar operaciones de lectura/escritura con tablas. Cuando el tiempo de espera expira y la solicitud de bloqueo falla, el servidor de ClickHouse lanza una excepción &quot;El intento de bloqueo excedió el tiempo de espera. Se evitó un posible interbloqueo. El cliente debería reintentar.&quot; con el código de error `DEADLOCK_AVOIDED`.
 
 Valores posibles:
 
@@ -1076,6 +1107,14 @@ No añadir alias a la lista de expresiones de nivel superior al reescribir múlt
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.3"},{"label": "1"},{"label": "Normalizar los nombres de las funciones a su forma canónica; esto era necesario para el enrutamiento de consultas de proyección"}]}]} />
 
 Normalizar los nombres de las funciones a su forma canónica
+
+## obfuscate_seed {#obfuscate_seed}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "Nueva configuración: cadena de semilla para la función de tabla obfuscate."}]}]} />
+
+Semilla para la función de tabla `obfuscate`. Es una cadena arbitraria: la semilla de cada columna se deriva de ella y del nombre de columna, por lo que una misma semilla siempre produce la misma ofuscación. Si se deja como cadena vacía, se genera una semilla aleatoria para cada consulta.
+
+La semilla es un parámetro de configuración ordinario, no un secreto: su valor se almacena y se muestra en texto sin cifrar, como cualquier otro parámetro de configuración, por ejemplo en `system.query_log` y `system.settings`. No utilice una contraseña ni ningún otro secreto como semilla. Si las salidas ofuscadas de distintas consultas no deben poder correlacionarse entre sí, mantenga el valor vacío predeterminado (una semilla aleatoria nueva por consulta) en lugar de establecer una semilla fija.
 
 ## offset {#offset}
 
@@ -1280,6 +1319,16 @@ Cuando se llama a una función de distancia de `QBit` (`L2DistanceTransposed`, `
 
 De forma predeterminada, con precisión 1 el vector de referencia conserva su precisión completa y solo el vector almacenado se reduce a signos (una distancia asimétrica). La distancia simétrica es varias veces más rápida, pero ignora las magnitudes de los elementos de referencia: una dimensión en la que la referencia es grande pesa lo mismo que una en la que es cercana a cero.
 
+## query_condition_cache_time_condition_grid_factor {#query_condition_cache_time_condition_grid_factor}
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración: paso de la cuadrícula que se utiliza al derivar condiciones deterministas a partir de condiciones que dependen de la hora actual en la caché de condiciones de consulta, expresado como una fracción de la distancia entre la constante de tiempo y la hora actual."}]}]} />
+
+Para las condiciones que dependen de la hora actual en la [caché de condiciones de consulta](/es/concepts/features/performance/caches/query-condition-cache) de las tablas `MergeTree` (consulte [`use_query_condition_cache_for_time_conditions`](/es/reference/settings/session-settings/use-query#use_query_condition_cache_for_time_conditions)), define el tamaño de la cuadrícula sobre la que se redondean las constantes de tiempo, expresado como una fracción de la distancia entre la constante y la hora actual. Por ejemplo, con el factor predeterminado de 1.0, la constante de `WHERE time >= now() - INTERVAL 10 DAY` se redondea a una cuadrícula de un día (con un máximo de un día), y la de `WHERE time >= now() - INTERVAL 1 HOUR`, a una cuadrícula de una hora.
+
+Los valores más pequeños mantienen la condición derivada más próxima a la original (menos lectura adicional cerca del límite), a costa de que la clave de la caché rote con mayor frecuencia. El paso de la cuadrícula tiene un mínimo de un segundo, por lo que un factor pequeño hace que la condición derivada converja hacia la original en lugar de desactivarla. Los valores menores o iguales a 0 desactivan la derivación por completo.
+
 ## query_metric_log_interval {#query_metric_log_interval}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
@@ -1470,7 +1519,7 @@ Si está habilitado, ClickHouse proporcionará el valor exacto de la estadístic
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nueva configuración para ejecutar una consulta en segundo plano, desconectada de la conexión que la envió y descartando el resultado."}]}]} />
 
-Si está habilitada, el servidor programa la consulta en segundo plano, devuelve inmediatamente un resultado vacío satisfactorio y ejecuta la consulta hasta completarla, independientemente de lo que ocurra con la conexión.
+Si está habilitada, el servidor programa la consulta en segundo plano, espera a que la consulta supere sus comprobaciones (por ejemplo, que las tablas existan y que el usuario tenga los permisos necesarios) y esté a punto de iniciar su trabajo principal, devuelve un resultado vacío satisfactorio y ejecuta la consulta hasta completarla, independientemente de lo que ocurra con la conexión. Si se lanza un error antes de ese momento, se devuelve al client; si se produce después, solo se registra en `system.query_log`.
 
 Una consulta en segundo plano no sobrevive a un reinicio del servidor. Durante el apagado, respeta la misma configuración del servidor que una consulta en primer plano: `shutdown_wait_unfinished_queries` determina si se cancela o se espera a que finalice (en ambos casos, las entradas en cola se descartan sin generar una entrada en `system.query_log`), y `shutdown_wait_unfinished` limita cuánto tiempo espera el servidor.
 
@@ -1739,6 +1788,22 @@ Valores posibles:
 
 * `0` - La cadena restante no se incluirá en el último elemento del array de resultados.
 * `1` - La cadena restante se incluirá en el último elemento del array de resultados. Este es el comportamiento de la función [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) de Spark y del método [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) de Python.
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Se usa el nombre compatible con SQL para el parámetro de configuración de división entera."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración para habilitar la división entera exacta en `\/` y `divide`."}]}]} />
+
+Hace que `/` y `divide` devuelvan un entero cuando ambos operandos son de tipos enteros, incluidos `Int128`, `UInt128`, `Int256` y `UInt256`.
+El cociente se trunca hacia cero. El resultado tiene el ancho del primer operando y es con signo si cualquiera de los operandos lo es.
+Tanto la división por cero como un cociente fuera del rango del tipo de resultado lanzan una excepción. Los operandos `Nullable` propagan `NULL`.
+
+De forma predeterminada, la división de dos enteros devuelve `Float64`. Este parámetro de configuración no afecta a las divisiones con operandos `Decimal` o de coma flotante,
+ni a las funciones explícitas `intDiv`, `divideDecimal` y `divideOrNull`.
+
+La elección queda registrada en el SQL recién enviado antes de que las expresiones se almacenen en la metadata de tablas, vistas, funciones SQL o mutaciones.
+Las definiciones existentes y las consultas `ATTACH` conservan su semántica de división original, con independencia de este parámetro de configuración.
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 

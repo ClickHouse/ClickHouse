@@ -12,7 +12,10 @@ sys.path.append(str(repo_path / "ci"))
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
-from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
+from ci.jobs.scripts.functional_tests_results import (
+    ABORTED_RUN_EXIT_CODES,
+    FTResultsProcessor,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -70,6 +73,7 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/musl",
         "contrib/heks",
         "contrib/sql-console",
         "contrib/optimized-routines",
@@ -302,8 +306,6 @@ def main():
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
         results.append(
-            # TODO: commented out to make job platform agnostic
-            #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
             Result.from_commands_run(
                 name="Cmake configuration",
                 command=f"cmake {repo_path_normalized} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
@@ -435,6 +437,13 @@ def main():
         test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
             runner_exit_code=test_exit_code,
         )
+        if test_exit_code in ABORTED_RUN_EXIT_CODES:
+            # The crash that aborted the run is only in the server logs.
+            crash_results = [
+                r for r in CH.check_fatal_messages_in_logs() if r.is_failure()
+            ]
+            if crash_results:
+                test_results.extend_sub_results(crash_results)
         fail_slow_new_tests(test_results, info.get_kv_data("new_stateless_test_files"))
         if test_exit_code != 0:
             attach_debug = True
