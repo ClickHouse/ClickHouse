@@ -16,6 +16,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Snapshot of storage that fixes set columns that can be read in query.
 /// There are 2 sources of columns: regular columns from metadata and virtual columns.
+/// `EPHEMERAL` columns are excluded: they are insert-only.
 struct StorageSnapshot
 {
     const IStorage & storage;
