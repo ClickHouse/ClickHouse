@@ -197,7 +197,7 @@ void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 v
 
 void ColumnIndex::insertIndex(size_t index)
 {
-    while (index > getMaxIndexForCurrentType())
+    while (size_of_type < sizeof(UInt64) && index >> (8 * size_of_type))
         expandType();
 
     auto insert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
