@@ -34,6 +34,7 @@ void SortCursorImpl::reset(const Columns & columns, const Block & block, UInt64 
 {
     all_columns.clear();
     sort_columns.clear();
+    sort_value_columns.clear();
 #if USE_EMBEDDED_COMPILER
     raw_sort_columns_data.clear();
 #endif
@@ -48,6 +49,11 @@ void SortCursorImpl::reset(const Columns & columns, const Block & block, UInt64 
         auto & column_desc = desc[j];
         size_t column_number = block.getPositionByName(column_desc.column_name);
         sort_columns.push_back(columns[column_number].get());
+
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(sort_columns.back()))
+            sort_value_columns.push_back({&nullable_column->getNestedColumn(), nullable_column->getNullMapData().data()});
+        else
+            sort_value_columns.push_back({sort_columns.back(), nullptr});
 
 #if USE_EMBEDDED_COMPILER
         if (desc.compiled_sort_description)
