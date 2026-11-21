@@ -164,7 +164,7 @@ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLIC
 
 With the stock configuration, if you use the `default` user without a password and leave `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` unset or set it to `0`, the user retains SQL access management and can connect only from localhost.
 
-There's a way to make `default` user insecurely available by setting environment variable `CLICKHOUSE_SKIP_USER_SETUP` to 1:
+`CLICKHOUSE_SKIP_USER_SETUP=1` skips user configuration even if you set a username, password, or access-management flag. With the stock configuration, this allows network connections as the `default` user without a password.
 
 ```bash
 docker run --rm -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 9000:9000/tcp %%IMAGE%%
