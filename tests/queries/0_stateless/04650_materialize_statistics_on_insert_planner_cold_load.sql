@@ -21,9 +21,11 @@ DROP TABLE IF EXISTS t_stats_cold_load_fact;
 DROP TABLE IF EXISTS t_stats_cold_load_dim;
 
 CREATE TABLE t_stats_cold_load_fact (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2';
+-- prewarm_statistics_cache pinned to default: CI randomizes it on, which loads statistics on part load
+-- and defeats the cold-load this test measures.
+SETTINGS auto_statistics_types = 'basic, uniq_v2', prewarm_statistics_cache = 0;
 CREATE TABLE t_stats_cold_load_dim (id UInt64, s String) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2';
+SETTINGS auto_statistics_types = 'basic, uniq_v2', prewarm_statistics_cache = 0;
 
 SYSTEM STOP MERGES t_stats_cold_load_fact;
 SYSTEM STOP MERGES t_stats_cold_load_dim;

@@ -8,6 +8,10 @@
 -- replicas 03733.
 -- https://github.com/ClickHouse/ClickHouse/issues/95524
 
+-- Pin to default: CI randomizes parallel_replicas_filter_pushdown off, which changes the pushed-down
+-- read condition this test asserts.
+SET parallel_replicas_filter_pushdown = 1;
+
 DROP TABLE IF EXISTS t_pr_local_pd;
 DROP TABLE IF EXISTS t_pr_local_pd_lambda_key;
 DROP VIEW IF EXISTS v_pr_local_pd;

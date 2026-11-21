@@ -1,8 +1,13 @@
 -- Tags: no-parallel-replicas, no-random-merge-tree-settings
 -- followup to 02882_primary_key_index_in_function_different_types
 -- add_minmax_index_for_numeric_columns=0: Different plan
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
+
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table

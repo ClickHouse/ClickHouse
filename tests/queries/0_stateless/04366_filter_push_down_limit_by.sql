@@ -11,6 +11,9 @@
 -- below). OFFSET and negative LIMIT BY forms are intentionally NOT pushed.
 
 SET query_plan_filter_push_down = 1;
+-- Reset (randomized in CI): the checks below assert the push down below LIMIT BY, and an explicit
+-- value would hide what `compatibility` sets.
+SET query_plan_filter_push_down_below_limit_by = DEFAULT;
 
 DROP TABLE IF EXISTS t_04366;
 CREATE TABLE t_04366 (key String, ts DateTime, val UInt64)

@@ -5,6 +5,7 @@
 
 SET max_threads = 8;
 SET join_algorithm = 'hash';
+SET hash_join_layout = 'auto'; -- The test checks the layout the planner picks
 SET max_block_size = 8192;
 SET query_plan_join_swap_table = 0;
 SET query_plan_join_shard_by_pk_ranges = 0;

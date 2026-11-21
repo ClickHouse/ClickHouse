@@ -1,6 +1,10 @@
 -- `EXPLAIN PLAN fragments = 1`: the shapes of the fragment graph that `05339_explain_plan_fragments` does not cover.
 -- The queries are only explained, never executed.
 
+-- Pin to default: CI randomizes distributed_plan_partial_aggregation_before_shuffle off, which changes
+-- the plan-fragment shapes this test prints.
+SET distributed_plan_partial_aggregation_before_shuffle = 1;
+
 DROP TABLE IF EXISTS small;
 DROP TABLE IF EXISTS big;
 

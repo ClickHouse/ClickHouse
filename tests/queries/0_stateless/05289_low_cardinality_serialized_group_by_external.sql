@@ -6,6 +6,9 @@
 SET serialize_query_plan = 0;
 SET enable_parallel_replicas = 0;
 SET max_rows_to_group_by = 0;
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which keeps the
+-- aggregation in memory so the external-aggregation path this test compares is never taken.
+SET min_bytes_before_external_group_by = 0;
 SET log_queries = 1;
 
 DROP TABLE IF EXISTS lc_serialized_group_by_external;

@@ -20,6 +20,7 @@ SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;
 SET join_use_nulls = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1;
+SET query_plan_convert_outer_join_to_inner_join_transitively = 1; -- CI may inject False; the test asserts the transitive outer->inner conversion happens
 SET optimize_move_to_prewhere = 1;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;

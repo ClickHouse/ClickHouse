@@ -4,6 +4,10 @@
 -- footer in one go, and a tiny fixed read that forces the second (metadata_size + 8 >
 -- initial_read_size) read path - must produce identical, correct results.
 
+-- Reset (randomized in CI): the queries without the setting check the default tail size, and an
+-- explicit value would hide what `compatibility` sets.
+SET input_format_parquet_footer_read_size = DEFAULT;
+
 insert into function file(currentDatabase() || '_data_05025.parquet')
     select number as x, toString(number) as s from numbers(10000)
     settings engine_file_truncate_on_insert = 1;

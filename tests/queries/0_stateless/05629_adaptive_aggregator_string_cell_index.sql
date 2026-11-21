@@ -9,6 +9,17 @@ SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET enable_parallel_single_level_merge = 1;
 SET max_rows_to_group_by = 0;
+-- Pin the adaptive aggregator's method-shaping settings to their defaults (same as the sibling 05498): the
+-- randomizer otherwise lowers the freeze thresholds, disables thawing, serializes the plan, or turns off the
+-- bucket top-K pass, each of which changes the indexed-table / thawed / top-K counters the test checks.
+SET adaptive_aggregator_freeze_threshold = 16384;
+SET adaptive_aggregator_freeze_threshold_bytes = 4194304;
+SET adaptive_aggregator_disable_thaw = 0;
+SET query_plan_aggregation_bucket_top_k = 1;
+SET serialize_query_plan = 0;
+-- Pin (randomized in CI): without the dedicated tracker, the ordinary aggregation of `thawed` measures the growth
+-- of the whole query's memory, which includes the adaptive tables, and converts to two-level without a thaw.
+SET use_aggregation_memory_tracker = 1;
 
 -- Each lane feeds one producer, so every table holds all the keys of its lane whatever the scheduling.
 CREATE VIEW lanes AS

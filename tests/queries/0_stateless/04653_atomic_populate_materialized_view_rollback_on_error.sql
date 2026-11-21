@@ -10,6 +10,9 @@
 -- was subscribed to its source. It must drop the just-created view: otherwise the failed CREATE would
 -- leave behind a view that future inserts silently never populate.
 
+-- the fail point and the rollback under test only exist on the atomic path
+SET materialized_views_populate_atomically = 1;
+
 DROP TABLE IF EXISTS src_04653;
 DROP TABLE IF EXISTS mv_04653;
 

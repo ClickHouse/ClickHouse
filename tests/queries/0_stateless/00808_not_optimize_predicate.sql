@@ -1,6 +1,9 @@
 SET send_logs_level = 'fatal';
 SET convert_query_to_cnf = 0;
 SET allow_deprecated_error_prone_window_functions = 1;
+-- CI may inject False; with push-down below LIMIT BY off, the filter is not pushed through the
+-- `... ORDER BY id LIMIT 1` subquery, so the primary key is not used and `force_primary_key` throws.
+SET query_plan_filter_push_down_below_limit_by = 1;
 
 DROP TABLE IF EXISTS test_00808;
 CREATE TABLE test_00808(date Date, id Int8, name String, value Int64, sign Int8) ENGINE = CollapsingMergeTree(sign) ORDER BY (id, date);

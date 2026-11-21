@@ -27,9 +27,10 @@ echo "21.6"
 $CLICKHOUSE_CLIENT --compatibility=21.6 -q "select value from system.settings where name='async_socket_for_remote'"
 
 echo "use_concurrency_control"
+# The randomized `use_concurrency_control` would override the `compatibility` value, `DEFAULT` takes it back.
 echo "23.3"
-$CLICKHOUSE_CLIENT --compatibility=23.3 -q "select value from system.settings where name='use_concurrency_control'"
+$CLICKHOUSE_CLIENT --compatibility=23.3 -q "SET use_concurrency_control = DEFAULT; select value from system.settings where name='use_concurrency_control'"
 echo "24.10"
-$CLICKHOUSE_CLIENT --compatibility=24.10 -q "select value from system.settings where name='use_concurrency_control'"
+$CLICKHOUSE_CLIENT --compatibility=24.10 -q "SET use_concurrency_control = DEFAULT; select value from system.settings where name='use_concurrency_control'"
 echo "24.12"
-$CLICKHOUSE_CLIENT --compatibility=24.12 -q "select value from system.settings where name='use_concurrency_control'"
+$CLICKHOUSE_CLIENT --compatibility=24.12 -q "SET use_concurrency_control = DEFAULT; select value from system.settings where name='use_concurrency_control'"

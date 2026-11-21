@@ -8,6 +8,10 @@ SET join_algorithm = 'hash', query_plan_join_swap_table = 0, query_plan_optimize
 -- Without the join order optimization, the join does not convert its hash table into a `FixedHashMap`.
 SET query_plan_optimize_join_order_limit = 10;
 SET join_runtime_filter_from_fixed_hash_table = 0;
+-- The kind of runtime filter depends on how many keys and bytes the exact set takes (its byte limit is the Bloom filter size),
+-- and the shared fixed hash map on the conversion and the serial layout.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288, hash_join_layout = 'auto';
+SET enable_join_fixed_hash_table_conversion = 1;
 SET max_threads = 1;
 
 DROP TABLE IF EXISTS t_probe;

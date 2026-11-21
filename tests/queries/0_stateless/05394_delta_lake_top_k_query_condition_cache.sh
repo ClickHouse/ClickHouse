@@ -36,8 +36,9 @@ function insert()
 insert 1000000
 insert 100000
 
+# `use_query_condition_cache_for_top_k` is pinned because CI randomizes it and the lookups below assert it.
 SETTINGS="use_query_condition_cache = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-    input_format_parquet_use_native_reader_v3 = 1, allow_experimental_delta_kernel_rs = 1"
+    input_format_parquet_use_native_reader_v3 = 1, allow_experimental_delta_kernel_rs = 1, use_query_condition_cache_for_top_k = 1"
 
 function run()
 {

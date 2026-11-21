@@ -11,6 +11,9 @@
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+# Pin (randomized in CI): the scanned file counts need the engine predicate, which one query turns off by itself.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --delta_lake_enable_engine_predicate=1"
 set -e
 
 ROOT="${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}_delta_inverted_stats"

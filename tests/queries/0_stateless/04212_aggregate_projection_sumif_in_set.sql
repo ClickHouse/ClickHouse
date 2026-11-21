@@ -11,6 +11,9 @@
 -- in the constant comparison instead of getField().
 
 SET explain_query_plan_default = 'legacy';
+-- Pin (randomized in CI): below this bound the matcher treats the `IN` sets as non-matching, so
+-- the projection is rejected and the `force_optimize_projection = 1` queries throw.
+SET query_plan_max_set_size_for_projection_match = 10000;
 -- With plan-based parallel replicas, `ReadFromParallelReplicas` prints the shipped fragment in its description,
 -- and the fragment reads the main table before a replica chooses the projection. Cut descriptions short, so that
 -- only the `ReadFromMergeTree` lines of the local plan are seen.

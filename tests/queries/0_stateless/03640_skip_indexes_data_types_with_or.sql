@@ -11,6 +11,9 @@ SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
 SET use_skip_indexes = 1;
+-- Pin the disjunction RPN budget to its default: CI randomizes it as low as 8, which drops the
+-- `<Combined skip indexes>` step over the OR conditions this test asserts on.
+SET use_skip_indexes_for_disjunctions_max_rpn_elements = 128;
 SET optimize_or_like_chain = 0;
 SET optimize_extract_common_expressions = 1;
 SET optimize_substitute_columns = 0;

@@ -5,6 +5,7 @@
 
 SET enable_parallel_replicas = 0;
 SET enable_packed_string_keys_in_hash_join = 1;
+SET min_rows_for_packed_string_keys_in_hash_join = DEFAULT; -- The `default` case below
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 'false';

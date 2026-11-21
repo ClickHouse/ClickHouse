@@ -12,6 +12,8 @@ SET enable_parallel_single_level_merge = 1;
 SET enable_parallel_single_level_merge_by_index = 1;
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 16384;
+-- Pin (randomized in CI): a lower byte bound freezes the tables, which are then not merged partition by partition.
+SET adaptive_aggregator_freeze_threshold_bytes = 4194304;
 SET enable_fixed_and_packed_string_keys_in_aggregation = 1;
 
 -- Each lane feeds one thread, and every lane holds the same 1800 keys of a `UInt32` and a `String`, far fewer than
