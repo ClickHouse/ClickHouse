@@ -52,6 +52,8 @@
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
 #include <Access/ContextAccess.h>
+#include <Access/SettingsConstraints.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
@@ -99,6 +101,7 @@ namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsString distributed_plan_worker_cluster;
     extern const SettingsUInt64 max_bytes_to_transfer;
@@ -117,6 +120,8 @@ namespace ErrorCodes
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
     extern const int EXCHANGE_PEER_DISCONNECTED;
+    extern const int INVALID_SETTING_VALUE;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
 namespace FailPoints
@@ -1419,18 +1424,78 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
         return requested_workers;
 
-    /// With the client disabled the default cluster plans no distributed nodes, but an explicitly named
-    /// cluster cannot be served, so reject it instead of silently running locally.
     const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
     {
-        if (!worker_cluster.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker client is not enabled; cannot use worker cluster '{}'", worker_cluster);
-        return 0;
+        /// Local execution needs no client.
+        if (settings[Setting::distributed_plan_execute_locally])
+            return requested_workers;
+
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Stateless worker client is not enabled; cannot run a distributed query plan{}",
+            worker_cluster.empty() ? "" : fmt::format(" on worker cluster '{}'", worker_cluster));
     }
+
     /// Size the plan from the provider the query executes on; an unusable selection throws here.
     return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
+}
+
+void applyDistributedPlanSettings(ContextMutablePtr context)
+{
+    const auto & settings = context->getSettingsRef();
+
+    const auto & make_plan = settings[Setting::make_distributed_plan];
+    const auto & workers_num = settings[Setting::distributed_plan_workers_num];
+    const auto & worker_cluster = settings[Setting::distributed_plan_worker_cluster];
+
+    Strings wants;
+    if (make_plan.value)
+        wants.emplace_back("`make_distributed_plan = 1`");
+
+    if (workers_num.value > 0)
+        wants.emplace_back(fmt::format("`distributed_plan_workers_num = {}`", workers_num.value));
+
+    if (!worker_cluster.value.empty())
+        wants.emplace_back(fmt::format("`distributed_plan_worker_cluster = '{}'`", worker_cluster.value));
+
+    if (wants.empty())
+        return;
+
+    const char * requests_verb = wants.size() > 1 ? "request" : "requests";
+    const char * conflicting_settings = wants.size() > 1 ? "those settings" : "that setting";
+
+    if (make_plan.changed && !make_plan.value)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "`make_distributed_plan = 0` conflicts with {}, which {} a distributed query plan. Set "
+            "`make_distributed_plan` to 1 or omit it.",
+            fmt::join(wants, ", "), requests_verb);
+
+    if (workers_num.changed && workers_num.value == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "`distributed_plan_workers_num = 0` conflicts with {}, which {} a distributed query plan. Set "
+            "`distributed_plan_workers_num = DEFAULT`, or set {} back to `DEFAULT`.",
+            fmt::join(wants, ", "), requests_verb, conflicting_settings);
+
+    /// `distributed_plan_execute_locally` requests local execution, `distributed_plan_worker_cluster`
+    /// remote execution; reject the conflict.
+    if (settings[Setting::distributed_plan_execute_locally] && !worker_cluster.value.empty())
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "`distributed_plan_worker_cluster = '{}'` cannot be used with `distributed_plan_execute_locally = 1`, "
+            "which runs the plan in-process. Set one of them back to `DEFAULT`.",
+            worker_cluster.value);
+
+    /// Already on; nothing to infer.
+    if (make_plan.value)
+        return;
+
+    /// Judged like a value `compatibility` derives: constraints and feature tier, not readonly mode.
+    if (!context->getSettingsConstraintsAndCurrentProfiles()->constraints.allowsValueFromCompatibility("make_distributed_plan", Field(true)))
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+            "A settings constraint forbids enabling `make_distributed_plan`, but {} {} a distributed query plan. "
+            "Set {} back to `DEFAULT`.",
+            fmt::join(wants, ", "), requests_verb, conflicting_settings);
+
+    context->applySettingsChanges({SettingChange("make_distributed_plan", Field(true))});
 }
 
 TaskToHostMap::~TaskToHostMap() = default;

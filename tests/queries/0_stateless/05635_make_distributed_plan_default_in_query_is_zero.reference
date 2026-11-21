@@ -1,0 +1,9 @@
+plain SELECT: DEFAULT conflicts with a workers num that wants a distributed plan
+UNION (clause on the last arm): same conflict
+EXPLAIN PIPELINE of that SELECT: same conflict
+EXPLAIN ANALYZE of that SELECT: same conflict
+a session-level workers num also conflicts with an in-query DEFAULT
+without a workers num or worker cluster, an in-query DEFAULT is just an explicit 0, no error
+false
+a bare SET make_distributed_plan = DEFAULT still clears it (not an explicit 0), unlike an in-query SETTINGS clause
+true

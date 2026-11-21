@@ -1,0 +1,6 @@
+the derived plan adjusts an explicitly set value
+false
+the explicitly set value is unaffected once the workers num goes back to zero
+true
+and no other setting keeps a trace of the derived window
+0
