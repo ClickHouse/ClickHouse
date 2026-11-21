@@ -754,7 +754,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getReplicasCountForParallelReading(),
         getParallelReplicasStreamId()};
 
     /// Set total rows in progress only on initiator with local plan, otherwise rows will be counted multiple times.
@@ -1141,7 +1141,7 @@ Pipe ReadFromMergeTree::readInOrder(
             all_ranges_callback.value(),
             read_task_callback.value(),
             number_of_current_replica.value_or(client_info.number_of_current_replica),
-            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+            getReplicasCountForParallelReading(),
             std::move(stream_id)};
 
         CoordinationMode mode = read_type == ReadType::InOrder
@@ -4542,6 +4542,14 @@ String ReadFromMergeTree::getParallelReplicasStreamId() const
     return data.getStorageID().getFullTableName();
 }
 
+size_t ReadFromMergeTree::getReplicasCountForParallelReading()
+{
+    if (!replicas_count_for_parallel_reading)
+        replicas_count_for_parallel_reading
+            = ClusterProxy::getReplicasCountForParallelReplicas(context, context->getClusterForParallelReplicas());
+    return *replicas_count_for_parallel_reading;
+}
+
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
     return is_parallel_reading_from_replicas
@@ -6895,7 +6903,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getReplicasCountForParallelReading(),
         getParallelReplicasStreamId());
 }
 
@@ -6910,7 +6918,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
         all_ranges_callback.value(),
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
-        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        getReplicasCountForParallelReading(),
         getParallelReplicasStreamId()};
 
     auto get_coordination_mode = [&]

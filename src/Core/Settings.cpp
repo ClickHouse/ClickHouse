@@ -167,6 +167,8 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 </Note>
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. The block is made smaller still when the codec could compress it to more than 512 MiB, which only a chain of expanding codecs does. Data written in larger blocks by older versions cannot be read.
 )", 0) \
     DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
 In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
@@ -362,6 +364,13 @@ This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent 
 `clickhouse-client` or over the HTTP interface. The writing side of the pipeline
 (squashing the blocks and writing them to the destination table) is parallelized
 across up to this many threads.
+
+Destinations whose results depend on insertion order keep a single write stream when the input has one stream:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(including their replicated variants), `MergeTree` tables with a `UNIQUE KEY`, `EmbeddedRocksDB`, and `Distributed`
+(the engine of the table on the shard is not known). A `SELECT` with multiple output streams has no input order
+to preserve, so these destinations can retain parallel sinks. `KeeperMap` always keeps a single write stream.
+These restrictions also apply to destinations reached through a materialized view or an `Alias` table.
 
 Possible values:
 
@@ -5998,6 +6007,15 @@ Possible values:
 - 0 — Queries will be executed with delay.
 - 1 — Queries will be executed without delay.
 )", 0) \
+    DECLARE(Bool, truncate_removes_parts_immediately, false, R"(
+If enabled, `TRUNCATE` of a non-replicated `MergeTree` table removes the truncated parts from disk at once. Otherwise they become inactive and are removed after `old_parts_lifetime` seconds, like the source parts of a merge, so that running queries and readers with a stale list of parts can still read them. Replicated tables always remove the parts at once.
+
+Possible values:
+
+- 0 - The truncated parts are removed after `old_parts_lifetime` seconds.
+- 1 - The truncated parts are removed at once.
+)", 0, \
+        {"26.12", true, false, "New setting. `TRUNCATE` of a `MergeTree` table keeps the removed parts for `old_parts_lifetime` seconds instead of removing them at once"}) \
     DECLARE(Bool, enable_scalar_subquery_optimization, true, R"(
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 )", 0, \
@@ -10646,6 +10664,17 @@ completes, so higher values hide more upload latency at the cost of memory. `0` 
 writing the next one.
 )", 0, \
         {"26.11", 0, 8, "New setting. An INSERT into Iceberg on S3 or Azure no longer waits for the upload of each finished data file."}) \
+    DECLARE(UInt64, iceberg_insert_max_sort_buffer_bytes, 1_GiB, R"(
+Max uncompressed bytes an `INSERT` into an Iceberg table with a sort order buffers across all partitions before
+writing them sorted. Past it, the largest buffer is written early as a smaller sorted data file. 0 means unlimited.
+)", 0, \
+        {"26.12", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(Bool, iceberg_write_table_statistics_ndv, false, R"(
+A commit to an Iceberg table records the number of distinct values of each column in the table statistics of its
+snapshot, for [`use_iceberg_table_statistics_ndv`](#use_iceberg_table_statistics_ndv). A commit to a table in a REST
+or Unity catalog throws.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
