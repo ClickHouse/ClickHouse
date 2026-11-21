@@ -1,6 +1,9 @@
 -- Tags: no-fasttest
 -- no-fasttest: uniqTheta is not in the fast test build
 
+-- Disable force_primary_key_reverse_order: groupUniqArray(N) depends on the row order, which must match the insertion order of the `Memory` table
+SET force_primary_key_reverse_order = 0;
+
 -- Without GROUP BY, the functions that ignore repeated values add each value of a LowCardinality argument once:
 -- the results must be the same as for the same rows in ordinary columns.
 

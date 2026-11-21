@@ -10,6 +10,8 @@
 SET join_algorithm = 'direct,parallel_hash,hash';
 SET cross_to_inner_join_rewrite = 0;
 SET join_use_nulls = 0;
+-- Disable force_primary_key_reverse_order: `ANY INNER` pairs rows greedily, so its count depends on the row order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS bnl_any_probe;
 DROP TABLE IF EXISTS bnl_any_build;

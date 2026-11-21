@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks the row at a fixed `_part_offset`, which depends on the key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_streaming_queries = 1,
     enable_parallel_replicas = 0,
     automatic_parallel_replicas_mode = 0,

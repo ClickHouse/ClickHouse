@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests array functions, creates MergeTree with order-dependent output
+SET force_primary_key_reverse_order = 0;
+
 SELECT 'Negative tests';
 SELECT arraySymmetricDifference(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT arraySymmetricDifference(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

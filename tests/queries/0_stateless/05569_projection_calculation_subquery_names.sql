@@ -2,6 +2,9 @@
 -- projection is calculated by a query (a normal projection with `WHERE`, or an aggregate projection), the
 -- calculated columns must still get the names its metadata describes.
 
+-- Disable force_primary_key_reverse_order: The output includes `_part_offset`, which depends on the sort order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_subquery_src;
 DROP TABLE IF EXISTS t_subquery_join;
 DROP TABLE IF EXISTS t_subquery_normal;

@@ -1,6 +1,9 @@
 -- a projection with WHERE stores only the rows that pass its filter, and a part with no such rows has no projection part
 -- the twin table has the projection materialized and shows the read that the optimizer selects
 
+-- Disable force_primary_key_reverse_order: which rows land in the sample of the part, and so the empirical verdict, depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0, enable_parallel_replicas = 0, log_queries = 1;
 
 DROP TABLE IF EXISTS t_est;

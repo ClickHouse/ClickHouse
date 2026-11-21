@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: `groupArray` order follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS logs_04615;

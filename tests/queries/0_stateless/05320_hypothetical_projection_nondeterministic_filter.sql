@@ -1,4 +1,6 @@
 -- every plan of the statement sees the same value of `randConstant`, so a projection with the table's own order reads the same marks
+-- Disable force_primary_key_reverse_order: the test needs the projection to have the same order as the table
+SET force_primary_key_reverse_order = 0;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS same_order;

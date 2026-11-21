@@ -1,5 +1,8 @@
 -- The index is used when dividing by a Decimal constant, as long as the dividend rescale cannot overflow
 
+-- Disable force_primary_key_reverse_order: the reference pins granule counts of the index analysis, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_parallel_replicas = 0;
 
 -- { echoOn }

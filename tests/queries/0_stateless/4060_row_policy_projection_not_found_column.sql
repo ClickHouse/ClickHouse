@@ -1,6 +1,9 @@
 -- Row policy filter on a column that is a projection key but not in SELECT
 -- caused NOT_FOUND_COLUMN_IN_BLOCK when aggregate projection optimization was applied
 
+-- Row policy combined with aggregate projection breaks when sorting key is reversed
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS test_row_policy_proj;
 DROP ROW POLICY IF EXISTS test_rp_proj ON test_row_policy_proj;
 

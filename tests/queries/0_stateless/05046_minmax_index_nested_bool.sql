@@ -1,5 +1,8 @@
 -- The automatic statistics part pruner emits its own Granules: line, and auto_statistics_types is
 -- randomized, so the EXPLAIN assertions below would match the wrong entry without this.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 SET use_statistics_for_part_pruning = 0;
 
 CREATE TABLE arr (id UInt64, a Array(Tuple(Float64, Bool)), INDEX idx_a a TYPE minmax GRANULARITY 1)

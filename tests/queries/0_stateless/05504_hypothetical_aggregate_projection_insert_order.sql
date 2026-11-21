@@ -1,6 +1,8 @@
 -- an insert calculates the projection from the rows in the order of the insert, the estimate reads them in the order of the part
 -- `any` keeps the first value of a group, so the order of the rows changes the size of its state
 
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0, max_threads = 1;
 SET max_block_size = 65409, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;

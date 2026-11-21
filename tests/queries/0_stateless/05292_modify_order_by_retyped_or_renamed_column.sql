@@ -1,6 +1,9 @@
 -- An expression added to the sorting key by ALTER can use only the columns added by the same ALTER.
 -- A column retyped or renamed by it keeps its rows, and so do its subcolumns.
 
+-- Disable force_primary_key_reverse_order: `MODIFY ORDER BY` with an ascending `k` would change the direction of the reversed key column
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_modify_order_by;
 CREATE TABLE t_modify_order_by (k UInt32, s String, arr String, n UInt32, tp Tuple(a UInt32, b UInt32))
 ENGINE = MergeTree ORDER BY k;

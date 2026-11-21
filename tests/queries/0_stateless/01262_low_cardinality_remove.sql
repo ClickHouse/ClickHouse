@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order in MergeTree tables
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS testView;
 DROP TABLE IF EXISTS testTable;
 

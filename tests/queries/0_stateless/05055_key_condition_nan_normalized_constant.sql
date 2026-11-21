@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks the exact granule counts of index analysis
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_keycond_nan_norm;
 -- Without the `basic` statistics there is no second pruner, so the granule counts below are
 -- attributable to key analysis alone.

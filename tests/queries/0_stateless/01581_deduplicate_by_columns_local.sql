@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests DEDUPLICATE operations with specific key expectations
+SET force_primary_key_reverse_order = 0;
+
 --- See also tests/queries/0_stateless/01581_deduplicate_by_columns_replicated.sql
 
 --- local case

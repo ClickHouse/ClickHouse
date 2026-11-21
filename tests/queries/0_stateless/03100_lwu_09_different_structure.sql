@@ -1,5 +1,7 @@
 -- Tags: no-replicated-database
 -- no-replicated-database: 03100_lwu_03_join
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET insert_keeper_fault_injection_probability = 0.0;
 SET enable_lightweight_update = 1;

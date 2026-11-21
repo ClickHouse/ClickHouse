@@ -2,6 +2,8 @@
 -- nullIn / notNullIn on a not-ready set inside an ANY JOIN filter used to abort with
 -- LOGICAL_ERROR "Not-ready Set is passed as the second argument for function 'nullIn'"
 -- during plan-time dry-run in convertAnyJoinToSemiOrAntiJoin (STID 0250-4409).
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_left_04340;
 DROP TABLE IF EXISTS t_right_04340;

@@ -3,6 +3,9 @@
 -- With the legacy result types, `toStartOfInterval` and `dateTrunc` narrow a `Date32` argument into `Date` / `DateTime`,
 -- which wraps outside their range. Index analysis must not treat such a rounding as monotonic. Each `count()` is next to its truth.
 
+-- Disable force_primary_key_reverse_order: Tests primary key analysis, which depends on the sort order
+SET force_primary_key_reverse_order = 0;
+
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS t_asc;

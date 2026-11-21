@@ -8,6 +8,9 @@
 -- path, rename and drop, FINAL, mixed part types, a materialized view and a projection holding the column. Compared
 -- with a Memory table of the type without SHARED; each line prints an equality flag.
 
+-- Disable force_primary_key_reverse_order: the test reads rows in the physical order of the sorting key
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS mem; CREATE TABLE mem (x UInt64, y UInt64, json JSON(a UInt64, b String, c Array(UInt8))) ENGINE = Memory; INSERT INTO mem SELECT number, number, concat('{"a":', toString(number * 10), ',"b":"', repeat('x', number % 7), '","c":', toString(range(number % 4)), if(number % 2 = 0, concat(',"d":', toString(number)), ''), '}') FROM numbers(40);
 SELECT '-- w: merges, mutations rewriting and hardlinking the column, indexes and columns from a SHARED path, deletes, rename, drop';
 DROP TABLE IF EXISTS t_w; CREATE TABLE t_w (x UInt64, y UInt64, json JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8))) ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, min_compress_block_size = 1, merge_max_block_size = 5;

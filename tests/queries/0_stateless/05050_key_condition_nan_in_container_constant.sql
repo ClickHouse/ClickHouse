@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test checks granule counts of primary key analysis, which depend on the physical layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- Partition pruning must not drop rows because of a NaN inside a tuple constant:
 -- `(1, 1) < (nan, 1)` is false, so the row is returned.
 

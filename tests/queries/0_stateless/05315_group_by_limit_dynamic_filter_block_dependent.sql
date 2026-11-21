@@ -1,6 +1,9 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the dynamic filter links the aggregation to the local reading step.
 
+-- Disable force_primary_key_reverse_order: the reference pins which rows are read first, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- `GROUP BY key LIMIT n` drops the rows beyond the top-K boundary with a `__topKFilter` PREWHERE. That shrinks
 -- the blocks every step between the read and the aggregation sees, so the filter must not be installed when
 -- one of those steps, or the existing PREWHERE, depends on its block (`rowNumberInAllBlocks`, `blockSize`):

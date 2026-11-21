@@ -2,6 +2,9 @@
 -- is applied again in the pruning predicate, so it prunes; nested casts, e.g. a narrowing `CAST` compared with a wider
 -- key, are not used for pruning, since `CAST(300 AS UInt8)` is 44 and the row 300 must be read.
 
+-- Disable force_primary_key_reverse_order: The asserted granule counts of the runtime filter index analysis depend on the sort order
+SET force_primary_key_reverse_order = 0;
+
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;

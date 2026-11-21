@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: output row order depends on MergeTree sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists count_lc_test;
 
 CREATE TABLE count_lc_test

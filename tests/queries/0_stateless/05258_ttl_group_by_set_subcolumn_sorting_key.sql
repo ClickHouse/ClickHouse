@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `TTL GROUP BY` aggregates rows in the sorting key order, the result depends on the key direction
+SET force_primary_key_reverse_order = 0;
+
 -- `TTL GROUP BY ... SET` must keep the part sorted when the sorting key is a subcolumn of a column assigned by `SET`.
 -- A merge calculates `n.a` before the TTL, so the sorting key must be recalculated from `n` after `SET`.
 -- https://github.com/ClickHouse/ClickHouse/issues/121861

@@ -1,5 +1,7 @@
 -- Graphite FINAL rolls up rows with different times, so a time bound inside indexHint must not prune either
 SET optimize_on_insert = 0;
+-- Disable force_primary_key_reverse_order: Graphite rollup keeps the version of the row which comes first in the sort order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_graphite_final_hint;
 

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order potentially affecting aggregation-in-order
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS test02315;
 
 CREATE TABLE test02315(a UInt64, b UInt64) ENGINE=MergeTree() ORDER BY (a, b);

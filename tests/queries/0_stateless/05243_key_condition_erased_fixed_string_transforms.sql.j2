@@ -1,6 +1,10 @@
 -- Padded comparison semantics must survive both ways of transforming constants into key values.
 -- `toString` isolates monotonic transforms for inequalities; `reverse` isolates deterministic
 -- transforms for equality. The byte strings differ only in padding, so losing a match is visible.
+
+-- Disable force_primary_key_reverse_order: the selected marks depend on the physical order of the rows, which follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 

@@ -1,3 +1,6 @@
+-- PREWHERE with fused functions and IN subquery produces wrong results when the key is reversed.
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (number UInt64) ENGINE = MergeTree() ORDER BY number AS SELECT * FROM numbers(2);
 

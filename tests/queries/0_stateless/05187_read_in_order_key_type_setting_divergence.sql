@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: EXPLAIN output shows the read type `InOrder`/`InReverseOrder`, which flips with a descending key
+SET force_primary_key_reverse_order = 0;
+
 -- A key expression is resolved twice: once by the table under its own settings, once by the
 -- query under the session's. When a setting changes its result type, the two are different
 -- functions with different orders, so read-in-order must not treat them as interchangeable.

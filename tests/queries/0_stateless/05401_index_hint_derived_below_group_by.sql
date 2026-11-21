@@ -1,6 +1,9 @@
 -- Tags: no-parallel-replicas
 -- https://github.com/ClickHouse/ClickHouse/issues/124502: a derived hint still prunes below GROUP BY and LIMIT BY
 
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 SET optimize_and_compare_chain = 1;
 SET query_plan_filter_push_down = 1;
 SET use_query_condition_cache = 0;

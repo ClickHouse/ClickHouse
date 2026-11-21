@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: backup database output depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 BACKUP_DATABASE_NAME=${CLICKHOUSE_TEST_UNIQUE_NAME}_backup
 RESTORE_DATABASE_NAME=${CLICKHOUSE_TEST_UNIQUE_NAME}_restore
 

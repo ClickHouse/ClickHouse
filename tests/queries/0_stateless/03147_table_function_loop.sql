@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests loop table function, output depends on MergeTree table ordering
+SET force_primary_key_reverse_order = 0;
+
 SELECT * FROM loop(numbers(3)) LIMIT 10;
 SELECT * FROM loop (numbers(3)) LIMIT 10 settings max_block_size = 1;
 

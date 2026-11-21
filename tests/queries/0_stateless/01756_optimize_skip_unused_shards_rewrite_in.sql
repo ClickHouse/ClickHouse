@@ -1,4 +1,6 @@
 -- Tags: shard
+-- Disable force_primary_key_reverse_order: tests distributed query planning, output order depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 -- NOTE: this test cannot use 'current_database = currentDatabase()',
 -- because it does not propagated via remote queries,

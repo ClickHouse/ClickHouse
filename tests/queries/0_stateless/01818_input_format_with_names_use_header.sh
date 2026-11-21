@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests CSV input format parsing, creates MergeTree with order-dependent output
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS \`01818_with_names\`;"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE \`01818_with_names\` (t String) ENGINE = MergeTree ORDER BY t;"

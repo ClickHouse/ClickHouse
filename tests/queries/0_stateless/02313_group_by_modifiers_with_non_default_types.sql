@@ -1,3 +1,5 @@
+-- GROUP BY ROLLUP/CUBE with Enum types produces different row counts with reverse key
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS test02313;
 
 CREATE TABLE test02313

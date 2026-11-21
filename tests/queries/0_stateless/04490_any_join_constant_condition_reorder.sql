@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `ANY JOIN` picks the matching row depending on the physical row order
+SET force_primary_key_reverse_order = 0;
+
 -- Test for a regression where join order optimization converted `ANY INNER JOIN ... ON 1`
 -- (constant-true condition, empty join expression, hence an unconnected pair in the join graph)
 -- to a CROSS join, silently dropping ANY strictness and returning a full cartesian product.

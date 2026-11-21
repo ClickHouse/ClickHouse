@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;

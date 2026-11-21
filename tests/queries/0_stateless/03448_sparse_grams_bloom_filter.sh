@@ -10,6 +10,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # making the rows_read assertions below non-deterministic.
 CLICKHOUSE_CLIENT+=" --use_query_condition_cache=0"
 
+
+# Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx2;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx3;"

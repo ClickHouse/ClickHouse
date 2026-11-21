@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests materialized views with AggregatingMergeTree target, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS test_mv;
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test_input;

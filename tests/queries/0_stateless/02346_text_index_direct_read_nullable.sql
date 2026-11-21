@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests text index queries on MergeTree, behavior depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 -- Test that text index direct read optimization works correctly with nullable needles.
 
 DROP TABLE IF EXISTS tab;

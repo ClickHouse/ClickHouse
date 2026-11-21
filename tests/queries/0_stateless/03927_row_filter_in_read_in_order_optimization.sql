@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes read-in-order optimization breaking EXPLAIN ReadType output
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET optimize_read_in_order = 1;

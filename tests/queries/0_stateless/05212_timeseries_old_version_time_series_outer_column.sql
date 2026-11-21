@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Disable force_primary_key_reverse_order: the order of samples inside the series follows the sorting key direction
+SET force_primary_key_reverse_order = 0;
 --
 -- The outer column `time_series` of a TimeSeries table was renamed to `samples` in version 3 (see TimeSeriesVersion.h),
 -- and a table of an earlier version keeps the old name. The generation of the column is covered by

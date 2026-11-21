@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: covers the ascending key; a descending key gives a wrong `count()`, see https://github.com/ClickHouse/ClickHouse/issues/124155
+SET force_primary_key_reverse_order = 0;
+
 -- A boundary mark of a `Tuple` key column can hold a `NULL` inside the tuple. The key stores NULLs
 -- last, while `Field` order puts them below every value, so such a mark used to compare below the mark
 -- before it: the granule between them looked empty and the rows it holds were never read.

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks the exact mark ranges dropped by a projection index
+SET force_primary_key_reverse_order = 0;
+
 -- Test for use_indexes_refiner_in_read_pools: mark ranges fully filtered out by a projection
 -- index are dropped inside MergeTree read pools before read tasks are created for them.
 
