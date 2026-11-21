@@ -8,9 +8,9 @@ namespace DB
 class ParserDropRewriteRuleQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "DROP RULE query"; }
+    [[nodiscard]] const char * getName() const override { return "DROP RULE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 };
 }

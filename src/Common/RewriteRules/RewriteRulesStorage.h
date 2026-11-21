@@ -14,9 +14,9 @@ class RewriteRulesStorage : private WithContext
 public:
     static std::unique_ptr<RewriteRulesStorage> create(const ContextPtr & context);
 
-    RewriteRuleObjectsList getAll() const;
+    [[nodiscard]] RewriteRuleObjectsList getAll() const;
 
-    MutableRewriteRuleObjectPtr get(const std::string & rule_name) const;
+    [[nodiscard]] MutableRewriteRuleObjectPtr get(const std::string & rule_name) const;
 
     void create(const RewriteRuleObjectPtr & query);
 
@@ -36,7 +36,7 @@ public:
     /// reload that failed after listing is retried rather than taken for done.
     void commitUpdate();
 
-    bool isReplicated() const;
+    [[nodiscard]] bool isReplicated() const;
 
 private:
     class IRewriteRulesStorage;
@@ -47,9 +47,9 @@ private:
 
     RewriteRulesStorage(std::shared_ptr<IRewriteRulesStorage> storage_, ContextPtr context_);
 
-    std::vector<std::string> listRules() const;
+    [[nodiscard]] std::vector<std::string> listRules() const;
 
-    ASTCreateRewriteRuleQuery readCreateQuery(const std::string & rule_name) const;
+    [[nodiscard]] ASTCreateRewriteRuleQuery readCreateQuery(const std::string & rule_name) const;
 
     void writeCreateQuery(const String & rule_name, const String & create_query, bool replace = false);
 };

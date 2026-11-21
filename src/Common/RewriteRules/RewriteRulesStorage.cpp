@@ -68,11 +68,11 @@ class RewriteRulesStorage::IRewriteRulesStorage
 public:
     virtual ~IRewriteRulesStorage() = default;
 
-    virtual bool exists(const std::string & path) const = 0;
+    [[nodiscard]] virtual bool exists(const std::string & path) const = 0;
 
-    virtual std::vector<std::string> list() const = 0;
+    [[nodiscard]] virtual std::vector<std::string> list() const = 0;
 
-    virtual std::string read(const std::string & path) const = 0;
+    [[nodiscard]] virtual std::string read(const std::string & path) const = 0;
 
     virtual void write(const std::string & path, const std::string & data, bool replace) = 0;
 
@@ -80,7 +80,7 @@ public:
 
     virtual bool removeIfExists(const std::string & path) = 0;
 
-    virtual bool isReplicated() const = 0;
+    [[nodiscard]] virtual bool isReplicated() const = 0;
 
     virtual bool waitUpdate(size_t /* timeout */) { return false; }
 
@@ -104,9 +104,9 @@ public:
 
     ~LocalStorage() override = default;
 
-    bool isReplicated() const override { return false; }
+    [[nodiscard]] bool isReplicated() const override { return false; }
 
-    std::vector<std::string> list() const override
+    [[nodiscard]] std::vector<std::string> list() const override
     {
         if (!fs::exists(root_path))
             return {};
@@ -137,12 +137,12 @@ public:
         return elements;
     }
 
-    bool exists(const std::string & file_name) const override
+    [[nodiscard]] bool exists(const std::string & file_name) const override
     {
         return fs::exists(getPath(file_name));
     }
 
-    std::string read(const std::string & file_name) const override
+    [[nodiscard]] std::string read(const std::string & file_name) const override
     {
         ReadBufferFromFile in(getPath(file_name));
         std::string data;
@@ -220,7 +220,7 @@ public:
 protected:
     std::string root_path;
 
-    std::string getPath(const std::string & file_name) const
+    [[nodiscard]] std::string getPath(const std::string & file_name) const
     {
         const auto file_name_as_path = fs::path(file_name);
         if (file_name_as_path.is_absolute())

@@ -11,10 +11,10 @@ protected:
     const char * end;
     bool allow_settings_after_format_in_insert;
 
-    const char * getName() const override { return "ALTER RULE query"; }
+    [[nodiscard]] const char * getName() const override { return "ALTER RULE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
     explicit ParserAlterRewriteRuleQuery(const char * end_, bool allow_settings_after_format_in_insert_ = false)
         : end(end_)
