@@ -1902,6 +1902,8 @@ KeyCondition::KeyCondition(
             for (const auto & mapping : element.set_index->getIndexesMapping())
                 next_function_number += mapping.functions.size();
     }
+
+    forEachAtomWithPolarity(rpn, [](RPNElement & element, bool positive) { element.under_not = !positive; });
 }
 
 KeyCondition::KeyCondition(
@@ -8097,13 +8099,14 @@ bool keyTypeMayHoldNestedNullOrNaN(const DataTypePtr & key_type)
 /// puts such a value above every value that shares its prefix, and a row whose first differing position
 /// holds one compares greater than the constant at row level too, or is `NULL`, which `WHERE` rejects
 /// as well. So a range bounded above by an ordinary value excludes it on both sides, and only a range
-/// that reaches `+inf` can claim it as matching, while a negated range may claim it either way. A set
-/// atom is not affected: both the set index and the row-level `IN` compare whole tuples by hash, so a
-/// nested `NULL` or `NaN` matches only its identical copy on both sides.
+/// that reaches `+inf` can claim it as matching, while `FUNCTION_NOT_IN_RANGE` or a range under `NOT`
+/// may claim it either way. A set atom is not affected: both the set index and the row-level `IN`
+/// compare whole tuples by hash, so a nested `NULL` or `NaN` matches only its identical copy on both sides.
 bool atomMayClaimNestedNullOrNaN(const KeyCondition::RPNElement & element)
 {
     return element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
-        || (element.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE && element.range.right.isPositiveInfinity());
+        || (element.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE
+            && (element.under_not || element.range.right.isPositiveInfinity()));
 }
 
 /// Whether the analysed range of a key column, read by `element`, may hold a NULL value. A NULL key
