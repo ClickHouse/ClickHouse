@@ -618,9 +618,20 @@ void AggregateFunctionTuple::mergeAndDestroyBatch(
     std::atomic<bool> & is_cancelled,
     Arena * arena) const
 {
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-        nested_functions[i]->mergeAndDestroyBatch(
-            dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    size_t i = 0;
+    try
+    {
+        for (; i < nested_functions.size(); ++i)
+            nested_functions[i]->mergeAndDestroyBatch(
+                dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    }
+    catch (...)
+    {
+        /// The function that threw has destroyed its own states of the batch, the following ones are untouched.
+        for (size_t k = i + 1; k < nested_functions.size(); ++k)
+            nested_functions[k]->destroyBatch(0, size, rhs_places, offset + state_offsets[k]);
+        throw;
+    }
 }
 
 void AggregateFunctionTuple::serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const
@@ -778,14 +789,14 @@ namespace
 class AggregateFunctionCombinatorTuple final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Tuple"; }
+    [[nodiscard]] String getName() const override { return "Tuple"; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
-    bool transformsMultipleNestedFunctions() const override { return true; }
+    [[nodiscard]] bool transformsMultipleNestedFunctions() const override { return true; }
 
     /// The elements of the tuples are passed to the nested functions row by row, so the tuples are converted around.
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     void convertVariantArgumentsAroundMultipleNestedFunctions(
         DataTypes & arguments, const VectorWithMemoryTracking<DataTypes> & converted_nested_arguments_list) const override
@@ -805,7 +816,7 @@ public:
         }
     }
 
-    VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & arguments) const override
+    [[nodiscard]] VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -849,7 +860,7 @@ public:
         return nested_arguments_list;
     }
 
-    AggregateFunctionPtr transformAggregateFunctionFromMultipleNestedFunctions(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunctionFromMultipleNestedFunctions(
         const String & nested_name,
         VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions,
         const AggregateFunctionProperties &,

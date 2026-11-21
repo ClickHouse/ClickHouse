@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -693,6 +694,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     filename_generator.setBaseMetadataFile(state.table_state.metadata_version, state.table_state.metadata_file_path);
     filename_generator.setCompressionMethod(compression_method);
 
+    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
     std::vector<std::string> files_for_cleanup;
     bool committed = false;
 
@@ -702,6 +704,13 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     });
 
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
+
+    /// DROP PARTITION writes no rows.
+    if (write_statistics)
+        if (auto statistics_file_path = writeIcebergTableStatisticsNdv(
+                /*column_sketches=*/ nullptr, /*union_with_parent=*/ true, state.metadata_object, new_snapshot, filename_generator,
+                components.path_resolver, object_storage, context))
+            files_for_cleanup.push_back(*statistics_file_path);
 
     try
     {

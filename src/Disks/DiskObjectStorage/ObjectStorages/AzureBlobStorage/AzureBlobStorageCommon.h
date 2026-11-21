@@ -72,7 +72,7 @@ struct Endpoint
     std::optional<bool> container_already_exists;
     std::optional<bool> add_account_name_to_url;
 
-    String getContainerEndpoint() const
+    [[nodiscard]] String getContainerEndpoint() const
     {
         String url = storage_account_url;
         if (url.ends_with('/'))
@@ -93,7 +93,7 @@ struct Endpoint
         return url;
     }
 
-    String getServiceEndpoint() const
+    [[nodiscard]] String getServiceEndpoint() const
     {
         String url = storage_account_url;
 
@@ -132,15 +132,15 @@ class ContainerClientWrapper
 public:
     ContainerClientWrapper(RawContainerClient client_, String blob_prefix_);
 
-    bool IsClientForDisk() const;
-    BlobClient GetBlobClient(const String & blob_name) const;
-    BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
-    BlobContainerPropertiesRespones GetProperties() const;
-    ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+    [[nodiscard]] bool IsClientForDisk() const;
+    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
+    [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
+    [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
 
-    BlobContainerBatch CreateBatch() const;
-    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
-    String GetBlobPath(const String & blob_name) const;
+    [[nodiscard]] BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    [[nodiscard]] String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;
@@ -173,26 +173,30 @@ struct ConnectionParams
     String workload_identity_client_id;
     String workload_identity_tenant_id;
 
-    String getContainer() const { return endpoint.container_name; }
-    String getConnectionURL() const;
+    [[nodiscard]] String getContainer() const { return endpoint.container_name; }
+    [[nodiscard]] String getConnectionURL() const;
     /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
-    String getConnectionURLWithoutQuery() const;
+    [[nodiscard]] String getConnectionURLWithoutQuery() const;
 
-    std::unique_ptr<ServiceClient> createForService() const;
-    std::unique_ptr<ContainerClient> createForContainer() const;
+    [[nodiscard]] std::unique_ptr<ServiceClient> createForService() const;
+    [[nodiscard]] std::unique_ptr<ContainerClient> createForContainer() const;
 
     /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
-    bool checkOrDropServerManagedCredentials() const;
+    bool checkOrDropServerManagedCredentials() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
 
     /// Whether requests would authenticate with the server's own identity: no SAS token and a server-managed `auth_method`.
-    bool usesServerManagedCredentials() const;
+    [[nodiscard]] bool usesServerManagedCredentials() const;
 
     /// `auth_method` for a caller that obtains tokens from it directly; throws `ACCESS_DENIED` if it is off limits.
-    AuthMethod getPermittedAuthMethod() const;
+    [[nodiscard]] AuthMethod getPermittedAuthMethod() const;
 
     /// Throws `ACCESS_DENIED` if a storage defined in user SQL uses the server's own identity and the accessing session
     /// is restricted. Does not change the parameters, so a client kept for others is not affected.
     void checkSessionMayUseServerIdentity(bool restrict_server_credentials) const;
+
+    /// Like `checkSessionMayUseServerIdentity`, but does not read `forbid_implicit_credentials`, which every session
+    /// overwrites in `applyNewSettings`. For delta-kernel, which builds its credentials from these parameters.
+    void checkSessionMayUseServerIdentityIgnoringSharedFlag(bool restrict_server_credentials) const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
@@ -224,12 +228,13 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 
 /// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the
 /// tag is absent - in release builds too, because `AZURE_ASSERT_MSG` expands to a bare `std::abort`
-/// under `NDEBUG`. Never call it directly on a value that comes from a remote endpoint: the endpoint
-/// is under no obligation to send the header, and one that does not must not take the server down.
-inline String getETagOrEmpty(const Azure::ETag & etag)
-{
-    return etag.HasValue() ? etag.ToString() : "";
-}
+/// under `NDEBUG`. Never call it directly on a value that comes from a remote endpoint; use this
+/// function instead.
+///
+/// Azure Blob Storage and every known compatible implementation send a non-empty header in every
+/// `GetProperties`, `ListBlobs` and `Download` answer, so an absent or empty header means the endpoint
+/// is not behaving correctly.
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 

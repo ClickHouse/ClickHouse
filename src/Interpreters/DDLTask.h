@@ -53,15 +53,15 @@ struct HostID
 
     static HostID fromString(const String & host_port_str);
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         return Cluster::Address::toString(host_name, port);
     }
 
-    String readableString() const;
+    [[nodiscard]] String readableString() const;
 
-    bool isLocalAddress(UInt16 clickhouse_port) const;
-    bool isLoopbackHost() const;
+    [[nodiscard]] bool isLocalAddress(UInt16 clickhouse_port) const;
+    [[nodiscard]] bool isLoopbackHost() const;
 
     static String applyToString(const HostID & host_id)
     {
@@ -72,8 +72,7 @@ struct HostID
 
 struct DDLLogEntry
 {
-    static constexpr const UInt64 OLDEST_VERSION = 1;
-    static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
+    /// The oldest supported version.
     static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
     static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
     static constexpr const UInt64 PRESERVE_INITIAL_QUERY_ID_VERSION = 5;
@@ -85,7 +84,8 @@ struct DDLLogEntry
     /// Remember to update the value below once new version is added
     static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 8;
 
-    UInt64 version = 1;
+    /// Servers that wrote version 3 as 2 reject version 3 in a mixed-version cluster.
+    UInt64 version = OPENTELEMETRY_ENABLED_VERSION;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
@@ -101,7 +101,7 @@ struct DDLLogEntry
     Strings initiator_user_roles;
 
     void setSettingsIfRequired(ContextPtr context);
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parse(const String & data);
     void assertVersion() const;
 };

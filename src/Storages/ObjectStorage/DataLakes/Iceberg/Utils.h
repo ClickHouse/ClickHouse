@@ -32,6 +32,7 @@ class GenericDatum;
 namespace DB
 {
 struct StorageID;
+struct FormatSettings;
 }
 
 namespace DataLake
@@ -41,6 +42,10 @@ class ICatalog;
 
 namespace DB::Iceberg
 {
+
+/// The Iceberg timestamps are UTC instants: the reference implementation reads and writes ORC with `useUTCTimestamp`,
+/// so the ORC time zones of the query do not apply.
+void useUTCForORCTimestamps(FormatSettings & settings);
 
 void writeMessageToFile(
     const String & data,
@@ -155,6 +160,8 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+bool isIcebergVariantType(const DataTypePtr & type);
+void checkIcebergTypeSupportedByFormatVersion(const Poco::Dynamic::Var & type, Int64 format_version, const String & column_name);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
@@ -234,9 +241,14 @@ enum class FileCategory : uint8_t
 
 FileCategory inspectFileCategory(const String & relative_path);
 
+/// The fields of the table's default sort order; null if it has none.
+Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object);
+
+/// If `sort_description` is set, it receives the order over the key columns `sortBlockByKeyDescription` appends, NULLs placed per `null-order`.
 KeyDescription getSortingKeyDescriptionFromMetadata(
-    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description = nullptr);
+/// Sorts the block by the key `sort_description`, appending computed key columns under names no block column has; `result_sort_description` is pointed at the sort columns.
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context);
 
 void forEachAvroEntry(
     const String & filename,
