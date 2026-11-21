@@ -34,3 +34,17 @@ private:
     void onAllocImpl(void * ptr, size_t size) const;
     void onFreeImpl(void * ptr, size_t size) const;
 };
+
+/// Suppress MemorySample traces on threads that process the trace log.
+class MemorySamplingBlockerInThread
+{
+public:
+    explicit MemorySamplingBlockerInThread(bool block = true);
+    ~MemorySamplingBlockerInThread();
+
+    MemorySamplingBlockerInThread(const MemorySamplingBlockerInThread &) = delete;
+    MemorySamplingBlockerInThread & operator=(const MemorySamplingBlockerInThread &) = delete;
+
+private:
+    const bool was_blocked;
+};
