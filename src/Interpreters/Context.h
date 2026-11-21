@@ -694,6 +694,9 @@ protected:
     /// Set for the context `system.tables` reads table totals with: a storage that would have to read remote
     /// storage (e.g. data lake metadata) to compute `totalRows`/`totalBytes` returns nullopt instead.
     bool totals_without_storage_access = false;
+    /// Set for a sink created in the middle of an insert, e.g. for a later block of an insert into a `TimeSeries` table.
+    /// Such a sink may delay the insert but must not reject it for too many parts, like the later blocks of one sink.
+    bool is_insert_continuation = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -2116,6 +2119,9 @@ public:
 
     bool isAnalyzingBackgroundExpressions() const { return is_analyzing_background_expressions; }
     void setAnalyzingBackgroundExpressions(bool value) { is_analyzing_background_expressions = value; }
+
+    bool isInsertContinuation() const { return is_insert_continuation; }
+    void setInsertContinuation() { is_insert_continuation = true; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }

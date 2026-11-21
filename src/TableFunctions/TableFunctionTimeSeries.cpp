@@ -1,5 +1,7 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -77,6 +79,9 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
 {
+    /// Reading needs SELECT and writing needs INSERT (see `executeImpl`), so finding the target needs one of them.
+    if (!context->getAccess()->isGranted(AccessType::INSERT, time_series_storage_id.database_name, time_series_storage_id.table_name))
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     return time_series_storage->getTargetTable(target_kind, context);
 }
@@ -94,15 +99,32 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
-    return getTargetTable(context);
+    auto target_table = getTargetTable(context);
+    /// A write needs INSERT on the TimeSeries table and on the target, like `INSERT INTO` the TimeSeries table.
+    if (is_insert_query)
+    {
+        context->checkAccess(AccessType::INSERT, time_series_storage_id);
+        context->checkAccess(AccessType::INSERT, target_table->getStorageID());
+    }
+    else
+    {
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
+        /// The planner doesn't check the storage returned by a table function, so the whole target must be readable.
+        context->checkAccess(AccessType::SELECT, target_table->getStorageID());
+    }
+    return target_table;
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
+    auto target_table = getTargetTable(context);
+    /// The columns are the target's, so this needs what `DESCRIBE` of the target needs.
+    context->checkAccess(AccessType::SHOW_COLUMNS, target_table->getStorageID());
+    checkSourceStorageAccess(context, target_table, target_table->getStorageID(), AccessType::SHOW_COLUMNS);
+    auto metadata_snapshot = target_table->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
 

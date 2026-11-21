@@ -1,0 +1,41 @@
+-- with SELECT:
+timeSeriesSamples: grant INSERT ON db.ts (ACCESS_DENIED)
+timeSeriesTags: grant INSERT ON db.ts (ACCESS_DENIED)
+timeSeriesTimeRanges: grant INSERT ON db.ts (ACCESS_DENIED)
+timeSeriesMetricFamilies: grant INSERT ON db.ts (ACCESS_DENIED)
+0	0	0	0
+-- with SELECT, INSERT on the TimeSeries table:
+timeSeriesSamples: grant INSERT ON db.<samples target> (ACCESS_DENIED)
+timeSeriesTags: grant INSERT ON db.<tags target> (ACCESS_DENIED)
+timeSeriesTimeRanges: grant INSERT ON db.<timeranges target> (ACCESS_DENIED)
+timeSeriesMetricFamilies: grant INSERT ON db.<metricfamilies target> (ACCESS_DENIED)
+0	0	0	0
+-- with SELECT, INSERT on the TimeSeries table and its targets:
+timeSeriesSamples: OK
+timeSeriesTags: OK
+timeSeriesTimeRanges: OK
+timeSeriesMetricFamilies: OK
+1	1	1	1
+-- with INSERT on the TimeSeries table and its targets:
+timeSeriesSamples: OK
+timeSeriesTags: OK
+timeSeriesTimeRanges: OK
+timeSeriesMetricFamilies: OK
+2	2	2	2
+-- reading needs SELECT on the TimeSeries table and on the whole target:
+without SELECT on the TimeSeries table: grant SELECT ON db.ts (ACCESS_DENIED)
+inner target without SELECT: grant SELECT ON db.<tags target> (ACCESS_DENIED)
+inner target with SELECT: OK
+external target without grants: grant SELECT ON db.ext_tags (ACCESS_DENIED)
+external target without grants, DESCRIBE: grant SHOW COLUMNS ON db.ext_tags (ACCESS_DENIED)
+external target with SELECT on other columns: grant SELECT ON db.ext_tags (ACCESS_DENIED)
+external target with SELECT: OK
+external target with SELECT, DESCRIBE: OK
+-- the selector and the PromQL table functions need SELECT on the TimeSeries table:
+timeSeriesSelector with SELECT on the targets only: grant SELECT ON db.ts (ACCESS_DENIED)
+prometheusQuery with SELECT on the targets only: grant SELECT ON db.ts (ACCESS_DENIED)
+prometheusQueryRange with SELECT on the targets only: grant SELECT ON db.ts (ACCESS_DENIED)
+timeSeriesSelector with SELECT on the targets only, reading: grant SELECT ON db.ts (ACCESS_DENIED)
+timeSeriesSelector with SELECT: OK
+prometheusQuery with SELECT: OK
+prometheusQueryRange with SELECT: OK

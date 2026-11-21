@@ -173,13 +173,17 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     /// deferred to onStart, so that the error still surfaces during execution, where the callers
     /// expect it (e.g. `materialized_views_ignore_errors` and async insert flushes handle errors
     /// thrown by an executing sink, not errors thrown while the insert chain is being built).
-    try
+    /// A sink created in the middle of an insert doesn't check: the insert has already written parts.
+    if (!context->isInsertContinuation())
     {
-        storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
-    }
-    catch (...)
-    {
-        too_many_parts_exception = std::current_exception();
+        try
+        {
+            storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+        }
+        catch (...)
+        {
+            too_many_parts_exception = std::current_exception();
+        }
     }
 }
 

@@ -5,7 +5,7 @@
 
 SET allow_experimental_time_series_table = 1;
 
-DROP TABLE IF EXISTS ts, ts_fail, not_ts, ts_v6, ts_v7;
+DROP TABLE IF EXISTS ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags, ts_ext_metric_families, ext_metric_families, ts_ttl_metric_families;
 
 -- The inner tables use MergeTree, so the counts below don't depend on background merges.
 CREATE TABLE ts ENGINE = TimeSeries TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family;
@@ -123,4 +123,38 @@ INSERT INTO ts_v6 (metric_family, type, unit, help) VALUES ('m', 'gauge', 'secon
 SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts_v6);
 ALTER TABLE ts_v6 MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 10; -- { serverError INVALID_SETTING_VALUE }
 
-DROP TABLE ts, ts_fail, not_ts, ts_v6, ts_v7;
+SELECT '--- an external tags table has no cache, because it can lose rows the cache cannot see ---';
+CREATE TABLE ext_tags_no_bounds (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String))
+ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
+CREATE TABLE ts_ext_tags ENGINE = TimeSeries SETTINGS version = 9 TAGS ext_tags_no_bounds;
+INSERT INTO ts_ext_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
+TRUNCATE TABLE ext_tags_no_bounds;
+INSERT INTO ts_ext_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
+SELECT count() FROM ext_tags_no_bounds;
+
+SELECT '--- an external metric families table has no cache, because it can lose rows the cache cannot see ---';
+CREATE TABLE ext_metric_families (metric_family String, type String, unit String, help String) ENGINE = MergeTree ORDER BY metric_family;
+CREATE TABLE ts_ext_metric_families ENGINE = TimeSeries SETTINGS version = 9 METRICS ext_metric_families;
+INSERT INTO ts_ext_metric_families (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+TRUNCATE TABLE ext_metric_families;
+INSERT INTO ts_ext_metric_families (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM ext_metric_families;
+
+SELECT '--- an inner tags table with a TTL has no cache, because the TTL removes rows the cache cannot see ---';
+-- The tags table uses MergeTree, so a time series written twice has two rows.
+CREATE TABLE ts_ttl_tags ENGINE = TimeSeries
+    TAGS INNER COLUMNS (written DateTime DEFAULT now())
+    TAGS INNER ENGINE = MergeTree ORDER BY (metric_name, id) TTL written + INTERVAL 10 YEAR;
+INSERT INTO ts_ttl_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)]);
+INSERT INTO ts_ttl_tags (metric_name, tags, samples) VALUES ('http_requests', {'job': 'api'}, [(toDateTime64('2026-01-01 00:00:01', 3), 2.)]);
+SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts_ttl_tags);
+
+SELECT '--- an inner metric families table with a TTL has no cache, because the TTL removes rows the cache cannot see ---';
+CREATE TABLE ts_ttl_metric_families ENGINE = TimeSeries
+    METRIC FAMILIES INNER COLUMNS (written DateTime DEFAULT now())
+    METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family TTL written + INTERVAL 10 YEAR;
+INSERT INTO ts_ttl_metric_families (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+INSERT INTO ts_ttl_metric_families (metric_family, type, unit, help) VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies({CLICKHOUSE_DATABASE:Identifier}.ts_ttl_metric_families);
+
+DROP TABLE ts, ts_fail, not_ts, ts_v6, ts_v7, ts_ext_tags, ext_tags_no_bounds, ts_ttl_tags, ts_ext_metric_families, ext_metric_families, ts_ttl_metric_families;

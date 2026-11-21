@@ -1,0 +1,6 @@
+--- a failed samples insert leaves no recent samples ---
+0
+0
+--- with a deduplication token, the samples of later blocks are kept, and a retry is deduplicated ---
+8000
+8
