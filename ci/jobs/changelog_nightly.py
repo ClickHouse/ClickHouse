@@ -1046,6 +1046,28 @@ def analyze_reverts(text, anchor, range_prs=()):
     cancelling = {
         pr for pr in targets if targets[pr] and targets[pr] <= cycle_entries
     }
+    # Except a revert of reverts that arrived under a strict-retention category:
+    # its author wrote a changelog entry, and a re-apply can carry more than the
+    # re-apply - `#129863` re-landed the tests of `#129425` and fixed `GLOBAL IN`
+    # in projection `WHERE` along the way. Such a link is kept like any strict
+    # entry: as a bullet of its own, or appended to the entry it re-applied
+    # when its text only repeats that entry (skill section 2, case 6). Forcing
+    # it out, as for a revert that takes a change out, lost that fix from the
+    # 26.11 changelog.
+    # Today's raw entries say so only on the day the re-apply arrives. On later
+    # runs it is a strict entry in no raw block, so the in-progress section is
+    # the record: an earlier verified edit could leave it attributed there only
+    # as its own accepted bullet or as the re-apply link on the entry it brought
+    # back, and that link has to stay either way. And once a later revert took
+    # that entry out again, the ledger is: a deletion it recorded as strict or
+    # already accepted is `required` when the entry comes back.
+    reapplying_with_entry = {
+        pr
+        for pr in cancelling
+        if targets[pr] <= set(targets)
+        and (pr in strict_prs or is_attributed(section, pr) or pr in required)
+    }
+    cancelling -= reapplying_with_entry
     # Which pull requests have to carry which re-applying links. Asked of every
     # entry that ships and was ever reverted, not only of the restorations:
     # when the whole chain arrives in one raw block the entry never left the
@@ -1084,7 +1106,11 @@ def analyze_reverts(text, anchor, range_prs=()):
         (
             link
             for link in allowance
-            if link in strict_prs and link not in cancelling
+            if link in strict_prs
+            and link not in cancelling
+            # Permitted a bullet of its own, not required one: its entry may
+            # also be merged into the entry it brought back.
+            and link not in reapplying_with_entry
         ),
         key=int,
     )
@@ -1154,6 +1180,12 @@ def analyze_reverts(text, anchor, range_prs=()):
         "reapply": reapply,
         "reapply_allowance": allowance,
         "own_entry_required": own_entry_required,
+        "reapplying_with_entry": sorted(reapplying_with_entry, key=int),
+        # The ones to put to the agent: those arriving in today's raw blocks.
+        # The others are already in the section, where their link stays.
+        "reapplying_with_entry_new": sorted(
+            (pr for pr in reapplying_with_entry if pr in strict_prs), key=int
+        ),
         "case_five": case_five,
         "amend": amend,
         "unresolved": unresolved,
@@ -1456,8 +1488,13 @@ Entries to restore. Point 4 above, spread over several days: an earlier run of t
             for item in reverts["amend"]
         )
         amend = f"""
-Entries to amend. These entries are already in the in-progress section and stay, because the reverts of their changes were themselves reverted. Append to each of them the link of every pull request listed as having re-applied it, if it is not there yet, and delete the raw revert bullets — a revert that was taken back leaves no trace of its own, so that link is the only record of the pull request that put the change back:
+Entries to amend. These entries are already in the in-progress section and stay, because the reverts of their changes were themselves reverted. Append to each of them the link of every pull request listed as having re-applied it, if it is not there yet, and delete the raw revert bullets — a revert that was taken back leaves no trace of its own, so that link is the only record of the pull request that put the change back (the re-applies listed below as having an entry of their own are the exception):
 {entries}
+"""
+    own = ""
+    if reverts.get("reapplying_with_entry_new"):
+        own = f"""
+Re-applies with an entry of their own. These pull requests revert reverts of this release, so they put a change back (point 4), but their authors also wrote a changelog entry under one of the categories of point 3: {_pr_list(reverts["reapplying_with_entry_new"])}. A re-apply can carry more than the re-apply, such as a fix made along the way. Read each with `gh pr view <N> --json title,body`. If its entry describes a change beyond the one it brings back, keep it as a bullet of its own; if it only repeats the entry it brought back, merge it into that entry (skill section 7). Either way, its link has to stay in the section.
 """
     outside = ""
     if reverts["case_five"]:
@@ -1498,7 +1535,7 @@ Task:
 6. Do not commit. Do not modify any file other than {CHANGELOG_FILE}. Do not touch the sections of already-released versions or anything below them. Keep the `FIXME` placeholders in the header and table of contents — the release manager fills in the date and links at release time.
 
 The `gh` CLI is authenticated; use `gh pr view <N> --json title,body` when the skill requires consulting a pull request (reverts, unclear entries).
-{restore}{amend}{outside}{retry}"""
+{restore}{amend}{own}{outside}{retry}"""
 
 
 def disappeared_entries(old_text, text, anchor, exempt=()):
