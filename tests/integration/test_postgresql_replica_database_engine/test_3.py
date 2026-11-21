@@ -195,6 +195,68 @@ def test_sorting_key_follows_index_column_order(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_covering_index_include_columns_not_in_sorting_key(started_cluster):
+    pk_table = "test_covering_primary_key"
+    ri_table = "test_covering_replica_identity"
+    nullable_table = "test_covering_nullable_include"
+    pg_manager.create_postgres_table(
+        pk_table,
+        "",
+        """CREATE TABLE "{}" (key integer, value text NOT NULL, PRIMARY KEY (key) INCLUDE (value))""",
+    )
+    pg_manager.create_postgres_table(
+        ri_table,
+        "",
+        """CREATE TABLE "{}" (key integer NOT NULL, key2 integer NOT NULL, value text NOT NULL)""",
+    )
+    pg_manager.execute(
+        f"CREATE UNIQUE INDEX {ri_table}_idx ON {ri_table} (key2, key) INCLUDE (value)"
+    )
+    pg_manager.execute(
+        f"ALTER TABLE {ri_table} REPLICA IDENTITY USING INDEX {ri_table}_idx"
+    )
+    pg_manager.create_postgres_table(
+        nullable_table,
+        "",
+        """CREATE TABLE "{}" (key integer, value text, PRIMARY KEY (key) INCLUDE (value))""",
+    )
+    pg_manager.execute(f"INSERT INTO {pk_table} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+    pg_manager.execute(
+        f"INSERT INTO {ri_table} VALUES (1, 10, 'a'), (2, 20, 'b'), (3, 30, 'c')"
+    )
+    pg_manager.execute(
+        f"INSERT INTO {nullable_table} VALUES (1, 'a'), (2, NULL), (3, 'c')"
+    )
+
+    tables = [pk_table, ri_table, nullable_table]
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{','.join(tables)}'"],
+    )
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_manager.get_default_database()
+        )
+    assert (
+        instance.query(
+            f"SELECT name, sorting_key FROM system.tables WHERE database = 'test_database' AND name IN ('{pk_table}', '{ri_table}', '{nullable_table}') ORDER BY name"
+        )
+        == f"{nullable_table}\tkey\n{pk_table}\tkey\n{ri_table}\tkey2, key\n"
+    )
+
+    for table in tables:
+        pg_manager.execute(f"UPDATE {table} SET value = 'a2' WHERE key = 1")
+        pg_manager.execute(f"DELETE FROM {table} WHERE key = 2")
+        pg_manager.execute(f"UPDATE {table} SET key = 4 WHERE key = 3")
+    for table in tables:
+        check_tables_are_synchronized(
+            instance, table, postgres_database=pg_manager.get_default_database()
+        )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_materialized_view(started_cluster):
     pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
