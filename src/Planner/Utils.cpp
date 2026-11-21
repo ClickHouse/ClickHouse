@@ -64,6 +64,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
@@ -872,6 +873,34 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
     return additional_result_filter_ast;
+}
+
+std::optional<String> getAdditionalTableFilter(const IStorage & storage, const String & table_expression_alias, const ContextPtr & context)
+{
+    /// A synthetic data source is not a table of the catalog, and it may borrow the name of one,
+    /// so the filters keyed by that name must not be applied to it.
+    if (storage.isSyntheticDataSource())
+        return std::nullopt;
+
+    auto const & additional_filters = context->getSettingsRef()[Setting::additional_table_filters].value;
+    if (additional_filters.empty())
+        return std::nullopt;
+
+    auto const & storage_id = storage.getStorageID();
+
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & tuple = additional_filter.safeGet<Tuple>();
+        auto const & table = tuple.at(0).safeGet<String>();
+        auto const & filter = tuple.at(1).safeGet<String>();
+
+        if (table == table_expression_alias ||
+            (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
+            (table == storage_id.getFullNameNotQuoted()))
+            return filter;
+    }
+
+    return std::nullopt;
 }
 
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
