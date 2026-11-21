@@ -33,6 +33,7 @@ public:
 
     [[nodiscard]] String getName() const override { return name; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isNoExcept() const override { return true; }
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }

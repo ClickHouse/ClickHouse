@@ -1020,6 +1020,11 @@ public:
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
+    /// Some comparisons can throw depending on the argument types and values (for example,
+    /// parsing Date/DateTime strings or validating enum literals). The function instance does
+    /// not retain the bound argument types, so the only safe answer at this level is conservative.
+    [[nodiscard]] bool isNoExcept() const override { return false; }
+
     [[nodiscard]] bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
     [[nodiscard]] bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
     [[nodiscard]] bool isNameInsensitive() const override { return true; }

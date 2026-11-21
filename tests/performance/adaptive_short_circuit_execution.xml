@@ -1,0 +1,30 @@
+<test>
+    <!-- Every pair below compares the same query with `short_circuit_function_evaluation='force_enable'`:
+         the baseline keeps the static short-circuit path, the second query additionally turns on
+         `enable_adaptive_short_circuit_lazy_execution`, so only the adaptive heuristic differs.
+         The lazy branches consist only of functions eligible for eager execution (logical functions and
+         `compareSubstrings` over stored columns), so the heuristic can actually change the schedule. -->
+    <settings>
+        <max_threads>8</max_threads>
+        <short_circuit_function_evaluation>force_enable</short_circuit_function_evaluation>
+    </settings>
+
+    <create_query>CREATE TABLE adaptive_short_circuit (b0 UInt8, b1 UInt8, b2 UInt8, b3 UInt8, sel UInt8, s1 String, s2 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO adaptive_short_circuit SELECT rand(1) % 2, rand(2) % 2, rand(3) % 2, rand(4) % 2, rand(5) % 100 = 0, repeat(toString(number % 10), 32), repeat(toString(number % 7), 32) FROM numbers(50000000)</fill_query>
+
+    <!-- A weakly selective condition with a cheap lazy branch: the adaptive mode should switch the branch to eager execution. -->
+    <query>SELECT sum(if(b0, and(b1, b2, b3), 0)) FROM adaptive_short_circuit FORMAT Null</query>
+    <query>SELECT sum(if(b0, and(b1, b2, b3), 0)) FROM adaptive_short_circuit FORMAT Null SETTINGS enable_adaptive_short_circuit_lazy_execution = 1</query>
+
+    <query>SELECT sum(or(b0, and(b1, b2), and(b2, b3))) FROM adaptive_short_circuit FORMAT Null</query>
+    <query>SELECT sum(or(b0, and(b1, b2), and(b2, b3))) FROM adaptive_short_circuit FORMAT Null SETTINGS enable_adaptive_short_circuit_lazy_execution = 1</query>
+
+    <query>SELECT sum(and(b0, compareSubstrings(s1, s2, 0, 0, 32))) FROM adaptive_short_circuit FORMAT Null</query>
+    <query>SELECT sum(and(b0, compareSubstrings(s1, s2, 0, 0, 32))) FROM adaptive_short_circuit FORMAT Null SETTINGS enable_adaptive_short_circuit_lazy_execution = 1</query>
+
+    <!-- A highly selective condition: lazy execution of the second argument pays off, and the adaptive mode should keep it lazy. -->
+    <query>SELECT sum(and(sel, compareSubstrings(s1, s2, 0, 0, 32))) FROM adaptive_short_circuit FORMAT Null</query>
+    <query>SELECT sum(and(sel, compareSubstrings(s1, s2, 0, 0, 32))) FROM adaptive_short_circuit FORMAT Null SETTINGS enable_adaptive_short_circuit_lazy_execution = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS adaptive_short_circuit</drop_query>
+</test>

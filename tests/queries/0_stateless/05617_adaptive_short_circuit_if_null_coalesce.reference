@@ -1,0 +1,6 @@
+ifNull	543333	1	1
+coalesce	543333	1	1
+coalesce_with_nulls	543333	1	1
+case_transform	603333	1	1
+case_multi_if	603333	1	1
+if	543333	1	1

@@ -5219,10 +5219,13 @@ static ColumnConst::Ptr deserializeConstant(
             captured_column.column = captured_column.column->cloneResized(1);
         }
 
+        /// The constant is shared by every pipeline stream, and the pool gives each execution its own
+        /// instance if `enable_adaptive_short_circuit_lazy_execution` makes the lambda body stateful.
         auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
         auto expression_actions = createLambdaExpressionActions(
             std::move(capture_dag), ExpressionActionsSettings(context, CompileExpressions::yes), *capture_ptr);
-        auto function_expression = std::make_shared<FunctionExpression>(std::move(capture_ptr), std::move(expression_actions));
+        auto function_expression = std::make_shared<FunctionExpression>(
+            std::move(capture_ptr), std::make_shared<ExpressionActionsPool>(std::move(expression_actions)));
 
         return ColumnConst::create(ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns)), 0);
     }
