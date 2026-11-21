@@ -849,6 +849,89 @@ def test_attach_table_skips_changes_made_before_snapshot_export(started_cluster)
     pg_manager.drop_materialized_db()
 
 
+def test_attach_table_changes_before_and_after_snapshot_export_in_one_batch(
+    started_cluster,
+):
+    # The consumer does not read the slot while ATTACH TABLE runs, so the changes made before the snapshot
+    # export and the ones made after it (while the snapshot is loading) arrive in one batch. PostgreSQL
+    # sends the definition of the table only once per batch, together with the first change, which is
+    # skipped here. The definition must be kept for the changes after the snapshot LSN, and the changes
+    # before it must stay skipped.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach_toast_one_batch"
+    pg_manager.create_postgres_table(
+        attached_table_name,
+        "",
+        """CREATE TABLE "{}" (key integer PRIMARY KEY, toast_value text, other text)""",
+    )
+    pg_manager.execute(
+        f'ALTER TABLE "{attached_table_name}" ALTER COLUMN toast_value SET STORAGE EXTERNAL'
+    )
+    pg_manager.execute(
+        f"INSERT INTO \"{attached_table_name}\" SELECT number, repeat('a', 30000), 'initial' "
+        "FROM generate_series(1, 3) AS number"
+    )
+
+    export_failpoint = "materialized_postgresql_pause_before_snapshot_export"
+    load_failpoint = "materialized_postgresql_pause_in_load_from_snapshot"
+    errors = []
+
+    def attach():
+        try:
+            instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+        except Exception as e:
+            errors.append(e)
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {export_failpoint}")
+    instance.query(f"SYSTEM ENABLE FAILPOINT {load_failpoint}")
+    attach_thread = threading.Thread(target=attach)
+    try:
+        attach_thread.start()
+        assert instance.wait_for_log_line(
+            f"Pausing before exporting the snapshot of table `{attached_table_name}`"
+        )
+        # The table is already published, but the snapshot is not exported yet.
+        pg_manager.execute(
+            f"UPDATE \"{attached_table_name}\" SET other = 'updated' WHERE key = 1"
+        )
+        pg_manager.execute(f'DELETE FROM "{attached_table_name}" WHERE key = 1')
+
+        instance.query(f"SYSTEM DISABLE FAILPOINT {export_failpoint}")
+        assert instance.wait_for_log_line(
+            f"Pausing while loading table `{attached_table_name}` from a snapshot"
+        )
+        # The snapshot is exported, but ATTACH TABLE has not finished, so the consumer is still stopped.
+        pg_manager.execute(
+            f"UPDATE \"{attached_table_name}\" SET other = 'later' WHERE key = 2"
+        )
+        pg_manager.execute(
+            f"INSERT INTO \"{attached_table_name}\" VALUES (4, repeat('b', 30000), 'inserted')"
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {export_failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {load_failpoint}")
+        attach_thread.join()
+    assert not errors, errors
+
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert (
+        instance.query(
+            f"SELECT key, other, length(toast_value) FROM test_database.{attached_table_name} ORDER BY key"
+        )
+        == "2\tlater\t30000\n3\tinitial\t30000\n4\tinserted\t30000\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_attached_table_can_be_detached_permanently(started_cluster):
     # A table added by ATTACH TABLE gets a freshly built wrapper, which never went through
     # `startSynchronization`. It must still be marked as belonging to a database whose replication has

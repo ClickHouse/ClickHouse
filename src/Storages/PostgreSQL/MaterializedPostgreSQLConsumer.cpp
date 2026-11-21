@@ -806,7 +806,12 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
     {
         case 'B': // Begin
         {
-            readInt64(replication_message, pos, size); /// Int64 transaction end lsn
+            /// The final LSN of the transaction, that is, the position of its commit record. A snapshot exported
+            /// at the consistent point `S` contains exactly the transactions committed before `S`, and the
+            /// stream delivers the ones committed at or after `S`, so this is what `isSyncAllowed` compares
+            /// with the snapshot LSN of a table. The LSN of an individual change must not be used for that:
+            /// a transaction that was still running at `S` has changes below `S` that are not in the snapshot.
+            transaction_final_lsn_value = readInt64(replication_message, pos, size);
             readInt64(replication_message, pos, size); /// Int64 transaction commit timestamp
             break;
         }
@@ -820,11 +825,12 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            if (!isSyncAllowed(relation_id, table_name))
+            auto * storage_data_ptr = getStorageDataForChange(relation_id, table_name);
+            if (!storage_data_ptr)
                 return;
 
             Int8 new_tuple = readInt8(replication_message, pos, size);
-            auto & storage_data = storages.find(table_name)->second;
+            auto & storage_data = *storage_data_ptr;
 
             if (new_tuple)
                 readTupleData(storage_data, replication_message, pos, size, PostgreSQLQuery::INSERT);
@@ -841,10 +847,11 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            if (!isSyncAllowed(relation_id, table_name))
+            auto * storage_data_ptr = getStorageDataForChange(relation_id, table_name);
+            if (!storage_data_ptr)
                 return;
 
-            auto & storage_data = storages.find(table_name)->second;
+            auto & storage_data = *storage_data_ptr;
             std::optional<size_t> old_row_idx;
 
             auto process_identifier = [&](Int8 identifier) -> bool
@@ -919,13 +926,14 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            if (!isSyncAllowed(relation_id, table_name))
+            auto * storage_data_ptr = getStorageDataForChange(relation_id, table_name);
+            if (!storage_data_ptr)
                 return;
 
              /// 0 or 1 if replica identity is set to full. For now only default replica identity is supported (with primary keys).
             readInt8(replication_message, pos, size);
 
-            auto & storage_data = storages.find(table_name)->second;
+            auto & storage_data = *storage_data_ptr;
             readTupleData(storage_data, replication_message, pos, size, PostgreSQLQuery::DELETE);
             break;
         }
@@ -968,7 +976,20 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             /// `I`/`U`/`D` for that relation would consume the waiting entry and dereference the missing
             /// storage.
             if (!isSyncAllowed(relation_id, table_name))
+            {
+                /// The table has a storage but waits for its snapshot LSN (see `waiting_list` and `skip_list`).
+                /// Its changes in this transaction are not applied, but the definition must not be lost:
+                /// `pgoutput` sends the `Relation` message of a table once per decoding call and does not
+                /// repeat it for a later transaction of the same call, and processing it is the only way to
+                /// create the buffer the changes are decoded into. Keep the message and process it when the
+                /// first change of the table is allowed (see `getStorageDataForChange`).
+                if (storages.contains(table_name))
+                    pending_relation_messages[relation_id] = String(replication_message, size);
                 return;
+            }
+
+            /// This definition supersedes the one kept while the table was waiting.
+            pending_relation_messages.erase(relation_id);
 
             auto storage_iter = storages.find(table_name);
             if (storage_iter == storages.end())
@@ -1265,6 +1286,14 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 
     final_lsn = result[0][0].as<std::string>();
     LOG_TRACE(log, "Advanced LSN up to: {}", getLSNValue(final_lsn));
+
+    /// Every transaction the slot delivers from now on is committed after this position, so a table whose
+    /// snapshot LSN is not above it does not have to be checked any more.
+    const Int64 confirmed_lsn_value = getLSNValue(final_lsn);
+    std::erase_if(waiting_list, [&](const auto & waiting_table)
+    {
+        return getLSNValue(waiting_table.second.start_lsn) <= confirmed_lsn_value;
+    });
     committed = false;
     return final_lsn;
 }
@@ -1283,13 +1312,20 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
 
     if (new_table_with_lsn != waiting_list.end())
     {
-        auto table_start_lsn = new_table_with_lsn->second;
-        chassert(!table_start_lsn.empty());
+        auto & waiting_table = new_table_with_lsn->second;
+        chassert(!waiting_table.start_lsn.empty());
 
-        if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
+        if (transaction_final_lsn_value >= getLSNValue(waiting_table.start_lsn))
         {
-            LOG_TRACE(log, "Synchronization is started for table: {} (start_lsn: {})", relation_name, table_start_lsn);
-            waiting_list.erase(new_table_with_lsn);
+            /// The entry is not removed here. The slot is not advanced yet, so if this batch fails to be
+            /// decoded or inserted, the next one starts from the same position and delivers the changes
+            /// committed before the snapshot again; they must be rejected again. `advanceLSN` removes the
+            /// entry once the slot is past the snapshot LSN.
+            if (!waiting_table.started)
+            {
+                LOG_TRACE(log, "Synchronization is started for table: {} (start_lsn: {})", relation_name, waiting_table.start_lsn);
+                waiting_table.started = true;
+            }
             return true;
         }
 
@@ -1318,7 +1354,7 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
     /// Table has received a valid lsn, but it is not yet at a position, from which synchronization is
     /// allowed. It is allowed only after lsn position, returned with snapshot, from which
     /// table was reloaded.
-    if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
+    if (transaction_final_lsn_value >= getLSNValue(table_start_lsn))
     {
         LOG_TRACE(log, "Synchronization is resumed for table: {} (start_lsn: {})",
                 relation_id_to_name[relation_id], table_start_lsn);
@@ -1329,6 +1365,31 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
     }
 
     return false;
+}
+
+MaterializedPostgreSQLConsumer::StorageData * MaterializedPostgreSQLConsumer::getStorageDataForChange(
+    Int32 relation_id, const String & relation_name)
+{
+    if (!isSyncAllowed(relation_id, relation_name))
+        return nullptr;
+
+    /// The definition of the table arrived while the table was still waiting for its snapshot LSN.
+    /// Process it now: it creates the buffer for the change. It can also find that the structure does
+    /// not match and mark the table as skipped, so ask again afterwards.
+    if (auto pending_relation_message = pending_relation_messages.extract(relation_id))
+    {
+        const String & message = pending_relation_message.mapped();
+        processReplicationMessage(message.data(), message.size());
+
+        if (!isSyncAllowed(relation_id, relation_name))
+            return nullptr;
+    }
+
+    auto storage_iter = storages.find(relation_name);
+    if (storage_iter == storages.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No storage for table {} (relation id: {})", relation_name, relation_id);
+
+    return &storage_iter->second;
 }
 
 void MaterializedPostgreSQLConsumer::markTableAsSkipped(
@@ -1400,7 +1461,7 @@ void MaterializedPostgreSQLConsumer::addNested(
 
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
-    waiting_list[postgres_table_name] = table_start_lsn;
+    waiting_list[postgres_table_name] = WaitingTable{.start_lsn = table_start_lsn};
 }
 
 void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
@@ -1463,6 +1524,9 @@ bool MaterializedPostgreSQLConsumer::consume()
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
                 "{}, NULL, {}, 'publication_names', {}, 'proto_version', '1')",
                 quoteStringPostgreSQL(replication_slot_name), max_block_size, quoteStringPostgreSQL(doubleQuoteStringPostgreSQL(publication_name)));
+
+        /// Each call decodes from the confirmed position of the slot and sends every `Relation` message anew.
+        pending_relation_messages.clear();
 
         auto stream{pqxx::stream_from::query(*tx, query_str)};
 
