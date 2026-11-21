@@ -95,6 +95,9 @@ static void checkVirtualRowCoversSortDescription(const Block & pk_block, const S
     }
 }
 
+/// Merges of at least this many inputs prefetch the next rows of their fixed-size columns.
+constexpr static size_t min_inputs_to_prefetch = 8;
+
 #ifndef NDEBUG
 constexpr static bool do_debug_checks = true;
 #else
@@ -128,6 +131,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , source_row_filter_masks(num_inputs, nullptr)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
+    , source_fixed_size_planes(num_inputs)
 {
     if (filter_column_position != -1)
     {
@@ -157,6 +161,7 @@ void MergingSortedAlgorithm::addInput()
     source_row_filter_masks.emplace_back(nullptr);
     cursors.emplace_back();
     virtual_row_boundary.emplace_back();
+    source_fixed_size_planes.emplace_back();
 }
 
 const IColumnFilter * MergingSortedAlgorithm::resolveRowFilterMask(const Chunk & chunk) const
@@ -199,8 +204,12 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     /// are, the per-row wrapping check in `insertRow` / `insertRows` is pure overhead. This is
     /// only ever raised back to `true` in `consume` (before those rows can reach `insertRow`).
     merged_data.setMayHaveReplicatedColumns(anyInputColumnReplicated(inputs));
+    if (!merged_data.mayHaveReplicatedColumns())
+        merged_data.enableFixedSizeByteCount();
 
     current_inputs = std::move(inputs);
+    prefetch_sources = current_inputs.size() >= min_inputs_to_prefetch;
+    source_fixed_size_planes.assign(current_inputs.size(), {});
     virtual_row_boundary.assign(current_inputs.size(), {});
     source_row_filter_masks.assign(current_inputs.size(), nullptr);
 
@@ -212,6 +221,8 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
 
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
         source_row_filter_masks[source_num] = resolveRowFilterMask(chunk);
+        if (prefetch_sources)
+            updateSourcePlanes(source_num);
     }
 
     if constexpr (do_debug_checks)
@@ -357,6 +368,8 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
     source_row_filter_masks[source_num] = resolveRowFilterMask(current_inputs[source_num].chunk);
+    if (prefetch_sources)
+        updateSourcePlanes(source_num);
 
     if (!is_virtual_row)
     {
@@ -441,6 +454,34 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
     return result;
 }
 
+void MergingSortedAlgorithm::updateSourcePlanes(size_t source_num)
+{
+    auto & planes = source_fixed_size_planes[source_num];
+    planes.clear();
+
+    const auto & chunk = current_inputs[source_num].chunk;
+    if (!chunk)
+        return;
+
+    for (const auto & column : chunk.getColumns())
+    {
+        const auto column_planes = column->getPlanes();
+        if (column_planes.shape == ColumnPlanes::Shape::Fixed)
+            planes.push_back({static_cast<const char *>(column_planes.data), column_planes.stride, column->size() * column_planes.stride});
+    }
+}
+
+void MergingSortedAlgorithm::prefetchSource(size_t source_num, size_t row) const
+{
+    /// Many alternating inputs are more streams than the hardware prefetcher follows.
+    for (const auto & plane : source_fixed_size_planes[source_num])
+    {
+        const size_t offset = row * plane.stride + 64;
+        if (offset < plane.bytes)
+            __builtin_prefetch(plane.data + offset);
+    }
+}
+
 void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
 {
     auto write_row_source = [&](bool skipped)
@@ -466,6 +507,9 @@ void MergingSortedAlgorithm::insertRow(const SortCursorImpl & current)
         merged_data.insertRow(current.all_columns, current_row, current.rows);
         write_row_source(false);
     }
+
+    if (prefetch_sources)
+        prefetchSource(current.order, current_row + 1);
 }
 
 void MergingSortedAlgorithm::insertRows(const SortCursorImpl & current, size_t num_rows)
@@ -501,6 +545,9 @@ void MergingSortedAlgorithm::insertRows(const SortCursorImpl & current, size_t n
                 out_row_sources_buf->write(row_source.data);
         }
     }
+
+    if (prefetch_sources)
+        prefetchSource(current.order, current.getRow() + num_rows);
 }
 
 void MergingSortedAlgorithm::insertChunk(size_t source_num)

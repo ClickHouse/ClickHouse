@@ -1,0 +1,83 @@
+<test iceberg="0">
+    <!--
+        Merges of 50 small parts sorted by (sid, ts): with the default and with the batch sorting queue,
+        of a table without fixed-size columns, and reading the 50 parts in order.
+
+        Each timed merge first re-attaches the 50 source parts (a second `OPTIMIZE ... FINAL` would find
+        one part and do nothing). Neither the source nor the destination tables merge in the background
+        (`max_bytes_to_merge_at_*_space_in_pool = 1`).
+        Not on Iceberg tables: the test measures MergeTree merges of parts.
+    -->
+    <create_query>
+        CREATE TABLE merge_src (sid UInt64, ts DateTime64(3), value Float64, v1 Float64, v2 Int32, v3 Int32, v4 UInt8, v5 Float32, host LowCardinality(String))
+        ENGINE = MergeTree ORDER BY (sid, ts)
+        SETTINGS auto_statistics_types = '', max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE merge_dst (sid UInt64, ts DateTime64(3), value Float64, v1 Float64, v2 Int32, v3 Int32, v4 UInt8, v5 Float32, host LowCardinality(String))
+        ENGINE = MergeTree ORDER BY (sid, ts)
+        SETTINGS auto_statistics_types = '', max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE merge_dst_batch (sid UInt64, ts DateTime64(3), value Float64, v1 Float64, v2 Int32, v3 Int32, v4 UInt8, v5 Float32, host LowCardinality(String))
+        ENGINE = MergeTree ORDER BY (sid, ts)
+        SETTINGS auto_statistics_types = '', max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1, merge_use_batch_sorting_queue = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE merge_src_str (sid String, ts String, value String)
+        ENGINE = MergeTree ORDER BY (sid, ts)
+        SETTINGS auto_statistics_types = '', max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE merge_dst_str (sid String, ts String, value String)
+        ENGINE = MergeTree ORDER BY (sid, ts)
+        SETTINGS auto_statistics_types = '', max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO merge_src
+        SELECT number % 10000, toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 10000) * 15000 + sipHash64(number) % 1000),
+               (number % 997) / 7.0, (number % 991) / 3.0, toInt32(number % 1000), toInt32(sipHash64(number) % 100000), toUInt8(number % 7),
+               toFloat32(number % 113), concat('host-', toString(number % 50))
+        FROM numbers(5000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000
+    </fill_query>
+    <fill_query>
+        INSERT INTO merge_src_str
+        SELECT toString(number % 10000), toString(toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intDiv(number, 10000) * 15000 + sipHash64(number) % 1000)),
+               toString((number % 997) / 7.0)
+        FROM numbers(5000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000
+    </fill_query>
+    <fill_query>SELECT throwIf(count() != 50) FROM system.parts WHERE database = currentDatabase() AND table = 'merge_src' AND active</fill_query>
+    <fill_query>SELECT throwIf(count() != 50) FROM system.parts WHERE database = currentDatabase() AND table = 'merge_src_str' AND active</fill_query>
+
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE merge_dst;
+            ALTER TABLE merge_dst ATTACH PARTITION tuple() FROM merge_src;
+            OPTIMIZE TABLE merge_dst FINAL SETTINGS optimize_throw_if_noop = 1;
+        "
+    ]]></query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE merge_dst_batch;
+            ALTER TABLE merge_dst_batch ATTACH PARTITION tuple() FROM merge_src;
+            OPTIMIZE TABLE merge_dst_batch FINAL SETTINGS optimize_throw_if_noop = 1;
+        "
+    ]]></query>
+    <query type="shell"><![CDATA[
+        ${CLICKHOUSE_CLIENT} --query "
+            TRUNCATE TABLE merge_dst_str;
+            ALTER TABLE merge_dst_str ATTACH PARTITION tuple() FROM merge_src_str;
+            OPTIMIZE TABLE merge_dst_str FINAL SETTINGS optimize_throw_if_noop = 1;
+        "
+    ]]></query>
+    <query>SELECT * FROM merge_src ORDER BY sid, ts FORMAT Null SETTINGS max_threads = 4</query>
+
+    <drop_query>DROP TABLE IF EXISTS merge_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_dst</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_dst_batch</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_src_str</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_dst_str</drop_query>
+</test>
