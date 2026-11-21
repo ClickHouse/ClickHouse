@@ -167,7 +167,7 @@ A [lightweight `DELETE`](/reference/statements/delete) query can be run as a lig
 
 **Potential performance impacts:**
 - Adds an overhead to `SELECT` queries that need to apply patches
-- [Skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) will not be used for columns in data parts that have patches to be applied. [Projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) will not be used if there are patch parts for table, including for data parts that don't have patches to be applied.
+- [Skipping indexes](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) will not be used for columns in data parts that have patches to be applied. [Projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) will not be used if there are patch parts for table, including for data parts that don't have patches to be applied. With the setting `optimize_use_projection_filtering_with_patch_parts` enabled, they can still be used to filter the data read from the table (for example, projections that store `_part_offset`), except in data parts with patches that update a column the projection is built from.
 - Small updates which are too frequent may lead to a "too many parts" error. It is recommended to batch several updates into a single query, for example by putting ids for updates in a single `IN` clause in the `WHERE` clause
 - Lightweight updates are designed to update small amounts of rows (up to about 10% of the table). If you need to update a larger amount, it is recommended to use the [`ALTER TABLE ... UPDATE`](/reference/statements/alter/update) mutation
 

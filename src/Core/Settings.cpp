@@ -7053,6 +7053,12 @@ Automatically choose implicit projections to perform SELECT query
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0, \
         {"25.6", false, true, "New setting"}) \
+    DECLARE(Bool, optimize_use_projection_filtering_with_patch_parts, false, R"(
+Allows projections, for example those that store `_part_offset`, to filter the data read from a table that has patch parts (from lightweight updates and deletes) or data mutations applied on the fly. The data is still read from the table, with the patches applied. A data part whose patches or mutations change a column the projection depends on is read without the projection.
+
+Requires `optimize_use_projection_filtering`. When disabled, projections are not used at all while the table has patch parts or mutations applied on the fly.
+)", 0, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(Float, optimize_projection_skip_index_ratio, 0.5, R"(
 When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. `0` always applies them, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
 
