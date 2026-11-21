@@ -25,7 +25,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int PATH_ACCESS_DENIED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -38,9 +37,8 @@ FileDictionarySource::FileDictionarySource(
     , sample_block{sample_block_}
     , context(context_)
 {
-    auto user_files_path = context->getUserFilesPath();
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_path))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
+    if (created_from_ddl)
+        checkDictionarySourcePathIsInsideUserFiles(filepath, context->getUserFilesPath());
 }
 
 
