@@ -81,8 +81,7 @@ private:
     ConfigurationPtr latest_config;
     /// The `application.*` properties that `Poco::Util::Application` sets before any file or command-line layer is added.
     ConfigurationPtr application_properties;
-    /// Port names of the `<protocols>` endpoints served by introspection listeners. These listeners are not
-    /// reconfigured on config reload, so no regular listener is created for these endpoints until restart.
+    /// Port names of the `<protocols>` endpoints served by introspection listeners, which are not reconfigured on config reload.
     std::unordered_set<std::string> introspection_port_names;
 
     HTTPContextPtr httpContext() const;
