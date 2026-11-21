@@ -77,8 +77,10 @@ public:
         }
     }
 
-    void removeBefore(GridScaleTimestampType cut_off)
+    /// Returns true if a value left the window.
+    bool removeBefore(GridScaleTimestampType cut_off)
     {
+        bool removed = false;
         if constexpr (is_invertible)
         {
             while (!window.empty() && window.front().first <= cut_off)
@@ -86,6 +88,7 @@ public:
                 const SummaryType leaving = std::move(window.front().second);
                 window.pop_front();
                 current_sum.unmerge(leaving, window.empty() ? nullptr : &window.front().second);
+                removed = true;
             }
         }
         else if (use_two_stacks)
@@ -110,11 +113,11 @@ public:
                 if (front_stack.empty() || front_stack.back().last_timestamp > cut_off)
                     break;
                 front_stack.pop_back();
+                removed = true;
             }
         }
         else
         {
-            bool removed = false;
             while (!window.empty() && window.front().first <= cut_off)
             {
                 window.pop_front();
@@ -123,7 +126,19 @@ public:
             if (removed)
                 current_sum_valid = false;
         }
+        return removed;
     }
+
+    /// Sums the in-window values again, for an invertible sum whose subtraction loses precision.
+    void recomputeCurrentSum() requires is_invertible
+    {
+        current_sum = SummaryType{};
+        for (const auto & timestamp_and_value : window)
+            current_sum.merge(timestamp_and_value.second);
+    }
+
+    /// The in-window values in time order.
+    const auto & getWindow() const requires is_invertible { return window; }
 
     /// The reference is valid until the next `add` or `removeBefore`.
     const SummaryType & getCurrentSum() const
