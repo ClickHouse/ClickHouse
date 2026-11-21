@@ -239,7 +239,7 @@ IProcessor::Status LazyReadFromObjectStorageSource::prepare(const UpdatedInputPo
     return Status::Finished;
 }
 
-IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
+void LazyReadFromObjectStorageSource::updatePipeline(PipelineUpdate & update)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyReadFromObjectStorageSource: no lazy materializing rows");
@@ -250,7 +250,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
 
     auto & files = rows->rows_in_files;
     if (files.empty())
-        return {};
+        return;
 
     const auto & settings = context->getSettingsRef();
     const bool etag_validated_on_read
@@ -312,7 +312,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         /*row_level_filter_=*/ nullptr,
         /*prewhere_info_=*/ nullptr);
 
-    Processors sources;
+    auto & sources = update.to_add;
     for (auto & group_files : groups)
     {
         auto iterator = std::make_shared<LazyRowsObjectIterator>(
@@ -333,18 +333,17 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
             format_filter_info,
             /*need_only_count_=*/ false);
 
+        sources.push_back(source);
         auto & source_output = source->getOutputs().front();
         inputs.emplace_back(source_output.getHeader(), this);
         connect(source_output, inputs.back());
         inputs.back().setNeeded();
         const size_t input_index = input_port_to_index.size();
         input_port_to_index[&inputs.back()] = input_index;
-        sources.push_back(std::move(source));
     }
 
     next_input_to_process = inputs.begin();
     chunks.resize(sources.size());
-    return PipelineUpdate{.to_add = std::move(sources), .to_remove = {}};
 }
 
 }

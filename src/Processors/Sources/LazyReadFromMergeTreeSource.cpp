@@ -204,11 +204,12 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
     return Status::Finished;
 }
 
-IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
+void LazyReadFromMergeTreeSource::updatePipeline(PipelineUpdate & update)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyReadFromMergeTreeSource: No lazy materializing rows");
-    auto processors = buildReaders();
+    auto & processors = update.to_add;
+    processors = buildReaders();
     lazy_materializing_rows.reset();
     for (auto & processor : processors)
     {
@@ -221,7 +222,6 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
 
     next_input_to_process = inputs.begin();
     chunks.resize(processors.size());
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
 Processors LazyReadFromMergeTreeSource::buildReaders()

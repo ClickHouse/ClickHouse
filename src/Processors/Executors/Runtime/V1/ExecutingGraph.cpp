@@ -311,18 +311,18 @@ void ExecutingGraph::removeAffectedEdges(Node & node, const UnorderedSetWithMemo
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(DevectorWithMemoryTracking<Node *> & stack, Node & cur_node)
 {
-    IProcessor::PipelineUpdate update = cur_node.processor()->updatePipeline();
-
-    /// The processor has already connected its ports to the new processors. From here on every step
-    /// that records them in the graph may throw (each allocates, and an allocation may fail on the memory
-    /// limit), and a failure halfway leaves the nodes and edges inconsistent with the ports: the node
-    /// of a recorded processor, or `cur_node` itself, is connected to a processor that is not in the
-    /// graph. The exception cancels the executor, but a thread that is already expanding another node
-    /// would still walk every node in `addEdges` and hit that connection as a logical error. Mark the
-    /// graph instead, so that later expansions bail out, and keep the new processors alive because
-    /// the ports of live nodes point at them.
+    /// The processor connects its ports to the new processors, and it appends each of them to `update.to_add`
+    /// before connecting it. Both the processor and every step that records the new processors in the graph
+    /// may throw (each allocates, and an allocation may fail on the memory limit), and a failure halfway leaves
+    /// the nodes and edges inconsistent with the ports: the node of a recorded processor, or `cur_node` itself,
+    /// is connected to a processor that is not in the graph. The exception cancels the executor, but a thread
+    /// that is already expanding another node would still walk every node in `addEdges` and hit that
+    /// connection as a logical error. Mark the graph instead, so that later expansions bail out, and keep the
+    /// new processors alive because the ports of live nodes point at them.
+    IProcessor::PipelineUpdate update;
     try
     {
+        cur_node.processor()->updatePipeline(update);
         return updatePipelineImpl(stack, cur_node, update);
     }
     catch (...)

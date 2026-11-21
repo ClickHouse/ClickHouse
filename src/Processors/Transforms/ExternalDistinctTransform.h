@@ -67,7 +67,7 @@ public:
 
     Status prepare() override;
     void work() override;
-    PipelineUpdate updatePipeline() override;
+    void updatePipeline(PipelineUpdate & update) override;
 
     std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
     ProcessorMemoryStats getMemoryStats() const;

@@ -5,7 +5,7 @@
 #include <Common/Stopwatch.h>
 
 #include <atomic>
-#include <list>
+#include <Common/ListWithMemoryTracking.h>
 #include <memory>
 #include <span>
 #include <vector>
@@ -23,14 +23,14 @@ class IQueryPlanStep;
 class ISpillable;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = ListWithMemoryTracking<StorageLimits>;
 
 class RowsBeforeStepCounter;
 using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 class StepWallClock;
 
@@ -253,8 +253,12 @@ public:
     /** You must call this method if 'prepare' returned UpdatePipeline.
       * This method cannot access any port, but it can create new ports for current processor.
       *
-      * Method should return set of new already connected processors or disconnected finished processors.
-      * All returned processors must be connected only to each other or current processor.
+      * Method should fill `update` with new already connected processors or disconnected finished processors.
+      * All added processors must be connected only to each other or current processor.
+      *
+      * Append a new processor to `update.to_add` before connecting it. Every allocation may throw, and if the
+      * method throws, the executor keeps the processors in `update.to_add` alive, because the ports of the
+      * current processor and of the other new processors may point at them.
       *
       * Method can't move data from/to port or perform calculations.
       * 'prepare' should be called again after this operation.
@@ -264,7 +268,7 @@ public:
         Processors to_add;
         Processors to_remove;
     };
-    virtual PipelineUpdate updatePipeline();
+    virtual void updatePipeline(PipelineUpdate & update);
 
     /// Why the processor is being cancelled, chosen by the caller of cancel.
     enum class CancelReason : uint8_t

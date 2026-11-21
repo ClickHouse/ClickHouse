@@ -181,7 +181,7 @@ public:
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
-    PipelineUpdate updatePipeline() override;
+    void updatePipeline(PipelineUpdate & update) override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
     std::span<ISpillable * const> getSpillables() override { return {spillables.data(), adaptive_spillable ? 2uz : 1uz}; }

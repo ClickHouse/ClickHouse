@@ -152,13 +152,13 @@ class AsyncInsertInfo : public ChunkInfoCloneable<AsyncInsertInfo>
 public:
     AsyncInsertInfo() = default;
     AsyncInsertInfo(const AsyncInsertInfo & other) = default;
-    AsyncInsertInfo(const std::vector<size_t> & offsets_, const std::vector<String> & tokens_)
+    AsyncInsertInfo(const VectorWithMemoryTracking<size_t> & offsets_, const VectorWithMemoryTracking<String> & tokens_)
         : offsets(offsets_)
         , tokens(tokens_)
     {}
 
-    std::vector<size_t> offsets;
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<size_t> offsets;
+    VectorWithMemoryTracking<String> tokens;
 };
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;

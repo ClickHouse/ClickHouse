@@ -63,7 +63,7 @@ IProcessor::Status LazyReadFromFileSource::prepare()
     return Status::PortFull;
 }
 
-IProcessor::PipelineUpdate LazyReadFromFileSource::updatePipeline()
+void LazyReadFromFileSource::updatePipeline(PipelineUpdate & update)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyReadFromFileSource: no lazy materializing rows");
@@ -72,17 +72,16 @@ IProcessor::PipelineUpdate LazyReadFromFileSource::updatePipeline()
     lazy_materializing_rows.reset();
 
     if (rows->rows_in_files.empty())
-        return {};
+        return;
 
     auto source = StorageFile::createLazyRowsSource(
         storage, info, context, max_block_size, std::move(rows->rows_in_files));
 
+    update.to_add.push_back(source);
     auto & source_output = source->getOutputs().front();
     inputs.emplace_back(source_output.getHeader(), this);
     connect(source_output, inputs.back());
     inputs.back().setNeeded();
-
-    return PipelineUpdate{.to_add = {source}, .to_remove = {}};
 }
 
 }

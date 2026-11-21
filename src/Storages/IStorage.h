@@ -22,7 +22,7 @@
 #include <expected>
 #include <functional>
 #include <optional>
-#include <list>
+#include <Common/ListWithMemoryTracking.h>
 #include <Poco/Timespan.h>
 
 
@@ -52,7 +52,7 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = ListWithMemoryTracking<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;

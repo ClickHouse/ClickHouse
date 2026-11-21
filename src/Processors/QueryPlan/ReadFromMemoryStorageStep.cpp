@@ -838,14 +838,14 @@ public:
         return Status::Finished;
     }
 
-    PipelineUpdate updatePipeline() override
+    void updatePipeline(PipelineUpdate & update) override
     {
         const auto rows = std::move(lazy_materializing_rows);
         lazy_materializing_rows.reset();
 
         VectorWithMemoryTracking<MemoryLazyBlockRows> block_rows = groupRowsByBlock(rows->rows);
 
-        Processors sources;
+        auto & sources = update.to_add;
         const size_t num_sources = std::min(std::max<size_t>(num_streams, 1), block_rows.size());
         for (size_t i = 0; i < num_sources; ++i)
         {
@@ -856,16 +856,15 @@ public:
             auto source = std::make_shared<LazyReadFromMemoryBlocksSource>(
                 outputs.front().getSharedHeader(), columns, data, std::move(source_block_rows), nested_arrays);
 
+            sources.push_back(source);
             auto & source_output = source->getOutputs().front();
             inputs.emplace_back(source_output.getHeader(), this);
             connect(source_output, inputs.back());
             /// All at once, so that the sources run in parallel.
             inputs.back().setNeeded();
-            sources.push_back(std::move(source));
         }
 
         current_input = inputs.begin();
-        return PipelineUpdate{.to_add = std::move(sources), .to_remove = {}};
     }
 
 private:

@@ -99,7 +99,7 @@ std::tuple<int, uint32_t, Int64> IProcessor::scheduleForEvent()
 }
 #endif
 
-IProcessor::PipelineUpdate IProcessor::updatePipeline()
+void IProcessor::updatePipeline(PipelineUpdate & /*update*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
 }
