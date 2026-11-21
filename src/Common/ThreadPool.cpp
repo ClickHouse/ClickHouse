@@ -472,6 +472,16 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || finished; };
 
+        ++waiting_schedulers;
+        /// A freed slot wakes only one scheduler, so pass the wakeup on while slots remain free.
+        /// A scheduler that fails without taking the slot also releases a thread that stayed for it.
+        SCOPE_EXIT(
+            --waiting_schedulers;
+            if (queue_size && scheduled_jobs < queue_size)
+                slot_freed.notify_one();
+            wakeUpExcessIdleThreadsNoLock();
+        );
+
         /// Wait for available threads or timeout
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
@@ -485,13 +495,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         }
         else
             slot_freed.wait(lock, pred);
-
-        /// A freed slot wakes only one scheduler, so pass the wakeup on while slots remain free.
-        /// This covers a scheduler that fails without taking the slot.
-        SCOPE_EXIT(
-            if (queue_size && scheduled_jobs < queue_size)
-                slot_freed.notify_one();
-        );
 
         if (finished)
             return on_error("finished");
@@ -864,9 +867,15 @@ void ThreadPoolImpl<Thread>::wakeUpAllIdleThreadsNoLock()
 }
 
 template <typename Thread>
+size_t ThreadPoolImpl<Thread>::threadsToKeepNoLock() const
+{
+    return std::min(max_threads, scheduled_jobs + waiting_schedulers + max_free_threads);
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeUpExcessIdleThreadsNoLock()
 {
-    const size_t target = std::min(max_threads, scheduled_jobs + max_free_threads);
+    const size_t target = threadsToKeepNoLock();
     if (threads.size() <= target)
         return;
     const size_t excess = threads.size() - target;
@@ -1082,7 +1091,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// already popped it and `removeIdleThreadNoLock` is a no-op.
             while (parent_pool.jobs.empty()
                 && !parent_pool.finished
-                && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
+                && parent_pool.threads.size() <= parent_pool.threadsToKeepNoLock())
             {
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
@@ -1091,13 +1100,13 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()
                         || parent_pool.finished
-                        || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
+                        || parent_pool.threads.size() > parent_pool.threadsToKeepNoLock();
                 });
 
                 parent_pool.removeIdleThreadNoLock(this);
             }
 
-            if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
+            if (parent_pool.jobs.empty() || parent_pool.threads.size() > parent_pool.threadsToKeepNoLock())
             {
                 // We enter here if:
                 //  - either this thread is not needed anymore due to max_free_threads excess;

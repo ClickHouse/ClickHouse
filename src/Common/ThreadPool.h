@@ -218,6 +218,8 @@ private:
     size_t queue_size;
 
     size_t scheduled_jobs = 0;
+    /// Schedulers waiting for a slot. Each of them is about to add a job, so a thread that finishes a job stays for it.
+    size_t waiting_schedulers = 0;
 
     // Originally equals to max_threads, but changes dynamically.
     // Decrements with every new thread started, increments when it finishes.
@@ -274,6 +276,9 @@ private:
     /// excess threads from the bottom of the stack (oldest-idle first) so the
     /// recently-active workers stay in the LIFO position they earned.
     void wakeUpExcessIdleThreadsNoLock();
+
+    /// The number of threads to keep, up to `max_threads`: one per scheduled job or waiting scheduler, plus `max_free_threads`. Must be called with mutex held.
+    size_t threadsToKeepNoLock() const;
 
     void finishNoLock(const std::lock_guard<std::mutex> & lock);
     void finalize();
