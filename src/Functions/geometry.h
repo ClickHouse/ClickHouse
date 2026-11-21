@@ -2,7 +2,6 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/EnumReflection.h>
 #include <boost/geometry.hpp>
@@ -18,7 +17,11 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <cfloat>
+#include <cmath>
 #include <memory>
+#include <numbers>
+#include <string_view>
 
 namespace DB
 {
@@ -83,9 +86,6 @@ Polygon<Point> getPolygonFromField(const Field & field)
 {
     Polygon<Point> polygon;
     const auto & array = field.safeGet<Array>();
-    VectorWithMemoryTracking<Ring<Point>> rings_outer;
-    Ring<Point> ring_inner;
-
     for (size_t i = 0; i < array.size(); ++i)
     {
         const auto & ring = array.at(i);
@@ -105,6 +105,146 @@ MultiPolygon<Point> getMultiPolygonFromField(const Field & field)
     for (const auto & tuple : array)
         polygon.push_back(getPolygonFromField<Point>(tuple));
     return polygon;
+}
+
+/// Throws if a coordinate in `geometry` is NaN or infinite. The column converters check this, but the `Field` getters
+/// above do not.
+template <typename Geometry>
+void checkPointsAreFinite(const Geometry & geometry)
+{
+    boost::geometry::for_each_point(geometry, [](const auto & point)
+    {
+        const Float64 first = boost::geometry::get<0>(point);
+        const Float64 second = boost::geometry::get<1>(point);
+        if (isNaN(first) || isNaN(second))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be NaN");
+        if (std::isinf(first) || std::isinf(second))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be infinite");
+    });
+}
+
+/// Throws if a latitude in `geometry` is outside [−90, 90] degrees. Longitudes wrap around, so any finite one is valid.
+template <typename Geometry>
+void checkSphericalLatitudes(const Geometry & geometry, std::string_view function_name)
+{
+    boost::geometry::for_each_point(geometry, [function_name](const SphericalPoint & point)
+    {
+        const Float64 latitude = boost::geometry::get<1>(point);
+        if (!(latitude >= -90 && latitude <= 90))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Point ({}, {}) is invalid in function {}. For a valid point, the latitude is between -90 and 90 degrees inclusive",
+                boost::geometry::get<0>(point),
+                latitude,
+                function_name);
+    });
+}
+
+/// The number of vertices of a ring, not counting a closing vertex equal to the first one.
+template <typename Point>
+size_t ringVertexCount(const Ring<Point> & ring)
+{
+    size_t n = ring.size();
+    if (n >= 2 && boost::geometry::get<0>(ring.front()) == boost::geometry::get<0>(ring.back())
+        && boost::geometry::get<1>(ring.front()) == boost::geometry::get<1>(ring.back()))
+        --n;
+    return n;
+}
+
+/// The number of edges between two different vertices among the first `n` vertices of a ring, including the edge from
+/// the last vertex to the first one. An edge between equal vertices adds nothing to the area of the ring, nor to the
+/// rounding error of the area.
+template <typename Point>
+size_t ringEdgeCount(const Ring<Point> & ring, size_t n)
+{
+    size_t edges = 0;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const Point & from = ring[i];
+        const Point & to = ring[i + 1 == n ? 0 : i + 1];
+        if (boost::geometry::get<0>(from) != boost::geometry::get<0>(to) || boost::geometry::get<1>(from) != boost::geometry::get<1>(to))
+            ++edges;
+    }
+    return edges;
+}
+
+/// Whether `a` and `b` are antipodal. Both latitudes must be in [−90, 90].
+inline bool areAntipodal(const SphericalPoint & a, const SphericalPoint & b)
+{
+    const Float64 latitude = boost::geometry::get<1>(a);
+    if (latitude != -boost::geometry::get<1>(b))
+        return false;
+    if (std::abs(latitude) == 90)
+        return true;
+    /// Each longitude is reduced first, so that the difference of two large ones does not overflow.
+    const Float64 longitude_difference
+        = std::remainder(boost::geometry::get<0>(a), 360.0) - std::remainder(boost::geometry::get<0>(b), 360.0);
+    return std::abs(std::remainder(longitude_difference, 360.0)) == 180;
+}
+
+/// Throws if two consecutive vertices of `points` are antipodal. If `closed`, the last vertex and the first one are
+/// consecutive too.
+template <typename Points>
+void checkSphericalPathEdges(const Points & points, bool closed, std::string_view function_name)
+{
+    const size_t n = points.size();
+    const size_t edges = closed ? n : (n == 0 ? 0 : n - 1);
+    for (size_t i = 0; i < edges; ++i)
+    {
+        const SphericalPoint & from = points[i];
+        const SphericalPoint & to = points[i + 1 == n ? 0 : i + 1];
+        if (areAntipodal(from, to))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The edge from ({}, {}) to ({}, {}) in function {} joins antipodal points, so its path is undefined: every half "
+                "of a great circle through them is a shortest path. Add a vertex between them",
+                boost::geometry::get<0>(from),
+                boost::geometry::get<1>(from),
+                boost::geometry::get<0>(to),
+                boost::geometry::get<1>(to),
+                function_name);
+    }
+}
+
+/// Throws if an edge of a ring or a linestring in `geometry` joins two antipodal points. Otherwise the path of the edge
+/// would depend on the rounding errors of the coordinates.
+template <typename Geometry>
+void checkSphericalEdges(const Geometry & geometry, std::string_view function_name)
+{
+    using Tag = typename boost::geometry::tag<Geometry>::type;
+    if constexpr (std::is_same_v<Tag, boost::geometry::linestring_tag>)
+    {
+        checkSphericalPathEdges(geometry, /* closed */ false, function_name);
+    }
+    else if constexpr (std::is_same_v<Tag, boost::geometry::ring_tag>)
+    {
+        checkSphericalPathEdges(geometry, /* closed */ true, function_name);
+    }
+    else if constexpr (std::is_same_v<Tag, boost::geometry::polygon_tag>)
+    {
+        checkSphericalEdges(geometry.outer(), function_name);
+        for (const auto & inner : geometry.inners())
+            checkSphericalEdges(inner, function_name);
+    }
+    else if constexpr (std::is_same_v<Tag, boost::geometry::multi_linestring_tag> || std::is_same_v<Tag, boost::geometry::multi_polygon_tag>)
+    {
+        for (const auto & part : geometry)
+            checkSphericalEdges(part, function_name);
+    }
+    else
+    {
+        static_assert(std::is_same_v<Tag, boost::geometry::point_tag> || std::is_same_v<Tag, boost::geometry::multi_point_tag>);
+    }
+}
+
+/// Whether a ring of `edges` edges (`ringEdgeCount`) whose area, of either of the two regions it bounds, is `area`
+/// steradians splits the sphere into two equal halves up to rounding, as the equator does. Then the interior of the ring
+/// is the half on its right, as for the clockwise `Ring`. Otherwise it is the smaller region. The bound of the rounding
+/// error is the one of `S2::GetCurvatureMaxError`, but without the edges of zero length, so that repeating a vertex does
+/// not change the interior.
+inline bool isHemisphere(Float64 area, size_t edges)
+{
+    return std::abs(2 * std::numbers::pi - std::abs(area)) <= 11.25 * DBL_EPSILON * static_cast<Float64>(edges);
 }
 
 /// Must match the global discriminators of the Geometry Variant type.
