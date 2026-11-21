@@ -3,9 +3,15 @@
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -215,6 +221,109 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
+/// Whether casting `from` to `to` cannot throw. Integer-to-integer conversions wrap around, conversions to a float round,
+/// and a cast built by `ActionsDAG::addCast` clamps an out-of-range date (`clamps_dates`).
+static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to, bool clamps_dates)
+{
+    if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
+        return false;
+
+    const auto from_nested = removeNullable(removeLowCardinality(from));
+    const auto to_nested = removeNullable(removeLowCardinality(to));
+
+    /// `Nothing` has no values, e.g. the elements of `[]`.
+    if (isNothing(from_nested))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_nested.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_nested.get());
+    if (from_array && to_array)
+        return canCastWithoutThrowing(from_array->getNestedType(), to_array->getNestedType(), clamps_dates);
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_nested.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_nested.get());
+    if (from_tuple && to_tuple)
+    {
+        const auto positions = tryGetTupleCastElementPositions(*from_tuple, *to_tuple);
+        if (!positions)
+            return false;
+        for (size_t i = 0; i < positions->size(); ++i)
+        {
+            const auto & position = (*positions)[i];
+            if (position && !canCastWithoutThrowing(from_tuple->getElements()[*position], to_tuple->getElements()[i], clamps_dates))
+                return false;
+        }
+        return true;
+    }
+
+    /// `canBeSafelyCast` pairs tuples inside a `Map` by position and accepts any `QBit` cast.
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from_nested.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to_nested.get());
+    if (from_map && to_map)
+        return canCastWithoutThrowing(from_map->getKeyType(), to_map->getKeyType(), clamps_dates)
+            && canCastWithoutThrowing(from_map->getValueType(), to_map->getValueType(), clamps_dates);
+
+    const auto * from_qbit = typeid_cast<const DataTypeQBit *>(from_nested.get());
+    const auto * to_qbit = typeid_cast<const DataTypeQBit *>(to_nested.get());
+    if (from_qbit && to_qbit)
+        return from_qbit->getDimension() == to_qbit->getDimension()
+            && canCastWithoutThrowing(from_qbit->getElementType(), to_qbit->getElementType(), clamps_dates);
+
+    if (from_map || to_map || from_qbit || to_qbit)
+        return false;
+
+    if (canBeSafelyCast(from, to))
+        return true;
+    if (clamps_dates && isDateOrDate32OrDateTimeOrDateTime64(from_nested) && isDateOrDate32OrDateTimeOrDateTime64(to_nested))
+        return true;
+
+    if (isFloat(to_nested) && (isNumber(from_nested) || isEnum(from_nested)))
+        return true;
+
+    return (isInteger(from_nested) || isEnum(from_nested)) && isInteger(to_nested);
+}
+
+/// A cast written in the query follows `date_time_overflow_behavior`, so it may throw on a date.
+static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
+{
+    static constexpr std::string_view numeric_conversions[] = {
+        "toInt8", "toInt16", "toInt32", "toInt64", "toInt128", "toInt256",
+        "toUInt8", "toUInt16", "toUInt32", "toUInt64", "toUInt128", "toUInt256",
+        "toBFloat16", "toFloat32", "toFloat64"};
+
+    const auto & name = node.function_base->getName();
+    const bool is_cast = name == "_CAST" || name == "CAST";
+    const bool is_numeric_conversion = node.children.size() == 1 && std::ranges::find(numeric_conversions, name) != std::end(numeric_conversions);
+    if (node.children.empty() || (!is_cast && !is_numeric_conversion))
+        return false;
+
+    return canCastWithoutThrowing(node.children.front()->result_type, node.result_type, /*clamps_dates=*/false);
+}
+
+/// A runtime filter computes the key also on rows that are removed before the join.
+static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
+{
+    return allReachableNodes({key}, [](const ActionsDAG::Node * node)
+    {
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        /// A function with a known constant result is not executed.
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->column)
+            return true;
+
+        /// `IFunctionBase::canThrow` assumes that every cast, conversion and `tuple` can throw.
+        if (node->function_base->getName() == "tuple" || isConversionThatCannotThrow(*node))
+            return true;
+
+        DataTypesWithConstInfo arguments;
+        arguments.reserve(node->children.size());
+        for (const auto * child : node->children)
+            arguments.push_back({child->result_type, child->column != nullptr, typeid_cast<const ColumnConst *>(child->column.get())});
+        return !node->function_base->canThrow(arguments);
+    });
+}
+
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
 /// identical across the two Auto-PR plan builds (single-replica and parallel-replicas), so their
 /// plans hash equally with no special-casing.
@@ -395,6 +504,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
+    /// Per key pair in `preCalculateKeys` order, as written in the query, before it casts keys to a common type.
+    VectorWithMemoryTracking<bool> probe_key_can_throw;
+    DataTypes probe_key_types;
+
     /// The runtime filter is built on the build (right) side and is addressed by name
     /// (BuildRuntimeFilterStep on the key name, findInOutputs, name-keyed permutations). If a join
     /// KEY column name occurs more than once in the build input header (e.g. a correlated subquery
@@ -419,9 +532,17 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// duplicated NON-key build column guarded by such a filter would needlessly disable the
             /// filter (which is only ever built on the real key).
             if (lhs.fromLeft() && rhs.fromRight())
+            {
                 build_key_names.insert(rhs.getColumnName());
+                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(lhs.getNode()));
+                probe_key_types.push_back(lhs.getType());
+            }
             else if (lhs.fromRight() && rhs.fromLeft())
+            {
                 build_key_names.insert(lhs.getColumnName());
+                probe_key_can_throw.push_back(!canComputeKeyOnAnyRow(rhs.getNode()));
+                probe_key_types.push_back(rhs.getType());
+            }
         }
 
         const auto & build_header = *build_filter_node->step->getOutputHeader();
@@ -438,6 +559,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
+    DataTypes join_key_probe_types_as_written;
 
     /// Collect equality predicates for runtime filter construction.
     /// Non-equality predicates (e.g. range conditions) are skipped for non-ANTI-JOIN:
@@ -471,6 +593,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    /// A filter on a subset of the keys over-approximates, except for LEFT ANTI JOIN, whose `NOT IN` filter needs every key.
+    if (std::ranges::all_of(probe_key_can_throw, std::identity{})
+        || (check_left_does_not_contain && std::ranges::any_of(probe_key_can_throw, std::identity{})))
+        return false;
+
     /// Save original number of expression before extracting key DAGs
     const auto total_join_on_predicates_count = join_operator.expression.size();
 
@@ -479,9 +606,20 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         auto key_dags = join_step->preCalculateKeys(apply_filter_node->step->getOutputHeader(), build_filter_node->step->getOutputHeader());
         if (key_dags)
         {
-            auto get_node_column_with_type_and_name = [](const auto * e) { return ColumnWithTypeAndName(e->result_type, e->result_name); };
-            join_keys_probe_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->first.keys | std::views::transform(get_node_column_with_type_and_name));
-            join_keys_build_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->second.keys | std::views::transform(get_node_column_with_type_and_name));
+            const auto & probe_keys = key_dags->first.keys;
+            const auto & build_keys = key_dags->second.keys;
+            if (probe_keys.size() != probe_key_can_throw.size() || build_keys.size() != probe_keys.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} join key pairs, got {} probe keys and {} build keys",
+                    probe_key_can_throw.size(), probe_keys.size(), build_keys.size());
+
+            for (size_t i = 0; i < probe_keys.size(); ++i)
+            {
+                if (probe_key_can_throw[i])
+                    continue;
+                join_keys_probe_side.emplace_back(probe_keys[i]->result_type, probe_keys[i]->result_name);
+                join_keys_build_side.emplace_back(build_keys[i]->result_type, build_keys[i]->result_name);
+                join_key_probe_types_as_written.push_back(probe_key_types[i]);
+            }
             if (!isPassthroughActions(key_dags->first.actions_dag))
                 makeExpressionNodeOnTopOf(*apply_filter_node, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
             if (!isPassthroughActions(key_dags->second.actions_dag))
@@ -561,6 +699,21 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             common_types.push_back(join_key_build_side.type);
         }
     }
+
+    /// Both `preCalculateKeys` and `createRuntimeFilterCondition` cast the key to the common type with `ActionsDAG::addCast`.
+    for (size_t i = common_types.size(); i-- > 0;)
+    {
+        if (canCastWithoutThrowing(join_key_probe_types_as_written[i], common_types[i], /*clamps_dates=*/true))
+            continue;
+        if (check_left_does_not_contain)
+            return false;
+        join_keys_probe_side.erase(join_keys_probe_side.begin() + i);
+        join_keys_build_side.erase(join_keys_build_side.begin() + i);
+        join_key_probe_types_as_written.erase(join_key_probe_types_as_written.begin() + i);
+        common_types.erase(common_types.begin() + i);
+    }
+    if (join_keys_build_side.empty())
+        return false;
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
     const size_t hash_table_keys_count = countHashTableKeys(*join_step);
