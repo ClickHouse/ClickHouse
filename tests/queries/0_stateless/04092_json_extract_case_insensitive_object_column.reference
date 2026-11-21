@@ -117,3 +117,11 @@ complex result types, non-constant key	a	[1,2]	{}
 complex result types, non-constant key	m	[]	{'x':1}
 typed JSON object	{"Key":42}	42	42	42	1
 typed Tuple object	42	42	1
+typed Map object	42	42	42	1
+typed Dynamic object	42	42	42	1
+scalar tuple result	(5,6)	(5,6)	(5,6)	(5,6)
+mixed groups	Obj	0	0
+mixed groups	a	1	1
+mixed groups, table	Obj	0	0
+mixed groups, table	a	1	1
+large const object	256

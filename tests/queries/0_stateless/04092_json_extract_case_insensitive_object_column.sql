@@ -329,3 +329,31 @@ FROM (SELECT '{"Obj": {"Key": 42}}'::JSON(Obj JSON) AS j);
 SELECT 'typed Tuple object',
     JSONExtractIntCaseInsensitive(j, 'obj', 'key'), JSONExtractInt(j, 'Obj', 'Key'), JSONHas(j, 'Obj', 'Key')
 FROM (SELECT '{"Obj": {"Key": 42}}'::JSON(Obj Tuple(Key Int64)) AS j);
+
+-- Any other typed path that holds a whole object is handled the same way, whatever its type is.
+SELECT 'typed Map object',
+    JSONExtractIntCaseInsensitive(j, 'obj', 'key'), JSONExtractInt(j, 'Obj', 'Key'), JSONExtractInt(toString(j), 'Obj', 'Key'), JSONHas(j, 'Obj', 'Key')
+FROM (SELECT '{"Obj": {"Key": 42}}'::JSON(Obj Map(String, Int64)) AS j);
+SELECT 'typed Dynamic object',
+    JSONExtractIntCaseInsensitive(j, 'obj', 'key'), JSONExtractInt(j, 'Obj', 'Key'), JSONExtractInt(toString(j), 'Obj', 'Key'), JSONHas(j, 'Obj', 'Key')
+FROM (SELECT '{"Obj": {"Key": 42}}'::JSON(Obj Dynamic) AS j);
+
+-- A `Tuple` result is produced by the parser also when all its elements are scalars.
+SELECT 'scalar tuple result',
+    JSONExtract(j, 't', 'Tuple(n UInt8, m UInt8)'), JSONExtract(toString(j), 't', 'Tuple(n UInt8, m UInt8)'),
+    JSONExtractCaseInsensitive(j, 'T', 'Tuple(n UInt8, m UInt8)'),
+    JSONExtract(j, 't', 'Nullable(Tuple(n UInt8, m UInt8))')
+FROM (SELECT '{"t": {"n": 5, "m": 6}}'::JSON AS j);
+
+-- With non-constant keys, a group of rows whose keys descend into a typed path goes through the parser,
+-- and it does not change the result of the other rows: every row gives the same answer as with a constant key.
+SELECT 'mixed groups', k, JSONExtractInt(j, k, 'flag'),
+    if(k = 'a', JSONExtractInt(j, 'a', 'flag'), JSONExtractInt(j, 'Obj', 'flag'))
+FROM (SELECT '{"a": {"flag": true}, "Obj": {"flag": true}}'::JSON(Obj JSON) AS j, arrayJoin(['a', 'Obj']) AS k) ORDER BY k;
+SELECT 'mixed groups, table', k, JSONExtractInt(j, k, 'flag'),
+    if(k = 'a', JSONExtractInt(j, 'a', 'flag'), JSONExtractInt(j, 'Obj', 'flag'))
+FROM (SELECT materialize('{"a": {"flag": true}, "Obj": {"flag": true}}')::JSON(Obj JSON) AS j, arrayJoin(['a', 'Obj']) AS k) ORDER BY k;
+
+-- A constant `JSON` object is not expanded to one copy per row, also when all the rows have the same non-constant key.
+SELECT 'large const object', sum(JSONExtractInt(CAST(concat('{"blob": "', repeat('x', 1000000), '", "a": 1}'), 'JSON'), materialize('a')))
+FROM numbers(256) SETTINGS max_memory_usage = 134217728;

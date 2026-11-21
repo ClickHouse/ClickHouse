@@ -115,9 +115,6 @@ public:
         static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
                             const FormatSettings & format_settings)
         {
-            MutableColumnPtr to{result_type->createColumn()};
-            to->reserve(input_rows_count);
-
             if (arguments.empty())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", String(Name::name));
 
@@ -141,7 +138,6 @@ public:
             /// that the stored value cannot be cast to with `accurateCastOrNull` (such as `Array` and `Map`),
             /// and the paths that descend into a typed path that the subcolumn lookup cannot see into
             /// (`runForObjectColumn` returns `nullptr` for them).
-            ColumnsWithTypeAndName arguments_holder;
             if (is_object_input)
             {
                 const size_t num_path_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
@@ -156,14 +152,36 @@ public:
                         return result;
                 }
 
-                auto string_type = std::make_shared<DataTypeString>();
-                arguments_holder = arguments;
-                arguments_holder[0].column = serializeObjectColumnToJSONText(first_column, input_rows_count, format_settings);
-                arguments_holder[0].type = string_type;
+                return runForObjectColumnThroughJSONText(arguments, result_type, input_rows_count, format_settings);
             }
 
-            /// String input: parse JSON and extract values.
-            const ColumnsWithTypeAndName & json_arguments = is_object_input ? arguments_holder : arguments;
+            return runForString(arguments, result_type, input_rows_count, format_settings);
+        }
+
+    private:
+        /// Serializes every row of a `JSON` column back to JSON text and handles it with the string implementation.
+        static ColumnPtr runForObjectColumnThroughJSONText(
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            const FormatSettings & format_settings)
+        {
+            ColumnsWithTypeAndName json_arguments = arguments;
+            json_arguments[0].column = serializeObjectColumnToJSONText(arguments[0], input_rows_count, format_settings);
+            json_arguments[0].type = std::make_shared<DataTypeString>();
+            return runForString(json_arguments, result_type, input_rows_count, format_settings);
+        }
+
+        /// String input: parse JSON and extract values.
+        static ColumnPtr runForString(
+            const ColumnsWithTypeAndName & json_arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            const FormatSettings & format_settings)
+        {
+            MutableColumnPtr to{result_type->createColumn()};
+            to->reserve(input_rows_count);
+
             const ColumnPtr & arg_json = json_arguments[0].column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
@@ -241,7 +259,6 @@ public:
             return to;
         }
 
-    private:
         /// The `JSON`-object fast path reads the value stored at the requested path as a subcolumn and
         /// casts it to the function's result type. That is what the value-extracting functions need, and
         /// only they: the remaining ones have to look at the document structure, and a cast of the stored
@@ -285,25 +302,13 @@ public:
 
         /// The subcolumn route casts the stored value to the result type with `accurateCastOrNull`, which
         /// wraps the target in `Nullable` and so rejects the types that cannot be inside `Nullable`, such as
-        /// `Array` and `Map`, also as elements of a `Tuple`. Those results are produced by the parser instead.
+        /// `Array` and `Map`. A `Tuple` is not produced this way either, whatever its elements are: the stored
+        /// value is an object, which cannot be cast to a `Tuple`, so the cast would silently give the default.
+        /// Those results are produced by the parser instead.
         static bool canCastObjectSubcolumnTo(const DataTypePtr & type)
         {
             const DataTypePtr nested = removeNullable(removeLowCardinality(type));
-            if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
-            {
-                for (const auto & element : tuple->getElements())
-                    if (!canCastObjectSubcolumnTo(element))
-                        return false;
-                return true;
-            }
-            return nested->canBeInsideNullable();
-        }
-
-        /// A typed path whose value is itself an object, with keys that are not stored paths of the column.
-        static bool isTypedPathObject(const DataTypePtr & type)
-        {
-            const DataTypePtr nested = removeNullable(removeLowCardinality(type));
-            return isObject(nested) || isTuple(nested);
+            return !isTuple(nested) && nested->canBeInsideNullable();
         }
 
         static bool arePathArgumentsStrings(const ColumnsWithTypeAndName & arguments, size_t num_path_arguments)
@@ -383,16 +388,32 @@ public:
                         group_arguments[i].column = arguments[i].column->index(*group_rows[group], 0);
                 }
                 ColumnPtr group_result = runForObjectColumn<Name, Impl, case_insensitive>(group_arguments, result_type, group_size, format_settings);
-                /// The keys of this group cannot be read from subcolumns: the whole block goes through the parser.
+                /// The keys of this group cannot be read from subcolumns, so this group, and only it, goes through
+                /// the parser, exactly as it does with the same keys given as constants. The other groups keep
+                /// the results of the subcolumn route: the parser has different coercion rules, and the result
+                /// of a row must not depend on the keys of the other rows of the block.
                 if (!group_result)
-                    return nullptr;
-                group_results[group] = group_result->convertToFullColumnIfConst();
+                    group_result = runForObjectColumnThroughJSONText(group_arguments, result_type, group_size, format_settings);
+                group_results[group] = group_result;
+            }
+
+            /// The result of a group with a constant object is constant: it holds a single value for all its rows.
+            VectorWithMemoryTracking<const IColumn *> group_values(group_results.size());
+            VectorWithMemoryTracking<UInt8> group_is_const(group_results.size());
+            for (size_t group = 0; group < group_results.size(); ++group)
+            {
+                const auto * result_const = typeid_cast<const ColumnConst *>(group_results[group].get());
+                group_is_const[group] = result_const != nullptr;
+                group_values[group] = result_const ? &result_const->getDataColumn() : group_results[group].get();
             }
 
             auto result = result_type->createColumn();
             result->reserve(input_rows_count);
             for (size_t row = 0; row < input_rows_count; ++row)
-                result->insertFrom(*group_results[row_group[row]], row_position[row]);
+            {
+                const size_t group = row_group[row];
+                result->insertFrom(*group_values[group], group_is_const[group] ? 0 : row_position[row]);
+            }
             return result;
         }
 
@@ -478,12 +499,32 @@ public:
             size_t input_rows_count,
             const FormatSettings & format_settings)
         {
+            /// A constant object is never expanded to `input_rows_count` copies: the value is extracted once
+            /// from its single row, and the result is constant as well. The path keys are constants here too.
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get()))
+            {
+                ColumnsWithTypeAndName single_row_arguments = arguments;
+                single_row_arguments[0].column = col_const->getDataColumnPtr();
+                ColumnPtr single_row_result
+                    = runForObjectColumnImpl<TName, TImpl, is_case_insensitive>(single_row_arguments, result_type, 1, format_settings);
+                if (!single_row_result)
+                    return nullptr;
+                return ColumnConst::create(single_row_result->convertToFullColumnIfConst(), input_rows_count);
+            }
+            return runForObjectColumnImpl<TName, TImpl, is_case_insensitive>(arguments, result_type, input_rows_count, format_settings);
+        }
+
+        template <typename TName, template <typename> typename TImpl, bool is_case_insensitive = false>
+        static ColumnPtr runForObjectColumnImpl(
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            const FormatSettings & format_settings)
+        {
             const auto & first_column = arguments[0];
             const auto & data_type_object = assert_cast<const DataTypeObject &>(*first_column.type);
 
-            const auto * col_const = typeid_cast<const ColumnConst *>(first_column.column.get());
-            const auto * col_object = typeid_cast<const ColumnObject *>(
-                col_const ? col_const->getDataColumnPtr().get() : first_column.column.get());
+            const auto * col_object = typeid_cast<const ColumnObject *>(first_column.column.get());
 
             if (!col_object)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for Object parsing");
@@ -537,8 +578,7 @@ public:
                 path += key;
             }
 
-            /// Expand ColumnConst to full column if needed.
-            ColumnPtr object_column = col_const ? col_const->convertToFullColumn() : first_column.column;
+            const ColumnPtr & object_column = first_column.column;
 
             /// Note: an empty `path` is not a special case here. The root form (no path arguments) is
             /// handled by the caller, so getting here with an empty path means a single empty key
@@ -564,14 +604,15 @@ public:
             VectorWithMemoryTracking<String> case_insensitive_matches;
             if constexpr (!is_case_insensitive)
             {
-                /// A typed path can hold a whole object (`JSON(Obj JSON)` or `JSON(Obj Tuple(Key Int64))`), and
-                /// the combined subcolumn of a path inside it is not found. Such paths are read from the JSON text.
+                /// A typed path can hold a whole object, whatever its type is (`JSON(Obj JSON)`,
+                /// `JSON(Obj Tuple(Key Int64))`, `JSON(Obj Map(String, Int64))`, `JSON(Obj Dynamic)`, ...), and the
+                /// keys inside it are not stored paths of this column, so the combined subcolumn of a path inside
+                /// it is not found. Every path that descends into a typed path is read from the JSON text.
                 if (!data_type_object.getTypedPaths().contains(path))
                 {
-                    for (const auto & [typed_path, typed_type] : data_type_object.getTypedPaths())
+                    for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
                     {
-                        if (typed_path.size() < path.size() && path[typed_path.size()] == '.' && path.starts_with(typed_path)
-                            && isTypedPathObject(typed_type))
+                        if (typed_path.size() < path.size() && path[typed_path.size()] == '.' && path.starts_with(typed_path))
                             return nullptr;
                     }
                 }
@@ -609,14 +650,14 @@ public:
                     return true;
                 };
 
-                /// A typed path can hold a whole object (`JSON(Obj JSON)` or `JSON(Obj Tuple(Key Int64))`), and the
+                /// A typed path can hold a whole object, whatever its type is (`JSON(Obj JSON)`,
+                /// `JSON(Obj Tuple(Key Int64))`, `JSON(Obj Map(String, Int64))`, `JSON(Obj Dynamic)`, ...), and the
                 /// keys inside it are not stored paths of this column, so they cannot be matched here. When the
-                /// requested path descends into such a typed path, the caller reads the value from the JSON text.
-                for (const auto & [typed_path, typed_type] : data_type_object.getTypedPaths())
+                /// requested path descends into a typed path, the caller reads the value from the JSON text.
+                for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
                 {
                     if (typed_path.size() < path.size() && path[typed_path.size()] == '.'
-                        && match_case_insensitive(typed_path, std::string_view(path).substr(0, typed_path.size()))
-                        && isTypedPathObject(typed_type))
+                        && match_case_insensitive(typed_path, std::string_view(path).substr(0, typed_path.size())))
                         return nullptr;
                 }
 
