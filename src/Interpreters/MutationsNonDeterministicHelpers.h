@@ -16,8 +16,9 @@ struct FirstNonDeterministicFunctionResult
 };
 
 /// Searches for non-deterministic functions and subqueries which
-/// may also be non-deterministic in expressions of mutation command.
+/// may also be non-deterministic in expressions of mutation command or in an expression.
 FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context);
+FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(ASTPtr expression, ContextPtr context);
 
 /// Executes non-deterministic functions and subqueries in expressions of mutation
 /// command and replaces them to the literals with a result of expressions.

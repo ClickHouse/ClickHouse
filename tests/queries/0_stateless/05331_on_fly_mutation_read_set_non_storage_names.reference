@@ -1,0 +1,100 @@
+alias in a delete predicate
+1
+[2]
+0
+0
+alias in an update expression, closed over its source
+1	11
+2	11
+1	11
+2	11
+1	12
+2	12
+1	11
+2	11
+1	11
+2	11
+1	12
+2	12
+alias of an alias, alias over a subcolumn
+1	2	3
+2	1	5
+1	2	3
+2	1	5
+lambda parameters and expression aliases
+1	6
+2	6
+1	4
+2	9
+1	106
+2	106
+1	6
+2	6
+1	4
+2	9
+1	106
+2	106
+qualified name, element of a tuple alias, both
+1	10
+2	10
+1	10
+2	10
+1	11
+2	11
+1	10
+2	10
+1	10
+2	10
+1	11
+2	11
+flattened nested group
+1	3
+2	1
+1	3
+2	1
+alias over a subcolumn of an updated column
+1
+names that only look like a column do not read it
+1	6
+2	6
+1	1
+2	2
+1	20
+2	40
+1	1
+2	1
+1	6
+2	6
+1	1
+2	2
+1	20
+2	40
+1	1
+2	1
+alias over a nondeterministic function is not applied on the fly
+1
+2
+1	0	0
+2	0	0
+a qualified name reads only the column the analyzer binds it to
+1	7
+2	8
+1	0
+2	0
+1	7
+2	8
+1	0
+2	0
+an ALIAS prefix and a Nested group bind what the analyzer binds
+1	10
+2	2
+1	3
+2	1
+1	3
+2	1
+1	10
+2	2
+1	3
+2	1
+1	3
+2	1

@@ -139,32 +139,31 @@ using ExecuteNonDeterministicConstFunctionsVisitor = InDepthNodeVisitor<ExecuteN
 
 }
 
-FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context)
+FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(ASTPtr expression, ContextPtr context)
 {
     FirstNonDeterministicFunctionMatcher::Data finder_data{context, {}};
+    FirstNonDeterministicFunctionFinder(finder_data).visit(expression);
+    return finder_data.result;
+}
 
+FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context)
+{
     switch (command.type)
     {
         case MutationCommand::UPDATE:
         {
             auto alter = command.ast();
-            auto update_assignments_ast = alter->update_assignments->clone();
-            FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
+            auto result = findFirstNonDeterministicFunction(alter->update_assignments->clone(), context);
+            if (result.nondeterministic_function_name || result.subquery)
+                return result;
 
-            if (finder_data.result.nondeterministic_function_name)
-                return finder_data.result;
-
-            ASTPtr predicate_ast(alter->predicate);
-            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
-            return finder_data.result;
+            return findFirstNonDeterministicFunction(ASTPtr(alter->predicate), context);
         }
 
         case MutationCommand::DELETE:
         {
             auto alter = command.ast();
-            ASTPtr predicate_ast(alter->predicate);
-            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
-            return finder_data.result;
+            return findFirstNonDeterministicFunction(ASTPtr(alter->predicate), context);
         }
 
         default:
