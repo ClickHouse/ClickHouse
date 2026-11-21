@@ -80,7 +80,7 @@ namespace
             {
                 ASTs equals_args;
                 equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(String(header_value)));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 
@@ -115,24 +115,8 @@ namespace
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
     VectorWithMemoryTracking<size_t> result;
-
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        if (auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>())
-        {
-            const auto & function_name = function_node->getFunctionName();
-            if (function_name == "headers" || function_name == "body")
-            {
-                result.push_back(i);
-            }
-        }
-    }
-
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers", "body"});
     return result;
 }
 

@@ -441,7 +441,7 @@ String StorageObjectStorageConfiguration::getURIForAccessCheck(const String & wr
 {
     /// The URI as the user typed it, which passed the source access check, e.g. `http://host/bucket/data/{_partition_id}.tsv`,
     /// and the path inside the storage that it names, e.g. `data/{_partition_id}.tsv`.
-    const String & granted_uri = getRawURI();
+    const String granted_uri(getRawURI());
     const String granted_path = getRawPath().path;
 
     /// When the URI is the path itself, e.g. for `azureBlobStorage`, the path is used as is: parsing it as a URI
