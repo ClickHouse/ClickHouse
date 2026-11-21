@@ -1,0 +1,51 @@
+--- bounded, no cursor
+a.log	0	1	a
+a.log	4	2	b
+a.log	8	3	c
+b.log	0	10	x
+b.log	5	20	y
+--- bounded, with cursor
+a.log	3
+--- the STREAM does not consume the records
+5
+--- a cursor outside a file
+BAD_ARGUMENTS
+--- a dot in a file name that is not escaped
+BAD_ARGUMENTS
+--- unbounded, with cursor
+a.log 4
+c.log 30
+a.log 5
+--- incremental refresh
+round1	8	75
+round2	9	81
+round3	10	88
+round4	10	88
+round5	11	100000088
+round6	12	100000097
+--- file names with a common dotted prefix and with the suffixes of the structured cursor
+app.inode	8
+app.log	2
+app.log.1	4
+app.offset	6
+app.inode	8
+app.log	2
+app.log.1	4
+app.offset	6
+--- a file with two names (hard links) is read once
+app.inode	7
+app.inode	8
+app.log	1
+app.log	2
+app.log.1	3
+app.log.1	4
+app.offset	5
+app.offset	6
+--- a record equal to the column name is not taken for a header
+a
+b
+v
+--- a file renamed by log rotation keeps its position
+app.log 1
+app.log 2
+app.log.1 3

@@ -23,6 +23,8 @@
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/StorageFileLog.h>
+#include <Storages/FileLog/FileLogStreamSource.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -77,6 +79,7 @@ namespace ErrorCodes
     extern const int CANNOT_SELECT;
     extern const int QUERY_NOT_ALLOWED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -526,6 +529,22 @@ void StorageFileLog::read(
     size_t /* num_streams */)
 
 {
+    if (query_info.isStream())
+    {
+        const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+        if (stream_settings.watermark)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a table with engine FileLog");
+
+        auto source = std::make_shared<FileLogStreamSource>(
+            *this, storage_snapshot, query_context, column_names, stream_settings, getMaxBlockSize(), getPollTimeoutMillisecond());
+        source->setStorageLimits(query_info.storage_limits);
+
+        auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+        step->setStepDescription("Read from FileLog STREAM");
+        query_plan.addStep(std::move(step));
+        return;
+    }
+
     query_plan.addStep(
         std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
@@ -1187,6 +1206,16 @@ app.log.2.gz    older files, compressed
 
 A table on `FileLog('/var/lib/clickhouse/user_files/my_app/*.log', 'JSONEachRow')` reads `app.log`; after the rotation it keeps reading `app.log.1`, so the lines the application writes there before it reopens its log are not lost, and it never reads the compressed files. Make sure the glob does not match the compressed file names.
 
+## Streaming queries {#streaming-queries}
+
+A streaming query (`SELECT ... FROM file_log STREAM`, an experimental feature enabled by `enable_streaming_queries`) reads the files with its own readers. Unlike a direct `SELECT`, it does not move the read positions stored in the metadata of the table and does not need `stream_like_engine_allow_direct_select`. The cursor is a map from the file name to the offset of the last read record, and can be reconstructed from the `_filename` and `_offset` virtual columns. The cursor splits its keys by dots, so a dot in a file name is written as `%2E` (and a percent sign as `%25`):
+
+```sql
+SELECT _filename, _offset, * FROM file_log STREAM CURSOR {'app%2Elog': 1024}
+```
+
+A file without an entry in the cursor is read from the beginning, and only complete records (ending with a newline) are read. The files are identified by their inodes: a file renamed by log rotation keeps its read position, and a file with several names (hard links) is read once. An unbounded stream checks the files for new data every `poll_timeout_ms`; a file replaced by another one with the same name or truncated is read from the beginning, and a file that leaves the directory is closed after its remaining records are read. `STREAM BOUNDED` reads the records that are complete within the sizes of the files at the start of the query, so a `FileLog` table can be the source of an incremental refresh of a refreshable materialized view (`APPEND INCREMENTAL`). The cursor that it keeps has the inode of every file and the position after its last read record too (`{'app%2Elog': {'offset': 1024, 'inode': 123, 'end': 1100}}`), so a file renamed by log rotation keeps its position, and a file replaced or truncated is read from the beginning by the next refresh. `WATERMARK` is not supported.
+
 ## Virtual columns {#virtual-columns}
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
@@ -1230,6 +1259,34 @@ void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
         }
     }
     it->second = FileContext{.inode = inode};
+}
+
+Names StorageFileLog::listStreamFiles() const
+{
+    if (!path_is_directory)
+    {
+        const auto file_name = std::filesystem::path(path).filename().string();
+        if (std::filesystem::is_regular_file(getFullDataPath(file_name)))
+            return {file_name};
+        return {};
+    }
+
+    Names result;
+    for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
+    {
+        if (!dir_entry.is_regular_file())
+            continue;
+        String file_name = dir_entry.path().filename();
+        if (fileNameMatches(file_name))
+            result.push_back(std::move(file_name));
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+StreamingHandleErrorMode StorageFileLog::getStreamingHandleErrorMode() const
+{
+    return (*filelog_settings)[FileLogSetting::handle_error_mode];
 }
 
 bool StorageFileLog::fileNameMatches(const String & file_name) const

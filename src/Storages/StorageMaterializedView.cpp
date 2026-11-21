@@ -191,16 +191,17 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
-        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
-        /// read from the beginning on every refresh, appending the same rows again.
-        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (!merge_tree)
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`. A source
+        /// that supports STREAM but does not report the cursor would be read from the beginning on every refresh,
+        /// appending the same rows again.
+        if (!source->reportsStreamingCursor())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                "Incremental refresh source table {} has engine {}, which does not report the cursor of a streaming read",
                 source->getStorageID().getNameForLogs(), source->getName());
 
         /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
+        if (merge_tree)
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,

@@ -65,6 +65,15 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// A streaming query reads the files with its own readers, see `FileLogStreamSource`.
+    bool supportsStreaming() const override { return true; }
+    bool reportsStreamingCursor() const override { return true; }
+
+    /// The names of the files of the table that currently exist, for a streaming query.
+    Names listStreamFiles() const;
+
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const;
+
     void drop() override;
 
     const auto & getFormatName() const { return format_name; }
