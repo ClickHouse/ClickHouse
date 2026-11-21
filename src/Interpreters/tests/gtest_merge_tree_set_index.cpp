@@ -1,13 +1,18 @@
 #include <Interpreters/Set.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 using namespace DB;
 
@@ -195,6 +200,73 @@ void checkSingleIntegerColumn()
     }
 }
 
+/// An end of a range of `Int64` tuples, compared lexicographically with the rows of the set. The second element of a
+/// pair is 0 for a row value and for an included bound; an excluded left end lies just above its value (+1), an
+/// excluded right end just below it (-1). `nullopt` is an infinity.
+using LexPoint = std::optional<std::vector<std::pair<Int64, int>>>;
+
+/// The rows of the generic path tests, with duplicates and a gap at 2 in the first element.
+const std::vector<std::vector<Int64>> & genericPathRows()
+{
+    static const std::vector<std::vector<Int64>> rows = {{0, 1}, {0, 3}, {1, 0}, {1, 0}, {1, 2}, {1, 2}, {3, 0}, {3, 1}, {3, 3}};
+    return rows;
+}
+
+bool anyRowInLexRange(const LexPoint & left, const LexPoint & right)
+{
+    return std::ranges::any_of(genericPathRows(), [&](const std::vector<Int64> & row)
+    {
+        std::vector<std::pair<Int64, int>> point;
+        for (Int64 value : row)
+            point.emplace_back(value, 0);
+        return (!left || *left <= point) && (!right || point <= *right);
+    });
+}
+
+void checkGenericPath(
+    const MergeTreeSetIndex & index, const DataTypes & types, const Ranges & ranges,
+    const LexPoint & left, const LexPoint & right, bool all_bounds_equal)
+{
+    bool expected = anyRowInLexRange(left, right);
+    std::vector<int> key_col_to_sparse_pos;
+    for (size_t i = 0; i < ranges.size(); ++i)
+        key_col_to_sparse_pos.push_back(static_cast<int>(i));
+    for (BoolMask mask : {index.checkInRange(ranges, types, 0), index.checkInRange(key_col_to_sparse_pos, ranges, types, 0)})
+    {
+        EXPECT_EQ(mask.can_be_true, expected);
+        EXPECT_EQ(mask.can_be_false, all_bounds_equal ? !expected : true);
+    }
+}
+
+/// Builds the range directly, so that `Range` does not normalize open integer bounds.
+Range makeRange(const Field & left, bool left_included, const Field & right, bool right_included)
+{
+    Range range(left);
+    range.right = right;
+    range.left_included = left_included;
+    range.right_included = right_included;
+    return range;
+}
+
+struct Bound
+{
+    Int64 left;
+    Int64 right;
+    bool left_included;
+    bool right_included;
+};
+
+/// Every range of one `Int64` key column with ends in [-1, 4], including the empty ones.
+std::vector<Bound> genericPathBounds()
+{
+    std::vector<Bound> bounds;
+    for (Int64 left = -1; left <= 4; ++left)
+        for (Int64 right = left; right <= 4; ++right)
+            for (unsigned flags = 0; flags < 4; ++flags)
+                bounds.push_back({left, right, (flags & 1) != 0, (flags & 2) != 0});
+    return bounds;
+}
+
 }
 
 TEST(MergeTreeSetIndex, SingleIntegerColumnBounds)
@@ -207,4 +279,92 @@ TEST(MergeTreeSetIndex, SingleIntegerColumnBounds)
     checkSingleIntegerColumn<Int16>();
     checkSingleIntegerColumn<Int32>();
     checkSingleIntegerColumn<Int64>();
+}
+
+TEST(MergeTreeSetIndex, GenericPathBoundsKeyColumns)
+{
+    auto int64 = std::make_shared<DataTypeInt64>();
+    DataTypes types = {int64, int64};
+    Columns columns;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto column = int64->createColumn();
+        for (const auto & row : genericPathRows())
+            column->insert(Field(row[i]));
+        columns.push_back(std::move(column));
+    }
+    MergeTreeSetIndex index(columns, {{0, 0, {}}, {1, 1, {}}});
+
+    const std::vector<Bound> bounds = genericPathBounds();
+    for (const Bound & first : bounds)
+    {
+        for (const Bound & second : bounds)
+        {
+            SCOPED_TRACE(::testing::Message() << "left=(" << first.left << ", " << second.left << ") right=("
+                << first.right << ", " << second.right << ") left_included=(" << first.left_included << ", "
+                << second.left_included << ") right_included=(" << first.right_included << ", " << second.right_included << ")");
+            Ranges ranges = {
+                makeRange(Field(first.left), first.left_included, Field(first.right), first.right_included),
+                makeRange(Field(second.left), second.left_included, Field(second.right), second.right_included)};
+            LexPoint left = std::vector<std::pair<Int64, int>>{
+                {first.left, first.left_included ? 0 : 1}, {second.left, second.left_included ? 0 : 1}};
+            LexPoint right = std::vector<std::pair<Int64, int>>{
+                {first.right, first.right_included ? 0 : -1}, {second.right, second.right_included ? 0 : -1}};
+            checkGenericPath(index, types, ranges, left, right, first.left == first.right && second.left == second.right);
+        }
+    }
+}
+
+/// All ranges are checked by one index, so that its range buffers are reused, also between a bound and an infinity.
+TEST(MergeTreeSetIndex, GenericPathBoundsTupleKey)
+{
+    auto int64 = std::make_shared<DataTypeInt64>();
+    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(DataTypes{int64, int64});
+    DataTypePtr nullable_tuple_type = std::make_shared<DataTypeNullable>(tuple_type);
+
+    std::vector<std::pair<Int64, Int64>> points;
+    for (Int64 first = -1; first <= 4; ++first)
+        for (Int64 second = -1; second <= 4; ++second)
+            points.emplace_back(first, second);
+    auto tuple = [](std::pair<Int64, Int64> point) { return Field(Tuple{Field(point.first), Field(point.second)}); };
+    auto lex = [](std::pair<Int64, Int64> point, int epsilon)
+    {
+        return LexPoint(std::vector<std::pair<Int64, int>>{{point.first, 0}, {point.second, epsilon}});
+    };
+
+    for (const DataTypePtr & type : {tuple_type, nullable_tuple_type})
+    {
+        SCOPED_TRACE(type->getName());
+        DataTypes types = {type};
+        auto column = type->createColumn();
+        for (const auto & row : genericPathRows())
+            column->insert(Field(Tuple{Field(row[0]), Field(row[1])}));
+        MergeTreeSetIndex index({std::move(column)}, {{0, 0, {}}});
+
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            for (bool included : {false, true})
+            {
+                SCOPED_TRACE(::testing::Message() << "point=(" << points[i].first << ", " << points[i].second
+                    << ") included=" << included);
+                checkGenericPath(index, types, {Range::createLeftBounded(tuple(points[i]), included)},
+                    lex(points[i], included ? 0 : 1), std::nullopt, false);
+                checkGenericPath(index, types, {Range::createRightBounded(tuple(points[i]), included)},
+                    std::nullopt, lex(points[i], included ? 0 : -1), false);
+            }
+            for (size_t j = i; j < points.size(); ++j)
+            {
+                for (unsigned flags = 0; flags < 4; ++flags)
+                {
+                    bool left_included = flags & 1;
+                    bool right_included = flags & 2;
+                    SCOPED_TRACE(::testing::Message() << "left=(" << points[i].first << ", " << points[i].second
+                        << ") right=(" << points[j].first << ", " << points[j].second << ") left_included=" << left_included
+                        << " right_included=" << right_included);
+                    checkGenericPath(index, types, {makeRange(tuple(points[i]), left_included, tuple(points[j]), right_included)},
+                        lex(points[i], left_included ? 0 : 1), lex(points[j], right_included ? 0 : -1), i == j);
+                }
+            }
+        }
+    }
 }
