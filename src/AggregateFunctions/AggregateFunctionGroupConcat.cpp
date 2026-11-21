@@ -6,6 +6,8 @@
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/VarInt.h>
 
 namespace DB
 {

@@ -18,6 +18,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ThreadStatus.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <mutex>
@@ -565,6 +566,71 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     {
         format_settings.out << prefix << "Allow not exact filter: " << (build_options.polarity == RuntimeFilterPolarity::Contains) << '\n';
     }
+}
+
+namespace
+{
+
+StepAnalysisReport runtimeFilterAnalysisReport(const RuntimeFilter & filter)
+{
+    const auto description = filter.describe();
+
+    /// `printRuntimeFilterGroup` expects the type first and the reason right after it.
+    MetricList filter_metrics;
+    filter_metrics.emplace_back(MetricKey::FilterType, std::string(toString(description.kind)));
+    if (description.disabled_reason != RuntimeFilterDisabledReason::None)
+        filter_metrics.emplace_back(MetricKey::Reason, std::string(toString(description.disabled_reason)));
+    if (description.replaced_kind)
+        filter_metrics.emplace_back(MetricKey::ReplacedFilterType, std::string(toString(*description.replaced_kind)));
+    if (description.keys)
+        filter_metrics.emplace_back(MetricKey::UniqueKeys, *description.keys);
+    if (description.bytes)
+        filter_metrics.emplace_back(MetricKey::Size, *description.bytes);
+    if (description.set_bits_ratio)
+        filter_metrics.emplace_back(MetricKey::SetBits, 100.0 * *description.set_bits_ratio);
+
+    /// Summed over every `__applyFilter` of the filter.
+    const auto & stats = filter.getStats();
+    const auto rows_checked = static_cast<UInt64>(stats.rows_checked.load());
+    const auto rows_passed = static_cast<UInt64>(stats.rows_passed.load());
+
+    MetricList probe_metrics;
+    probe_metrics.emplace_back(MetricKey::RowsChecked, rows_checked);
+    probe_metrics.emplace_back(MetricKey::RowsPassed, rows_passed);
+    if (rows_checked != 0)
+        probe_metrics.emplace_back(MetricKey::PassRate, 100.0 * static_cast<double>(rows_passed) / static_cast<double>(rows_checked));
+    /// Let through unchecked: every row of a disabled filter, and the blocks skipped after it passed too many rows.
+    probe_metrics.emplace_back(MetricKey::RowsSkipped, static_cast<UInt64>(stats.rows_skipped.load()));
+    probe_metrics.emplace_back(MetricKey::RowsBeforeReady, static_cast<UInt64>(stats.rows_before_ready.load()));
+
+    StepAnalysisReport report;
+    report.push_back({MetricGroupKey::RuntimeFilter, std::move(filter_metrics)});
+    report.push_back({MetricGroupKey::Probe, std::move(probe_metrics)});
+    return report;
+}
+
+}
+
+StepAnalyzer BuildRuntimeFilterStep::makeAnalyzer() const
+{
+    StepAnalyzer analyzer = IQueryPlanStep::makeAnalyzer();
+
+    /// The build streams merge into one filter under one key, so the first transform reports for the whole step.
+    analyzer.reporter = [](StepProcessors step_processors) -> StepAnalysisReport
+    {
+        for (const auto * processor : step_processors)
+        {
+            const auto * transform = typeid_cast<const BuildRuntimeFilterTransform *>(processor);
+            if (!transform)
+                continue;
+            if (const auto filter = transform->getRegisteredFilter())
+                return runtimeFilterAnalysisReport(*filter);
+            return {};
+        }
+        return {};
+    };
+
+    return analyzer;
 }
 
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);

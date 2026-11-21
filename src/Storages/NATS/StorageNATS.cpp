@@ -74,7 +74,7 @@ extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
 extern const NATSSettingsUInt64 nats_max_block_size;
 extern const NATSSettingsUInt64 nats_max_rows_per_message;
 extern const NATSSettingsString nats_consumer_name;
-extern const NATSSettingsUInt64 nats_num_consumers;
+extern const NATSSettingsNonZeroUInt64 nats_num_consumers;
 extern const NATSSettingsSecretString nats_password;
 extern const NATSSettingsString nats_queue_group;
 extern const NATSSettingsUInt64 nats_reconnect_wait;
@@ -1115,6 +1115,10 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    /// Read all consumers in parallel when CPU slots are available, as Kafka and RabbitMQ do.
+    /// Each NATSSource measures its flush deadline from when its own read begins in generateImpl,
+    /// so consumers also make progress when concurrency control limits available slots.
+    block_io.pipeline.setNumThreads(std::max(block_io.pipeline.getNumThreads(), sources.size()));
 
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
@@ -1480,6 +1484,25 @@ void registerStorageNATS(StorageFactory & factory)
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
 
+        /// The consumer semaphore takes an `int`. A bigger value can wrap to a valid one, so it is rejected only for a new definition,
+        /// to keep existing tables loadable.
+        const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+        const UInt64 num_consumers = (*nats_settings)[NATSSetting::nats_num_consumers].value;
+        if (is_fresh_definition && num_consumers > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `nats_num_consumers` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                num_consumers);
+
+        const UInt64 reconnect_wait = (*nats_settings)[NATSSetting::nats_reconnect_wait].value;
+        if (is_fresh_definition && reconnect_wait > std::numeric_limits<int>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `nats_reconnect_wait` can not be bigger than {}, got {}",
+                std::numeric_limits<int>::max(),
+                reconnect_wait);
+
         return std::make_shared<StorageNATS>(
             args.table_id,
             args.getContext(),
@@ -1496,7 +1519,7 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         SecretArgumentsSpec{
             /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
-            .secret_settings = NATS::SETTINGS_TO_HIDE,
+            .secret_settings = NATS::settingsToHide(),
             .settings_as_arguments = true,
             .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
         },
