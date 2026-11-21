@@ -124,6 +124,15 @@ DiskPtr StorageFactory::Arguments::getDisk(const String & name) const
     return disk;
 }
 
+std::pair<DiskPtr, CustomDiskRegistrationPtr> StorageFactory::Arguments::getDiskWithCustomDiskRegistration(const String & name) const
+{
+    auto result = getContext()->getDiskWithCustomDiskRegistration(name);
+    /// A short `ATTACH` uses the disk of its own stored definition, so its hosts are exempt like loading at start.
+    if (!isLoadingFromExistingMetadata(mode))
+        DiskFromAST::ensureDiskIsAllowed(result.first, getLocalContext(), /* check_remote_hosts */ !query.attach_short_syntax);
+    return result;
+}
+
 StoragePolicyPtr StorageFactory::Arguments::getStoragePolicy(const String & name) const
 {
     auto storage_policy = getContext()->getStoragePolicy(name);

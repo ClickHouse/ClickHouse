@@ -113,7 +113,8 @@ static std::pair<FileCachePtr, FileCacheSettings> getCache(
     auto cache = FileCacheFactory::instance().getOrCreate(
         cache_name,
         file_cache_settings,
-        predefined_configuration ? "" : config_prefix);
+        predefined_configuration ? "" : config_prefix,
+        is_custom_disk);
 
     return std::pair(cache, file_cache_settings);
 }

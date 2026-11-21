@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskSelector.h>
 
@@ -8,6 +9,9 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
+
+#include <algorithm>
+#include <unordered_set>
 
 
 namespace DB
@@ -45,41 +49,124 @@ void DiskSelector::assertInitialized() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskSelector not initialized");
 }
 
+namespace
+{
+
+bool isWritablePlainDisk(const DiskPtr & disk)
+{
+    return disk->isPlain() && !disk->isReadOnly() && !disk->isWriteOnce();
+}
+
+/// Same endpoint, same bucket, and nested common key prefixes.
+bool areObjectStoragePrefixesOverlapping(const ObjectStoragePtr & object_storage, const ObjectStoragePtr & other_object_storage)
+{
+    if (object_storage->getDescription() != other_object_storage->getDescription())
+        return false;
+
+    if (object_storage->getObjectsNamespace() != other_object_storage->getObjectsNamespace())
+        return false;
+
+    const auto prefix = object_storage->getCommonKeyPrefix();
+    const auto other_prefix = other_object_storage->getCommonKeyPrefix();
+    return prefix.starts_with(other_prefix) || other_prefix.starts_with(prefix);
+}
+
+}
+
+bool DiskSelector::arePlainRewritableDisksOverlapping(const DiskPtr & disk, const DiskPtr & other_disk)
+{
+    if (!isWritablePlainDisk(disk) || !isWritablePlainDisk(other_disk))
+        return false;
+
+    LOG_TEST(getLogger("recordDisk"), "Validating plain disk: {}-{}-{}-{}-{} vs {}-{}-{}-{}-{}",
+        disk->getName(), disk->isReadOnly(), disk->isWriteOnce(), disk->getObjectStorage()->getDescription(), disk->getObjectStorage()->getObjectsNamespace(),
+        other_disk->getName(), other_disk->isReadOnly(), other_disk->isWriteOnce(), other_disk->getObjectStorage()->getDescription(), other_disk->getObjectStorage()->getObjectsNamespace());
+
+    if (!areObjectStoragePrefixesOverlapping(disk->getObjectStorage(), other_disk->getObjectStorage()))
+        return false;
+
+    /// The same metadata storage under the `cache` and `encrypted` layers is the same disk.
+    return unwrapEncryptedAndCacheLayers(other_disk).get() != unwrapEncryptedAndCacheLayers(disk).get();
+}
+
+std::vector<String> DiskSelector::findPlainRewritableDisksOverlappingNewDisk(
+    const String & disk_name,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context,
+    bool run_local_paths_check,
+    RemoteHostFilterCheck remote_host_filter_check,
+    const std::vector<std::pair<String, DiskPtr>> & disks)
+{
+    std::vector<String> result;
+
+    if (!std::ranges::any_of(disks, [](const auto & name_and_disk) { return isWritablePlainDisk(name_and_disk.second); }))
+        return result;
+
+    /// The disk types registered in `registerDiskObjectStorage`, and the rule it uses to choose `plain_rewritable` metadata.
+    static const std::unordered_set<std::string_view> object_storage_disk_types
+        = {"object_storage", "s3", "s3_plain", "s3_with_keeper", "s3_plain_rewritable", "hdfs", "azure_blob_storage", "local_blob_storage", "web"};
+
+    const auto disk_type = config.getString(config_prefix + ".type", "local");
+    if (!object_storage_disk_types.contains(disk_type))
+        return result;
+
+    if (config.has(config_prefix + ".metadata_type"))
+    {
+        if (config.getString(config_prefix + ".metadata_type") != "plain_rewritable")
+            return result;
+    }
+    else if (!disk_type.contains("plain") || !disk_type.contains("rewritable"))
+    {
+        return result;
+    }
+
+    /// A read-only disk cannot overwrite the metadata of another disk, as in `arePlainRewritableDisksOverlapping`.
+    if (config.getBool(config_prefix + ".read_only", false))
+        return result;
+
+    Strings object_storage_config_prefixes;
+    if (config.has(config_prefix + ".locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys(config_prefix + ".locations", locations);
+        for (const auto & location : locations)
+            object_storage_config_prefixes.push_back(config_prefix + ".locations." + location);
+    }
+    else
+    {
+        object_storage_config_prefixes.push_back(config_prefix);
+    }
+
+    for (const auto & object_storage_config_prefix : object_storage_config_prefixes)
+    {
+        const auto object_storage = ObjectStorageFactory::instance().create(
+            disk_name, config, object_storage_config_prefix, context, /* run_access_check = */ false, run_local_paths_check,
+            remote_host_filter_check);
+
+        if (object_storage->isReadOnly())
+            continue;
+
+        for (const auto & [other_disk_name, other_disk] : disks)
+        {
+            if (isWritablePlainDisk(other_disk)
+                && areObjectStoragePrefixesOverlapping(object_storage, other_disk->getObjectStorage())
+                && std::ranges::find(result, other_disk_name) == result.end())
+                result.push_back(other_disk_name);
+        }
+    }
+
+    return result;
+}
+
 void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
 {
-    if (disk->isPlain() && !disk->isReadOnly() && !disk->isWriteOnce())
+    for (const auto & [saved_disk_name, saved_disk] : disks)
     {
-        for (const auto & [saved_disk_name, saved_disk] : disks)
-        {
-            if (!saved_disk->isPlain() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
-                continue;
-
-            /// Same endpoint
-            if (disk->getObjectStorage()->getDescription() != saved_disk->getObjectStorage()->getDescription())
-                continue;
-
-            /// Same bucket
-            if (disk->getObjectStorage()->getObjectsNamespace() != saved_disk->getObjectStorage()->getObjectsNamespace())
-                continue;
-
-            LOG_TEST(getLogger("recordDisk"), "Validating plain disk: {}-{}-{}-{}-{} vs {}-{}-{}-{}-{}",
-                disk_name, disk->isReadOnly(), disk->isWriteOnce(), disk->getObjectStorage()->getDescription(), disk->getObjectStorage()->getObjectsNamespace(),
-                saved_disk_name, saved_disk->isReadOnly(), saved_disk->isWriteOnce(), saved_disk->getObjectStorage()->getDescription(), saved_disk->getObjectStorage()->getObjectsNamespace());
-
-            /// Nested common keys
-            const auto new_prefix = disk->getObjectStorage()->getCommonKeyPrefix();
-            const auto saved_prefix = saved_disk->getObjectStorage()->getCommonKeyPrefix();
-            if (new_prefix.starts_with(saved_prefix) || saved_prefix.starts_with(new_prefix))
-            {
-                const auto unwrapped_metadata_storage_saved = unwrapEncryptedAndCacheLayers(saved_disk);
-                const auto unwrapped_metadata_storage_new = unwrapEncryptedAndCacheLayers(disk);
-
-                if (unwrapped_metadata_storage_saved.get() != unwrapped_metadata_storage_new.get())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
-                        disk_name, saved_disk_name);
-            }
-        }
+        if (arePlainRewritableDisksOverlapping(disk, saved_disk))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "It is not possible to register multiple plain-rewritable disks with the same object storage prefix. Disks '{}' and '{}'",
+                disk_name, saved_disk_name);
     }
 
     const auto [_, inserted] = disks.emplace(disk_name, std::move(disk));
@@ -144,7 +231,10 @@ catch (...)
 }
 
 DiskSelectorPtr DiskSelector::updateFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context) const
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context,
+    const std::vector<std::pair<String, DiskPtr>> & retiring_disks) const
 {
     assertInitialized();
 
@@ -167,6 +257,20 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         auto disk_config_prefix = config_prefix + "." + disk_name;
         if (!result->getDisksMap().contains(disk_name))
         {
+            /// `addToDiskMap` checks the new disk only against the disks of the selector, after it is created.
+            if (!skip_types.contains(config.getString(disk_config_prefix + ".type", "local")))
+            {
+                const auto overlapping_disk_names = findPlainRewritableDisksOverlappingNewDisk(
+                    disk_name, config, disk_config_prefix, context, /* run_local_paths_check = */ false, RemoteHostFilterCheck::None,
+                    retiring_disks);
+                if (!overlapping_disk_names.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot create the disk '{}' from the configuration yet: the plain-rewritable disk '{}' works with the same "
+                        "object storage prefix, it is not used by any table or database anymore, but it is not shut down yet. "
+                        "Reload the configuration again later",
+                        disk_name, overlapping_disk_names.front());
+            }
+
             auto created_disk = factory.create(
                 disk_name, config, disk_config_prefix, context, result->getDisksMap(), /*attach*/ false, /*custom_disk*/ false, skip_types);
             if (created_disk)
@@ -250,6 +354,12 @@ void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
 {
     assertInitialized();
     recordDisk(name, disk);
+}
+
+void DiskSelector::removeFromDiskMap(const String & name)
+{
+    assertInitialized();
+    disks.erase(name);
 }
 
 void DiskSelector::shutdown()

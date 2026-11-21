@@ -24,7 +24,8 @@ ${CLICKHOUSE_CLIENT} -q "
         type = 'object_storage',
         object_storage_type = 'local',
         metadata_type = 'local',
-        path = '${disk_path}');
+        path = '${disk_path}',
+        wait_for_blob_removal = 1);
 
     INSERT INTO test VALUES (1);
     SELECT * FROM test;
@@ -36,10 +37,10 @@ else
     echo "the root of the object storage is not at the expected location: ${disk_root}"
 fi
 
+# The blobs of the dropped table are removed before the query returns (`wait_for_blob_removal`), so that the root
+# of the object storage is empty. `SYSTEM WAIT BLOBS CLEANUP` cannot be used here: the disk is unregistered as
+# soon as the last table using it is dropped.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test SYNC"
-
-# Make sure the blobs of the dropped table are gone, so that the root of the object storage is empty.
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT BLOBS CLEANUP '${disk_name}'"
 
 if [ -d "${disk_root}" ]; then
     echo "the root of the object storage exists"

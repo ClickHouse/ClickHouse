@@ -1,0 +1,8 @@
+-- the wrapped disk is kept by the cache disk
+3
+-- the cache disk is registered again, and still keeps the disk it wraps
+3
+1
+-- the wrapped disk is released together with the cache disk
+1
+0
