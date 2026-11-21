@@ -1,7 +1,9 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Core/Block_fwd.h>
+#include <Interpreters/SetSpillable.h>
 
 #include <vector>
 
@@ -37,6 +39,7 @@ public:
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
 
@@ -47,10 +50,11 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
 
     /// Mapping from required input slot to input-header position, precomputed once (the input header is fixed).
     /// Lets transform() run the expression positionally without rebuilding a Block name index per chunk.
-    std::vector<ssize_t> input_positions;
+    VectorWithMemoryTracking<ssize_t> input_positions;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
@@ -63,6 +67,7 @@ public:
         ExpressionActionsPtr expression_);
 
     String getName() const override { return "ConvertingTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
 protected:
     void onCancel() noexcept override;
@@ -77,6 +82,7 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    SetSpillables set_spillables;
     Chunk cur_chunk;
 };
 

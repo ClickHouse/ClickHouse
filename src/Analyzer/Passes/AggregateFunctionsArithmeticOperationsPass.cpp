@@ -88,10 +88,10 @@ public:
             return;
 
         static std::unordered_map<std::string_view, std::unordered_set<std::string_view>> supported_aggregate_functions
-            = {{"sum", {"multiply", "divide"}},
-               {"min", {"multiply", "divide", "plus", "minus"}},
-               {"max", {"multiply", "divide", "plus", "minus"}},
-               {"avg", {"multiply", "divide", "plus", "minus"}}};
+            = {{"sum", {"multiply", "divide", "divideExact"}},
+               {"min", {"multiply", "divide", "divideExact", "plus", "minus"}},
+               {"max", {"multiply", "divide", "divideExact", "plus", "minus"}},
+               {"avg", {"multiply", "divide", "divideExact", "plus", "minus"}}};
 
         auto & aggregate_function_arguments_nodes = aggregate_function_node->getArguments().getNodes();
         if (aggregate_function_arguments_nodes.size() != 1)
@@ -115,6 +115,11 @@ public:
 
         const auto & arithmetic_function_name = arithmetic_function_node_typed->getFunctionName();
         if (!supported_aggregate_function_it->second.contains(arithmetic_function_name))
+            return;
+
+        /// Exact integer division must retain per-row truncation and overflow checks.
+        if (arithmetic_function_name == "divideExact"
+            && isInteger(removeNullable(removeLowCardinality(arithmetic_function_node_typed->getResultType()))))
             return;
 
         const auto * left_argument_constant_node = arithmetic_function_arguments_nodes[0]->as<ConstantNode>();
@@ -155,7 +160,8 @@ public:
             return;
 
         const auto * constant_node = right_argument_constant_node ? right_argument_constant_node : left_argument_constant_node;
-        if ((arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && !isFiniteNonZero(constant_node->getValue()))
+        if ((arithmetic_function_name == "multiply" || arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
+            && !isFiniteNonZero(constant_node->getValue()))
             return;
 
         /** Need reverse max <-> min for:
@@ -178,7 +184,7 @@ public:
         if (left_argument_constant_node && !right_argument_constant_node)
         {
             /// Do not rewrite `sum(1/n)` with `sum(1) * div(1/n)` because of lose accuracy
-            if (arithmetic_function_name == "divide")
+            if (arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
                 return;
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
@@ -197,7 +203,8 @@ public:
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
 
-            bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
+            bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
+                && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
 
             if (need_reverse)
                 lower_aggregate_function_name = get_reverse_aggregate_function_name(lower_aggregate_function_name);

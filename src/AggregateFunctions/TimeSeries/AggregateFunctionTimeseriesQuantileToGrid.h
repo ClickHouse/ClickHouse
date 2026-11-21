@@ -7,6 +7,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesQuantileHelpers.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSortedValues.h>
@@ -38,12 +39,23 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
     /// The sorted values of the window, so every quantile is read from them without sorting.
     using Summary = AggregateFunctionTimeseriesSortedValues<ValueType>;
 
-    /// Sliding aggregator: keeps the sorted values of the window and reads the phi-quantile (R-7, inclusive) from them.
+    /// Sliding aggregator: keeps the values of the window (sorted unless `one_bucket_windows`) and takes their R-7 phi-quantile.
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
         static_assert(decltype(sliding_sum)::is_invertible);
+
+        /// Each window is one bucket (the window is not longer than the step, or the grid start equals the end), read by one
+        /// grid point only: it is kept unsorted, and `getResult` selects the quantile from it.
+        bool one_bucket_windows;
+        mutable VectorWithMemoryTracking<ValueType> one_bucket_values;
+        GridScaleTimestampType one_bucket_end{};
+
+        explicit Aggregator(bool one_bucket_windows_)
+            : one_bucket_windows(one_bucket_windows_)
+        {
+        }
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
@@ -56,6 +68,14 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
             if (values.empty())
                 return;
 
+            if (one_bucket_windows)
+            {
+                /// Replaces the bucket of the previous grid point, which is out of this window.
+                one_bucket_values = std::move(values);
+                one_bucket_end = bucket_end_timestamp;
+                return;
+            }
+
             Summary summary;
             summary.add(std::move(values));
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
@@ -63,12 +83,20 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
+            if (one_bucket_windows)
+            {
+                if (one_bucket_end <= cut_off)
+                    one_bucket_values.clear();
+                return;
+            }
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
+        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
         {
-            return sliding_sum.getCurrentSum().quantile(phi);
+            if (one_bucket_windows)
+                return calculateTimeseriesQuantile(one_bucket_values, phi);
+            return calculateTimeseriesQuantileOfSorted(sliding_sum.getCurrentSum().values, phi);
         }
     };
 
@@ -92,7 +120,7 @@ public:
     void deserialize(ReadBuffer & buf, size_t grid_size);
 
     /// The level at grid point `grid_index`. It is 0 if no row has been added, then every window is empty anyway.
-    Float64 at(size_t grid_index) const;
+    [[nodiscard]] Float64 at(size_t grid_index) const;
 
 private:
     /// One value if the level is the same at every grid point, `grid_size` values otherwise. Empty until a row is added.
@@ -129,7 +157,7 @@ public:
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return {};
+        return Aggregator{Base::buckets_per_window == 1};
     }
 
     void addExtraArguments(

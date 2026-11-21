@@ -3,7 +3,6 @@
 -- would surface later as BAD_ARGUMENTS ("Cannot compare tuples of different sizes") from the
 -- tuple comparison, making the reported error depend on an unrelated setting.
 
-SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 

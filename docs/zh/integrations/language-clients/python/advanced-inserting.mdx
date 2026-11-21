@@ -13,6 +13,8 @@ doc_type: 'reference'
 
 ClickHouse Connect 的 Native-format 插入操作，以及 `insert` 和 `insert_df` 方法，都在 `InsertContext` 中执行。`insert_arrow`、`insert_df_arrow` 和 `raw_insert` 方法会直接发送其载荷，而不会使用 `InsertContext`。`InsertContext` 包含传递给客户端 `insert` 方法的所有参数值。此外，在初次构造 `InsertContext` 时，ClickHouse Connect 还会获取插入列的数据类型，以便高效地进行 Native format 插入。复用同一个 `InsertContext` 执行多次插入时，就可以避免这类“预查询”，从而让插入更快、更高效。
 
+内部执行的 `DESCRIBE TABLE` 使用服务器自行生成的查询 ID，而 `INSERT` 则沿用单次插入设置或客户端默认设置中的 `query_id`。
+
 可以使用客户端的 `create_insert_context` 方法获取 `InsertContext`。该方法接受的参数与 `insert` 函数相同，但 `context` 本身除外。请注意，复用 `InsertContext` 时，只应修改其 `data` 属性。这也符合它的设计目的：为向同一张表重复插入新数据提供一个可复用的对象。
 
 ```python
@@ -29,7 +31,17 @@ assert qr.row_count == 4
 assert qr.first_row[0] == 113
 ```
 
-`InsertContext`s 包含会在 insert 过程中更新的可变状态，因此不具备线程安全性。
+`InsertContext`s 包含会在插入过程中更新的可变状态，因此不具备线程安全性。
+
+### 插入重试与去重 {#insert-retries-and-deduplication}
+
+在某些远程连接关闭的情况下，两种 HTTP 客户端都可以对 `insert` 和 `insert_df` 重试一次。重试时，客户端会重新构建 Native 插入数据。传递给 `raw_insert` 的字符串或字节载荷同样支持这种重试，但生成器或已打开的文件不会被重放。这类插入重试不使用 `query_retries`，也不适用于 HTTP 429、503 或 504 响应。
+
+插入重试遵循至少一次 (at-least-once) 语义。如果首次尝试已提交但响应丢失，重试可能会再次插入相同的行。此外，首次尝试提交之后也可能抛出异常。客户端不保证精确一次 (exactly-once) 插入。
+
+去重行为取决于表引擎、服务器版本和相关设置。对于普通 MergeTree 表，请将表设置 `non_replicated_deduplication_window` 设为足以覆盖重试的非零值。其默认值为 `0`，即禁用去重。Replicated 和 Shared MergeTree 支持插入去重，但在依赖该功能之前，应先确认实际生效的设置。尤其需要注意，在 ClickHouse 26.2 之前的版本中，或在使用较旧的兼容性设置时，服务器端异步插入默认不会去重。去重仅对配置的去重窗口内的插入生效。
+
+通过 query 或 command 方法发送的 SQL `INSERT` 语句遵循另一套 [HTTP 重试策略](/zh/integrations/language-clients/python/driver-api#http-retries)。
 
 ### 写入格式 {#write-formats}
 
