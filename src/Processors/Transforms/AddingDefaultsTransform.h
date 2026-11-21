@@ -20,8 +20,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class AddingDefaultsTransform final : public ISimpleTransform
 {
 public:
-    /// Returns `num_rows` rows of the `extra_inputs` among `read_by_defaults` (or their subcolumns). Called only for a chunk
-    /// where some default is evaluated, with what it reads.
+    /// Returns `num_rows` rows of the `extra_inputs` among `read_by_defaults`, the columns (not subcolumns) the defaults
+    /// read. Called only for a chunk where some default is evaluated.
     using GetExtraInputs = std::function<ColumnsWithTypeAndName(const NameSet & read_by_defaults, size_t num_rows)>;
 
     /// `extra_inputs_` are columns the input format does not produce, e.g. Hive partition columns.

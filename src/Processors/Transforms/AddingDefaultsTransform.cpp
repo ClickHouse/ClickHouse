@@ -141,17 +141,21 @@ static MutableColumnPtr mixColumns(
     return column_mixed;
 }
 
-/// The column that `name` is or is a subcolumn of.
-static String getColumnOfSubcolumn(const ColumnsDescription & columns, const String & name)
+/// The column of `columns` or `available_columns` that `name` is or is a subcolumn of, exact names first.
+static String getColumnOfSubcolumn(const ColumnsDescription & columns, const Block & available_columns, const String & name)
 {
-    if (columns.has(name))
+    if (columns.has(name) || available_columns.has(name))
         return name;
 
     for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
-        const auto * column = columns.tryGet(String(column_name));
-        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
-            return column->name;
+        DataTypePtr type;
+        if (const auto * column = columns.tryGet(String(column_name)))
+            type = column->type;
+        else if (const auto * available = available_columns.findByName(column_name))
+            type = available->type;
+        if (type && type->tryGetSubcolumnType(subcolumn_name))
+            return String(column_name);
     }
     return name;
 }
@@ -173,7 +177,7 @@ static NameSet getColumnsReadByDefault(
         RequiredSourceColumnsVisitor(data).visit(expression);
         for (const auto & required : data.requiredColumns())
         {
-            auto name = getColumnOfSubcolumn(columns, required);
+            auto name = getColumnOfSubcolumn(columns, available_columns, required);
             if (!visited.insert(name).second)
                 continue;
 

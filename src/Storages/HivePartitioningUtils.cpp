@@ -185,11 +185,8 @@ std::function<ColumnsWithTypeAndName(const NameSet &, size_t)> makePartitionColu
     {
         NamesAndTypesList read_columns;
         for (const auto & column : columns)
-        {
-            const auto is_read = [&](const String & name) { return name == column.name || name.starts_with(column.name + "."); };
-            if (std::ranges::any_of(read_by_defaults, is_read))
+            if (read_by_defaults.contains(column.name))
                 read_columns.push_back(column);
-        }
 
         ColumnsWithTypeAndName result;
         if (read_columns.empty())

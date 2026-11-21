@@ -7,6 +7,9 @@ INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/full.jsonl', LineAsString
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/full.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,x');
 INSERT INTO FUNCTION file(currentDatabase() || '/nokey/full.jsonl', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"c0":2,"d":"y"}');
 INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/q=bad/f.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,');
+INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/dotted.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,ok,');
+INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/dotted2.csv', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('1,ok,,zz');
+INSERT INTO FUNCTION file(currentDatabase() || '/k=abc/null.jsonl', LineAsString, 's String') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('{"c0":1,"k.null":"file","d1":"x"}');
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/k=abc/f.jsonl', format = LineAsString, structure = 's String') SETTINGS s3_truncate_on_insert = 1 VALUES ('{"c0":1}'), ('{"c0":2,"d":"x"}');
 
 SET use_hive_partitioning = 1;
@@ -29,3 +32,8 @@ SELECT d FROM file(currentDatabase() || '/k=abc/f.jsonl', JSONEachRow, 'c0 Int32
 
 -- The path supplies `k`, so its own `DEFAULT` is not evaluated and `q` is not read.
 SELECT d FROM file(currentDatabase() || '/k=abc/q=bad/f.csv', CSV, 'c0 Int32, k String DEFAULT toString(q), q UInt32, d String DEFAULT k');
+
+-- `k.value` and `k.null` are columns of their own, not subcolumns of `k`; a default over the unread `k.null` fails as before.
+SELECT d FROM file(currentDatabase() || '/k=abc/dotted.csv', CSV, 'c0 Int32, k UInt32, `k.value` String, d String DEFAULT `k.value`');
+SELECT d1, d2 FROM file(currentDatabase() || '/k=abc/dotted2.csv', CSV, 'c0 Int32, k UInt32, `k.value` String, d1 String DEFAULT `k.value`, d2 String DEFAULT toString(k)');
+SELECT d1, d2 FROM file(currentDatabase() || '/k=abc/null.jsonl', JSONEachRow, 'c0 Int32, k Nullable(String), `k.null` String, d1 String DEFAULT k, d2 String DEFAULT `k.null`'); -- { serverError UNKNOWN_IDENTIFIER }

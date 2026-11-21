@@ -197,6 +197,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
         for (const auto & column : info.columns_description)
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
 
+    NameSet unread_columns_read_by_defaults;
     for (const auto & [_, column_default] : info.columns_description.getDefaults())
     {
         if (!column_default.expression)
@@ -205,11 +206,29 @@ ReadFromFormatInfo prepareReadingFromFormat(
         auto expression = column_default.expression->clone();
         RequiredSourceColumnsVisitor(columns_context).visit(expression);
         for (const auto & input : columns_context.requiredColumns())
-            for (const auto & [name, type] : hive_parameters.hive_partition_columns_to_read_from_file_path_map)
-                if (isSameOrNestedColumn(name, input) && !info.format_header.has(name)
-                    && !info.hive_partition_columns_read_by_defaults.contains(name))
-                    info.hive_partition_columns_read_by_defaults.emplace_back(name, type);
+        {
+            auto column = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input);
+            if (!column)
+                continue;
+            const auto name = column->getNameInStorage();
+            if (info.format_header.has(name))
+                continue;
+            auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(name);
+            if (it == hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+                unread_columns_read_by_defaults.insert(name);
+            else if (!info.hive_partition_columns_read_by_defaults.contains(name))
+                info.hive_partition_columns_read_by_defaults.emplace_back(name, it->second);
+        }
     }
+    /// Among the read columns, an unread column `k.null` would resolve to a subcolumn of the Hive column `k`.
+    info.hive_partition_columns_read_by_defaults.remove_if([&](const NameAndTypePair & hive_column)
+    {
+        return std::ranges::any_of(unread_columns_read_by_defaults, [&](const String & name)
+        {
+            return name.starts_with(hive_column.name + ".")
+                && hive_column.type->tryGetSubcolumnType(std::string_view(name).substr(hive_column.name.size() + 1));
+        });
+    });
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
