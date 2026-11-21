@@ -197,6 +197,12 @@ inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
         }
     }
 
+    if constexpr (is_floating_point<From> && !is_floating_point<To>)
+    {
+        if (isNaN(value))
+            return false;
+    }
+
     if (greaterOp(value, std::numeric_limits<To>::max())
         || lessOp(value, std::numeric_limits<To>::lowest()))
     {
