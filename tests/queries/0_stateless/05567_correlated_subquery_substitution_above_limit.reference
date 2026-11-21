@@ -1,0 +1,31 @@
+-- case 1: EXISTS, derived table with ORDER BY LIMIT, equality above the LIMIT
+1
+3
+-- case 2: OFFSET without LIMIT
+2
+-- case 3: LIMIT with OFFSET
+2
+-- case 4: scalar subquery
+1	1
+2	0
+3	1
+-- case 5: GROUP BY under the LIMIT
+1
+3
+-- case 6: case 1 with the left decorrelation join kind
+1
+3
+-- case 7: JOIN LATERAL
+1	1
+3	3
+-- case 8: equalities below the LIMIT are still substituted
+plan: limit_by=1, substituted=1
+1
+2
+3
+-- case 9: equality above the LIMIT on a column determined by an equality below it
+1
+3
+-- case 10: UNION ALL under the LIMIT
+1
+3
