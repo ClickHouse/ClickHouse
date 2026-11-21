@@ -383,7 +383,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
 
     return is_subquery == rhs_typed.is_subquery &&
         (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
-        is_recursive_with == rhs_typed.is_recursive_with &&
+        (options.ignore_cte || is_recursive_with == rhs_typed.is_recursive_with) &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
@@ -427,14 +427,18 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         projection_column.type->updateHash(state);
     }
 
-    for (const auto & projection_alias : projection_aliases_to_override)
+    /// A resolved node has already applied these aliases to `projection_columns`.
+    if (!isResolved())
     {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
+        for (const auto & projection_alias : projection_aliases_to_override)
+        {
+            state.update(projection_alias.size());
+            state.update(projection_alias);
+        }
     }
 
-    state.update(is_materialized);
-    state.update(is_recursive_with);
+    state.update(!options.ignore_cte && is_materialized);
+    state.update(!options.ignore_cte && is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
     state.update(is_group_by_with_totals);
