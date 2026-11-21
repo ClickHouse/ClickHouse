@@ -834,6 +834,13 @@ static bool isTrivialCast(const ActionsDAG::Node & node, bool value_is_truth_tes
 
     auto type_name = field.safeGet<String>();
     const auto & source_type = node.children[0]->result_type;
+
+    /// A cast to `Bool` makes every nonzero byte 1, which only a truth test does not observe.
+    const auto target_type = removeLowCardinalityAndNullable(node.result_type);
+    if (!value_is_truth_tested && isUInt8(removeLowCardinalityAndNullable(source_type))
+        && (isBool(target_type) || isSimpleAggregateFunctionOfBool(*target_type)))
+        return false;
+
     if (source_type->getName() == type_name)
         return true;
 
