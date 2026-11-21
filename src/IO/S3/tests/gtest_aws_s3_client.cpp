@@ -2535,7 +2535,7 @@ TEST(IOTestAwsS3Client, AssumeRoleRefreshInConcurrentFibers)
     const size_t fiber_count = getFiberCountAboveSchedulerThreads();
     std::atomic<size_t> requests_signed_with_refreshed_credentials = 0;
     std::atomic<size_t> other_requests = 0;
-    /// A thread per fiber: the server closes, instead of queueing, a connection that finds no idle thread in its pool.
+    /// A thread per fiber: the server refuses, not queues, a connection it may start a thread for while its pool has none free.
     FunctionHTTPServer http([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
     {
         if (getCredentialString(request).starts_with("Credential=refreshed_role_access_key/"))
