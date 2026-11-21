@@ -1,0 +1,21 @@
+<test>
+    <!-- Planning of `k IN (<set>)` on a table with column statistics, where the selectivity estimator computes
+         an exact estimate from one point range per set element. -->
+    <create_query>CREATE TABLE stats_in_set_u64 (k UInt64, v UInt32, s String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE stats_in_set_str (k String, v UInt32, s String) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO stats_in_set_u64 SELECT number * 3, number % 1000, toString(number % 977) FROM numbers(4000000)</fill_query>
+    <fill_query>INSERT INTO stats_in_set_str SELECT concat('k', toString(number * 3)), number % 1000, toString(number % 977) FROM numbers(4000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE stats_in_set_u64 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE stats_in_set_str FINAL</fill_query>
+
+    <query>SELECT count() FROM stats_in_set_u64 WHERE k IN (SELECT (1000000 + number * 7919 % 5000) * 3 FROM numbers(5000)) AND v > 10 AND s != '' SETTINGS min_marks_per_part_to_load_statistics = 0</query>
+    <query>SELECT count() FROM stats_in_set_str WHERE k IN (SELECT concat('k', toString((1000000 + number * 7919 % 5000) * 3)) FROM numbers(5000)) AND v > 10 AND s != '' SETTINGS min_marks_per_part_to_load_statistics = 0</query>
+    <query>SELECT count() FROM stats_in_set_u64 WHERE k IN (SELECT (1000000 + number * 7919 % 10000) * 3 FROM numbers(10000)) AND v > 10 AND s != '' SETTINGS min_marks_per_part_to_load_statistics = 0</query>
+    <query>SELECT count() FROM stats_in_set_str WHERE k IN (SELECT concat('k', toString((1000000 + number * 7919 % 10000) * 3)) FROM numbers(10000)) AND v > 10 AND s != '' SETTINGS min_marks_per_part_to_load_statistics = 0</query>
+    <query>SELECT count() FROM stats_in_set_u64 WHERE k IN (SELECT intHash64(number) % 4000000 * 3 FROM numbers(10000)) AND v > 10 AND s != '' SETTINGS min_marks_per_part_to_load_statistics = 0</query>
+    <query>SELECT count() FROM stats_in_set_str WHERE k IN (SELECT concat('k', toString(intHash64(number) % 4000000 * 3)) FROM numbers(10000)) AND v > 10 AND s != '' SETTINGS min_marks_per_part_to_load_statistics = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS stats_in_set_u64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS stats_in_set_str</drop_query>
+</test>

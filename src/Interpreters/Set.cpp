@@ -615,9 +615,41 @@ std::shared_ptr<const PlainRanges> Set::getPlainRanges() const
                 return;
 
             const auto & column = *set_elements.front();
+            const auto & type = *set_elements_types.front();
+            const size_t size = column.size();
+
+            /// Points strictly increasing under `compareByLeftBound` are exactly what sorting and merging below would produce.
+            if (size > 1 && (type.isValueRepresentedByNumber() || isStringOrFixedString(type) || isUUID(type)))
+            {
+                IColumn::Permutation permutation;
+                column.getPermutation(
+                    IColumn::PermutationSortDirection::Ascending,
+                    IColumn::PermutationSortStability::Unstable,
+                    /*limit*/ 0,
+                    /*nan_direction_hint*/ 1,
+                    permutation);
+
+                Ranges ranges;
+                ranges.reserve(size);
+                bool strictly_increasing = true;
+                for (size_t i = 0; i < size && strictly_increasing; ++i)
+                {
+                    ranges.emplace_back(column[permutation[i]]);
+                    strictly_increasing = i == 0 || PlainRanges::compareByLeftBound(ranges[i - 1], ranges[i]);
+                }
+
+                if (strictly_increasing)
+                {
+                    auto result = std::make_shared<PlainRanges>(Ranges{});
+                    result->ranges = std::move(ranges);
+                    plain_ranges = std::move(result);
+                    return;
+                }
+            }
+
             Ranges ranges;
-            ranges.reserve(column.size());
-            for (size_t i = 0; i < column.size(); ++i)
+            ranges.reserve(size);
+            for (size_t i = 0; i < size; ++i)
                 ranges.emplace_back(column[i]);
 
             plain_ranges = std::make_shared<const PlainRanges>(ranges, /*may_have_intersection*/ true, /*ordered*/ false);
