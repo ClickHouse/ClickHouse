@@ -3181,7 +3181,12 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
+        /// A NULL row may hold a value that is not a member of the source type: the padding of non-joined
+        /// rows in a `LEFT JOIN` leaves a raw 0 in an `Enum` nested in a `Tuple`. `CastType::accurate` has
+        /// to reject such a value, and any type with a non-trivial default insert can hold one, so the NULL
+        /// rows are filtered out before the conversion rather than converted themselves.
+        const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+            && (cast_type == CastType::accurate || !from_nested_type->isDefaultInsertTrivial());
 
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr

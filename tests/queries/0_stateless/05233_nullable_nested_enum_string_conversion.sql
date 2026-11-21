@@ -31,6 +31,13 @@ FROM nested_enum_left AS l LEFT JOIN nested_enum_right AS r ON l.k = r.k
 ORDER BY l.k
 SETTINGS join_use_nulls = 0, join_algorithm = 'hash';
 
+-- `CAST` and the null-handling functions convert the nested value as well, so they must not read it under `NULL`.
+SELECT l.k, CAST(r.t AS Nullable(String)), accurateCastOrNull(r.t, 'String'),
+       toString(ifNull(r.t, tuple('b'))), toString(coalesce(r.t, tuple('b'))), toString(if(isNull(r.t), tuple('birth'), r.t))
+FROM nested_enum_left AS l LEFT JOIN nested_enum_right AS r ON l.k = r.k
+ORDER BY l.k
+SETTINGS join_use_nulls = 1, join_algorithm = 'hash';
+
 DROP TABLE nested_enum_right;
 DROP TABLE nested_enum_left;
 

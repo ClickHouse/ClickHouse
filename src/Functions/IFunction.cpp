@@ -229,23 +229,31 @@ namespace
 {
 
 /// `createBlockWithNestedColumns` only strips the null map, it does not touch the values under it, so
-/// the nested value of a null slot is whatever happened to be stored there. For a `Nullable(Enum)`
-/// that value is usually not a member of the type: both `INSERT ... VALUES (NULL)` and the padding of
-/// non-joined rows in a `LEFT JOIN` leave a raw 0 there, and 0 is a declared value only if the enum
-/// happens to define it. A function that reads the nested column of such an argument - `like`,
-/// `match`, anything that turns an `Enum` into its name - is then handed a code that does not exist
-/// and throws `UNKNOWN_ELEMENT_OF_ENUM` for a row whose result is NULL anyway.
+/// the nested value of a null slot is whatever happened to be stored there. For an `Enum`, or for a
+/// `Tuple`/`Object` that contains one, that value is usually not a member of the type: both
+/// `INSERT ... VALUES (NULL)` and the padding of non-joined rows in a `LEFT JOIN` leave a raw 0
+/// there, and 0 is a declared value only if the enum happens to define it. A function that reads the
+/// nested column of such an argument - `like`, `match`, anything that turns an `Enum` into its name -
+/// is then handed a code that does not exist and throws `UNKNOWN_ELEMENT_OF_ENUM` for a row whose
+/// result is NULL anyway.
 ///
-/// Normalize the null slots to the default of the nested type, which for an `Enum` is a declared
-/// value. With `only_enums` the other argument types are left alone, which is what the paths that
-/// discard the values of null rows afterwards want; the path that has to produce `f(default(input))`
-/// for a null row (see below) passes false and normalizes everything.
+/// Normalize the null slots to the default of the nested type, which for any type containing an
+/// `Enum` is a declared value. With `only_enum_containing_types` the other argument types are left
+/// alone, which is what the paths that discard the values of null rows afterwards want; the path that
+/// has to produce `f(default(input))` for a null row (see below) passes false and normalizes
+/// everything.
 ///
-/// `only_enums` is deliberately not "every type whose payload some function might reject". An `Enum`
-/// payload is outside the domain of its own type - no valid `Enum` column can hold it - so
-/// `createBlockWithNestedColumns` hands the function a malformed column, and installing the type's
-/// default repairs a type invariant. A `String` or a number under a null map, in contrast, is a well
-/// formed value of its type, and a function that rejects it - `match` handed an invalid regular
+/// The gate is `isDefaultInsertTrivial`, used as a "contains an `Enum`" test: the only types that
+/// override it to return false are `Enum` itself and `Tuple`/`Object`, which recurse into their
+/// elements. If a future type also starts returning false, it will silently join the per-row copy
+/// below; that is correct only if its null slots can hold a value outside of its domain too, otherwise
+/// this gate has to be narrowed to the types that actually contain an `Enum`.
+///
+/// `only_enum_containing_types` is deliberately not "every type whose payload some function might
+/// reject". An `Enum` payload is outside the domain of its own type - no valid `Enum` column can hold
+/// it - so `createBlockWithNestedColumns` hands the function a malformed column, and installing the
+/// type's default repairs a type invariant. A `String` or a number under a null map, in contrast, is
+/// a well formed value of its type, and a function that rejects it - `match` handed an invalid regular
 /// expression, `hasToken` handed a token separator - rejects it as data, exactly as it would in a
 /// non-null row. Installing the type default there would only swap one arbitrary value for another,
 /// while costing a per-row copy of every `Nullable` argument on paths whose whole point is to avoid
@@ -254,13 +262,13 @@ namespace
 /// `short_circuit_function_evaluation_for_nulls_threshold` lets it;
 /// see https://github.com/ClickHouse/ClickHouse/issues/119614.
 void patchNullSlots(
-    const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count, bool only_enums)
+    const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count, bool only_enum_containing_types)
 {
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (!args[i].type->isNullable())
             continue;
-        if (only_enums && removeNullable(args[i].type)->isDefaultInsertTrivial())
+        if (only_enum_containing_types && removeNullable(args[i].type)->isDefaultInsertTrivial())
             continue;
 
         const auto & nested_type = nested_args[i].type;
@@ -355,7 +363,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// produces a Nullable column whose nested data still contains `'x'`, so running the
             /// function on it would return `f('x')` instead of the desired `f('')`.
             ColumnsWithTypeAndName patched_columns = createBlockWithNestedColumns(args);
-            patchNullSlots(args, patched_columns, input_rows_count, /*only_enums=*/ false);
+            patchNullSlots(args, patched_columns, input_rows_count, /*only_enum_containing_types=*/ false);
             auto temporary_result_type = removeNullable(result_type);
 
             return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
@@ -406,7 +414,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// When all columns are constant or numeric, the cost of [[countBytesInFilter]] or [[ColumnUInt8::create]] should not be ignored.
             /// That's why we add a fast path for this case.
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-            patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
+            patchNullSlots(args, temporary_columns, input_rows_count, /*only_enum_containing_types=*/ true);
             auto temporary_result_type = removeNullable(result_type);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
@@ -455,7 +463,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                     && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold));
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
-        patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
+        patchNullSlots(args, temporary_columns, input_rows_count, /*only_enum_containing_types=*/ true);
         auto temporary_result_type = removeNullable(result_type);
 
         if (!should_short_circuit)
