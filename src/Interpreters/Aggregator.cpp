@@ -2671,6 +2671,12 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// running, so an active heap never sees key columns in a representation it cannot rank.
     const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
+    /// The methods of one `String` key, and of fixed-width keys and one `String`, read a `ColumnReplicated` over a
+    /// `String` column in place (see `replicatedStrings`). So a sparse `String` key becomes one over its values, once
+    /// per block, instead of being expanded. An active top-K heap needs the key expanded, because it builds its ranked
+    /// columns from the key columns.
+    const bool reads_replicated_string_in_place = AggregatedDataVariants::readsReplicatedStringKeyInPlace(result.type) && !top_k_active;
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
@@ -2680,7 +2686,15 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
         else
         {
-            materialized_columns.push_back(removeSpecialRepresentations(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
+            /// Removes the special representations as `removeSpecialRepresentations` does, except that a sparse `String`
+            /// key that the method reads in place becomes a `ColumnReplicated` over its values.
+            ColumnPtr column = columns.at(keys_positions[i])->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated();
+            const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get());
+            if (reads_replicated_string_in_place && column_sparse && typeid_cast<const ColumnString *>(&column_sparse->getValuesColumn()))
+                column = column_sparse->toReplicated();
+            else
+                column = recursiveRemoveSparse(column);
+            materialized_columns.push_back(column->convertToFullColumnIfConst());
             key_columns[i] = materialized_columns.back().get();
         }
 

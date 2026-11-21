@@ -90,6 +90,12 @@ public:
 
     ColumnPtr convertToFullColumnIfSparse() const override;
 
+    /// Returns the column as a `ColumnReplicated` over `values`, without copying them: the index of a row is the
+    /// position of its value, 0 (the default value) for a default row. The indexes take the narrowest unsigned type
+    /// that holds the positions. For example, 5 rows with `values` `['', 'a', 'b']` and offsets `[1, 3]` get the
+    /// `UInt8` indexes `[0, 1, 0, 2, 0]`.
+    ColumnPtr toReplicated() const;
+
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;

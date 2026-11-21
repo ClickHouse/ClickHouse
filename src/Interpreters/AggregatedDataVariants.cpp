@@ -308,6 +308,11 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
     }
 }
 
+bool AggregatedDataVariants::readsReplicatedStringKeyInPlace(Type type_)
+{
+    return type_ == Type::key_packed_string || type_ == Type::key_packed_string_two_level || isKeysAndPackedString(type_);
+}
+
 bool AggregatedDataVariants::isKeysAndPackedString(Type type_)
 {
     switch (type_)

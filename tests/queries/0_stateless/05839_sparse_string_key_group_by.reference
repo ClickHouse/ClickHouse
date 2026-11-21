@@ -1,0 +1,11 @@
+Sparse
+one key	1
+UInt64 and String	1
+UInt64 and String, no aggregate functions	1
+UInt8 and String	1
+UInt64, UInt8 and String	1
+indexes of one byte	1
+indexes of four bytes	1
+adaptive aggregator, frozen	1
+two-level	1
+top-K heap	1

@@ -161,6 +161,28 @@ ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
     return values->createWithOffsets(getOffsetsData(), *createColumnConst(values, 0), _size, /*shift=*/ 1);
 }
 
+ColumnPtr ColumnSparse::toReplicated() const
+{
+    const auto & offsets_data = getOffsetsData();
+    auto build = [&]<typename Index>() -> ColumnPtr
+    {
+        auto indexes = ColumnVector<Index>::create(_size, Index(0));
+        auto & indexes_data = indexes->getData();
+        for (size_t j = 0; j < offsets_data.size(); ++j)
+            indexes_data[offsets_data[j]] = static_cast<Index>(j + 1);
+        return ColumnReplicated::create(values, std::move(indexes));
+    };
+
+    const size_t max_position = values->size() - 1;
+    if (max_position <= std::numeric_limits<UInt8>::max())
+        return build.template operator()<UInt8>();
+    if (max_position <= std::numeric_limits<UInt16>::max())
+        return build.template operator()<UInt16>();
+    if (max_position <= std::numeric_limits<UInt32>::max())
+        return build.template operator()<UInt32>();
+    return build.template operator()<UInt64>();
+}
+
 void ColumnSparse::insertSingleValue(const Inserter & inserter)
 {
     inserter(*values);
