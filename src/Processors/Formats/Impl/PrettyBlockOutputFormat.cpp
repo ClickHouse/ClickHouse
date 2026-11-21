@@ -1204,6 +1204,10 @@ void PrettyBlockOutputFormat::consume(Chunk chunk)
 void PrettyBlockOutputFormat::consumeTotals(Chunk chunk)
 {
     total_rows = 0;
+    /// The row budget counts only the main output: Totals and Extremes print below it, and the
+    /// `displayed_rows < max_rows` guard would otherwise hide their rows for good once the main
+    /// output has used the budget up (issue #104839).
+    displayed_rows = 0;
     writeCString("\nTotals:\n", out);
     write(std::move(chunk), PortKind::Totals);
 }
@@ -1211,6 +1215,8 @@ void PrettyBlockOutputFormat::consumeTotals(Chunk chunk)
 void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
 {
     total_rows = 0;
+    /// Same as Totals above: give the Extremes section its own row budget.
+    displayed_rows = 0;
     writeCString("\nExtremes:\n", out);
     write(std::move(chunk), PortKind::Extremes);
 }
