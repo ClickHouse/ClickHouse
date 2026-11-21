@@ -838,8 +838,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
                 function_node.getNullsAction(),
                 window_function.argument_types,
                 window_function.function_parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+                properties);
         }
 
         // Find the window corresponding to this function. It may be either
