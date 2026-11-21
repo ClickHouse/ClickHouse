@@ -35,7 +35,7 @@ SELECT aiGenerate(x, map('credentials', 'ai_compat_remote_http')) FROM tab; -- {
 SELECT '-- compatibility = 26.6 restores the legacy defaults';
 SET compatibility = '26.6';
 SELECT getSetting('ai_function_allow_insecure_endpoint'), getSetting('ai_function_max_api_calls_per_query'), getSetting('ai_function_max_retries'), getSetting('ai_function_max_concurrent_requests_per_thread');
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_compat_remote_http')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_compat_remote_http')) AS r FROM tab);
 
 -- =============================================================================
 -- Cleanup

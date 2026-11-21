@@ -33,12 +33,12 @@ SELECT 'aggregating merge tree insert', uniqMerge(s) FROM agg_t_105462;
 
 -- Two-level and multi-threaded aggregator variants: same state shape reached
 -- through different scheduling.
-SELECT 'two-level single-thread', count() FROM (
-    SELECT hex(uniqStateOrNull(h)) FROM source_105462 GROUP BY h WITH ROLLUP
+SELECT 'two-level single-thread', count(s) FROM (
+    SELECT hex(uniqStateOrNull(h)) AS s FROM source_105462 GROUP BY h WITH ROLLUP
     SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, max_threads = 1);
 
-SELECT 'multi-threaded merge', count() FROM (
-    SELECT hex(uniqStateOrNull(h)) FROM source_105462 GROUP BY h WITH ROLLUP
+SELECT 'multi-threaded merge', count(s) FROM (
+    SELECT hex(uniqStateOrNull(h)) AS s FROM source_105462 GROUP BY h WITH ROLLUP
     SETTINGS max_threads = 4);
 
 -- `Memory`-engine source: confirms the consumer paths above work independently

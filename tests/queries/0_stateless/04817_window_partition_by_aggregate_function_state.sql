@@ -44,12 +44,12 @@ SELECT count() FROM (SELECT row_number() OVER (PARTITION BY id ORDER BY st) FROM
 
 SELECT '-- window ORDER BY over a state is refused, old analyzer';
 SELECT count() FROM (SELECT row_number() OVER w FROM t_wpb_state WINDOW w AS (ORDER BY st)); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY saf) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (ORDER BY s) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY saf) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY s) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY lc) FROM t_wpb_state);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY nl) FROM t_wpb_state);
+SELECT count(r) FROM (SELECT row_number() OVER (ORDER BY saf) AS r FROM t_wpb_state);
+SELECT count(r) FROM (SELECT row_number() OVER (ORDER BY s) AS r FROM t_wpb_state);
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY saf) AS r FROM t_wpb_state);
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY s) AS r FROM t_wpb_state);
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY lc) AS r FROM t_wpb_state);
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY nl) AS r FROM t_wpb_state);
 
 SELECT '-- comparable types are untouched, old analyzer';
 SELECT count() FROM (SELECT st FROM t_wpb_state GROUP BY st);
@@ -61,8 +61,8 @@ INSERT INTO t_wpb_qbit
 SELECT number, arrayMap(x -> toFloat32(number), range(16))::QBit(BFloat16, 16),
        [arrayMap(x -> toFloat32(number), range(16))::QBit(BFloat16, 16)]
 FROM numbers(6);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY q) FROM t_wpb_qbit);
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY qa) FROM t_wpb_qbit);
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY q) AS r FROM t_wpb_qbit);
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY qa) AS r FROM t_wpb_qbit);
 -- The window ORDER BY guard is aggregate-state-specific, so it does not widen the old analyzer's
 -- acceptance of a QBit sort key. The analyzer refuses it for being incomparable, as it already did.
 SELECT count() FROM (SELECT row_number() OVER (ORDER BY q) FROM t_wpb_qbit); -- { serverError ILLEGAL_COLUMN }
@@ -72,8 +72,8 @@ DROP TABLE IF EXISTS t_wpb_dyn;
 CREATE TABLE t_wpb_dyn (d Dynamic, val UInt64) ENGINE = Memory;
 INSERT INTO t_wpb_dyn VALUES (1, 10), (2, 20), ('str', 30);
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY d) FROM t_wpb_dyn); -- { serverError ILLEGAL_COLUMN }
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY d) FROM t_wpb_dyn) SETTINGS allow_suspicious_types_in_group_by = 1;
-SELECT count() FROM (SELECT row_number() OVER (PARTITION BY CAST(st, 'Dynamic')) FROM t_wpb_state) SETTINGS allow_suspicious_types_in_group_by = 1;
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY d) AS r FROM t_wpb_dyn) SETTINGS allow_suspicious_types_in_group_by = 1;
+SELECT count(r) FROM (SELECT row_number() OVER (PARTITION BY CAST(st, 'Dynamic')) AS r FROM t_wpb_state) SETTINGS allow_suspicious_types_in_group_by = 1;
 DROP TABLE IF EXISTS t_wpb_var;
 -- The state version is spelled out: a conversion to Variant matches the variants by the exact type,
 -- and a fresh `uniqState` carries state version 1 in its type.
