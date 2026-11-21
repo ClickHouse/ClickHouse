@@ -1,0 +1,10 @@
+--- CSV: _row_number when a row is skipped by input_format_allow_errors_num
+0	1
+2	2
+3	3
+4	4
+--- Regexp: _row_number when a line is skipped by format_regexp_skip_unmatched
+0	1
+2	2
+3	3
+4	4
