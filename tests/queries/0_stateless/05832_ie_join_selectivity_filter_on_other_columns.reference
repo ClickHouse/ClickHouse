@@ -1,0 +1,33 @@
+-- unfiltered input: by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- WHERE on a column that is not an operand, PREWHERE optimization disabled: by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+2814	4509870
+-- WHERE on a column that is not an operand, PREWHERE optimization enabled: by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+2814	4509870
+2814	4509870
+-- explicit PREWHERE on a column that is not an operand: by selectivity
+Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- both inputs filtered on columns that are not operands: by selectivity
+Conditions: __table1.a1 < __table3.b1 AND __table1.a3 < __table3.b3
+-- WHERE on an operand: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a predicate that reads an operand through an expression reads the operand: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+2814	4509870
+2814	4509870
+-- a filter on a column computed from an operand: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- the same filter not pushed down: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+1533	1181292
+1533	1181292
+-- the same filter on a computed column named like a stored column that is not an operand: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a predicate that selects rows by their position: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a LIMIT over the filtered input: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
+-- a non-throwing read limit on the filtered input: syntax order
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2

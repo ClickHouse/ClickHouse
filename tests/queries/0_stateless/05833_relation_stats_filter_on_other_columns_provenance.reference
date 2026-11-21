@@ -1,0 +1,27 @@
+-- WHERE on a column that is not an operand, PREWHERE optimization disabled
+b1 range: measured-statistics[filter-on-other-columns]
+b2 range: measured-statistics[filter-on-other-columns]
+b3 range: measured-statistics[filter-on-other-columns]
+f range: measured-statistics[row-subset]
+-- the same, PREWHERE optimization enabled
+b1 range: measured-statistics[filter-on-other-columns]
+b2 range: measured-statistics[filter-on-other-columns]
+b3 range: measured-statistics[filter-on-other-columns]
+f range: measured-statistics[row-subset]
+-- WHERE on an operand
+b1 range: measured-statistics[filter-on-other-columns]
+b2 range: measured-statistics[filter-on-other-columns]
+b3 range: measured-statistics[row-subset]
+-- a filter on a column computed from an operand, not pushed down: no attribution
+b1 range: measured-statistics[row-subset]
+b2 range: measured-statistics[row-subset]
+b3 range: measured-statistics[row-subset]
+-- the same filter pushed into the read: attributed to the operand
+b1 range: measured-statistics[filter-on-other-columns]
+b2 range: measured-statistics[filter-on-other-columns]
+b3 range: measured-statistics[row-subset]
+-- a non-throwing read limit: no attribution
+b1 range: measured-statistics[row-subset]
+b2 range: measured-statistics[row-subset]
+b3 range: measured-statistics[row-subset]
+f range: measured-statistics[row-subset]
