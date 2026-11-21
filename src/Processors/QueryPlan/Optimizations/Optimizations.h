@@ -145,6 +145,10 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+/// Remove an ExpressionStep that is a pure identity (only INPUT nodes, inputs equal outputs,
+/// and the step input header equals the output header).
+size_t tryRemoveTrivialExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+
 /// replace a dropped always-true filter with an expression
 size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
@@ -295,6 +299,7 @@ inline const auto & getOptimizations()
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_bucket_top_k},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
+        {tryRemoveTrivialExpressions, "removeTrivialExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryReplaceAlwaysTrueFilter, "replaceAlwaysTrueFilter", &QueryPlanOptimizationSettings::replace_always_true_filter},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
