@@ -52,6 +52,15 @@ struct AWSSignatureV4Request
 /// that defines the request. The signature itself is not verified here: it requires the user's secret.
 AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & request, time_t now);
 
+/// Returns the request target (the path and the query string) in the form covered by the signature: every path component
+/// and every query parameter is percent-encoded in the canonical way, the parameters are sorted, and the signature
+/// of a presigned URL is removed. Requests with the same signature have the same canonical URL, while the original
+/// request target can be spelled in many ways (e.g. `param_%74enant=1` instead of `param_tenant=1`, or the parameters
+/// in another order). So this is what a query must get from `currentRequestURL`: it can search the URL literally
+/// (e.g. with `extractURLParameter`), and its result must not depend on a spelling that is not signed.
+/// The request must be already validated by `parseAWSSignatureV4Request`.
+String getAWSSignatureV4CanonicalURL(const HTTPServerRequest & request);
+
 /// Returns the payload hash of the request (see `AWSSignatureV4Request::payload_hash`).
 String getAWSSignatureV4PayloadHash(const HTTPServerRequest & request);
 

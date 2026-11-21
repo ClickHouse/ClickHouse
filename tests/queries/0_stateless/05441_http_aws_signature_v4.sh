@@ -246,6 +246,17 @@ show("encoded slash instead of a separator", send("GET", filtered_path, presigne
 show("legacy query endpoint", send("GET", "/query", presigned_params("GET", "/query", [("query", "SELECT 'endpoint'"), ("database", database)])))
 show("encoded character in the legacy query endpoint", send("GET", "/query",
      presigned_params("GET", "/query", [("query", "SELECT 'endpoint'"), ("database", database)]), tamper_url=lambda url: url.replace("/query?", "/%71uery?")))
+# The query gets the URL in the canonical form, so a literal search in it does not depend on the spelling of the request
+# target, which is not signed: a parameter name with an encoded unreserved character or another order of the parameters.
+url_query = ("SELECT extractURLParameter(currentRequestURL(), 'param_tenant'), {tenant:String},"
+             " position(currentRequestURL(), 'param_tenant') < position(currentRequestURL(), 'query='),"
+             " position(currentRequestURL(), 'X-Amz-Signature=')")
+url_params = [("query", url_query), ("param_tenant", "alice")]
+show("request URL in a query", send("GET", "/", presigned_params("GET", "/", url_params)))
+show("request URL with an encoded character in a parameter name", send("GET", "/", presigned_params("GET", "/", url_params),
+     tamper_url=lambda url: url.replace("&param_tenant=", "&param_%74enant=")))
+show("request URL with reordered parameters", send("GET", "/", presigned_params("GET", "/", url_params),
+     tamper_url=lambda url: "/?" + "&".join(reversed(url.split("?", 1)[1].split("&")))))
 show("signed query with a plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")])))
 show("plus instead of an encoded plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")]),
      tamper_url=lambda url: url.replace("%2B", "+")))

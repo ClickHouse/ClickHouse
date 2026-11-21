@@ -297,6 +297,48 @@ SignatureComponents parseAuthorizationHeader(const HTTPServerRequest & request)
     return res;
 }
 
+/// The path with every component decoded and encoded again in the canonical way. The components are processed
+/// separately: `parseHTTPPath` splits the path by the literal slashes, and an encoded slash (`%2F`) is a part of
+/// a component, so they must not be confused.
+String buildCanonicalPath(std::string_view raw_path)
+{
+    String res;
+    for (size_t begin = 0;;)
+    {
+        size_t end = raw_path.find('/', begin);
+        res += awsURIEncode(percentDecode(raw_path.substr(begin, end == std::string_view::npos ? end : end - begin)));
+        if (end == std::string_view::npos)
+            break;
+        res += '/';
+        begin = end + 1;
+    }
+    return res;
+}
+
+/// The parameters encoded in the canonical way and sorted, without the signature of a presigned URL.
+String buildCanonicalQueryString(const std::vector<std::pair<String, String>> & params, bool presigned)
+{
+    std::vector<std::pair<String, String>> canonical_params;
+    for (const auto & [key, value] : params)
+    {
+        if (presigned && key == "X-Amz-Signature")
+            continue;
+        canonical_params.emplace_back(awsURIEncode(key), awsURIEncode(value));
+    }
+    std::sort(canonical_params.begin(), canonical_params.end());
+
+    String res;
+    for (size_t i = 0; i < canonical_params.size(); ++i)
+    {
+        if (i)
+            res += '&';
+        res += canonical_params[i].first;
+        res += '=';
+        res += canonical_params[i].second;
+    }
+    return res;
+}
+
 /// Builds `<HTTPMethod>\n<CanonicalURI>\n<CanonicalQueryString>\n<CanonicalHeaders>\n<SignedHeaders>\n<HashedPayload>`.
 String buildCanonicalRequest(
     const HTTPServerRequest & request,
@@ -330,33 +372,9 @@ String buildCanonicalRequest(
         i += 2;
     }
 
-    for (size_t begin = 0;;)
-    {
-        size_t end = raw_path.find('/', begin);
-        res += awsURIEncode(percentDecode(raw_path.substr(begin, end == std::string_view::npos ? end : end - begin)));
-        if (end == std::string_view::npos)
-            break;
-        res += '/';
-        begin = end + 1;
-    }
+    res += buildCanonicalPath(raw_path);
     res += '\n';
-
-    std::vector<std::pair<String, String>> canonical_params;
-    for (const auto & [key, value] : params)
-    {
-        if (presigned && key == "X-Amz-Signature")
-            continue;
-        canonical_params.emplace_back(awsURIEncode(key), awsURIEncode(value));
-    }
-    std::sort(canonical_params.begin(), canonical_params.end());
-    for (size_t i = 0; i < canonical_params.size(); ++i)
-    {
-        if (i)
-            res += '&';
-        res += canonical_params[i].first;
-        res += '=';
-        res += canonical_params[i].second;
-    }
+    res += buildCanonicalQueryString(params, presigned);
     res += '\n';
 
     for (const auto & name : signed_headers)
@@ -695,6 +713,21 @@ AWSSignatureV4Request parseAWSSignatureV4Request(const HTTPServerRequest & reque
     res.string_to_sign = fmt::format("{}\n{}\n{}/{}/{}/aws4_request\n{}",
         algorithm, components.amz_date, res.date, res.region, res.service, sha256Hex(canonical_request));
 
+    return res;
+}
+
+String getAWSSignatureV4CanonicalURL(const HTTPServerRequest & request)
+{
+    auto params = parseQueryString(getQueryString(request));
+    bool presigned = findParameter(params, "X-Amz-Algorithm") != nullptr;
+
+    String res = buildCanonicalPath(getRawPath(request));
+    String query = buildCanonicalQueryString(params, presigned);
+    if (!query.empty())
+    {
+        res += '?';
+        res += query;
+    }
     return res;
 }
 

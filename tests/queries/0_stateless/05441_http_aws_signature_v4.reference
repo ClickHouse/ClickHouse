@@ -32,6 +32,9 @@ path filter: 200 1	Hello
 encoded slash instead of a separator: 403 Code: 516
 legacy query endpoint: 200 endpoint
 encoded character in the legacy query endpoint: 403 Code: 516
+request URL in a query: 200 alice	alice	1	0
+request URL with an encoded character in a parameter name: 200 alice	alice	1	0
+request URL with reordered parameters: 200 alice	alice	1	0
 signed query with a plus: 200 a+b
 plus instead of an encoded plus: 403 Code: 516
 signed query_id with an encoded hash: 200 1	Hello

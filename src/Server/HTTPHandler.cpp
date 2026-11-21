@@ -544,7 +544,9 @@ void HTTPHandler::processQuery(
 
     /// Expose the HTTP request URL and the SQL-defined handler name (if any) to the query
     /// via `currentRequestURL()` / `currentHandler()` and the query_log.
-    context->setHTTPRequestURL(request.getURI());
+    /// The URL of a request signed with AWS Signature Version 4 is exposed in the canonical form, which is what
+    /// the signature covers: the original request target can be respelled without invalidating the signature.
+    context->setHTTPRequestURL(is_aws_signature_v4 ? getAWSSignatureV4CanonicalURL(request) : request.getURI());
     if (!introspection_handler_name.empty())
     {
         context->setHTTPHandlerName(introspection_handler_name);
