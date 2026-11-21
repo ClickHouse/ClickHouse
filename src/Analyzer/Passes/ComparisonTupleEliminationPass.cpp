@@ -9,6 +9,9 @@
 #include <Interpreters/Context.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
+
+#include <Common/assert_cast.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/AggregationUtils.h>
@@ -204,40 +207,34 @@ private:
         if (function_node_typed.getFunctionName() != "tuple")
             return {};
 
-        auto & constant_node_typed = constant_node->as<ConstantNode &>();
-        const auto & constant_node_value = constant_node_typed.getValue();
-        if (constant_node_value.getType() != Field::Types::Which::Tuple)
-            return {};
-
-        const auto & constant_tuple = constant_node_value.safeGet<Tuple>();
-
-        const auto & function_arguments_nodes = function_node_typed.getArguments().getNodes();
-        size_t function_arguments_nodes_size = function_arguments_nodes.size();
-        if (function_arguments_nodes_size != constant_tuple.size())
-            return {};
-
+        const auto & constant_node_typed = constant_node->as<ConstantNode &>();
         auto constant_node_result_type = constant_node_typed.getResultType();
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(constant_node_result_type.get());
         if (!tuple_data_type)
             return {};
 
+        const auto & function_arguments_nodes = function_node_typed.getArguments().getNodes();
+        size_t function_arguments_nodes_size = function_arguments_nodes.size();
         const auto & tuple_data_type_elements = tuple_data_type->getElements();
         if (tuple_data_type_elements.size() != function_arguments_nodes_size)
             return {};
 
-        if (function_arguments_nodes_size == 1)
+        /// A `Field` of a `Dynamic` value does not keep its member type, so the elements are taken from the column.
+        const auto & constant_tuple_column = assert_cast<const ColumnTuple &>(constant_node_typed.getColumn()->getDataColumn());
+        auto make_element_constant_node = [&](size_t i)
         {
-            auto comparison_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[0], tuple_data_type_elements[0]);
-            return makeNonFoldingComparisonFunction(function_arguments_nodes[0], std::move(comparison_argument_constant_node), comparison_function_name);
-        }
+            return std::make_shared<ConstantNode>(ColumnConst::create(constant_tuple_column.getColumnPtr(i), 1), tuple_data_type_elements[i]);
+        };
+
+        if (function_arguments_nodes_size == 1)
+            return makeNonFoldingComparisonFunction(function_arguments_nodes[0], make_element_constant_node(0), comparison_function_name);
 
         QueryTreeNodes tuple_arguments_equals_functions;
         tuple_arguments_equals_functions.reserve(function_arguments_nodes_size);
 
         for (size_t i = 0; i < function_arguments_nodes_size; ++i)
         {
-            auto equals_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[i], tuple_data_type_elements[i]);
-            auto equals_function = makeEqualsFunction(function_arguments_nodes[i], std::move(equals_argument_constant_node));
+            auto equals_function = makeEqualsFunction(function_arguments_nodes[i], make_element_constant_node(i));
             tuple_arguments_equals_functions.push_back(std::move(equals_function));
         }
 
