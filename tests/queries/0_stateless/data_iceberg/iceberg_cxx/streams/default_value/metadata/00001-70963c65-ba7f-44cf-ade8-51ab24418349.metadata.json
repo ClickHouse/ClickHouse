@@ -1,0 +1,76 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "b85c20a6-59ee-4281-8a89-09f7f0f163ba",
+  "location" : "s3a://warehouse/streams/default_value",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1753789851746,
+  "last-column-id" : 1,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 6970183646808496718,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6970183646808496718,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 6970183646808496718,
+    "timestamp-ms" : 1753789851746,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1753789848166",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "436",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "436",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "3.5.1",
+      "app-id" : "local-1753789848166",
+      "engine-name" : "spark",
+      "iceberg-version" : "Apache Iceberg 1.8.0 (commit c277c2014a1b37fe755cfe37f173b6465bb8cb73)"
+    },
+    "manifest-list" : "s3a://warehouse/streams/default_value/metadata/snap-6970183646808496718-1-53a26f70-d6af-494b-86dd-876274058f24.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1753789851746,
+    "snapshot-id" : 6970183646808496718
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1753789849975,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00000-6664ae46-ad52-4279-a62c-4eaf41619c61.metadata.json"
+  } ]
+}

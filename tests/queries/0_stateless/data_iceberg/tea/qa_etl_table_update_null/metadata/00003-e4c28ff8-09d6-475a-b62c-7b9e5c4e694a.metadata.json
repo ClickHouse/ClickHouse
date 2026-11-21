@@ -1,0 +1,179 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "53fb4e20-4569-494e-9d74-09b05dda95ee",
+  "location" : "s3a://warehouse/qa_etl_table_update_null",
+  "last-sequence-number" : 3,
+  "last-updated-ms" : 1742812319655,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "text_field",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "int_field",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 6340996158808292109,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6340996158808292109,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4531705079736119272,
+    "timestamp-ms" : 1742812316689,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250324_103156_00000_2t5ie",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/qa_etl_table_update_null/metadata/snap-4531705079736119272-1-c993262e-35e3-40f2-a79a-5ee9c669ec53.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 6287019087870224545,
+    "parent-snapshot-id" : 4531705079736119272,
+    "timestamp-ms" : 1742812318687,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250324_103157_00001_2t5ie",
+      "trino_user" : "trino",
+      "added-data-files" : "1",
+      "added-records" : "7",
+      "added-files-size" : "531",
+      "changed-partition-count" : "1",
+      "total-records" : "7",
+      "total-files-size" : "531",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/qa_etl_table_update_null/metadata/snap-6287019087870224545-1-baa784aa-6d0b-48c5-b3f4-48fa2cfae2b3.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 3,
+    "snapshot-id" : 6340996158808292109,
+    "parent-snapshot-id" : 6287019087870224545,
+    "timestamp-ms" : 1742812319655,
+    "summary" : {
+      "operation" : "overwrite",
+      "trino_query_id" : "20250324_103159_00002_2t5ie",
+      "trino_user" : "trino",
+      "added-data-files" : "1",
+      "added-position-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-records" : "7",
+      "added-files-size" : "1455",
+      "added-position-deletes" : "7",
+      "changed-partition-count" : "1",
+      "total-records" : "14",
+      "total-files-size" : "1986",
+      "total-data-files" : "2",
+      "total-delete-files" : "1",
+      "total-position-deletes" : "7",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/qa_etl_table_update_null/metadata/snap-6340996158808292109-1-e72171fb-a4aa-41d5-8432-b2d0a8e40848.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ {
+    "snapshot-id" : 6287019087870224545,
+    "statistics-path" : "s3a://warehouse/qa_etl_table_update_null/metadata/20250324_103157_00001_2t5ie-145249a9-71d6-4de2-ac51-159048f1b25c.stats",
+    "file-size-in-bytes" : 843,
+    "file-footer-size-in-bytes" : 624,
+    "blob-metadata" : [ {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 6287019087870224545,
+      "sequence-number" : 2,
+      "fields" : [ 1 ],
+      "properties" : {
+        "ndv" : "7"
+      }
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 6287019087870224545,
+      "sequence-number" : 2,
+      "fields" : [ 2 ],
+      "properties" : {
+        "ndv" : "4"
+      }
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 6287019087870224545,
+      "sequence-number" : 2,
+      "fields" : [ 3 ],
+      "properties" : {
+        "ndv" : "5"
+      }
+    } ]
+  } ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1742812316689,
+    "snapshot-id" : 4531705079736119272
+  }, {
+    "timestamp-ms" : 1742812318687,
+    "snapshot-id" : 6287019087870224545
+  }, {
+    "timestamp-ms" : 1742812319655,
+    "snapshot-id" : 6340996158808292109
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1742812316689,
+    "metadata-file" : "s3a://warehouse/qa_etl_table_update_null/metadata/00000-fe9ebb5f-0fc2-4389-b790-f9596300ed0d.metadata.json"
+  }, {
+    "timestamp-ms" : 1742812318687,
+    "metadata-file" : "s3a://warehouse/qa_etl_table_update_null/metadata/00001-9eb3d518-aee8-44ed-83d2-e02d957dcb17.metadata.json"
+  }, {
+    "timestamp-ms" : 1742812318959,
+    "metadata-file" : "s3a://warehouse/qa_etl_table_update_null/metadata/00002-9bfeff11-b252-4554-ad47-0bbf3c52f016.metadata.json"
+  } ]
+}

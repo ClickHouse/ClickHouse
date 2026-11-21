@@ -1,0 +1,117 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "96520868-705d-4e88-8b8a-881708e5efb5",
+  "location" : "s3a://warehouse/month_timestamptz_partitioning",
+  "last-sequence-number" : 2,
+  "last-updated-ms" : 1741900826965,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "c2",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 3,
+      "name" : "c3",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "c2_month",
+      "transform" : "month",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 7681461458663170398,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7681461458663170398,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 2311346262833015500,
+    "timestamp-ms" : 1741900826540,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250313_211747_00012_z8hj2",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/month_timestamptz_partitioning/metadata/snap-2311346262833015500-1-889b631f-d6ef-4c9b-9f44-4119d724cf02.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 7681461458663170398,
+    "parent-snapshot-id" : 2311346262833015500,
+    "timestamp-ms" : 1741900826965,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250313_211747_00013_z8hj2",
+      "trino_user" : "trino",
+      "added-data-files" : "3",
+      "added-records" : "3",
+      "added-files-size" : "1381",
+      "changed-partition-count" : "3",
+      "total-records" : "3",
+      "total-files-size" : "1381",
+      "total-data-files" : "3",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/month_timestamptz_partitioning/metadata/snap-7681461458663170398-1-1fcf77ef-6cf3-4bdb-94a7-e06502b15dc0.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1741900826540,
+    "snapshot-id" : 2311346262833015500
+  }, {
+    "timestamp-ms" : 1741900826965,
+    "snapshot-id" : 7681461458663170398
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1741900826540,
+    "metadata-file" : "s3a://warehouse/month_timestamptz_partitioning/metadata/00000-460db0e6-3f78-456e-a417-6582017304af.metadata.json"
+  } ]
+}

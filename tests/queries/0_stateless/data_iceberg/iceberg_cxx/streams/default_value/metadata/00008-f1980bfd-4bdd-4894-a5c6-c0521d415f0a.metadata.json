@@ -1,0 +1,300 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "b85c20a6-59ee-4281-8a89-09f7f0f163ba",
+  "location" : "s3a://warehouse/streams/default_value",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1753789852151,
+  "last-column-id" : 8,
+  "current-schema-id" : 7,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 1,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "boolean_col",
+      "required" : false,
+      "type" : "boolean"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 2,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "boolean_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "integer_col",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 3,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "boolean_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "integer_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "long_col",
+      "required" : false,
+      "type" : "long"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 4,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "boolean_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "integer_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "long_col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "float_col",
+      "required" : false,
+      "type" : "float"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 5,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "boolean_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "integer_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "long_col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "float_col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 6,
+      "name" : "double_col",
+      "required" : false,
+      "type" : "double"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 6,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "boolean_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "integer_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "long_col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "float_col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 6,
+      "name" : "double_col",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "decimal_col",
+      "required" : false,
+      "type" : "decimal(10, 2)"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 7,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "boolean_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "integer_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "long_col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 5,
+      "name" : "float_col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 6,
+      "name" : "double_col",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "decimal_col",
+      "required" : false,
+      "type" : "decimal(10, 2)"
+    }, {
+      "id" : 8,
+      "name" : "string_col",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 6970183646808496718,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6970183646808496718,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 6970183646808496718,
+    "timestamp-ms" : 1753789851746,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1753789848166",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "436",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "436",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "3.5.1",
+      "app-id" : "local-1753789848166",
+      "engine-name" : "spark",
+      "iceberg-version" : "Apache Iceberg 1.8.0 (commit c277c2014a1b37fe755cfe37f173b6465bb8cb73)"
+    },
+    "manifest-list" : "s3a://warehouse/streams/default_value/metadata/snap-6970183646808496718-1-53a26f70-d6af-494b-86dd-876274058f24.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1753789851746,
+    "snapshot-id" : 6970183646808496718
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1753789849975,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00000-6664ae46-ad52-4279-a62c-4eaf41619c61.metadata.json"
+  }, {
+    "timestamp-ms" : 1753789851746,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00001-70963c65-ba7f-44cf-ade8-51ab24418349.metadata.json"
+  }, {
+    "timestamp-ms" : 1753789851933,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00002-d773ffda-fe18-4618-8507-169ade077336.metadata.json"
+  }, {
+    "timestamp-ms" : 1753789851974,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00003-0c5e50fb-c0e9-4728-b17f-205596f0fb2a.metadata.json"
+  }, {
+    "timestamp-ms" : 1753789852011,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00004-3407beea-47d2-4534-956a-2d4c2765e1ea.metadata.json"
+  }, {
+    "timestamp-ms" : 1753789852043,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00005-81b7e3ea-9759-4b98-8c08-d1491b8a66be.metadata.json"
+  }, {
+    "timestamp-ms" : 1753789852074,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00006-80f56245-b492-4e27-8aa2-e65cb690a12e.metadata.json"
+  }, {
+    "timestamp-ms" : 1753789852114,
+    "metadata-file" : "s3a://warehouse/streams/default_value/metadata/00007-850d1790-217d-4bfd-ad1f-1900ecbd9bc5.metadata.json"
+  } ]
+}
