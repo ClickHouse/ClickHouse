@@ -842,7 +842,7 @@ static void buildORCSearchArgumentImpl(
                 }
 
                 /// Under a negation ORC keeps the atom NULL for a NULL, which the reader returns as the default,
-                /// so read the row groups with NULLs. Element statistics do not count the NULLs of ancestors.
+                /// so read the row groups with NULLs. Element statistics need not count the NULLs of ancestors.
                 if (negated)
                 {
                     bool is_top_level = false;
