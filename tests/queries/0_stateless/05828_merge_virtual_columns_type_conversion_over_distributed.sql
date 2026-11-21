@@ -19,6 +19,13 @@ SELECT _database = currentDatabase(), _table FROM merge_vc_conv WHERE _table = '
 SELECT _table, p FROM merge_vc_conv ORDER BY p SETTINGS prefer_localhost_replica = 0;
 SELECT _table, count() FROM merge_vc_conv GROUP BY _table SETTINGS prefer_localhost_replica = 1;
 
+-- An output alias named like the substitute is not a read of it.
+SELECT _table AS p FROM merge_vc_conv SETTINGS prefer_localhost_replica = 0;
+SELECT _database = currentDatabase() AS p FROM merge_vc_conv SETTINGS prefer_localhost_replica = 0;
+SELECT concat(_table, '!') AS p FROM merge_vc_conv SETTINGS prefer_localhost_replica = 0;
+SELECT _table AS p, count() FROM merge_vc_conv GROUP BY p SETTINGS prefer_localhost_replica = 0;
+SELECT _table AS p FROM merge_vc_conv SETTINGS prefer_localhost_replica = 1;
+
 DROP TABLE merge_vc_conv;
 DROP TABLE merge_vc_conv_dist;
 DROP TABLE merge_vc_conv_child;

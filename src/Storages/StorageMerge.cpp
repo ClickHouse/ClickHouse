@@ -24,6 +24,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
@@ -1893,6 +1894,49 @@ String childOutputNameOfVirtualColumn(const String & column_name)
     return "toLowCardinality(" + childActionNameOfVirtualColumn(column_name) + ")";
 }
 
+/// The name of the column in a column identifier that the planner created for a table expression with a
+/// generated alias (`__table1.x`), if the name is such an identifier.
+std::optional<String> tryGetColumnNameFromColumnIdentifier(const String & name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return {};
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isNumericASCII(name[pos]))
+        ++pos;
+
+    if (pos == prefix.size() || pos + 1 >= name.size() || name[pos] != '.')
+        return {};
+
+    return name.substr(pos + 1);
+}
+
+bool isMergeNameVirtualColumn(const String & column_name)
+{
+    return column_name == "_database" || column_name == "_table";
+}
+
+/// Whether the expression reads the column of the table expression itself, not through an `ALIAS` column
+/// and not from inside a subquery.
+bool readsColumnOfTableExpression(const QueryTreeNodePtr & node, const String & column_name, const QueryTreeNodePtr & table_expression)
+{
+    if (!node)
+        return false;
+
+    const auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return false;
+
+    if (const auto * column_node = node->as<ColumnNode>())
+        return !column_node->hasExpression()
+            && column_node->getColumnName() == column_name
+            && column_node->getColumnSourceOrNull() == table_expression;
+
+    return std::ranges::any_of(node->getChildren(), [&](const auto & child)
+        { return readsColumnOfTableExpression(child, column_name, table_expression); });
+}
+
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
     TableExpressionNodePtr original_table_expression,
@@ -1935,9 +1979,17 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
             auto & modified_query_node = modified_query->as<QueryNode &>();
             auto & projection = modified_query_node.getProjection().getNodes();
             auto projection_columns = modified_query_node.getProjectionColumns();
+            /// The projection changes its size, so a list of aliases given to it from outside (the column
+            /// list of a CTE or of a subquery, `WITH cte(v) AS (...)`) no longer corresponds to it. The names
+            /// it gave to the original columns are in `projection_columns` already.
+            modified_query_node.setProjectionAliasesToOverride({});
             auto add_to_projection = [&](const NameAndTypePair & child_column)
             {
-                if (std::ranges::any_of(projection_columns, [&](const auto & column) { return column.name == child_column.name; }))
+                /// A column of the projection that merely has the name of the child column - an expression
+                /// under an alias, `SELECT _table AS p` - is not a read of it.
+                if (isMergeNameVirtualColumn(child_column.name)
+                    ? std::ranges::any_of(projection_columns, [&](const auto & column) { return column.name == child_column.name; })
+                    : readsColumnOfTableExpression(modified_query_node.getProjectionNode(), child_column.name, replacement_table_expression))
                     return;
                 child_only_projection.emplace_back(projection.size(), std::make_shared<ColumnNode>(child_column, replacement_table_expression));
                 projection.push_back(child_only_projection.back().second);
@@ -2026,6 +2078,9 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
     NamesAndTypes projection_columns;
+    /// The aliases given to the original projection from outside (the column list of a CTE or of a
+    /// subquery) do not correspond to the projection built below.
+    modified_query_node->setProjectionAliasesToOverride({});
 
     // Select only required columns from the table, because projection list may contain:
     // 1. aggregate functions
@@ -3289,6 +3344,35 @@ void ReadFromMerge::convertAndFilterSourceStream(
     /// place of a `_database`/`_table` column of the child.
     if (common_processed_stage == QueryProcessingStage::FetchColumns)
     {
+        /// The expressions of the `ALIAS` columns read the columns of the child by their names, but a child
+        /// that plans the read itself (`Distributed`) names them by the column identifiers of its own
+        /// planner (`__table1.x`), even at `FetchColumns`. Give such columns the names they were requested
+        /// under, so the expressions find their inputs.
+        if (!aliases.empty())
+        {
+            const NameSet requested_names(column_names_read.begin(), column_names_read.end());
+            ActionsDAG rename_dag(before_block_header->getColumnsWithTypeAndName());
+            auto & outputs = rename_dag.getOutputs();
+            bool has_renamed_columns = false;
+            for (auto & output : outputs)
+            {
+                auto requested_name = tryGetColumnNameFromColumnIdentifier(output->result_name);
+                if (!requested_name || !requested_names.contains(*requested_name) || before_block_header->has(*requested_name))
+                    continue;
+
+                output = &rename_dag.addAlias(*output, *requested_name);
+                has_renamed_columns = true;
+            }
+
+            if (has_renamed_columns)
+            {
+                auto rename_step = std::make_unique<ExpressionStep>(before_block_header, std::move(rename_dag));
+                rename_step->setStepDescription("Rename the columns of the child to the names they were requested under");
+                child.plan.addStep(std::move(rename_step));
+                pipe_columns = child.plan.getCurrentHeader()->getNamesAndTypesList();
+            }
+        }
+
         for (const auto & alias : aliases)
         {
             ActionsDAG actions_dag(pipe_columns);
