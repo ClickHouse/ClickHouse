@@ -1,5 +1,6 @@
 #include <Interpreters/Set.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -318,11 +319,8 @@ TEST(MergeTreeSetIndex, GenericPathBoundsKeyColumns)
 TEST(MergeTreeSetIndex, GenericPathBoundsTupleKey)
 {
     auto int64 = std::make_shared<DataTypeInt64>();
-    DataTypes types = {std::make_shared<DataTypeTuple>(DataTypes{int64, int64})};
-    auto column = types[0]->createColumn();
-    for (const auto & row : genericPathRows())
-        column->insert(Field(Tuple{Field(row[0]), Field(row[1])}));
-    MergeTreeSetIndex index({std::move(column)}, {{0, 0, {}}});
+    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(DataTypes{int64, int64});
+    DataTypePtr nullable_tuple_type = std::make_shared<DataTypeNullable>(tuple_type);
 
     std::vector<std::pair<Int64, Int64>> points;
     for (Int64 first = -1; first <= 4; ++first)
@@ -334,28 +332,38 @@ TEST(MergeTreeSetIndex, GenericPathBoundsTupleKey)
         return LexPoint(std::vector<std::pair<Int64, int>>{{point.first, 0}, {point.second, epsilon}});
     };
 
-    for (size_t i = 0; i < points.size(); ++i)
+    for (const DataTypePtr & type : {tuple_type, nullable_tuple_type})
     {
-        for (bool included : {false, true})
+        SCOPED_TRACE(type->getName());
+        DataTypes types = {type};
+        auto column = type->createColumn();
+        for (const auto & row : genericPathRows())
+            column->insert(Field(Tuple{Field(row[0]), Field(row[1])}));
+        MergeTreeSetIndex index({std::move(column)}, {{0, 0, {}}});
+
+        for (size_t i = 0; i < points.size(); ++i)
         {
-            SCOPED_TRACE(::testing::Message() << "point=(" << points[i].first << ", " << points[i].second
-                << ") included=" << included);
-            checkGenericPath(index, types, {Range::createLeftBounded(tuple(points[i]), included)},
-                lex(points[i], included ? 0 : 1), std::nullopt, false);
-            checkGenericPath(index, types, {Range::createRightBounded(tuple(points[i]), included)},
-                std::nullopt, lex(points[i], included ? 0 : -1), false);
-        }
-        for (size_t j = i; j < points.size(); ++j)
-        {
-            for (unsigned flags = 0; flags < 4; ++flags)
+            for (bool included : {false, true})
             {
-                bool left_included = flags & 1;
-                bool right_included = flags & 2;
-                SCOPED_TRACE(::testing::Message() << "left=(" << points[i].first << ", " << points[i].second
-                    << ") right=(" << points[j].first << ", " << points[j].second << ") left_included=" << left_included
-                    << " right_included=" << right_included);
-                checkGenericPath(index, types, {makeRange(tuple(points[i]), left_included, tuple(points[j]), right_included)},
-                    lex(points[i], left_included ? 0 : 1), lex(points[j], right_included ? 0 : -1), i == j);
+                SCOPED_TRACE(::testing::Message() << "point=(" << points[i].first << ", " << points[i].second
+                    << ") included=" << included);
+                checkGenericPath(index, types, {Range::createLeftBounded(tuple(points[i]), included)},
+                    lex(points[i], included ? 0 : 1), std::nullopt, false);
+                checkGenericPath(index, types, {Range::createRightBounded(tuple(points[i]), included)},
+                    std::nullopt, lex(points[i], included ? 0 : -1), false);
+            }
+            for (size_t j = i; j < points.size(); ++j)
+            {
+                for (unsigned flags = 0; flags < 4; ++flags)
+                {
+                    bool left_included = flags & 1;
+                    bool right_included = flags & 2;
+                    SCOPED_TRACE(::testing::Message() << "left=(" << points[i].first << ", " << points[i].second
+                        << ") right=(" << points[j].first << ", " << points[j].second << ") left_included=" << left_included
+                        << " right_included=" << right_included);
+                    checkGenericPath(index, types, {makeRange(tuple(points[i]), left_included, tuple(points[j]), right_included)},
+                        lex(points[i], left_included ? 0 : 1), lex(points[j], right_included ? 0 : -1), i == j);
+                }
             }
         }
     }
