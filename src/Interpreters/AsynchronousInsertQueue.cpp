@@ -75,6 +75,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
     extern const Event AsyncInsertFlush;
+    extern const Event AsyncInsertFlushedWithoutBatching;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -112,6 +113,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsBool wait_for_async_insert;
 }
 
 namespace ErrorCodes
@@ -546,6 +548,25 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     }
 }
 
+void AsynchronousInsertQueue::startFlushOfKey(QueueShard & shard, UInt128 key_hash, InsertData & data)
+{
+    chassert(!data.flush_of_key_finished);
+
+    /// The state of the keys is queue bookkeeping, not charged to any query, as the queue itself.
+    MemoryTrackerBlockerInThread queue_bookkeeping_not_charged;
+    ++shard.key_states[key_hash].flushes_in_progress;
+
+    data.flush_of_key_finished = [&shard, key_hash]
+    {
+        MemoryTrackerBlockerInThread queue_bookkeeping_not_charged_to_the_flush;
+        std::lock_guard lock(shard.mutex);
+        auto it = shard.key_states.find(key_hash);
+        chassert(it != shard.key_states.end() && it->second.flushes_in_progress > 0);
+        if (it != shard.key_states.end() && --it->second.flushes_in_progress == 0 && !it->second.waited_alone)
+            shard.key_states.erase(it);
+    };
+}
+
 void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context)
 {
     auto & insert_query = query->as<ASTInsertQuery &>();
@@ -806,16 +827,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         auto [it, inserted] = shard.iterators.try_emplace(key.hash);
         auto now = std::chrono::steady_clock::now();
         auto timeout_ms = getBusyWaitTimeoutMs(settings, shard, flush_time_points, now);
-        if (timeout_ms != shard.busy_timeout_ms)
-        {
-            LOG_TRACE(
-                log,
-                "Asynchronous timeout {} from {} to {} for queue shard {}.",
-                timeout_ms < shard.busy_timeout_ms ? "decreased" : "increased",
-                shard.busy_timeout_ms.count(),
-                timeout_ms.count(),
-                shard_num);
-        }
 
         if (inserted)
         {
@@ -839,6 +850,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         try
         {
             data->entries.emplace_back(entry);
+            /// An insert that joins a batch handed over to the deadline thread makes it batched.
+            data->flushed_without_batching = false;
         }
         catch (...)
         {
@@ -874,23 +887,75 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
 
         auto max_busy_timeout_exceeded = [&shard, &settings, &now, &flush_time_points]() -> bool
         {
-            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) || !flush_time_points.first)
+            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !TSA_SUPPRESS_WARNING_FOR_READ(shard.last_arrival_time) || !flush_time_points.first)
                 return false;
 
             auto max_ms = saturatedMilliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
-            return *TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
+            return *TSA_SUPPRESS_WARNING_FOR_READ(shard.last_arrival_time) + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
         };
+
+        /// A client that waits for each insert sends the next one only after the previous one is flushed, so the busy timeout
+        /// never batches its inserts and only adds latency, and the gap between them stays short because of this wait.
+        /// So flush at once if the last batch with this key waited for its deadline alone, and no flush with the key is
+        /// in progress: every earlier insert with the key is finished. Another client inserting with the same key keeps
+        /// a flush running or a batch waiting, so its inserts wait and are batched as before. Clients whose inserts arrive
+        /// between such short flushes do not overlap with them, so every `max_flushes_without_batching` inserts one waits
+        /// for its deadline again: if it is batched with another insert, the key is batched again.
+        auto key_state = shard.key_states.find(key.hash);
+        bool batching_is_not_happening = inserted && key_state != shard.key_states.end() && key_state->second.waited_alone
+            && key_state->second.flushes_in_progress == 0
+            && key_state->second.flushes_without_batching < QueueShard::max_flushes_without_batching
+            && settings[Setting::async_insert_use_adaptive_busy_timeout] && settings[Setting::wait_for_async_insert];
 
         /// Here we check whether we have hit the limit on the maximum data size in the buffer or
         /// if the elapsed time since the last insert exceeds the maximum busy wait timeout.
         /// We also use the limit settings from the query context.
         /// This works because queries with the same set of settings are already grouped together.
-        if (!flush_stopped && (has_enough_bytes || has_enough_queries || max_busy_timeout_exceeded()))
+        const char * flush_reason = nullptr;
+        bool flush_without_batching = false;
+        if (has_enough_bytes)
+            flush_reason = "enough bytes accumulated";
+        else if (has_enough_queries)
+            flush_reason = "enough queries accumulated";
+        else if (max_busy_timeout_exceeded())
+            flush_reason = "maximum busy wait timeout exceeded";
+        else if (batching_is_not_happening)
         {
-            LOG_TRACE(log, "Scheduling async insert processing job because {}",
-                      has_enough_bytes ? "enough bytes accumulated" :
-                      has_enough_queries ? "enough queries accumulated" :
-                      "maximum busy wait timeout exceeded");
+            flush_reason = "the previous insert with this key was not batched with any other";
+            flush_without_batching = true;
+        }
+
+        /// `flushAll` clears `flush_stopped` without the shard mutex, so it is read once. Otherwise an insert flushed because
+        /// it is not batched could see the flag set here and cleared below, and wait for the pool in this thread.
+        if (flush_stopped)
+        {
+            flush_reason = nullptr;
+            flush_without_batching = false;
+        }
+
+        if (flush_without_batching)
+        {
+            /// The batch is handed over to the deadline thread of the shard instead of being scheduled here. Pool admission
+            /// can wait for a running flush, and the caller can hold locks of the destination table, which that flush or
+            /// a query waiting for them may need: an insert of a single client must not wait for the pool with them.
+            LOG_TRACE(log, "Handing async insert over to the deadline thread because {}", flush_reason);
+            ++key_state->second.flushes_without_batching;
+            ProfileEvents::increment(ProfileEvents::AsyncInsertFlushedWithoutBatching);
+            data->flushed_without_batching = true;
+            data->timeout_ms = Milliseconds::zero();
+
+            NOEXCEPT_SCOPE({
+                auto node = shard.queue.extract(queue_it);
+                node.key() = now;
+                it->second = shard.queue.insert(std::move(node));
+            });
+        }
+        else if (flush_reason)
+        {
+            LOG_TRACE(log, "Scheduling async insert processing job because {}", flush_reason);
+            if (data->entries.size() > 1 && key_state != shard.key_states.end())
+                key_state->second.waited_alone = false;
+            startFlushOfKey(shard, key.hash, *data);
             data->timeout_ms = Milliseconds::zero();
             data->trackFlush(shard.in_flight_flushes);
             data_to_process = std::move(data);
@@ -901,8 +966,25 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
             });
         }
 
-        shard.last_insert_time = now;
-        shard.busy_timeout_ms = timeout_ms;
+        /// Inserts flushed because they are not batched would make the shard look busy and raise the busy timeout
+        /// of the other keys in it.
+        if (!flush_without_batching)
+        {
+            if (timeout_ms != shard.busy_timeout_ms)
+            {
+                LOG_TRACE(
+                    log,
+                    "Asynchronous timeout {} from {} to {} for queue shard {}.",
+                    timeout_ms < shard.busy_timeout_ms ? "decreased" : "increased",
+                    shard.busy_timeout_ms.count(),
+                    timeout_ms.count(),
+                    shard_num);
+            }
+
+            shard.last_insert_time = now;
+            shard.busy_timeout_ms = timeout_ms;
+        }
+        shard.last_arrival_time = now;
 
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
@@ -1058,9 +1140,10 @@ void AsynchronousInsertQueue::flush(const std::vector<StorageID> & tables)
                 }
 
                 affected_set.emplace(storage.getNameForLogs());
-                queues_to_flush[i].emplace(it->first, std::move(it->second));
+                auto to_flush = queues_to_flush[i].emplace(it->first, std::move(it->second));
                 NOEXCEPT_SCOPE({
-                    shard.iterators.erase(it->second.key.hash);
+                    startFlushOfKey(shard, to_flush->second.key.hash, *to_flush->second.data);
+                    shard.iterators.erase(to_flush->second.key.hash);
                     it = queue.erase(it);
                 });
             }
@@ -1137,6 +1220,8 @@ void AsynchronousInsertQueue::flushAll()
             std::lock_guard lock(queue_shards[i].mutex);
             queues_to_flush[i] = std::move(queue_shards[i].queue);
             queue_shards[i].iterators.clear();
+            for (auto & [_, entry] : queues_to_flush[i])
+                startFlushOfKey(queue_shards[i], entry.key.hash, *entry.data);
         }
     }
 
@@ -1230,6 +1315,31 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
                     MemoryTrackerBlockerInThread lock_memory_tracker;
 
                     shard.iterators.erase(it->second.key.hash);
+
+                    const auto key_hash = it->second.key.hash;
+                    if (it->second.data->flushed_without_batching)
+                    {
+                        /// Handed over by `pushDataChunk`, which has already updated the state of the key.
+                    }
+                    else if (it->second.data->entries.size() == 1 && (*it->second.key.settings)[Setting::wait_for_async_insert]
+                        && (*it->second.key.settings)[Setting::async_insert_use_adaptive_busy_timeout])
+                    {
+                        /// Only inserts with the adaptive busy timeout are flushed without batching, so only their keys are kept.
+                        /// ponytail: idle keys that stop inserting are only removed when there are many of them.
+                        if (shard.key_states.size() >= shard.key_states_to_drop_idle)
+                        {
+                            std::erase_if(shard.key_states, [](const auto & key_and_state) { return key_and_state.second.flushes_in_progress == 0; });
+                            shard.key_states_to_drop_idle = std::max(QueueShard::min_key_states_to_drop_idle, 2 * shard.key_states.size());
+                        }
+                        auto & key_state = shard.key_states[key_hash];
+                        key_state.waited_alone = true;
+                        key_state.flushes_without_batching = 0;
+                    }
+                    else if (auto key_state = shard.key_states.find(key_hash); key_state != shard.key_states.end())
+                    {
+                        key_state->second.waited_alone = false;
+                    }
+                    startFlushOfKey(shard, key_hash, *it->second.data);
 
                     it->second.data->trackFlush(shard.in_flight_flushes);
                     entries_to_flush.emplace_back(std::move(it->second));
@@ -1599,7 +1709,11 @@ try
         }
 
         LOG_DEBUG(log, "Flushed {} rows, {} bytes", num_rows, num_bytes);
-        queue_shard_flush_time_history.updateWithCurrentTime();
+        /// Before the clients are notified, because they may send the next insert right away.
+        data->finishFlushOfKey();
+        /// A flush that did not wait is not counted in the history, for the same reason as its insert.
+        if (!data->flushed_without_batching)
+            queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
         logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);
