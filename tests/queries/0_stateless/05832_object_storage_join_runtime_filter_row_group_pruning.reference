@@ -1,0 +1,50 @@
+--- layout: row groups ---
+16
+2
+--- A an exact set of keys ---
+2	1415
+2	1415
+a_on	15	0
+a_off	0	0
+--- B the [min, max] range when the exact set is too large ---
+2	1415
+2	1415
+b_on	15	0
+b_off	0	0
+--- P pages ---
+2	1415
+2	1415
+p_on	1	7
+p_off	0	0
+--- H a Hive partition column read from the file ---
+1600
+1600
+h_on	0	0
+h_off	0	0
+--- D a column with a default expression ---
+3	1725
+3	1725
+d_on	0	0
+d_off	0	0
+--- S a runtime filter on a column with a default expression and one on an ordinary column ---
+3	1725
+3	1725
+s_on	14	0
+s_off	0	0
+--- F a FixedString column read as String ---
+['FIXED_LEN_BYTE_ARRAY','INT64']
+100	74950
+100	74950
+f_on	0	0
+f_off	0	0
+--- Q1 the query condition cache ---
+2	1415
+2	1415
+q1_on	15	0
+q1_off	0	0
+1600
+--- Q2 the per-file row count cache ---
+2	1415
+0
+1600
+q2_on	15	0

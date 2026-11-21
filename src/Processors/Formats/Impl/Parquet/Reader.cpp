@@ -1061,6 +1061,12 @@ static size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
+/// A `FIXED_LEN_BYTE_ARRAY` read as `String`: its statistics keep the trailing zero bytes the cast strips.
+static bool statisticsKeepStrippedZeroBytes(const Reader::PrimitiveColumnInfo & column, const DataTypePtr & output_type)
+{
+    return isFixedString(column.decoded_type) && isString(removeNullable(removeLowCardinality(output_type)));
+}
+
 void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
 {
     extended_sample_block = *sample_block;
@@ -1336,15 +1342,25 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         auto condition = format_filter_info->tryGetJoinRuntimeFilterKeyCondition(*sample_block);
         if (condition && *condition && !(*condition)->alwaysUnknownOrTrue())
         {
-            join_runtime_filter_key_condition = *condition;
-            for (size_t idx_in_output_block : join_runtime_filter_key_condition->getUsedColumns())
+            VectorWithMemoryTracking<size_t> used_primitives;
+            bool statistics_usable = true;
+            for (size_t idx_in_output_block : (*condition)->getUsedColumns())
             {
                 const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
                 if (!output_idx.has_value())
                     continue;
                 const OutputColumnInfo & output_info = output_columns[output_idx.value()];
-                if (output_info.is_primitive)
-                    primitive_columns[output_info.primitive_start].used_by_join_runtime_filter = true;
+                if (!output_info.is_primitive)
+                    continue;
+                if (statisticsKeepStrippedZeroBytes(primitive_columns[output_info.primitive_start], output_info.output_type))
+                    statistics_usable = false;
+                used_primitives.push_back(output_info.primitive_start);
+            }
+            if (statistics_usable)
+            {
+                join_runtime_filter_key_condition = *condition;
+                for (size_t primitive_idx : used_primitives)
+                    primitive_columns[primitive_idx].used_by_join_runtime_filter = true;
             }
         }
     }
@@ -1448,13 +1464,11 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
                 /// query's collation order, so a row group could be skipped while still holding
                 /// values that sort before the threshold under the collator. The per-row
                 /// `__topKFilter` (which does compare with the collator) stays.
-                /// Same for a `FIXED_LEN_BYTE_ARRAY` read as `String`: its statistics keep the trailing zero bytes the cast strips.
                 if (top_k_column_is_read
                     && !format_filter_info->top_k_filter->threshold_tracker->getCollator()
                     && output_info.is_primitive
                     && primitive_columns[output_info.primitive_start].decoder.allow_stats
-                    && !(isFixedString(primitive_columns[output_info.primitive_start].decoded_type)
-                         && isString(removeNullable(removeLowCardinality(output_info.output_type)))))
+                    && !statisticsKeepStrippedZeroBytes(primitive_columns[output_info.primitive_start], output_info.output_type))
                     top_k_primitive_idx = output_info.primitive_start;
 
                 if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
