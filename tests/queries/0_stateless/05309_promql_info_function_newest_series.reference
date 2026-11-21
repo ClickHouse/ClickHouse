@@ -1,0 +1,26 @@
+-- the newest info series is used, with the lookback
+[('__name__','metric'),('instance','a'),('job','1'),('version','new')]	[('1970-01-01 00:03:00.000',3),('1970-01-01 00:04:00.000',4)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','old')]	[('1970-01-01 00:01:00.000',0),('1970-01-01 00:02:00.000',2)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','old')]	[('1970-01-01 00:01:00.000',0),('1970-01-01 00:02:00.000',0),('1970-01-01 00:03:00.000',0),('1970-01-01 00:04:00.000',0)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','new')]	[('1970-01-01 00:03:00.000',2),('1970-01-01 00:04:00.000',3)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','old')]	[('1970-01-01 00:01:00.000',0),('1970-01-01 00:02:00.000',0)]
+-- the first selector of an aggregation is in its expression
+[('__name__','metric'),('instance','a'),('job','1'),('version','new')]	[('1970-01-01 00:03:00.000',3),('1970-01-01 00:04:00.000',4)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','old')]	[('1970-01-01 00:01:00.000',0),('1970-01-01 00:02:00.000',2)]
+-- subqueries
+[('__name__','metric'),('instance','a'),('job','1'),('version','new')]	[('1970-01-01 00:03:00.000',3),('1970-01-01 00:04:00.000',4)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','old')]	[('1970-01-01 00:01:00.000',0),('1970-01-01 00:02:00.000',2),('1970-01-01 00:03:00.000',2)]
+[('instance','a'),('job','1'),('version','new')]	[('1970-01-01 00:03:00.000',3),('1970-01-01 00:04:00.000',4)]
+[('instance','a'),('job','1'),('version','old')]	[('1970-01-01 00:01:00.000',0),('1970-01-01 00:02:00.000',2)]
+-- info series must have every identifying label found on the series
+[('__name__','metric'),('instance','a'),('job','api'),('pair_data','api-a')]	1970-01-01 00:00:00.000	3
+[('__name__','metric'),('instance','standalone')]	1970-01-01 00:00:00.000	2
+[('__name__','metric'),('job','api')]	1970-01-01 00:00:00.000	1
+[('__name__','metric'),('instance','standalone'),('instance_data','instance-only')]	1970-01-01 00:00:00.000	2
+-- different values of a data label from two info metrics
+-- two series of one info metric with the same timestamp
+-- the second argument must be a label selector
+-- a stale info series is not used
+[('__name__','metric'),('instance','a'),('job','1')]	[('1970-01-01 00:02:00.000',2),('1970-01-01 00:03:00.000',3)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','v1')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:01:00.000',1)]
+[('__name__','metric'),('instance','a'),('job','1'),('version','v2')]	[('1970-01-01 00:04:00.000',4)]

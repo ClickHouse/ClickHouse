@@ -1,0 +1,25 @@
+-- all data labels of target_info
+[('__name__','metric'),('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- one data label
+[('__name__','metric'),('data','info'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- no info series with the same identifying labels
+[('__name__','metric_not_matching_target_info'),('instance','a'),('job','2'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- a data label matcher not matching the empty string drops series without that label
+[('__name__','metric'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- labels of the series are kept
+[('__name__','metric_with_overlapping_label'),('another_data','another info'),('data','base'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- other info metrics
+[('__name__','metric'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+[('__name__','metric'),('build_data','build'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+[('__name__','metric'),('another_data','another info'),('build_data','build'),('data','info'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- every matcher of the label selector matches the empty string
+[('__name__','metric'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+[('__name__','metric'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+[('__name__','metric'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+[('__name__','metric'),('build_data','build'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- info series are not enriched
+[('__name__','build_info'),('build_data','build'),('instance','a'),('job','1')]	[('1970-01-01 00:00:00.000',1),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',1)]
+-- the metric name dropped before info() stays dropped
+[('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:05:00.000',1),('1970-01-01 00:10:00.000',2)]
+-- a metric named info
+[('__name__','info'),('a','b')]	1970-01-01 00:10:00.000	5

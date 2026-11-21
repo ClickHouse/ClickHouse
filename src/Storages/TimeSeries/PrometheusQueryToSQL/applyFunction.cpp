@@ -4,6 +4,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyClampFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionAbsent.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionInfo.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
@@ -84,6 +85,9 @@ SQLQueryPiece applyFunction(
 
     if (isHistogramQuantile(function_name))
         return applyHistogramQuantile(function_node, std::move(arguments), context);
+
+    if (isFunctionInfo(function_name))
+        return applyFunctionInfo(function_node, std::move(arguments), context);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
 }
