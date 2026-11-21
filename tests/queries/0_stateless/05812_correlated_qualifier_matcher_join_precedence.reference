@@ -1,0 +1,9 @@
+keys equated by isNotDistinctFrom
+(7)	(7)	7
+(7)	(7)	7
+control: renamed
+(7)	(7)	7
+ARRAY JOIN output below a JOIN is ambiguous with the other side, the alias takes over
+8
+control: renamed
+8

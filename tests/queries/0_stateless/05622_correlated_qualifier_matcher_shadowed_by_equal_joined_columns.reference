@@ -1,0 +1,9 @@
+equal subqueries
+(7)	(7)	7
+(7)	(7)	7
+two references to one table
+(7)	(7)	7
+equated keys of an INNER JOIN
+(7)	(7)	7
+different subqueries stay ambiguous, the alias takes over
+(7)	(8)	10

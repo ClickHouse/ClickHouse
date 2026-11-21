@@ -1,0 +1,7 @@
+scalar left column wins over tuple right column
+5	(7)	10
+tuple left column wins over scalar right column
+(7)	5	7
+ambiguous joined columns, the alias takes over
+8
+8
