@@ -3,6 +3,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -77,34 +78,39 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
 {
 }
 
-void StorageSystemProjectionPartsColumns::processNextStorage(
-    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+struct StorageSystemProjectionPartsColumns::ColumnsProcessingState : StorageProcessingState
 {
-    /// Prepare information about columns in storage.
     struct ColumnInfo
     {
         String default_kind;
         String default_expression;
     };
 
-    QueryStatusPtr query_status = context->getProcessListElement();
+    std::unordered_map<String, std::unordered_map<String, ColumnInfo>> projection_columns_info;
+    QueryStatusPtr query_status;
+};
+
+StorageSystemPartsBase::StorageProcessingStatePtr StorageSystemProjectionPartsColumns::prepareStorage(
+    ContextPtr context, const StoragesInfo & info, const std::vector<UInt8> & /*columns_mask*/)
+{
+    auto state = std::make_unique<ColumnsProcessingState>();
+    state->query_status = context->getProcessListElement();
 
     auto storage_metadata = info.storage->getInMemoryMetadataPtr(context, false);
-    std::unordered_map<String, std::unordered_map<String, ColumnInfo>> projection_columns_info;
     size_t metadata_column_number = 0;
     for (const auto & projection : storage_metadata->getProjections())
     {
-        auto & columns_info = projection_columns_info[projection.name];
+        auto & columns_info = state->projection_columns_info[projection.name];
         for (const auto & column : projection.metadata->getColumns())
         {
             /// The prepass alone can take a long time on a table with many projections or many columns.
             /// A partially filled `projection_columns_info` would report wrong defaults, so give up the whole storage instead.
             ++metadata_column_number;
             slowDownSystemPartsMetadataEnumeration(info.table, metadata_column_number);
-            if (query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
-                return;
+            if (state->query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !state->query_status->checkTimeLimit())
+                return nullptr;
 
-            ColumnInfo column_info;
+            ColumnsProcessingState::ColumnInfo column_info;
             if (column.default_desc.expression)
             {
                 column_info.default_kind = toString(column.default_desc.kind);
@@ -115,185 +121,182 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         }
     }
 
-    /// Go through the list of projection parts.
-    MergeTreeData::DataPartStateVector all_parts_state;
+    return state;
+}
 
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status);
-    PartitionKeySamples partition_key_samples;
+void StorageSystemProjectionPartsColumns::processPart(
+    ContextPtr /*context*/,
+    MutableColumns & columns,
+    const std::vector<UInt8> & columns_mask,
+    const StoragesInfo & info,
+    const MergeTreeData::DataPartPtr & part,
+    MergeTreeData::DataPartState part_state,
+    bool has_state_column,
+    StorageProcessingState & storage_state)
+{
+    auto & state = assert_cast<ColumnsProcessingState &>(storage_state);
+    const auto & query_status = state.query_status;
 
-    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
+    const auto * parent_part = part->getParentPart();
+    chassert(parent_part);
+
+    auto columns_size = part->getTotalColumnsSize();
+    auto parent_columns_size = parent_part->getTotalColumnsSize();
+
+    /// Don't count the reference held by the enumeration in the returned refcount.
+    auto use_count = part.use_count() - 1;
+
+    auto min_max_date = parent_part->getMinMaxDate();
+    auto min_max_time = parent_part->getMinMaxTime();
+
+    auto index_size_in_bytes = part->getIndexSizeInBytes();
+    auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+
+    using State = MergeTreeDataPartState;
+
+    /// The rendered text is identical for every column of a part.
+    String partition_str;
+    if (columns_mask[0])
+        partition_str = part->partition.serializeToString(state.partition_key_samples.get(*part));
+
+    size_t column_position = 0;
+    auto & columns_info = state.projection_columns_info[part->name];
+    for (const auto & column : part->getColumns())
     {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
+        ++column_position;
+        slowDownSystemPartsColumnsEnumeration(info.table, column_position);
+        /// The limit stays exceeded, so the source stops before the next part as well.
+        if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            return;
 
-        slowDownSystemPartsEnumeration(info.table);
+        size_t src_index = 0;
+        size_t res_index = 0;
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(partition_str);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->name);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getTypeName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->name);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->uuid);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->getTypeName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part_state == State::Active);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getMarksCount());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->rows_count);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getBytesOnDisk());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(columns_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->getMarksCount());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->rows_count);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->getBytesOnDisk());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_columns_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_columns_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_columns_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(part->modification_time));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
 
-        const auto & part = all_parts.projection_parts[part_number];
-        const auto * parent_part = part->getParentPart();
-        chassert(parent_part);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(use_count));
 
-        auto part_state = all_parts_state[part_number];
-        auto columns_size = part->getTotalColumnsSize();
-        auto parent_columns_size = parent_part->getTotalColumnsSize();
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(min_max_date.first);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(min_max_date.second);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
 
-        /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-        auto use_count = part.use_count() - 1;
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->info.getPartitionId());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->info.min_block);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->info.max_block);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(parent_part->info.level);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(UInt64(parent_part->info.getDataVersion()));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(index_size_in_bytes);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(index_size_in_allocated_bytes);
 
-        auto min_max_date = parent_part->getMinMaxDate();
-        auto min_max_time = parent_part->getMinMaxTime();
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.database);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.table);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(info.engine);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
 
-        auto index_size_in_bytes = part->getIndexSizeInBytes();
-        auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column.name);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column.type->getName());
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_position);
 
-        using State = MergeTreeDataPartState;
-
-        /// The rendered text is identical for every column of a part.
-        String partition_str;
-        if (columns_mask[0])
-            partition_str = part->partition.serializeToString(partition_key_samples.get(*part));
-
-        bool time_limit_exceeded = false;
-        size_t column_position = 0;
-        auto & columns_info = projection_columns_info[part->name];
-        for (const auto & column : part->getColumns())
+        auto column_info_it = columns_info.find(column.name);
+        if (column_info_it != columns_info.end())
         {
-            ++column_position;
-            slowDownSystemPartsColumnsEnumeration(info.table, column_position);
-            if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
-            {
-                time_limit_exceeded = true;
-                break;
-            }
-
-            size_t src_index = 0;
-            size_t res_index = 0;
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(partition_str);
+                columns[res_index++]->insert(column_info_it->second.default_kind);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->name);
+                columns[res_index++]->insert(column_info_it->second.default_expression);
+        }
+        else
+        {
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getTypeName());
+                columns[res_index++]->insertDefault();
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->name);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->uuid);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->getTypeName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part_state == State::Active);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getMarksCount());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->rows_count);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getBytesOnDisk());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(columns_size.data_compressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(columns_size.data_uncompressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(columns_size.marks);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->getMarksCount());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->rows_count);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->getBytesOnDisk());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_columns_size.data_compressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_columns_size.data_uncompressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_columns_size.marks);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(part->modification_time));
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(use_count));
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(min_max_date.first);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(min_max_date.second);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->info.getPartitionId());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->info.min_block);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->info.max_block);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(parent_part->info.level);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(UInt64(parent_part->info.getDataVersion()));
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(index_size_in_bytes);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(index_size_in_allocated_bytes);
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(info.database);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(info.table);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(info.engine);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column.name);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column.type->getName());
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_position);
-
-            auto column_info_it = columns_info.find(column.name);
-            if (column_info_it != columns_info.end())
-            {
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insert(column_info_it->second.default_kind);
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insert(column_info_it->second.default_expression);
-            }
-            else
-            {
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insertDefault();
-                if (columns_mask[src_index++])
-                    columns[res_index++]->insertDefault();
-            }
-
-            ColumnSize column_size = part->getColumnSize(column.name);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.data_compressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.data_uncompressed);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(column_size.marks);
-            if (columns_mask[src_index++])
-            {
-                if (auto column_modification_time = part->getColumnModificationTime(column.name))
-                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
-                else
-                    columns[res_index++]->insertDefault();
-            }
-
-            if (has_state_column)
-                columns[res_index++]->insert(part->stateString());
+                columns[res_index++]->insertDefault();
         }
 
-        if (time_limit_exceeded)
-            break;
+        ColumnSize column_size;
+        if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
+            column_size = part->getColumnSize(column.name);
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.data_compressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.data_uncompressed);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(column_size.marks);
+        if (columns_mask[src_index++])
+        {
+            if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                columns[res_index++]->insert(UInt64(column_modification_time.value()));
+            else
+                columns[res_index++]->insertDefault();
+        }
+
+        if (has_state_column)
+            columns[res_index++]->insert(part->stateString());
     }
 }
 

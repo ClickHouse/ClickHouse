@@ -20,8 +20,20 @@ public:
     std::string getName() const override { return "SystemPartsColumns"; }
 
 protected:
-    void processNextStorage(
-        ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) override;
+    StorageProcessingStatePtr prepareStorage(ContextPtr context, const StoragesInfo & info, const std::vector<UInt8> & columns_mask) override;
+
+    void processPart(
+        ContextPtr context,
+        MutableColumns & columns,
+        const std::vector<UInt8> & columns_mask,
+        const StoragesInfo & info,
+        const MergeTreeData::DataPartPtr & part,
+        MergeTreeData::DataPartState part_state,
+        bool has_state_column,
+        StorageProcessingState & storage_state) override;
+
+private:
+    struct ColumnsProcessingState;
 };
 
 }

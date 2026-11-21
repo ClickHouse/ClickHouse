@@ -6,11 +6,11 @@
 #   a server-global switch, so a concurrently running instance of this test could turn it off
 #   in the middle of the checks.
 #
-# Tests that the eager readers of the `system.parts` family honor `max_execution_time` with
-# `timeout_overflow_mode = 'break'`: the query stops the eager result building at the first
-# cancellation checkpoint that sees the expired deadline and finishes without an error. No partial
-# prefix is handed out past the deadline (see the note before the second group below), so the
-# checks assert that the work stops quickly, not that the collected rows are returned.
+# Tests that the readers of the `system.parts` family honor `max_execution_time` with
+# `timeout_overflow_mode = 'break'`: the query stops the enumeration at the first cancellation
+# checkpoint that sees the expired deadline and finishes without an error. The rows collected
+# before the deadline are not necessarily handed out (see the note before the second group below),
+# so the checks assert that the work stops quickly, not that the collected rows are returned.
 #
 # Both groups of checks run under the `slowdown_system_parts_enumeration` failpoint, which only
 # affects the tables named `t_slowdown_system_parts*` (see below).
@@ -22,8 +22,8 @@
 # cancellation checkpoint sees an expired deadline. Only the upper bound is asserted, because the
 # exact number of rows collected before the deadline is inherently nondeterministic.
 #
-# The second group of checks proves that the cancellation checkpoints actually stop the eager
-# result building quickly. Every sleep of the failpoint is counted by the
+# The second group of checks proves that the cancellation checkpoints actually stop the
+# enumeration quickly. Every sleep of the failpoint is counted by the
 # `SystemPartsEnumerationSlowdownSleeps` profile event, and each check asserts an upper bound on
 # the number of sleeps its query performed before stopping, taken from `system.query_log`. The
 # sleeps covered are:
@@ -53,10 +53,11 @@
 # system-table query pipeline alone can take seconds to initialize. Load can only make the
 # deadline fire earlier and the count smaller, never larger.
 #
-# Note that a query of these tables that runs into its deadline returns no rows at all, in any
-# overflow mode: the whole result is built as a single chunk after the enumeration, and a chunk
-# produced past the deadline is never handed over to the rest of the pipeline. So the checks below
-# assert that the work stops quickly, not that a partial result is handed out.
+# Note that a query of these tables that runs into its deadline returns at most the chunks that
+# were completed before it: the rows are emitted in chunks of `preferred_block_size_bytes`, and
+# the last chunk, produced past the deadline, may never be handed over to the rest of the pipeline.
+# The fixtures here fit into a single chunk, so the checks below assert that the work stops
+# quickly, not that a partial result is handed out.
 #
 # All the checked queries are sent in a single client invocation: the client startup alone takes
 # seconds in the debug and sanitizer builds.
