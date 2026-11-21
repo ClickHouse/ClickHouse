@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
@@ -106,6 +107,8 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
 
 QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 {
+    if (top_k_filter && top_k_filter->threshold_tracker)
+        top_k_filter->threshold_tracker->setSharedByPlanCopies();
     auto copy = std::make_unique<ReadFromObjectStorageStep>(*this);
     copy->iterator_wrapper.reset();
     copy->read_in_order_files.clear();
