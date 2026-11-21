@@ -1,6 +1,8 @@
 #pragma once
 
 #include <ranges>
+#include <unordered_map>
+#include <vector>
 #include <IO/Operators.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/FunctionNode.h>
@@ -13,60 +15,77 @@ class ExpressionsStack
 public:
     void push(const QueryTreeNodePtr & node)
     {
+        bool is_aggregate_or_grouping = false;
+        if (const auto * function = node->as<FunctionNode>())
+            is_aggregate_or_grouping = isAggregateOrGroupingFunction(*function);
+
+        entries.reserve(entries.size() + 1);
+
         if (node->hasAlias())
         {
             const auto & node_alias = node->getAlias();
-            alias_name_to_expressions[node_alias].push_back(node);
+            auto [it, inserted] = alias_name_to_expressions.try_emplace(node_alias);
+            try
+            {
+                it->second.push_back(node);
+            }
+            catch (...)
+            {
+                if (inserted)
+                    alias_name_to_expressions.erase(it);
+                throw;
+            }
         }
 
-        if (const auto * function = node->as<FunctionNode>())
-        {
-            if (isAggregateOrGroupingFunction(*function))
-                ++aggregate_or_grouping_functions_counter;
-        }
+        if (is_aggregate_or_grouping)
+            ++aggregate_or_grouping_functions_counter;
 
-        expressions.emplace_back(node);
+        entries.push_back(Entry{
+            .node = node,
+            .is_aggregate_or_grouping = is_aggregate_or_grouping,
+        });
     }
 
-    void pop()
+    void pop() noexcept
     {
-        const auto & top_expression = expressions.back();
+        const auto & top_entry = entries.back();
+        const auto & top_expression = top_entry.node;
         const auto & top_expression_alias = top_expression->getAlias();
 
         if (!top_expression_alias.empty())
         {
             auto it = alias_name_to_expressions.find(top_expression_alias);
-            auto & alias_expressions = it->second;
-            alias_expressions.pop_back();
+            if (it != alias_name_to_expressions.end())
+            {
+                auto & alias_expressions = it->second;
+                alias_expressions.pop_back();
 
-            if (alias_expressions.empty())
-                alias_name_to_expressions.erase(it);
+                if (alias_expressions.empty())
+                    alias_name_to_expressions.erase(it);
+            }
         }
 
-        if (const auto * function = top_expression->as<FunctionNode>())
-        {
-            if (isAggregateOrGroupingFunction(*function))
-                --aggregate_or_grouping_functions_counter;
-        }
+        if (top_entry.is_aggregate_or_grouping)
+            --aggregate_or_grouping_functions_counter;
 
-        expressions.pop_back();
+        entries.pop_back();
     }
 
     [[nodiscard]] [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
     {
-        return expressions.front();
+        return entries.front().node;
     }
 
     [[nodiscard]] const QueryTreeNodePtr & getTop() const
     {
-        return expressions.back();
+        return entries.back().node;
     }
 
     [[maybe_unused]] const QueryTreeNodePtr & operator[](int32_t n) const
     {
         if (n < 0)
-            n = static_cast<int32_t>(expressions.size()) + n - 1;
-        return expressions[n];
+            n = static_cast<int32_t>(entries.size()) + n - 1;
+        return entries[n].node;
     }
 
     [[nodiscard]] [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
@@ -98,25 +117,26 @@ public:
 
     bool has(const IQueryTreeNode * node) const
     {
-        return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });
+        return std::ranges::any_of(entries, [node](const auto & entry) { return entry.node.get() == node; });
     }
 
     [[nodiscard]] [[maybe_unused]] size_t size() const
     {
-        return expressions.size();
+        return entries.size();
     }
 
     [[nodiscard]] bool empty() const
     {
-        return expressions.empty();
+        return entries.empty();
     }
 
     void dump(WriteBuffer & buffer) const
     {
-        buffer << "Expression resolve process stack size: " << expressions.size() << '\n';
+        buffer << "Expression resolve process stack size: " << entries.size() << '\n';
 
-        for (const auto & expression : expressions)
+        for (const auto & entry : entries)
         {
+            const auto & expression = entry.node;
             buffer << " Expression ";
             buffer << expression->formatASTForErrorMessage();
 
@@ -137,6 +157,12 @@ public:
     }
 
 private:
+    struct Entry
+    {
+        QueryTreeNodePtr node;
+        bool is_aggregate_or_grouping = false;
+    };
+
     static bool isAggregateOrGroupingFunction(const FunctionNode & function)
     {
         /// A window function is evaluated after aggregation: its arguments and window specification see GROUP BY keys
@@ -148,7 +174,7 @@ private:
             || function.getFunctionName() == "grouping";
     }
 
-    QueryTreeNodes expressions;
+    std::vector<Entry> entries;
     size_t aggregate_or_grouping_functions_counter = 0;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
