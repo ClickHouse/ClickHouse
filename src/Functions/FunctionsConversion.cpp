@@ -3181,7 +3181,8 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
     if (result_is_nullable)
     {
-        bool exclude_source_nulls = source_is_nullable && cast_type == CastType::accurate && !nested_types_equal;
+        const bool exclude_source_nulls = source_is_nullable && !nested_types_equal
+            && (cast_type == CastType::accurate || !from_nested_type->isDefaultInsertTrivial());
 
         return [wrapper, source_is_nullable, exclude_source_nulls]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
