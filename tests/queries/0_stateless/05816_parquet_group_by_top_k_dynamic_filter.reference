@@ -1,0 +1,22 @@
+-- the row groups beyond the boundary are skipped
+-- results identical with and without the optimization
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+-- s3
+OK
