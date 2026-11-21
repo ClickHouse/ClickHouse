@@ -26,6 +26,7 @@ class AccessRightsElements;
 class SettingsChanges;
 struct StorageID;
 struct ConstraintsDescription;
+class VirtualColumnsDescription;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
@@ -200,6 +201,11 @@ private:
 };
 
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
+
+/// Rejects a column named after a virtual column of the engine: a persistent one, an ephemeral one for an `EPHEMERAL`
+/// column, any of them if `reject_reserved_names`.
+void throwIfColumnsConflictWithVirtuals(
+    const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals, const String & engine_name, bool reject_reserved_names);
 
 /// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
 void checkStorageSettingNames(const StorageFactory::Arguments & args);

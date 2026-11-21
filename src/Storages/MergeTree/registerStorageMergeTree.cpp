@@ -54,6 +54,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_reserved_column_names;
     extern const SettingsBool enable_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -1258,6 +1259,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else
     {
         merging_params.allow_tuple_element_aggregation = false;
+    }
+
+    /// Must run before the constructor: it takes over the data path, which with `table_disk` may hold another table's data.
+    if (args.mode <= LoadingStrictnessLevel::CREATE)
+    {
+        throwIfColumnsConflictWithVirtuals(metadata.columns, metadata.virtuals, args.engine_name,
+            !local_settings[Setting::allow_reserved_column_names] && check_aliases);
+        /// The columns of a columnless `ReplicatedMergeTree` come from Keeper, after the check in `StorageFactory::get`.
+        if (!args.query.isTemporary())
+            checkAllTypesAreAllowedInTable(metadata.columns.getAll());
     }
 
     if (replicated)
