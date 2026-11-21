@@ -157,6 +157,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createHashJoinImplementation());
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
+    addRule(createUnionImplementation());
     addRule(createTwoStageAggregationTransformation());
     /// Registered conditionally: the rule can never apply when the setting is off,
     /// and the optimizer is built per query, so the gate belongs here.

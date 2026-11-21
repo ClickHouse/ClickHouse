@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
@@ -37,6 +38,58 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_statistics_optimize;
+}
+
+/// `UNION ALL` keeps the rows of every input, so counts are summed over all inputs rather than
+/// taken from the first one: otherwise the plan would depend on the branch order. A column's
+/// distinct count is bounded by the sum over inputs and is unknown if any input does not know it.
+static ExpressionStatistics deriveUnionStatistics(const VectorWithMemoryTracking<const ExpressionStatistics *> & inputs)
+{
+    constexpr Float64 unknown_bound = Float64(std::numeric_limits<UInt64>::max());
+    ExpressionStatistics result;
+    result.max_row_count = 0;
+    result.estimated_distinct_bound = 0;
+    Float64 total_bytes = 0;
+    for (const auto * input : inputs)
+    {
+        result.estimated_row_count += input->estimated_row_count;
+        result.min_row_count += input->min_row_count;
+        result.max_row_count = std::min(result.max_row_count + input->max_row_count, unknown_bound);
+        result.estimated_distinct_bound = std::min(result.estimated_distinct_bound + input->estimated_distinct_bound, unknown_bound);
+        total_bytes += input->estimated_row_count * input->estimated_bytes_per_row;
+    }
+    result.estimated_bytes_per_row = result.estimated_row_count > 0
+        ? total_bytes / result.estimated_row_count
+        : inputs.front()->estimated_bytes_per_row;
+
+    for (const auto & [column_name, first_input_column] : inputs.front()->column_statistics)
+    {
+        Float64 distinct_values = 0;
+        Float64 column_bytes = 0;
+        bool bytes_known = true;
+        bool known = true;
+        for (const auto * input : inputs)
+        {
+            auto input_column = input->column_statistics.find(column_name);
+            if (input_column == input->column_statistics.end() || input_column->second.num_distinct_values == 0)
+            {
+                known = false;
+                break;
+            }
+            distinct_values += Float64(input_column->second.num_distinct_values);
+            column_bytes += input->estimated_row_count * input_column->second.avg_bytes;
+            bytes_known = bytes_known && input_column->second.avg_bytes > 0;
+        }
+        if (!known)
+            continue;
+
+        auto & column = result.column_statistics[column_name];
+        column.num_distinct_values = QueryPlanOptimizations::toUInt64Saturating(
+            std::min(distinct_values, std::max(result.estimated_row_count, 1.0)));
+        if (bytes_known)
+            column.avg_bytes = result.estimated_row_count > 0 ? column_bytes / result.estimated_row_count : first_input_column.avg_bytes;
+    }
+    return result;
 }
 
 void StatisticsDerivation::deriveStatistics(GroupId group_id)
@@ -157,6 +210,13 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
         }
         result.min_row_count = 0;
         group->statistics = std::move(result);
+    }
+    else if (typeid_cast<const UnionStep *>(plan_step))
+    {
+        VectorWithMemoryTracking<const ExpressionStatistics *> inputs;
+        for (size_t index = 0; index < expression->inputs.size(); ++index)
+            inputs.push_back(&input_statistics(index));
+        group->statistics = deriveUnionStatistics(inputs);
     }
     else if (!expression->inputs.empty())
     {
