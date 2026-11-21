@@ -1897,7 +1897,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
-    setProperties(new_metadata, old_metadata);
+    setPropertiesAndResetSerializationHints(new_metadata, old_metadata);
 
     try
     {
@@ -1906,7 +1906,9 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     catch (...)
     {
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
-        setProperties(old_metadata, new_metadata);
+        /// Hints too, otherwise the revert pairs old column types with the new-typed hints the
+        /// publish above built. Safe here because this function never calls `changeSettings`.
+        setPropertiesAndResetSerializationHints(old_metadata, new_metadata);
         throw;
     }
 }
@@ -6941,11 +6943,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", applied_metadata_snapshot->getMetadataVersion());
     }
 
-    {
-        auto parts_lock = lockParts();
-        resetSerializationHints(parts_lock);
-    }
-
     return true;
 }
 
@@ -7156,7 +7153,7 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
 
         if (statistics_changed)
         {
@@ -7173,7 +7170,7 @@ void StorageReplicatedMergeTree::alter(
         catch (...)
         {
             /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            changeSettings(old_metadata->getSettingsChanges(), table_lock_holder);
             if (statistics_changed)
                 setInMemoryMetadata(*old_metadata);
             throw;
@@ -7211,7 +7208,7 @@ void StorageReplicatedMergeTree::alter(
     {
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        changeSettings(future_metadata.getSettingsChanges(), table_lock_holder);
 
         /// changeSettings is the sole writer of the setting-derived escape fields and has
         /// already committed them; carry them into future_metadata so the comment commit
@@ -7235,7 +7232,7 @@ void StorageReplicatedMergeTree::alter(
         catch (...)
         {
             /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
-            changeSettings(old_metadata->settings_changes, table_lock_holder);
+            changeSettings(old_metadata->getSettingsChanges(), table_lock_holder);
             setInMemoryMetadata(*old_metadata);
             throw;
         }
@@ -7360,7 +7357,7 @@ void StorageReplicatedMergeTree::alter(
                     "its value may differ between replicas, see allow_nondeterministic_mutations setting", *virtual_column_name);
         }
 
-        bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
+        bool settings_are_changed = (ast_to_str(current_metadata->getSettingsChanges()) != ast_to_str(future_metadata.getSettingsChanges()));
         bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
         if (settings_are_changed || comment_is_changed)
@@ -7368,7 +7365,7 @@ void StorageReplicatedMergeTree::alter(
             StorageInMemoryMetadata metadata_copy = *current_metadata;
 
             if (settings_are_changed)
-                metadata_copy.settings_changes = future_metadata.settings_changes;
+                metadata_copy.setSettingsChanges(future_metadata.getSettingsChanges());
             if (comment_is_changed)
                 metadata_copy.setComment(future_metadata.comment);
 
@@ -7379,7 +7376,7 @@ void StorageReplicatedMergeTree::alter(
 
             /// Just change settings
             if (settings_are_changed)
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
+                changeSettings(metadata_copy.getSettingsChanges(), table_lock_holder);
 
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)
@@ -7397,7 +7394,7 @@ void StorageReplicatedMergeTree::alter(
             {
                 /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
                 if (settings_are_changed)
-                    changeSettings(current_metadata->settings_changes, table_lock_holder);
+                    changeSettings(current_metadata->getSettingsChanges(), table_lock_holder);
                 if (comment_is_changed)
                     setInMemoryMetadata(*current_metadata);
                 throw;
@@ -7432,6 +7429,8 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.alter_version = new_metadata_version;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
+            /// Pin the partitions of the scoped commands as `ID '...'` before the entry is written, see `mutate`.
+            resolvePartitionIdsOfScopedCommands(mutation_entry.commands, query_context);
 
             int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
@@ -9131,6 +9130,13 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// Resolve the partitions of the scoped commands (`... IN PARTITION p`) once, with the submitting
+    /// query's context, and replace each partition expression in the command text with the `ID '...'`
+    /// it resolved to. The entry written to `/mutations` then names exactly these partitions: every
+    /// replica, the block numbers allocated below, and every later reload agree on them, and none of
+    /// them evaluates the user's partition expression again.
+    resolvePartitionIdsOfScopedCommands(mutation_entry.commands, query_context);
+
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
     const auto zookeeper = getZooKeeper();
 
@@ -9333,11 +9339,17 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {}", sync_timeout_ms);
 }
 
-QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
+QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & original_commands, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::updateLightweight");
     auto context_copy = Context::createCopy(query_context);
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
+
+    /// Resolve the partitions of the scoped commands once, as in `mutate`: the block numbers are
+    /// allocated in the partitions they name, and the patch is produced from the same commands, so
+    /// both steps agree on the partitions without evaluating the partition expression twice.
+    MutationCommands commands = original_commands;
+    resolvePartitionIdsOfScopedCommands(commands, query_context);
 
     LightweightUpdateHolderInKeeper update_holder;
     update_holder.zookeeper = zookeeper;
