@@ -7,6 +7,8 @@
 # `token -> ..data/token`, and the kubelet writes the new one into a new directory and points `..data` at it.
 # A credential file directly in `/tmp` is visible on its own: the `/tmp` of the host does not cover the private
 # writable one.
+# The default directory of the AWS SDK, `~/.aws`, is visible also if `HOME` is not set: the SDK takes the home directory
+# of the user from the passwd database then.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +18,8 @@ EXPECTED="token: first
 config in /tmp: profile
 unrelated file in /tmp: hidden
 /tmp is writable: yes
-rotated token: second"
+rotated token: second
+.aws in the home directory without HOME: visible"
 
 # The configuration of the tests enables the isolation only where the container allows the namespaces: see
 # `tests/config/install.sh`.
@@ -35,6 +38,20 @@ TMP_CONFIG="/tmp/${CLICKHOUSE_DATABASE}_filesystem_isolation_aws_config"
 TMP_UNRELATED="/tmp/${CLICKHOUSE_DATABASE}_filesystem_isolation_unrelated"
 echo profile > "$TMP_CONFIG"
 echo unrelated > "$TMP_UNRELATED"
+
+# The home directory of the user in the passwd database. The check is skipped if there is none or it is not writable.
+# Another instance of this test can use the directory at the same time, so it is removed only if it is empty.
+PASSWD_HOME=$(getent passwd "$(id -u)" | cut -d: -f6)
+AWS_MARKER=
+if [[ "$PASSWD_HOME" == /* ]]; then
+    for _ in {1..100}; do
+        if mkdir -p "$PASSWD_HOME/.aws" 2>/dev/null && echo marker 2>/dev/null > "$PASSWD_HOME/.aws/${CLICKHOUSE_DATABASE}_marker"; then
+            AWS_MARKER="$PASSWD_HOME/.aws/${CLICKHOUSE_DATABASE}_marker"
+            break
+        fi
+        [ -w "$PASSWD_HOME" ] || break
+    done
+fi
 
 cat > "$DIR/conf/config.xml" <<EOF
 <clickhouse>
@@ -59,10 +76,14 @@ function finish()
     [ -n "$PID" ] && kill "$PID" 2>/dev/null
     wait
     rm -f "$TMP_CONFIG" "$TMP_UNRELATED"
+    if [ -n "$AWS_MARKER" ]; then
+        rm -f "$AWS_MARKER"
+        rmdir "$PASSWD_HOME/.aws" 2>/dev/null
+    fi
 }
 trap finish EXIT
 
-AWS_WEB_IDENTITY_TOKEN_FILE="$DIR/serviceaccount/token" AWS_CONFIG_FILE="$TMP_CONFIG" $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
+env -u HOME AWS_WEB_IDENTITY_TOKEN_FILE="$DIR/serviceaccount/token" AWS_CONFIG_FILE="$TMP_CONFIG" $CLICKHOUSE_BINARY server --config-file "$DIR/conf/config.xml" > "$DIR/server.out" 2>&1 &
 PID=$!
 
 for _ in {1..600}; do
@@ -91,3 +112,9 @@ mv -T "$DIR/serviceaccount/..data_tmp" "$DIR/serviceaccount/..data"
 rm -rf "$DIR/serviceaccount/..2026_01_01_00_00_00.1"
 
 echo "rotated token: $(cat "/proc/$PID/root$DIR/serviceaccount/token" 2>&1)"
+
+if [ -z "$AWS_MARKER" ] || [ -e "/proc/$PID/root$AWS_MARKER" ]; then
+    echo ".aws in the home directory without HOME: visible"
+else
+    echo ".aws in the home directory without HOME: hidden"
+fi

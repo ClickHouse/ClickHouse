@@ -24,6 +24,9 @@
 #include <set>
 #include <string_view>
 
+#include <pwd.h>
+#include <unistd.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -907,16 +910,36 @@ private:
         }
 
         /// The default location of the configuration and the credentials of the AWS SDK, `~/.aws/config` and
-        /// `~/.aws/credentials`, as `Aws::FileSystem::GetHomeDirectory` finds it. Only if it is a directory that can
+        /// `~/.aws/credentials`, as `Aws::FileSystem::GetHomeDirectory` finds it: `HOME`, and if it is not set or is
+        /// empty, the home directory of the user in the passwd database. Only if it is a directory that can
         /// be accessed: the server can inherit the home directory of another user, as `HOME=/root` after
         /// `clickhouse su` in the entrypoint of the Docker image, and it does not need it unless it uses S3.
-        if (const char * home = std::getenv("HOME"); home && *home == '/') // NOLINT(concurrency-mt-unsafe)
+        if (const std::string home = getHomeDirectory(); home.starts_with('/'))
         {
             const fs::path aws_directory = absolute(home, "/") / ".aws";
             std::error_code error;
             if (fs::is_directory(aws_directory, error))
                 add(aws_directory, Access::ReadOnly, "the configuration of the AWS SDK in the home directory");
         }
+    }
+
+    /// The home directory as the AWS SDK resolves it, see `Aws::FileSystem::GetHomeDirectory`.
+    static std::string getHomeDirectory()
+    {
+        std::string home;
+        if (const char * value = std::getenv("HOME")) // NOLINT(concurrency-mt-unsafe)
+            home = value;
+
+        if (home.empty())
+        {
+            passwd entry{};
+            passwd * result = nullptr;
+            std::array<char, 4096> buffer{};
+            if (getpwuid_r(getuid(), &entry, buffer.data(), buffer.size(), &result) == 0 && result && result->pw_dir)
+                home = result->pw_dir;
+        }
+
+        return Poco::trim(home);
     }
 
     /// The profiles of Kerberos at the default paths of the bundled MIT Kerberos (`DEFAULT_PROFILE_PATH`), with the
