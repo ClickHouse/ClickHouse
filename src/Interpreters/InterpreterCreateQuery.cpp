@@ -3045,6 +3045,56 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// `res` is the storage this query just built, and for a table function it is a proxy that
     /// resolving would run during CREATE.
     auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip).get();
+
+    /// A constructed replicated storage has its replica registered in Keeper, and a registration left
+    /// there makes every retry of the CREATE fail with REPLICA_ALREADY_EXISTS. Best effort, because the
+    /// original exception is the one the user must see.
+    auto rollback_failed_creation = [&]
+    {
+        if (!replicated_storage || create.attach)
+            return;
+
+        /// Once the database has accepted the storage, removing anything from under the database map
+        /// would leave an attached table with no data. Both the registration and the local directory are
+        /// then left for DROP TABLE.
+        if (database->isTableExist(create.getTable(), getContext()))
+            return;
+
+        /// A `Replicated` database's DDL entry becomes executable on the other replicas only once its
+        /// commit creates `/committed`, and a secondary query replays an already published entry. Only an
+        /// unpublished registration is this statement's alone, so unprovable visibility counts as published.
+        auto txn = getContext()->getZooKeeperMetadataTransaction();
+        bool published = txn != nullptr;
+        if (published)
+        {
+            try
+            {
+                /// A transaction carrying no task path is not an entry of the DDL log. A commit that was never
+                /// attempted published nothing; after an attempt, only Keeper tells a rejected one from a lost reply.
+                const String task_path = txn->getTaskZooKeeperPath();
+                if (txn->isInitialQuery() && !task_path.empty())
+                    published = txn->isExecuted() && txn->getZooKeeper()->exists(fs::path(task_path) / "committed");
+            }
+            catch (...)
+            {
+                tryLogCurrentException("InterpreterCreateQuery");
+            }
+        }
+        if (!published)
+            replicated_storage->tryRemoveOwnReplicaFromZooKeeper();
+
+        try
+        {
+            /// Non-recursive: with `table_disk` the data path is a disk root that can hold detached parts of
+            /// another table. A leftover directory fails the retry with TABLE_ALREADY_EXISTS.
+            replicated_storage->dropIfEmpty();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("InterpreterCreateQuery");
+        }
+    };
+
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
@@ -3052,8 +3102,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (fault(thread_local_rng))
         {
             /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
-            if (!create.attach)
-                replicated_storage->dropIfEmpty();
+            rollback_failed_creation();
 
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
@@ -3070,7 +3119,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (has_explicit_uuid && !create.attach_short_syntax && !internal && !getContext()->isDDLOrOnClusterInternal())
         getContext()->clearCaches();
 
-    database->createTable(getContext(), create.getTable(), res, query_ptr);
+    try
+    {
+        database->createTable(getContext(), create.getTable(), res, query_ptr);
+    }
+    catch (...)
+    {
+        rollback_failed_creation();
+        throw;
+    }
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.
