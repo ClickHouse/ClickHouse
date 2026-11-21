@@ -1,7 +1,6 @@
 ---
 description: 'System table containing loading status and configuration metadata for User-Defined Functions (UDFs).'
 keywords: ['system table', 'user_defined_functions', 'udf', 'executable']
-slug: /operations/system-tables/user_defined_functions
 title: 'system.user_defined_functions'
 doc_type: 'reference'
 ---

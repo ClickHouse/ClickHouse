@@ -1,7 +1,6 @@
 ---
 title: 'Troubleshooting'
 description: 'Installation troubleshooting guide'
-slug: /guides/troubleshooting
 doc_type: 'guide'
 keywords: ['troubleshooting', 'debugging', 'problem solving', 'errors', 'diagnostics']
 ---

@@ -1,6 +1,5 @@
 ---
 description: 'Calculates the value of the population covariance'
-slug: /sql-reference/aggregate-functions/reference/covarpopstable
 title: 'covarPopStable'
 doc_type: 'reference'
 ---

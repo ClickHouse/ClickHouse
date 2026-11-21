@@ -2,7 +2,6 @@
 title: 'What SQL syntax does ClickHouse support?'
 toc_hidden: true
 toc_priority: 10
-slug: /faq/general/sql
 description: 'ClickHouse supports 100% of SQL syntax'
 doc_type: 'reference'
 keywords: ['SQL syntax', 'ANSI SQL']

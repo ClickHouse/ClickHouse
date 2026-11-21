@@ -1,6 +1,5 @@
 ---
 description: 'Applies bit-wise `OR` to a series of numbers.'
-slug: /sql-reference/aggregate-functions/reference/groupbitor
 title: 'groupBitOr'
 doc_type: 'reference'
 ---

@@ -1,6 +1,5 @@
 ---
 description: 'Computes an approximate quantile of a numeric data sequence.'
-slug: /sql-reference/aggregate-functions/reference/quantile
 title: 'quantile'
 doc_type: 'reference'
 ---

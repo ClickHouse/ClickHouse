@@ -1,6 +1,5 @@
 ---
 description: 'Returns an array with the first N items in ascending order.'
-slug: /sql-reference/aggregate-functions/reference/grouparraysorted
 title: 'groupArraySorted'
 doc_type: 'reference'
 ---

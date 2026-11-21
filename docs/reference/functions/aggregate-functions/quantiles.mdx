@@ -1,6 +1,5 @@
 ---
 description: 'quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK'
-slug: /sql-reference/aggregate-functions/reference/quantiles
 title: 'quantiles Functions'
 doc_type: 'reference'
 ---

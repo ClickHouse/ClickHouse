@@ -1,7 +1,6 @@
 ---
 description: 'Computes the quantile of a numeric data sequence using the Greenwald-Khanna
   algorithm.'
-slug: /sql-reference/aggregate-functions/reference/quantileGK
 title: 'quantileGK'
 doc_type: 'reference'
 ---

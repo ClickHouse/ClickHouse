@@ -1,7 +1,6 @@
 ---
 title: 'Demo application'
 description: 'Demo application for observability'
-slug: /observability/demo-application
 keywords: ['observability', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
 doc_type: 'guide'
 ---

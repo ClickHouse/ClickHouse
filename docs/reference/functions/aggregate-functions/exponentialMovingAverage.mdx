@@ -1,7 +1,6 @@
 ---
 description: 'Calculates the exponential moving average of values for the determined
   time.'
-slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
 title: 'exponentialMovingAverage'
 doc_type: 'reference'
 ---

@@ -1,6 +1,5 @@
 ---
 description: 'Computes the kurtosis of a sequence.'
-slug: /sql-reference/aggregate-functions/reference/kurtpop
 title: 'kurtPop'
 doc_type: 'reference'
 ---

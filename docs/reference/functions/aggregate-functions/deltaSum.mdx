@@ -1,6 +1,5 @@
 ---
 description: 'Sums the arithmetic difference between consecutive rows.'
-slug: /sql-reference/aggregate-functions/reference/deltasum
 title: 'deltaSum'
 doc_type: 'reference'
 ---

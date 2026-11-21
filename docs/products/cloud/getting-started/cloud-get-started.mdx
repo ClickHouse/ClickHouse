@@ -1,5 +1,4 @@
 ---
-slug: /cloud/get-started
 title: 'Get started with ClickHouse Cloud'
 description: 'Complete guide to getting started with ClickHouse Cloud - from discovering features to deployment and optimization'
 hide_title: true

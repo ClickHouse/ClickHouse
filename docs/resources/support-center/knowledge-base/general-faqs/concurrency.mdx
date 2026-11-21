@@ -2,7 +2,6 @@
 title: 'Does ClickHouse support frequent, concurrent queries?'
 toc_hidden: true
 toc_priority: 10
-slug: /faq/general/concurrency
 description: 'ClickHouse supports high QPS and high concurrency'
 doc_type: 'reference'
 keywords: ['concurrency', 'QPS']

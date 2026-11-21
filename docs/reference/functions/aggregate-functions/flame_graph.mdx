@@ -1,6 +1,5 @@
 ---
 description: 'Aggregate function which builds a flamegraph using the list of stacktraces.'
-slug: /sql-reference/aggregate-functions/reference/flame_graph
 title: 'flameGraph'
 doc_type: 'reference'
 ---

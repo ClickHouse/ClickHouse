@@ -93,7 +93,6 @@ WITH
 '---
 title: ''Session Settings''
 sidebar_label: ''Session Settings''
-slug: /operations/settings/settings
 toc_max_heading_level: 2
 description: ''Settings which are found in the ``system.settings`` table.''
 doc_type: ''reference''
