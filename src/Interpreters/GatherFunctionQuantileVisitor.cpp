@@ -39,6 +39,7 @@ namespace ErrorCodes
     {"quantileTiming", "quantilesTiming"},
     {"quantileTimingWeighted", "quantilesTimingWeighted"},
     {"quantileGK", "quantilesGK"},
+    {"quantileKLL", "quantilesKLL"},
 };
 
 String GatherFunctionQuantileData::toFusedNameOrSelf(const String & func_name)
