@@ -63,6 +63,11 @@ private:
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.
     void addRequiredAccessForModifyQuerySQLSecurity(AccessRightsElements & required_access, const StoragePtr & storage) const;
 
+    /// Adds `SELECT` on the columns that the expressions of an `ADD COLUMN` or `MODIFY COLUMN` declaration read,
+    /// so that a user cannot store an expression, e.g. `public ALIAS secret`, that reads a column they cannot read.
+    void addRequiredAccessForColumnDeclarationExpressions(
+        AccessRightsElements & required_access, const ASTAlterCommand & command, const StoragePtr & storage) const;
+
     BlockIO executeToTable(const ASTAlterQuery & alter);
 
     BlockIO executeToDatabase(const ASTAlterQuery & alter);
