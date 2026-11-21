@@ -1613,6 +1613,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     child.plan.addStep(std::move(filter_step));
                 }
 
+                if (child.plan.getCurrentHeader()->columns() > output_header->columns())
+                {
+                    ActionsDAG projection(child.plan.getCurrentHeader()->getColumnsWithTypeAndName());
+                    projection.removeUnusedActions(output_header->getNames(), /*allow_remove_inputs=*/ false);
+                    auto projection_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(projection));
+                    projection_step->setStepDescription("Remove columns the Merge table read does not output");
+                    child.plan.addStep(std::move(projection_step));
+                }
+
                 removeDelayedMaterializingCTEsStepFor(child.plan, outer_materialized_ctes);
 
                 child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info, child.plan));
@@ -3131,6 +3140,26 @@ void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(added_filter_nodes);
 
     filterTablesAndCreateChildrenPlans();
+}
+
+bool ReadFromMerge::canRemoveUnusedColumns() const
+{
+    /// Each child plan ends with a projection onto `output_header`, which is added when it is created.
+    return common_processed_stage == QueryProcessingStage::FetchColumns && !child_plans;
+}
+
+ReadFromMerge::RemoveUnusedColumnsResult ReadFromMerge::removeUnusedColumns(
+    const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & /*inputs*/)
+{
+    if (unneeded_output_positions.empty())
+        return {};
+
+    Block header = *output_header;
+    for (auto it = unneeded_output_positions.rbegin(); it != unneeded_output_positions.rend(); ++it)
+        header.erase(*it);
+    output_header = std::make_shared<const Block>(std::move(header));
+
+    return {.step_changed = true, .dropped_output_positions = unneeded_output_positions};
 }
 
 QueryPlanRawPtrs ReadFromMerge::getChildPlans(bool /*for_explain*/)

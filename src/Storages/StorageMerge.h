@@ -244,6 +244,10 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
+    bool canRemoveUnusedColumns() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(
+        const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
+
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
     QueryPlanRawPtrs getBuiltChildPlans() override;
 
