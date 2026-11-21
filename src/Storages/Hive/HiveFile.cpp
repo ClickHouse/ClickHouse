@@ -268,7 +268,8 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     for (size_t i = 0; i < num_row_groups; ++i)
     {
         split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        split_minmax_idxes[i]->hyperrectangle.resize(num_cols, Range::createWholeUniverseWithoutNull());
+        /// One range for every column of the index, also for the ones that the file does not have: they stay unconstrained.
+        split_minmax_idxes[i]->hyperrectangle.resize(index_names_and_types.size(), Range::createWholeUniverseWithoutNull());
 
         size_t j = 0;
         auto it = index_names_and_types.begin();
