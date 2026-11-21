@@ -10,6 +10,23 @@ def infinite_redirect(_path):
     return "Redirected"
 
 
+@route("/tagging-denied/<_path:path>")
+def tagging_denied(_path):
+    if "tagging" in request.query_string:
+        result = '<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+        response.status = 403
+        response.content_type = "application/xml"
+        response.set_header("Content-Length", len(result))
+        return result
+    result = "1\n"
+    response.content_type = "text/plain"
+    response.set_header("Content-Length", len(result))
+    response.set_header("ETag", '"x"')
+    response.set_header("Last-Modified", "Wed, 01 Jan 2025 00:00:00 GMT")
+    response.set_header("x-amz-tagging-count", "1")
+    return result
+
+
 @route("/<_bucket>/<_path:path>")
 def server(_bucket, _path):
     for name in request.headers:
