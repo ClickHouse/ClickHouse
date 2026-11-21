@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/formatIPv6.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -990,6 +991,71 @@ static Field coerceConstantForBloomFilterHash(
         if (signed_value < 0)
             return {};
         return convertFieldToType(Field(static_cast<UInt64>(signed_value)), *actual_type, value_type.get());
+    }
+
+    /// Likewise for a `Float64` constant: `equals` compares it with the seconds of a `DateTime`
+    /// numerically, and `convertFieldToType` throws `TYPE_MISMATCH`. Only a whole number of seconds
+    /// that fits `UInt32` can equal a stored value; the index declines for everything else, and for
+    /// the wide integers, which `convertFieldToType` does not accept for a `DateTime` either.
+    if (WhichDataType(actual_type).isDateTime())
+    {
+        switch (value_field.getType())
+        {
+            case Field::Types::Float64:
+            {
+                UInt32 seconds = 0;
+                if (!accurate::convertNumeric<Float64, UInt32, true>(value_field.safeGet<Float64>(), seconds))
+                    return {};
+                return convertFieldToType(Field(static_cast<UInt64>(seconds)), *actual_type, value_type.get());
+            }
+            case Field::Types::UInt128:
+            case Field::Types::Int128:
+            case Field::Types::UInt256:
+            case Field::Types::Int256:
+                return {};
+            default:
+                break;
+        }
+    }
+
+    /// `equals` compares an `IPv4` with an `IPv6` as the IPv4-mapped `IPv6` address, and an `IPv4`
+    /// with an integer numerically, while `convertFieldToType` brings to `IPv4` only an `IPv4`, a
+    /// `UInt64` and a string, and to `IPv6` only an `IPv6`, a string and a `FixedString(16)` (handled
+    /// above for the reverse direction), and throws `TYPE_MISMATCH` for the rest. The index declines
+    /// for those instead of making a query fail that succeeds without it.
+    if (WhichDataType(actual_type).isIPv4()
+        && value_field.getType() != Field::Types::IPv4
+        && value_field.getType() != Field::Types::UInt64
+        && value_field.getType() != Field::Types::String)
+        return {};
+
+    if (WhichDataType(actual_type).isIPv6()
+        && value_field.getType() != Field::Types::IPv6
+        && value_field.getType() != Field::Types::String)
+        return {};
+
+    /// `Bool` is stored as `UInt8`, and a column can hold a byte other than 0 and 1 (e.g. through
+    /// `reinterpret`). `equals` compares that byte with an integer constant numerically, while the
+    /// non-strict `convertFieldToType` clamps any non-zero integer to `true`, so `2` would be hashed
+    /// as `1` and the granule holding the byte `2` pruned. Hash the number that is compared; one
+    /// outside of `UInt8` equals no stored value, and the index declines.
+    if (isBool(actual_type) && !(value_type && isBool(removeLowCardinalityAndNullable(value_type))))
+    {
+        if (value_field.getType() == Field::Types::UInt64)
+        {
+            const UInt64 unsigned_value = value_field.safeGet<UInt64>();
+            if (unsigned_value > std::numeric_limits<UInt8>::max())
+                return {};
+            return Field(unsigned_value);
+        }
+
+        if (value_field.getType() == Field::Types::Int64)
+        {
+            const Int64 signed_value = value_field.safeGet<Int64>();
+            if (signed_value < 0 || signed_value > std::numeric_limits<UInt8>::max())
+                return {};
+            return Field(static_cast<UInt64>(signed_value));
+        }
     }
 
     return convertFieldToType(value_field, *actual_type, value_type.get());
