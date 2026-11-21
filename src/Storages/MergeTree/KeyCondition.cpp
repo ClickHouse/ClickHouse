@@ -3694,6 +3694,47 @@ static bool isTextOfElementValues(const std::vector<FunctionBasePtr> & chain, co
     return (isNativeInteger(source_type) && isNativeInteger(element_type)) || (isDate(source_type) && isDate(element_type));
 }
 
+/// Whether `IN` parses a `String` part of the key: `Set::execute` casts the key into the element type of the set,
+/// and a `String` or `FixedString` cast into another type is parsed, so many spellings match one element.
+static bool keyToSetCastParsesString(DataTypePtr key, DataTypePtr element)
+{
+    key = removeLowCardinalityAndNullable(key);
+    element = removeLowCardinalityAndNullable(element);
+    if (isNothing(element) || isString(element) || element->equals(*key))
+        return false;
+    if (isStringOrFixedString(key))
+        return true;
+
+    /// A `Map` is cast as the array of key-value tuples it is stored as.
+    if (const auto * map = typeid_cast<const DataTypeMap *>(key.get()))
+        key = map->getNestedType();
+    if (const auto * map = typeid_cast<const DataTypeMap *>(element.get()))
+        element = map->getNestedType();
+
+    const auto * key_array = typeid_cast<const DataTypeArray *>(key.get());
+    const auto * element_array = typeid_cast<const DataTypeArray *>(element.get());
+    if (key_array && element_array)
+        return keyToSetCastParsesString(key_array->getNestedType(), element_array->getNestedType());
+
+    const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
+    const auto * element_tuple = typeid_cast<const DataTypeTuple *>(element.get());
+    if (!key_tuple || !element_tuple)
+        return false;
+
+    /// Named tuples are cast by name, so a position pairs the elements only when the names agree.
+    const auto & key_elements = key_tuple->getElements();
+    const auto & element_elements = element_tuple->getElements();
+    if (key_elements.size() != element_elements.size()
+        || (key_tuple->hasExplicitNames() && element_tuple->hasExplicitNames()
+            && key_tuple->getElementNames() != element_tuple->getElementNames()))
+        return anyInTypeTree(*key, [](const IDataType & type) { return isStringOrFixedString(type); });
+
+    for (size_t i = 0; i < key_elements.size(); ++i)
+        if (keyToSetCastParsesString(key_elements[i], element_elements[i]))
+            return true;
+    return false;
+}
+
 bool KeyCondition::tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -3774,7 +3815,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// matches `'2023-02-01 12:00:00'` as well as `'2023-02-01 12:00:00.000'`. The index renders the
         /// element into a single spelling instead and would read every other one as certainly not in the
         /// set - a pruned row that the predicate keeps, which relaxing the atom cannot repair, because a
-        /// relaxed atom still prunes on the points it holds. The index is not used for such a set. A
+        /// relaxed atom still prunes on the points it holds. The index is not used for such a set.
+        /// A `String` inside a `Tuple`, an `Array` or a `Map` key is parsed the same way, element by element. A
         /// `String` element is cast the other way only by padding a `FixedString` key, which keeps the
         /// atom a superset. A `Dynamic`, `Variant` or `JSON` element gets no exemption either, top-level or
         /// inside a composite such as `Map(String, Dynamic)`: the key is cast into it by parsing as well -
@@ -3788,8 +3830,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 = removeLowCardinalityAndNullable(mapping.set_transform ? mapping.set_transform->input_type : key_column_type);
             const DataTypePtr element_type = removeLowCardinalityAndNullable(set_element_type);
 
-            if (isStringOrFixedString(predicate_column_type) && !isString(element_type) && !isNothing(element_type)
-                && !element_type->equals(*predicate_column_type)
+            if (keyToSetCastParsesString(predicate_column_type, element_type)
                 && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
         }
