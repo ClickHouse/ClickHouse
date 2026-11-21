@@ -2368,6 +2368,38 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 
+def test_rename_database_does_not_load_catalog_tables(started_cluster):
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/131423.
+
+    The incremental refreshable view source check of `RENAME DATABASE` must not load the
+    catalog tables, so an unresolvable table must not replace the `NOT_IMPLEMENTED` error.
+    """
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    db_name = f"iceberg_rename_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, "broken_table")
+
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        error = node.query_and_get_error(
+            f"RENAME DATABASE {db_name} TO {db_name}_new",
+            settings={"database_datalake_require_metadata_access": 1},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    assert "NOT_IMPLEMENTED" in error, error
+    assert "Injected metadata resolution failure" not in error, error
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
 def test_merge_over_datalake_with_unresolvable_table_does_not_hang(started_cluster):
     """
     Regression test for the StorageMerge consumer of DatabaseDataLake::getTablesIterator.
@@ -3222,6 +3254,38 @@ def test_drop_mv_with_unreachable_target(started_cluster):
         node.query(f"DROP TABLE {mv} SYNC")
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+
+def test_rename_mv_source_with_unreachable_target(started_cluster):
+    # Renaming the source of a non-incremental view must not depend on its `TO` table in a catalog that cannot be reached.
+    node = started_cluster.instances["node1"]
+
+    uid = uuid.uuid4().hex[:12]
+    namespace = f"mv_src_unreachable_ns_{uid}"
+    tgt_table = f"mv_src_unreachable_tgt_{uid}"
+    src = f"mv_src_unreachable_src_{uid}"
+    mv = f"mv_src_unreachable_mv_{uid}"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, tgt_table, "(k Int64)")
+    node.query(f"CREATE TABLE {src} (k Int64) ENGINE = MergeTree ORDER BY k")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv}
+            REFRESH EVERY 10 YEAR APPEND
+            TO {CATALOG_NAME}.`{namespace}.{tgt_table}` EMPTY
+            AS SELECT k FROM {src}
+        """
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        node.query(f"RENAME TABLE {src} TO {src}_moved")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    node.query(f"DROP TABLE {mv} SYNC")
+    node.query(f"DROP TABLE {src}_moved SYNC")
 
 
 def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
