@@ -355,6 +355,8 @@ The defaults below apply unless overridden in the disk configuration or inherite
 | `s3_max_single_read_retries` | Maximum read attempts, including the initial attempt, when a read fails with a retryable error. | `4` |
 | `min_bytes_for_seek` | Accepted by the disk configuration reader but not used by the current S3 read buffer. Use [`remote_read_min_bytes_for_seek`](/reference/settings/session-settings/other#remote_read_min_bytes_for_seek) for that buffer. | `1048576` (1 MiB) |
 | `metadata_path` | Local metadata directory, used with `metadata_type=local`. | `<path>/disks/<disk_name>/`, where `<path>` is the server data directory |
+| `persistent_removal_log` | Persists the queue of blobs pending background removal in `.metadata/blobs_to_remove.log` on the metadata disk, so that the blobs of removed files are still deleted after a restart. | `true` |
+| `metadata_removal_log_compaction_threshold` | Number of removed entries in `.metadata/blobs_to_remove.log` after which the log is compacted. | `1000` |
 | `skip_access_check`                             | If `true`, skips disk access checks during startup.                                                                                                                                                                                           | `false`                                  |
 | `header`                                        | Adds specified HTTP header to requests. Can be specified multiple times.                                                                                                                                                                      | -                                        |
 | `server_side_encryption_customer_key_base64`    | Required headers for accessing S3 objects with SSE-C encryption.                                                                                                                                                                              | -                                        |
@@ -635,6 +637,8 @@ The read-attempt limits include the initial attempt and are separate from Azure 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `metadata_path` | Local metadata directory, used only with `metadata_type=local`. | `<path>/disks/<disk_name>/`, where `<path>` is the server data directory |
+| `persistent_removal_log` | Persists the queue of blobs pending background removal in `.metadata/blobs_to_remove.log` on the metadata disk, so that the blobs of removed files are still deleted after a restart. | `true` |
+| `metadata_removal_log_compaction_threshold` | Number of removed entries in `.metadata/blobs_to_remove.log` after which the log is compacted. | `1000` |
 | `skip_access_check` | Skips the disk's startup access check. Does not disable authentication or container initialization. | `false` |
 | `metadata_keep_free_space_bytes` | Bytes to keep free on the local metadata disk. | `0` |
 

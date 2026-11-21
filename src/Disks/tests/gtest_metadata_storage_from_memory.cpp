@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -436,7 +437,7 @@ protected:
         DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", dir + "metadata");
         MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(
             metadata_disk, "/", object_storage->createKeyGenerator(),
-            /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/1000);
+            std::make_unique<InMemoryRemovalQueue>());
 
         std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
         std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};

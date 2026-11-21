@@ -8,6 +8,7 @@
 #include <Core/ServerUUID.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PersistentRemovalQueue.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -163,7 +164,8 @@ private:
 
         auto disk = active_disks[path] = std::make_shared<Disk>("test-metadata", local_disk_metadata_dir);
         auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
-        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator, /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
+        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator,
+            std::make_unique<DB::PersistentRemovalQueue>(disk, std::string(DB::MetadataStorageFromDisk::SYSTEM_METADATA_DIR), /*compaction_threshold_=*/1000));
 
         return metadata;
     }
@@ -488,6 +490,30 @@ TEST_F(MetadataLocalDiskTest, TestValidSingleOperationsRemove)
     transaction->commit(DB::NoCommitOptions{});
 
     EXPECT_FALSE(metadata->existsFile("g.txt"));
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobsToRemoveRestoredAfterRestart)
+{
+    const std::string path = "/TestBlobsToRemoveRestoredAfterRestart";
+    auto metadata = getMetadataStorage(path);
+    metadata->startup();
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("f.txt", {DB::StoredObject("blob", "f.txt", 100)});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("f.txt", /*if_exists=*/false, /*should_remove_objects=*/true);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    auto disk = getMetadataDisk(path);
+    auto restarted = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}"),
+        std::make_unique<DB::PersistentRemovalQueue>(disk, std::string(DB::MetadataStorageFromDisk::SYSTEM_METADATA_DIR), /*compaction_threshold_=*/1000));
+    restarted->startup();
+
+    verifyBlobsToRemove(restarted, {"blob"});
 }
 
 TEST_F(MetadataLocalDiskTest, TestValidUnlinkMetadata)
