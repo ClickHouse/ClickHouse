@@ -1,0 +1,23 @@
+t_arrays	1
+t_ints	1
+t_ip	1
+t_nullable	1
+t_sparse	1
+t_strings	1
+t_unique	1
+t_wide	1
+Sparse
+t_arrays	array32_zstd array64_lz4	1	1
+t_ints	u32_doubledelta u32_delta u32_t64 u64_t64 u64_lz4	1	1
+t_ip	ipv6_zstd ipv4_lz4 ipv6_lz4	1	1
+t_nullable	lc_nullable_zstd nullable_zstd nullable_lz4	1	1
+t_sparse	str_zstd lc_zstd str_lz4 lc_lz4	1	1
+t_strings	lc_zstd lc_lz4 str_zstd str_lz4	1	1
+t_unique	str_zstd lc_zstd lc_lz4 str_lz4	1	1
+t_wide	lc_zstd lc_lz4 str_zstd str_lz4	1	1
+1
+1
+t_narrowed_lz4	3
+t_narrowed_zstd1	3
+t_narrowed_zstd6	3
+1	1	1

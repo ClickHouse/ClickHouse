@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <AggregateFunctions/AggregateFunctionEstimateCompressionRatioWithTarget.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <AggregateFunctions/SingleValueData.h>
@@ -25,6 +26,7 @@
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -36,13 +38,21 @@ struct Settings;
 namespace ErrorCodes
 {
 extern const int BAD_QUERY_PARAMETER;
+extern const int UNKNOWN_CODEC;
 extern const int UNKNOWN_QUERY_PARAMETER;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+ASTPtr parseEstimateCompressionRatioCodec(const String & codec)
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
+    return ast;
+}
+
 namespace
 {
-
 
 struct AggregationFunctionEstimateCompressionRatioData
 {
@@ -104,14 +114,7 @@ private:
     CompressionCodecPtr getCodecOrDefault() const
     {
         if (codec.has_value())
-        {
-            ParserCodec codec_parser;
-            auto ast
-                = parseQuery(codec_parser, "(" + codec.value() + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            /// The aggregate compresses the serialized values directly, so a declarative codec would measure nothing.
-            CompressionCodecFactory::instance().checkCodecChainIsNotDeclarative(ast);
-            return CompressionCodecFactory::instance().get(ast, argument_types[0]);
-        }
+            return CompressionCodecFactory::instance().get(parseEstimateCompressionRatioCodec(*codec), argument_types[0]);
         return CompressionCodecFactory::instance().getDefaultCodec();
     }
 
@@ -232,25 +235,45 @@ public:
 }
 
 static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
-    const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings * settings)
 {
     if (arguments.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one argument", name);
-    if (parameters.size() > 2)
-        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Aggregate function {} accepts at most two parameters", name);
+    if (parameters.size() > 3)
+        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Aggregate function {} accepts at most three parameters", name);
 
     std::optional<String> codec;
     std::optional<UInt64> block_size_bytes;
+    DataTypePtr target_type;
     for (const auto & param : parameters)
     {
         if (param.getType() == Field::Types::String)
         {
+            const auto & value = param.safeGet<String>();
+            /// No codec is named like a type. A string that starts with a type name gets the error of that type.
+            auto type = DataTypeFactory::instance().tryGet(value);
+            String family = value.substr(0, value.find('('));
+            boost::algorithm::trim(family);
+            if (!type && DataTypeFactory::instance().hasNameOrAlias(family))
+                type = DataTypeFactory::instance().get(value);
+            if (type)
+            {
+                if (target_type)
+                    throw Exception(
+                        ErrorCodes::BAD_QUERY_PARAMETER,
+                        "Multiple target types specified for {}. Expected at most one string parameter that names a type (target_type)",
+                        name);
+                target_type = std::move(type);
+                continue;
+            }
+
             if (codec.has_value())
                 throw Exception(
                     ErrorCodes::BAD_QUERY_PARAMETER,
-                    "Multiple string type parameters specified for {}. Expected at most one string type (codec) parameter",
-                    name);
-            codec = param.safeGet<String>();
+                    "Multiple codecs specified for {}: '{}' and '{}'. A string parameter is the codec unless it names a data type "
+                    "(the target type)",
+                    name, *codec, value);
+            codec = value;
         }
         else if (param.getType() == Field::Types::UInt64)
         {
@@ -278,11 +301,30 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         {
             throw Exception(
                 ErrorCodes::UNKNOWN_QUERY_PARAMETER,
-                "Invalid parameter type for {}. Expected String (codec) and/or UInt64 (block_size_bytes)",
+                "Invalid parameter type for {}. Expected String (codec or target_type) and/or UInt64 (block_size_bytes)",
                 name);
         }
     }
 
+    if (target_type)
+        return createAggregateFunctionEstimateCompressionRatioWithTarget(
+            name, arguments, parameters, std::move(target_type), codec, block_size_bytes, settings);
+
+    /// A query checks the codec here too, so that a misspelled one is an error without rows. Loading a table does not, so
+    /// that the server starts with a stored state type that names such a codec.
+    if (codec && settings)
+    {
+        try
+        {
+            (void)CompressionCodecFactory::instance().get(parseEstimateCompressionRatioCodec(*codec), arguments[0]);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_CODEC)
+                e.addMessage("A string parameter is the codec unless it names a data type (the target type)");
+            throw;
+        }
+    }
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
 
@@ -292,18 +334,45 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
+With `target_type`, it estimates how the column would compress if it were stored as `target_type`.
+It returns the size of the column in its own type divided by its estimated compressed size in `target_type`.
+The numerator is the same for every target type and codec, so the results for several candidates of the same column can be compared: the larger the ratio, the smaller the column on disk.
+A call without `target_type` uses a simpler model, so pass the type the column has now as one of the candidates too.
+
+With `target_type`, the estimate follows how a new `MergeTree` table with the default settings writes a column of a wide part:
+- one compressed stream per substream, for example the sizes and the characters of a `String`, or the dictionary and the indexes of a `LowCardinality` column;
+- granules of 8192 rows, or of fewer rows when they take 10 MiB in `target_type`;
+- sparse serialization for a column of mostly default values, decided from the first 8192 rows (or 1 MiB of rows), where a table decides from all the rows of a part;
+- values converted as `CAST` converts them, as `ALTER TABLE ... MODIFY COLUMN` does, with the settings of the query that adds them (a `SETTINGS` clause in a subquery doesn't apply).
+
+The estimate is approximate, and it does not read the settings of any table.
+A state kept in a `Memory` table keeps the conversion settings of the query that added its rows, whichever query reads it.
+A table sizes its granules from its insert blocks and from all its columns together, while the function sees one column and no insert blocks, so the granules of wide rows can differ.
+The numerator of a `LowCardinality` column is the size of its values, not of its dictionary.
+As `LowCardinality`, the estimated size of wide values with few distinct values is a few percent too large (up to about 11% for 1.2 KB values with 1000 distinct ones), because the function writes the rows of a granule in pieces of 1 MiB, where a table writes them at once.
+The result can depend on how a query splits the rows between threads.
+The rows of a group that one thread gathers join the rows of the other threads while they are fewer than a granule and less than 1 MiB; beyond that, they are estimated as a separate part.
+States that are serialized (in a distributed query, an external aggregation, or an `AggregateFunction` column) are separate parts too.
+Every part adds its own block headers and, for `LowCardinality`, its own dictionary, which matters when a group compresses to a few kilobytes: the ratio of such a group as `LowCardinality` can drop by half with several threads.
+`max_threads = 1` gives a more stable result, though still an estimate.
+
+`Dynamic` and `JSON` are not supported as target types, nor as arguments with `target_type`, and neither is an argument with `LowCardinality` inside a `Variant`: convert them in the query first.
+
+With or without `target_type`, in a window with a growing frame (for example `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`), the new rows of every step are compressed on their own, as a separate part, so the result is far lower than for the same rows without the window (0.14 instead of 8.8 for 1000 short strings).
+
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.
 See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
 </Note>
     )";
-    FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes])(column)";
+    FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec][, block_size_bytes][, target_type])(column)";
     FunctionDocumentation::Arguments arguments = {
         {"column", "Column of any type.", {"Any"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size). The default value is 1 MiB (1048576 bytes); with `target_type`, the defaults of `MergeTree` (64 KiB and 1 MiB). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}},
+        {"target_type", "The name of the data type to estimate the column in, for example `'LowCardinality(String)'`.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -349,6 +418,21 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
 ┌───────────estimate─┐
 │ 143.60078980434392 │
 └────────────────────┘
+        )"
+    },
+    {
+        "Comparing types with `target_type`",
+        R"(
+SELECT
+    estimateCompressionRatio('ZSTD(3)', 'String')(s) AS as_string,
+    estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) AS as_low_cardinality
+FROM (SELECT concat('region_', toString(number % 16)) AS s FROM numbers(1000000))
+SETTINGS max_threads = 1
+        )",
+        R"(
+┌─────────as_string─┬─as_low_cardinality─┐
+│ 83.43419600583817 │  7352.941176470588 │
+└───────────────────┴────────────────────┘
         )"
     }
     };
