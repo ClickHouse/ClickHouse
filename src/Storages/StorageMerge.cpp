@@ -3038,8 +3038,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
             auto extract_subcolumns_dag = createSubcolumnsExtractionActions(
                 Block(adding_missing_defaults_dag.getResultColumns()), header.getNames(), local_context);
             adding_missing_defaults_dag = ActionsDAG::merge(std::move(adding_missing_defaults_dag), std::move(extract_subcolumns_dag));
-            adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
         }
+
+        /// `columns_to_fill` has each name once, but the header repeats a column the query selects twice.
+        adding_missing_defaults_dag.removeUnusedActions(header.getNames(), false);
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
