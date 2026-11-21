@@ -13,7 +13,7 @@ USER="user_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -n -q "
     DROP USER IF EXISTS $USER;
-    CREATE TABLE tab (id UInt64, val String, lowered String ALIAS lower(val)) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE tab (id UInt64, val String, lowered String ALIAS lower(val)) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 "
 
 echo '1. ALTER ADD INDEX with a transform is refused.'
@@ -26,7 +26,7 @@ echo '2. CREATE with a transform is refused.'
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode none -q "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.dst_transform ON CLUSTER test_shard_localhost
     (id UInt64, val String, INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)))
-    ENGINE = MergeTree ORDER BY id
+    ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0
 " 2>&1 | grep -c -m1 "distributed_ddl_use_initial_user_and_roles"
 
 echo '3. An index without a transform is unaffected.'
@@ -46,12 +46,12 @@ $CLICKHOUSE_CLIENT -n -q "
 
 echo '4. CREATE AS with an explicit engine and no privilege on the source.'
 $CLICKHOUSE_CLIENT --user "$USER" --distributed_ddl_output_mode none -q "
-    CREATE TABLE ${CLICKHOUSE_DATABASE}.dst ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.tab ENGINE = MergeTree ORDER BY tuple()
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.dst ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.tab ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0
 " 2>&1 | grep -o -m1 "SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.tab"
 
 echo '5. The same for a source that does not exist.'
 $CLICKHOUSE_CLIENT --user "$USER" --distributed_ddl_output_mode none -q "
-    CREATE TABLE ${CLICKHOUSE_DATABASE}.dst ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.missing ENGINE = MergeTree ORDER BY tuple()
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.dst ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.missing ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0
 " 2>&1 | grep -o -m1 "SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.missing"
 
 $CLICKHOUSE_CLIENT -n -q "

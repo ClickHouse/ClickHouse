@@ -1,0 +1,11 @@
+projection inherits the opt-out
+ReadFromMergeTree (p_inherit)
+projection reset to its own default
+ReadFromMergeTree (p_reset)
+Name: auto_minmax_index_c
+after reattach
+ReadFromMergeTree (p_reset)
+Name: auto_minmax_index_c
+p_bad
+p_inherit
+p_reset

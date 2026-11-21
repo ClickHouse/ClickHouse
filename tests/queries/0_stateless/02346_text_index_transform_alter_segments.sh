@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 echo '1. An ordinary index added after a mutation segment, with a rename in each metadata segment.'
 $CLICKHOUSE_CLIENT -n -q "
-    CREATE TABLE seg (id UInt64, a String, m UInt64 MATERIALIZED 1) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE seg (id UInt64, a String, m UInt64 MATERIALIZED 1) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
     ALTER TABLE seg
         RENAME COLUMN a TO b,
         MATERIALIZE COLUMN m,
@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -n -q "
 echo '2. The same with a text index transform, on the local host.'
 $CLICKHOUSE_CLIENT -n -q "
     SET enable_full_text_index = 1;
-    CREATE TABLE seg_text (id UInt64, a String, m UInt64 MATERIALIZED 1) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE seg_text (id UInt64, a String, m UInt64 MATERIALIZED 1) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
     ALTER TABLE seg_text
         RENAME COLUMN a TO b,
         MATERIALIZE COLUMN m,

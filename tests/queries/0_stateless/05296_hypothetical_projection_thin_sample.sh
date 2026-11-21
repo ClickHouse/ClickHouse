@@ -6,12 +6,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, prefer_optimize_projection = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_thin; DROP TABLE IF EXISTS t_thin_real;
     CREATE TABLE t_thin (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+        SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_thin_real AS t_thin;
     ALTER TABLE t_thin_real ADD PROJECTION p_b (SELECT * ORDER BY b);
     INSERT INTO t_thin SELECT number, cityHash64(number) % 1000 FROM numbers(600);

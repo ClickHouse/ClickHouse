@@ -11,7 +11,7 @@ PIN="optimize_use_implicit_projections = 0, optimize_use_projections = 1, optimi
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real_coarse; DROP TABLE IF EXISTS t_real_same;
     CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', use_const_adaptive_granularity = 0;
+        SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', use_const_adaptive_granularity = 0, add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_real_coarse AS t_est;
     CREATE TABLE t_real_same AS t_est;
     ALTER TABLE t_real_coarse ADD PROJECTION p_b (SELECT a, b, v ORDER BY b) WITH SETTINGS (index_granularity = 1000);

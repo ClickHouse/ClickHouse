@@ -22,7 +22,7 @@ CREATE TABLE tab
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))
 )
-ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '3. Denied in a postprocessor.';
 
@@ -32,7 +32,7 @@ CREATE TABLE tab
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = demangle(val))
 )
-ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '4. Denied when nested under a String result.';
 
@@ -42,11 +42,11 @@ CREATE TABLE tab
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(val, demangle(val)))
 )
-ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '5. Denied via ALTER ADD INDEX.';
 
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)); -- { serverError FUNCTION_NOT_ALLOWED }
 
@@ -60,7 +60,7 @@ CREATE TABLE tab
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val))
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab VALUES (1, 'Hello World');
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
@@ -78,7 +78,7 @@ CREATE TABLE tab
     val String,
     INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = demangle(val))
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab VALUES (1, 'hello world');
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
@@ -107,7 +107,7 @@ SELECT '11. An ALIAS column hiding a privileged function is denied.';
 
 -- Its own table: a column may carry only one text index, and that is checked before permissions are.
 SET allow_introspection_functions = 1;
-CREATE TABLE tab_alias (id UInt64, val String, mangled String ALIAS demangle(val)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE tab_alias (id UInt64, val String, mangled String ALIAS demangle(val)) ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 SET allow_introspection_functions = 0;
 
 ALTER TABLE tab_alias ADD INDEX idx_alias(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = mangled) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
@@ -130,7 +130,7 @@ DROP TABLE tab;
 SELECT '14. The transform preflight does not reject what a plain ALTER accepts.';
 
 CREATE TABLE tab_preflight (id UInt64, val String, num UInt64)
-ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'minmax';
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'minmax';
 
 -- The preflight must drop implicit statistics too, or `ADD STATISTICS` looks like a duplicate.
 ALTER TABLE tab_preflight ADD INDEX idx_pre(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)) GRANULARITY 1,
@@ -145,7 +145,7 @@ SELECT '15. Replacing a privileged alias in the same statement is allowed.';
 
 SET allow_introspection_functions = 1;
 CREATE TABLE tab_replace (id UInt64, val String, transformed String ALIAS demangle(val))
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_numeric_columns = 0;
 SET allow_introspection_functions = 0;
 
 -- The installed transform is `lower(val)`; the alias it replaces must not be demanded.
@@ -160,7 +160,7 @@ DROP TABLE tab_replace;
 SELECT '16. A statement without a transform is not analyzed at all.';
 
 SET allow_statistics = 1;
-CREATE TABLE tab_plain (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'basic';
+CREATE TABLE tab_plain (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'basic';
 
 ALTER TABLE tab_plain ADD INDEX idx_minmax(x) TYPE minmax GRANULARITY 1, ADD STATISTICS x TYPE basic;
 

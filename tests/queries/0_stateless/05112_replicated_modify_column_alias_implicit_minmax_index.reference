@@ -1,0 +1,15 @@
+the alias expression is indexed on both replicas
+t_05112_r1	auto_minmax_index_a
+t_05112_r1	auto_minmax_index_expr_alias
+t_05112_r2	auto_minmax_index_a
+t_05112_r2	auto_minmax_index_expr_alias
+type change of an expression alias
+t_05112_r1	auto_minmax_index_a
+t_05112_r2	auto_minmax_index_a
+alias values	0
+alias values on the follower	0
+expression alias to physical
+t_05112_r1	auto_minmax_index_a
+t_05112_r2	auto_minmax_index_a
+physical values	100000
+physical values on the follower	100000

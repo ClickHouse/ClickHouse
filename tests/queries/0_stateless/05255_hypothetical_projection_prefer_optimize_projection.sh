@@ -8,13 +8,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # prefer_optimize_projection makes the optimizer use any usable projection, and the verdict follows it;
 # the twin table with the projection materialized shows what the optimizer really reads
 
+# the implicit minmax indices of add_minmax_index_for_numeric_columns change the plans and estimates this test pins
+
 # the estimate never uses parallel replicas, so neither does the real plan it is checked against
 PIN="optimize_trivial_count_query = 0, optimize_use_implicit_projections = 0, optimize_use_projections = 1, enable_parallel_replicas = 0"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_prefer; DROP TABLE IF EXISTS t_prefer_real;
     CREATE TABLE t_prefer (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi';
+        SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
     CREATE TABLE t_prefer_real AS t_prefer;
     ALTER TABLE t_prefer_real ADD PROJECTION p_b (SELECT a, b, v ORDER BY b);
     INSERT INTO t_prefer SELECT number, number % 100, number FROM numbers(300);

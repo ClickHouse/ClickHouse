@@ -8,6 +8,10 @@
 
 #include <Columns/ColumnNullable.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -24,12 +28,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_na
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
 {
-    for (size_t i = 0; i < index_sample_block.columns(); ++i)
-    {
-        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
-        serializations.push_back(type->getDefaultSerialization());
-    }
-    datatypes = index_sample_block.getDataTypes();
+    initSerializations();
 }
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
@@ -40,12 +39,23 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     , index_sample_block(index_sample_block_)
     , hyperrectangle(std::move(hyperrectangle_))
 {
+    initSerializations();
+}
+
+void MergeTreeIndexGranuleMinMax::initSerializations()
+{
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         serializations.push_back(type->getDefaultSerialization());
+        const DataTypePtr nested_type = removeNullable(removeLowCardinality(type));
+        bool_columns.push_back(isBool(nested_type) || isSimpleAggregateFunctionOfBool(*nested_type));
     }
     datatypes = index_sample_block.getDataTypes();
+    /// A `Bool` column can hold any byte (e.g. `INSERT ... SELECT toUInt8(2)`), so its bounds are read as the stored
+    /// bytes rather than converted to `true`, and widened in `deserializeBinary`. A `Bool` nested in another type
+    /// (e.g. in a `JSON` value) is compared as a `Bool` field, so it is still read as one.
+    bool_format_settings.binary.read_bool_field_as_int = true;
 }
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
@@ -81,14 +91,15 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
         /// When updating in place, deserialize directly into the Range's fields.
         Field & min_ref = update_in_place ? static_cast<Field &>(hyperrectangle[i].left) : min_val;
         Field & max_ref = update_in_place ? static_cast<Field &>(hyperrectangle[i].right) : max_val;
+        const FormatSettings & column_format_settings = bool_columns[i] ? bool_format_settings : format_settings;
 
         switch (version)
         {
             case 1:
                 if (!datatypes[i]->isNullable())
                 {
-                    serializations[i]->deserializeBinary(min_ref, istr, format_settings);
-                    serializations[i]->deserializeBinary(max_ref, istr, format_settings);
+                    serializations[i]->deserializeBinary(min_ref, istr, column_format_settings);
+                    serializations[i]->deserializeBinary(max_ref, istr, column_format_settings);
                 }
                 else
                 {
@@ -102,8 +113,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
-                        serializations[i]->deserializeBinary(min_ref, istr, format_settings);
-                        serializations[i]->deserializeBinary(max_ref, istr, format_settings);
+                        serializations[i]->deserializeBinary(min_ref, istr, column_format_settings);
+                        serializations[i]->deserializeBinary(max_ref, istr, column_format_settings);
                     }
                     else
                     {
@@ -115,8 +126,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
             /// New format with proper Nullable support for values that include NULL values
             case 2:
-                serializations[i]->deserializeBinary(min_ref, istr, format_settings);
-                serializations[i]->deserializeBinary(max_ref, istr, format_settings);
+                serializations[i]->deserializeBinary(min_ref, istr, column_format_settings);
+                serializations[i]->deserializeBinary(max_ref, istr, column_format_settings);
 
                 // NULL_LAST
                 if (min_ref.isNull())
@@ -131,6 +142,13 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
         normalizeBoolFields(min_ref);
         normalizeBoolFields(max_ref);
+
+        /// Some functions see the stored byte of a `Bool` (`b = true`, `toUInt8(b) = 2`), others see it converted to
+        /// 0 or 1 (`b IN (true)`). A granule with bytes in `[2, 2]` must match both `toUInt8(b) = 2` and `b IN (true)`,
+        /// so its range is widened to `[1, 2]`: the lower bound covers the converted value too. The upper bound
+        /// already does, and a granule of only 0 and 1 is not changed.
+        if (bool_columns[i] && min_ref.getType() == Field::Types::UInt64 && min_ref.safeGet<UInt64>() > 1)
+            min_ref = UInt64(1);
 
         if (update_in_place)
         {
@@ -284,6 +302,10 @@ MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String 
 {
     const DataTypePtr & type = index_sample_block.getByPosition(0).type;
     serialization = type->getDefaultSerialization();
+    /// Keep the stored byte of a `Bool` bound, as `MergeTreeIndexGranuleMinMax` does.
+    const DataTypePtr nested_type = removeNullable(removeLowCardinality(type));
+    if (isBool(nested_type) || isSimpleAggregateFunctionOfBool(*nested_type))
+        format_settings.binary.read_bool_field_as_int = true;
     granules.reserve(size_hint_);
 }
 

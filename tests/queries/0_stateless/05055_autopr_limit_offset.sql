@@ -3,7 +3,9 @@
 
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t(key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+-- The implicit `minmax` index on `value` of `add_minmax_index_for_numeric_columns` lets the top-K read of
+-- `ORDER BY value LIMIT` skip granules, which changes the byte estimates the decisions below rest on.
+CREATE TABLE t(key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';

@@ -18,8 +18,8 @@ SET max_insert_threads = 1;
 
 DROP TABLE IF EXISTS f;
 DROP TABLE IF EXISTS d;
-CREATE TABLE f (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'uniq';
-CREATE TABLE d (k UInt64, v UInt64, s String) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'uniq';
+CREATE TABLE f (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'uniq';
+CREATE TABLE d (k UInt64, v UInt64, s String) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'uniq';
 INSERT INTO f SELECT number FROM numbers(1000);
 INSERT INTO d SELECT number, number % 10, if(number % 50 = 0, 'rare', 'common') FROM numbers(1000);
 

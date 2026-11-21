@@ -1,6 +1,7 @@
 -- Virtual columns of a text index are read right before the first PREWHERE step that uses them,
 -- so the index is read only for the granules that passed the preceding steps (including the TopK filter).
 -- Without that, the prewhere readers would read every selected row twice: once for `flag`/`ts`, once from the index.
+-- The implicit minmax indices of add_minmax_index_for_numeric_columns would prune granules by `flag` before the PREWHERE readers, so the tables opt out.
 
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
@@ -27,7 +28,7 @@ CREATE TABLE tab
     INDEX idx_t t TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 
 -- `flag` passes whole granules (every 10th one), `third` and `common` are in every granule,
 -- `ts` decreases, so the TopK threshold set by the first block rejects all later rows.
@@ -73,7 +74,7 @@ CREATE TABLE tab_partial
     s String
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab_partial SELECT number, intDiv(number, 128) % 10 = 0, concat('common', if(number % 3 = 0, ' third', '')) FROM numbers(10000);
 ALTER TABLE tab_partial ADD INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha);

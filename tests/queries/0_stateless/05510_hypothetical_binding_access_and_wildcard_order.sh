@@ -10,7 +10,7 @@ sess="sess_05510_${CLICKHOUSE_DATABASE}"
 
 echo "a type change of a revoked column is denied, not described"
 $CLICKHOUSE_CLIENT -n -q "
-    CREATE TABLE t_access (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+    CREATE TABLE t_access (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100;
     INSERT INTO t_access SELECT number, number FROM numbers(1000);
     DROP USER IF EXISTS ${user};
     CREATE USER ${user} NOT IDENTIFIED;
@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT -q "DROP USER ${user}"
 echo "a new order of the columns under * makes a projection with positional GROUP BY not applicable"
 $CLICKHOUSE_CLIENT -n -q "
     SET enable_positional_arguments_for_projections = 1, optimize_use_projections = 1;
-    CREATE TABLE t_order (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100;
+    CREATE TABLE t_order (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100;
     INSERT INTO t_order SELECT number, number % 10 FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p ON t_order (SELECT *, count() GROUP BY 1, 2);
     SELECT trim(explain) FROM (EXPLAIN WHATIF SELECT b, count() FROM t_order WHERE b = 1 GROUP BY a, b) WHERE explain LIKE '  status:%';

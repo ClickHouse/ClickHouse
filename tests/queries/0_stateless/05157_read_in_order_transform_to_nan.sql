@@ -105,7 +105,8 @@ DROP TABLE t_read_in_order_nan_ranges_bf16;
 -- The same for a `Decimal` key, whose mark range endpoints are `DecimalField`: a range away from zero
 -- keeps the monotonicity of `0. / x`, and the granules are still pruned.
 DROP TABLE IF EXISTS t_read_in_order_nan_ranges_decimal;
-CREATE TABLE t_read_in_order_nan_ranges_decimal (x Decimal(10, 2)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+-- The implicit minmax index on `x` would add its own `Granules` line to the plan below.
+CREATE TABLE t_read_in_order_nan_ranges_decimal (x Decimal(10, 2)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_read_in_order_nan_ranges_decimal SELECT number + 1 FROM numbers(8);
 
 SELECT 'finite ranges Decimal';

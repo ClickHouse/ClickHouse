@@ -19,6 +19,10 @@
 # addresses skp_idx_a.pos.*, which is the on-disk name of an unrelated surviving
 # index literally named `a.pos`. Both the standalone and the packed-archive path
 # must skip any candidate a surviving index owns.
+#
+# Every table opts out of `add_minmax_index_for_numeric_columns`: the assertions count the indices
+# and index files a table owns, and an implicit minmax index on a numeric column that carries no
+# explicit index of its own would add a member here but not in the reference table.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
@@ -44,7 +48,7 @@ run_case() {
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0, add_minmax_index_for_numeric_columns = 0,
              escape_index_filenames = ${escape},
              packed_skip_index_max_bytes = ${packed};
     INSERT INTO ${tbl} (k, v, w) SELECT number, number, number FROM numbers(500);
@@ -92,7 +96,7 @@ run_inverse_case() {
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0, add_minmax_index_for_numeric_columns = 0,
              packed_skip_index_max_bytes = 0,
              escape_index_filenames = ${escape},
              allow_experimental_text_index_phrase_search = 1;
@@ -163,7 +167,7 @@ run_suffix_named_drop_case() {
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0, add_minmax_index_for_numeric_columns = 0,
              escape_index_filenames = ${escape},
              packed_skip_index_max_bytes = ${packed},
              columns_and_secondary_indices_sizes_lazy_calculation = 0;
@@ -195,7 +199,7 @@ run_suffix_named_drop_case() {
         CREATE TABLE ${tbl}_ref (k UInt64, v UInt64, w UInt64, INDEX a v TYPE minmax GRANULARITY 1)
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-                 index_granularity = 100, replace_long_file_name_to_hash = 0,
+                 index_granularity = 100, replace_long_file_name_to_hash = 0, add_minmax_index_for_numeric_columns = 0,
                  escape_index_filenames = ${escape},
                  packed_skip_index_max_bytes = ${packed},
                  columns_and_secondary_indices_sizes_lazy_calculation = 0;
@@ -242,7 +246,7 @@ run_packed_survivor_not_packed_case() {
     local ref="${tbl}_ref"
 
     local create_settings="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0, add_minmax_index_for_numeric_columns = 0,
              escape_index_filenames = 0, packed_skip_index_max_bytes = 1048576,
              columns_and_secondary_indices_sizes_lazy_calculation = 0"
 

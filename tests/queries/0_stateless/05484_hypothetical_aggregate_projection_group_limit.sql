@@ -3,8 +3,10 @@
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0;
 
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the marks of the base table and change
+-- the estimates and the real reads this test compares, so the tables opt out
 CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_est SELECT number, number % 500, number FROM numbers(10000);
 CREATE HYPOTHETICAL PROJECTION p ON t_est (SELECT b, sum(v), count() GROUP BY b);
 

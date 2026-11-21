@@ -18,7 +18,9 @@ DROP TABLE IF EXISTS t_outer_sv;
 DROP TABLE IF EXISTS t_small_sv;
 DROP TABLE IF EXISTS t_big_sv;
 
-CREATE TABLE t_outer_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+-- No implicit min-max index on `k`: it would prune the main query with the set built by the deferred
+-- pipeline, so the rows read would no longer tell which path was taken.
+CREATE TABLE t_outer_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1;
 INSERT INTO t_outer_sv SELECT number FROM numbers(1000);
 
 CREATE TABLE t_small_sv (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192;

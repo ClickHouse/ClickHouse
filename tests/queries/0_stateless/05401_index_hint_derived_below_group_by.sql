@@ -7,7 +7,9 @@ SET use_query_condition_cache = 0;
 SET optimize_or_like_chain = 1;
 
 DROP TABLE IF EXISTS t_chain_keys;
-CREATE TABLE t_chain_keys (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+-- `add_minmax_index_for_numeric_columns = 0`: the reference shows the granules selected by the primary key only, and
+-- implicit min-max indices on `a` and `b` would add their own lines to `EXPLAIN indexes = 1`.
+CREATE TABLE t_chain_keys (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO t_chain_keys SELECT intDiv(number, 100), number % 997 FROM numbers(100000);
 OPTIMIZE TABLE t_chain_keys FINAL;
 
@@ -40,7 +42,7 @@ DROP TABLE t_chain_keys;
 
 -- a user-written hint equal to a derived one still must not prune below GROUP BY
 DROP TABLE IF EXISTS t_hint_key;
-CREATE TABLE t_hint_key (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+CREATE TABLE t_hint_key (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = '10Mi';
 INSERT INTO t_hint_key SELECT intDiv(number, 10), number % 10 FROM numbers(100);
 OPTIMIZE TABLE t_hint_key FINAL;
 
@@ -54,7 +56,7 @@ DROP TABLE t_hint_key;
 
 -- below GROUP BY in a remote() local plan the derived hint still means the alias, not the column it shadows
 DROP TABLE IF EXISTS t_hint_alias;
-CREATE TABLE t_hint_alias (k UInt32, v UInt32, w UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+CREATE TABLE t_hint_alias (k UInt32, v UInt32, w UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = '10Mi';
 INSERT INTO t_hint_alias SELECT number, number % 10, number % 7, [number % 7, number % 10] FROM numbers(100);
 OPTIMIZE TABLE t_hint_alias FINAL;
 SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT w AS k, v FROM remote('127.0.0.1', currentDatabase(), t_hint_alias) AS t GROUP BY w, v, t.k) WHERE k < v AND v < 3 SETTINGS prefer_localhost_replica = 1);
@@ -68,7 +70,7 @@ DROP TABLE t_hint_alias;
 
 -- a derived hint alone below GROUP BY does not pass GROUPING SETS that lack its key
 DROP TABLE IF EXISTS t_hint_gs;
-CREATE TABLE t_hint_gs (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+CREATE TABLE t_hint_gs (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = '10Mi';
 INSERT INTO t_hint_gs SELECT number, number FROM numbers(200);
 OPTIMIZE TABLE t_hint_gs FINAL;
 SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM (SELECT a, max(b) AS m FROM (SELECT a, b FROM t_hint_gs GROUP BY GROUPING SETS ((a, b), (b))) GROUP BY a HAVING a < m AND m < 120));
@@ -80,7 +82,7 @@ DROP TABLE t_hint_gs;
 
 -- a derived hint on a GROUPING SETS key expression does not keep the other conjuncts above the aggregation
 DROP TABLE IF EXISTS t_gs_expr_key;
-CREATE TABLE t_gs_expr_key (k UInt32, v UInt32, w UInt8) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+CREATE TABLE t_gs_expr_key (k UInt32, v UInt32, w UInt8) ENGINE = MergeTree ORDER BY v SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO t_gs_expr_key SELECT number % 30, intDiv(number, 100), number % 7 FROM numbers(10000);
 OPTIMIZE TABLE t_gs_expr_key FINAL;
 SELECT countIf(explain LIKE '%indexHint(%') > 0 FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT intDiv(k, 10) AS g, v, count() FROM t_gs_expr_key GROUP BY GROUPING SETS ((g, v), (g, v, w)) HAVING g < v AND v < 3);

@@ -1,0 +1,4 @@
+t_numeric_stored	auto_minmax_index_x	Implicit	1
+t_other_category	auto_minmax_index_x	Explicit	1
+t_other_category_enabled	auto_minmax_index_x	Explicit	1
+t_string_disabled	auto_minmax_index_x	Implicit	1

@@ -11,7 +11,8 @@ CREATE TABLE test_alter_on_mutation
   value String
 )
 ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_01062/alter_on_mutation', '1')
-ORDER BY key PARTITION BY date;
+ORDER BY key PARTITION BY date
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_alter_on_mutation select toDate('2020-01-05'), number, toString(number) from system.numbers limit 100;
 INSERT INTO test_alter_on_mutation select toDate('2020-01-06'), number, toString(number) from system.numbers limit 100;

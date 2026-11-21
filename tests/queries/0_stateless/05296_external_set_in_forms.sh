@@ -129,13 +129,14 @@ cat "${LOCAL_DIR}/mutations-1.out"
 tail -n 1 "${LOCAL_DIR}/mutations-0.out"
 
 # The set of lazy `FINAL` serves only index analysis, which needs its values, so it stays in memory with a
-# threshold of 1 byte and lazy `FINAL` applies. The parts are never merged.
+# threshold of 1 byte and lazy `FINAL` applies. The parts are never merged. The implicit minmax index on `v`
+# would already skip the granules by `v < 500`, and lazy `FINAL` would not be worth applying.
 for threshold in 0 1; do
     ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}/lazy-final-${threshold}" --max_bytes_before_external_set "${threshold}" \
         --send_logs_level trace --multiquery > "${LOCAL_DIR}/lazy-final-${threshold}.out" \
         2> "${LOCAL_DIR}/lazy-final-${threshold}.log" <<'SQL'
 CREATE TABLE r (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k
-SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1;
+SETTINGS index_granularity = 128, max_bytes_to_merge_at_max_space_in_pool = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO r SELECT number, number FROM numbers(100000);
 INSERT INTO r SELECT number, number + 1 FROM numbers(1000);
 SELECT 'lazy final', count(), sum(v) FROM r FINAL WHERE v < 500 SETTINGS query_plan_optimize_lazy_final = 1;

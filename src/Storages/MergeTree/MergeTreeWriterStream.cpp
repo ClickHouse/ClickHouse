@@ -62,7 +62,10 @@ public:
         const WriteSettings & packed_write_settings_,
         const String & display_file_name_,
         bool & coupled_spilled_)
-        : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+        : WriteBufferFromFileBase(
+            adaptiveBufferInitialSize(packed_write_settings_.use_adaptive_write_buffer, packed_write_settings_.adaptive_write_buffer_initial_size, buf_size_),
+            nullptr,
+            0)
         , spill_threshold(spill_threshold_)
         , open_per_file(std::move(open_per_file_))
         , claim_archive_base(std::move(claim_archive_base_))
@@ -72,6 +75,7 @@ public:
         , display_file_name(display_file_name_)
         , coupled_spilled(coupled_spilled_)
     {
+        enableAdaptiveBufferGrowth(packed_write_settings_.use_adaptive_write_buffer, buf_size_);
     }
 
     ~SizeAdaptiveSpoolBuffer() override = default;
@@ -126,17 +130,20 @@ void SizeAdaptiveSpoolBuffer::nextImpl()
     if (spilled)
     {
         per_file_writer->write(working_buffer.begin(), bytes_in_buffer);
-        return;
+    }
+    else
+    {
+        /// Append to the in-memory accumulator. If we exceed the threshold, promote to per-file
+        /// and dump everything we have so subsequent writes flow straight through.
+        const size_t old_size = accumulator.size();
+        accumulator.resize(old_size + bytes_in_buffer);
+        std::memcpy(accumulator.data() + old_size, working_buffer.begin(), bytes_in_buffer);
+
+        if (accumulator.size() > spill_threshold)
+            promoteToPerFile();
     }
 
-    /// Append to the in-memory accumulator. If we exceed the threshold, promote to per-file
-    /// and dump everything we have so subsequent writes flow straight through.
-    const size_t old_size = accumulator.size();
-    accumulator.resize(old_size + bytes_in_buffer);
-    std::memcpy(accumulator.data() + old_size, working_buffer.begin(), bytes_in_buffer);
-
-    if (accumulator.size() > spill_threshold)
-        promoteToPerFile();
+    growAdaptiveBufferAfterFlush();
 }
 
 void SizeAdaptiveSpoolBuffer::promoteToPerFile()
@@ -179,6 +186,8 @@ void SizeAdaptiveSpoolBuffer::commitToPackedIfNeeded()
 
 void SizeAdaptiveSpoolBuffer::finalizeImpl()
 {
+    /// Don't try to resize buffer in nextImpl.
+    use_adaptive_buffer_size = false;
     next();
 
     /// Last chance to honour a peer's late spill: if the data file spilled but the marks file

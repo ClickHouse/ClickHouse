@@ -27,8 +27,13 @@ SELECT '===Replicated case===';
 DROP TABLE IF EXISTS clear_column1;
 DROP TABLE IF EXISTS clear_column2;
 SELECT sleep(1) FORMAT Null;
-CREATE TABLE clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_00446/tables/clear_column', '1') ORDER BY d PARTITION by toYYYYMM(d) SETTINGS min_bytes_for_wide_part = 0;
-CREATE TABLE clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_00446/tables/clear_column', '2') ORDER BY d PARTITION by toYYYYMM(d) SETTINGS min_bytes_for_wide_part = 0;
+-- The implicit min-max indices are pinned off: the test asserts that `CLEAR COLUMN` releases the
+-- data of the cleared column, and a column carrying a min-max index is not released in a part that
+-- uses the full (packed) part storage - a later mutation reads the absent column back as defaults
+-- because an index of the part depends on it. That happens for an explicitly declared index just as
+-- well, see https://github.com/ClickHouse/ClickHouse/issues/118533; drop the pin once it is fixed.
+CREATE TABLE clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_00446/tables/clear_column', '1') ORDER BY d PARTITION by toYYYYMM(d) SETTINGS min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_00446/tables/clear_column', '2') ORDER BY d PARTITION by toYYYYMM(d) SETTINGS min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO clear_column1 (d) VALUES ('2000-01-01'), ('2000-02-01');
 SYSTEM SYNC REPLICA clear_column2;

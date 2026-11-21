@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS t_bf_codec;
 -- well with `ZSTD`. Such an index keeps the part's codec.
 -- Every granule has the same 1000 values of `c`, so the filters of `bf_repeated` are identical and compress well.
 -- The `tokenbf_v1` filter over a single repeated token is compressible as well.
+-- The implicit min-max indices of `add_minmax_index_for_numeric_columns` are disabled, so only the listed indices are checked.
 CREATE TABLE t_bf_codec
 (
     a UInt64,
@@ -21,7 +22,8 @@ CREATE TABLE t_bf_codec
     INDEX tbf s TYPE tokenbf_v1(8192, 3, 0) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY a
-SETTINGS default_compression_codec = 'ZSTD(1)', index_granularity = 8192, index_granularity_bytes = '10Mi';
+SETTINGS default_compression_codec = 'ZSTD(1)', index_granularity = 8192, index_granularity_bytes = '10Mi',
+    add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_bf_codec SELECT number, 0, number % 1000, 'a' FROM numbers(100000);
 

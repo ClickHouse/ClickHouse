@@ -9,7 +9,7 @@
 DROP TABLE IF EXISTS t_exclusion_search_max_steps;
 
 CREATE TABLE t_exclusion_search_max_steps (a int, b int) ENGINE = MergeTree() ORDER BY (a, b)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_exclusion_search_max_steps
 SELECT

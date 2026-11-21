@@ -9,7 +9,7 @@ SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_set_shadow;
-CREATE TABLE t_set_shadow (k UInt32, v UInt32, w UInt32, INDEX ik k TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+CREATE TABLE t_set_shadow (k UInt32, v UInt32, w UInt32, INDEX ik k TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO t_set_shadow SELECT number, number % 10, number % 7 FROM numbers(100);
 OPTIMIZE TABLE t_set_shadow FINAL;
 

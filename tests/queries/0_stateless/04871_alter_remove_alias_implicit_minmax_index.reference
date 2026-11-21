@@ -1,0 +1,8 @@
+before
+auto_minmax_index_a
+auto_minmax_index_expr_alias
+after
+auto_minmax_index_a
+auto_minmax_index_id_alias
+100000
+100000
