@@ -11148,6 +11148,14 @@ Enables the `ZXC` compression codec.
 )", BETA, \
         {"26.11", false, false, "The `ZXC` compression codec was moved to Beta."}, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_fsst_codec, false, R"(
+Enables the `FSST` compression codec.
+
+The values of a `String` column compressed by `FSST` are checked against the string filters of `apply_string_filters_during_scan`
+on the compressed data, and only the matching values are decoded. This does not happen when the uncompressed cache is used
+(`use_uncompressed_cache = 1`): the cache keeps the decompressed blocks, so the values are decoded and then checked, as with other codecs.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `FSST` compression codec."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \

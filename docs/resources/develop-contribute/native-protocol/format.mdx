@@ -1457,6 +1457,38 @@ When the `0x80` flag is clear, the payload is a standalone `.pco` stream that is
 
 Chunk `i` expands to bytes `[i × 65536, min((i + 1) × 65536, uncompressed_size))` of the block. The first chunk starts right after the sizes, and every chunk starts at a multiple of 4 from the start of the body.
 
+`0xa2` (FSST) carries a body written by the `FSST` codec (Fast Static Symbol Table string compression). The first byte is the format:
+
+```text
+[1 byte: format]   ← 0 = STORED, 1 = ENCODED, 2 = ENCODED_ALIGNED
+
+STORED:
+[uncompressed_size bytes]                ← the raw bytes
+
+ENCODED:
+[symbol table]
+[codes]                                  ← until the end of the body
+
+ENCODED_ALIGNED:
+[symbol table]
+[4 bytes:  codes_size LE u32]
+[codes_size bytes: codes]
+[VarUInt:  num_boundaries]
+[VarUInt × num_boundaries]               ← positions of the codes at the boundaries of the values, as differences
+                                           with the previous position (the first one with 0); every difference is ≥ 1
+
+symbol table:
+[1 byte:   S]                            ← number of symbols, 0..255
+[S bytes:  length of every symbol]       ← 1..8
+[sum of the lengths: the bytes of the symbols, in order of their codes]
+```
+
+The codes are decoded one by one: a code `c < S` expands to the bytes of symbol `c`, and the escape code `0xFF` is followed by one literal byte that is copied as is. Any other code is invalid, and the decoded size must equal `uncompressed_size`. The `STORED` format is used when encoding would not make the block smaller.
+
+`ENCODED_ALIGNED` is written when the writer knows the boundaries of the values in the block (the data stream of a `String` column with a separate sizes stream is the concatenation of the values): no symbol crosses a boundary, so every value that starts in the block is encoded on its own. The index lists, for every boundary of the values inside the block, the position in `codes` of the first code of the value that starts there. Positions increase strictly and do not exceed `codes_size`. A decoder that only needs the bytes can ignore the index.
+
+Inside a `Multiple` (`0x91`) frame, `FSST` can be the first stage of the chain; its output (the nested `0xa2` header and the body above) is then compressed by the next stages, and the value boundaries are passed only to that first stage.
+
 The method byte also encodes the [column-level codecs](/reference/statements/create/table/codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
 
 | Byte   | Method            |
@@ -1476,6 +1508,7 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 | `0x9f` | `ZXC`             |
 | `0xa0` | `PCO` (see [Per-column codec frames](#per-column-codec-frames)) |
 | `0xa1` | `GDeflate` (see [Per-column codec frames](#per-column-codec-frames)) |
+| `0xa2` | `FSST` (see [Per-column codec frames](#per-column-codec-frames)) |
 
 `DoubleDelta` (`0x94`) stores second differences as MSB-first prefix/sign/magnitude bits. Word-based decoding preserves this encoding, element count, and final-byte padding.
 
@@ -1492,6 +1525,8 @@ The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs 
 `0xa0` (`PCO`) is a **beta** lossless codec for fixed-width numeric columns, implemented by the pcodec Rust library. A table can be created with `CODEC(PCO)` only when the `enable_pco_codec` setting is set. In builds that include the library, the method byte is always accepted on decompression so that previously written data stays readable. A server built without it (without Rust, or with `ENABLE_PCO=OFF`) does not register the codec and rejects `0xa0` frames with `UNKNOWN_CODEC`.
 
 `0xa1` (`GDeflate`) is an **experimental** Deflate variant whose chunks a GPU can expand in parallel. A table can be created with `CODEC(GDeflate)` only when the `enable_gdeflate_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
+
+`0xa2` (`FSST`) is an **experimental** string codec (Fast Static Symbol Table). A table can be created with `CODEC(FSST)` only when the `enable_fsst_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 
 ### Checksum {#checksum}
 
