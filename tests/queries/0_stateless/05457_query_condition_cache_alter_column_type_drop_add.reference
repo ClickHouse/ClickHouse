@@ -1,0 +1,12 @@
+MODIFY type	100000
+MODIFY type	100000
+MODIFY type, not on the fly	100000
+MODIFY type, not on the fly	100000
+MODIFY time zone	100000
+MODIFY time zone	100000
+DROP and ADD	100000
+DROP and ADD	100000
+DROP and ADD, KILL MUTATION	100000
+DROP and ADD, KILL MUTATION	100000
+DROP and ADD, projection	100000
+DROP and ADD, projection	100000
