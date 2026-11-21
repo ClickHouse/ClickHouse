@@ -1516,7 +1516,7 @@ void MergeTreeData::addColumnSizesOfParts(
         },
         [&](size_t part_index)
         {
-            /// Moved out, so that the memory of a consumed part is released (assigning `{}` keeps the capacity).
+            /// Moved out, so that the memory of a consumed part is released.
             const auto sizes = std::move(sizes_of_parts[part_index]);
             for (const auto & [name, size] : sizes)
                 result[name].add(size);

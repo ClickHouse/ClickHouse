@@ -3859,7 +3859,7 @@ std::optional<std::vector<std::pair<String, ColumnSize>>> IMergeTreeDataPart::ge
     std::unordered_map<String, size_t> column_positions;
     for (const auto & column_name : column_names)
     {
-        /// Resolved first, as by the loops this replaces: a column may have the name of a subcolumn of another one.
+        /// Resolved before the cache lookup: a column may have the name of a subcolumn of another column.
         auto column = tryGetColumn(column_name);
         if (!column)
             continue;

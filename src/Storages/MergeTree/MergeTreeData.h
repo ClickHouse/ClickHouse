@@ -613,9 +613,7 @@ public:
         const std::function<void(size_t)> & load_part,
         const std::function<void(size_t)> & consume_part);
 
-    /// Adds to `result` the sizes of the subcolumns (and, if `with_columns`, of the columns) among `column_names` in every
-    /// part of `parts` that has them, see IMergeTreeDataPart::getColumnAndSubcolumnSizes. The subcolumn sizes not
-    /// calculated yet whose calculation reads files of the part are calculated on up to `max_threads` threads.
+    /// Adds the getColumnAndSubcolumnSizes of every part to `result`; the parts that read files are sized on up to `max_threads` threads.
     static void addColumnSizesOfParts(
         const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result);
 
