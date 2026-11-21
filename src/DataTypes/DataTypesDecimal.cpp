@@ -467,7 +467,7 @@ void convertFromDecimalBatch(
     using NativeType = typename FromFieldType::NativeType;
     using ToFieldType = typename ToDataType::FieldType;
 
-    /// `convertToImpl`'s formula with the multiplier converted once: the compiler keeps the 256-bit conversion in the loop.
+    /// `convertToImpl`'s formula with the multiplier converted once.
     if constexpr (std::is_same_v<NativeType, Int256> && is_floating_point<ToFieldType>)
     {
         const Float64 divisor = static_cast<Float64>(DecimalUtils::scaleMultiplier<NativeType>(scale));
@@ -476,7 +476,7 @@ void convertFromDecimalBatch(
         return;
     }
 
-    /// A wide value that fits into Int64 has the same whole part in 64 bits, where the division is much cheaper.
+    /// A wide value that fits into Int64 has the same whole part in 64 bits.
     if constexpr (is_big_int_v<NativeType> && !is_floating_point<ToFieldType>)
     {
         if (scale <= DecimalUtils::max_precision<Decimal64>)
