@@ -37,6 +37,9 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsDeserializeStatesCache * cache) const override;
 
+    /// As for `SerializationString`: without dictionary granules the lengths are those of `WITH_SIZE_STREAM`.
+    SerializationPtr resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const override;
+
 private:
     MergeTreeStringSerializationVersion version;
 

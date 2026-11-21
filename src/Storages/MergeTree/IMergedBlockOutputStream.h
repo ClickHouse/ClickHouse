@@ -79,6 +79,16 @@ protected:
         SerializationInfoByName & serialization_infos,
         MergeTreeData::DataPart::Checksums & checksums);
 
+    /// Removes from `checksums` the streams that a column left empty and that the serialization resolved for such a
+    /// part does not read (see `ISerialization::resolveForEmptySubstreams`): the dictionary streams of a `String` column
+    /// without dictionary granules. Adds their substream names to `removed_substreams` and returns the names of their
+    /// files, which the caller removes after the sync, as for empty columns.
+    static NameSet removeStreamsLeftEmpty(
+        const MergeTreeDataPartPtr & data_part,
+        const NamesAndTypesList & columns,
+        MergeTreeData::DataPart::Checksums & checksums,
+        std::unordered_set<String> & removed_substreams);
+
     MergeTreeSettingsPtr storage_settings;
     LoggerPtr log;
 

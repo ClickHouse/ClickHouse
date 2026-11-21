@@ -163,6 +163,14 @@ public:
     /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
     virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
+    /// Tells whether the file of a substream of a column in a data part holds no data or does not exist.
+    using SubstreamIsEmptyCallback = std::function<bool(const SerializationSubstreamPath &)>;
+
+    /// Returns the serialization that reads the column from a data part, given which of its substreams hold no data. A
+    /// serialization with substreams that some columns leave empty returns a simpler one for those columns: for example,
+    /// a `String` column with no dictionary granules in the part reads like `WITH_SIZE_STREAM`, into a plain column.
+    [[nodiscard]] virtual SerializationPtr resolveForEmptySubstreams(const SubstreamIsEmptyCallback &) const { return getPtr(); }
+
     static KindStack getKindStack(const IColumn & column);
     static String kindToString(Kind kind);
     static String kindStackToString(const KindStack & kind);

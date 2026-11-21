@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -87,6 +88,9 @@ public:
     /// If some column exists in both left and right we keep only substreams from the left.
     /// Shared per-column entries of the inputs are reused, not copied.
     static ColumnsSubstreams merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order);
+
+    /// Returns a copy without the substreams of `substreams`, for streams whose files are not kept in the part.
+    [[nodiscard]] ColumnsSubstreams withoutSubstreams(const std::unordered_set<String> & substreams) const;
 
     /// Compares only the ordered lists of substreams (the rest of the state is derived from them).
     bool operator==(const ColumnsSubstreams & other) const;

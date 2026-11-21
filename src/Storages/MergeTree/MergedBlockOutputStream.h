@@ -105,6 +105,9 @@ private:
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
     MergeTreeWriterSettings writer_settings;
+
+    /// The substreams whose files `removeStreamsLeftEmpty` removed from the part.
+    std::unordered_set<String> substreams_left_empty;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;

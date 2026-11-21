@@ -368,6 +368,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
+    auto streams_files = removeStreamsLeftEmpty(new_part, new_part->getColumns(), checksums, substreams_left_empty);
+    files_to_remove_after_sync.insert(streams_files.begin(), streams_files.end());
+
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     written_files = finalizePartOnDisk(new_part, checksums, gathered_data);
 
@@ -576,6 +579,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         writer->getColumnsSubstreams(),
         gathered_data.columns_substreams,
         new_part->getColumns().getNames());
+    if (!substreams_left_empty.empty())
+        columns_substreams = columns_substreams.withoutSubstreams(substreams_left_empty);
 
     if (!columns_substreams.empty())
     {
