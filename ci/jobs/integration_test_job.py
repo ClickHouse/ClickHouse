@@ -1817,72 +1817,85 @@ tar -czf ./ci/tmp/logs.tar.gz \
     targeted_tests = []
     mandatory_test_modules = set()
     if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check ???"
-        targeter = Targeting(info=info)
-        try:
-            tests, results_with_info = targeter.get_all_relevant_tests_with_info()
-        except (CIDBTimeoutError, GitHubUnavailableError) as ex:
-            # CIDB is overloaded (typically while the coverage export inserts),
-            # or the GitHub API keeps failing.
-            # Skip rather than fail, as the stateless targeted jobs do: an ERROR here
-            # would skip every job that waits for the core blocking jobs. Not cached,
-            # so a rerun or the next commit selects again.
-            if isinstance(ex, CIDBTimeoutError):
-                cause = "test selection timed out in CIDB"
-                comment = "CIDB timeout in test selection, rerun to test"
-            else:
-                cause = "the GitHub API failed during test selection"
-                comment = "GitHub API error in test selection, rerun to test"
-            message = f"Targeted tests were not run: {cause}: {ex}"
-            print(f"WARNING: {message}")
-            info.add_workflow_warning(message)
-            skipped = Result.create_from(
-                status=Result.Status.SKIPPED,
-                info=f"{message}\n{traceback.format_exc()}",
-            )
-            skipped.set_comment(comment)
-            skipped.complete_job(do_not_cache=True)
-        # no subtask level for integration tests - cannot add this info to the report now
-        # results.append(results_with_info)
-        # The changed test modules run in every configuration, not only in the flaky
-        # check, and so do the modules of packages whose supporting files changed: the
-        # coverage selector sees only source files.
-        changed_files = info.get_changed_files() or []
-        owning_modules = Targeting.owning_test_modules(changed_files)
-        # The modules that run whatever the coverage ranking: the merge-queue check
-        # reserves part of its time budget for those of them in the sequential phase.
-        mandatory_test_modules = set(changed_test_modules + owning_modules) | {
-            r["test"].split("::")[0]
-            for r in targeter.selection_diagnostics["selected"]
-            if set(r["sources"]) & MANDATORY_SELECTION_SOURCES
-        }
-        tests = changed_test_modules + owning_modules + tests
-        harness_files = [f for f in changed_files if is_shared_harness_file(f)]
-        if harness_files:
-            fallback_parallel, fallback_sequential = get_parallel_sequential_tests_to_run(
-                1, HARNESS_FALLBACK_BATCHES, [], workers, args.options, info
+        if info.is_local_run:
+            assert (
+                args.test
+            ), (
+                "Local run of targeted integration job requires --test "
+                "(CIDB-based test selection is unavailable). "
+                "Example: --test test_polymorphic_parts"
             )
             print(
-                f"Shared integration harness changed ({harness_files}): also running batch "
-                f"1/{HARNESS_FALLBACK_BATCHES} of the full suite"
+                "NOTE: local targeted run: using explicit --test selectors instead of CIDB",
+                flush=True,
             )
-            tests += fallback_parallel + fallback_sequential
-        if not tests:
-            # early exit
-            Result.create_from(
-                status=Result.Status.SKIPPED,
-                info="No changed tests, and no tests found by coverage or previous failures",
-            ).complete_job()
+        else:
+            assert not args.test, "--test not supposed to be used for targeted check ???"
+            targeter = Targeting(info=info)
+            try:
+                tests, results_with_info = targeter.get_all_relevant_tests_with_info()
+            except (CIDBTimeoutError, GitHubUnavailableError) as ex:
+                # CIDB is overloaded (typically while the coverage export inserts),
+                # or the GitHub API keeps failing.
+                # Skip rather than fail, as the stateless targeted jobs do: an ERROR here
+                # would skip every job that waits for the core blocking jobs. Not cached,
+                # so a rerun or the next commit selects again.
+                if isinstance(ex, CIDBTimeoutError):
+                    cause = "test selection timed out in CIDB"
+                    comment = "CIDB timeout in test selection, rerun to test"
+                else:
+                    cause = "the GitHub API failed during test selection"
+                    comment = "GitHub API error in test selection, rerun to test"
+                message = f"Targeted tests were not run: {cause}: {ex}"
+                print(f"WARNING: {message}")
+                info.add_workflow_warning(message)
+                skipped = Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info=f"{message}\n{traceback.format_exc()}",
+                )
+                skipped.set_comment(comment)
+                skipped.complete_job(do_not_cache=True)
+            # no subtask level for integration tests - cannot add this info to the report now
+            # results.append(results_with_info)
+            # The changed test modules run in every configuration, not only in the flaky
+            # check, and so do the modules of packages whose supporting files changed: the
+            # coverage selector sees only source files.
+            changed_files = info.get_changed_files() or []
+            owning_modules = Targeting.owning_test_modules(changed_files)
+            # The modules that run whatever the coverage ranking: the merge-queue check
+            # reserves part of its time budget for those of them in the sequential phase.
+            mandatory_test_modules = set(changed_test_modules + owning_modules) | {
+                r["test"].split("::")[0]
+                for r in targeter.selection_diagnostics["selected"]
+                if set(r["sources"]) & MANDATORY_SELECTION_SOURCES
+            }
+            tests = changed_test_modules + owning_modules + tests
+            harness_files = [f for f in changed_files if is_shared_harness_file(f)]
+            if harness_files:
+                fallback_parallel, fallback_sequential = get_parallel_sequential_tests_to_run(
+                    1, HARNESS_FALLBACK_BATCHES, [], workers, args.options, info
+                )
+                print(
+                    f"Shared integration harness changed ({harness_files}): also running batch "
+                    f"1/{HARNESS_FALLBACK_BATCHES} of the full suite"
+                )
+                tests += fallback_parallel + fallback_sequential
+            if not tests:
+                # early exit
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="No changed tests, and no tests found by coverage or previous failures",
+                ).complete_job()
 
-        # Coverage and changed files select whole modules (`test_x/test.py`), previous
-        # failures select test cases (`test_x/test.py::test_case[param]`). Drop
-        # parametrization and the test cases of selected modules, so that every test runs once.
-        names = [t.strip().split("[")[0] for t in tests if t.strip()]
-        modules = {t for t in names if "::" not in t}
-        targeted_tests = list(
-            dict.fromkeys(t for t in names if "::" not in t or t.split("::")[0] not in modules)
-        )
-        print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
+            # Coverage and changed files select whole modules (`test_x/test.py`), previous
+            # failures select test cases (`test_x/test.py::test_case[param]`). Drop
+            # parametrization and the test cases of selected modules, so that every test runs once.
+            names = [t.strip().split("[")[0] for t in tests if t.strip()]
+            modules = {t for t in names if "::" not in t}
+            targeted_tests = list(
+                dict.fromkeys(t for t in names if "::" not in t or t.split("::")[0] not in modules)
+            )
+            print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
         start_docker_in_docker()
