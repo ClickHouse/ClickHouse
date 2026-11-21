@@ -476,6 +476,8 @@ public:
             to_values_arr.getData().reserve(size);
         }
 
+        const DataTypes & result_types = assert_cast<const DataTypeTuple &>(*this->result_type).getElements();
+
         // Write arrays of keys and values
         for (const auto & elem : merged_maps)
         {
@@ -487,7 +489,13 @@ public:
             {
                 auto & to_values_col = assert_cast<ColumnArray &>(to_tuple.getColumn(col + 1)).getData();
                 if (elem.second[col].isNull())
-                    to_values_col.insertDefault();
+                {
+                    const auto & value_type = assert_cast<const DataTypeArray &>(*result_types[col + 1]).getNestedType();
+                    if (value_type->isDefaultInsertTrivial())
+                        to_values_col.insertDefault();
+                    else
+                        value_type->insertDefaultInto(to_values_col);
+                }
                 else
                     to_values_col.insert(elem.second[col]);
             }
