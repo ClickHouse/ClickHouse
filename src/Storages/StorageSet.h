@@ -13,6 +13,11 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class Set;
 using SetPtr = std::shared_ptr<Set>;
 
+class IBackup;
+using BackupPtr = std::shared_ptr<const IBackup>;
+
+class ReadBuffer;
+
 
 /** Common part of StorageSet and StorageJoin.
   */
@@ -31,6 +36,9 @@ public:
     /// With `persistent = 0` the table keeps its data only in memory, like `Memory`.
     bool hasUnreplicatedTableDataOnDisk() const override { return persistent; }
     Strings getDataPaths() const override { return {path}; }
+
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
 protected:
     StorageSetOrJoinBase(
@@ -52,7 +60,11 @@ protected:
     void restore();
 
 private:
+    /// The `<number>.bin` files under `path`, in the order they were written.
+    std::vector<std::pair<UInt64, String>> listDataFiles() const;
     void restoreFromFile(const String & file_path);
+    void restoreFromBuffer(ReadBuffer & in, const String & source);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
