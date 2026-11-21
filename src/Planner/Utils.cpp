@@ -933,23 +933,35 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
     return conjuncts;
 }
 
-bool optimizePlanForExists(QueryPlan & query_plan)
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated)
 {
     auto * node = query_plan.getRootNode();
+    /// `arrayJoin` can make the result empty, so the plan is kept from the topmost such step.
+    QueryPlan::Node * changes_number_of_rows = nullptr;
     while (true)
     {
-        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        if (auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
         {
+            if (!changes_number_of_rows && !expression->getTransformTraits().preserves_number_of_rows)
+                changes_number_of_rows = node;
             node = node->children[0];
             continue;
         }
         if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
         {
             const auto & params = aggregation->getParams();
-            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+            /// A grouping set without keys returns a row for an empty input, like an aggregation without keys.
+            bool has_set_without_keys = params.keys_size == 0
+                || std::ranges::any_of(
+                    aggregation->getGroupingSetsParamsList(),
+                    [](const GroupingSetsParams & grouping_set) { return grouping_set.used_keys.empty(); });
+            if (has_set_without_keys && !params.empty_result_for_aggregation_by_empty_set)
             {
-                /// Subquery will always produce at least one row
-                return true;
+                /// Subquery will always produce at least one row. Decorrelation loses the row of an empty input
+                /// of an aggregate without keys, so for a correlated subquery the steps above it are ignored.
+                if (!changes_number_of_rows || (is_correlated && params.keys_size == 0))
+                    return true;
+                break;
             }
             node = node->children[0];
             continue;
@@ -968,6 +980,9 @@ bool optimizePlanForExists(QueryPlan & query_plan)
         }
         break;
     }
+
+    if (changes_number_of_rows)
+        node = changes_number_of_rows;
 
     if (node != query_plan.getRootNode())
     {
