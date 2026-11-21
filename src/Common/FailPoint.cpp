@@ -379,6 +379,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_after_ttl_mode_selection) \
     PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
+    PAUSEABLE_ONCE(mt_mutate_task_pause_before_merge_list) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     ONCE(merge_checkpoint_abort_before_last_column) \
     PAUSEABLE_ONCE(merge_checkpoint_pause_after_column) \

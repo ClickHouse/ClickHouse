@@ -28,6 +28,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_before_rename_part[];
+    extern const char mt_mutate_task_pause_before_merge_list[];
 }
 
 
@@ -44,6 +45,8 @@ void MutatePlainMergeTreeTask::onCompleted()
 
 void MutatePlainMergeTreeTask::prepare()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_merge_list);
+
     future_part = merge_mutate_entry->future_part;
 
     merge_list_entry = storage.getContext()->getMergeList().insert(
@@ -51,6 +54,11 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context,
         thread_group);
+
+    /// `KILL MUTATION` cancels only the entries already in the merge list, and this task took its commands when it
+    /// was selected. Check after the insert: a kill that comes later finds the entry.
+    if (!storage.areMutationsRegistered(merge_mutate_entry->mutation_ids))
+        (*merge_list_entry)->is_cancelled = true;
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -186,7 +194,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
 
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
+                /// If `KILL MUTATION` removed one of the mutations, the others are retried without it: this is not their failure.
+                if (storage.areMutationsRegistered(merge_mutate_entry->mutation_ids))
+                    storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 throw;
             }

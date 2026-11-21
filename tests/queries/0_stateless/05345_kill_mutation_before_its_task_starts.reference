@@ -1,0 +1,5 @@
+10	1045
+(UPDATE x = x + 100 WHERE 1)	0	1
+10	11045
+t_kill_single	ABORTED	1
+t_kill_squashed	ABORTED	1
