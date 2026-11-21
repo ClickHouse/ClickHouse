@@ -43,3 +43,12 @@ SELECT accurateCastOrNull(materialize(toUInt16(257)), 'Enum8(\'a\' = 1)') SETTIN
 SELECT materialize(toUInt16(257)) IN (SELECT CAST('a', 'Enum8(\'a\' = 1)')), materialize(toUInt16(1)) IN (SELECT CAST('a', 'Enum8(\'a\' = 1)'));
 SELECT tuple(materialize(toUInt16(257))) IN (SELECT tuple(CAST('a', 'Enum8(\'a\' = 1)'))), tuple(materialize(toUInt16(1))) IN (SELECT tuple(CAST('a', 'Enum8(\'a\' = 1)')));
 SELECT materialize(toFloat64(1.5)) IN (SELECT CAST('a', 'Enum8(\'a\' = 1)')), materialize(nan) IN (SELECT CAST('a', 'Enum16(\'a\' = 1)'));
+
+-- Array and map keys of a set convert with `accurateCast`, so a number that does not fit throws like it does for numeric keys.
+SELECT materialize([toUInt16(2)]) IN (SELECT [CAST('a', 'Enum8(\'a\' = 1)')]), materialize([toUInt16(1)]) IN (SELECT [CAST('a', 'Enum8(\'a\' = 1)')]);
+SELECT materialize(map('k', toUInt16(2))) IN (SELECT map('k', CAST('a', 'Enum8(\'a\' = 1)'))), materialize(map('k', toUInt16(1))) IN (SELECT map('k', CAST('a', 'Enum8(\'a\' = 1)')));
+SELECT materialize([toUInt16(257)]) IN (SELECT [CAST('a', 'Enum8(\'a\' = 1)')]); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT materialize([1.5]) IN (SELECT [CAST('a', 'Enum8(\'a\' = 1)')]); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT materialize(map('k', toUInt16(257))) IN (SELECT map('k', CAST('a', 'Enum8(\'a\' = 1)'))); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT tuple(materialize([toUInt16(257)])) IN (SELECT tuple([CAST('a', 'Enum8(\'a\' = 1)')])); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast(materialize(toUInt16(257)), 'Enum8(\'a\' = 1)') SETTINGS check_conversion_from_numbers_to_enum = 0; -- { serverError CANNOT_CONVERT_TYPE }

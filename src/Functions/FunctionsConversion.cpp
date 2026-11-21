@@ -2724,7 +2724,7 @@ FunctionCast::WrapperType FunctionCast::createEnumWrapper(
         return createStringToEnumWrapper<ColumnFixedString, EnumType>(requested_result_is_nullable);
     else if (isNativeNumber(from_type))
     {
-        if (!settings.check_conversion_from_numbers_to_enum && cast_type != CastType::accurateOrNull)
+        if (!settings.check_conversion_from_numbers_to_enum && cast_type == CastType::nonAccurate)
         {
             auto function = Function::createFromSettings(settings);
             return createFunctionAdaptor(function, from_type);
@@ -2862,8 +2862,9 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper(bool requested
 
     const bool accurate_or_null = requested_result_is_nullable && cast_type == CastType::accurateOrNull;
     const bool strict = cast_type != CastType::nonAccurate;
+    const bool check_value = settings.check_conversion_from_numbers_to_enum;
 
-    return [function_name = cast_name, accurate_or_null, strict] (
+    return [function_name = cast_name, accurate_or_null, strict, check_value] (
         ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/) -> ColumnPtr
     {
         const auto & first_col = arguments.front().column.get();
@@ -2925,7 +2926,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper(bool requested
                     throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be converted to enum type", toString(in_data[i]));
 
                 /// Validate that value exists in Enum (throws if not found)
-                (void)result_type.getNameForValue(converted_value);
+                if (check_value)
+                    (void)result_type.getNameForValue(converted_value);
                 out_data[i] = converted_value;
             }
         }
