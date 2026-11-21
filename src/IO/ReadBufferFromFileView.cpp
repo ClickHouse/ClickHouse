@@ -31,11 +31,13 @@ ReadBufferFromFileView::ReadBufferFromFileView(
         impl->setRequestMap(std::move(slice));
     }
 
-    /// Seek to the begin of file.
+    /// Seek to the begin of file. The impl still owns its native buffer state here (no swap yet),
+    /// so its buffer-end offset can be read directly after the seek.
     impl->seek(left_bound, SEEK_SET);
+    const size_t impl_buffer_end = impl->getPosition() + impl->available();
     swap(*impl);
 
-    file_offset_of_buffer_end += available();
+    file_offset_of_buffer_end = impl_buffer_end;
     original_working_buffer = working_buffer;
     resizeWorkingBuffer();
 }
@@ -129,7 +131,20 @@ void ReadBufferFromFileView::executeWithOriginalBuffer(Op && op)
 
     /// Set working buffer and other internal into impl.
     swap(*impl);
-    op();
+    try
+    {
+        op();
+    }
+    catch (...)
+    {
+        /// The swap MUST be undone even if `op` throws — otherwise `this` and `impl` are left holding
+        /// each other's working buffers (and a stale `original_working_buffer`), so any subsequent
+        /// read or seek over-reads / serves wrong bytes. `op` can throw (e.g. setReadUntilPosition /
+        /// seek bound checks), so restore-on-exception is required for the view to stay consistent.
+        swap(*impl);
+        original_working_buffer = working_buffer;
+        throw;
+    }
     /// `impl` is the only source of truth for the end of its buffer: the offset kept here may have
     /// been clamped by `resizeWorkingBuffer` to a bound that has changed since.
     const size_t impl_buffer_end = impl->getPosition() + impl->available();
