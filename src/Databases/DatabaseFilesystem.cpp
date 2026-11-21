@@ -81,6 +81,23 @@ DatabaseFilesystem::DatabaseFilesystem(
 
     path = fs::absolute(path).lexically_normal();
 
+    /// The paths of the tables are checked against the resolved `user_files_path` without resolving them, as `file` checks
+    /// its paths, so an absolute path written through a `user_files_path` that is a symlink, such as
+    /// `/var/lib/clickhouse/user_files_link/sub`, is moved onto the resolved one, as a relative path is built on it. Only
+    /// this prefix is replaced: the symlinks below it are kept, as `file` keeps them. The prefix is normalized lexically, which
+    /// differs from resolving it if a `..` follows a symlink in it, so it is replaced only if it is the same directory.
+    if (!is_local)
+    {
+        fs::path configured_user_files_path = fs::absolute(getContext()->getUserFilesPath()).lexically_normal();
+        if (!configured_user_files_path.has_filename())
+            configured_user_files_path = configured_user_files_path.parent_path();
+        std::error_code equivalent_ec;
+        if (configured_user_files_path != user_files_path
+            && fs::equivalent(configured_user_files_path, user_files_path, equivalent_ec)
+            && fileOrSymlinkPathStartsWith(path, configured_user_files_path.string()))
+            path = (user_files_path / fs::path(path).lexically_relative(configured_user_files_path)).lexically_normal();
+    }
+
     /// `ec` is set only if stat fails for a reason other than a missing path, e.g. a symlink loop.
     std::error_code ec;
     const bool path_exists = fs::exists(path, ec);
@@ -131,16 +148,21 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 {
     /// If run in Local mode, no need for path checking.
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
-    const auto & user_files_path = context_->getUserFilesPath();
 
     const auto [path_to_archive, path_in_archive] = splitToArchiveParts(table_path, context_);
     const String path_to_probe = path_to_archive.empty() ? table_path : path_to_archive;
 
     /// Check access for file before checking its existence.
-    if (check_path && !fileOrSymlinkPathStartsWith(path_to_probe, user_files_path))
+    if (check_path)
     {
-        /// Access denied is thrown regardless of 'throw_on_error'
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        /// The path of the database is built on the resolved `user_files_path`, and `file` checks the paths against
+        /// it as well, so a `user_files_path` reached through a symlink is resolved here too.
+        const String user_files_path = fs::weakly_canonical(context_->getUserFilesPath());
+        if (!fileOrSymlinkPathStartsWith(path_to_probe, user_files_path))
+        {
+            /// Access denied is thrown regardless of 'throw_on_error'
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        }
     }
 
     if (!containsGlobs(path_to_probe))
