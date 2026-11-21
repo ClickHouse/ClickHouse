@@ -112,6 +112,10 @@ public:
 
     [[nodiscard]] const SortDescription & getSortDescription() const override { return result_description; }
 
+    /// The order the input streams already come in, so that only the remaining suffix has to be
+    /// sorted. Non-empty only for the `FinishSorting` flavours.
+    [[nodiscard]] const SortDescription & getPrefixDescription() const { return prefix_description; }
+
     [[nodiscard]] bool hasPartitions() const { return !partition_by_description.empty(); }
     [[nodiscard]] const SortDescription & getPartitionByDescription() const { return partition_by_description; }
     [[nodiscard]] Names getPartitionByColumnNames() const;
