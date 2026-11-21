@@ -1,11 +1,9 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <numeric>
 #include <ranges>
 #include <unordered_set>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -110,51 +108,6 @@ static bool memoryBoundMergingWillBeUsed(
     SortDescription sort_description_for_merging)
 {
     return should_produce_results_in_order_of_bucket_number && memory_bound_merging_of_aggregation_results_enabled && !sort_description_for_merging.empty();
-}
-
-/// Whether a state of `function` can own memory outside its arenas. A state with a trivial destructor cannot
-/// own anything it would have to free, so its whole footprint is its `sizeOfData` bytes (allocated in an arena)
-/// plus whatever it allocates in the arena. Any other state may keep part of its payload on the heap, even when
-/// `allocatesMemoryInArena` is true: e.g. the hash set of `uniqExact` grows through `HashTableAllocator`, and the
-/// array of a numeric `groupArray` uses `MixedAlignedArenaAllocator`, which switches to the ordinary allocator
-/// once it reaches 4096 bytes. There is no way to tell these apart from arena-only states, so all of them are
-/// treated as unaccountable. Combinators report a trivial destructor only if their nested functions do.
-static bool aggregateStateMayOwnMemoryOutsideArenas(const IAggregateFunction & function)
-{
-    return !function.hasTrivialDestructor();
-}
-
-/// Whether some column of `header` (at any nesting level, e.g. `Array(AggregateFunction(...))`) carries
-/// aggregate states whose memory the shuffle buffer budget cannot measure. `Dynamic` and `JSON` columns can
-/// hold aggregate states of any function in variants that appear only in the data chunks, not in the header,
-/// so they are treated as unaccountable too.
-static bool hasAggregateStatesWithMemoryOutsideArenas(const Block & header)
-{
-    for (const auto & column : header)
-    {
-        if (anyInTypeTree(*column.type, [](const IDataType & type)
-            {
-                WhichDataType which(type);
-                return which.isDynamic() || which.isObject();
-            }))
-            return true;
-    }
-
-    bool result = false;
-    auto check = [&](const IColumn & column)
-    {
-        if (const auto * aggregate = typeid_cast<const ColumnAggregateFunction *>(&column))
-            result = result || aggregateStateMayOwnMemoryOutsideArenas(*aggregate->getAggregateFunction());
-    };
-
-    for (const auto & column : header)
-    {
-        if (!column.column)
-            continue;
-        check(*column.column);
-        column.column->forEachSubcolumnRecursively(check);
-    }
-    return result;
 }
 
 /// Whether some `GROUP BY` key can hold values that compare equal while hashing differently. The shuffle routes
@@ -938,7 +891,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// by hash(GROUP BY keys) into `num_shards` groups, merge each group back into a single sorted
         /// stream (disjoint keys across groups), then run streaming in-order aggregation on each group in
         /// parallel. This parallelizes aggregation-in-order across threads while keeping its bounded memory
-        /// (the reshuffle buffering is capped by aggregation_in_order_shuffle_max_buffered_bytes). The output
+        /// (the reshuffle uses back-pressure with progress markers, see `BufferedShardByHashTransform`). The output
         /// is no longer globally ordered by the GROUP BY keys, so this is only used when the order is not
         /// relied upon downstream (see the gate below).
         /// The order in which the rows of one group reach the aggregate function is preserved, so aggregates
@@ -1001,14 +954,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// out to the ordinary in-order funnel above the same threshold the (now removed) sharded
             /// aggregation used.
             && pipeline.getNumStreams() * max_threads < 100'000
-            /// The buffer budget measures the columns of a buffered chunk and, for aggregate states, the arenas
-            /// they live in. A state that keeps its payload on the heap (e.g. `uniqExact` or a large numeric
-            /// `groupArray` read from an `AggregatingMergeTree`) can retain megabytes per state that neither is
-            /// visible to, so the budget would let such chunks accumulate without bound. Do not use the shuffle
-            /// for any state that may do so (any state with a non-trivial destructor) unless the budget is
-            /// disabled anyway.
-            && (settings.aggregation_in_order_shuffle_max_buffered_bytes == 0
-                || !hasAggregateStatesWithMemoryOutsideArenas(pipeline.getHeader()))
             /// Every row of an in-order group must be routed to the same shard.
             && !hasKeysWithHashInconsistentWithComparison(pipeline.getHeader(), transform_params->params.keys);
 
@@ -1023,8 +968,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             for (const auto & key : transform_params->params.keys)
                 key_columns.push_back(stream_header->getPositionByName(key));
 
-            /// The columns the per-shard merges below sort by: the scatter expands a `ColumnReplicated` in them
-            /// before charging the budget, because the merges would expand it anyway before retaining it.
+            /// The columns the per-shard merges below sort by: the scatter sends their values as progress markers.
             ColumnNumbers sorting_columns;
             sorting_columns.reserve(sort_description_for_merging.size());
             for (const auto & column_desc : sort_description_for_merging)
@@ -1036,18 +980,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// single sorted stream. Scatter + merge are added in one transform() so the intermediate
             /// num_streams * num_shards port count does not inflate the pipeline's parallelism limit.
             ///
-            /// The scatter does not use per-queue back-pressure. A per-shard sorted
-            /// merge is a *selective* consumer (it waits for the smallest-key input), so bounding the scatter
-            /// with back-pressure could deadlock (a stalled merge backs the scatter up across all shards).
-            /// Instead, the scatter pulls new input only on demand (to feed a starving lane), which keeps the
-            /// buffering small in practice because all shard merges advance through the global key order
-            /// roughly in lockstep. The demand-driven read-ahead is still unbounded in the worst case (long
-            /// runs of a single key park everything on one shard while another lane starves), so all scatters
-            /// share a byte budget; exceeding it fails the query instead of buffering without limit. The shared
-            /// `budget` also carries the stage-wide de-duplication table, so a physical buffer several scatters
-            /// hold at once (e.g. the arena of aggregate states several streams reach) is charged only once.
-            auto budget = std::make_shared<BufferedShardByHashBudget>();
-            const size_t max_buffered_bytes = settings.aggregation_in_order_shuffle_max_buffered_bytes;
+            /// A per-shard sorted merge is a *selective* consumer (it waits for the smallest key among all of its
+            /// inputs), so plain back-pressure between the scatters and the merges could deadlock. The scatters
+            /// break the cycle by sending virtual rows with the current position of their stream to the merges
+            /// that wait for them, so the memory stays bounded by a few chunks per scatter without any limit to
+            /// enforce (see `BufferedShardByHashTransform`).
             pipeline.transform([&](OutputPortRawPtrs ports)
             {
                 chassert(ports.size() == num_streams);
@@ -1059,7 +996,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 for (size_t stream = 0; stream < num_streams; ++stream)
                 {
                     auto scatter_transform = std::make_shared<BufferedShardByHashTransform>(
-                        stream_header, num_shards, key_columns, max_buffered_bytes, budget, sorting_columns);
+                        stream_header, num_shards, key_columns, sorting_columns);
                     connect(*ports[stream], scatter_transform->getInputs().front());
                     for (auto & output : scatter_transform->getOutputs())
                         scatter_outputs.push_back(&output);
@@ -1072,7 +1009,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         stream_header, num_streams, sort_description_for_merging,
                         max_block_size, /*max_block_size_bytes=*/ 0,
                         /*max_dynamic_subcolumns=*/ std::nullopt,
-                        SortingQueueStrategy::Batch);
+                        SortingQueueStrategy::Batch,
+                        /*limit_=*/ 0,
+                        /*always_read_till_end_=*/ false,
+                        /*out_row_sources_buf_=*/ nullptr,
+                        /*filter_column_name_=*/ std::nullopt,
+                        /*use_average_block_sizes=*/ false,
+                        /*apply_virtual_row_conversions=*/ false);
                     auto input_it = merge->getInputs().begin();
                     for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)
                         connect(*scatter_outputs[stream * num_shards + shard], *input_it);

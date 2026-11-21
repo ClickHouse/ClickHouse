@@ -84,8 +84,9 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
     checkOrdinaryStateLayout(*func);
 }
 
-ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
-    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
+ColumnAggregateFunction::ColumnAggregateFunction(
+    const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_)
+    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
     checkOrdinaryStateLayout(*func);
 }
@@ -109,16 +110,6 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
 void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
 {
     foreign_arenas.push_back(arena_);
-}
-
-void ColumnAggregateFunction::forEachArena(const std::function<void(const Arena & arena, bool is_owned)> & callback) const
-{
-    if (my_arena)
-        callback(*my_arena, true);
-
-    for (const auto & arena : foreign_arenas)
-        if (arena)
-            callback(*arena, false);
 }
 
 namespace
@@ -866,7 +857,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max, size_t /*sta
 
 ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 {
-    auto res = create(func, concatArenas(foreign_arenas, my_arena));
+    auto res = create(func, concatArenas(foreign_arenas, my_arena), version);
     res->src = getPtr();
     /// The view refers to the same states, so it must keep the state version:
     /// the version affects how the states are serialized (e.g. in `groupArray` over a state column).
