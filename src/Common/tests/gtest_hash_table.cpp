@@ -4,6 +4,7 @@
 #include <random>
 #include <ranges>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <Interpreters/AggregationCommon.h>
 
@@ -872,4 +873,50 @@ TEST(HashTableRobinHood, ReserveSerializationAndTwoLevel)
         ASSERT_TRUE(deserialized.erase(i * 3));
     ASSERT_TRUE(deserialized.empty());
     deserialized.checkInvariants();
+}
+
+
+namespace
+{
+
+template <typename T>
+size_t countDistinctDefaultHashes(const std::vector<T> & keys)
+{
+    std::unordered_set<size_t> hashes;
+    for (const auto & key : keys)
+        hashes.insert(DefaultHash<T>{}(key));
+    return hashes.size();
+}
+
+}
+
+TEST(DefaultHash, WideIntegersAndDecimalsMixAllWords)
+{
+    /// These keys collide if the 64-bit words are folded with XOR: their words are equal, or they differ only in the highest word.
+    std::vector<Int128> keys128;
+    std::vector<Int256> keys256;
+    for (Int64 k = -100; k <= 100; ++k)
+    {
+        keys128.push_back(Int128(k) * ((Int128(1) << 64) + 1));
+        keys256.push_back(Int256(k) << 192);
+    }
+
+    EXPECT_EQ(countDistinctDefaultHashes(keys128), keys128.size());
+    EXPECT_EQ(countDistinctDefaultHashes(keys256), keys256.size());
+    EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal128>(keys128.begin(), keys128.end())), keys128.size());
+    EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal256>(keys256.begin(), keys256.end())), keys256.size());
+
+    /// With XOR folding, `v` collides with `-v - 1`.
+    std::vector<Int128> small128;
+    std::vector<Int256> small256;
+    for (Int64 k = -100; k <= 100; ++k)
+    {
+        small128.push_back(k);
+        small256.push_back(k);
+    }
+
+    EXPECT_EQ(countDistinctDefaultHashes(small128), small128.size());
+    EXPECT_EQ(countDistinctDefaultHashes(small256), small256.size());
+    EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal128>(small128.begin(), small128.end())), small128.size());
+    EXPECT_EQ(countDistinctDefaultHashes(std::vector<Decimal256>(small256.begin(), small256.end())), small256.size());
 }
