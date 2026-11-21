@@ -92,8 +92,9 @@ private:
         const MutableColumnRawPtrs & other_columns,
         const Block & interpolate_block);
 
+    Field fillingValueInResult(size_t i);
     void rememberFillingRowInResult();
-    bool fillingRowEquals(const FillingRow & other) const;
+    bool fillingRowEquals(const FillingRow & other);
 
     const SortDescription sort_description;
     const SortDescription fill_description; /// Contains only columns with WITH FILL.
@@ -108,6 +109,8 @@ private:
     FillingRow filling_row_in_result;
     /// The value inserted for a NULL in the filling row, for each fill column.
     Row fill_column_defaults;
+    /// An empty column of the type of each Float32 or BFloat16 fill column, nullptr for the other fill columns.
+    MutableColumns fill_column_rounding;
 
     using Positions = VectorWithMemoryTracking<size_t>;
     Positions fill_column_positions;

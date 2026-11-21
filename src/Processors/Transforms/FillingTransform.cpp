@@ -753,6 +753,8 @@ FillingTransform::FillingTransform(
         const Block & output_header = getOutputPort().getHeader();
         fill_column_defaults.push_back(output_header.getByPosition(block_position).type->getDefault());
         const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
+        const WhichDataType which_type(type);
+        fill_column_rounding.push_back(which_type.isFloat32() || which_type.isBFloat16() ? type->createColumn() : MutableColumnPtr{});
 
         if (!tryConvertFields(descr, type))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
@@ -1006,17 +1008,34 @@ void FillingTransform::insertFromFillingRow(
     rememberFillingRowInResult();
 }
 
+/// The value of the filling row in the i-th fill column as it is inserted into the result.
+Field FillingTransform::fillingValueInResult(size_t i)
+{
+    const Field & value = filling_row[i];
+    if (value.isNull())
+        return fill_column_defaults[i];
+    if (!fill_column_rounding[i])
+        return value;
+
+    /// A Float32 or BFloat16 column rounds the Float64 value of the filling row.
+    IColumn & column = *fill_column_rounding[i];
+    column.insert(value);
+    Field rounded = column[0];
+    column.popBack(1);
+    return rounded;
+}
+
 void FillingTransform::rememberFillingRowInResult()
 {
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        filling_row_in_result[i] = filling_row[i].isNull() ? fill_column_defaults[i] : filling_row[i];
+        filling_row_in_result[i] = fillingValueInResult(i);
 }
 
 /// Whether the filling row, as it is inserted into the result, has the values of `other`.
-bool FillingTransform::fillingRowEquals(const FillingRow & other) const
+bool FillingTransform::fillingRowEquals(const FillingRow & other)
 {
     for (size_t i = 0, size = filling_row.size(); i < size; ++i)
-        if (!equals(filling_row[i].isNull() ? fill_column_defaults[i] : filling_row[i], other[i]))
+        if (!equals(fillingValueInResult(i), other[i]))
             return false;
     return true;
 }

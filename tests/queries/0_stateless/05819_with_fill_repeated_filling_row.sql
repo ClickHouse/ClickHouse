@@ -63,6 +63,17 @@ ORDER BY a WITH FILL, o, b WITH FILL STEP 2 STALENESS 2, c WITH FILL;
 SELECT * FROM values('a Int64, o Int64, b Int64, c Int64', (0, 0, 0, 0), (0, 1, 3, 0), (0, 2, 2, 0), (0, 3, 1, 0))
 ORDER BY a WITH FILL, o, b WITH FILL STEP 2 STALENESS 2, c WITH FILL;
 
+-- A Float32 or BFloat16 fill key is compared as it is inserted, after rounding
+SELECT * FROM values('a Float32, o Int64, b Int64', (0.7, 0, 2), (0.7, 5, 1), (2, 0, 0))
+ORDER BY a WITH FILL FROM 0.7 TO 1, o, b WITH FILL FROM 2;
+
+SELECT * FROM values('a Nullable(BFloat16), o Int64, b Int64', (0.7, 0, 2), (0.7, 5, 1), (2, 0, 0))
+ORDER BY a WITH FILL FROM 0.7 TO 1, o, b WITH FILL FROM 2
+SETTINGS max_block_size = 1;
+
+SELECT * FROM values('a Int64, o Int64, b Float32', (1, 2, 100000000), (1, 0, 100000016), (1, -1, 100000008), (2, 0, 100000032))
+ORDER BY a WITH FILL, o DESC, b WITH FILL STEP 15 STALENESS 15;
+
 -- A filling row that is not inserted again counts as inserted for the rows after it
 SELECT * FROM values('a Nullable(Int64), b Nullable(Int64), c Nullable(Int64)', (1, 0, NULL), (3, 4, NULL), (0, 3, NULL), (NULL, 2, NULL))
 ORDER BY a ASC NULLS FIRST WITH FILL, b DESC NULLS LAST WITH FILL STEP -3 STALENESS -3, c DESC NULLS LAST WITH FILL TO 1;
