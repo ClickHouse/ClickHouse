@@ -241,6 +241,9 @@ public:
 
     void removeKey(const Key & key, bool if_exists, const UserID & user_id);
 
+    /// Hands a key directory that the initial load found empty to the cleanup thread.
+    void addLeftoverEmptyKeyDirectory(const std::string & key_prefix_directory, const Key & key);
+
     /// Returns true if the client was fully purged; false if any key kept
     /// non-releasable (held) segments and survived — retry on a later sweep.
     /// If `pool` is given, metadata buckets are processed in parallel on it
@@ -325,6 +328,11 @@ private:
         LockedKey &,
         const CacheMetadataGuard::Lock &);
 
+    /// Does nothing when the key exists again: the directory then belongs to that key.
+    void removeLeftoverEmptyKeyDirectory(const std::string & key_prefix_directory, const Key & key);
+
+    void removeKeyIfStillRemoving(const Key & key);
+
     void downloadThreadFunc(const bool & stop_flag);
 
     /// Firstly, this cleanup does not delete cache files,
@@ -336,6 +344,8 @@ private:
     /// triggered by removal of source files from objects storage.
     /// E.g. number of elements submitted to background cleanup should remain low.
     void cleanupThreadFunc();
+    /// Removes emptied keys until none is left; started by `cleanupThreadFunc` when they pile up.
+    void helperCleanupThreadFunc();
 };
 
 class CacheMetadata::Iterator

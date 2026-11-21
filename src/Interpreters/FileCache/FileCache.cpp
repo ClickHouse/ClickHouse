@@ -2075,6 +2075,34 @@ void FileCache::loadMetadata()
     main_priority->shuffle();
 }
 
+struct FileCache::LoadMetadataProgress
+{
+    std::atomic<size_t> listed_key_prefix_directories = 0;
+    std::atomic<size_t> loaded_keys = 0;
+    std::atomic<size_t> loaded_file_segments = 0;
+    std::atomic<size_t> empty_key_directories = 0;
+
+    void logIfDue(const LoggerPtr & logger)
+    {
+        if (since_last_log.compareAndRestart(log_period_sec))
+            logNow(logger, "Loading");
+    }
+
+    void logNow(const LoggerPtr & logger, std::string_view state) const
+    {
+        LOG_INFO(logger,
+            "{} filesystem cache: {} sec elapsed, {} key prefix directories listed, {} keys with {} file segments loaded, "
+            "{} empty key directories left for background cleanup",
+            state, since_start.elapsedSeconds(), listed_key_prefix_directories.load(), loaded_keys.load(),
+            loaded_file_segments.load(), empty_key_directories.load());
+    }
+
+private:
+    static constexpr double log_period_sec = 30;
+    Stopwatch since_start;
+    AtomicStopwatch since_last_log;
+};
+
 void FileCache::loadMetadataImpl()
 {
     auto parse_user = [&](const fs::path & path) -> std::optional<OriginInfo>
@@ -2232,6 +2260,7 @@ void FileCache::loadMetadataImpl()
     /// so listing threads load all keys directly.
     ConcurrentBoundedQueue<std::pair<fs::path, OriginInfo>> key_dirs_queue(num_loading_threads == 0 ? 0 : 1000);
 
+    LoadMetadataProgress progress;
     std::exception_ptr first_exception;
     std::mutex exception_mutex;
     /// Tracks how many listing threads are still running.
@@ -2258,7 +2287,8 @@ void FileCache::loadMetadataImpl()
                 return;
             try
             {
-                loadMetadataForKey(item.first, item.second);
+                loadMetadataForKey(item.first, item.second, progress);
+                progress.logIfDue(log);
             }
             catch (...)
             {
@@ -2319,9 +2349,11 @@ void FileCache::loadMetadataImpl()
                             {
                                 if (stop_loading_metadata)
                                     break;
-                                loadMetadataForKey(key_dir_path, origin);
+                                loadMetadataForKey(key_dir_path, origin, progress);
                             }
+                            progress.logIfDue(log);
                         }
+                        ++progress.listed_key_prefix_directories;
                     }
                     catch (...)
                     {
@@ -2368,25 +2400,29 @@ void FileCache::loadMetadataImpl()
     if (first_exception)
         std::rethrow_exception(first_exception);
 
+    progress.logNow(log, "Loaded");
+
     main_priority->check(cache_state_guard.lock());
 
     assertCacheCorrectness();
 }
 
-void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info)
+void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info, LoadMetadataProgress & progress)
 {
+    const auto key = Key::fromKeyString(key_directory.filename().string());
+
     /// Open the directory once and reuse the iterator for the scan below.
     /// `fs::is_empty` would open the directory just to test for emptiness,
     /// which costs a redundant opendir/readdir per key directory.
     fs::directory_iterator offset_it{key_directory};
     if (offset_it == fs::directory_iterator())
     {
-        LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
-        fs::remove(key_directory);
+        /// Not removed here: with many such directories the removal takes most of the load time.
+        metadata.addLeftoverEmptyKeyDirectory(key_directory.parent_path().string(), key);
+        ++progress.empty_key_directories;
         return;
     }
 
-    const auto key = Key::fromKeyString(key_directory.filename().string());
     auto key_metadata = metadata.getKeyMetadata(
         key,
         CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY,
@@ -2590,6 +2626,9 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             "{} file(s) for key {} do not fit in cache anymore",
             size_limit, failed_to_fit, key);
     }
+
+    ++progress.loaded_keys;
+    progress.loaded_file_segments += segments.size() - failed_to_fit;
 
     if (key_metadata->sizeUnlocked() == 0)
     {
