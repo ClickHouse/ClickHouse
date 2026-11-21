@@ -6557,8 +6557,9 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
         result.convertToTwoLevel();
 
-    /// Checking the constraints.
-    if (!checkLimits(result_size, no_more_keys))
+    /// Checking the constraints; a rebuild or re-seed of the kept keys is not a new overflow.
+    bool rebuild_no_more_keys = true;
+    if (!checkLimits(result_size, result.kept_keys_rebuild_in_progress ? rebuild_no_more_keys : no_more_keys))
         return false;
 
     /** Flush data to disk if too much RAM is consumed.
