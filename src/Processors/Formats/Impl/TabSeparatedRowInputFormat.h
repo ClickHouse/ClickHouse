@@ -57,6 +57,8 @@ public:
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
     void skipPrefixBeforeHeader() override;
+    void skipRowBetweenDelimiter() override;
+    void skipComments();
 
     VectorWithMemoryTracking<String> readRow() { return readRowImpl<false>(); }
     VectorWithMemoryTracking<String> readNames() override { return readHeaderRow(); }
