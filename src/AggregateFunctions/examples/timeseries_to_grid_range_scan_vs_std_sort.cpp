@@ -28,6 +28,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 
+#include <Common/Arena.h>
 #include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -89,8 +90,9 @@ size_t bucketCountForDensity(Float64 density)
 
 /// Places the BASE_GRID populated buckets at random distinct positions in `[0, bucket_count)`. A random
 /// (irregular) layout matches real data - bucket indices come from sample timestamps, not a regular lattice -
-/// and avoids the introsort cost artifact a regular layout triggers at some densities.
-Dataset buildDataset(Float64 density)
+/// and avoids the introsort cost artifact a regular layout triggers at some densities. The sample buffers are
+/// allocated in `arena`, which must outlive the dataset.
+Dataset buildDataset(Float64 density, Arena & arena)
 {
     const size_t bucket_count = bucketCountForDensity(density);
     Dataset dataset(NUM_SERIES);
@@ -105,7 +107,7 @@ Dataset buildDataset(Float64 density)
             const size_t candidate = static_cast<size_t>(rng() % (i + 1));
             const size_t k = buckets.has(candidate) ? i : candidate;
             /// Insert as production does: `operator[]` default-constructs the bucket, then samples are added.
-            buckets[k].add(gridPoint(k), static_cast<Float64>((k * 7 + series * 3) % 101));
+            buckets[k].add(gridPoint(k), static_cast<Float64>((k * 7 + series * 3) % 101), &arena);
         }
     }
     return dataset;
@@ -166,7 +168,8 @@ int mainEntryExampleTimeSeriesToGridRangeScanVsStdSort(int, char **)
     bool range_still_winning = true;
     for (Float64 density : {1.0, 0.9, 0.8, 0.7, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1})
     {
-        const Dataset dataset = buildDataset(density);
+        Arena arena;
+        const Dataset dataset = buildDataset(density, arena);
         const size_t bucket_count = bucketCountForDensity(density);
         const Float64 range_scan_ns = measureNanoseconds(Strategy::RangeScan, bucket_count, dataset, checksum);
         const Float64 sort_ns = measureNanoseconds(Strategy::Sort, bucket_count, dataset, checksum);

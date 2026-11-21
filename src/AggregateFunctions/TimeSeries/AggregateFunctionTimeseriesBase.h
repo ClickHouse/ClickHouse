@@ -154,7 +154,7 @@ public:
     {
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return bucket_allocates_memory_in_arena; }
 
     /// The state is `FunctionImpl::State`: this `State` or a derived class's extension of it.
     [[nodiscard]] bool hasTrivialDestructor() const override
@@ -194,7 +194,7 @@ public:
 
             const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
             const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
-            add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
+            add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num], arena);
         }
     }
 
@@ -240,7 +240,7 @@ public:
             {
                 derived().addExtraArguments(i, run_end, place + place_offset, extraArgumentColumns(columns), flags, /* flag_value_to_include = */ true);
 
-                addSamples<true>(place + place_offset, timestamp_data, value_data, flags, i, run_end);
+                addSamples<true>(place + place_offset, timestamp_data, value_data, flags, i, run_end, arena);
             }
 
             i = run_end;
@@ -268,7 +268,7 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        Arena *,
+        Arena * arena,
         ssize_t if_argument_pos) const override
     {
         const UInt8 * include_flags_data = nullptr;
@@ -281,7 +281,7 @@ public:
             include_flags_data = flags.data();
         }
 
-        addBatchSinglePlaceWithFlags<true>(row_begin, row_end, place, columns, include_flags_data);
+        addBatchSinglePlaceWithFlags<true>(row_begin, row_end, place, columns, include_flags_data, arena);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -290,7 +290,7 @@ public:
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
-        Arena *,
+        Arena * arena,
         ssize_t if_argument_pos)
         const override
     {
@@ -308,7 +308,7 @@ public:
             exclude_flags_data = combined_exclude_flags.get();
         }
 
-        addBatchSinglePlaceWithFlags<false>(row_begin, row_end, place, columns, exclude_flags_data);
+        addBatchSinglePlaceWithFlags<false>(row_begin, row_end, place, columns, exclude_flags_data, arena);
     }
 
     void addManyDefaults(
@@ -319,7 +319,7 @@ public:
     {
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & buckets = data(place)->buckets;
         const auto & rhs_buckets = data(rhs)->buckets;
@@ -327,7 +327,55 @@ public:
         for (const auto & rhs_bucket : rhs_buckets)
         {
             auto & bucket = buckets[rhs_bucket.getKey()];
-            bucket.merge(rhs_bucket.getMapped());
+            if constexpr (bucket_allocates_memory_in_arena)
+                bucket.merge(rhs_bucket.getMapped(), arena);
+            else
+                bucket.merge(rhs_bucket.getMapped());
+        }
+    }
+
+    /// Unlike the default, the buckets take the buffers of the sources instead of copying them (see `mergeTakingBuffers`),
+    /// so a destination state may point into the arena of a source state. That is safe because the aggregator keeps the
+    /// arenas of all merged partial results as long as the result: `Aggregator::prepareVariantsToMerge` for the merge,
+    /// and `prepareOutputBlockColumns` for `-State` and intermediate results. The only callers,
+    /// `Aggregator::mergeAndDestroyDetachedBatch` and the `Tuple` combinator, satisfy this. Heap buffers (4096 bytes and
+    /// more) just change owner: the source ends up with the former buffer of the destination and frees it, if there is
+    /// one, when it is destroyed.
+    void mergeAndDestroyBatch(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * rhs_places,
+        size_t size,
+        size_t offset,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        if constexpr (!bucket_allocates_memory_in_arena)
+        {
+            Base::mergeAndDestroyBatch(dst_places, rhs_places, size, offset, thread_pool, is_cancelled, arena);
+        }
+        else
+        {
+            size_t i = 0;
+            try
+            {
+                for (; i < size; ++i)
+                {
+                    if (unlikely(i == 1))
+                        Base::injectMergeBatchFault();
+
+                    chassert(!this->isSelfMerge(dst_places[i] + offset, rhs_places[i] + offset),
+                             "AggregateFunctionTimeseriesBase::mergeAndDestroyBatch called with the same source and destination state");
+                    derived().mergeTakingBuffers(dst_places[i] + offset, rhs_places[i] + offset, arena);
+                    destroy(rhs_places[i] + offset);
+                }
+            }
+            catch (...)
+            {
+                /// `destroy` does not throw, so the sources from `i` on are not destroyed yet.
+                Base::destroyBatch(i, size, rhs_places, offset);
+                throw;
+            }
         }
     }
 
@@ -345,7 +393,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
@@ -379,7 +427,10 @@ public:
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with index {} greater than bucket count {}", bucket_index, bucket_count);
 
             auto & bucket = data(place)->buckets[bucket_index];
-            bucket.deserialize(buf);
+            if constexpr (bucket_allocates_memory_in_arena)
+                bucket.deserialize(buf, arena);
+            else
+                bucket.deserialize(buf);
 
             /// Validate that each deserialized sample falls into this bucket's timestamp range.
             bucket.checkTimestampsInRange(bucketTimeRange(bucket_index));
@@ -577,12 +628,26 @@ protected:
     {
     }
 
+    /// The merge of `mergeAndDestroyBatch`: `rhs` is destroyed right after it, so the buckets take its buffers.
+    /// A derived class with extra state shadows it like `addExtraArguments`.
+    void mergeTakingBuffers(AggregateDataPtr __restrict place, AggregateDataPtr __restrict rhs, Arena * arena) const
+    {
+        auto & buckets = data(place)->buckets;
+        auto & rhs_buckets = data(rhs)->buckets;
+        buckets.reserve(rhs_buckets.size());
+        for (auto & rhs_bucket : rhs_buckets)
+            buckets[rhs_bucket.getKey()].merge(std::move(rhs_bucket.getMapped()), arena);
+    }
+
 private:
     /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
     /// copyable or declaring `is_position_independent`.
     static_assert(
         std::is_trivially_copyable_v<Bucket> || requires { requires Bucket::is_position_independent; },
         "Bucket must be position independent (memmove-able) to be stored in a HashMap");
+
+    /// A bucket declaring `allocates_memory_in_arena` takes the arena in `add`, `addMany`, `merge` and `deserialize`.
+    static constexpr bool bucket_allocates_memory_in_arena = requires { requires Bucket::allocates_memory_in_arena; };
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
@@ -1115,14 +1180,17 @@ private:
         return reinterpret_cast<State *>(place);
     }
 
-    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value, Arena * arena) const
     {
         const size_t bucket_index = bucketIndexForTimestamp(timestamp);
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
         auto & bucket = data(place)->buckets[bucket_index];
-        bucket.add(timestamp, value);
+        if constexpr (bucket_allocates_memory_in_arena)
+            bucket.add(timestamp, value, arena);
+        else
+            bucket.add(timestamp, value);
     }
 
     static constexpr ALWAYS_INLINE Int64 toInt64(GridScaleTimestampType timestamp)
@@ -1220,7 +1288,8 @@ private:
         const TimestampType * __restrict timestamps,
         const ValueType * __restrict values,
         size_t row_begin,
-        size_t row_end) const /// NOLINT
+        size_t row_end,
+        Arena * arena) const /// NOLINT
     {
         size_t i = row_begin;
         while (i < row_end)
@@ -1231,7 +1300,13 @@ private:
             /// against an infinite loop.
             const size_t count = std::max<size_t>(run, static_cast<size_t>(1));
             if (sample_class.bucket_index != NO_BUCKET)
-                state->buckets[sample_class.bucket_index].addMany(timestamps + i, values + i, count);
+            {
+                auto & bucket = state->buckets[sample_class.bucket_index];
+                if constexpr (bucket_allocates_memory_in_arena)
+                    bucket.addMany(timestamps + i, values + i, count, arena);
+                else
+                    bucket.addMany(timestamps + i, values + i, count);
+            }
             i += count;
         }
     })
@@ -1246,13 +1321,14 @@ private:
         const ValueType * __restrict values,
         const UInt8 * __restrict flags,
         size_t row_begin,
-        size_t row_end) const
+        size_t row_end,
+        Arena * arena) const
     {
         if (flags)
         {
             for (size_t i = row_begin; i < row_end; ++i)
                 if (!flags || (flags[i] != 0) == flag_value_to_include)
-                    add(place, timestamps[i], values[i]);
+                    add(place, timestamps[i], values[i], arena);
             return;
         }
 
@@ -1261,26 +1337,26 @@ private:
 #if USE_X86_64_MULTITARGET_CODE
         if (isArchSupported(TargetArch::x86_64_v4))
         {
-            addSamplesToBucketsImpl_x86_64_v4(state, timestamps, values, row_begin, row_end);
+            addSamplesToBucketsImpl_x86_64_v4(state, timestamps, values, row_begin, row_end, arena);
             return;
         }
 #endif
-        addSamplesToBucketsImpl(state, timestamps, values, row_begin, row_end);
+        addSamplesToBucketsImpl(state, timestamps, values, row_begin, row_end, arena);
     }
 
-    void addMany(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t start, size_t end) const
+    void addMany(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t start, size_t end, Arena * arena) const
     {
-        addSamples<true>(place, timestamp_ptr, value_ptr, nullptr, start, end);
+        addSamples<true>(place, timestamp_ptr, value_ptr, nullptr, start, end, arena);
     }
 
-    void addManyNotNull(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict null_map, size_t start, size_t end) const
+    void addManyNotNull(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict null_map, size_t start, size_t end, Arena * arena) const
     {
-        addSamples<false>(place, timestamp_ptr, value_ptr, null_map, start, end);
+        addSamples<false>(place, timestamp_ptr, value_ptr, null_map, start, end, arena);
     }
 
-    void addManyConditional(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) const
+    void addManyConditional(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict condition_map, size_t start, size_t end, Arena * arena) const
     {
-        addSamples<true>(place, timestamp_ptr, value_ptr, condition_map, start, end);
+        addSamples<true>(place, timestamp_ptr, value_ptr, condition_map, start, end, arena);
     }
 
     /// `flag_value_to_include` parameter determines which rows are included into result.
@@ -1292,7 +1368,8 @@ private:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        const UInt8 * flags_data) const
+        const UInt8 * flags_data,
+        Arena * arena) const
     {
         derived().addExtraArguments(row_begin, row_end, place, extraArgumentColumns(columns), flags_data, flag_value_to_include);
 
@@ -1303,11 +1380,11 @@ private:
             const ValueType * value_data = typeid_cast<const ValueColumnType &>(*columns[1]).getData().data();
 
             if (!flags_data)
-                addMany(place, timestamp_data, value_data, row_begin, row_end);
+                addMany(place, timestamp_data, value_data, row_begin, row_end, arena);
             else if constexpr (flag_value_to_include)
-                addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+                addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
             else
-                addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+                addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end, arena);
 
             return;
         }
@@ -1350,7 +1427,7 @@ private:
             /// No row is skipped, so the samples of all the rows are stored contiguously and are added
             /// in a single call, which lets the vectorized kernel work on the whole batch.
             const size_t samples_count = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]) - previous_timestamp_offset;
-            addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, samples_count);
+            addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, samples_count, arena);
             return;
         }
 
@@ -1367,7 +1444,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
                         i, timestamp_array_size, value_array_size);
 
-                addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size);
+                addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size, arena);
             }
 
             previous_timestamp_offset = timestamp_offsets[i];
