@@ -7133,17 +7133,22 @@ ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPr
             sizes.rows += part->rows_count;
     };
 
+    /// The sizes the storage caches are of its current active parts, not of this query's snapshot,
+    /// so the rows are counted on the same parts.
+    auto get_table_wide_sizes = [&]
+    {
+        ColumnSizesForPrewhere table_wide{.sizes = data.getColumnSizes(columns, calculate_subcolumn_sizes)};
+        for (const auto & part : data.getDataPartsVectorForInternalUsage())
+            add_rows(table_wide, part);
+        return table_wide;
+    };
+
     /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means
     /// the same part set. Nothing was pruned: keep the table-wide estimate the storage already caches instead
     /// of measuring every part and column again, exactly as before pruned parts were taken into account.
     const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
     if (parts.size() == parts_before_pruning)
-    {
-        ColumnSizesForPrewhere result{.sizes = data.getColumnSizes(columns, calculate_subcolumn_sizes)};
-        for (const auto & part : parts)
-            add_rows(result, part.data_part);
-        return result;
-    }
+        return get_table_wide_sizes();
 
     ColumnSizesForPrewhere result;
     for (const auto & part : parts)
@@ -7167,12 +7172,7 @@ ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPr
     /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
     const bool nothing_measured = std::ranges::all_of(result.sizes, [](const auto & entry) { return entry.second.data_compressed == 0; });
     if (!parts.empty() && nothing_measured)
-    {
-        ColumnSizesForPrewhere table_wide{.sizes = data.getColumnSizes(columns, calculate_subcolumn_sizes)};
-        for (const auto & part : data.getDataPartsVectorForInternalUsage())
-            add_rows(table_wide, part);
-        return table_wide;
-    }
+        return get_table_wide_sizes();
 
     return result;
 }
