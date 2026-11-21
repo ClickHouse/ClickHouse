@@ -63,6 +63,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool group_by_use_nulls_with_totals;
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
@@ -1518,7 +1519,8 @@ public:
 
         if (const auto * query_node = node->as<QueryNode>())
         {
-            if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
+            if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets()
+                || (query_node->isGroupByWithTotals() && getContext()->getSettingsRef()[Setting::group_by_use_nulls_with_totals]))
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
             correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
@@ -1573,7 +1575,7 @@ public:
         if (can_wrap_result_columns_with_nullable)
         {
             /// Do not optimize if we have JOIN with setting join_use_null.
-            /// Do not optimize if we have GROUP BY WITH ROLLUP/CUBE/GROUPING SETS with setting group_by_use_nulls.
+            /// Do not optimize if we have GROUP BY WITH ROLLUP/CUBE/GROUPING SETS/TOTALS with setting group_by_use_nulls.
             /// It may change the behaviour if subcolumn can be converted
             /// to Nullable while the original column cannot (e.g. for Array type).
             return {};

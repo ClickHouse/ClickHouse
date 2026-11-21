@@ -30,13 +30,13 @@ a	1	Nullable(String)
 b	3	Nullable(String)
 \N	6	Nullable(String)
 
-	3	Nullable(String)
+\N	3	Nullable(String)
 -- the same nesting under CUBE WITH TOTALS
 a	1	Nullable(String)
 b	3	Nullable(String)
 \N	6	Nullable(String)
 
-	3	Nullable(String)
+\N	3	Nullable(String)
 -- other window function names
 a	1	1	1	\N
 b	1	1	1	\N
@@ -73,16 +73,16 @@ b	Nullable(String)
 2	2
 3	3
 -- and a frame offset that is only constant while the key is not Nullable is rejected, as under a named window
--- WITH TOTALS, where `group_by_use_nulls` does not reach the key today
+-- WITH TOTALS, where `group_by_use_nulls` makes the key Nullable and NULL in the totals row
 a	1
 b	1
 
-	1
--- and an aggregate inside a window function under WITH TOTALS alone, unconverted for the same reason
-a	1	String
-b	3	String
+\N	1
+-- and an aggregate inside a window function under WITH TOTALS alone, converted for the same reason
+a	1	Nullable(String)
+b	3	Nullable(String)
 
-	3	String
+\N	3	Nullable(String)
 -- a named window, which resolves outside the window function and already worked
 a	1
 b	1
