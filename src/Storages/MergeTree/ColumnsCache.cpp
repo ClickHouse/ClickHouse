@@ -69,7 +69,7 @@ class MemoryReleasedInThread
 public:
     MemoryReleasedInThread() : allocated_before(allocated()), deallocated_before(deallocated()) {}
 
-    size_t get() const
+    [[nodiscard]] size_t get() const
     {
         const UInt64 allocated_since = allocated() - allocated_before;
         const UInt64 deallocated_since = deallocated() - deallocated_before;
