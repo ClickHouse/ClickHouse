@@ -1264,9 +1264,9 @@ static bool tryNormalizeNeedlePadding(Field & value, const DataTypePtr & value_t
     return tryNormalizeNeedlePadding(value.safeGet<String>(), isFixedString(inner_type), context);
 }
 
-/// The value an absent map key reads: `''`, or all NUL when the value type is `FixedString`.
-/// `mapValues` stores neither.
-static bool isMapValueDefault(std::string_view value, const Block & header)
+/// The value an absent map key reads, and the element that LEFT ARRAY JOIN adds for an empty array:
+/// `''`, or all NUL when the value type is `FixedString`. The index does not have it for these rows.
+static bool isDefaultValue(std::string_view value, const Block & header)
 {
     /// A text index is always defined on a single expression.
     chassert(header.columns() == 1);
@@ -1296,8 +1296,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
 
     /// `arrayJoin(arr) = const` needs an element equal to the constant, like `has(arr, const)`; a row answer cannot replace it
-    if (auto array_join_argument = index_column_node.getArrayJoinArgument();
-        function_name == "equals" && array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+    bool padded = false;
+    if (auto array_join_argument = getIndexedArrayJoinArgument(index_column_node, padded); function_name == "equals" && array_join_argument)
     {
         index_column_node = *array_join_argument;
         direct_read_mode = TextIndexDirectReadMode::None;
@@ -1453,7 +1453,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
         ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
         ///   behaves the same.
-        if (value_field.safeGet<String>().empty())
+        if (value_field.safeGet<String>().empty() || (padded && isDefaultValue(value_field.safeGet<String>(), header)))
             return false;
 
         auto tokens = stringToTokens(value_field, /*compact=*/ true);
@@ -2337,7 +2337,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
     /// If index can be used, than we can analyze the index as for scalar string column
     /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
-    if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
+    if (const_value.getType() != Field::Types::String || isDefaultValue(const_value.safeGet<String>(), header))
         return false;
 
     if (!hasIndexForMapElementValue(index_column_node))
@@ -2462,6 +2462,20 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     return true;
 }
 
+std::optional<RPNBuilderTreeNode> MergeTreeIndexConditionText::getIndexedArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded) const
+{
+    auto argument = node.getArrayJoinArgument();
+    if (!argument || hasIndexForColumn(argument->getColumnName()))
+        return argument;
+    if (!argument->isFunction() || argument->toFunctionNode().getFunctionName() != "emptyArrayToSingle")
+        return std::nullopt;
+    auto array = argument->toFunctionNode().getArgumentAt(0);
+    if (!hasIndexForColumn(array.getColumnName()))
+        return std::nullopt;
+    padded = true;
+    return array;
+}
+
 bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const RPNBuilderTreeNode & lhs,
     const RPNBuilderTreeNode & rhs,
@@ -2481,6 +2495,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
+    bool padded = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
@@ -2491,7 +2506,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return true;
         }
         /// `arrayJoin(arr) IN (set)` needs an element in the set, like `hasAny(arr, set)`
-        if (auto array_join_argument = node.getArrayJoinArgument(); array_join_argument && hasIndexForColumn(array_join_argument->getColumnName()))
+        if (getIndexedArrayJoinArgument(node, padded))
             return true;
         return hasIndexForColumn(node.getColumnName())
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
@@ -2587,7 +2602,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
         /// See MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty.
-        if (element.empty() || (has_index_for_map_element_value && isMapValueDefault(element, header)))
+        if (element.empty() || ((has_index_for_map_element_value || padded) && isDefaultValue(element, header)))
         {
             out.text_search_queries.clear();
             return false;
