@@ -37,7 +37,7 @@ SELECT
 FROM
 (
     SELECT
-        arrayJoin(JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')) AS node,
+        arrayJoin(JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes')) AS node,
         arrayJoin(JSONExtractArrayRaw(node, 'Projections')) AS projection
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'

@@ -44,7 +44,7 @@ FROM
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     )
-    SELECT arrayJoin(JSONExtractArrayRaw(plan, 'Nodes')) AS node FROM one_plan
+    SELECT arrayJoin(JSONExtractArrayRaw(plan, 'Plans', 1, 'Nodes')) AS node FROM one_plan
 );
 
 -- The join reports what it matched, which is what makes the step worth logging.
@@ -63,7 +63,7 @@ FROM
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     )
-    SELECT arrayJoin(JSONExtractArrayRaw(plan, 'Nodes')) AS node FROM one_plan
+    SELECT arrayJoin(JSONExtractArrayRaw(plan, 'Plans', 1, 'Nodes')) AS node FROM one_plan
 )
 WHERE JSONExtractString(node, 'NodeType') = 'FilledJoin';
 

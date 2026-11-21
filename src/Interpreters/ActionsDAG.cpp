@@ -692,7 +692,8 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     std::string name,
     bool is_deterministic_constant,
     bool is_masked_secret,
-    bool is_runtime_filter_id)
+    bool is_runtime_filter_id,
+    std::vector<size_t> scalar_subquery_ids_)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -710,6 +711,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     node.is_deterministic_constant = is_deterministic_constant;
     node.is_masked_secret = is_masked_secret;
     node.is_runtime_filter_id = is_runtime_filter_id;
+    node.scalar_subquery_ids = std::move(scalar_subquery_ids_);
 
     return addNode(std::move(node));
 }
@@ -2449,6 +2451,12 @@ void ActionsDAG::removeFromOutputs(const NameSet & node_names)
     outputs = std::move(new_outputs);
 }
 
+void ActionsDAG::addScalarSubqueryId(size_t id)
+{
+    if (std::find(scalar_subquery_ids.begin(), scalar_subquery_ids.end(), id) == scalar_subquery_ids.end())
+        scalar_subquery_ids.push_back(id);
+}
+
 ActionsDAG ActionsDAG::clone() const
 {
     UnorderedMapWithMemoryTracking<const Node *, const Node *> old_to_new_nodes;
@@ -2474,6 +2482,8 @@ ActionsDAG ActionsDAG::clone(UnorderedMapWithMemoryTracking<const Node *, const 
 
     for (const auto & input_node : inputs)
         actions.inputs.push_back(old_to_new_nodes[input_node]);
+
+    actions.scalar_subquery_ids = scalar_subquery_ids;
 
     return actions;
 }
@@ -3143,6 +3153,9 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, UnorderedMapWithMemoryTracki
         });
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
+
+    for (size_t id : second.scalar_subquery_ids)
+        first.addScalarSubqueryId(id);
 }
 
 void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)

@@ -250,7 +250,11 @@ public:
     /// set that fills that table or through the table stored next to the set itself.
     [[nodiscard]] bool hasExternalTable() const;
 
+    /// Identifies this subquery
+    [[nodiscard]] size_t getSubqueryId() const { return subquery_id; }
+
 private:
+    const size_t subquery_id;
     Hash hash;
     ASTPtr ast;
     /// The set and the step that fills it are made with these settings.

@@ -41,6 +41,7 @@ public:
     [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     [[nodiscard]] bool hasCorrelatedExpressions() const override { return conditions.hasCorrelatedColumns(); }
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override { visitor(conditions); }
     [[nodiscard]] const ActionsDAG & getConditions() const { return conditions; }
     /// Whether the transform closes its input once the range ends.
     [[nodiscard]] bool canStopReadingEarly() const { return !always_read_till_end && !start_all && (limit || end_column_name); }

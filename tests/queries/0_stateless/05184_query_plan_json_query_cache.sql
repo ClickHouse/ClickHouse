@@ -27,8 +27,8 @@ SELECT
     countIf(query_cache_usage = 'Write'),
     countIf(query_cache_usage = 'Read'),
     -- The one that executed has a plan.
-    countIf(query_cache_usage = 'Write' AND length(JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')) > 0),
+    countIf(query_cache_usage = 'Write' AND length(JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes')) > 0),
     -- The one served from the cache has none, because nothing ran.
-    countIf(query_cache_usage = 'Read' AND empty(JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes')))
+    countIf(query_cache_usage = 'Read' AND empty(JSONExtractArrayRaw(toJSONString(query_plan), 'Plans', 1, 'Nodes')))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05184_query_cache';

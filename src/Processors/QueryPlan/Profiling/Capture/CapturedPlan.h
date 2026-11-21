@@ -20,6 +20,18 @@ class AnalyzeStepsStats;
 struct ExplainPlanOptions;
 struct PrettyNamesPerPlan;
 
+/// What kind of subquery a captured sub-plan came from.
+enum class SubPlanKind : uint8_t
+{
+    /// An `IN (SELECT ...)` whose set is built during planning, so that index analysis can use it.
+    Set,
+    /// A `(SELECT ...)` yielding a single value, executed during analysis and folded into the
+    /// outer query as a literal.
+    Scalar,
+};
+
+std::string_view toString(SubPlanKind kind);
+
 struct CapturedStep
 {
     String id;
@@ -31,6 +43,9 @@ struct CapturedStep
     /// (`getBuiltChildPlans`).
     VectorWithMemoryTracking<String> children;
 
+    /// Ids of the subqueries whose results this step reads.
+    VectorWithMemoryTracking<size_t> consumed_subquery_ids;
+
     std::optional<AnalyzedStepData> statistics;
 
     /// What index and projection analysis decided. Only a `ReadFromMergeTree` has any.
@@ -38,7 +53,34 @@ struct CapturedStep
     PlanProjectionStats projections;
 };
 
-/// A whole query: its own steps and the totals.
+/// A plan that ran for the query but is not part of its plan tree.
+struct CapturedSubPlan
+{
+    /// Identifies the subquery within the query. Every step that consumes its result carries the
+    /// same id.
+    size_t subquery_id = 0;
+    SubPlanKind kind = SubPlanKind::Set;
+
+    /// Id of the root node
+    String root_id;
+    VectorWithMemoryTracking<CapturedStep> nodes;
+
+    /// Totals for the sub-plan's own pipeline.
+    std::optional<UInt64> execution_time_ns;
+    std::optional<UInt64> max_threads;
+
+    /// Reads a walked sub-plan, under the same conditions as `CapturedPlan::capture`, and without
+    /// statistics: they are filled in once the sub-plan's pipeline has run.
+    static CapturedSubPlan capture(
+        const PlanWalk & walk,
+        const ExplainPlanOptions & options,
+        size_t max_description_length,
+        const PrettyNamesPerPlan * pretty_names,
+        size_t subquery_id,
+        SubPlanKind kind);
+};
+
+/// A whole query: its own steps, the sub-plans that ran for it, and the totals.
 struct CapturedPlan
 {
     /// Id of the root node
@@ -50,6 +92,7 @@ struct CapturedPlan
     std::optional<UInt64> max_threads;
 
     VectorWithMemoryTracking<CapturedStep> nodes;
+    VectorWithMemoryTracking<CapturedSubPlan> sub_plans;
 
     /// Reads a walked plan into a `CapturedPlan`. The walk gives the shape; each step is read
     /// here for what it says about itself.

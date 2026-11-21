@@ -4,10 +4,14 @@
 
 #include <Core/SortDescription.h>
 
+#include <vector>
+
 namespace DB
 {
 
 class PlannerQueryProcessingInfo;
+class ConstantNode;
+class IQueryPlanStep;
 
 struct QueryAnalysisResult
 {
@@ -18,6 +22,19 @@ struct QueryAnalysisResult
     bool query_has_array_join_in_join_tree = false;
     bool query_has_with_totals_in_any_subquery_in_join_tree = false;
     SortDescription sort_description;
+
+    /// Scalar subqueries whose value became the LIMIT or OFFSET, as in `LIMIT (SELECT ...)`. They
+    /// cannot be linked the way every other consumer is: the walk that attributes a subquery to the
+    /// step that reads it looks inside `ActionsDAG`s, and `LimitStep` keeps its bound as a plain
+    /// field rather than an expression. So the ids are carried here and put on the step directly.
+    std::vector<size_t> limit_offset_subquery_ids;
+
+    /// Collects the ids of the scalar subqueries folded into a LIMIT or OFFSET constant.
+    void collectLimitOffsetSubqueryIdsFrom(const ConstantNode & constant);
+
+    /// Marks `step` as reading the scalar subqueries of the LIMIT and OFFSET.
+    void addLimitOffsetSubqueryIdsTo(IQueryPlanStep & step) const;
+
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
     Float64 fractional_limit = 0;

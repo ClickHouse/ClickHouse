@@ -48,6 +48,12 @@ public:
     [[nodiscard]] const std::optional<ActionsDAG> & getElementFilter() const { return element_filter; }
     [[nodiscard]] const String & getElementFilterColumnName() const { return element_filter_column_name; }
 
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        if (element_filter)
+            visitor(*element_filter);
+    }
+
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     [[nodiscard]] bool isSerializable() const override { return true; }
