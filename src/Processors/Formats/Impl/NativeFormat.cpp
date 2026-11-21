@@ -574,7 +574,7 @@ For example, `Variant(String, UInt32)` with 5 rows `[0::UInt32, 'hello', NULL, 3
 
 Unlike [RowBinary](/reference/formats/RowBinary/RowBinary#dynamic) where each value is self-describing (type prefix + value), the Native format serializes `Dynamic` as a structure prefix followed by a [Variant](#variant) column.
 
-The structure prefix contains a `UInt64(LE)` serialization version, then the number of dynamic types (as VarUInt), then the type names as strings. In version V1 the type count is written twice for compatibility. The data that follows is a `Variant` column whose type list is the dynamic types plus an internal `SharedVariant` type, sorted alphabetically.
+The structure prefix contains a `UInt64(LE)` serialization version, then the number of dynamic types (as VarUInt), then the type names as strings. In version V1 the type count is written twice for compatibility. The data that follows is a `Variant` column whose type list is the dynamic types plus an internal `SharedVariant` type, sorted alphabetically. With `output_format_native_write_json_as_string=1`, values of types containing `JSON` are listed among the dynamic types (also beyond `max_types`, up to 254 types) instead of being stored in `SharedVariant`, so their JSON is written as text.
 
 For example, `Dynamic` with 5 rows `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']`:
 
