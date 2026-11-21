@@ -1,0 +1,17 @@
+--- WRITE ON S3 only
+grant READ ON S3
+grant READ ON S3
+grant READ ON S3
+--- READ ON S3 only
+3
+c1	Nullable(Int64)
+grant WRITE ON S3
+grant WRITE ON S3
+grant WRITE ON S3
+3
+--- READ and WRITE ON S3
+5
+6
+--- WRITE ON S3 for f.csv only
+grant WRITE ON S3
+0
