@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
@@ -68,11 +69,15 @@ void formatLimitExpression(const IAST & expression, std::span<const std::string_
 
     /// `(expr) AS alias`, not `(expr AS alias)`: that is how the parenthesized expression is printed after parsing it back.
     std::string_view alias_text;
-    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&expression); with_alias && !with_alias->alias.empty())
+    if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&expression);
+        with_alias && (!with_alias->alias.empty() || with_alias->parametrised_alias))
     {
         WriteBufferFromOwnString alias_buf;
         alias_buf << " AS ";
-        s.writeIdentifier(alias_buf, with_alias->alias, /*ambiguous=*/false);
+        if (with_alias->parametrised_alias)
+            with_alias->parametrised_alias->format(alias_buf, s);
+        else
+            s.writeIdentifier(alias_buf, with_alias->alias, /*ambiguous=*/false);
         if (text.ends_with(alias_buf.stringView()))
         {
             alias_text = text.substr(text.size() - alias_buf.stringView().size());

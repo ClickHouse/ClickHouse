@@ -2270,8 +2270,7 @@ void replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(ASTPtr & ast, const Columns
         {
             auto function = makeASTFunction(
                 "getSubcolumn", make_intrusive<ASTIdentifier>(subcolumn->first), make_intrusive<ASTLiteral>(subcolumn->second));
-            if (auto alias = identifier->tryGetAlias(); !alias.empty())
-                function->setAlias(alias);
+            function->copyAliasesFrom(*identifier);
             ast = std::move(function);
         }
         return;

@@ -222,6 +222,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsBool parameterize_view_by_alias_parameter;
     extern const SettingsString polyglot_dialect;
     extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
@@ -3057,7 +3058,19 @@ static BlockIO executeQueryImpl(
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
         if (out_ast && probably_has_params)
         {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
+            /// The query's own `SETTINGS` reach `context` only after the substitution, see `applySettingsFromQuery` below.
+            bool alias_parameterizes_view = settings[Setting::parameterize_view_by_alias_parameter];
+            if (const auto * create = out_ast->as<ASTCreateQuery>(); create && create->is_ordinary_view && create->select)
+            {
+                /// Setting values can be placeholders bound by the statement's own `param_*` settings: substitute a copy first.
+                ASTPtr settings_ast = out_ast->clone();
+                ReplaceQueryParameterVisitor(context->getQueryParameters()).visit(settings_ast);
+                auto query_settings_context = Context::createCopy(context);
+                InterpreterSetQuery::applySettingsFromQuery(settings_ast, query_settings_context);
+                alias_parameterizes_view = query_settings_context->getSettingsRef()[Setting::parameterize_view_by_alias_parameter];
+            }
+
+            ReplaceQueryParameterVisitor visitor(context->getQueryParameters(), alias_parameterizes_view);
             visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
                 query = out_ast->formatWithSecretsOneLine();

@@ -707,6 +707,10 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         });
     }
 
+    /// The condition becomes an argument of the aggregate, where a parametrised alias is not kept.
+    if (auto * with_alias = dynamic_cast<ASTWithAlias *>(condition->children[0].get()))
+        with_alias->parametrised_alias.reset();
+
     function.name += "If";
     function.arguments->children.push_back(condition->children[0]);
     return true;
@@ -1481,7 +1485,7 @@ ASTPtr exactCastArgument(
     /// The text is a literal only together with the type that reads it, so it is not recorded in the
     /// literal token map - it is not a literal of the query on its own.
     auto result = make_intrusive<ASTLiteral>(std::move(literal->text));
-    result->setAlias(argument->tryGetAlias());
+    result->copyAliasesFrom(*argument);
     return result;
 }
 

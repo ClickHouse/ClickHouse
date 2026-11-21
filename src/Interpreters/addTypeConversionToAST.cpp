@@ -3,6 +3,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
@@ -24,9 +25,10 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 
     if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
-        func->alias = ast_with_alias->alias;
+        func->copyAliasesFrom(*ast_with_alias);
         func->setPreferAliasToColumnName(ast_with_alias->preferAliasToColumnName());
         ast_with_alias->alias.clear();
+        ast_with_alias->parametrised_alias.reset();
     }
 
     return func;

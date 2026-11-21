@@ -16,14 +16,20 @@ namespace DB
 class QueryParameterVisitor
 {
 public:
-    explicit QueryParameterVisitor(NameToNameMap & parameters, bool include_deferred_expressions_ = true)
+    explicit QueryParameterVisitor(NameToNameMap & parameters, bool include_deferred_expressions_ = true, bool include_parametrised_aliases_ = true)
         : query_parameters(parameters)
         , include_deferred_expressions(include_deferred_expressions_)
+        , include_parametrised_aliases(include_parametrised_aliases_)
     {
     }
 
     void visit(const ASTPtr & ast)
     {
+        /// Not a child, see ASTWithAlias::parametrised_alias.
+        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(ast.get());
+            include_parametrised_aliases && with_alias && with_alias->parametrised_alias)
+            visitQueryParameter(*with_alias->parametrised_alias);
+
         if (const auto & query_parameter = ast->as<ASTQueryParameter>())
             visitQueryParameter(*query_parameter);
         else if (const auto * set_query = ast->as<ASTSetQuery>())
@@ -41,6 +47,7 @@ public:
 private:
     NameToNameMap & query_parameters;
     const bool include_deferred_expressions;
+    const bool include_parametrised_aliases;
 
     /// Row policy filters and masking policy expressions are not children, see ASTCreateRowPolicyQuery::filters.
     void visitDeferredExpressions(const IAST & ast)
@@ -102,10 +109,10 @@ NameSet analyzeReceiveQueryParams(const std::string & query)
     return query_param_names;
 }
 
-NameSet analyzeReceiveQueryParams(const ASTPtr & ast, bool include_deferred_expressions)
+NameSet analyzeReceiveQueryParams(const ASTPtr & ast, bool include_deferred_expressions, bool include_parametrised_aliases)
 {
     NameToNameMap query_params;
-    QueryParameterVisitor(query_params, include_deferred_expressions).visit(ast);
+    QueryParameterVisitor(query_params, include_deferred_expressions, include_parametrised_aliases).visit(ast);
     NameSet query_param_names;
     for (const auto & query_param : query_params)
         query_param_names.insert(query_param.first);

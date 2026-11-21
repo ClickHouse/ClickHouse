@@ -1,0 +1,36 @@
+SELECT number AS {a:Identifier}, (number + 1) AS {b:Identifier} FROM numbers(2) AS {t:Identifier}	1
+SELECT 1 LIMIT  AFTER (settings = 1) AS {p:Identifier}	1
+v_alias_only	[('a','Identifier')]	1
+v_alias_param	[('a','Identifier'),('n','UInt64')]	1
+x
+0
+1
+y
+1
+2
+x
+0
+1
+0
+1
+y
+0
+1
+y
+1
+2
+1	1
+7
+SELECT countIf(number > 0) FROM numbers(3)	1
+[]
+2
+v_alias_cte	[('a','Identifier')]	1
+v_alias_table	[('a','Identifier')]	1
+7
+7
+0	1
+1
+4
+[]	0
+7
+1
