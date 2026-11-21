@@ -1656,7 +1656,7 @@ private:
         DataTypePtr array_elements_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
         const DataTypePtr & index_type = arguments[1].type;
 
-        DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, arguments[1].type});
+        DataTypePtr common_type = getLeastSupertypeForComparison(array_elements_type, arguments[1].type);
         auto [null_map_data, null_map_item] = getNullMaps(arguments);
         ColumnPtr col_nested = castColumn({ getColumnWithDefaultsUnderNulls(col_array->getDataPtr(), null_map_data, array_elements_type), array_elements_type, "" }, common_type);
         ColumnPtr item_arg = castColumn({ getColumnWithDefaultsUnderNulls(arguments[1].column, null_map_item, index_type), removeLowCardinality(index_type), "" }, common_type);

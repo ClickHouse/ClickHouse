@@ -1,0 +1,53 @@
+arr eq	0	0
+arr ne	1	1
+arr lt	1	1
+arr ndf	0	0
+arr df	1	1
+arr lc	0	0
+arr arr	0	0
+arr tuple	0	0
+tuple arr	0	0
+map eq	0	0
+map lt	1	1
+map key	0	0
+tuple named	0	0
+json	0	0
+json arr	0	0
+map json	0	0
+scalar ndf	0	0
+scalar df	1	1
+scalar ndf lc	0	0
+tuple ndf	0	0
+keep 0/1	1	1	1	1	0
+keep bool	1	1	1
+keep json	1	1
+keep variant	1
+keep lc	0	0	0	0
+cols	2	2	2	2	2	2
+cols scalar ndf	2	2
+cross	0	0
+tuple variant	0	0
+keep tuple variant	1
+exists	0
+has col	0	0	0	0
+exists col	0
+exists col noopt	0
+exists col plan	1
+has any	0	0	0	0	0	0
+keep has	1	1	1
+starts ends	0	0	0	0
+map remove	{[true]:'x'}	{(true):'x'}
+keep starts remove	1	1	{[false]:'y'}
+key lt	3000
+key lt noidx	3000
+key eq	0
+key eq noidx	0
+key lt plan	1
+expr key	0	3000	3000
+expr key keep plan	1
+expr key scalar	3000	3000
+expr key string keep plan	1
+expr key tuple	3000
+expr key tuple keep plan	1
+key has	0	3000
+key not has keep plan	1
