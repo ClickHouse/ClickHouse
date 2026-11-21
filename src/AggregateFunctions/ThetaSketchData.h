@@ -11,6 +11,7 @@
 #include <theta_intersection.hpp>
 #include <theta_a_not_b.hpp>
 
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 
@@ -30,22 +31,30 @@ template <typename Key>
 class ThetaSketchData : private boost::noncopyable
 {
 private:
-    /// Used for insertions
-    std::unique_ptr<datasketches::update_theta_sketch> sk_update;
-    /// Used for merging
-    std::unique_ptr<datasketches::theta_union> sk_union;
+    /// Not std::allocator: operator new is tracked but, by default, never refused at the memory limit.
+    using SketchAllocator = AllocatorWithMemoryTracking<uint64_t>;
+    using UpdateSketch = datasketches::update_theta_sketch_alloc<SketchAllocator>;
+    using UnionSketch = datasketches::theta_union_alloc<SketchAllocator>;
+    using IntersectionSketch = datasketches::theta_intersection_alloc<SketchAllocator>;
+    using ANotBSketch = datasketches::theta_a_not_b_alloc<SketchAllocator>;
+    using CompactSketch = datasketches::compact_theta_sketch_alloc<SketchAllocator>;
 
-    datasketches::update_theta_sketch * getSkUpdate()
+    /// Used for insertions
+    std::unique_ptr<UpdateSketch> sk_update;
+    /// Used for merging
+    std::unique_ptr<UnionSketch> sk_union;
+
+    UpdateSketch * getSkUpdate()
     {
         if (!sk_update)
-            sk_update = std::make_unique<datasketches::update_theta_sketch>(datasketches::update_theta_sketch::builder().build());
+            sk_update = std::make_unique<UpdateSketch>(UpdateSketch::builder().build());
         return sk_update.get();
     }
 
-    datasketches::theta_union * getSkUnion()
+    UnionSketch * getSkUnion()
     {
         if (!sk_union)
-            sk_union = std::make_unique<datasketches::theta_union>(datasketches::theta_union::builder().build());
+            sk_union = std::make_unique<UnionSketch>(UnionSketch::builder().build());
         return sk_union.get();
     }
 
@@ -92,7 +101,7 @@ public:
 
     void merge(const ThetaSketchData & rhs)
     {
-        datasketches::theta_union * u = getSkUnion();
+        UnionSketch * u = getSkUnion();
 
         if (sk_update)
         {
@@ -123,7 +132,7 @@ public:
             return;
         }
 
-        datasketches::theta_union * u = getSkUnion();
+        UnionSketch * u = getSkUnion();
 
         if (sk_update)
         {
@@ -131,7 +140,7 @@ public:
             sk_update.reset(nullptr);
         }
 
-        datasketches::theta_intersection theta_intersection;
+        IntersectionSketch theta_intersection;
 
         theta_intersection.update(u->get_result());
 
@@ -147,7 +156,7 @@ public:
 
     void aNotB(const ThetaSketchData & rhs)
     {
-        datasketches::theta_union * u = getSkUnion();
+        UnionSketch * u = getSkUnion();
 
         if (sk_update)
         {
@@ -155,18 +164,18 @@ public:
             sk_update.reset(nullptr);
         }
 
-        datasketches::theta_a_not_b a_not_b;
+        ANotBSketch a_not_b;
 
         if (rhs.sk_update)
         {
-            datasketches::compact_theta_sketch result = a_not_b.compute(u->get_result(), *rhs.sk_update);
+            CompactSketch result = a_not_b.compute(u->get_result(), *rhs.sk_update);
             sk_union.reset(nullptr);
             u = getSkUnion();
             u->update(result);
         }
         else if (rhs.sk_union)
         {
-            datasketches::compact_theta_sketch result = a_not_b.compute(u->get_result(), rhs.sk_union->get_result());
+            CompactSketch result = a_not_b.compute(u->get_result(), rhs.sk_union->get_result());
             sk_union.reset(nullptr);
             u = getSkUnion();
             u->update(result);
@@ -184,7 +193,7 @@ public:
             return;
 
         /// The size comes from the state, so the bytes are appended as they arrive rather than allocated up front.
-        datasketches::compact_theta_sketch::vector_bytes bytes;
+        CompactSketch::vector_bytes bytes;
         while (bytes.size() < size)
         {
             if (in.eof())
@@ -198,7 +207,7 @@ public:
 
         try
         {
-            auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
+            auto sk = CompactSketch::deserialize(bytes.data(), bytes.size());
             getSkUnion()->update(sk);
         }
         catch (const DB::Exception &)
@@ -240,7 +249,7 @@ public:
         }
         else
         {
-            datasketches::compact_theta_sketch::vector_bytes bytes;
+            CompactSketch::vector_bytes bytes;
             writeVectorBinary(bytes, out);
         }
     }
