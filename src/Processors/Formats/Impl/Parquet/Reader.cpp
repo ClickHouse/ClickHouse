@@ -40,6 +40,7 @@
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
+#include <IO/ZstdContext.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
@@ -60,6 +61,7 @@
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <zlib.h>
+#include <zstd.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -205,6 +207,57 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
     return uncompressed_size == 0;
 }
 
+/// Decodes the ZSTD frames at the start of the page until `uncompressed_size` bytes are produced; the rest of the page
+/// is not read. Returns the produced size or a zstd error code.
+static size_t decompressZSTDFramesUntilFull(ZSTD_DCtx * ctx, const char * data, size_t compressed_size, char * out, size_t uncompressed_size)
+{
+    size_t consumed = 0;
+    size_t produced = 0;
+    while (produced < uncompressed_size && consumed < compressed_size)
+    {
+        size_t frame_size = ZSTD_findFrameCompressedSize(data + consumed, compressed_size - consumed);
+        if (ZSTD_isError(frame_size))
+            return frame_size;
+        size_t res = ZSTD_decompressDCtx(ctx, out + produced, uncompressed_size - produced, data + consumed, frame_size);
+        if (ZSTD_isError(res))
+            return res;
+        consumed += frame_size;
+        produced += res;
+    }
+    return produced;
+}
+
+namespace
+{
+
+/// The context shared by the ZSTD pages that the current `decodePrimitiveColumn` call decodes on this thread.
+thread_local ZstdDCtxPtr * current_zstd_context = nullptr;
+
+class ScopedZstdContext
+{
+public:
+    ScopedZstdContext() : outer(current_zstd_context)
+    {
+        if (!outer)
+            current_zstd_context = &ctx;
+    }
+
+    ~ScopedZstdContext()
+    {
+        if (!outer)
+            current_zstd_context = nullptr;
+    }
+
+    ScopedZstdContext(const ScopedZstdContext &) = delete;
+    ScopedZstdContext & operator=(const ScopedZstdContext &) = delete;
+
+private:
+    ZstdDCtxPtr ctx;
+    ZstdDCtxPtr * outer;
+};
+
+}
+
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
     /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
@@ -252,8 +305,24 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             method = CompressionMethod::Brotli;
             break;
         case parq::CompressionCodec::ZSTD:
-            method = CompressionMethod::Zstd;
-            break;
+        {
+            ZstdDCtxPtr own_ctx;
+            ZstdDCtxPtr & ctx = current_zstd_context ? *current_zstd_context : own_ctx;
+            if (!ctx)
+            {
+                ctx.reset(ZSTD_createDCtx());
+                if (!ctx)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create a ZSTD decompression context");
+            }
+            size_t res = ZSTD_decompressDCtx(ctx.get(), out, uncompressed_size, data, compressed_size);
+            if (ZSTD_isError(res))
+                res = decompressZSTDFramesUntilFull(ctx.get(), data, compressed_size, out, uncompressed_size);
+            if (ZSTD_isError(res))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ZSTD compressed page: {}", ZSTD_getErrorName(res));
+            if (res != uncompressed_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected uncompressed page size");
+            return;
+        }
         case parq::CompressionCodec::LZ4_RAW:
         {
             /// LZ4 block.
@@ -3662,6 +3731,8 @@ static constexpr size_t max_coalesced_value_bytes = 8;
 
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
 {
+    ScopedZstdContext zstd_context;
+
     /// Allocate columns for values, null map, and array offsets.
     /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
     constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE) / 4;
