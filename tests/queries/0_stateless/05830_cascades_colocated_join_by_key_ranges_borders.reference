@@ -1,0 +1,44 @@
+-- 1. inner join
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_borders_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_borders_right)
+8338	8634458	3467868
+8338	8634458	3467868
+-- 2. full join
+8689	9039458	3496593
+8689	9039458	3496593
+-- 3. GROUP BY the key
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (RangePartitionedRead default.t_range_borders_left)
+1500	5418	406	6577349
+1500	5418	406	6577349
+-- 4. the rows of each key, in the two plans
+7197596715427644412
+7197596715427644412
+-- 5. small blocks
+8338	8634458	3467868
+8338	8634458	3467868
+-- 6. fewer key values than nodes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (RangePartitionedRead default.t_range_borders_few)
+2	300	24850
+2	300	24850

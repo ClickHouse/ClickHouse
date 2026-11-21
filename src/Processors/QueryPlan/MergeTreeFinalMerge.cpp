@@ -2,7 +2,12 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/Exception.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -37,6 +42,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -186,6 +192,77 @@ Pipe buildFullFinalMergePipe(
     return pipe;
 }
 
+void DistributedReadBucket::serialize(WriteBuffer & out, const KeyDescription & primary_key) const
+{
+    marks.serialize(out, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+    writeBinary(hasBorders(), out);
+    if (!hasBorders())
+        return;
+
+    FormatSettings format_settings;
+    const size_t border_size = borders.empty() ? 0 : borders.front().size();
+    writeVarUInt(border_size, out);
+    writeVarUInt(borders.size(), out);
+    for (const auto & border : borders)
+        for (size_t i = 0; i < border_size; ++i)
+            primary_key.data_types[i]->getDefaultSerialization()->serializeBinary(border[i], out, format_settings);
+    writeVarUInt(index, out);
+}
+
+void DistributedReadBucket::deserialize(ReadBuffer & in, const KeyDescription & primary_key, Kind kind_with_borders)
+{
+    marks.deserialize(in, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+    UInt8 has_borders = 0;
+    readBinary(has_borders, in);
+    if (has_borders > 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: unknown value {} of the flag of borders of a read bucket", static_cast<UInt32>(has_borders));
+    kind = has_borders ? kind_with_borders : Kind::Plain;
+    if (!has_borders)
+        return;
+
+    /// For example, a read divided by ranges of key values that came under the step name of a usual read.
+    /// Without this the task would return all the rows of its marks, also those of another task.
+    if (kind_with_borders == Kind::Plain)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: a read bucket has borders, but the read has no `FINAL` and is not divided by ranges of key values");
+
+    FormatSettings format_settings;
+    size_t border_size = 0;
+    readVarUInt(border_size, in);
+    if (border_size > primary_key.data_types.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Distributed read: a border of a read bucket has {} values, the primary key has {} columns", border_size, primary_key.data_types.size());
+    size_t borders_count = 0;
+    readVarUInt(borders_count, in);
+    borders.assign(borders_count, VectorWithMemoryTracking<Field>(border_size));
+    for (auto & border : borders)
+        for (size_t i = 0; i < border_size; ++i)
+            primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], in, format_settings);
+    readVarUInt(index, in);
+}
+
+DistributedReadBucket::Kind getKindOfLaneWithBorders(bool is_final, bool divided_by_key_ranges)
+{
+    if (is_final && divided_by_key_ranges)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Distributed read: a read with `FINAL` cannot be divided by ranges of key values");
+    if (divided_by_key_ranges)
+        return DistributedReadBucket::Kind::Trim;
+    return is_final ? DistributedReadBucket::Kind::Merge : DistributedReadBucket::Kind::Plain;
+}
+
+void addKeyRangeTrimToPipe(
+    Pipe & pipe, const DistributedReadBucket & bucket, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+{
+    if (bucket.kind != DistributedReadBucket::Kind::Trim)
+        return;
+
+    /// The coordinator makes such buckets only for key columns with one sort direction.
+    const auto & reverse_flags = metadata_snapshot->getSortingKey().reverse_flags;
+    const bool in_reverse_order = !reverse_flags.empty() && reverse_flags.front();
+    addLayerRangeFilterToPipe(pipe, metadata_snapshot->getPrimaryKey(), bucket.borders, bucket.index, in_reverse_order, context);
+}
+
 Pipe buildDistributedFinalPipe(
     const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
@@ -210,7 +287,7 @@ Pipe buildDistributedFinalPipe(
     RangesInDataPartsDescription non_intersecting_marks;
     for (const auto & lane : lanes)
     {
-        if (!lane.needs_merge)
+        if (lane.kind != DistributedReadBucket::Kind::Merge)
         {
             for (const auto & part_marks : lane.marks)
                 non_intersecting_marks.push_back(part_marks);

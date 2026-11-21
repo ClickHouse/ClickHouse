@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
@@ -30,5 +31,9 @@ bool translateDistributionColumns(const ActionsDAG & dag, VectorWithMemoryTracki
 /// Translates sort column names through the DAG to input names. Returns false if any column is
 /// computed (its order is not derivable from the input).
 bool translateSortDescription(const ActionsDAG & dag, SortDescription & sort_desc);
+
+/// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
+/// Value equality between renamed columns survives; a computed expression changes the values.
+UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions);
 
 }

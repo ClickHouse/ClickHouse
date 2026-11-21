@@ -1,0 +1,49 @@
+-- 1. join on the date and one more column
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by toYYYYMM(#0)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_month_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_month_right)
+1810	2224490	2117700
+1810	2224490	2117700
+-- 2. join on the date only
+181000	2177249000	211770000
+181000	2177249000	211770000
+-- 3. LEFT, RIGHT and FULL join: rows with no match are returned one time
+24000	22190	287988000	2117700
+24000	22190	287988000	2117700
+2400	590	2224490	2878800
+2400	590	2224490	2878800
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by toYYYYMM(#0)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_month_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_month_right)
+24590	590	22190
+24590	590	22190
+-- 4. ANY join: one row for each key, because all rows of a key are on one node
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by toYYYYMM(#0)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_month_left)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (PartitionedRead default.t_coloc_month_right)
+181
+181
+-- 5. GROUP BY a right column above a LEFT join: the rows with no match are one group
+182	24000	22190
+182	24000	22190

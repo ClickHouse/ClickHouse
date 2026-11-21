@@ -1,0 +1,82 @@
+-- 1. join of a table with a DISTINCT of the key of another table
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders)) )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_through_events)
+            Expression ((Change column names to column identifiers + Project names))
+              Distinct (Co-located (by keyRanges(#0; 3 borders)) DISTINCT)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromMergeTree (RangePartitionedRead default.t_range_through_groups)
+32000	271984000
+32000	271984000
+-- 2. an aggregation by the first key column above an aggregation by two key columns
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+              Aggregating
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_through_events)
+6000	15430	22570
+6000	15430	22570
+-- 3. the join compares a result of an aggregate function: the aggregation does not keep ranges of it
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_range_through_groups)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              ShuffleExchange
+                Aggregating
+                  Expression ((Before GROUP BY + Change column names to column identifiers))
+                    ReadFromMergeTree (RangePartitionedRead default.t_range_through_events)
+6000	32000
+6000	32000
+-- 4. the aggregation is not by the first key column
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_through_groups)
+            BroadcastExchange
+              GatherExchange
+                Expression ((Change column names to column identifiers + (Project names + Projection)))
+                  MergingAggregated
+                    ShuffleExchange
+                      Aggregating
+                        Expression ((Before GROUP BY + Change column names to column identifiers))
+                          ReadFromMergeTree (ParallelRead default.t_range_through_events)
+7	32000	21
+7	32000	21
+-- 5. join of two aggregations by the key
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders))  swapped)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              Aggregating
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_through_groups)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              Aggregating
+                Expression ((Before GROUP BY + Change column names to column identifiers))
+                  ReadFromMergeTree (RangePartitionedRead default.t_range_through_events)
+6000	32000	45970
+6000	32000	45970

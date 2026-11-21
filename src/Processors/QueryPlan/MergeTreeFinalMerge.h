@@ -29,16 +29,52 @@ void addMergingFinal(
     bool enable_vertical_final,
     bool read_in_reverse = false);
 
-/// One lane of a distributed task's read: the marks it reads. When `needs_merge` it is a FINAL intersecting
-/// layer (read in order, trimmed to `(borders[index-1], borders[index]]`, then merge-deduplicated); otherwise
-/// a plain or non-intersecting read with `borders`/`index` unused.
+/// One lane of a distributed task's read: the marks it reads, and what the task does with their rows.
 struct DistributedReadBucket
 {
+    /// It is not written to the task parameter. There a lane only says if it has borders, and the read
+    /// that owns the lane knows what it does with borders (`getKindOfLaneWithBorders`).
+    enum class Kind : UInt8
+    {
+        /// A plain or non-intersecting read; `borders` and `index` are unused.
+        Plain = 0,
+        /// A FINAL intersecting layer: read in order, trimmed to `(borders[index-1], borders[index]]`,
+        /// then merge-deduplicated.
+        Merge = 1,
+        /// A read divided by ranges of key values: its marks also hold the granules that cross a border,
+        /// so the rows are trimmed to `(borders[index-1], borders[index]]`.
+        Trim = 2,
+    };
+
     RangesInDataPartsDescription marks;
-    bool needs_merge = false;
+    Kind kind = Kind::Plain;
     VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> borders;
     size_t index = 0;
+
+    [[nodiscard]] bool hasBorders() const { return kind != Kind::Plain; }
+
+    /// The format of one lane in the task parameter of a distributed read: the marks, a flag that the lane
+    /// has borders, and for a lane with borders the borders (as values of the first columns of
+    /// `primary_key`) and the index.
+    /// The task parameter is a part of what the read step sends to another server, as the bytes of the step
+    /// are, but it has no version of its own. A change of this format thus needs a new version or a new name
+    /// of the read step: a server that does not know it refuses the step before it reads the task parameter.
+    void serialize(WriteBuffer & out, const KeyDescription & primary_key) const;
+    /// `kind_with_borders` is the kind that a lane with borders gets. With `Plain` the read has no use for
+    /// borders, and a lane with borders is refused.
+    void deserialize(ReadBuffer & in, const KeyDescription & primary_key, Kind kind_with_borders);
 };
+
+/// The kind of a lane with borders in a read: `Merge` in a `FINAL` read, `Trim` in a read divided by
+/// ranges of key values, `Plain` in another read (it has no use for borders).
+DistributedReadBucket::Kind getKindOfLaneWithBorders(bool is_final, bool divided_by_key_ranges);
+
+/// For a bucket of a read divided by ranges of key values (`Kind::Trim`): keeps in `pipe` only the rows of
+/// the range of the bucket. The marks of such a bucket also hold the granules that cross a border of the
+/// range, and without this the rows of such a granule would come from two tasks. Does nothing for another
+/// bucket. The rows of each chunk of the pipe must be in the order of the primary key, as a part stores them.
+void addKeyRangeTrimToPipe(
+    Pipe & pipe, const DistributedReadBucket & bucket, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
 /// Reads one lane's marks into a pipe -- the part-source-specific seam of `buildDistributedFinalPipe`.
 using DistributedFinalReadStepGetter = std::function<Pipe(const RangesInDataPartsDescription & marks)>;

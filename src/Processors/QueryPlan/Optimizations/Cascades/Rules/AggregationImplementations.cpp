@@ -6,11 +6,13 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Core/SortDescription.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -61,6 +63,8 @@ public:
     void addLocalAggregation();
     void addShuffleAggregation(size_t node_count);
     void addSingleKeyShuffleAggregations(const VectorWithMemoryTracking<size_t> & candidate_node_counts);
+    void addCoLocatedAggregations(size_t node_count);
+    void addCoLocatedAggregationsByKeyRanges(size_t node_count);
 
     /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
     [[nodiscard]] bool isShuffleApplicable() const
@@ -248,6 +252,96 @@ void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregati
     }
 }
 
+/// Co-located - the input is read already divided by a function of some of the group keys, which the table
+/// stores as a partition key component. The rows of one group are then on one node, as after a shuffle by
+/// those keys, so each node produces final results and no exchange is necessary below the aggregation.
+void AggregationImplementation::StrategyEnumerator::addCoLocatedAggregations(size_t node_count)
+{
+    const auto & keys = agg_step.getParams().keys;
+    for (const auto & layout : getDeliveredStorageLayouts(memo, expression->inputs[0].group_id))
+    {
+        DistributionDescription by_layout;
+        by_layout.node_count = node_count;
+        by_layout.layout_function = layout.function;
+
+        bool all_arguments_are_keys = true;
+        for (const auto & argument : layout.argument_columns)
+        {
+            auto key = std::ranges::find_if(keys, [&](const String & key_name) { return argument.contains(key_name); });
+            if (key == keys.end())
+            {
+                all_arguments_are_keys = false;
+                break;
+            }
+            by_layout.columns.push_back({*key});
+        }
+        if (!all_arguments_are_keys)
+            continue;
+
+        addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_layout, by_layout,
+            fmt::format("Co-located (by {}) {}", layout.function->dump(), agg_step.getStepDescription()));
+    }
+}
+
+/// Co-located by key ranges - the input comes from tables sorted by some of the group keys, so the reads can
+/// divide it by ranges of those keys. The rows of one group are then on one node, and each node produces
+/// final results with no exchange below the aggregation.
+void AggregationImplementation::StrategyEnumerator::addCoLocatedAggregationsByKeyRanges(size_t node_count)
+{
+    const auto & keys = agg_step.getParams().keys;
+
+    /// A consumer above selected the borders, for example a join of this aggregation with another table.
+    /// Other borders cannot satisfy it, so the aggregation passes the function on to its input. Each
+    /// required column must be a group key: the rows of a group are then in one range, and the group stays there.
+    const auto & required = required_properties.distribution;
+    if (required.layout_function && required.layout_function->tryGetKeyRanges())
+    {
+        if (required.is_replicated || required.node_count != node_count)
+            return;
+
+        DistributionDescription by_required_ranges;
+        by_required_ranges.node_count = node_count;
+        by_required_ranges.layout_function = required.layout_function;
+        for (const auto & required_column : required.columns)
+        {
+            auto key = std::ranges::find_if(keys, [&](const String & key_name) { return required_column.contains(key_name); });
+            if (key == keys.end())
+                return;
+            by_required_ranges.columns.push_back({*key});
+        }
+
+        addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_required_ranges, by_required_ranges,
+            fmt::format("Co-located (by {}) {}", required.layout_function->dump(), agg_step.getStepDescription()));
+        return;
+    }
+    for (const auto & candidate : getKeyRangeLayoutCandidates(memo, expression->inputs[0].group_id))
+    {
+        DistributionDescription by_ranges;
+        by_ranges.node_count = node_count;
+
+        /// The first key columns of the tables that are all group keys. More of them give more places for a border.
+        for (const auto & key_column : candidate.key_columns)
+        {
+            auto key = std::ranges::find_if(keys, [&](const String & key_name) { return key_column.contains(key_name); });
+            if (key == keys.end())
+                break;
+            by_ranges.columns.push_back({*key});
+        }
+
+        const size_t key_size = by_ranges.columns.size();
+        if (key_size == 0)
+            continue;
+
+        const DataTypes key_types(candidate.key_types.begin(), candidate.key_types.begin() + key_size);
+        by_ranges.layout_function = getKeyRangeLayoutFunction(memo, candidate.read_groups, key_types, candidate.in_reverse_order, node_count);
+        if (!by_ranges.layout_function)
+            continue;
+
+        addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_ranges, by_ranges,
+            fmt::format("Co-located (by {}) {}", by_ranges.layout_function->dump(), agg_step.getStepDescription()));
+    }
+}
+
 GroupExpressions AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
@@ -339,6 +433,18 @@ GroupExpressions AggregationImplementation::applyImpl(GroupExpressionPtr express
 
         if (strategies.hasMultipleKeys())
             strategies.addSingleKeyShuffleAggregations(candidate_node_counts);
+
+        if (memo.getContext().distributed_plan_use_partition_key_layout)
+        {
+            for (size_t candidate_node_count : candidate_node_counts)
+                strategies.addCoLocatedAggregations(candidate_node_count);
+        }
+
+        if (memo.getContext().distributed_plan_use_primary_key_range_layout)
+        {
+            for (size_t candidate_node_count : candidate_node_counts)
+                strategies.addCoLocatedAggregationsByKeyRanges(candidate_node_count);
+        }
     }
 
     return result;

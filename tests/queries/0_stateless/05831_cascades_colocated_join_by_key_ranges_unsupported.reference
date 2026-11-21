@@ -1,0 +1,94 @@
+-- 1. control: equal keys
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin (co-located by keyRanges(#0; 3 borders))  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_unsup_base)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (RangePartitionedRead default.t_range_unsup_base)
+111000	598444500
+111000	598444500
+-- 2. the key types are not equal
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_unsup_base)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_range_unsup_u32)
+19500	103865250
+19500	103865250
+-- 3. one key is descending
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_unsup_base)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_range_unsup_desc)
+19500	103865250
+19500	103865250
+-- 4. Nullable keys
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_range_unsup_nullable)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_range_unsup_nullable)
+4000	7998000
+4000	7998000
+-- 5. the first key column is an expression
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_unsup_base)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_range_unsup_expr)
+19500	103865250
+19500	103865250
+-- 6. FINAL
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_unsup_base)
+            Expression (Change column names to column identifiers)
+              BroadcastExchange
+                ReadFromMergeTree (default.t_range_unsup_replacing)
+19500	38634750
+19500	38634750
+-- 7. the join compares an expression of the key
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_range_unsup_base)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_range_unsup_base)
+110975	598288525
+110975	598288525

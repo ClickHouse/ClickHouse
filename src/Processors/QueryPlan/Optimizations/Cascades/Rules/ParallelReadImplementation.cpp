@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StorageLayout.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -43,6 +44,42 @@ GroupExpressions ParallelReadImplementation::applyImpl(GroupExpressionPtr expres
 {
     const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
     const size_t node_count = required_properties.distribution.node_count;
+
+    /// The parent requires the rows divided by ranges of key values at given borders. Only this read can
+    /// deliver that, and only when the required columns are the first columns of the primary key of its table.
+    if (required_properties.distribution.layout_function && required_properties.distribution.layout_function->tryGetKeyRanges())
+    {
+        auto read_by_ranges_expression = tryMakeKeyRangeReadVariant(expression, required_properties.distribution);
+        if (!read_by_ranges_expression)
+        {
+            LOG_TEST(getLogger("ParallelRead"), "No read by key ranges for '{}': the read cannot be split by {} over the required columns",
+                read_step->getStepDescription(), required_properties.distribution.layout_function->dump());
+            return {};
+        }
+        return addPhysicalToMemo(read_by_ranges_expression, required_properties, memo);
+    }
+
+    /// The parent requires the rows divided by a function that a table stores. Only this read can deliver
+    /// that, and only when its table has the function as a partition key component over the required columns.
+    if (required_properties.distribution.layout_function)
+    {
+        auto component_index = findPartitionKeyComponent(*read_step, required_properties.distribution);
+        if (!component_index)
+        {
+            LOG_TEST(getLogger("ParallelRead"), "No partitioned read for '{}': the partition key has no component {} over the required columns",
+                read_step->getStepDescription(), required_properties.distribution.layout_function->dump());
+            return {};
+        }
+
+        auto partitioned_read_expression = tryMakePartitionedReadVariant(expression, *component_index, required_properties.distribution);
+        if (!partitioned_read_expression)
+        {
+            LOG_TEST(getLogger("ParallelRead"), "No partitioned read for '{}': the read cannot be split by partition value",
+                read_step->getStepDescription());
+            return {};
+        }
+        return addPhysicalToMemo(partitioned_read_expression, required_properties, memo);
+    }
 
     /// Produce a distributed read that splits work uniformly across all nodes: the coordinator
     /// computes each bucket's authoritative marks and the fan-out ships them to the workers in

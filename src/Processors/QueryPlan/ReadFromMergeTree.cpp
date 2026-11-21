@@ -95,6 +95,8 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/FieldVisitors.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -5262,6 +5264,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->distributed_read_buckets = distributed_read_buckets;
     cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
     cloned_step->distributed_read_param_name = distributed_read_param_name;
+    cloned_step->divided_by_key_ranges = divided_by_key_ranges;
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
     if (deferred_row_level_filter)
@@ -5702,8 +5705,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, whether it
-    /// needs a FINAL merge, and (for a merge layer) the borders + index. Marks are matched to local parts by
+    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, a flag that
+    /// the lane has borders, and (for a merge layer or a key range) the borders + index. Marks are matched to local parts by
     /// name, and a part this replica no longer has is a retryable error (it diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
@@ -5712,7 +5715,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         String blob = settings.parameter_lookup->getParameter(distributed_read_param_name).safeGet<String>();
         ReadBufferFromString buf(blob);
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-        DB::FormatSettings format_settings;
+        const auto kind_with_borders = getKindOfLaneWithBorders(isQueryWithFinal(), divided_by_key_ranges);
         size_t num_lanes = 0;
         readVarUInt(num_lanes, buf);
         distributed_read_task_buckets.clear();
@@ -5720,20 +5723,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         for (size_t lane = 0; lane < num_lanes; ++lane)
         {
             DistributedReadBucket bucket;
-            bucket.marks.deserialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-            readBinary(bucket.needs_merge, buf);
-            if (bucket.needs_merge)
-            {
-                size_t border_arity = 0;
-                readVarUInt(border_arity, buf);
-                size_t num_borders = 0;
-                readVarUInt(num_borders, buf);
-                bucket.borders.assign(num_borders, VectorWithMemoryTracking<Field>(border_arity));
-                for (auto & border : bucket.borders)
-                    for (size_t i = 0; i < border_arity; ++i)
-                        primary_key.data_types[i]->getDefaultSerialization()->deserializeBinary(border[i], buf, format_settings);
-                readVarUInt(bucket.index, buf);
-            }
+            bucket.deserialize(buf, primary_key, kind_with_borders);
             distributed_read_task_buckets.push_back(std::move(bucket));
         }
 
@@ -6400,6 +6390,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         pipeline.init(createEmptyPipe(num_streams_when_nothing_to_read));
         return;
     }
+
+    /// A read with no `FINAL` has one bucket. When the read is divided by key ranges, the bucket keeps only the rows of its range.
+    if (!isQueryWithFinal() && !distributed_read_task_buckets.empty())
+        addKeyRangeTrimToPipe(pipe, distributed_read_task_buckets.front(), storage_snapshot->metadata, context);
 
     /// The filters added here belong to the query this read was planned in, which can have its own `SETTINGS`.
     const bool optimize_constant_columns_after_filter = context->getSettingsRef()[Setting::optimize_constant_columns_after_filter];
@@ -7535,7 +7529,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         /// downstream exchange (dropping empties would shrink the count for tiny tables and force a reshuffle).
         VectorWithMemoryTracking<DistributedReadBucket> buckets;
         for (auto & slice : sliceMarksAcrossBuckets(analysis->parts_with_ranges, target_buckets))
-            buckets.push_back({std::move(slice), /*needs_merge=*/ false, {}, 0});
+            buckets.push_back({std::move(slice), DistributedReadBucket::Kind::Plain, {}, 0});
 
         if (buckets.empty() || buckets.size() > max_total_buckets)
             return 0;
@@ -7544,6 +7538,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         setDistributedRead(buckets.size());
         distributed_read_param_name = nextDistributedReadParamName();
         distributed_read_buckets = std::move(buckets);
+        divided_by_key_ranges = false;
         return distributed_read_buckets.size();
     }
 
@@ -7642,7 +7637,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
                 const size_t non_intersecting_buckets = std::max<size_t>(1, span_budget * non_intersecting_marks / span_marks);
                 for (auto & slice : sliceMarksAcrossBuckets(ranges.non_intersecting_parts_ranges, non_intersecting_buckets))
                     if (!slice.empty())
-                        buckets.push_back({std::move(slice), /*needs_merge=*/ false, {}, 0});
+                        buckets.push_back({std::move(slice), DistributedReadBucket::Kind::Plain, {}, 0});
             }
         }
         else
@@ -7660,7 +7655,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
                 std::move(intersecting), intersecting_layers, primary_key.column_names.size(), *in_reverse_order, log);
             for (size_t i = 0; i < split.layers.size(); ++i)
                 if (!split.layers[i].empty())
-                    buckets.push_back({split.layers[i].getDescriptions(), /*needs_merge=*/ true, split.borders, i});
+                    buckets.push_back({split.layers[i].getDescriptions(), DistributedReadBucket::Kind::Merge, split.borders, i});
         }
     }
 
@@ -7680,6 +7675,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         buckets.size(), lanes_per_task, tasks, target_buckets);
     distributed_read_lanes_per_task = lanes_per_task;
     distributed_read_buckets = std::move(buckets);
+    divided_by_key_ranges = false;
     setDistributedRead(tasks);
     distributed_read_param_name = nextDistributedReadParamName();
     return tasks;
@@ -7692,12 +7688,10 @@ VectorWithMemoryTracking<String> ReadFromMergeTree::serializeDistributedReadBuck
         return result;
 
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
-    DB::FormatSettings format_settings;
 
     /// Each task gets `distributed_read_lanes_per_task` consecutive virtual buckets (lanes): a count, then
-    /// for each lane its marks, its merge flag, and (for a merge lane) the span borders + its index among
-    /// them so the worker can rebuild the trimming filter. Borders are concrete PK values (the producer
-    /// gates on `isSafePrimaryKey`).
+    /// each lane in the format of `DistributedReadBucket::serialize`. Borders are concrete PK values (the
+    /// producer gates on `isSafePrimaryKey`, or on `isSafePrimaryDataKeyType` for the key columns of the borders).
     const size_t lanes_per_task = std::max<size_t>(1, distributed_read_lanes_per_task);
     for (size_t start = 0; start < distributed_read_buckets.size(); start += lanes_per_task)
     {
@@ -7705,24 +7699,117 @@ VectorWithMemoryTracking<String> ReadFromMergeTree::serializeDistributedReadBuck
         WriteBufferFromOwnString buf;
         writeVarUInt(end - start, buf);
         for (size_t i = start; i < end; ++i)
-        {
-            const auto & bucket = distributed_read_buckets[i];
-            bucket.marks.serialize(buf, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
-            writeBinary(bucket.needs_merge, buf);
-            if (bucket.needs_merge)
-            {
-                const size_t border_arity = bucket.borders.empty() ? 0 : bucket.borders.front().size();
-                writeVarUInt(border_arity, buf);
-                writeVarUInt(bucket.borders.size(), buf);
-                for (const auto & border : bucket.borders)
-                    for (size_t j = 0; j < border_arity; ++j)
-                        primary_key.data_types[j]->getDefaultSerialization()->serializeBinary(border[j], buf, format_settings);
-                writeVarUInt(bucket.index, buf);
-            }
-        }
+            distributed_read_buckets[i].serialize(buf, primary_key);
         result.push_back(buf.str());
     }
     return result;
+}
+
+/// The bucket of the parts whose partition key component has `value`. It depends only on the value, so
+/// two tables with the same component agree on it. An integer goes by its remainder: a component like
+/// `hash % 16` then fills 4 buckets evenly.
+static size_t bucketOfPartitionValue(const Field & value, size_t bucket_count)
+{
+    if (value.getType() == Field::Types::UInt64)
+        return value.safeGet<UInt64>() % bucket_count;
+    if (value.getType() == Field::Types::Int64)
+        return static_cast<UInt64>(value.safeGet<Int64>()) % bucket_count;
+
+    SipHash hash;
+    applyVisitor(FieldVisitorHash(hash), value);
+    return hash.get64() % bucket_count;
+}
+
+size_t ReadFromMergeTree::setupDistributedReadBucketsByPartitionValue(size_t component_index, size_t target_buckets)
+{
+    if (target_buckets == 0 || target_buckets > max_distributed_read_buckets || !supportsBucketedRead())
+        return 0;
+
+    /// `FINAL` can merge rows of different partitions, and this split could put them into different buckets.
+    if (isQueryWithFinal() && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        return 0;
+
+    auto analysis = getOrCreateAnalyzedResult();
+    if (!analysis || analysis->parts_with_ranges.empty())
+        return 0;
+
+    /// A bucket can stay empty: the count must be `target_buckets` in every table of the join.
+    VectorWithMemoryTracking<DistributedReadBucket> buckets(target_buckets);
+    for (const auto & part : analysis->parts_with_ranges)
+    {
+        const auto & partition_value = part.data_part->partition.value;
+        if (component_index >= partition_value.size())
+            return 0;
+
+        RangesInDataPartDescription description;
+        description.info = part.data_part->info;
+        description.ranges = part.ranges;
+        buckets[bucketOfPartitionValue(partition_value[component_index], target_buckets)].marks.push_back(std::move(description));
+    }
+
+    distributed_read_lanes_per_task = 1;
+    setDistributedRead(buckets.size());
+    distributed_read_param_name = nextDistributedReadParamName();
+    distributed_read_buckets = std::move(buckets);
+    divided_by_key_ranges = false;
+    return distributed_read_buckets.size();
+}
+
+size_t ReadFromMergeTree::setupDistributedReadBucketsByKeyRanges(
+    const VectorWithMemoryTracking<VectorWithMemoryTracking<Field>> & borders, bool in_reverse_order, size_t target_buckets)
+{
+    if (target_buckets == 0 || target_buckets > max_distributed_read_buckets || borders.size() >= target_buckets || !supportsBucketedRead())
+        return 0;
+
+    /// A `FINAL` read has its own layers of key ranges, see `setupDistributedReadBuckets`.
+    if (isQueryWithFinal())
+        return 0;
+
+    /// The row filter of a bucket compares the first key columns with the borders, so the read must return them.
+    const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+    const size_t border_size = borders.empty() ? 0 : borders.front().size();
+    if (border_size > primary_key.column_names.size())
+        return 0;
+    for (size_t i = 0; i < border_size; ++i)
+    {
+        if (!getOutputHeader()->has(primary_key.column_names[i]))
+            return 0;
+    }
+
+    auto analysis = getOrCreateAnalyzedResult();
+    if (!analysis || analysis->parts_with_ranges.empty())
+        return 0;
+
+    auto layers = splitPartsRangesByBorders(analysis->parts_with_ranges, borders, in_reverse_order);
+    if (layers.empty())
+        return 0;
+
+    /// A bucket above the last border stays empty: the count must be `target_buckets` in every table of the join.
+    VectorWithMemoryTracking<DistributedReadBucket> buckets(target_buckets);
+    for (size_t i = 0; i < layers.size(); ++i)
+        buckets[i] = {layers[i].getDescriptions(), DistributedReadBucket::Kind::Trim, borders, i};
+
+    distributed_read_lanes_per_task = 1;
+    setDistributedRead(buckets.size());
+    distributed_read_param_name = nextDistributedReadParamName();
+    distributed_read_buckets = std::move(buckets);
+    divided_by_key_ranges = true;
+    return distributed_read_buckets.size();
+}
+
+Float64 ReadFromMergeTree::getLargestDistributedReadBucketShare() const
+{
+    size_t total_marks = 0;
+    size_t largest_bucket_marks = 0;
+    for (const auto & bucket : distributed_read_buckets)
+    {
+        size_t bucket_marks = 0;
+        for (const auto & part : bucket.marks)
+            bucket_marks += part.ranges.getNumberOfMarks();
+        total_marks += bucket_marks;
+        largest_bucket_marks = std::max(largest_bucket_marks, bucket_marks);
+    }
+    return total_marks == 0 ? 0 : static_cast<Float64>(largest_bucket_marks) / static_cast<Float64>(total_marks);
 }
 
 Strings ReadFromMergeTree::getShardsForDistributedRead() const
@@ -8110,14 +8197,29 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     return step;
 }
 
+String ReadFromMergeTree::getSerializationName() const
+{
+    return divided_by_key_ranges ? name_by_key_ranges : name;
+}
+
+std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserializeByKeyRanges(Deserialization & ctx)
+{
+    auto step = deserialize(ctx);
+    /// The step is not a `ReadFromMergeTree` when the table has no parts on this server.
+    if (auto * read = typeid_cast<ReadFromMergeTree *>(step.get()))
+        read->setDividedByKeyRanges();
+    return step;
+}
+
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
     /// Version 1 carries the `allow_query_condition_cache` flag bit (bit 64 of the flags byte).
-    registry.registerStep(
-        "ReadFromMergeTree",
-        ReadFromMergeTree::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG}});
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG}};
+    registry.registerStep(ReadFromMergeTree::name, ReadFromMergeTree::deserialize, versions);
+    /// A read divided by ranges of key values has the same bytes under its own name (`getSerializationName`).
+    registry.registerStep(ReadFromMergeTree::name_by_key_ranges, ReadFromMergeTree::deserializeByKeyRanges, versions);
 }
 
 }
