@@ -30,6 +30,7 @@
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -162,13 +163,19 @@ enum class SubqueryFunctionType : uint8_t
     ALL
 };
 
-static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
+/// `subquery_text` is the text of the subquery as written in the query, used to name the rewritten right-hand
+/// side of `ALL`, see below.
+static bool modifyAST(ASTPtr ast, SubqueryFunctionType type, std::string_view subquery_text)
 {
     /* Rewrite in AST:
      *  = ANY --> IN
      * != ALL --> NOT IN
-     *  = ALL --> IN (SELECT singleValueOrNull(*) FROM subquery)
+     *  = ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x IN (SELECT tupleElement(_a, 2))
+     *             where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
      * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
+     * <, <=, >, >= ANY --> comparison with (SELECT min(*) / max(*) FROM subquery)
+     * <, <=, >, >= ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x op tupleElement(_a, 2)
+     *             where SQ = (SELECT (count(*) = 0, min(*) / max(*)) FROM subquery)
     **/
 
     auto * function = assert_cast<ASTFunction *>(ast.get());
@@ -208,31 +215,140 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
 
-    auto table_expression = make_intrusive<ASTTableExpression>();
-    table_expression->subquery = std::move(subquery_node);
-    table_expression->children.push_back(table_expression->subquery);
+    /// `x op ALL (empty set)` must be TRUE (vacuous truth). This is what the aggregate-based rewrites below
+    /// (`= ALL`, `< ALL`, `<= ALL`, `> ALL`, `>= ALL`) get wrong without extra care: `singleValueOrNull`
+    /// returns NULL for an empty set, so `x IN (NULL)` is FALSE, and `min` / `max` return the default value
+    /// of the type. So for ALL we also need to know whether the right-hand side is empty. The emptiness flag
+    /// and the aggregate are computed by a single SELECT returning a tuple, see below.
+    /// `!= ALL` is not handled here: it returns early above as a plain `notIn`, which already yields TRUE on
+    /// an empty right-hand side for a non-NULL left-hand side. `NULL != ALL (empty set)` keeps returning NULL,
+    /// following the NULL semantics of `notIn` (and mirroring `NULL = ANY (empty set)`), instead of TRUE: under
+    /// the default `transform_null_in = 0` a NULL left-hand side - a literal NULL or a NULL value in a Nullable
+    /// column - makes `notIn` return NULL before the emptiness of the set is looked at, and only with
+    /// `transform_null_in = 1` an empty set gives TRUE for NULL as well. `05045_notequals_all_single_evaluation`
+    /// pins this.
+    const bool vacuous_truth = type == SubqueryFunctionType::ALL;
 
-    auto tables_in_select_element = make_intrusive<ASTTablesInSelectQueryElement>();
-    tables_in_select_element->table_expression = std::move(table_expression);
-    tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
+    ASTPtr projection = aggregate_function;
+    if (vacuous_truth)
+    {
+        auto flag = makeASTFunction("equals",
+            makeASTFunction("count", make_intrusive<ASTAsterisk>()), make_intrusive<ASTLiteral>(UInt64{0}));
+        projection = makeASTFunction("tuple", std::move(flag), aggregate_function);
+    }
 
-    auto tables_in_select = make_intrusive<ASTTablesInSelectQuery>();
-    tables_in_select->children.push_back(std::move(tables_in_select_element));
+    /// (SELECT projection FROM from_subquery), or (SELECT projection) without the FROM clause.
+    auto make_select_subquery = [](ASTPtr select_projection, ASTPtr from_subquery)
+    {
+        auto select_exp_list = make_intrusive<ASTExpressionList>();
+        select_exp_list->children.push_back(std::move(select_projection));
 
-    auto select_exp_list = make_intrusive<ASTExpressionList>();
-    select_exp_list->children.push_back(aggregate_function);
+        auto select_query = make_intrusive<ASTSelectQuery>();
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
 
-    auto select_query = make_intrusive<ASTSelectQuery>();
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
-    select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
+        if (from_subquery)
+        {
+            auto table_expression = make_intrusive<ASTTableExpression>();
+            table_expression->subquery = std::move(from_subquery);
+            table_expression->children.push_back(table_expression->subquery);
 
-    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-    select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
-    select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
-    select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+            auto tables_in_select_element = make_intrusive<ASTTablesInSelectQueryElement>();
+            tables_in_select_element->table_expression = std::move(table_expression);
+            tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
 
-    auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
-    ast->children[0]->children.back() = std::move(new_subquery);
+            auto tables_in_select = make_intrusive<ASTTablesInSelectQuery>();
+            tables_in_select->children.push_back(std::move(tables_in_select_element));
+
+            select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
+        }
+
+        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
+        select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
+        select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+
+        return make_intrusive<ASTSubquery>(std::move(select_with_union_query));
+    };
+
+    auto new_subquery = make_select_subquery(std::move(projection), std::move(subquery_node));
+
+    if (!vacuous_truth)
+    {
+        ast->children[0]->children.back() = std::move(new_subquery);
+        return true;
+    }
+
+    /// x op ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x op tupleElement(_a, 2)
+    ///     where SQ = (SELECT (count(*) = 0, aggregate(*)) FROM subquery), for `<`, `<=`, `>`, `>=`
+    /// x = ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x IN (SELECT tupleElement(_a, 2))
+    ///     where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
+    ///
+    /// The scalar subquery SQ occurs in the result only once, under a unique alias `_a`, and the other places refer
+    /// to it by that alias. `x` also occurs once. So:
+    /// - The right-hand side is evaluated once, so even if it is non-deterministic, the emptiness flag and the
+    ///   compared value observe the same evaluation.
+    /// - The rewritten expression copies neither operand, so the parsed query is linear in the nesting depth of
+    ///   quantifiers, both in the right-hand side (`x = ALL (SELECT y = ALL (...))`) and in the left-hand side
+    ///   (`(x = ALL (...)) = ALL (...)`), and `max_ast_elements` is not exceeded. Note that the analyzer still
+    ///   expands every reference to an alias with a copy of the aliased expression, so quantifiers deeply nested
+    ///   in the right-hand side are analyzed with a cost that grows with the nesting depth (bounded by
+    ///   `max_expanded_ast_elements`); the scalar subqueries themselves are evaluated once, as the copies have
+    ///   the same hash.
+    /// - SQ is evaluated to a constant, and so are its elements. For `<`, `<=`, `>`, `>=` the comparison of `x`
+    ///   with a constant keeps the type conversions of a comparison with a constant, and it stays visible to the
+    ///   primary key analysis, while the constant emptiness flag folds the disjunction.
+    ///
+    /// The aggregation over an empty set may produce no row at all (`empty_result_for_aggregation_by_empty_set = 1`,
+    /// or a correlated subquery for a missing group). Then the scalar subquery is NULL, and that also means that
+    /// the right-hand side is empty, hence `ifNull(..., 1)`.
+    ///
+    /// For a non-empty right-hand side, `= ALL` is the former `x IN (SELECT singleValueOrNull(*) FROM subquery)`:
+    /// the right-hand side of `IN` is still a subquery returning the single row with the value of
+    /// `singleValueOrNull`, only that value is taken from SQ instead of being computed again. So everything that
+    /// `IN` with a subquery does is kept as is: the set comparison of tuples (also of tuples containing NULL), a
+    /// NULL `x` following `transform_null_in`, FALSE rather than NULL when the subquery returns a NULL or several
+    /// distinct values, the conversion of the set to the type of `x`, the result type, and the use of the primary
+    /// key, including a `Nullable` key. A comparison with the constant `tupleElement(_a, 2)`, by `equals` or by
+    /// `in`, would differ in all of these: e.g. `(1, NULL) = (1, NULL)` is NULL, and `x IN (1, NULL)` takes the
+    /// tuple for a list of values. It also means that, as before, a correlated subquery is not supported in
+    /// `= ALL`, because `IN` does not support it.
+    ///
+    /// The alias is derived from the hash of the aggregate function and the text of the subquery, so different
+    /// right-hand sides get different aliases, and identical ones, which may share an alias, also share the
+    /// value. The text is hashed
+    /// rather than the AST, because `IAST::getTreeHash` would keep every implementation of `updateTreeHashImpl`
+    /// in the WebAssembly build of the parser (see `utils/wasm-parser`), where nothing else uses them.
+    auto & arguments = ast->children[0]->children;
+    auto lhs = arguments[0];
+
+    SipHash hash_state;
+    hash_state.update(aggregate_function_name);
+    hash_state.update(subquery_text);
+    const auto hash = hash_state.get128();
+    const String alias = fmt::format("_all_subquery_{}_{}", hash.items[UInt128::_impl::little(0)], hash.items[UInt128::_impl::little(1)]);
+    new_subquery->setAlias(alias);
+
+    auto rhs_element = [&](UInt64 index) -> ASTPtr
+    {
+        return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(alias), make_intrusive<ASTLiteral>(index));
+    };
+
+    auto is_empty = makeASTFunction("ifNull",
+        makeASTFunction("tupleElement", std::move(new_subquery), make_intrusive<ASTLiteral>(UInt64{1})),
+        make_intrusive<ASTLiteral>(UInt64{1}));
+
+    ASTPtr comparison;
+    if (function_equals)
+        comparison = makeASTFunction("in", std::move(lhs), make_select_subquery(rhs_element(2), nullptr));
+    else
+        comparison = makeASTFunction(operator_name, std::move(lhs), rhs_element(2));
+
+    /// Mutate ast in place to become: or(is_empty, comparison)
+    auto * result = assert_cast<ASTFunction *>(ast.get());
+    result->name = "or";
+    result->arguments = make_intrusive<ASTExpressionList>();
+    result->arguments->children = {std::move(is_empty), std::move(comparison)};
+    result->children = {result->arguments};
 
     return true;
 }
@@ -3824,6 +3940,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
         bool is_subquery = true;
+        std::string_view subquery_text;
 
         /// `ANY`/`SOME`/`ALL` with a subquery right-hand side is the existing
         /// quantifier syntax, rewritten to `IN`/`NOT IN` via `modifyAST`. This form is
@@ -3847,9 +3964,11 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         {
             subquery_function_type = all_kw ? SubqueryFunctionType::ALL : SubqueryFunctionType::ANY;
 
+            auto subquery_begin = pos;
             if (prev_is_comparison && subquery_parser.parse(pos, tmp, expected))
             {
                 /// Existing subquery path: leave `is_subquery = true`.
+                subquery_text = textBetween(subquery_begin, pos);
             }
             else if ((some_kw || all_kw) && pos->type == TokenType::OpeningRoundBracket)
             {
@@ -3890,7 +4009,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             {
                 function = makeASTFunction(prev_op, argument, tmp);
 
-                if (!modifyAST(function, subquery_function_type))
+                if (!modifyAST(function, subquery_function_type, subquery_text))
                     return Action::NONE;
             }
             else
