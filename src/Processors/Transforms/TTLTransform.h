@@ -24,6 +24,7 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
+        bool apply_ttl_,
         bool force_,
         bool ttl_delete_applied_by_merge_ = false
     );
@@ -48,6 +49,9 @@ private:
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool rows_ttl_provenance_invalidated = false;
     bool all_data_dropped = false;
+    /// If false, only fills default values for `expired_columns`: no TTL algorithm runs and the part keeps its TTL infos.
+    /// TODO: move the fill into its own step, build `TTLStep` only when the merge applies TTL, and drop this flag.
+    const bool apply_ttl = true;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
     const bool ttl_delete_applied_by_merge = false;
 

@@ -148,14 +148,43 @@ TTLTransform::TTLTransform(
     const MergeTreeData::MutableDataPartPtr & data_part_,
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
+    bool apply_ttl_,
     bool force_,
     bool ttl_delete_applied_by_merge_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
+    , apply_ttl(apply_ttl_)
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
 {
+    const auto & storage_columns = metadata_snapshot_->getColumns();
+    const auto & column_defaults = storage_columns.getDefaults();
+
+    auto build_default_expr = [&](const String & name)
+    {
+        using Result = std::pair<ExpressionActionsPtr, String>;
+        auto it = column_defaults.find(name);
+        if (it == column_defaults.end())
+            return Result{};
+        const auto & column = storage_columns.get(name);
+        auto default_ast = it->second.expression->clone();
+        default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
+        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
+        auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
+        return Result{actions, default_ast->getColumnName()};
+    };
+
+    for (const auto & expired_column : expired_columns)
+    {
+        auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
+        expired_columns_data.emplace(
+            expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
+    }
+
+    if (!apply_ttl)
+        return;
+
     auto old_ttl_infos = data_part->ttl_infos;
 
     /// Columns the rows-TTL expression is built from. A column TTL that resets one of them
@@ -223,30 +252,6 @@ TTLTransform::TTLTransform(
         /// aggregation can run, they no longer necessarily describe the rows written to the part.
         rows_ttl_provenance_invalidated |= algorithm->isMinTTLExpired();
         algorithms.emplace_back(std::move(algorithm));
-    }
-
-    const auto & storage_columns = metadata_snapshot_->getColumns();
-    const auto & column_defaults = storage_columns.getDefaults();
-
-    auto build_default_expr = [&](const String & name)
-    {
-        using Result = std::pair<ExpressionActionsPtr, String>;
-        auto it = column_defaults.find(name);
-        if (it == column_defaults.end())
-            return Result{};
-        const auto & column = storage_columns.get(name);
-        auto default_ast = it->second.expression->clone();
-        default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
-        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
-        auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
-        return Result{actions, default_ast->getColumnName()};
-    };
-
-    for (const auto & expired_column : expired_columns)
-    {
-        auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
-        expired_columns_data.emplace(
-            expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
     }
 
     /// Columns whose TTL expired for the whole part are replaced with defaults before any algorithm
@@ -484,6 +489,9 @@ Chunk TTLTransform::generate()
 
 void TTLTransform::finalize()
 {
+    if (!apply_ttl)
+        return;
+
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
