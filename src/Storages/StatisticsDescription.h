@@ -73,6 +73,11 @@ struct ColumnStatisticsDescription
     using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
     StatisticsTypeDescMap types_to_desc;
     DataTypePtr data_type;
+    /// Set by `addImplicitStatistics` when it leaves out the implicit `uniq` / `uniq_v2` of the column
+    /// (`auto_statistics_assume_floats_distinct`): the optimizer assumes instead that all non-NULL values are
+    /// distinct, see `shouldAssumeAllDistinct`. Like the implicit statistics, it is derived from the table settings,
+    /// cleared by `removeImplicitStatistics` and never persisted. Doesn't count for `empty`: nothing is built for it.
+    bool assume_all_distinct = false;
 };
 
 StatisticsType stringToStatisticsType(String type);

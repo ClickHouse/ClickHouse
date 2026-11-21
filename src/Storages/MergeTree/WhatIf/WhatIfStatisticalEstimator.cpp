@@ -20,7 +20,7 @@ bool tryEstimateWithStatistics(
 {
     auto metadata = read_step->getStorageMetadata();
 
-    if (!metadata->hasStatistics())
+    if (!metadata->hasStatisticsForEstimation())
         return false;
 
     if (parts.empty())
@@ -40,6 +40,9 @@ bool tryEstimateWithStatistics(
             return false;
 
     ConditionSelectivityEstimatorBuilder builder(context);
+    builder.setCardinalityPolicy(metadata);
+    /// See `MergeTreeData::getConditionSelectivityEstimator`.
+    const Names columns_without_statistics = builder.getAssumedDistinctColumnsWithoutStatistics(filter_input_columns);
     bool has_any_stats = false;
 
     auto statistics_cache = context->getStatisticsCache();
@@ -54,6 +57,14 @@ bool tryEstimateWithStatistics(
             for (const auto & [column_name, stat] : stats)
                 builder.addStatistics(column_name, stat);
             has_any_stats = true;
+        }
+        for (const auto & column_name : columns_without_statistics)
+        {
+            if (!stats.contains(column_name) && part.data_part->getColumnPosition(column_name))
+            {
+                builder.addRowsWithoutStatistics(column_name, part.data_part->rows_count);
+                has_any_stats = true;
+            }
         }
     }
 

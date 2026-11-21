@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 
@@ -75,7 +76,9 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"statistics",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The statistics of the column."},
         {"estimates.min",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated minimum value of the column."},
         {"estimates.max",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated maximum value of the column."},
-        {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column."},
+        {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column. "
+            "For a column without a uniq statistic whose values are assumed to be distinct (see the MergeTree setting `auto_statistics_assume_floats_distinct`), the assumed cardinality, "
+            "which is the number of rows of the part if the column has no statistics at all."},
         {"estimates.null_count",                       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of NULL values in the column."},
         {"estimates.default_count",                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of rows equal to the column's storage default value (NULL for Nullable columns, 0 / '' / [] / ... for non-Nullable). NULL when no basic statistic is available."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
@@ -127,6 +130,18 @@ void StorageSystemPartsColumns::processNextStorage(
 
         columns_info[column.name] = column_info;
     }
+
+    /// The same policy as in the estimator, see `ConditionSelectivityEstimatorBuilder::setCardinalityPolicy`.
+    auto assumes_all_distinct = [&](const String & column_name)
+    {
+        const auto * column = metadata_snapshot->getColumns().tryGet(column_name);
+        return column && shouldAssumeAllDistinct(*column);
+    };
+    auto assumes_all_distinct_without_statistics = [&](const String & column_name)
+    {
+        const auto * column = metadata_snapshot->getColumns().tryGet(column_name);
+        return column && shouldAssumeAllDistinctWithoutStatistics(*column);
+    };
 
     /// Go through the list of parts.
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -353,8 +368,24 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
             {
                 auto estimate_it = find_estimate(column.name);
-                if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
-                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
+                std::optional<UInt64> cardinality;
+                if (estimate_it != estimates->end())
+                {
+                    cardinality = estimate_it->second.estimated_cardinality;
+                    /// Without a sketch, show the cardinality the optimizer assumes, if it does. It is derived from
+                    /// the estimate on request, not stored with it: every part keeps an estimate per column.
+                    if (!cardinality && assumes_all_distinct(column.name))
+                        cardinality = estimate_it->second.estimateAssumedDistinctCardinality(column.type);
+                }
+                else if (assumes_all_distinct_without_statistics(column.name))
+                {
+                    /// The estimator assumes as many distinct values as rows, see
+                    /// `ConditionSelectivityEstimatorBuilder::addRowsWithoutStatistics`.
+                    cardinality = part->rows_count;
+                }
+
+                if (cardinality)
+                    columns[res_index++]->insert(*cardinality);
                 else
                     columns[res_index++]->insertDefault();
             }

@@ -2567,6 +2567,23 @@ The `minmax` statistics type is deprecated: it is a subset of `basic`, which sho
         {"26.7", "basic, uniq_v2", "basic, uniq_v2", "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}, \
         {"26.4", "", "basic, uniq_v2", "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}, \
         {"25.10", "", "", "New setting"}) \
+    DECLARE(Bool, auto_statistics_assume_floats_distinct, true, R"(
+When enabled, the implicit statistics from [auto_statistics_types](#auto_statistics_types) don't include `uniq` and
+`uniq_v2` for `Float32` and `Float64` columns (also inside `Nullable`), because the values of such columns are almost
+always distinct and the sketch costs CPU and memory on every insert and merge. Instead, wherever the optimizer needs
+the number of distinct values of such a column and no sketch exists, it assumes that all non-`NULL` values are
+distinct. The assumed value is capped using `basic` statistics: rows equal to the default value (`0`) count as one
+value, and a column with equal minimum and maximum has one value. If the column has no statistics at all (e.g. with
+`auto_statistics_types = 'uniq_v2'`), the number of rows is assumed.
+
+- Only implicit statistics are affected: an explicit `STATISTICS(uniq)` or `STATISTICS(uniq_v2)` on a column still
+  builds a sketch, and the optimizer then uses it.
+- Nothing is assumed if `auto_statistics_types` contains neither `uniq` nor `uniq_v2`.
+- `BFloat16` and `LowCardinality(...)` columns are not affected.
+- Existing parts are rebuilt with the new set of statistics on their next merge, or with
+  `ALTER TABLE ... MATERIALIZE STATISTICS`.
+)", 0, \
+        {"26.12", false, true, "Do not build implicit uniq statistics for Float columns; assume distinct values instead"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
