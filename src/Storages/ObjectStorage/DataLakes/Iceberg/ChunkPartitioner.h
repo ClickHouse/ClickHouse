@@ -44,6 +44,8 @@ private:
 
     std::vector<FunctionOverloadResolverPtr> functions;
     std::vector<std::optional<size_t>> function_params;
+    /// Parallel to `function_params`; null where a transform takes no argument.
+    DataTypes function_param_types;
     std::vector<String> columns_to_apply;
     DataTypes result_data_types;
 
