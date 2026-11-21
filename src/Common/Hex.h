@@ -37,8 +37,8 @@ void decodeHexStrings(
     size_t row_count);
 
 /// Encode the in-memory representation of `CityHash_v1_0_2::uint128` (`low64` followed by `high64`,
-/// each in native byte order) to 32 hex chars: `high64` first, then `low64`. On big-endian hosts
-/// the scalar implementation reads both halves as native integers, which matches that layout.
+/// each in native byte order) to 32 hex chars: `high64` first, then `low64`. Every implementation
+/// reads both halves as native integers, so this holds on any byte order.
 void encodeHex16LEUpper(uint8_t * dst, const uint8_t * src);
 void encodeHex16LELower(uint8_t * dst, const uint8_t * src);
 
