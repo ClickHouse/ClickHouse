@@ -40,7 +40,7 @@ public:
     [[nodiscard]] bool isVariadic() const override { return true; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    /// An empty time and a zero-filled FixedString, the defaults behind a NULL, cannot be parsed.
+    /// An empty time and a zero-filled `FixedString`, the defaults behind a `NULL`, cannot be parsed.
     [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     [[nodiscard]] String getSignatureString() const override
