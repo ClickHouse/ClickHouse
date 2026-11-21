@@ -147,11 +147,9 @@ workflow = Workflow.Config(
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
-        # The merge queue's non-sanitizer flaky check also runs here, so a test
-        # that is only too slow (or only flaky) without a sanitizer is reported
-        # in the PR rather than first bouncing it from the merge queue. Same job
-        # config as in `ci/workflows/merge_queue.py`.
-        *JobConfigs.stateless_tests_flaky_mq_jobs,
+        # The non-sanitizer (`amd_binary`) flaky check, so a test that is only
+        # too slow (or only flaky) without a sanitizer is reported in the PR.
+        *JobConfigs.stateless_tests_flaky_amd_binary_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
         # both amd64 and aarch64). Each per-arch variant has
