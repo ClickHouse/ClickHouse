@@ -1251,7 +1251,8 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     MutationCommands commands_with_partitions = commands;
     resolvePartitionIdsOfScopedCommands(commands_with_partitions, query_context);
 
-    MergeTreeMutationEntry entry(std::move(commands_with_partitions), disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    MergeTreeMutationEntry entry(std::move(commands_with_partitions), disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
+                                 (*getSettings())[MergeTreeSetting::fsync_part_directory]);
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1909,6 +1910,9 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
+    /// Entries loaded by `loadMutations` do not carry the setting, so apply the current one so the
+    /// removal fsyncs the directory. See #111380.
+    to_kill->fsync_directory = (*getSettings())[MergeTreeSetting::fsync_part_directory];
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
