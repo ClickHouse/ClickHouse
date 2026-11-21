@@ -225,9 +225,9 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const Str
 
 void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk)
 {
+    auto log = getLogger("ObjectStorageQueueTableMetadata");
     if (processing_threads_num != from_zk.processing_threads_num)
     {
-        auto log = getLogger("ObjectStorageQueueTableMetadata");
         const auto message = PreformattedMessage::create(
             "Using `processing_threads_num` from keeper: {} (local: {})",
             from_zk.processing_threads_num.load(), processing_threads_num.load());
@@ -238,6 +238,14 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
             LOG_TRACE(log, message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
+    }
+
+    /// `ALTER TABLE ... MODIFY SETTING buckets` of any table on the `keeper_path` migrates a queue with at most one
+    /// bucket in Keeper, so the definition of such a queue may lag the `buckets` stored in Keeper.
+    if (modeFromString(mode) == ObjectStorageQueueMode::ORDERED && buckets != from_zk.buckets && getBucketsNum() <= 1)
+    {
+        LOG_WARNING(log, "Using `buckets` from keeper: {} (local: {})", from_zk.buckets.load(), buckets.load());
+        buckets = from_zk.buckets.load();
     }
 }
 
