@@ -112,6 +112,11 @@ public:
         const auto offset_column = arguments[1].column->convertToFullColumnIfReplicated();
         const auto length_column = arguments.size() > 2 ? arguments[2].column->convertToFullColumnIfReplicated() : nullptr;
 
+        /// `getInt` reads a UInt64 of 2^63 or more as a negative number, which would count from the end (issue #132511).
+        checkIntegerArgumentFitsInt64(*offset_column, getName(), "offset");
+        if (length_column)
+            checkIntegerArgumentFitsInt64(*length_column, getName(), "length");
+
         if (isColumnConst(*offset_column)
             && !offset_column->onlyNull()
             && offset_column->getUInt(0) == 1
