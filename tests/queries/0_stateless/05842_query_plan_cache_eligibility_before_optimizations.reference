@@ -1,0 +1,13 @@
+-- 1. a constant condition removed from the query by the optimizations
+-- native: 1 2 3 
+-- hits after a native repeat (must be 0): 0
+-- HTTP: 101 102 103 
+-- hits of the HTTP run (must be 0): 0
+-- 2. a constant condition removed from the body of an expanded view
+-- native: 1 2 3 
+-- hits after a native repeat (must be 0): 0
+-- HTTP: 101 102 103 
+-- hits of the HTTP run (must be 0): 0
+-- 3. a deterministic constant condition does not prevent caching
+-- native: 1 2 3 
+-- hits after a native repeat (must be 1): 1

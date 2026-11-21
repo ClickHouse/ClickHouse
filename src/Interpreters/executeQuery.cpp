@@ -1831,7 +1831,11 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// The check reads only the analyzed query tree, which the interpreter has already built
     /// (scalar subqueries are folded during analysis), so it runs before the logical plan is
     /// built: a permanently uncacheable query must not pay for planning twice.
-    if (!queryTreeIsEligibleForPlanCache(
+    /// The interpreter has already checked the resolved tree before the optimization passes, which
+    /// can remove an ineligible expression (e.g. the folded condition of an `if`), and recorded the
+    /// result in `planning_identities`; the optimized tree is checked as well.
+    if (planning_identities->hasIneligibleQueryTree()
+        || !queryTreeIsEligibleForPlanCache(
             analyzer_interpreter->getQueryTree(), context, settings[Setting::query_plan_cache_allow_scalar_subqueries]))
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
