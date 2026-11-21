@@ -25,6 +25,9 @@ extern const int NOT_IMPLEMENTED;
 namespace
 {
 
+/// 999:59:59, the largest `Time64` value in whole seconds.
+constexpr Int128 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
+
 /// An integer token is a number of ticks; out-of-range values saturate to the `Time64` range.
 template <typename ReturnType>
 ReturnType readTime64TicksText(Time64 & x, UInt32 scale, ReadBuffer & istr)
@@ -34,7 +37,8 @@ ReturnType readTime64TicksText(Time64 & x, UInt32 scale, ReadBuffer & istr)
         readIntText128Saturating(ticks, istr);
     else if (!readIntText128Saturating<bool>(ticks, istr))
         return false;
-    const Int128 max_ticks = Int128(3600000) * DecimalUtils::scaleMultiplier<Time64::NativeType>(scale) - 1;
+    const Int128 multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
+    const Int128 max_ticks = max_time_seconds * multiplier + multiplier - 1;
     x = static_cast<Int64>(std::clamp(ticks, -max_ticks, max_ticks));
     return ReturnType(true);
 }
