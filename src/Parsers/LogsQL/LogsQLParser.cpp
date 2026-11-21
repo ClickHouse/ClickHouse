@@ -2180,8 +2180,11 @@ ASTPtr LogsQLParser::parseFilterWeekRange()
     if (total_offset_ns)
         time_expr = shiftTime(time_expr, -total_offset_ns);
 
-    /// toDayOfWeek returns 1 for Monday ... 7 for Sunday; convert to Sunday = 0.
-    ASTPtr day_of_week = makeASTFunction("modulo", makeASTFunction("toDayOfWeek", time_expr), make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(7))));
+    /// `toDayOfWeek` with mode 0 returns 1 for Monday ... 7 for Sunday regardless of `week_functions_starting_day`; convert to Sunday = 0.
+    ASTPtr day_of_week = makeASTFunction(
+        "modulo",
+        makeASTFunction("toDayOfWeek", time_expr, make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)))),
+        make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(7))));
 
     return makeAnd({
         makeASTFunction(include_start ? "greaterOrEquals" : "greater", day_of_week, make_intrusive<ASTLiteral>(Field(start_day))),

@@ -21,10 +21,14 @@ struct Date32RoundingNarrowing
     IntervalKind::Kind kind;
     Int64 num_units;
     const DateLUTImpl * time_zone;
+    /// The day weeks start on for the `Week` kind, 1 = Monday ... 7 = Sunday, from `week_functions_starting_day`.
+    UInt8 first_weekday;
 };
 
 /// Nothing when `result_type` (Nullable / LowCardinality stripped) holds the whole Date32 domain.
-std::optional<Date32RoundingNarrowing> describeDate32RoundingNarrowing(const DataTypePtr & result_type, IntervalKind::Kind kind, Int64 num_units);
+/// `first_weekday` must be the day the rounding itself starts weeks on.
+std::optional<Date32RoundingNarrowing> describeDate32RoundingNarrowing(
+    const DataTypePtr & result_type, IntervalKind::Kind kind, Int64 num_units, UInt8 first_weekday);
 
 /// Monotonic on [left, right] only when both rounded bounds fit the result type. Nothing else is claimed: the rounding wraps,
 /// and a key expression stores the wrapped results.

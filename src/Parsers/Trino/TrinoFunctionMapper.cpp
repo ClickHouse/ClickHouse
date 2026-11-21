@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
+#include <Common/IntervalKind.h>
 #include <Common/StringUtils.h>
 #include <base/defines.h>
 
@@ -289,7 +290,8 @@ ASTPtr makeThreeValuedMatch(ASTFunction & function, ASTs & arguments, UInt64 dec
 /// Simple renames: the argument order and semantics match.
 /// Names that already resolve in ClickHouse with the same semantics (through
 /// case-insensitive aliases, e.g. `concat`, `coalesce`, `cardinality`, `abs`,
-/// `date_trunc`, `max_by`) are not listed.
+/// `max_by`) are not listed. `date_trunc` resolves to `dateTrunc` too, except for
+/// the `week` unit, see its rewriter.
 const std::unordered_map<String, String> & getRenames()
 {
     static const std::unordered_map<String, String> renames =
@@ -333,8 +335,6 @@ const std::unordered_map<String, String> & getRenames()
         {"format_datetime", "formatDateTimeInJodaSyntax"},
         {"parse_datetime", "parseDateTimeInJodaSyntax"},
         {"day_of_month", "toDayOfMonth"},
-        {"day_of_week", "toDayOfWeek"},
-        {"dow", "toDayOfWeek"},
         {"day_of_year", "toDayOfYear"},
         {"doy", "toDayOfYear"},
         /// DANGER if unmapped: ClickHouse `week` defaults to the non-ISO Sunday-based mode.
@@ -427,6 +427,15 @@ const std::unordered_map<String, String> & getRenames()
 
 const std::unordered_map<String, Rewriter> & getRewriters()
 {
+    /// Trino `day_of_week` and its alias `dow` are ISO: 1 = Monday, 7 = Sunday, which is `toDayOfWeek` mode 0. The
+    /// explicit mode keeps the `week_functions_starting_day` setting from changing the result.
+    static const Rewriter day_of_week = [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+    {
+        function.name = "toDayOfWeek";
+        if (arguments.size() == 1)
+            arguments.push_back(make_intrusive<ASTLiteral>(UInt64(0)));
+    };
+
     static const std::unordered_map<String, Rewriter> rewriters =
     {
         /// Higher-order functions: the lambda moves from the last to the first argument.
@@ -703,6 +712,35 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             requireArguments(function, arguments, 1, 1, "(timestamp)");
             function.name = "formatDateTime";
             arguments.push_back(make_intrusive<ASTLiteral>(String("%Y-%m-%dT%H:%i:%S")));
+        }},
+        {"day_of_week", day_of_week},
+        {"dow", day_of_week},
+        {"date_trunc", [](ASTPtr & node, ASTFunction &, ASTs & arguments)
+        {
+            /// Trino `date_trunc('week', x)` starts weeks on Monday. `dateTrunc` starts them on the day of
+            /// `week_functions_starting_day` and has no `mode`, so the week is computed with `toMonday`, cast to the
+            /// type `dateTrunc` returns for `x`: the same for `month` as for `week`, and independent of the setting.
+            /// The time zone argument of the native `dateTrunc` is passed to both. The other units, and calls that
+            /// `dateTrunc` rejects, resolve to `dateTrunc` unchanged.
+            if (arguments.size() != 2 && arguments.size() != 3)
+                return;
+            const auto * unit = arguments[0]->as<ASTLiteral>();
+            if (!unit || unit->value.getType() != Field::Types::String)
+                return;
+            IntervalKind kind;
+            if (!IntervalKind::tryParseString(Poco::toLower(unit->value.safeGet<String>()), kind) || kind != IntervalKind::Kind::Week)
+                return;
+            ASTs to_monday_arguments{arguments[1]};
+            ASTs date_trunc_arguments{make_intrusive<ASTLiteral>(String("month")), arguments[1]->clone()};
+            if (arguments.size() == 3)
+            {
+                to_monday_arguments.push_back(arguments[2]);
+                date_trunc_arguments.push_back(arguments[2]->clone());
+            }
+            node = makeFunctionWithArguments(
+                "CAST",
+                {makeFunctionWithArguments("toMonday", std::move(to_monday_arguments)),
+                 makeFunctionWithArguments("toTypeName", {makeFunctionWithArguments("dateTrunc", std::move(date_trunc_arguments))})});
         }},
         {"timezone", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {

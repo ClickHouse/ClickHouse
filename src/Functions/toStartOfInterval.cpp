@@ -15,6 +15,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/WeekFunctionsSettings.h>
 #include <Functions/toStartOfInterval.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
@@ -225,15 +226,21 @@ private:
     ToStartOfIntervalOverload overload;
     bool preserve_argument_type;
     std::optional<Date32RoundingNarrowing> date32_narrowing;
+    /// The day weeks start on without `origin`, 1 = Monday ... 7 = Sunday, from `week_functions_starting_day`.
+    UInt8 first_weekday;
 
 public:
     static constexpr auto name = "toStartOfInterval";
 
     FunctionToStartOfInterval(
-        ToStartOfIntervalOverload overload_, bool preserve_argument_type_, std::optional<Date32RoundingNarrowing> date32_narrowing_)
+        ToStartOfIntervalOverload overload_,
+        bool preserve_argument_type_,
+        std::optional<Date32RoundingNarrowing> date32_narrowing_,
+        UInt8 first_weekday_)
         : overload(overload_)
         , preserve_argument_type(preserve_argument_type_)
         , date32_narrowing(date32_narrowing_)
+        , first_weekday(first_weekday_)
     {
     }
 
@@ -651,7 +658,19 @@ private:
                     /// signed overload: the unsigned one clamps a day before the epoch to the first day after it, which
                     /// starts after the timestamp zero in a time zone with a negative offset, and the result would exceed
                     /// the argument. The legacy behavior keeps the unsigned overload, so that the setting restores the old results.
-                    if constexpr (saturate && std::is_same_v<TimeColumnType, ColumnDateTime>)
+                    /// A week starts on `first_weekday`, from `week_functions_starting_day`.
+                    if constexpr (unit == IntervalKind::Kind::Week)
+                    {
+                        if constexpr (saturate && std::is_same_v<TimeColumnType, ColumnDateTime>)
+                            return convertToResultRepresentation<unit, ResultDataType>(
+                                ToStartOfInterval<unit>::executeWithFirstWeekday(static_cast<Int64>(time), num_units, time_zone, 1, first_weekday),
+                                time_zone, result_scale_multiplier);
+                        else
+                            return convertToResultRepresentation<unit, ResultDataType>(
+                                ToStartOfInterval<unit>::executeWithFirstWeekday(time, num_units, time_zone, scale_multiplier, first_weekday),
+                                time_zone, result_scale_multiplier);
+                    }
+                    else if constexpr (saturate && std::is_same_v<TimeColumnType, ColumnDateTime>)
                         return convertToResultRepresentation<unit, ResultDataType>(
                             ToStartOfInterval<unit>::execute(static_cast<Int64>(time), num_units, time_zone, 1), time_zone, result_scale_multiplier);
                     else
@@ -672,7 +691,8 @@ private:
                 if constexpr ((unit == IntervalKind::Kind::Week || unit == IntervalKind::Kind::Month)
                     && std::is_same_v<TimeColumnType, ColumnDateTime> && std::is_same_v<ResultDataType, DataTypeDateTime>)
                 {
-                    if (num_units == 1)
+                    /// `toFirstDayOfWeek` starts the week on Monday.
+                    if (num_units == 1 && (unit == IntervalKind::Kind::Month || first_weekday == 1))
                     {
                         UInt32 min_time = std::numeric_limits<UInt32>::max();
                         for (size_t i = 0; i != size; ++i)
@@ -744,6 +764,7 @@ public:
     FunctionToStartOfIntervalOverloadResolver(ContextPtr context_, bool preserve_argument_type_)
         : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
         , preserve_argument_type(preserve_argument_type_)
+        , first_weekday(WeekFunctionsSettings(context_).firstWeekday(1))
     {
     }
 
@@ -989,10 +1010,10 @@ public:
         {
             const auto * interval_column = checkAndGetColumnConst<ColumnInt64>(args[1].column.get());
             const Int64 num_units = interval_column ? interval_column->getValue<Int64>() : 0;
-            date32_narrowing = describeDate32RoundingNarrowing(return_type, interval_type->getKind(), num_units);
+            date32_narrowing = describeDate32RoundingNarrowing(return_type, interval_type->getKind(), num_units, first_weekday);
         }
 
-        auto function = std::make_shared<FunctionToStartOfInterval>(overload, preserve_argument_type, date32_narrowing);
+        auto function = std::make_shared<FunctionToStartOfInterval>(overload, preserve_argument_type, date32_narrowing, first_weekday);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -1004,6 +1025,8 @@ public:
 private:
     const bool enable_extended_results_for_datetime_functions;
     const bool preserve_argument_type;
+    /// Weeks start on this day without `origin`, see `FunctionToStartOfInterval`.
+    const UInt8 first_weekday;
 };
 
 }
@@ -1013,13 +1036,19 @@ FunctionOverloadResolverPtr createLegacyToStartOfIntervalOverloadResolver(Contex
     return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context, /* preserve_argument_type_ = */ false);
 }
 
-std::optional<Date32RoundingNarrowing> describeDate32RoundingNarrowing(const DataTypePtr & result_type, IntervalKind::Kind kind, Int64 num_units)
+std::optional<Date32RoundingNarrowing> describeDate32RoundingNarrowing(
+    const DataTypePtr & result_type, IntervalKind::Kind kind, Int64 num_units, UInt8 first_weekday)
 {
     const DataTypePtr type = removeNullable(recursiveRemoveLowCardinality(result_type));
     if (isDate(type))
-        return Date32RoundingNarrowing{.kind = kind, .num_units = num_units, .time_zone = &DateLUT::instance("UTC")};
+        return Date32RoundingNarrowing{
+            .kind = kind, .num_units = num_units, .time_zone = &DateLUT::instance("UTC"), .first_weekday = first_weekday};
     if (isDateTime(type))
-        return Date32RoundingNarrowing{.kind = kind, .num_units = num_units, .time_zone = &assert_cast<const DataTypeDateTime &>(*type).getTimeZone()};
+        return Date32RoundingNarrowing{
+            .kind = kind,
+            .num_units = num_units,
+            .time_zone = &assert_cast<const DataTypeDateTime &>(*type).getTimeZone(),
+            .first_weekday = first_weekday};
     return {};
 }
 
@@ -1050,7 +1079,9 @@ IFunction::Monotonicity getDate32RoundingMonotonicity(const Date32RoundingNarrow
                 return seconds >= 0 && seconds <= std::numeric_limits<UInt32>::max();
             }
             case IntervalKind::Kind::Week:
-                return fits_date(ToStartOfInterval<IntervalKind::Kind::Week>::execute(d, units, time_zone, 1));
+                /// Rounded as the function rounds it: from `week_functions_starting_day`, not always from Monday.
+                return fits_date(ToStartOfInterval<IntervalKind::Kind::Week>::executeWithFirstWeekday(
+                    d, units, time_zone, 1, narrowing.first_weekday));
             case IntervalKind::Kind::Month:
                 return fits_date(ToStartOfInterval<IntervalKind::Kind::Month>::execute(d, units, time_zone, 1));
             case IntervalKind::Kind::Quarter:
@@ -1099,7 +1130,7 @@ The calculation is performed relative to specific points in time:
 (*) hour intervals are special: the calculation is always performed relative to 00:00:00 (midnight) of the current day. As a result, only
 hour values between 1 and 23 are useful.
 
-If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday.
+If unit `WEEK` was specified, `toStartOfInterval` assumes that weeks start on Monday. Note that this behavior is different from that of function `toStartOfWeek` in which weeks start by default on Sunday. The setting [`week_functions_starting_day`](/reference/settings/session-settings/week-functions#week_functions_starting_day) changes the day weeks start on: the intervals are then aligned to the first such day on or after 1970-01-01 instead of 1970-01-05. The setting doesn't apply to the overload with an `origin`.
 
 The second overload emulates TimescaleDB's `time_bucket()` function, respectively PostgreSQL's `date_bin()` function.
 
