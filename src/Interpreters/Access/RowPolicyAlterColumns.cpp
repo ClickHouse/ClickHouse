@@ -11,6 +11,7 @@
 #include <Parsers/parseQuery.h>
 #include <Planner/Utils.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
@@ -38,10 +39,16 @@ bool removesColumn(const AlterCommand & command)
     return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
 }
 
-/// n.x is also a use of the nested column n
-bool usesColumn(const Names & used_columns, const String & column)
+/// a used name is a column or a subcolumn of one; a command on n changes the column n, or the whole Nested n if there is no column n
+bool usesColumn(const Names & used_columns, const ColumnsDescription & columns, const String & column)
 {
-    return std::ranges::any_of(used_columns, [&](const String & used) { return used == column || used.starts_with(column + "."); });
+    const bool whole_nested = !columns.has(column);
+    return std::ranges::any_of(used_columns, [&](const String & used)
+    {
+        const auto found = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
+        const auto in_storage = found ? found->getNameInStorage() : used;
+        return in_storage == column || (whole_nested && in_storage.starts_with(column + "."));
+    });
 }
 
 Names columnsReadByFilter(
@@ -141,7 +148,7 @@ void checkRowPoliciesBeforeAlter(
                 const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, analysis_context);
                 for (const auto & command : commands)
                 {
-                    if (removesColumn(command) && usesColumn(used_columns, command.column_name))
+                    if (removesColumn(command) && usesColumn(used_columns, metadata_snapshot->getColumns(), command.column_name))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "Cannot {} column {}: it is used by row policy {}. Change or drop the policy first",
                             command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename", backQuote(command.column_name), policy_name);
