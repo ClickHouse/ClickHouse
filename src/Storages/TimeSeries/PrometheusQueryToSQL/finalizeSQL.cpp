@@ -8,6 +8,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionSort.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
@@ -290,7 +291,14 @@ namespace
         const auto * aggregation = (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
             ? static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node)
             : nullptr;
-        if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
+
+        /// A PromQL sort function at the root is applied here, see `applyFunctionSort`.
+        if (auto sort_order = getSortOrder(result))
+        {
+            builder.order_by = std::move(sort_order->keys);
+            builder.order_direction = (sort_order->direction == SortDirection::DESCENDING) ? -1 : 1;
+        }
+        else if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
         {
             if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
             {

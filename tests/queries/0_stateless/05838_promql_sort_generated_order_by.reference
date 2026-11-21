@@ -1,0 +1,9 @@
+-- by value
+ORDER BY value DESC,
+    tags DESC
+-- by labels
+ORDER BY arrayMap(lambda(tuple(piece), multiIf(less(piece, '0'), tuple(0, 0, piece), less(piece, ':'), tuple(1, length(trimLeft(piece, '0')), trimLeft(piece, '0')), tuple(2, 0, piece))), extractAll(ifNull(timeSeriesExtractTag(group, 'instance'), ''), '[0-9]+|[^0-9]+')) ASC,
+    arrayMap(lambda(tuple(piece), multiIf(less(piece, '0'), tuple(0, 0, piece), less(piece, ':'), tuple(1, length(trimLeft(piece, '0')), trimLeft(piece, '0')), tuple(2, 0, piece))), extractAll(ifNull(timeSeriesExtractTag(group, 'job'), ''), '[0-9]+|[^0-9]+')) ASC,
+    tags ASC
+-- not the root
+ORDER BY tags ASC
