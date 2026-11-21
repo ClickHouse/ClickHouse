@@ -135,17 +135,45 @@ bool decompress(Int32 codec, std::string_view in, char * out, size_t size)
         }
         case PulsarProto::ZLIB:
         {
+            if (in.size() > std::numeric_limits<uInt>::max())
+                return false;
             z_stream stream{};
-            if (inflateInit(&stream) != Z_OK)
+            int res = inflateInit(&stream);
+            if (res == Z_MEM_ERROR)
+                throw std::bad_alloc();
+            if (res != Z_OK)
                 return false;
             stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(in.data()));
             stream.avail_in = static_cast<uInt>(in.size());
             stream.next_out = reinterpret_cast<Bytef *>(out);
             stream.avail_out = static_cast<uInt>(size);
-            int res = in.size() > std::numeric_limits<uInt>::max() ? Z_DATA_ERROR : inflate(&stream, Z_FINISH);
-            bool ok = res == Z_STREAM_END && stream.total_out == size;
+
+            /// Block by block, so that `data_type` tells where the input ended. One byte past the size catches longer output.
+            Bytef extra;
+            int data_type = 0;
+            while (true)
+            {
+                if (stream.avail_out == 0 && stream.total_out == size)
+                {
+                    stream.next_out = &extra;
+                    stream.avail_out = 1;
+                }
+                res = inflate(&stream, Z_BLOCK);
+                if (res != Z_OK || stream.total_out > size)
+                    break;
+                data_type = stream.data_type;
+            }
+            const uLong total_out = stream.total_out;
+            const uInt remaining_in = stream.avail_in;
             inflateEnd(&stream);
-            return ok;
+            if (res == Z_MEM_ERROR)
+                throw std::bad_alloc();
+
+            /// The Java client ends the stream with a sync flush, without the final block and the checksum: accept it
+            /// when all input is consumed at a block boundary (128) outside of the final block (64), as the C++ client does.
+            const bool complete = res == Z_STREAM_END
+                || (res == Z_BUF_ERROR && remaining_in == 0 && (data_type & 128) != 0 && (data_type & 64) == 0);
+            return complete && total_out == size;
         }
         case PulsarProto::SNAPPY:
         {
