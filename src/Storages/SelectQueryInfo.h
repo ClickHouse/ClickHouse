@@ -33,6 +33,8 @@ struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
 class Cluster;
+
+class IStorage;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
 class PlannerContext;
@@ -244,6 +246,9 @@ struct SelectQueryInfo
     /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
     [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
     [[nodiscard]] std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
+
+    /// The name of the column the planner reads from `storage` only to count the rows, if no filter it attaches later reads it too.
+    [[nodiscard]] std::optional<String> getRowCountOnlyColumnName(const IStorage & storage, const ContextPtr & context) const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.

@@ -16,6 +16,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -138,6 +140,39 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
             return true;
     }
     return false;
+}
+
+/// `SELECT projection FROM (query)`.
+ASTPtr wrapQueryWithProjection(ASTPtr query, ASTPtr projection)
+{
+    /// A subquery holds an `ASTSelectWithUnionQuery`.
+    if (!query->as<ASTSelectWithUnionQuery>())
+    {
+        auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        union_query->list_of_selects = make_intrusive<ASTExpressionList>();
+        union_query->list_of_selects->children.push_back(std::move(query));
+        union_query->children.push_back(union_query->list_of_selects);
+        query = std::move(union_query);
+    }
+
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->children.push_back(make_intrusive<ASTSubquery>(std::move(query)));
+    table_expression->subquery = table_expression->children.back();
+
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->children.push_back(std::move(table_expression));
+    tables_element->table_expression = tables_element->children.back();
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(tables_element));
+
+    auto projection_list = make_intrusive<ASTExpressionList>();
+    projection_list->children.push_back(std::move(projection));
+
+    auto select_query = make_intrusive<ASTSelectQuery>();
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_list));
+    return select_query;
 }
 
 bool hasSubquery(const ASTPtr & expr)
@@ -785,13 +820,26 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
+    /// The view is read only to count its rows: give the column the default of its type, as `ReadFromMerge` does.
+    /// Then nothing reads the column from the view query, and the analyzer drops the projection of the view query
+    /// when it does not change the number of rows, so that the tables under the view get a row-count-only read too.
+    Names inner_column_names = column_names;
+    if (column_names.size() == 1 && query_info.getRowCountOnlyColumnName(*this, context) == column_names.front())
+    {
+        const auto column_type = storage_snapshot->getSampleBlockForColumns(column_names).getByPosition(0).type;
+        auto default_value = makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(column_type->getName()));
+        default_value->setAlias(column_names.front());
+        current_inner_query = wrapQueryWithProjection(normalizeAndValidateQuery(current_inner_query, column_names), std::move(default_value));
+        inner_column_names.clear();
+    }
+
     const bool sealed = isSealed(*storage_snapshot->metadata, context) && !isReadByDefiner(*storage_snapshot->metadata, context);
     auto view_context = getViewContext(context, storage_snapshot, this, current_inner_query);
     {
         /// The outer filter is used only to analyze the indexes of the inner tables,
         /// but for a sealed view it would skip data by the values of the rows the view hides.
         InterpreterSelectQueryAnalyzer interpreter(
-            current_inner_query, view_context, options, column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
+            current_inner_query, view_context, options, inner_column_names, sealed ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
         /// The plan owns the body's query context: its steps hold it only weakly, and the optimizer records projections into it.

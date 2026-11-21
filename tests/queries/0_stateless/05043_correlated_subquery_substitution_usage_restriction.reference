@@ -2,8 +2,8 @@
 plan: substituted=0
 -- Case 34: guarded, the same channel with an exact-type member and no cross-type edge at all
 plan: substituted=0
--- Case 36: guarded, the correlated column is used in the subquery projection
-plan: substituted=0
+-- Case 36: the correlated column is used only in the subquery projection, which EXISTS does not read, so it is removed and the subquery is substituted
+plan: substituted=1
 1
 -- Case 37: guarded, the correlated column is an aggregate argument / a user group key
 plan: substituted=0

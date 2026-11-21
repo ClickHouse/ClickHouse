@@ -301,7 +301,8 @@ private:
         Names required_column_names,
         Names & column_names_as_aliases,
         bool & is_smallest_column_requested,
-        Aliases & aliases) const;
+        Aliases & aliases,
+        const String * row_count_only_column) const;
 
     /// An object of this helper class is created
     ///  when processing a Merge table data source (subordinary table)
@@ -316,6 +317,8 @@ private:
         ///  SELECT x from T  if  T has row policy  y=42
         ///  required y in data pipeline
         void extendNames(Names &) const;
+
+        [[nodiscard]] bool readsColumn(const String & column_name) const;
 
         /// Use storage facilities to filter data
         ///  optimization
@@ -407,5 +410,10 @@ private:
     /// The metadata snapshot of a child table to read with. It may refresh the metadata of a data lake child, which can be slow.
     [[nodiscard]] StorageMetadataPtr getChildMetadataSnapshot(const StoragePtr & storage, const ContextPtr & query_context) const;
 };
+
+/// Whether the number of rows read from `storage` may depend on which of its columns are read. False only for
+/// a `MergeTree` table and a `Merge` table over such tables: e.g. a view with `ARRAY JOIN`, `MaterializedPostgreSQL`
+/// (`_sign`) and `system.parts` (`_state`) return other rows.
+bool rowsMayDependOnReadColumns(const StoragePtr & storage);
 
 }
