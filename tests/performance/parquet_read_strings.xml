@@ -1,0 +1,16 @@
+<!-- Reading String columns from Parquet: long runs of one dictionary value, bit-packed dictionary indexes and PLAIN pages. -->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_read_strings.parquet', Parquet)
+        SELECT
+            if(intDiv(number, 64) % 16 = 0, concat('model ', toString(intDiv(number, 1024) % 100)), '') AS sparse,
+            concat('phrase ', toString(cityHash64(number) % 1000)) AS dict,
+            concat('https://example.com/', toString(cityHash64(number, 1))) AS plain
+        FROM numbers(20000000)
+        SETTINGS engine_file_truncate_on_insert = 1
+    ]]></fill_query>
+
+    <query>SELECT sparse FROM file('test_parquet_read_strings.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT dict FROM file('test_parquet_read_strings.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT plain FROM file('test_parquet_read_strings.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+</test>
