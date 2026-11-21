@@ -916,7 +916,7 @@ protected:
             "in_memory", std::move(cluster), metadata, std::move(object_storages), nullptr, *config, "");
     }
 
-    size_t countBlobs() const
+    [[nodiscard]] size_t countBlobs() const
     {
         size_t count = 0;
         const std::string prefix = object_storage->getCommonKeyPrefix();
@@ -928,7 +928,7 @@ protected:
         return count;
     }
 
-    std::string readThroughDisk(const std::string & path) const
+    [[nodiscard]] std::string readThroughDisk(const std::string & path) const
     {
         auto buf = disk->readFile(path, DB::ReadSettings{});
         std::string content;
