@@ -1,304 +1,127 @@
 ---
 name: create-worktree
-description: Create a ClickHouse git worktree with submodules hardlinked from the main repo. Use when the user wants to create a new worktree for ClickHouse development.
+description: Create a ClickHouse git worktree whose submodules share storage with the main checkout, add submodules to a worktree that was created without them, or update the submodules of a worktree after a merge moved their pins. Use when the user wants a new worktree for ClickHouse development, or when the submodules of a worktree must follow new pins.
 argument-hint: <branch-name>
 disable-model-invocation: false
-allowed-tools: Bash(git:*), Bash(cp:*), Bash(ln:*), Bash(ls:*), Bash(rm:*), Bash(mkdir:*), Bash(find:*), Bash(pwd:*), Bash(sed:*), Bash(awk:*), Bash(xargs:*), Bash(sh:*), Bash(nproc:*), AskUserQuestion
+allowed-tools: Bash(git:*), Bash(ls:*), Bash(pwd:*), Bash(${CLAUDE_SKILL_DIR}/worktree.sh *), AskUserQuestion
 ---
 
 # Create ClickHouse Worktree Skill
 
-Create a new git worktree for ClickHouse development. When the worktree will be built or tested, submodules are hardlinked from the main repo (independent copies, no network, no extra disk for git objects). For text-only tasks (docs, comments, typo fixes), submodule setup is skipped — it's the slow part of the workflow and is pure overhead when nothing will be compiled.
+Create a git worktree for ClickHouse development. The script `worktree.sh` next to this file does the work. The submodules of the worktree share storage with the main checkout:
+
+- macOS (APFS): the submodule git data and the submodule files are clones (`cp -c`) of the main checkout. A worktree costs about 1.7 GiB (1.3 GiB of superproject files, 0.4 GiB for the submodules) instead of 11-27 GiB, and the submodule setup takes about 3 minutes.
+- Linux: the submodule object files are hardlinks, and the submodule files are checked out (about 10 GiB, because ext4 has no clones).
+
+The script never runs `git submodule update`. By default it uses the main checkout as it is, and it uses the network only for submodule commits that no local git data has. Only on request (`--fresh-master`) it fetches `master` of the superproject and updates the main checkout.
+
+## Rules
+
+- **Never run `git submodule update --init`, or any `git submodule update`, in a worktree.** In a worktree, it clones each submodule from GitHub into a private copy of the git data (15-17 GiB in total) and checks out the files again. Use `worktree.sh update-submodules` instead.
+- **Remove a worktree with `git -C <MAIN_REPO> worktree remove --force <WORKTREE_PATH>`.** It also deletes `<MAIN_REPO>/.git/worktrees/<name>`, which holds the submodule git data. If the directory is already gone, run `git -C <MAIN_REPO> worktree prune`, which deletes that data. Deleting only the worktree directory leaves the data on disk.
+- Remove a worktree when its PR is merged. Each worktree has its own submodule files.
 
 ## Arguments
 
-- `$0` (required): Branch name. If the branch already exists, the worktree will check it out. If it doesn't exist, a new branch will be created from the current HEAD of the main repo.
+- `$0` (required): Branch name. If the branch exists, the worktree checks it out. If it does not exist, a new branch is created.
 
 ## Process
 
-### 1. Determine the source repo
+### 1. Determine the main repo
 
-- Detect the source repo (`MAIN_REPO`) by running `git rev-parse --show-toplevel` from the current working directory.
-- Verify it is a git repository. If not, report an error and stop.
+Find the main checkout (`MAIN_REPO`), also when the current directory is a worktree:
+
+```bash
+dirname "$(git rev-parse --path-format=absolute --git-common-dir)"
+```
+
+If this fails, the current directory is not a git checkout: report an error and stop.
 
 ### 2. Validate inputs
 
-- Ensure `$0` (branch name) is provided. If not, use `AskUserQuestion` to ask the user for a branch name.
-- Compute `SAFE_BRANCH` by replacing all `/` characters in the branch name with `-`. For example, branch `release/25.12` → `SAFE_BRANCH=release-25.12`. This avoids creating nested directories from slashes in branch names.
-- Use `AskUserQuestion` to ask the user for the **worktree destination path**. Suggest `<MAIN_REPO>/../<MAIN_REPO_NAME>-<SAFE_BRANCH>` as the default — this places the worktree as a sibling of the main repo directory, named after both the repo and the branch (e.g. `../ClickHouse-my-feature` or `../ClickHouse-release-25.12`). The user may enter a different path if preferred.
+- Make sure that `$0` (branch name) is given. If not, use `AskUserQuestion` to ask the user for a branch name.
+- Compute `SAFE_BRANCH`: the branch name with each `/` replaced by `-`. For example, branch `release/25.12` gives `SAFE_BRANCH=release-25.12`. This prevents nested directories.
+- Use `AskUserQuestion` to ask the user for the **worktree destination path**. Suggest `<MAIN_REPO>/../<MAIN_REPO_NAME>-<SAFE_BRANCH>` as the default: a sibling of the main checkout, named after the repo and the branch (for example `../ClickHouse-my-feature`). The user can enter a different path.
 
-Let `WORKTREE_PATH` be the chosen path (resolved to an absolute path).
+Let `WORKTREE_PATH` be the chosen path.
 
-### 3. Determine worktree path and branch state
+### 3. Choose the start point
 
-- Worktree path: `<WORKTREE_PATH>` (from step 2)
-- Check if the worktree directory already exists. If it does, report to the user and stop.
-- Check if the branch already exists:
+- The branch exists locally: no start point.
+- The branch exists only on a remote: fetch it, and use `origin/<branch-name>` as the start point.
   ```bash
-  git -C <MAIN_REPO> branch --list <branch-name>
-  git -C <MAIN_REPO> branch --list -r "origin/<branch-name>"
+  git -C <MAIN_REPO> fetch --no-recurse-submodules origin <branch-name>
+  ```
+- New branch: give no start point. The script then starts the branch from the current `master` of the main checkout, as it is, without network.
+- Pass `--fresh-master` only when the user asks for the latest `master`. The script then fetches the upstream of `master`, updates the main checkout when that is safe, and starts a new branch from the fresh upstream.
+- A different base (for example `public/master` in a private checkout, or a release branch): fetch it, and give it as the start point.
+  ```bash
+  git -C <MAIN_REPO> fetch --no-recurse-submodules public master    # start point: public/master
   ```
 
-### 4. Create the worktree
+### 4. Decide whether to set up submodules
 
-**If branch exists locally:**
-```bash
-# Text-only:
-git -C <MAIN_REPO> worktree add <WORKTREE_PATH> <branch-name>
+Submodules are needed only to build or to run tests in the worktree.
 
-# Build/test:
-git -C <MAIN_REPO> worktree add --no-checkout <WORKTREE_PATH> <branch-name>
-```
+- **Skip them** (`--no-submodules`) when the work is text only: docs, comments, changelog entries, `.md` files, typo fixes that need no compile.
+- **Set them up** when the work involves `ninja` or tests in this worktree.
 
-**If branch exists on remote only:**
-```bash
-# Text-only:
-git -C <MAIN_REPO> worktree add <WORKTREE_PATH> -b <branch-name> origin/<branch-name>
+If you are not sure, use `AskUserQuestion`: "Will you build or run tests in this worktree? (No: skip the submodule setup, much faster)". Submodules can be added later with `update-submodules`.
 
-# Build/test:
-git -C <MAIN_REPO> worktree add --no-checkout <WORKTREE_PATH> -b <branch-name> origin/<branch-name>
-```
+### 5. Run the script
 
-**If branch does not exist (create new):**
-```bash
-# Text-only:
-git -C <MAIN_REPO> worktree add -b <branch-name> <WORKTREE_PATH>
-
-# Build/test:
-git -C <MAIN_REPO> worktree add --no-checkout -b <branch-name> <WORKTREE_PATH>
-```
-
-### 5. Decide whether to set up submodules
-
-The submodule hardlink step below is the slow part of this skill — it walks every contrib module, runs `cp -al` over all of them, rewrites configs, and checks out every submodule's working tree. The checkout repair treats `nproc` as a total worker budget: a small number of outer submodule jobs, each using parallel checkout workers internally.
-
-**Skip step 6 entirely (jump to step 7)** when the planned work is text-only and won't be built or tested locally:
-- docs, comments, changelog entries, `.md` files
-- typo fixes in source files where no compile is needed to verify
-
-**Run step 6** when the task will involve `ninja` or running tests against this worktree.
-
-If genuinely unsure, use `AskUserQuestion`: "Will you build or run tests in this worktree? (No → skip submodule setup, much faster)"
-
-### 6. Set up submodules via hardlinks
-
-Only do this step if step 5 selected the build/test path. Instead of cloning each submodule from the network, hardlink the git modules directory from the main repo. This gives each worktree an independent copy of the submodule git data (safe to modify independently) without using extra disk space for the object files, and without any network access.
-
-Determine `GIT_DIR` — the `.git` directory of the main repo. For a regular repo this is `<MAIN_REPO>/.git`. For a worktree it may differ; use `git -C <MAIN_REPO> rev-parse --git-common-dir` to get the correct path.
-
-Determine `WORKTREE_ENTRY` — the name git uses for this worktree's entry in `$GIT_DIR/worktrees/`. This is `$(basename <WORKTREE_PATH>)`.
+Run the script next to this file, with its output in a log file. With submodules, it takes several minutes. Run it in the background.
 
 ```bash
-GIT_COMMON_DIR=$(git -C <MAIN_REPO> rev-parse --git-common-dir)
-case "$GIT_COMMON_DIR" in
-    /*) GIT_DIR=$GIT_COMMON_DIR ;;
-    *) GIT_DIR=<MAIN_REPO>/$GIT_COMMON_DIR ;;
-esac
-WORKTREE_ENTRY=$(basename <WORKTREE_PATH>)
-
-# Hardlink-copy the modules directory from the main repo while checking out the
-# parent worktree files. These write disjoint paths, and the module copy only
-# needs the worktree metadata created by `git worktree add --no-checkout`.
-( cp -al $GIT_DIR/modules \
-         $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules ) &
-cp_pid=$!
-
-parent_checkout_status=0
-git -C <WORKTREE_PATH> \
-    -c checkout.workers=0 \
-    -c core.fsync=none \
-    -c gc.auto=0 \
-    checkout -q -f HEAD -- . || parent_checkout_status=$?
-
-modules_copy_status=0
-wait "$cp_pid" || modules_copy_status=$?
-
-if [ "$parent_checkout_status" -ne 0 ]
-then
-    printf "FAILED: parent checkout\n" >&2
-    exit "$parent_checkout_status"
-fi
-
-if [ "$modules_copy_status" -ne 0 ]
-then
-    printf "FAILED: cp -al modules\n" >&2
-    exit "$modules_copy_status"
-fi
-
-# Register submodules in the worktree config while rewriting module configs.
-# These operations touch disjoint files: `submodule init` writes the worktree
-# config, while the sed pass fixes copied submodule `config` and
-# `config.worktree` files under the hardlinked modules dir.
-git -C <WORKTREE_PATH> submodule init &
-init_pid=$!
-
-# Fix the worktree pointer inside each submodule's config and config.worktree
-# files in one tree walk. Most modules use `config`; a few use the
-# worktreeConfig extension and store the actual core.worktree in
-# `config.worktree` instead.
-find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules \
-    \( -name config -o -name config.worktree \) -exec \
-    sed -i "s|worktree = .*/contrib/|worktree = <WORKTREE_PATH>/contrib/|" {} +
-
-if ! wait "$init_pid"
-then
-    printf "FAILED: submodule init\n" >&2
-    exit 1
-fi
-
-CPU_COUNT=$(nproc)
-DEFAULT_SUBMODULE_CHECKOUT_WORKERS=8
-if [ "$DEFAULT_SUBMODULE_CHECKOUT_WORKERS" -gt "$CPU_COUNT" ]
-then
-    DEFAULT_SUBMODULE_CHECKOUT_WORKERS=$CPU_COUNT
-fi
-
-SUBMODULE_CHECKOUT_WORKERS=${SUBMODULE_CHECKOUT_WORKERS:-$DEFAULT_SUBMODULE_CHECKOUT_WORKERS}
-if [ "$SUBMODULE_CHECKOUT_WORKERS" -lt 1 ]
-then
-    printf "FAILED: SUBMODULE_CHECKOUT_WORKERS must be positive\n" >&2
-    exit 1
-fi
-
-SUBMODULE_JOBS=${SUBMODULE_JOBS:-$(( CPU_COUNT / SUBMODULE_CHECKOUT_WORKERS ))}
-if [ "$SUBMODULE_JOBS" -lt 1 ]
-then
-    SUBMODULE_JOBS=1
-fi
-
-# This direct materialization path intentionally bypasses `git submodule update`.
-# Refuse custom update commands because skipping those would change semantics.
-( git -C <WORKTREE_PATH> config --file .gitmodules --get-regexp "^submodule\\..*\\.update$" 2>/dev/null || true ) |
-    while IFS=" " read -r config_key update_command
-    do
-        case "$update_command" in
-            "!"*)
-                printf "FAILED: custom submodule update command is unsupported on local hardlink path: %s\n" "$config_key" >&2
-                exit 1
-                ;;
-        esac
-    done || exit 1
-
-# Materialize submodule working trees in one parallel pass. Capture the gitlink
-# commits once, sanity-check the count, then reuse the same list to feed each
-# worker. If a commit is missing from the hardlinked module data, `git checkout`
-# fails locally without fetching.
-GITLINKS=$(git -C <WORKTREE_PATH> ls-files -s |
-    sed -n "s/^160000 \([0-9a-f][0-9a-f]*\) 0[[:space:]]\(.*\)$/\1 \2/p")
-GITLINK_COUNT=$(printf "%s\n" "$GITLINKS" | sed -n '$=')
-SUBMODULE_COUNT=$(git -C <WORKTREE_PATH> config --file .gitmodules --get-regexp "^submodule\\..*\\.path$" |
-    sed -n '$=')
-if [ "${GITLINK_COUNT:-0}" != "${SUBMODULE_COUNT:-0}" ]
-then
-    printf "FAILED: gitlink count %s does not match .gitmodules count %s\n" "${GITLINK_COUNT:-0}" "${SUBMODULE_COUNT:-0}" >&2
-    exit 1
-fi
-
-# Start known heavy submodules first, then emit the full gitlink list and keep
-# the first occurrence of each path. This preserves largest-first scheduling
-# without the per-submodule pack-size probing overhead.
-{
-    for submodule_path in \
-        contrib/llvm-project \
-        contrib/google-cloud-cpp \
-        contrib/aws \
-        contrib/openssl \
-        contrib/icu \
-        contrib/boost \
-        contrib/rust_vendor \
-        contrib/sysroot \
-        contrib/grpc \
-        contrib/arrow \
-        contrib/curl \
-        contrib/rocksdb \
-        contrib/postgres \
-        contrib/wasmtime
-    do
-        printf "%s\n" "$GITLINKS" |
-            awk -v p="$submodule_path" '$2 == p { print; exit }'
-    done
-
-    printf "%s\n" "$GITLINKS"
-} |
-    awk "!seen[\$2]++ { print }" |
-    while IFS=" " read -r expected_commit submodule_path
-    do
-        printf "%s\0%s\0" "$expected_commit" "$submodule_path"
-    done |
-    xargs -0 -r -n2 -P "$SUBMODULE_JOBS" sh -c '
-        worktree_path=$1
-        git_dir=$2
-        worktree_entry=$3
-        checkout_workers=$4
-        expected_commit=$5
-        submodule_path=$6
-
-        if [ -z "$expected_commit" ] || [ -z "$submodule_path" ]
-        then
-            printf "FAILED: empty submodule checkout tuple\n" >&2
-            exit 1
-        fi
-
-        module_git_dir="$git_dir/worktrees/$worktree_entry/modules/$submodule_path"
-        module_worktree="$worktree_path/$submodule_path"
-
-        mkdir -p "$module_worktree" || exit 1
-        printf "gitdir: %s\n" "$module_git_dir" > "$module_worktree/.git" || exit 1
-
-        if ! git --git-dir="$module_git_dir" --work-tree="$module_worktree" \
-            -c advice.detachedHead=false \
-            -c checkout.workers="$checkout_workers" \
-            -c checkout.thresholdForParallelism=100 \
-            -c index.threads=true \
-            -c core.fsync=none \
-            -c gc.auto=0 \
-            checkout -q -f --detach "$expected_commit"
-        then
-            printf "FAILED: %s: commit %s is missing from the local mirror\n" "$submodule_path" "$expected_commit" >&2
-            exit 1
-        fi
-    ' sh "<WORKTREE_PATH>" "$GIT_DIR" "$WORKTREE_ENTRY" "$SUBMODULE_CHECKOUT_WORKERS"
-
-submodule_checkout_status=$?
-if [ "$submodule_checkout_status" -ne 0 ]
-then
-    printf "ERROR: a submodule could not be checked out at the commit the superproject records (see the FAILED line above).\n" >&2
-    printf "The local mirror is missing that commit, which happens when this worktree's branch pins a submodule\n" >&2
-    printf "to a commit the main repo has never fetched. Fetch it in the main repo, then re-run step 6:\n" >&2
-    printf "    git -C <MAIN_REPO> submodule update --init\n" >&2
-    exit "$submodule_checkout_status"
-fi
+${CLAUDE_SKILL_DIR}/worktree.sh create [--no-submodules] [--fresh-master] <MAIN_REPO> <WORKTREE_PATH> <branch-name> [<start-point>] \
+    > <MAIN_REPO>/tmp/create-worktree-<SAFE_BRANCH>.log 2>&1
 ```
 
-**Important:** `git submodule init` plus direct local checkout is used instead of `git submodule update --init` so the skill stays local-only. The submodule SHA is read from the superproject gitlink (`git ls-files -s`), so a worktree whose branch pins a submodule to a different commit than the source checkout still gets the correct dependency. If the hardlinked module data is incomplete, the command should fail; do not let `git` fetch or clone from the network on this path. If any submodule repair fails, the skill fails instead of silently skipping it, and prints the one command that fixes it (`git -C <MAIN_REPO> submodule update --init`, which fetches the missing commit into the shared mirror so a re-run succeeds offline). The default worker counts use `nproc` as a total budget: `SUBMODULE_CHECKOUT_WORKERS` defaults to `min(8, nproc)`, and `SUBMODULE_JOBS` defaults to `nproc / SUBMODULE_CHECKOUT_WORKERS`, clamped to at least 1.
+If the script prints `FAILED`, report the error to the user. Do not work around it.
 
-### 7. Report results
+### 6. Report results
 
 Report to the user:
-- Source repo: `<MAIN_REPO>`
+- Main repo: `<MAIN_REPO>`
 - Worktree path: `<WORKTREE_PATH>`
-- Branch: `<branch-name>` (newly created or existing)
-- Submodules: either "hardlinked from main repo (independent copies, no network cloning)" or "skipped (text-only task)" depending on the choice in step 5
+- Branch: `<branch-name>` (new or existing)
+- With `--fresh-master`: what the script reported about the main checkout (updated, or why not)
+- Submodules: "set up, sharing storage with the main checkout" or "skipped (text-only task)"
 - Suggest: `cd <WORKTREE_PATH>`
 
-## Examples
+## Later: update or add submodules
 
-- `/create-worktree my-feature` — Create a new worktree with a new branch `my-feature`
-- `/create-worktree fix/issue-12345` — Create a new worktree, branch name can contain slashes (slashes are replaced with dashes in the default directory name)
+Run this when a merge or a checkout moved submodule pins in the worktree (for example a merge of master), when a worktree created with `--no-submodules` now needs a build, or when an earlier setup was interrupted:
+
+```bash
+${CLAUDE_SKILL_DIR}/worktree.sh update-submodules [--fresh-master] <WORKTREE_PATH>
+```
+
+- Add `--fresh-master` only when the user asks to update the main checkout too, for example after merging a fresh `master` into the worktree.
+
+- It keeps the existing submodule git data of the worktree (`<MAIN_REPO>/.git/worktrees/<name>/modules`), with its local branches, stashes and commits, and copies only the missing git data from the main checkout. Never delete that directory to "repair" a worktree: it can hold the only copy of local submodule work.
+- It reads the pins from the index, so it also works during a merge, after the conflicts in the submodules are resolved.
+- It does not use `-f` for submodules that are already checked out, and it never replaces ignored local files (`--no-overwrite-ignore`): when local changes or ignored local files are in the way, it fails for that submodule, and the user decides.
+- When an earlier setup was interrupted, it finishes the first checkout of each submodule that did not complete it. A marker file in the git data of the submodule shows this; the final check fails while a marker is left.
+- If a submodule directory has files that this script did not set up (a checkout that uses other git data, or files without a checkout), it stops before any change and lists those directories.
+
+## What the script does
+
+1. **Prepares the main checkout and its git data.**
+   - By default it uses the main checkout as it is: no fetch, and no change to its files. With `--fresh-master`, it fetches the upstream of `master`; a missing upstream or a failed fetch fails the run. If the main checkout is on a clean `master`, it then fast-forwards `master` to that upstream. A submodule of the main checkout moves to its new pin only when nobody works on it: it is detached at the previous pin and has no changes in tracked files. Otherwise the files stay as they are, and the script says why: other sessions can use the main checkout. The fast-forward and the submodule moves never replace an ignored local file whose path the new commit tracks (`--no-overwrite-ignore`); in that case the main checkout or the submodule stays as it is, with a note, and the worktree setup continues.
+   - It makes the main git data (`<MAIN_REPO>/.git/modules/*`) contain every submodule commit that the worktree needs and does not have yet. It uses the network only for missing commits, from the URL in the `.gitmodules` of the worktree (a branch can move a submodule to a fork). It keeps each commit fetched by SHA under `refs/pins/<sha>`, so that `git gc` does not remove it, and checks that the commit and its history arrived; a shallow source (`contrib/update-submodules.sh` uses `--depth=1`) is supported. It accepts only plain repository URLs (`https://`, `ssh://`, `git@host:path`, `file://`, an absolute path) and safe submodule names and paths, because the `.gitmodules` of a branch can come from someone else. A submodule that is new in the worktree is cloned into the main git data, so that the next worktree can share it.
+2. **Copies the missing submodule git data** from `<MAIN_REPO>/.git/modules` to `<MAIN_REPO>/.git/worktrees/<name>/modules`, only for the submodules of the worktree: clones on macOS; on Linux, hardlinks for the object files and real copies for all other files, so that a fetch in one worktree (`FETCH_HEAD`, reflogs, index) does not change the others.
+3. **Sets up the submodule files.** On macOS, it clones the files of each submodule from the main checkout, and then checks out only the files that differ from the recorded commit. On Linux, it checks out the recorded commit. The heaviest submodules start first.
+4. **Checks the result:** every submodule must be at the commit that the superproject records. It also lists the submodules that have modified files. On macOS, `contrib/liburing` and `contrib/sysroot` always show modified files, because they have file names that differ only in case.
 
 ## Notes
 
-- For text-only tasks (docs, comments, typo fixes, changelog entries), step 6 is skipped — `git worktree add` alone is enough, and the worktree is ready immediately. If you later need to build there, run step 6's commands by hand.
-- Submodules use hardlinks (`cp -al`) — git object files are hardlinked (no extra disk space) but each worktree has its own independent directory structure and config. Modifying submodules in one worktree does not affect others. Note this applies to the git object database only: the submodule working-tree files are checked out fresh (not hardlinked), so editing a contrib source in one worktree never touches another.
-- The main repo must have submodules already cloned (`git submodule update --init` must have been run in the main repo at least once).
-- To remove a worktree later (preferred):
-  ```bash
-  git -C <MAIN_REPO> worktree remove --force <WORKTREE_PATH>
-  git -C <MAIN_REPO> worktree prune
-  ```
-- Or, if the directory is already gone:
-  ```bash
-  rm -rf <WORKTREE_PATH>
-  git -C <MAIN_REPO> worktree prune
-  ```
-- Build directories are NOT shared — you'll need to set up CMake/build separately in the new worktree.
+- The script ignores `submodule.recurse` from the user configuration: it handles each submodule itself.
+- The main checkout must have its submodules initialized once (`git submodule update --init` in the main checkout, not in a worktree).
+- Build directories are not shared. Set up CMake and the build in the new worktree separately.
+- `SUBMODULE_CHECKOUT_WORKERS` sets the parallel checkout workers in one submodule: by default 2 on macOS, where the clones leave little to check out, and `min(8, CPUs)` on Linux. `SUBMODULE_JOBS` (default `CPUs / SUBMODULE_CHECKOUT_WORKERS`) sets how many submodules are processed at the same time.
+
+## Examples
+
+- `/create-worktree my-feature`: create a worktree with a new branch `my-feature`.
+- `/create-worktree fix/issue-12345`: create a worktree. The branch name can contain slashes; they become dashes in the default directory name.
