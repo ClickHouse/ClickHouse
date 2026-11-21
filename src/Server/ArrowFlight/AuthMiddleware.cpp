@@ -211,7 +211,7 @@ void AuthMiddlewareFactory::TokenStorage::cleanupExpiredTokens()
 }
 
 arrow::Status AuthMiddlewareFactory::StartCall(
-        const arrow::flight::CallInfo & /*info*/,
+        const arrow::flight::CallInfo & info,
         const arrow::flight::ServerCallContext & context,
         std::shared_ptr<arrow::flight::ServerMiddleware> * middleware)
 {
@@ -317,7 +317,15 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         else
             session->makeSessionContext(session_id, parseSessionTimeout(server.context()->getConfigRef(), session_timeout), session_check == "1");
 
-        if (auth)
+        /// Mint and advertise a bearer token only for the Handshake RPC. Pushing a token on
+        /// EVERY basic-authenticated call made Flight SQL clients that adopt server-sent
+        /// authorization headers (e.g. the arrow-adbc Flight SQL driver, used by Power BI)
+        /// silently replace their per-call Basic credentials with a token that lives in
+        /// process memory with a short idle TTL - so an idle pause or a server restart
+        /// invalidated it and the client could never recover without reconnecting. Clients
+        /// that authenticate per call with Basic now keep doing so; clients that use the
+        /// Handshake flow receive a token exactly as before.
+        if (auth && info.method == arrow::flight::FlightMethod::Handshake)
             token = token_storage.getToken(username, password);
 
         auto parsed_session_timeout = session_id.empty()
