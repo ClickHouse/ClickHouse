@@ -117,7 +117,8 @@ ATTACH TABLE test_split;
 SELECT * FROM test_split FORMAT Null;
 "
 $CLICKHOUSE_CLIENT -m --query "
-SELECT arraySort(groupUniqArray(split_queue)) = ['Data', 'System'], countIf(slru_queue IS NULL) = count() FROM filesystemCache('$split', 1000, 1000000);
+-- The default \`cache_policy\` is SLRU, so every segment is also in an SLRU sub-queue of its split queue.
+SELECT arraySort(groupUniqArray(split_queue)) = ['Data', 'System'], countIf(slru_queue IN ('Probationary', 'Protected')) = count() FROM filesystemCache('$split', 1000, 1000000);
 SELECT count() FROM
 (
     SELECT path, split_queue FROM filesystemCache('$split', 1000, 1000000)
