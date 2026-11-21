@@ -37,6 +37,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <base/sleep.h>
+#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -517,6 +518,15 @@ Poco::Timestamp DiskObjectStorage::getLastModified(const String & path) const
 time_t DiskObjectStorage::getLastChanged(const String & path) const
 {
     return metadata_storage->getLastChanged(path);
+}
+
+bool DiskObjectStorage::isRemote() const
+{
+    for (const auto & location : cluster->getEnabledLocations())
+        if (object_storages->takePointingTo(location)->isRemote())
+            return true;
+
+    return metadata_storage->isRemote();
 }
 
 struct stat DiskObjectStorage::stat(const String & path) const

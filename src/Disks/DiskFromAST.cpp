@@ -1,10 +1,9 @@
 #include <Disks/DiskFromAST.h>
-#include <Common/assert_cast.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/SipHash.h>
-#include <Common/Config/ConfigProcessor.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
+#include <Common/assert_cast.h>
+#include <Common/SipHash.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,6 +16,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <algorithm>
+#include <memory>
 
 namespace DB
 {
@@ -99,6 +99,9 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
+    if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
+
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
@@ -118,24 +121,6 @@ static std::string getOrCreateCustomDisk(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
-
-    if (!attach && !disk->isRemote() && disk->getName() != "backup")
-    {
-        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
-
-        if (disk_path_expected_prefix.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Base path for custom local disks must be defined in config file by `{}`",
-                custom_local_disks_base_dir_in_config);
-
-        if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Path of the custom local disk must be inside `{}` directory",
-                disk_path_expected_prefix);
-    }
 
     return disk_name;
 }
