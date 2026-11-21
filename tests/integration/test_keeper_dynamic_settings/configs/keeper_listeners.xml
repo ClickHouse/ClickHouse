@@ -1,0 +1,7 @@
+<clickhouse>
+    <keeper_server>
+        <http_control>
+            <port>9182</port>
+        </http_control>
+    </keeper_server>
+</clickhouse>

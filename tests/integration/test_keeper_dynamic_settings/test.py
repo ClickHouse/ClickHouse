@@ -2,6 +2,7 @@ import csv
 import time
 
 import pytest
+import requests
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -12,6 +13,7 @@ node = cluster.add_instance(
     main_configs=[
         "configs/keeper_config.xml",
         "configs/keeper_dynamic.xml",
+        "configs/keeper_listeners.xml",
     ],
     stay_alive=True,
 )
@@ -293,3 +295,36 @@ def test_write_snapshot_version_reload_rejected(started_cluster):
             "write_snapshot_version incompatible with CREATE_TTL was accepted "
             f"on reload: {settings['write_snapshot_version']}"
         )
+
+
+LISTENERS_CONFIG_PATH = "/etc/clickhouse-server/config.d/keeper_listeners.xml"
+
+MOVED_LISTENERS_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <tcp_port replace="replace">9183</tcp_port>
+        <http_control>
+            <port>9184</port>
+        </http_control>
+    </keeper_server>
+</clickhouse>
+"""
+
+
+def test_reload_keeps_keeper_listeners(started_cluster):
+    """A config reload that changes the Keeper ports must not leave Keeper
+    without listeners: Keeper listeners are not reconfigured at runtime."""
+    keeper_utils.wait_until_connected(cluster, node)
+    ready_url = f"http://{cluster.get_instance_ip('node')}:9182/ready"
+    assert requests.get(ready_url, timeout=10).status_code == 200
+
+    with node.with_replace_config(
+        LISTENERS_CONFIG_PATH,
+        MOVED_LISTENERS_CONFIG,
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert (
+            keeper_utils.send_4lw_cmd(cluster, node, "ruok", timeout_sec=10) == "imok"
+        )
+        assert requests.get(ready_url, timeout=10).status_code == 200
