@@ -5359,6 +5359,19 @@ Possible values:
 When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
 )", 0, \
         {"26.7", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."}) \
+    DECLARE(Bool, aggregation_in_order_shuffle, false, R"(
+When enabled together with [optimize_aggregation_in_order](#optimize_aggregation_in_order), repartitions the sorted input by the hash of the `GROUP BY` keys into independent shards so that aggregation-in-order runs in parallel across threads, instead of funneling all partially-aggregated streams through the single-threaded `FinishAggregatingInOrderTransform`. Each shard aggregates a disjoint set of keys, so no cross-shard merge is needed, while keeping the bounded memory of aggregation-in-order.
+
+The order of `GROUP BY` keys in the output is not preserved, so this optimization is only applied when the result order is not relied upon downstream (i.e. when memory-bound merging is not used). It is also not applied when [max_rows_to_group_by](#max_rows_to_group_by) is set to a non-zero value, because the shuffled path does not enforce that limit.
+
+The rows of one group reach the aggregate function in the same order as on the ordinary aggregation-in-order path, so aggregates that depend only on that order, such as `groupArray`, `any` and `anyLast`, return the same result. Other aggregates are not guaranteed to return an identical result: the ordinary path accumulates one partial state per input stream and merges those states, while the shuffled path accumulates each group in a single state over the merged row sequence and never merges states. Any aggregate whose result depends on how partial states are combined can therefore return a different, equally valid result. Examples are `sum` over a floating-point argument (a different addition tree, so the last bits can differ), approximate aggregates such as `quantile*`, `topK` and `approx_top_k`, the element order of `groupUniqArray` and `groupArrayIntersect`, and the choice among tied rows of `argMin` and `argMax`. This is the same kind of difference that the ordinary path already exhibits between different values of `max_threads`.
+
+Possible values:
+
+- 0 — Shuffled aggregation-in-order is disabled.
+- 1 — Shuffled aggregation-in-order is enabled.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting to parallelize aggregation-in-order by repartitioning the sorted input by the hash of the `GROUP BY` keys into independent shards, avoiding the single-threaded `FinishAggregatingInOrderTransform` funnel while keeping bounded memory. Applied only when the result order is not relied upon downstream and `max_rows_to_group_by` is not set."}) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
 Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys or its hash-table buffer reaches `adaptive_aggregator_freeze_threshold_bytes`, then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are staged by their hash into per-partition buffers and aggregated exactly once, inside the bucket-parallel merge, which takes the partitions a few at a time in cache-sized tables. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 
