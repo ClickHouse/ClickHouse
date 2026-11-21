@@ -76,6 +76,18 @@ std::optional<StatelessTaskExecutor::TaskFailure> StatelessTaskExecutor::Failure
     return failure;
 }
 
+void StatelessTaskExecutor::LogsQueueSlot::set(InternalTextLogsQueuePtr logs_queue_)
+{
+    std::lock_guard lock(mutex);
+    logs_queue = std::move(logs_queue_);
+}
+
+InternalTextLogsQueuePtr StatelessTaskExecutor::LogsQueueSlot::get() const
+{
+    std::lock_guard lock(mutex);
+    return logs_queue;
+}
+
 StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size)
     : thread_pool(
         CurrentMetrics::StatelessWorkerThreads,
@@ -85,20 +97,17 @@ StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free
 {
 }
 
-StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors)
+struct StatelessTaskExecutor::TaskSetup
 {
-    /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
-    /// task. Running it twice would double-write exchanges and temp files and orphan the original from
-    /// cancel/forget, so treat a duplicate start as a no-op.
-    {
-        std::lock_guard lock(tasks_mutex);
-        if (tasks.contains(unique_task_id))
-        {
-            LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
-            return Result::Ok;
-        }
-    }
+    ContextMutablePtr query_context;
+    ObjectStoragePtr object_storage;
+    String object_storage_path;
+    InternalTextLogsQueuePtr logs_queue;
+    LogsLevel client_logs_level = LogsLevel::none;
+};
 
+StatelessTaskExecutor::TaskSetup StatelessTaskExecutor::setupTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const OpenTelemetry::TracingContext & trace_context)
+{
     ContextPtr global_context = Context::getGlobalContextInstance();
     ContextMutablePtr query_context = Context::createCopy(global_context);
     query_context->makeQueryContext();
@@ -112,8 +121,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         client_info.distributed_depth = 1;
         client_info.initial_query_id = task_description.initial_query_id;
-        /// The start request's trace context becomes the task's trace context.
-        client_info.client_trace_context = OpenTelemetry::CurrentContext();
+        client_info.client_trace_context = trace_context;
         query_context->setClientInfo(client_info);
     }
 
@@ -129,37 +137,92 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     if (const UInt64 worker_cores = getNumberOfCPUCoresToUse(); query_context->getSettingsRef()[Setting::max_threads] > worker_cores)
         query_context->setSetting("max_threads", worker_cores);
 
-    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
+    TaskSetup setup;
+    std::tie(setup.object_storage, setup.object_storage_path) = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 
+    /// Collect logs only when the coordinator asked for them and `send_logs_level` is not `none`.
+    setup.client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
+    if (collectors.logs && setup.client_logs_level != LogsLevel::none)
+    {
+        /// Bound the buffer so a stalled or slow status poll cannot grow it without limit; 0 means
+        /// unbounded (the default capacity is never reached in practice).
+        const UInt64 max_buffered_log_rows = query_context->getSettingsRef()[Setting::distributed_plan_max_buffered_log_rows];
+        setup.logs_queue = max_buffered_log_rows != 0
+            ? std::make_shared<InternalTextLogsQueue>(max_buffered_log_rows)
+            : std::make_shared<InternalTextLogsQueue>(); /// default capacity: effectively unbounded
+        setup.logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef()[Setting::send_logs_level].toString());
+        setup.logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
+    }
+    setup.query_context = std::move(query_context);
+    return setup;
+}
+
+StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, DistributedQueryTaskDescription task_description, const String & unique_temp_file_path, const TaskCollectors & collectors)
+{
     auto task_promise = std::make_shared<std::promise<std::optional<TaskFailure>>>();
     auto task_state = std::make_shared<TaskState>();
     task_state->completion_future = task_promise->get_future();
     task_state->collectors = collectors;
 
-    /// Collect logs only when the coordinator asked for them and `send_logs_level` is not `none`.
-    const LogsLevel client_logs_level = query_context->getSettingsRef()[Setting::send_logs_level];
-    if (collectors.logs && client_logs_level != LogsLevel::none)
-    {
-        /// Bound the buffer so a stalled or slow status poll cannot grow it without limit; 0 means
-        /// unbounded (the default capacity is never reached in practice).
-        const UInt64 max_buffered_log_rows = query_context->getSettingsRef()[Setting::distributed_plan_max_buffered_log_rows];
-        task_state->logs_queue = max_buffered_log_rows != 0
-            ? std::make_shared<InternalTextLogsQueue>(max_buffered_log_rows)
-            : std::make_shared<InternalTextLogsQueue>(); /// default capacity: effectively unbounded
-        task_state->logs_queue->max_priority = Poco::Logger::parseLevel(query_context->getSettingsRef()[Setting::send_logs_level].toString());
-        task_state->logs_queue->setSourceRegexp(query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
-    }
-
     {
         std::lock_guard lock(tasks_mutex);
-        /// If two starts of the same id race, keep the first; overwriting would orphan the running task.
-        if (!tasks.try_emplace(unique_task_id, task_state).second)
-        {
-            LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
+        if (!tryRegisterTaskLocked(unique_task_id, task_state))
             return Result::Ok;
-        }
     }
 
+    scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, OpenTelemetry::CurrentContext());
+    return Result::Ok;
+}
+
+void StatelessTaskExecutor::startTasks(const String & unique_query_id, DistributedQueryTaskBatch batch, const String & unique_temp_file_path, const TaskCollectors & collectors)
+{
+    const OpenTelemetry::TracingContext & trace_context = OpenTelemetry::CurrentContext();
+    size_t task_count = 0;
+    for (const auto & stage : batch.stages)
+        task_count += stage.tasks.size();
+    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Starting a batch of {} tasks of {}", task_count, unique_query_id);
+
+    for (auto & stage : batch.stages)
+    {
+        for (auto & [task, stream_sources] : stage.tasks)
+        {
+            DistributedQueryTaskDescription task_description;
+            task_description.initial_query_id = batch.initial_query_id;
+            task_description.serialized_query_plan = stage.serialized_query_plan;
+            task_description.exchanges = batch.exchanges;
+            task_description.settings_changes = batch.settings_changes;
+            task_description.serialization_version = batch.serialization_version;
+            task_description.exchange_stream_sources = std::move(stream_sources);
+            task_description.task = std::move(task);
+            const String unique_task_id = makeUniqueTaskId(unique_query_id, task_description.task.task_id);
+
+            auto task_promise = std::make_shared<std::promise<std::optional<TaskFailure>>>();
+            auto task_state = std::make_shared<TaskState>();
+            task_state->completion_future = task_promise->get_future();
+            task_state->collectors = collectors;
+            task_state->unique_query_id = unique_query_id;
+
+            {
+                std::lock_guard lock(tasks_mutex);
+                if (!tryRegisterTaskLocked(unique_task_id, task_state))
+                    continue;
+                auto & controller = query_controllers[unique_query_id];
+                if (!controller)
+                {
+                    controller = std::make_shared<WorkerQueryController>(unique_query_id);
+                    LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Created the query controller of {}", unique_query_id);
+                }
+                controller->addTask(unique_task_id);
+            }
+
+            scheduleTask(unique_task_id, std::move(task_state), std::move(task_promise), std::move(task_description), unique_temp_file_path, trace_context);
+        }
+    }
+}
+
+void StatelessTaskExecutor::scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
+    DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_)
+{
     /// Callback for periodic cancellation check
     auto is_task_cancelled = [cancelled = task_state->cancelled]() -> bool
     {
@@ -183,15 +246,21 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         failure_slot->set(std::move(failure));
     };
 
-    auto task_function = [task_description, object_storage, object_storage_path, distributed_query_id = unique_temp_file_path, query_context, task_promise, is_task_cancelled, update_progress,
-        report_failure, logs_queue = task_state->logs_queue, client_logs_level] mutable
+    auto task_function = [unique_task_id, task_description = std::move(task_description_), distributed_query_id = unique_temp_file_path,
+        collectors = task_state->collectors, trace_context = std::move(trace_context_), logs_queue_slot = task_state->logs_queue,
+        task_promise, is_task_cancelled, update_progress, report_failure] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `getStatus` treats a ready future as a terminal state
         std::optional<TaskFailure> task_failure;
         try
         {
-            /// QueryScope creation can throw, hence outer try-catch
+            /// Set up here rather than before the dispatch reply, so the reply waits only for the description.
+            /// Setup and QueryScope creation can throw, hence the outer try-catch.
+            auto [query_context, object_storage, object_storage_path, logs_queue, client_logs_level]
+                = setupTask(unique_task_id, task_description, distributed_query_id, collectors, trace_context);
+            logs_queue_slot->set(logs_queue);
+
             auto query_scope = QueryScope::create(query_context);
 
             if (logs_queue)
@@ -200,7 +269,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
             {
                 Stopwatch start_watch(CLOCK_MONOTONIC);
                 ASTSelectQuery ast_stub; /// FIXME: this is only used to populate query_kind
-                auto query_plan_hash = sipHash64(task_description.serialized_query_plan);
+                auto query_plan_hash = sipHash64(*task_description.serialized_query_plan);
                 /// Process-list insertion can throw (query limit); keep it inside the try.
                 auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
                 query_context->setProcessListElement(process_list_entry->getQueryStatus());
@@ -244,11 +313,9 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         /// scheduling exception so future waiters fail fast.
         task_promise->set_value(currentTaskFailure());
         std::lock_guard lock(tasks_mutex);
-        tasks.erase(unique_task_id);
+        eraseTaskLocked(unique_task_id);
         throw;
     }
-
-    return Result::Ok;
 }
 
 namespace
@@ -289,7 +356,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     /// Make a copy of task completion future to wait for it outside of the lock
     std::shared_future<std::optional<TaskFailure>> completion_future;
     std::shared_ptr<Progress> progress;
-    InternalTextLogsQueuePtr logs_queue;
+    std::shared_ptr<LogsQueueSlot> logs_queue;
     std::shared_ptr<ForwardedLogsCounter> forwarded_logs;
     std::shared_ptr<FailureSlot> failure_slot;
     TaskCollectors collectors;
@@ -308,7 +375,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
 
     if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
     {
-        auto logs = drainLogs(logs_queue, *forwarded_logs);
+        auto logs = drainLogs(logs_queue->get(), *forwarded_logs);
         Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
         if (auto failure = failure_slot->get())
             return TaskStatus{Result::TaskFailing, failure->message, std::move(progress_delta), failure->code, std::move(logs), collectors};
@@ -316,7 +383,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     }
 
     /// Drain only after the future is ready
-    auto logs = drainLogs(logs_queue, *forwarded_logs);
+    auto logs = drainLogs(logs_queue->get(), *forwarded_logs);
     Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
     const auto & failure = completion_future.get();
 
@@ -331,7 +398,19 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
     std::lock_guard lock(tasks_mutex);
     auto it = tasks.find(task_id);
     if (it == tasks.end())
+    {
+        if (cancelled_before_start.insert(task_id).second)
+        {
+            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Remembering cancelled unknown task {}, so a late start is ignored", task_id);
+            cancelled_before_start_order.push_back(task_id);
+            if (cancelled_before_start_order.size() > MAX_CANCELLED_BEFORE_START)
+            {
+                cancelled_before_start.erase(cancelled_before_start_order.front());
+                cancelled_before_start_order.pop_front();
+            }
+        }
         return Result::UnknownTaskId;
+    }
     *it->second->cancelled = true;
 
     return Result::Ok;
@@ -340,12 +419,46 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::cancelTask(const String & t
 StatelessTaskExecutor::Result StatelessTaskExecutor::forgetTask(const String & task_id)
 {
     std::lock_guard lock(tasks_mutex);
-    auto it = tasks.find(task_id);
-    if (it == tasks.end())
-        return Result::UnknownTaskId;
+    return eraseTaskLocked(task_id) ? Result::Ok : Result::UnknownTaskId;
+}
 
+bool StatelessTaskExecutor::tryRegisterTaskLocked(const String & unique_task_id, const TaskStatePtr & task_state)
+{
+    /// A start comes once, so its id is dropped here.
+    if (cancelled_before_start.erase(unique_task_id))
+    {
+        LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Ignoring the start of task {}: it was cancelled before the start arrived", unique_task_id);
+        return false;
+    }
+    /// `unique_task_id` is unique per task, so a repeated start (e.g. a coordinator retry) is the same
+    /// task. Running it twice would double-write exchanges and temp files and orphan the original from
+    /// cancel/forget, so treat a duplicate start as a no-op.
+    if (!tasks.try_emplace(unique_task_id, task_state).second)
+    {
+        LOG_WARNING(getLogger("StatelessTaskExecutor"), "Ignoring duplicate start for already running task {}", unique_task_id);
+        return false;
+    }
+    return true;
+}
+
+bool StatelessTaskExecutor::eraseTaskLocked(const String & unique_task_id)
+{
+    auto it = tasks.find(unique_task_id);
+    if (it == tasks.end())
+        return false;
+
+    const String & unique_query_id = it->second->unique_query_id;
+    if (!unique_query_id.empty())
+    {
+        auto controller = query_controllers.find(unique_query_id);
+        if (controller != query_controllers.end() && controller->second->removeTask(unique_task_id))
+        {
+            LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Dropped the query controller of {}", unique_query_id);
+            query_controllers.erase(controller);
+        }
+    }
     tasks.erase(it);
-    return Result::Ok;
+    return true;
 }
 
 void StatelessTaskExecutor::shutdown()

@@ -38,7 +38,9 @@ HTTPHeaderEntries getTraceContextHeaders()
     return headers;
 }
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
+/// Sends `operation` with `id_name` = `id`; the body is written by `task_serializer` while it is sent.
+String doSendTask(const String & endpoint_uri, const String & operation, const String & id_name, const String & id,
+    std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -59,9 +61,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
-    uri.addQueryParameter("operation",   "start");
+    uri.addQueryParameter("operation",   operation);
     uri.addQueryParameter("compress",    "false");
-    uri.addQueryParameter("task_id",     task_id);
+    uri.addQueryParameter(id_name,       id);
     uri.addQueryParameter("temp_path",   unique_temp_file_path);
     /// Absent when nothing is collected, so an older worker sees the request it has always seen.
     if (collectors.any())
@@ -90,31 +92,38 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 
 }
 
-String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
+String sendTaskBatch(const String & endpoint_uri, const String & unique_query_id, const DistributedQueryTaskBatch & batch,
+    const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
+    size_t task_count = 0;
+    for (const auto & stage : batch.stages)
+        task_count += stage.tasks.size();
+
     /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
     const Poco::URI uri(endpoint_uri);
     OpenTelemetry::SpanHolder span(
-        "StatelessWorkerClient::sendTask",
+        "StatelessWorkerClient::sendTaskBatch",
         OpenTelemetry::SpanKind::CLIENT,
         {
-            {"clickhouse.distributed.task_id", task_description.task.task_id},
-            {"clickhouse.initial_query_id", task_description.initial_query_id},
+            {"clickhouse.distributed.query_id", unique_query_id},
+            {"clickhouse.distributed.task_count", std::to_string(task_count)},
+            {"clickhouse.distributed.stage_count", std::to_string(batch.stages.size())},
+            {"clickhouse.initial_query_id", batch.initial_query_id},
             {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
         });
 
-    auto task_serializer = [task_description] (WriteBuffer & buf)
+    /// By reference: `doSendTask` writes the body before it returns.
+    auto batch_serializer = [&] (WriteBuffer & buf)
     {
-        serializeTask(task_description, buf);
+        serializeTaskBatch(batch, buf);
     };
 
     try
     {
-        return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
+        return doSendTask(endpoint_uri, "start_tasks", "query_id", unique_query_id, batch_serializer, unique_temp_file_path, collectors, context);
     }
     catch (...)
     {
-        /// Otherwise a dispatch that never reached the worker leaves a span that looks successful.
         span.addAttribute(std::current_exception());
         throw;
     }
@@ -159,13 +168,16 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
 
-    auto in = BuilderRWBufferFromHTTP(uri)
-        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+    auto builder = BuilderRWBufferFromHTTP(uri);
+    builder.withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
-        .withDelayInit(false)
-        .create(creds);
+        .withDelayInit(false);
+    /// A cleanup poll belongs to the teardown of a query that can already be killed.
+    if (for_cleanup)
+        builder.withoutQueryCancellationCheck();
+    auto in = builder.create(creds);
 
     DistributedQueryTaskStatus result;
     result.read(*in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
@@ -204,12 +216,14 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
 
+    /// Sent although the query can already be killed: the worker must still stop the task.
     auto in = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
         .withDelayInit(false)
+        .withoutQueryCancellationCheck()
         .create(creds);
 
     std::string s;
@@ -247,6 +261,7 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
         .withTimeouts(timeouts)
         .withSettings(read_settings)
         .withDelayInit(false)
+        .withoutQueryCancellationCheck()
         .create(creds);
 
     std::string s;

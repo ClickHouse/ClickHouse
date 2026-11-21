@@ -611,6 +611,7 @@
     M(StatelessWorkerInUse, "Number of stateless workers currently in use by running queries.") \
     M(StatelessWorkerIdle, "Number of stateless workers currently held by the server but not used by any running query.") \
     M(StatelessWorkerServerActiveTasks, "Number of query execution tasks currently active on a stateless worker (accepted from a tenant and not yet released).") \
+    M(StatelessWorkerQueryControllers, "Number of distributed queries with tasks on this stateless worker started by `start_tasks`, one query controller each.") \
     M(StatelessWorkerDiscoveryFreeWorkers, "Number of stateless workers that are registered and available to be leased, as tracked by the stateless worker discovery service.") \
     M(StatelessWorkerDiscoveryLeasedWorkers, "Number of stateless workers currently leased to tenants, as tracked by the stateless worker discovery service.") \
     M(StatelessWorkerDiscoveryDyingWorkers, "Number of stateless workers that have been evicted and are awaiting removal, as tracked by the stateless worker discovery service.") \
@@ -624,6 +625,9 @@
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \
     M(TaskTrackerThreadsActive, "Number of threads in the distributed query remote task tracker thread pool running a task.") \
     M(TaskTrackerThreadsScheduled, "Number of queued or active jobs in the distributed query remote task tracker thread pool.") \
+    M(DistributedPlanTaskDispatchThreads, "Number of threads that send the descriptions of distributed query tasks to the stateless workers.") \
+    M(DistributedPlanTaskDispatchThreadsActive, "Number of threads sending the description of a distributed query task to a stateless worker.") \
+    M(DistributedPlanTaskDispatchThreadsScheduled, "Number of queued or active jobs sending the descriptions of distributed query tasks to the stateless workers.") \
     M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
