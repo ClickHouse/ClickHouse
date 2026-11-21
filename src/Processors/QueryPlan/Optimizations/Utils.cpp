@@ -6,10 +6,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -21,6 +25,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Storages/StorageMerge.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <optional>
@@ -504,6 +509,12 @@ FilterResult filterResultForNotMatchedRows(
         }
     }
 
+    return evaluateFilterResult(filter_input, filter_node, allow_unknown_function_arguments);
+}
+
+FilterResult evaluateFilterResult(
+    ActionsDAG::IntermediateExecutionResult & input, const ActionsDAG::Node * filter_node, bool allow_unknown_function_arguments)
+{
     ActionsDAG::NodeRawConstPtrs targets = {filter_node};
     auto conjunction_atoms = ActionsDAG::extractConjunctionAtoms(filter_node);
     if (conjunction_atoms.size() > 1)
@@ -521,7 +532,7 @@ FilterResult filterResultForNotMatchedRows(
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
-            filter_input,
+            input,
             targets,
             /*input_rows_count=*/1,
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
@@ -541,7 +552,8 @@ FilterResult filterResultForNotMatchedRows(
 
     /// In filter context NULL is equivalent to false, but `and` with a constant NULL argument
     /// does not fold to a constant: the result is 0 or NULL depending on the other arguments
-    /// (e.g. `NULL = 42 AND <unknown>`).
+    /// (e.g. `NULL = 42 AND <unknown>`). Without `allow_unknown_function_arguments`, `and` is not
+    /// folded at all while one of its arguments is unknown, even with a constant 0 argument.
     /// Both are falsy, so if any conjunction atom is a falsy constant, the filter cannot pass.
     for (size_t i = whole_filter_evaluated ? 1 : 0; i < filter_output.size(); ++i)
     {
@@ -550,6 +562,123 @@ FilterResult filterResultForNotMatchedRows(
     }
 
     return FilterResult::UNKNOWN;
+}
+
+UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> collectNullPropagatingInputs(const ActionsDAG::Node * root)
+{
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> result;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{root};
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            case ActionsDAG::ActionType::PLACEHOLDER:
+                /// A column that is not `Nullable` here holds no NULL, so it rejects nothing.
+                if (isNullableOrLowCardinalityNullable(node->result_type))
+                    result.insert(node);
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                if (!node->children.empty())
+                    stack.push_back(node->children.front());
+                break;
+            case ActionsDAG::ActionType::FUNCTION:
+                if (node->function && node->function->isNullPropagating(node->result_type))
+                    stack.insert(stack.end(), node->children.begin(), node->children.end());
+                break;
+            case ActionsDAG::ActionType::COLUMN:
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+                break;
+        }
+    }
+
+    return result;
+}
+
+void collectNullRejectedColumnsFromJoinConditions(const JoinStepLogical & join, NameSet & left, NameSet & right)
+{
+    const auto & actions = join.getActionsDAG();
+    if (actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(actions))
+        return;
+
+    const auto & join_operator = join.getJoinOperator();
+    /// The sides for which a null-rejecting condition proves the input column not NULL.
+    auto [discards_left, discards_right] = [&]() -> std::pair<bool, bool>
+    {
+        const auto kind = join_operator.kind;
+        switch (join_operator.strictness)
+        {
+            case JoinStrictness::Unspecified:
+            case JoinStrictness::All:
+            case JoinStrictness::Any:
+            case JoinStrictness::Anti:
+                return {isInnerOrRight(kind), isInnerOrLeft(kind)};
+            case JoinStrictness::Semi:
+                return {isLeftOrRight(kind), isLeftOrRight(kind)};
+            default:
+                return {false, false};
+        }
+    }();
+    if (!discards_left && !discards_right)
+        return;
+
+    auto is_null_rejecting_operator = [](JoinConditionOperator op)
+    {
+        switch (op)
+        {
+            case JoinConditionOperator::Equals:
+            case JoinConditionOperator::Less:
+            case JoinConditionOperator::LessOrEquals:
+            case JoinConditionOperator::Greater:
+            case JoinConditionOperator::GreaterOrEquals:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    /// A key compared through `Dynamic` or `Variant` (a key of another type is cast to it to compare) holds a NULL as a
+    /// value, which matches another NULL, so the comparison does not reject NULL.
+    auto may_match_null = [](const JoinActionRef & operand)
+    {
+        const auto type = removeNullable(recursiveRemoveLowCardinality(operand.getType()));
+        return hasDynamicType(type) || isVariant(type);
+    };
+
+    for (const auto & expression : join_operator.expression)
+    {
+        auto [op, lhs, rhs] = expression.asBinaryPredicate();
+        if (!is_null_rejecting_operator(op))
+            continue;
+        if ((lhs && may_match_null(lhs)) || (rhs && may_match_null(rhs)))
+            continue;
+
+        for (const auto & operand : {lhs, rhs})
+        {
+            if (!operand)
+                continue;
+
+            NameSet * side = nullptr;
+            if (discards_left && operand.fromLeft())
+                side = &left;
+            else if (discards_right && operand.fromRight())
+                side = &right;
+
+            if (!side)
+                continue;
+
+            for (const auto * input : collectNullPropagatingInputs(operand.getNode()))
+                side->insert(input->result_name);
+        }
+    }
 }
 
 const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
