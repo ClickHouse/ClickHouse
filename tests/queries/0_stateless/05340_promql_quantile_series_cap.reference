@@ -1,0 +1,64 @@
+---- throw
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(0.5, three)', 60)
+2
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 0.5, three)', 60)
+2
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(-0.5, four)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 - 0.5, four)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 1.5, four)', 60)
+inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + NaN, four)', 60)
+nan
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(-0.5, five)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 - 0.5, five)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 1.5, five)', 60)
+inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + NaN, five)', 60)
+nan
+-- SELECT tags, value FROM prometheusQuery('prometheus', 'quantile by (g) (0.5, four)', 60) ORDER BY tags
+[('g','x')]	1.5
+[('g','y')]	6
+-- SELECT samples FROM prometheusQueryRange('prometheus', 'quantile(0.5, spread)', 60, 1000, 940)
+[('1970-01-01 00:01:00.000',2),('1970-01-01 00:16:40.000',8)]
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(0.5, four)', 60)
+error 395: PromQL aggregation operator 'quantile' got more than 3 series in one group at one step, see the server setting aggregate_function_group_array_max_element_size
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 0.5, four)', 60)
+error 395: PromQL aggregation operator 'quantile' got more than 3 series in one group at one step, see the server setting aggregate_function_group_array_max_element_size
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 0.5, five)', 60)
+error 395: PromQL aggregation operator 'quantile' got more than 3 series in one group at one step, see the server setting aggregate_function_group_array_max_element_size
+---- discard
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(0.5, three)', 60)
+2
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 0.5, three)', 60)
+2
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(-0.5, four)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 - 0.5, four)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 1.5, four)', 60)
+inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + NaN, four)', 60)
+nan
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(-0.5, five)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 - 0.5, five)', 60)
+-inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 1.5, five)', 60)
+inf
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + NaN, five)', 60)
+nan
+-- SELECT tags, value FROM prometheusQuery('prometheus', 'quantile by (g) (0.5, four)', 60) ORDER BY tags
+[('g','x')]	1.5
+[('g','y')]	6
+-- SELECT samples FROM prometheusQueryRange('prometheus', 'quantile(0.5, spread)', 60, 1000, 940)
+[('1970-01-01 00:01:00.000',2),('1970-01-01 00:16:40.000',8)]
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(0.5, four)', 60)
+error 395: PromQL aggregation operator 'quantile' got more than 3 series in one group at one step, see the server setting aggregate_function_group_array_max_element_size
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 0.5, four)', 60)
+error 395: PromQL aggregation operator 'quantile' got more than 3 series in one group at one step, see the server setting aggregate_function_group_array_max_element_size
+-- SELECT value FROM prometheusQuery('prometheus', 'quantile(scalar(vector(time())) * 0 + 0.5, five)', 60)
+error 395: PromQL aggregation operator 'quantile' got more than 3 series in one group at one step, see the server setting aggregate_function_group_array_max_element_size
