@@ -112,7 +112,8 @@ Chunk RollupTransform::generate()
         chunks.emplace_back(std::move(columns), num_rows);
         current_chunk = merge(std::move(chunks), !use_nulls, false);
     }
-    else if (gen_chunk.empty() && !has_input && !keys.empty() && !generated_grand_total)
+    else if (gen_chunk.empty() && !has_input && !keys.empty() && !generated_grand_total
+             && !params->params.empty_result_for_aggregation_by_empty_set)
     {
         /// Aggregation over an empty input yields no rows to roll up, while the equivalent
         /// `GROUPING SETS ((c0), ())` still reports the grand-total row (the Aggregator creates
@@ -120,6 +121,9 @@ Chunk RollupTransform::generate()
         /// and aggregate states are freshly created, so finalized aggregates report their
         /// empty-input values (count() = 0). The grand-total set is the last grouping set of a
         /// ROLLUP, numbered `keys.size()`.
+        ///
+        /// With `empty_result_for_aggregation_by_empty_set = 1` the empty grouping set produces
+        /// no row either, so nothing is emitted here (see AggregatingTransform).
         generated_grand_total = true;
         set_counter = keys.size();
         gen_chunk = makeGrandTotalRow();
