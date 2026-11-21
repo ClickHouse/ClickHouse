@@ -11,6 +11,7 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Storages/IStreamingStorage.h>
 #include <Common/Macros.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -85,7 +86,7 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         std::unique_ptr<KafkaSettings> kafka_settings_,
-        const String & collection_name_);
+        NamedCollectionPtr named_collection_);
 
     ~StorageKafka2() override;
 
@@ -193,8 +194,8 @@ private:
     /// For memory accounting in the librdkafka threads.
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
-    /// If named_collection is specified.
-    String collection_name;
+    /// The named collection with the overrides from the table definition, if the table uses one.
+    NamedCollectionPtr named_collection;
 
     void scheduleStreamingTasksImpl() override;
 

@@ -7,6 +7,7 @@
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/IStreamingStorage.h>
 #include <Common/Macros.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ThreadPool_fwd.h>
 
@@ -48,7 +49,7 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         std::unique_ptr<KafkaSettings> kafka_settings_,
-        const String & collection_name_);
+        NamedCollectionPtr named_collection_);
 
     ~StorageKafka() override;
 
@@ -168,8 +169,8 @@ private:
     /// contains global kafka properties.
     cppkafka::Configuration getProducerConfiguration();
 
-    /// If named_collection is specified.
-    String collection_name;
+    /// The named collection with the overrides from the table definition, if the table uses one.
+    NamedCollectionPtr named_collection;
 
     void scheduleStreamingTasksImpl() override;
 

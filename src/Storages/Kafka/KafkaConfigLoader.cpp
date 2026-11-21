@@ -7,6 +7,7 @@
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -16,6 +17,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
@@ -250,9 +252,8 @@ void loadConfigProperty(
     setKafkaConfigValue(kafka_config, tag, property_value);
 }
 
-void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const String & collection_name, const String & config_prefix)
+void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const NamedCollectionPtr & collection, const String & config_prefix)
 {
-    const auto & collection = NamedCollectionFactory::instance().get(collection_name);
     for (const auto & key : collection->getKeys(-1, config_prefix))
     {
         // Cut prefix with '.' before actual config tag.
@@ -264,14 +265,20 @@ void loadNamedCollectionConfig(cppkafka::Configuration & kafka_config, const Str
 void loadLegacyTopicConfig(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const String & config_prefix)
 {
-    if (!collection_name.empty())
+    /// For the topic `topic` the legacy section is `kafka_topic`, skip it if it is a new syntax section with `<name>`.
+    const String name_path = config_prefix + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+    if (collection)
     {
-        loadNamedCollectionConfig(kafka_config, collection_name, config_prefix);
+        if (!collection->has(name_path))
+            loadNamedCollectionConfig(kafka_config, collection, config_prefix);
         return;
     }
+
+    if (config.has(name_path))
+        return;
 
     Poco::Util::AbstractConfiguration::Keys tags;
     config.keys(config_prefix, tags);
@@ -286,14 +293,13 @@ void loadLegacyTopicConfig(
 void loadTopicConfig(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const String & config_prefix,
     const String & topic)
 {
-    if (!collection_name.empty())
+    if (collection)
     {
         const auto topic_prefix = fmt::format("{}.{}", config_prefix, KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG);
-        const auto & collection = NamedCollectionFactory::instance().get(collection_name);
         for (const auto & key : collection->getKeys(1, config_prefix))
         {
             /// Only consider key <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
@@ -304,7 +310,7 @@ void loadTopicConfig(
             const String kafka_topic_name_path = kafka_topic_path + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
             if (topic == collection->get<String>(kafka_topic_name_path))
                 /// Found it! Now read the per-topic configuration into cppkafka.
-                loadNamedCollectionConfig(kafka_config, collection_name, kafka_topic_path);
+                loadNamedCollectionConfig(kafka_config, collection, kafka_topic_path);
         }
     }
     else
@@ -326,9 +332,35 @@ void loadTopicConfig(
 void loadFromConfig(
     cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params, const String & config_prefix)
 {
-    if (!params.collection_name.empty())
+    if (const auto & collection = params.collection)
     {
-        loadNamedCollectionConfig(kafka_config, params.collection_name, config_prefix);
+        const auto keys = collection->getKeys(-1, config_prefix);
+        for (const auto & key : keys)
+        {
+            const auto param_name = key.substr(config_prefix.size() + 1);
+            const auto tag = param_name.substr(0, param_name.find('.'));
+            /// Consumer, producer and per-topic sections are not librdkafka properties, same as in the server configuration below.
+            if (tag == KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG || tag == KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG
+                || tag.starts_with(KafkaConfigLoader::CONFIG_KAFKA_TAG))
+                continue;
+            setKafkaConfigValue(kafka_config, param_name, collection->get<String>(key));
+        }
+
+        /// Per-topic configuration (new syntax) is applied after the common one.
+        for (const auto & key : keys)
+        {
+            const auto param_name = key.substr(config_prefix.size() + 1);
+            const auto tag = param_name.substr(0, param_name.find('.'));
+            if (tag == param_name || !tag.starts_with(KafkaConfigLoader::CONFIG_KAFKA_TOPIC_TAG))
+                continue;
+
+            const auto property = param_name.substr(tag.size() + 1);
+            const auto topic_name_path = config_prefix + "." + tag + "." + KafkaConfigLoader::CONFIG_NAME_TAG;
+            const auto topic_name = collection->getOrDefault<String>(topic_name_path, "");
+            if (property == KafkaConfigLoader::CONFIG_NAME_TAG || !std::ranges::contains(params.topics, topic_name))
+                continue;
+            setKafkaConfigValue(kafka_config, property, collection->get<String>(key));
+        }
         return;
     }
 
@@ -369,7 +401,7 @@ void loadFromConfig(
 
                 if (topic_name != topic)
                     continue;
-                loadTopicConfig(kafka_config, params.config, params.collection_name, kafka_topic_path, topic);
+                loadTopicConfig(kafka_config, params.config, params.collection, kafka_topic_path, topic);
             }
             continue;
         }
@@ -389,20 +421,20 @@ void loadFromConfig(
 void loadLegacyConfigSyntax(
     cppkafka::Configuration & kafka_config,
     const Poco::Util::AbstractConfiguration & config,
-    const String & collection_name,
+    const NamedCollectionPtr & collection,
     const Names & topics)
 {
     for (const auto & topic : topics)
     {
         const String kafka_topic_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_TAG + "_" + topic;
-        loadLegacyTopicConfig(kafka_config, config, collection_name, kafka_topic_path);
+        loadLegacyTopicConfig(kafka_config, config, collection, kafka_topic_path);
     }
 }
 
 void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String consumer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_CONSUMER_TAG;
-    loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
+    loadLegacyConfigSyntax(kafka_config, params.config, params.collection, params.topics);
     // A new syntax has higher priority
     loadFromConfig(kafka_config, params, consumer_path);
 }
@@ -410,9 +442,27 @@ void loadConsumerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
 void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfigLoader::LoadConfigParams & params)
 {
     const String producer_path = KafkaConfigLoader::CONFIG_KAFKA_TAG + "." + KafkaConfigLoader::CONFIG_KAFKA_PRODUCER_TAG;
-    loadLegacyConfigSyntax(kafka_config, params.config, params.collection_name, params.topics);
+    loadLegacyConfigSyntax(kafka_config, params.config, params.collection, params.topics);
     // A new syntax has higher priority
     loadFromConfig(kafka_config, params, producer_path);
+}
+
+/// The current named collection with the overrides from the table definition, so that changes of the collection reach existing tables.
+NamedCollectionPtr getCurrentCollection(const NamedCollectionPtr & table_collection)
+{
+    if (!table_collection)
+        return nullptr;
+
+    const auto current_collection = NamedCollectionFactory::instance().get(table_collection->getName());
+    auto collection = current_collection->duplicate();
+    for (const auto & key : table_collection->getKeys())
+    {
+        if (!table_collection->isQueryOverridden(key))
+            continue;
+        checkNamedCollectionOverrideLock(*current_collection, key);
+        collection->setOrUpdate<String>(key, table_collection->get<String>(key), {});
+    }
+    return collection;
 }
 
 template <typename TKafkaStorage>
@@ -428,9 +478,11 @@ void updateConfigurationFromConfig(
     const KafkaConfigLoader::LoadConfigParams & params,
     IKafkaExceptionInfoSinkWeakPtr exception_info_sink_ptr = IKafkaExceptionInfoSinkWeakPtr())
 {
-    loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
+    const auto collection = getCurrentCollection(params.collection);
+    const KafkaConfigLoader::LoadConfigParams current_params{params.config, collection, params.topics, params.log, params.context};
+    loadFromConfig(kafka_config, current_params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
-    specific_config_updater(kafka_config, params);
+    specific_config_updater(kafka_config, current_params);
 
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
@@ -588,12 +640,7 @@ void updateConfigurationFromConfig(
 
 }
 
-namespace
-{
-
-/// Sensitive properties must not be logged in cleartext: the log records can reach not only the
-/// server log, but also clients that set `send_logs_level`.
-bool isSensitiveProperty(std::string_view name)
+bool KafkaConfigLoader::isSensitiveProperty(std::string_view name)
 {
     /// The properties librdkafka marks with the _RK_SENSITIVE flag or stores as pointers, plus a
     /// substring safety net for properties unknown to the vendored librdkafka version.
@@ -607,13 +654,16 @@ bool isSensitiveProperty(std::string_view name)
     return sensitive_properties.contains(name) || name.contains("password") || name.contains("secret");
 }
 
+namespace
+{
+
 /// Log all properties of a Kafka client configuration, replacing the values of sensitive
 /// properties, e.g. `sasl.password` or `sasl.oauthbearer.client.secret`, with `[HIDDEN]`.
 void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr & log, std::string_view client_type)
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+            KafkaConfigLoader::isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
 }
 
 }

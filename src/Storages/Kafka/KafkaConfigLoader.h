@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Logger.h>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 
 namespace DB
@@ -26,7 +27,8 @@ struct KafkaConfigLoader
     struct LoadConfigParams
     {
         const Poco::Util::AbstractConfiguration & config;
-        String & collection_name;
+        /// The named collection of the table with the overrides from its definition, or `nullptr`.
+        const NamedCollectionPtr & collection;
         const Names & topics;
         LoggerPtr & log;
         ContextPtr context;
@@ -53,5 +55,9 @@ struct KafkaConfigLoader
 
     template <typename TKafkaStorage>
     static cppkafka::Configuration getProducerConfiguration(TKafkaStorage & storage, const ProducerConfigParams & params);
+
+    /// Sensitive properties must not be shown in cleartext: neither in the logs, whose records can reach
+    /// clients that set `send_logs_level`, nor in the table definition.
+    static bool isSensitiveProperty(std::string_view name);
 };
 }
