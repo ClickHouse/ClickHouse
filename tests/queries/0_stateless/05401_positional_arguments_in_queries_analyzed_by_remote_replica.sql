@@ -49,8 +49,7 @@ SELECT 'row policy';
 CREATE TABLE t_rp (k Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_rp SELECT number FROM numbers(5);
 CREATE ROW POLICY rp_pos_05401 ON t_rp USING k IN (SELECT number FROM numbers(5) ORDER BY 1 DESC LIMIT 1) TO ALL;
--- A remote server executing a plan shipped with serialize_query_plan = 1 does not apply its row policies (#112891).
-SELECT * FROM remote('127.0.0.2', currentDatabase(), t_rp) SETTINGS serialize_query_plan = 0;
+SELECT * FROM remote('127.0.0.2', currentDatabase(), t_rp);
 DROP ROW POLICY rp_pos_05401 ON t_rp;
 
 SELECT 'parameterized view';
