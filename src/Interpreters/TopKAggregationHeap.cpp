@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -11,6 +12,28 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// An empty key column of the heap for a key column of the block. The heap keeps the keys of a replicated column (a
+/// `String` column read with dictionary granules) plain (see `TopKAggregationHeapBase::insertSourceKey`).
+MutableColumnPtr emptyHeapKeyColumn(const IColumn & source_column)
+{
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&source_column))
+        return replicated->getNestedColumn()->cloneEmpty();
+    return source_column.cloneEmpty();
+}
+
+}
+
+void TopKAggregationHeapBase::insertSourceKey(IColumn & heap_key_column, const IColumn & source_column, size_t source_row)
+{
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&source_column))
+        heap_key_column.insertFrom(*replicated->getNestedColumn(), replicated->getIndexes().getIndexAt(source_row));
+    else
+        heap_key_column.insertFrom(source_column, source_row);
+}
 
 size_t TopKAggregationHeapBase::initBase(
     const ColumnRawPtrs & key_columns,
@@ -63,7 +86,7 @@ void TopKAggregationHeapBase::init(
     nulls_directions = {nulls_direction};
     is_composite = false;
     setK(query_k);
-    heap_column = source_column.cloneEmpty();
+    heap_column = emptyHeapKeyColumn(source_column);
     const size_t reserve_hint = next_trim_size + 1;
     heap_column->reserve(reserve_hint);
     heap_indices.clear();
@@ -98,7 +121,7 @@ void TopKAggregationHeapBase::init(
     MutableColumns sub_columns;
     sub_columns.reserve(n);
     for (const auto * col : source_columns)
-        sub_columns.emplace_back(col->cloneEmpty());
+        sub_columns.emplace_back(emptyHeapKeyColumn(*col));
     heap_column = ColumnTuple::create(std::move(sub_columns));
     const size_t reserve_hint = next_trim_size + 1;
     heap_column->reserve(reserve_hint);

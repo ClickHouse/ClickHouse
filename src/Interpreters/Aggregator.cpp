@@ -2812,11 +2812,11 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /// The methods of one `String` key and of fixed-width keys and one `String` read a replicated `String` key through its
     /// indexes (see `HashMethodPackedString`), so the strings of a column with dictionary granules are not copied into a
-    /// full column. An active top-K heap needs the materialized key columns, which it ranks.
-    const bool reads_replicated_strings_in_place = !top_k_active
-        && (result.type == AggregatedDataVariants::Type::key_packed_string
-            || result.type == AggregatedDataVariants::Type::key_packed_string_two_level
-            || AggregatedDataVariants::isKeysAndPackedString(result.type));
+    /// full column. An active top-K heap ranks and keeps such a key through the indexes as well (see
+    /// `TopKAggregationHeapBase::insertSourceKey`).
+    const bool reads_replicated_strings_in_place = result.type == AggregatedDataVariants::Type::key_packed_string
+        || result.type == AggregatedDataVariants::Type::key_packed_string_two_level
+        || AggregatedDataVariants::isKeysAndPackedString(result.type);
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
