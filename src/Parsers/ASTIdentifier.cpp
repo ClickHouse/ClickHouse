@@ -196,6 +196,14 @@ void ASTIdentifier::setShortName(const String & new_name)
 
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    hash_state.update(full_name.size());
+    hash_state.update(full_name);
+    hash_state.update(name_parts.size());
+    for (const auto & part : name_parts)
+    {
+        hash_state.update(part.size());
+        hash_state.update(part);
+    }
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
