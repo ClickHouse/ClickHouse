@@ -1,0 +1,23 @@
+-- regular MV: each INSERT into the source is one Delta version
+versions: 2
+10	0	9
+-- regular MV with the writes setting off: the source INSERT fails as a whole, nothing committed
+SUPPORT_IS_DISABLED
+versions: 2
+10
+10
+-- regular MV: a SETTINGS clause in the view definition applies to its SELECT only, the push into
+-- the Delta target still runs with the inserting session's settings (so it is still rejected)
+SUPPORT_IS_DISABLED
+versions: 2
+10
+10
+-- refreshable MV APPEND TO delta with the setting off in its definition: the refresh fails, nothing committed
+SUPPORT_IS_DISABLED
+1	1
+versions: 2
+-- refreshable MV APPEND TO delta with the setting on in its definition: one version per refresh,
+-- triggered from a session that has writes off
+versions: 4
+20
+Scheduled	
