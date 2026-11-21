@@ -1,0 +1,8 @@
+<clickhouse>
+    <max_concurrent_queries>2</max_concurrent_queries>
+    <enable_query_admission_queue>true</enable_query_admission_queue>
+    <!-- Deliberately long: this node exists to test what happens on the wakeup that
+         ends an admission wait, so the in-loop liveness poll must be far too slow to
+         notice the disconnect on its own. -->
+    <admission_queue_alive_check_interval_ms>10000</admission_queue_alive_check_interval_ms>
+</clickhouse>

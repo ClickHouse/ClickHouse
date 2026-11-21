@@ -224,6 +224,11 @@ namespace Net
         void setMutex(std::unique_ptr<RecursiveMutex> mutex);
         /// Replace the lock guarding SSL operations.
 
+        std::unique_lock<RecursiveMutex> lockSSL() const;
+        /// Acquires the lock guarding SSL operations, so that an external user of `ssl()` does
+        /// not access the `SSL` object concurrently with `sendBytes`, `receiveBytes` and others.
+        /// The lock is recursive, so the methods of this class may be called while holding it.
+
 
     protected:
         int completeHandshakeImpl(bool verifyPeer);
@@ -342,6 +347,12 @@ namespace Net
     inline SSL * SecureSocketImpl::ssl() const
     {
         return _pSSL;
+    }
+
+
+    inline std::unique_lock<SecureSocketImpl::RecursiveMutex> SecureSocketImpl::lockSSL() const
+    {
+        return std::unique_lock<RecursiveMutex>(*_mutex);
     }
 
 

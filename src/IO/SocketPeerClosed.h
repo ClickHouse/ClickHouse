@@ -58,7 +58,9 @@ SocketState getSSLSocketState(ssl_st * ssl);
 #endif
 
 /// Non-blocking, non-destructive check of whether the remote peer has closed the connection:
-/// `getSocketState(...) == SocketState::Closed`. A live connection returns false whether or not
+/// `getSocketState(...) == SocketState::Closed`, or `SocketState::DataPending` while the transport
+/// already reports a hangup (the peer sent a FIN or the connection is broken), because unread bytes
+/// stay in front of the FIN until they are read. A live connection returns false whether or not
 /// there are bytes waiting to be read; for a connection-pool reuse check, which must also reject
 /// a connection with unread data, test for `SocketState::Idle` instead.
 bool isSocketPeerClosed(int fd);
