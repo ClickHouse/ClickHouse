@@ -48,6 +48,7 @@ namespace DB::ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -1641,7 +1642,7 @@ void compactIcebergManifests(
         }
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest compaction failed to commit after {} attempts",
+    throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Manifest compaction failed to commit after {} attempts",
                 MAX_COMPACTION_RETRIES);
 }
 
