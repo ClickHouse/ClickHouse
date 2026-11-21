@@ -1,5 +1,6 @@
 #include <Formats/FormatSettings.h>
 #include <memory>
+#include <unordered_set>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
@@ -15,6 +16,8 @@
 #include <Columns/ColumnVariant.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -78,34 +81,97 @@ std::optional<ColumnWithTypeAndName> unwrapCarrier(const ColumnPtr & column, con
     return unwrapCarrier(value, active_type);
 }
 
-}
-
-bool holdsEnumValue(const ColumnPtr & column, const DataTypePtr & type)
+template <typename IsLeaf>
+bool holdsValueOf(const ColumnPtr & column, const DataTypePtr & type, IsLeaf is_leaf)
 {
     auto value = unwrapCarrier(column, type);
     if (!value)
         return false;
 
-    if (isEnum(value->type))
+    if (is_leaf(value->type))
         return true;
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(value->type.get()))
     {
         const auto & tuple_column = assert_cast<const ColumnTuple &>(*value->column);
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-            if (holdsEnumValue(tuple_column.getColumnPtr(i), tuple_type->getElement(i)))
+            if (holdsValueOf(tuple_column.getColumnPtr(i), tuple_type->getElement(i), is_leaf))
                 return true;
     }
     return false;
 }
 
+}
+
+bool holdsEnumValue(const ColumnPtr & column, const DataTypePtr & type)
+{
+    return holdsValueOf(column, type, [](const DataTypePtr & leaf_type) { return isEnum(leaf_type); });
+}
+
 namespace
 {
+
+bool holdsDateTimeValue(const ColumnPtr & column, const DataTypePtr & type)
+{
+    return holdsValueOf(column, type, [](const DataTypePtr & leaf_type) { return isDateTimeOrDateTime64(leaf_type); });
+}
 
 bool isStringOrNumber(const DataTypePtr & type)
 {
     auto value_type = removeLowCardinalityAndNullable(type);
     return isStringOrFixedString(value_type) || isNumber(value_type);
+}
+
+/// The zone the external database's rows of the date-time `type` are read in. Empty where the readers disagree: `MySQLSource`
+/// reads a `DateTime64` without an explicit zone in the session zone, the other readers in the zone the type holds.
+std::optional<std::string> rowsTimeZone(const DataTypePtr & type)
+{
+    const auto & mixin = dynamic_cast<const TimezoneMixin &>(*type);
+    const auto & zone = mixin.getTimeZone().getTimeZone();
+    if (!mixin.hasExplicitTimeZone() && isDateTime64(type) && DateLUT::instance().getTimeZone() != zone)
+        return {};
+    return zone;
+}
+
+/// `type`, a date-time, with the zone `zone` named explicitly: a type without an explicit zone is written in the session zone.
+DataTypePtr withTimeZone(const DataTypePtr & type, const std::string & zone)
+{
+    const auto & own = dynamic_cast<const TimezoneMixin &>(*type);
+    if (own.hasExplicitTimeZone() && own.getTimeZone().getTimeZone() == zone)
+        return type;
+    if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+        return std::make_shared<DataTypeDateTime64>(date_time64_type->getScale(), zone);
+    return std::make_shared<DataTypeDateTime>(zone);
+}
+
+/// The type of an `IN` member for the key `type`, each date-time in the zone its rows are read in; nullptr if that zone is unknown.
+DataTypePtr memberTypeOf(const DataTypePtr & type, bool & has_date_time)
+{
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return memberTypeOf(low_cardinality_type->getDictionaryType(), has_date_time);
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = memberTypeOf(nullable_type->getNestedType(), has_date_time);
+        return nested ? makeNullable(nested) : nullptr;
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements;
+        for (const auto & element : tuple_type->getElements())
+        {
+            auto element_type = memberTypeOf(element, has_date_time);
+            if (!element_type)
+                return nullptr;
+            elements.push_back(std::move(element_type));
+        }
+        return tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
+                                              : std::make_shared<DataTypeTuple>(elements);
+    }
+    if (!isDateTimeOrDateTime64(type))
+        return type;
+    has_date_time = true;
+    auto zone = rowsTimeZone(type);
+    return zone ? withTimeZone(type, *zone) : nullptr;
 }
 
 /// Table function arguments may hold identifiers and unresolved functions, which have no type.
@@ -117,10 +183,11 @@ bool hasResultType(const QueryTreeNodePtr & node)
 }
 
 /// Rewrites each `Enum` leaf of the size-1 constant `column` as a comparison with `operand_type` reads it: the name
-/// against a string, the value against a number. Empty if an `Enum` leaf faces another type.
-std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type)
+/// against a string, the value against a number. Gives each date-time leaf facing a date-time the zone the rows of the
+/// operand are read in (`rowsTimeZone`). Empty if an `Enum` leaf faces another type.
+std::optional<ColumnWithTypeAndName> renderLeaves(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type)
 {
-    if (!holdsEnumValue(column, type))
+    if (!holdsEnumValue(column, type) && !holdsDateTimeValue(column, type))
         return ColumnWithTypeAndName{column, type, ""};
 
     auto value = unwrapCarrier(column, type);
@@ -134,7 +201,7 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
         DataTypes types;
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
         {
-            auto element = renderEnumLeaves(tuple_column.getColumnPtr(i), tuple_type->getElement(i), operand_tuple_type->getElement(i));
+            auto element = renderLeaves(tuple_column.getColumnPtr(i), tuple_type->getElement(i), operand_tuple_type->getElement(i));
             if (!element)
                 return {};
             columns.push_back(element->column);
@@ -144,6 +211,16 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
             ? std::make_shared<DataTypeTuple>(types, tuple_type->getElementNames())
             : std::make_shared<DataTypeTuple>(types);
         return ColumnWithTypeAndName{ColumnTuple::create(std::move(columns)), result_type, ""};
+    }
+
+    if (isDateTimeOrDateTime64(value->type))
+    {
+        std::optional<std::string> zone;
+        if (isDateTimeOrDateTime64(operand_value_type))
+            zone = rowsTimeZone(operand_value_type);
+        if (!zone)
+            return ColumnWithTypeAndName{column, type, ""};
+        return ColumnWithTypeAndName{value->column, withTimeZone(value->type, *zone), ""};
     }
 
     if (!isEnum(value->type) || !isStringOrNumber(operand_value_type))
@@ -158,33 +235,40 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
     return ColumnWithTypeAndName{result, result_type, ""};
 }
 
-bool holdsEnumConstant(const QueryTreeNodePtr & node)
+using QueryTreeNodeRawPtrSet = std::unordered_set<const IQueryTreeNode *>;
+
+bool isAppliedLocally(const QueryTreeNodePtr & node, const QueryTreeNodeRawPtrSet & empty_sets)
 {
+    if (empty_sets.contains(node.get()))
+        return true;
+
     if (const auto * constant_node = node->as<ConstantNode>())
         if (holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))
             return true;
 
     for (const auto & child : node->getChildren())
-        if (child && holdsEnumConstant(child))
+        if (child && isAppliedLocally(child, empty_sets))
             return true;
     return false;
 }
 
-/// A constant that still holds an `Enum` value would reach the external database as its number; a conjunct with one is applied locally only.
+/// A constant that still holds an `Enum` value would reach the external database as its number, and an `IN` of `empty_sets`
+/// has no SQL form; a conjunct with either is applied locally only.
 /// Returns whether anything was removed: the external database then returns rows that the local filter drops,
 /// so the `LIMIT` must not be pushed down.
-bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const ContextPtr & context)
+bool removeConjunctsAppliedLocally(QueryTreeNodePtr & filter, const ContextPtr & context, const QueryTreeNodeRawPtrSet & empty_sets)
 {
     auto throw_if_strict = [&]
     {
         if (context->getSettingsRef()[Setting::external_table_strict_query])
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains expressions that cannot be pushed down (and external_table_strict_query=true)");
     };
+    auto applied_locally = [&](const QueryTreeNodePtr & node) { return isAppliedLocally(node, empty_sets); };
 
     auto * function = filter->as<FunctionNode>();
     if (!function || function->getFunctionName() != "and")
     {
-        if (holdsEnumConstant(filter))
+        if (applied_locally(filter))
         {
             throw_if_strict();
             filter = {};
@@ -194,7 +278,7 @@ bool removeConjunctsHoldingEnumConstants(QueryTreeNodePtr & filter, const Contex
     }
 
     auto & conjuncts = function->getArguments().getNodes();
-    if (std::erase_if(conjuncts, holdsEnumConstant) == 0)
+    if (std::erase_if(conjuncts, applied_locally) == 0)
         return false;
     throw_if_strict();
 
@@ -222,11 +306,11 @@ public:
         : set_params(set_params_)
     {}
 
-    void visitImpl(QueryTreeNodePtr & node) const
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto * function_node = node->as<FunctionNode>())
         {
-            renderEnumConstants(*function_node);
+            renderConstants(*function_node);
             return;
         }
 
@@ -249,9 +333,12 @@ public:
         }
     }
 
+    /// The `IN` functions whose set has no member of the key type.
+    QueryTreeNodeRawPtrSet empty_sets;
+
 private:
-    /// A constant that holds an `Enum` value is written in the domain its operand is compared in.
-    void renderEnumConstants(FunctionNode & function_node) const
+    /// A constant that holds an `Enum` or a date-time value is written in the domain its operand is compared in.
+    void renderConstants(FunctionNode & function_node)
     {
         auto & arguments = function_node.getArguments().getNodes();
         if (arguments.size() != 2 || !std::ranges::all_of(arguments, hasResultType))
@@ -260,8 +347,11 @@ private:
         const auto & name = function_node.getFunctionName();
         if (name == "in" || name == "notIn")
         {
-            if (auto set = renderInSet(arguments[0], arguments[1]))
+            bool empty_set = false;
+            if (auto set = renderInSet(arguments[0], arguments[1], empty_set))
                 arguments[1] = std::move(set);
+            else if (empty_set)
+                empty_sets.insert(&function_node);
         }
         else if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
             || name == "lessOrEquals" || name == "greaterOrEquals")
@@ -279,17 +369,22 @@ private:
             return nullptr;
 
         const auto & column = constant_node->getColumn()->getDataColumnPtr();
-        auto rendered = renderEnumLeaves(column, constant_node->getResultType(), operand->getResultType());
-        if (!rendered || rendered->column == column)
+        auto rendered = renderLeaves(column, constant_node->getResultType(), operand->getResultType());
+        if (!rendered || (rendered->column == column && rendered->type == constant_node->getResultType()))
             return nullptr;
         return std::make_shared<ConstantNode>(ColumnConst::create(rendered->column, 1), rendered->type);
     }
 
     /// The members of the set the local query builds for `lhs IN rhs`, as a scalar, a row or a list of them.
-    [[nodiscard]] QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
+    [[nodiscard]] QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs, bool & empty_set) const
     {
         const auto * constant_node = rhs->as<ConstantNode>();
-        if (!constant_node || !holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))
+        if (!constant_node)
+            return nullptr;
+        const auto & column = constant_node->getColumn()->getDataColumnPtr();
+        bool holds_enum = holdsEnumValue(column, constant_node->getResultType());
+        bool holds_date_time = holdsDateTimeValue(column, constant_node->getResultType());
+        if (!holds_enum && !holds_date_time)
             return nullptr;
 
         /// Keys as `getSetElementsForConstantValue` sees them: a one-element tuple stays packed. A `FixedString` key gets
@@ -298,20 +393,33 @@ private:
         const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(lhs_type.get());
         bool packed_key = lhs_tuple_type && lhs_tuple_type->getElements().size() == 1;
         DataTypes key_types = lhs_tuple_type && !lhs_tuple_type->getElements().empty() ? lhs_tuple_type->getElements() : DataTypes{lhs_type};
+        bool has_date_time_key = false;
+        bool has_other_key = false;
+        DataTypes member_types;
         for (auto & key_type : key_types)
         {
-            if (!isStringOrNumber(key_type))
-                return nullptr;
             if (isFixedString(removeLowCardinalityAndNullable(key_type)))
             {
                 DataTypePtr string_type = std::make_shared<DataTypeString>();
                 key_type = removeLowCardinality(key_type)->isNullable() ? makeNullable(string_type) : string_type;
             }
+            bool date_time_key = false;
+            auto member_type = memberTypeOf(key_type, date_time_key);
+            if (!member_type)
+                return nullptr;
+            date_time_key &= holds_date_time;
+            has_date_time_key |= date_time_key;
+            has_other_key |= !date_time_key && !isStringOrNumber(key_type);
+            member_types.push_back(std::move(member_type));
         }
+        /// Members typed with the keys are written as the text of any key type; untyped `Enum` members only for strings and numbers.
+        if (!has_date_time_key && (!holds_enum || has_other_key))
+            return nullptr;
         DataTypePtr set_lhs_type = lhs_tuple_type ? std::make_shared<DataTypeTuple>(key_types) : key_types.front();
 
         auto set = getSetElementsForConstantValue(set_lhs_type, constant_node->getColumn(), constant_node->getResultType(), set_params);
-        if (set.empty() || set.front().column->empty())
+        empty_set = set.empty() || set.front().column->empty();
+        if (empty_set)
             return nullptr;
 
         Tuple members;
@@ -327,6 +435,15 @@ private:
             for (const auto & key_column : set)
                 key.push_back((*key_column.column)[row]);
             members.push_back(std::move(key));
+        }
+
+        if (has_date_time_key)
+        {
+            DataTypePtr member_type = set.size() == 1 ? member_types.front() : std::make_shared<DataTypeTuple>(member_types);
+            if (members.size() == 1)
+                return std::make_shared<ConstantNode>(std::move(members.front()), member_type);
+            auto set_type = std::make_shared<DataTypeTuple>(DataTypes(members.size(), member_type));
+            return std::make_shared<ConstantNode>(Field(std::move(members)), std::move(set_type));
         }
 
         if (members.size() == 1)
@@ -376,7 +493,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
         }
-        if (query_node->hasPrewhere() && removeConjunctsHoldingEnumConstants(query_node->getPrewhere(), context))
+        if (query_node->hasPrewhere() && removeConjunctsAppliedLocally(query_node->getPrewhere(), context, visitor.empty_sets))
             allow_limit = false;
         if (query_node->hasWhere())
         {
@@ -384,7 +501,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
         }
-        if (query_node->hasWhere() && removeConjunctsHoldingEnumConstants(query_node->getWhere(), context))
+        if (query_node->hasWhere() && removeConjunctsAppliedLocally(query_node->getWhere(), context, visitor.empty_sets))
             allow_limit = false;
     }
 
