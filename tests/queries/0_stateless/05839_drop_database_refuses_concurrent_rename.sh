@@ -33,9 +33,10 @@ function pause_rename_and_start_drop()
     $CLICKHOUSE_CLIENT -q "DROP DATABASE $db SYNC" &
     for _ in {1..100}
     do
-        $CLICKHOUSE_CLIENT -q "RENAME TABLE IF EXISTS $db.probe TO $db.probe2" 2>&1 | grep -q UNFINISHED && break
+        $CLICKHOUSE_CLIENT -q "RENAME TABLE IF EXISTS $db.probe TO $db.probe2" 2>&1 | grep -q UNFINISHED && return
         sleep 0.1
     done
+    echo "DROP DATABASE $db is not waiting for the rename"
 }
 
 # 1. While a drop of `A` is pending, no table of `A` can be renamed or exchanged, in or out; `B` is not affected.
