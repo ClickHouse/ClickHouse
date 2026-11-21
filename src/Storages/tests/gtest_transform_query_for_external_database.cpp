@@ -1207,6 +1207,23 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
             "(SELECT a FROM test.table WHERE (_CAST((1, 2), 'Tuple(UInt8, UInt8)'), c) IN (((1, 2), 3)))",
             IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT a FROM test."table" WHERE ((1, 2), c) IN (((1, 2), 3)))");
+    /// A key position of unknown shape: the scalar `3` cannot be a row of the key, so the set is one row,
+    /// while a set whose elements can all be rows keeps them, also with redundant parentheses around it.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (tuple((1, 2), 3)))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT c FROM (SELECT row(1, 2) AS ab, 3 AS c) AS s WHERE (ab, c) IN (((1, 2), 3)))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT a FROM test.table WHERE (a, b) IN (((1, 2), (4, 5))))",
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT a FROM test."table" WHERE (a, b) IN ((1, 2), (4, 5)))");
     /// A row value is also valid as an operand of a comparison.
     EXPECT_EQ(
         formatQueryTableArgument(state,

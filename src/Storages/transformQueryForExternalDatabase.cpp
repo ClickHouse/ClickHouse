@@ -513,7 +513,7 @@ bool canBeRowOfINKey(const Field & value, const Field & key)
 /// We only do this when:
 /// 1. The LHS of IN is a multi-column tuple (a `tuple(...)` or `row(...)` call, or a tuple constant). For scalar IN like
 ///    `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})` is a flat list of values and must NOT be wrapped.
-/// 2. The tuple represents a single row (its first element is not a tuple, or cannot be a row of the key).
+/// 2. The tuple represents a single row (its first element is not a tuple, or one of its elements cannot be a row of the key).
 ///    For multi-row sets like `(id, name) IN ((1, 'a'), (2, 'b'))` the set is a tuple of tuples
 ///    which already formats with the correct nested parentheses.
 void wrapSingleRowTupleSetForINNode(ASTFunction & function)
@@ -534,7 +534,9 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
             return;
 
         const auto & tup = rhs_literal->value.safeGet<Tuple>();
-        if (!tup.empty() && (tup[0].getType() != Field::Types::Tuple || !canBeRowOfINKey(tup[0], key)))
+        if (!tup.empty()
+            && (tup[0].getType() != Field::Types::Tuple
+                || std::ranges::any_of(tup, [&](const Field & element) { return !canBeRowOfINKey(element, key); })))
             rhs = makeASTFunction("", rhs);
         return;
     }
@@ -550,8 +552,8 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
         const auto & elements = rhs_func->arguments->children;
         if (elements.empty())
             return;
-        const Field first_element = getTupleShape(*elements[0]);
-        if (first_element.getType() != Field::Types::Tuple || !canBeRowOfINKey(first_element, key))
+        if (getTupleShape(*elements[0]).getType() != Field::Types::Tuple
+            || std::ranges::any_of(elements, [&](const ASTPtr & element) { return !canBeRowOfINKey(getTupleShape(*element), key); }))
             rhs = makeASTFunction("", rhs);
     }
 }
