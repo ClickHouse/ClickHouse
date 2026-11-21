@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 
+#include <base/MemorySanitizer.h>
+
 #include <Poco/Exception.h>
 #include <Poco/Net/StreamSocket.h>
 
@@ -222,6 +224,13 @@ int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
 
     if (r)
         error(r, "recv");
+
+    /// The bytes land in the buffer through an io_uring completion, which MemorySanitizer does not
+    /// intercept the way it does the plain read/recv syscalls, so it still considers them
+    /// uninitialized. Unpoison them explicitly, as the TLS path in `SecureFiberStreamSocketImpl`
+    /// already does.
+    /// TODO(mstetsyuk): should be done at Silk level.
+    __msan_unpoison(buffer, bytes_read);
 
     useRecvThrottlerBudget(static_cast<int>(bytes_read));
 
