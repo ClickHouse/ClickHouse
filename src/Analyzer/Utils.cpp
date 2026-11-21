@@ -1006,6 +1006,84 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
     return visitor.hasFunction();
 }
 
+bool canBeSkippedByShortCircuit(const QueryTreeNodePtr & node, bool every_function_is_lazy, bool only_functions_that_can_throw)
+{
+    std::vector<const IQueryTreeNode *> nodes;
+    std::vector<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(node.get());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        /// A constant is already evaluated when the query tree is built, so it cannot throw per row.
+        if (current->as<ConstantNode>())
+            continue;
+
+        /// A table expression or a subquery in an argument slot is evaluated in its own scope, as a
+        /// set or a scalar, so lazy execution of this expression never reaches inside it.
+        switch (current->getNodeType())
+        {
+            case QueryTreeNodeType::TABLE:
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            case QueryTreeNodeType::QUERY:
+            case QueryTreeNodeType::UNION:
+                continue;
+            default:
+                break;
+        }
+
+        nodes.push_back(current);
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_process.push_back(child.get());
+    }
+
+    std::unordered_map<const IQueryTreeNode *, bool> is_lazy;
+    for (const auto * current : nodes | std::views::reverse)
+    {
+        bool lazy = std::ranges::any_of(current->getChildren(), [&](const QueryTreeNodePtr & child)
+        {
+            auto it = child ? is_lazy.find(child.get()) : is_lazy.end();
+            return it != is_lazy.end() && it->second;
+        });
+
+        const auto * function_node = current->as<FunctionNode>();
+        if (auto function_base = function_node ? function_node->getFunction() : nullptr)
+        {
+            /// getArgumentColumns describes each slot the way the resolver did, so the `in`
+            /// right-hand side is reported as a set instead of being asked for a result type.
+            const auto argument_columns = function_node->getArgumentColumns();
+            DataTypesWithConstInfo argument_types;
+            argument_types.reserve(argument_columns.size());
+            for (const auto & argument_column : argument_columns)
+                argument_types.push_back(
+                    {argument_column.type, argument_column.column != nullptr, typeid_cast<const ColumnConst *>(argument_column.column.get())});
+
+            lazy = lazy || every_function_is_lazy || function_base->isSuitableForShortCircuitArgumentsExecution(argument_types);
+
+            if (lazy && only_functions_that_can_throw)
+            {
+                /// `and`, `or` and `not` only combine their arguments, but `not` over `Dynamic` or `Variant`
+                /// is executed for each alternative and throws for one it does not accept.
+                const auto & function_name = function_node->getFunctionName();
+                bool combines_arguments = (function_name == "and" || function_name == "or" || function_name == "not")
+                    && std::ranges::none_of(argument_types, [](const auto & argument) { return isDynamic(argument.type) || isVariant(argument.type); });
+                if (!combines_arguments && function_base->canThrow(argument_types))
+                    return true;
+            }
+        }
+
+        if (lazy && !only_functions_that_can_throw)
+            return true;
+
+        is_lazy[current] = lazy;
+    }
+
+    return false;
+}
+
 namespace
 {
 

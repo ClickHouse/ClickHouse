@@ -504,29 +504,43 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.x
   WHERE
-    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 5, nodes: 2
-          FUNCTION id: 6, function_name: equals, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 7, nodes: 2
-                FUNCTION id: 8, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
+                FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 9, nodes: 1
-                      COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
-                FUNCTION id: 11, function_name: sipHash64, function_type: ordinary, result_type: UInt64
-                  ARGUMENTS
-                    LIST id: 12, nodes: 1
-                      COLUMN id: 13, column_name: D, result_type: UInt8, source_id: 3
-          FUNCTION id: 14, function_name: or, function_type: ordinary, result_type: UInt8
+                    LIST id: 10, nodes: 2
+                      FUNCTION id: 11, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 12, nodes: 1
+                            COLUMN id: 13, column_name: C, result_type: UInt8, source_id: 3
+                      FUNCTION id: 14, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 15, nodes: 1
+                            COLUMN id: 16, column_name: D, result_type: UInt8, source_id: 3
+          FUNCTION id: 17, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
-              LIST id: 15, nodes: 2
-                COLUMN id: 16, column_name: A, result_type: UInt8, source_id: 3
-                COLUMN id: 17, column_name: B, result_type: UInt8, source_id: 3
+              LIST id: 18, nodes: 2
+                COLUMN id: 19, column_name: B, result_type: UInt8, source_id: 3
+                FUNCTION id: 20, function_name: equals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 21, nodes: 2
+                      FUNCTION id: 22, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 23, nodes: 1
+                            COLUMN id: 13, column_name: C, result_type: UInt8, source_id: 3
+                      FUNCTION id: 24, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                        ARGUMENTS
+                          LIST id: 25, nodes: 1
+                            COLUMN id: 16, column_name: D, result_type: UInt8, source_id: 3
 
 SELECT count() AS `count()`
 FROM default.x AS __table1
-WHERE (sipHash64(__table1.C) = sipHash64(__table1.D)) AND (__table1.A OR __table1.B)
+WHERE (__table1.A AND (sipHash64(__table1.C) = sipHash64(__table1.D))) OR (__table1.B AND (sipHash64(__table1.C) = sipHash64(__table1.D)))
 -9220160771238933596	1	0	0	0	1	1
 -9217261049539683905	0	1	1	0	1	1
 -9154303869107404275	1	0	1	1	1	1
