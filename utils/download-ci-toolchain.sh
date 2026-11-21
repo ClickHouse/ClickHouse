@@ -2,7 +2,7 @@
 # Download the clang that ClickHouse CI compiles with and print the CC and CXX to configure a build with it.
 #
 # It is the LLVM release that the build docs install with llvm.sh, from the same commit, built with PGO and BOLT
-# by ci/jobs/build_toolchain.py. The build is pinned by TOOLCHAIN_COMMIT in ci/docker/binary-builder/Dockerfile,
+# by ci/jobs/build_toolchain.py. The build is pinned by TOOLCHAIN_COMMIT in ci/docker/fasttest/Dockerfile,
 # and CI compiles with it only while it is the compiler that ToolSet in ci/defs/defs.py names.
 # Only the compiler is kept, so the build uses the installed lld and LLVM tools. The compiler needs glibc 2.38 or newer.
 #
@@ -20,7 +20,7 @@ for tool in curl zstd; do
 done
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-dockerfile="$root/ci/docker/binary-builder/Dockerfile"
+dockerfile="$root/ci/docker/fasttest/Dockerfile"
 commit=$(sed -n 's/^ARG TOOLCHAIN_COMMIT=//p' "$dockerfile")
 s3_dir=$(sed -n 's/^ARG TOOLCHAIN_S3_DIR=//p' "$dockerfile")
 s3_dir=${s3_dir//'${TOOLCHAIN_COMMIT}'/$commit}

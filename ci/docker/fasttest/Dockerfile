@@ -201,3 +201,20 @@ RUN arch=${TARGETARCH:-amd64} \
     && rm /tmp/nfpm.deb
 
 ENV PYTHONUNBUFFERED=1
+
+# Optional PGO+BOLT optimized toolchain override
+ARG TOOLCHAIN_COMMIT=51fdb0b1b64e10e205041802cd91d962fb1d281c
+# S3 directory of that commit's artifacts. Praktika owns the prefix layout and
+# has changed it, so the location is pinned next to the commit instead of being
+# spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
+ARG TOOLCHAIN_S3_DIR=REFs/master/51fdb0b1b64e10e205041802cd91d962fb1d281c/optimizetoolchain
+RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
+    arch=${TARGETARCH:-amd64} && \
+    case $arch in \
+        amd64) tarch=amd64 ;; \
+        arm64) tarch=aarch64 ;; \
+    esac && \
+    curl -fsSL "https://clickhouse-builds.s3.amazonaws.com/${TOOLCHAIN_S3_DIR}/build_toolchain_pgo_bolt_${tarch}/clang-pgo-bolt.tar.zst" \
+      | zstd -d | tar -xf - -C /usr/local/ && \
+    echo "Installed PGO+BOLT toolchain from commit ${TOOLCHAIN_COMMIT}" \
+    ; fi
