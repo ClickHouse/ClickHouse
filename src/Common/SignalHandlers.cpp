@@ -54,7 +54,7 @@ static std::atomic_bool is_crashed = false;
 static_assert(std::atomic_bool::is_always_lock_free, "is_crashed must be lock-free for use in signal handlers");
 bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
 
-/// Set once the deadly signal handlers are reset to SIG_DFL; makes resetHandledSignals() a no-op afterwards.
+/// Set once the deadly signal handlers are reset to their previous actions; makes resetHandledSignals() a no-op afterwards.
 static std::atomic_flag handled_signals_were_reset;
 
 /// After re-raising the signal, the siginfo recorded in the core dump shows SI_TKILL with no si_addr,
@@ -348,11 +348,14 @@ void HandledSignals::addSignalHandler(
 #endif
 
     for (auto signal : signals)
-        if (sigaction(signal, &sa, nullptr))
+    {
+        struct sigaction previous{};
+        if (sigaction(signal, &sa, &previous))
             throw Poco::Exception("Cannot set signal handler.");
 
-    if (register_signal)
-        std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
+        if (register_signal)
+            handled_signals.emplace_back(signal, previous);
+    }
 #endif
 }
 
@@ -889,13 +892,12 @@ void HandledSignals::reset(bool close_pipe)
 {
     handled_signals_were_reset.test_and_set();
 
-    /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
-    /// Nothing was ever installed where there are no signals, so `handled_signals` is empty there
-    /// and this loop does nothing; it is compiled out to keep `signal` out of the WebAssembly link.
+    /// Give back the actions our handlers replaced, to avoid trying to write to the signal_pipe that will be closed after.
+    /// Nothing was ever installed where there are no signals, so this loop is compiled out there.
 #if defined(OS_HAS_SIGNAL_HANDLERS)
-    for (int sig : handled_signals)
+    for (auto it = handled_signals.rbegin(); it != handled_signals.rend(); ++it)
     {
-        if (SIG_ERR == signal(sig, SIG_DFL))
+        if (0 != sigaction(it->first, &it->second, nullptr))
         {
             try
             {
