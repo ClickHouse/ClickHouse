@@ -314,7 +314,9 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (row[pos].isNull())
             continue;
 
-        const Field & border = findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
+        /// The cursor is in the group of the next row for a column only when it holds the value of the next row.
+        const Field & border = compare_with_next_value && !next_original_row[pos].isNull() ? next_original_row[pos]
+            : findBorder(constraints[pos], next_original_row[pos], getDirection(pos));
         logDebug("border: {}", border);
 
         if (!border.isNull() && !equals(row[pos], border))
@@ -335,7 +337,9 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], row[pos], getDirection(pos)))
         return false;
 
-    if (!constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
+    /// Towards another group, the following columns are walked to their constraints before the step is refused below.
+    if ((!compare_with_next_value || next_original_row[pos].isNull()) && !constraints[pos].isNull()
+        && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
     /// A NaN border (a NaN `fill_to` or a staleness border derived from a NaN row) generates nothing: `accurateLess`

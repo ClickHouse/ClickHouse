@@ -57,6 +57,8 @@ public:
     /// up front once the anchor of the filling is known.
     void checkFillingTowardsConstraintsFitsColumnTypes();
 
+    void compareWithNextValue() { compare_with_next_value = true; }
+
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
     [[nodiscard]] size_t size() const { return row.size(); }
@@ -79,6 +81,8 @@ private:
     Row checked_walk_cursor;
     Row checked_walk_constraint;
     SortDescription sort_description;
+    /// Whether `next` finds the column to step by the value of the next row instead of by `min(TO, next value)`.
+    bool compare_with_next_value = false;
 };
 
 WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row);
