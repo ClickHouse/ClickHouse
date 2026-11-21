@@ -6254,6 +6254,7 @@ class ClickHouseInstance:
                 self.clickhouse_forced_stop = False
                 # Cleared first, so a start that throws leaves no exec of the previous server
                 self.clickhouse_exec_id = ""
+                first_launch = exec_id is None
                 exec_id = self.exec_in_container(
                     [
                         "bash",
@@ -6271,6 +6272,9 @@ class ClickHouseInstance:
                     environment=environment,
                     **({"workdir": DOLOR_CORE_DIR} if self.cluster.with_dolor else {}),
                 )
+                # The budget counts from the first launch, not from slow docker calls before it
+                if first_launch:
+                    start_time = time.time()
                 # With `--daemon` the exec is a launcher that exits 0 once it has forked,
                 # so only a foreground start's exec says how the server went away.
                 self.clickhouse_exec_id = "" if daemon else exec_id
