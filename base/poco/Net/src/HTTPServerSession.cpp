@@ -38,6 +38,32 @@ void HTTPServerSession::setKeepAliveTimeout(Poco::Timespan keepAliveTimeout)
     _keepAliveTimeout = keepAliveTimeout;
 }
 
+void HTTPServerSession::setStopCallback(std::function<bool()> stopCallback)
+{
+    _stopCallback = std::move(stopCallback);
+}
+
+bool HTTPServerSession::waitForRequest(Poco::Timespan timeout)
+{
+    if (!_stopCallback)
+        return socket().poll(timeout, Socket::SELECT_READ);
+
+    // Poll in bounded slices so that a connection idle in keep-alive does not
+    // block server shutdown for the whole timeout: the stop callback is checked
+    // between slices and aborts the wait as soon as the server stops.
+    static const Poco::Timespan slice(1, 0); // 1 second
+    Poco::Timespan remaining = timeout;
+    while (remaining > 0)
+    {
+        if (_stopCallback())
+            return false;
+        Poco::Timespan step = remaining < slice ? remaining : slice;
+        if (socket().poll(step, Socket::SELECT_READ))
+            return true;
+        remaining -= step;
+    }
+    return false;
+}
 
 
 bool HTTPServerSession::hasMoreRequests()
@@ -48,13 +74,13 @@ bool HTTPServerSession::hasMoreRequests()
 	{
 		_firstRequest = false;
 		--_maxKeepAliveRequests;
-		return socket().poll(getTimeout(), Socket::SELECT_READ);
+		return waitForRequest(getTimeout());
 	}
 	else if (canKeepAlive())
 	{
         if (_maxKeepAliveRequests > 0)
             --_maxKeepAliveRequests;
-        return buffered() > 0 || socket().poll(_keepAliveTimeout, Socket::SELECT_READ);
+        return buffered() > 0 || waitForRequest(_keepAliveTimeout);
     }
 	else
 		return false;
