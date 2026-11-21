@@ -1652,6 +1652,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 view_source_in_subqueries);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
+            type_inference_analyzer.resolved_scalar_subqueries = resolved_scalar_subqueries;
 
             bool type_inference_succeeded = false;
             bool post_resolution_is_safe = false;
