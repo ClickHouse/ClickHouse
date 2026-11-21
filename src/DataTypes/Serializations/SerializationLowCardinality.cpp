@@ -448,7 +448,8 @@ std::optional<Columns> SerializationLowCardinality::deserializeCompleteDictionar
         {
             if (dictionary_type->isNullable() && i == dictionary->getNullValueIndex() && !(flags & COMPLETE_DICTIONARIES_HAS_NULL))
                 continue;
-            if (i == dictionary->getDefaultValueIndex() && !(flags & COMPLETE_DICTIONARIES_HAS_DEFAULT))
+            /// For a `Nullable` dictionary, the default value of the nested type is next to `NULL`.
+            if (i == dictionary->getNestedTypeDefaultValueIndex() && !(flags & COMPLETE_DICTIONARIES_HAS_DEFAULT))
                 continue;
             positions_data.push_back(i);
         }
@@ -768,7 +769,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         if (!low_cardinality_state->uses_null && dictionary_type->isNullable())
             low_cardinality_state->uses_null = containsIndex(*positions, global_dictionary->getNullValueIndex());
         if (!low_cardinality_state->uses_default)
-            low_cardinality_state->uses_default = containsIndex(*positions, global_dictionary->getDefaultValueIndex());
+            low_cardinality_state->uses_default = containsIndex(*positions, global_dictionary->getNestedTypeDefaultValueIndex());
     }
 
     bool need_additional_keys = !keys->empty();
