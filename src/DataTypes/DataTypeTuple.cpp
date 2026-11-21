@@ -366,7 +366,7 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getSerialization(settings);
+        auto serialization = elems[i]->getSerialization(settings.forNestedTypes());
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
@@ -396,7 +396,7 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (const auto & elem : elems)
-        infos.push_back(elem->createSerializationInfo(settings));
+        infos.push_back(elem->createSerializationInfo(settings.forNestedTypes()));
 
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
@@ -425,7 +425,7 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i), settings);
+        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i), settings.forNestedTypes());
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 

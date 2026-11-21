@@ -23,6 +23,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
+          data_part->getType(),
           metadata_snapshot_,
           columns_list_,
           /*reset_columns=*/true)

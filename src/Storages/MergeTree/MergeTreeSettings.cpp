@@ -351,7 +351,7 @@ switch to `with_types` (or `with_missing_columns`) to enable the corresponding f
 )", 0, \
         {"25.11", "basic", "with_types", "Change to the newer format allowing custom string serialization"}, \
         {"25.10", "basic", "basic", "New setting"}) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_dictionaries", R"(
 Controls the serialization format for top-level `String` columns.
 
 This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
@@ -366,9 +366,25 @@ Possible values:
 
 - `single_stream` — Use the standard serialization format with inline sizes.
 - `with_size_stream` — Use a separate size stream for top-level `String` columns.
+- `with_dictionaries` — Experimental. Like `with_size_stream`, but in `Wide` parts each granule of a top-level `String`
+column is stored as a sorted dictionary of its distinct values plus a code per row when that form is smaller
+(see `string_dictionary_min_size_reduction`). Older versions cannot read such parts.
 )", 0, \
+        {"26.12", "with_size_stream", "with_dictionaries", "Change to the format with dictionary-encoded granules"}, \
         {"25.11", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"}, \
         {"25.10", "single_stream", "single_stream", "New setting"}) \
+    DECLARE(Float, string_dictionary_min_size_reduction, 0.1f, R"(
+With `string_serialization_version = 'with_dictionaries'`, a granule of a `String` column is stored as a dictionary
+of its distinct values plus a code per row only when that form is smaller than the plain form by at least this
+fraction of the plain size.
+)", EXPERIMENTAL, \
+        {"26.12", 0.1, 0.1, "New setting"}) \
+    DECLARE(Float, string_dictionary_max_distinct_ratio, 0.75f, R"(
+With `string_serialization_version = 'with_dictionaries'`, a granule of a `String` column is stored as a dictionary
+only when its distinct values are at most this fraction of its rows. A granule with more distinct values gains little
+from a dictionary, and every reader of its plain strings would copy each row out of it. `1` sets no limit.
+)", EXPERIMENTAL, \
+        {"26.12", 0.75, 0.75, "New setting"}) \
     DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
 Controls the serialization method used for `Nullable(T)` columns.
 

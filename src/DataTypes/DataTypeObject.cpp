@@ -227,10 +227,10 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
-        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types ? type->getSerialization(settings) : type->getDefaultSerialization();
+        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types ? type->getSerialization(settings.forNestedTypes()) : type->getDefaultSerialization();
 
     SerializationPtr dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
-        ? getDynamicType()->getSerialization(settings)
+        ? getDynamicType()->getSerialization(settings.forNestedTypes())
         : getDynamicType()->getDefaultSerialization();
 
     switch (schema_format)

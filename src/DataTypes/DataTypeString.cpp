@@ -38,6 +38,16 @@ SerializationPtr DataTypeString::doGetSerialization(const SerializationInfoSetti
     return SerializationString::create(settings.string_serialization_version);
 }
 
+SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
+{
+    const auto & settings = info.getSettings();
+    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES
+        && info.getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+        return wrapSerializationBasedOnKindStack(getSerialization(settings.forNestedTypes()), info.getKindStack(), settings);
+
+    return IDataType::getSerialization(info);
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (arguments && !arguments->children.empty())

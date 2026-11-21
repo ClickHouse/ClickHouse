@@ -336,6 +336,12 @@ String getNameForSubstreamPath(
             ++array_level;
         else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
             stream_name += ".size";
+        else if (it->type == Substream::StringDictionaryIndexes)
+            stream_name += ".strdict.idx";
+        else if (it->type == Substream::StringDictionarySizes)
+            stream_name += ".strdict.size";
+        else if (it->type == Substream::StringDictionaryElements)
+            stream_name += ".strdict";
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
@@ -631,6 +637,8 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
             || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
+            || elem.type == Substream::StringDictionaryIndexes
+            || elem.type == Substream::StringDictionarySizes
             || elem.type == Substream::DictionaryIndexes
             || elem.type == Substream::DictionaryKeysPrefix
             || elem.type == Substream::VariantDiscriminatorsPrefix

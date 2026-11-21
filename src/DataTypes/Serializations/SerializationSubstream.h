@@ -178,6 +178,12 @@ struct SerializationSubstream
         QuantizedCodes,
         ProductQuantizationCodebook,
 
+        /// The streams of `String` granules stored as dictionaries: one record per granule (its kind, and the codes
+        /// of a dictionary granule), the lengths of the dictionary values, and their bytes.
+        StringDictionaryIndexes,
+        StringDictionarySizes,
+        StringDictionaryElements,
+
         Regular,
     };
 

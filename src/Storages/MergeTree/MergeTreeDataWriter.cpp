@@ -1081,6 +1081,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    settings = settings.forPartType(new_data_part->getType());
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -1309,6 +1310,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    settings = settings.forPartType(new_data_part->getType());
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 

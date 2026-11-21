@@ -145,6 +145,40 @@ void ColumnReplicated::dropInsertionCache()
     insertion_cache.reset();
 }
 
+ColumnPtr ColumnReplicated::getUsedValues(size_t offset, size_t limit) const
+{
+    if (offset > size() || limit > size() - offset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Range [{}, {}) is out of bounds of ColumnReplicated of {} rows", offset, offset + limit, size());
+
+    auto positions = ColumnUInt64::create();
+    auto & positions_data = positions->getData();
+    PaddedPODArray<UInt8> seen(nested_column->size(), 0);
+    auto collect = [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
+    {
+        for (size_t row = offset; row < offset + limit; ++row)
+        {
+            const IndexType index = data[row];
+            if (!seen[index])
+            {
+                seen[index] = 1;
+                positions_data.push_back(index);
+            }
+        }
+    };
+
+    const IColumn & index_column = *indexes.getIndexes();
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&index_column))
+        collect(indexes_uint8->getData());
+    else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&index_column))
+        collect(indexes_uint16->getData());
+    else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&index_column))
+        collect(indexes_uint32->getData());
+    else
+        collect(assert_cast<const ColumnUInt64 &>(index_column).getData());
+
+    return nested_column->index(*positions, 0);
+}
+
 size_t ColumnReplicated::getOrInsertSourceRow(const ColumnReplicated & src, size_t src_row)
 {
     auto & cache = getInsertionCache();
@@ -311,11 +345,45 @@ ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_
 
 }
 
+namespace
+{
+
+bool isIdentityIndexes(const IColumn & indexes)
+{
+    auto check = [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
+    {
+        for (size_t i = 0; i != data.size(); ++i)
+        {
+            if (static_cast<UInt64>(data[i]) != i)
+                return false;
+        }
+        return true;
+    };
+
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
+        return check(indexes_uint8->getData());
+    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
+        return check(indexes_uint16->getData());
+    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
+        return check(indexes_uint32->getData());
+    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&indexes))
+        return check(indexes_uint64->getData());
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", indexes.getName());
+}
+
+}
+
 /// The generic index path (nested_column->index()) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
 /// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
 /// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
+    /// Indexes 0, 1, ..., size - 1 make the nested column the full column, as for a `String` column read from a part
+    /// whose granules are all plain.
+    if (nested_column->size() == size() && isIdentityIndexes(*indexes.getIndexes()))
+        return nested_column;
+
     if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
     {
         /// Per-array materialization
@@ -1025,35 +1093,6 @@ void compactReplicatedColumns(Columns & columns)
                     result.compact_indexed_columns[j], result.compact_indexes);
         }
     }
-}
-
-namespace
-{
-
-bool isIdentityIndexes(const IColumn & indexes)
-{
-    auto check = [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
-    {
-        for (size_t i = 0; i != data.size(); ++i)
-        {
-            if (static_cast<UInt64>(data[i]) != i)
-                return false;
-        }
-        return true;
-    };
-
-    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
-        return check(indexes_uint8->getData());
-    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
-        return check(indexes_uint16->getData());
-    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
-        return check(indexes_uint32->getData());
-    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&indexes))
-        return check(indexes_uint64->getData());
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", indexes.getName());
-}
-
 }
 
 void finishMergedReplicatedColumn(MutableColumnPtr & column)

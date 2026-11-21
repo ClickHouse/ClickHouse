@@ -57,6 +57,16 @@ public:
 
     void deserializeBinaryBulkStatePrefix(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const override;
 
+    void serializeBinaryBulkStatePrefix(const IColumn & column, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const override;
+    void serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const override;
+
+    /// `WITH_DICTIONARIES` reads into a `ColumnReplicated` over a `ColumnString`: a dictionary granule appends its values
+    /// once and a code per row, a plain granule appends its rows with indexes to themselves.
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
+
+    /// A column whose part has no dictionary granule for it holds exactly the streams of `WITH_SIZE_STREAM`.
+    SerializationPtr resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const override;
+
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
@@ -91,6 +101,7 @@ private:
     /// dispatch helpers for enumerateStreams
     void enumerateStreamsWithSize(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
     void enumerateStreamsWithoutSize(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
+    void enumerateStreamsWithDictionaries(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
 
     /// dispatch helpers for serializeBinaryBulkWithMultipleStreams
     void serializeBinaryBulkWithSizeStream(
@@ -100,6 +111,12 @@ private:
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const;
     void serializeBinaryBulkWithoutSizeStream(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
+    void serializeBinaryBulkWithDictionaries(
         const IColumn & column,
         size_t offset,
         size_t limit,
@@ -121,6 +138,12 @@ private:
         DeserializeBinaryBulkSettings & settings,
         SubstreamsCache * cache) const;
     void deserializeBinaryBulkWithoutSizeStream(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+    void deserializeBinaryBulkWithDictionaries(
         IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,

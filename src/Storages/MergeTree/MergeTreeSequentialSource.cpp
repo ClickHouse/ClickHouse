@@ -304,6 +304,10 @@ try
         auto pos = reader_header.getPositionByName(name);
         auto & result_column = result_columns.emplace_back(std::move(read_result.columns[pos]));
 
+        /// A `String` column with dictionary granules is read as a `ColumnReplicated`. Merges and mutations process and
+        /// write plain columns.
+        result_column = result_column->convertToFullColumnIfReplicated();
+
         /// When read_task_info->merged_part_offsets we need to adjust parent part offset in projection because it will
         /// be different when parent has order by column and merge will change order of rows.
         if (read_task_info->merged_part_offsets && read_task_info->data_part_info->isProjectionPart() && name == "_parent_part_offset")

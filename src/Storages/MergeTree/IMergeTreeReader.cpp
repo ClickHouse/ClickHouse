@@ -650,13 +650,32 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
 
     /// The part holds the serialization of every column it stores, built with the same call as below, so take it
     /// instead of building an equal one for every reader.
-    if (auto serialization = tryGetSerializationFromPart(*column_in_part))
-        return {*column_in_part, serialization};
+    SerializationPtr serialization = tryGetSerializationFromPart(*column_in_part);
+    if (!serialization)
+    {
+        if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
+            serialization = IDataType::getSerialization(*column_in_part, *it->second);
+        else
+            serialization = IDataType::getSerialization(*column_in_part, infos.getSettings());
+    }
 
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return {*column_in_part, IDataType::getSerialization(*column_in_part, *it->second)};
+    /// The part computes its serializations before its files are known, so the substreams that the column leaves
+    /// empty in this part are resolved here, where the checksums are.
+    if (data_part_info_for_read->isWidePart())
+    {
+        const auto & checksums = data_part_info_for_read->getChecksums();
+        const String name_in_storage = column_in_part->getNameInStorage();
+        serialization = serialization->resolveForEmptySubstreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_in_storage, substream_path, ".bin", checksums, storage_settings);
+            if (!stream_name)
+                return true;
+            auto it = checksums.files.find(*stream_name + ".bin");
+            return it == checksums.files.end() || it->second.uncompressed_size == 0;
+        });
+    }
 
-    return {*column_in_part, IDataType::getSerialization(*column_in_part, infos.getSettings())};
+    return {*column_in_part, serialization};
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const

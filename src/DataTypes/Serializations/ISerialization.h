@@ -163,6 +163,14 @@ public:
     /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
     virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
+    /// Tells whether the file of a substream of a column in a data part holds no data or does not exist.
+    using SubstreamIsEmptyCallback = std::function<bool(const SerializationSubstreamPath &)>;
+
+    /// Returns the serialization that reads the column from a data part, given which of its substreams hold no data. A
+    /// serialization with substreams that some columns leave empty returns a simpler one for those columns: for example,
+    /// a `String` column with no dictionary granules in the part reads like `WITH_SIZE_STREAM`, into a plain column.
+    [[nodiscard]] virtual SerializationPtr resolveForEmptySubstreams(const SubstreamIsEmptyCallback &) const { return getPtr(); }
+
     static KindStack getKindStack(const IColumn & column);
     static String kindToString(Kind kind);
     static String kindStackToString(const KindStack & kind);
@@ -302,6 +310,12 @@ public:
 
         size_t low_cardinality_max_dictionary_size = 0;
         bool low_cardinality_use_single_dictionary_for_part = true;
+
+        /// With `MergeTreeStringSerializationVersion::WITH_DICTIONARIES`, a `String` granule is stored as a dictionary
+        /// only when that form is smaller than the plain form by this fraction of the plain size, and when its distinct
+        /// values are at most `string_dictionary_max_distinct_ratio` of its rows.
+        double string_dictionary_min_size_reduction = 0.1;
+        double string_dictionary_max_distinct_ratio = 0.75;
 
         bool position_independent_encoding = true;
 

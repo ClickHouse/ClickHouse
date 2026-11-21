@@ -1,13 +1,20 @@
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/Serializations/StringGranuleDictionary.h>
 #include <IO/VarInt.h>
 #include <IO/ReadBuffer.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
 
 SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVersion version_)
     : version(version_)
@@ -40,6 +47,18 @@ void SerializationStringSize::enumerateStreams(
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
             settings.path.push_back(Substream::StringSizes);
             break;
+        case MergeTreeStringSerializationVersion::WITH_DICTIONARIES:
+            /// The lengths are in three streams: the records of the granules with the codes, the lengths of the rows of
+            /// plain granules, and the lengths of the dictionary values. The bytes are never read.
+            settings.path.push_back(Substream::StringDictionaryIndexes);
+            callback(settings.path);
+            settings.path.back() = Substream::StringSizes;
+            settings.path.back().data = data;
+            callback(settings.path);
+            settings.path.back() = Substream::StringDictionarySizes;
+            callback(settings.path);
+            settings.path.pop_back();
+            return;
     }
 
     settings.path.back().data = data;
@@ -62,12 +81,25 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
             deserializeBinaryBulkWithSizeStream(column, limit, settings, state, cache);
             break;
+        case MergeTreeStringSerializationVersion::WITH_DICTIONARIES:
+            deserializeBinaryBulkWithDictionaries(column, limit, settings, state, cache);
+            break;
     }
 }
 
 void SerializationStringSize::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
+    if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES)
+    {
+        state = getStringGranulesDeserializeState(settings, cache);
+        /// Without a states cache nothing tells whether the column is read too, and the lengths are taken from it, as
+        /// for `SINGLE_STREAM` below.
+        if (!cache)
+            checkAndGetState<DeserializeBinaryBulkStateStringWithDictionaries>(state)->need_string_data = true;
+        return;
+    }
+
     if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
     {
         settings.path.push_back(Substream::Regular);
@@ -214,9 +246,154 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     settings.path.pop_back();
 }
 
+SerializationPtr SerializationStringSize::resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const
+{
+    SubstreamPath dictionary_sizes;
+    dictionary_sizes.push_back(Substream::StringDictionarySizes);
+    if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES && substream_is_empty(dictionary_sizes))
+        return SerializationStringSize::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    return getPtr();
+}
+
 size_t SerializationStringSize::allocatedBytes() const
 {
     return sizeof(*this);
+}
+
+namespace
+{
+
+/// Appends the lengths of rows `[start, start + length)` of `column`, a `ColumnString` or a `ColumnReplicated` over one.
+void appendStringSizes(PaddedPODArray<UInt64> & sizes, const IColumn & column, size_t start, size_t length)
+{
+    sizes.reserve(sizes.size() + length);
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(&column))
+    {
+        const auto & offsets = assert_cast<const ColumnString &>(*replicated->getNestedColumn()).getOffsets();
+        const auto & indexes = replicated->getIndexes();
+        for (size_t row = start; row < start + length; ++row)
+        {
+            const size_t index = indexes.getIndexAt(row);
+            sizes.push_back(offsets[index] - offsets[index - 1]);
+        }
+        return;
+    }
+
+    const auto & offsets = assert_cast<const ColumnString &>(column).getOffsets();
+    for (size_t row = start; row < start + length; ++row)
+        sizes.push_back(offsets[row] - offsets[row - 1]);
+}
+
+/// Appends `dictionary_sizes[code]` for every code.
+void appendDictionarySizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dictionary_sizes, const IColumn & codes)
+{
+    auto append = [&]<typename T>(const PaddedPODArray<T> & data)
+    {
+        const size_t prev_size = sizes.size();
+        sizes.resize(prev_size + data.size());
+        for (size_t i = 0; i < data.size(); ++i)
+            sizes[prev_size + i] = dictionary_sizes[data[i]];
+    };
+
+    if (const auto * codes_uint8 = typeid_cast<const ColumnUInt8 *>(&codes))
+        append(codes_uint8->getData());
+    else if (const auto * codes_uint16 = typeid_cast<const ColumnUInt16 *>(&codes))
+        append(codes_uint16->getData());
+    else
+        append(assert_cast<const ColumnUInt32 &>(codes).getData());
+}
+
+}
+
+void SerializationStringSize::deserializeBinaryBulkWithDictionaries(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    auto & granules_state = *checkAndGetState<DeserializeBinaryBulkStateStringWithDictionaries>(state);
+    auto & sizes = assert_cast<ColumnUInt64 &>(column).getData();
+
+    if (granules_state.need_string_data)
+    {
+        /// The column is read as well, from the same streams. Take the lengths from it, and read it here if this
+        /// subcolumn comes first: the column then finds itself in the substreams cache.
+        settings.path.push_back(Substream::Regular);
+        auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path);
+        settings.path.pop_back();
+
+        ColumnPtr string_column;
+        size_t num_read_rows = 0;
+        if (cached_column_with_num_read_rows)
+        {
+            std::tie(string_column, num_read_rows) = *cached_column_with_num_read_rows;
+        }
+        else
+        {
+            auto read_column = ColumnReplicated::create(MutableColumnPtr(ColumnString::create()), MutableColumnPtr(ColumnUInt8::create()));
+            serialization_string->deserializeBinaryBulkWithMultipleStreams(*read_column, limit, settings, state, cache);
+            num_read_rows = read_column->size();
+            string_column = std::move(read_column);
+        }
+
+        appendStringSizes(sizes, *string_column, string_column->size() - num_read_rows, num_read_rows);
+        return;
+    }
+
+    /// Each stream is requested once per call, see `SerializationString::deserializeBinaryBulkWithDictionaries`.
+    settings.path.push_back(Substream::StringDictionaryIndexes);
+    ReadBuffer * indexes_stream = settings.getter(settings.path);
+    settings.path.back() = Substream::StringSizes;
+    ReadBuffer * sizes_stream = settings.getter(settings.path);
+    settings.path.back() = Substream::StringDictionarySizes;
+    ReadBuffer * dictionary_sizes_stream = settings.getter(settings.path);
+    settings.path.pop_back();
+
+    /// The column is not in the part.
+    if (!indexes_stream)
+        return;
+
+    if (!settings.continuous_reading)
+        granules_state.rows_left_in_granule = 0;
+
+    size_t rows_read = 0;
+    while (rows_read < limit)
+    {
+        auto & granule = granules_state.granule;
+        if (granules_state.rows_left_in_granule == 0)
+        {
+            if (indexes_stream->eof())
+                break;
+
+            granule.read(*indexes_stream);
+            granules_state.rows_left_in_granule = granule.rows;
+            if (granule.kind == StringGranuleHeader::Kind::Dictionary)
+            {
+                granules_state.dictionary_sizes.clear();
+                SerializationNumber<UInt64>::deserializeBinaryBulk(granules_state.dictionary_sizes, *dictionary_sizes_stream, granule.dictionary_size);
+                if (granules_state.dictionary_sizes.size() != granule.dictionary_size)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the dictionary lengths of a String granule");
+            }
+        }
+
+        const size_t rows = std::min(limit - rows_read, granules_state.rows_left_in_granule);
+        if (granule.kind == StringGranuleHeader::Kind::Plain)
+        {
+            const size_t prev_size = sizes.size();
+            SerializationNumber<UInt64>::deserializeBinaryBulk(sizes, *sizes_stream, rows);
+            if (sizes.size() - prev_size != rows)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the lengths of {} rows of a plain String granule", rows);
+        }
+        else
+        {
+            auto codes = readStringGranuleCodes(*indexes_stream, granule, rows);
+            appendDictionarySizes(sizes, granules_state.dictionary_sizes, *codes);
+        }
+
+        granules_state.rows_left_in_granule -= rows;
+        rows_read += rows;
+    }
 }
 
 }

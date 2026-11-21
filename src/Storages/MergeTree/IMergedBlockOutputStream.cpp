@@ -21,6 +21,7 @@ namespace MergeTreeSetting
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeSettingsPtr storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
+    MergeTreeDataPartType part_type,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
@@ -28,7 +29,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(std::move(data_part_storage_))
     , reset_columns(reset_columns_)
-    , info_settings
+    , info_settings(SerializationInfo::Settings
     {
         static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
@@ -38,11 +39,64 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
         (*storage_settings)[MergeTreeSetting::map_serialization_version],
         (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-    }
+    }.forPartType(part_type))
     , new_serialization_infos(info_settings)
 {
     if (reset_columns)
         new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
+}
+
+NameSet IMergedBlockOutputStream::removeStreamsLeftEmpty(
+    const MergeTreeDataPartPtr & data_part,
+    const NamesAndTypesList & columns,
+    MergeTreeData::DataPart::Checksums & checksums,
+    std::unordered_set<String> & removed_substreams)
+{
+    NameSet remove_files;
+    if (isCompactPart(data_part))
+        return remove_files;
+
+    const auto & settings = data_part->storage.getSettings();
+    const String mrk_extension = data_part->getMarksFileExtension();
+    for (const auto & column : columns)
+    {
+        auto serialization = data_part->getSerialization(column.name);
+        auto resolved = serialization->resolveForEmptySubstreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, settings);
+            if (!stream_name)
+                return true;
+            auto it = checksums.files.find(*stream_name + ".bin");
+            return it == checksums.files.end() || it->second.uncompressed_size == 0;
+        });
+        if (resolved == serialization)
+            continue;
+
+        NameSet kept_streams;
+        resolved->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            kept_streams.insert(ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings)));
+        });
+
+        serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto full_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings));
+            if (kept_streams.contains(full_name))
+                return;
+
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, settings);
+            if (!stream_name)
+                return;
+
+            for (const auto & file : {*stream_name + ".bin", *stream_name + mrk_extension})
+            {
+                checksums.files.erase(file);
+                remove_files.insert(file);
+            }
+            removed_substreams.insert(full_name);
+        });
+    }
+    return remove_files;
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(

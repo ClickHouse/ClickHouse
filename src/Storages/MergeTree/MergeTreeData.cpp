@@ -16014,6 +16014,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         (*settings)[MergeTreeSetting::map_serialization_version],
         (*settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    info_settings = info_settings.forPartType(new_data_part->getType());
 
     new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();

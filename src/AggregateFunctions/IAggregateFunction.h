@@ -295,6 +295,11 @@ public:
     /// so that a caller may skip repeated values.
     virtual bool ignoresRepeatedValues() const { return false; }
 
+    /// Return true if `add` and the batch methods read an argument in the replicated representation (`ColumnReplicated`)
+    /// through its indexes, as a `String` column with dictionary granules is read, so that the caller need not
+    /// materialize it.
+    virtual bool supportsReplicatedArguments() const { return false; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
     /// All overrides must be done on `mergeImpl` below.

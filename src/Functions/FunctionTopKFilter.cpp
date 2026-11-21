@@ -1,5 +1,6 @@
 #include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -114,6 +115,11 @@ public:
     /// The default implementation would convert a sparse argument to a full column on every call.
     [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
 
+    /// The default implementation would materialize a replicated argument on every call, because the function is not
+    /// deterministic within the query: the threshold moves between calls. Within one call it is read once, so `compare`
+    /// compares each value of the nested column once instead.
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
@@ -178,6 +184,15 @@ private:
             for (size_t i = 0; i < offsets.size(); ++i)
                 result_data[offsets[i]] = values_filter[i + 1];
             return result;
+        }
+
+        /// Each row gets the result of its value in the nested column.
+        if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
+        {
+            const auto & values = column_replicated->getNestedColumn();
+            auto values_result = compareValues({values, argument.type, argument.name}, current_threshold, values->size(), mode)
+                                     ->convertToFullColumnIfConst();
+            return values_result->index(*column_replicated->getIndexesColumn(), 0);
         }
 
         return compareValues(argument, current_threshold, input_rows_count, mode)->convertToFullColumnIfConst();

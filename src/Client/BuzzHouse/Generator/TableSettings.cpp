@@ -706,10 +706,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'single_stream'", "'with_size_stream'"};
+             static const DB::Strings choices = {"'single_stream'", "'with_size_stream'", "'with_dictionaries'"};
              return rg.pickRandomly(choices);
          },
-         {"'single_stream'", "'with_size_stream'"},
+         {"'single_stream'", "'with_size_stream'", "'with_dictionaries'"},
          false)},
     {"table_disk", trueOrFalseSetting},
     {"table_readonly", trueOrFalseSetting},

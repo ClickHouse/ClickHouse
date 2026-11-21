@@ -225,14 +225,14 @@ protected:
             new_idx = tuple.size();
 
             for (size_t i = 0; i < source_columns.size(); ++i)
-                tuple.getColumn(i).insertFrom(*source_columns[i], source_row);
+                insertSourceKey(tuple.getColumn(i), *source_columns[i], source_row);
 
             tuple.addSize(1);
         }
         else
         {
             new_idx = heap_column->size();
-            heap_column->insertFrom(*source_columns[0], source_row);
+            insertSourceKey(*heap_column, *source_columns[0], source_row);
         }
 
         heap_indices.push_back(new_idx);
@@ -240,6 +240,12 @@ protected:
         if (boundary_row == invalid_row && heap_indices.size() >= k)
             initBoundary();
     }
+
+    /// Appends row `source_row` of a key column of the block to a key column of the heap. A replicated key column (a
+    /// `String` column read with dictionary granules) gives the entry of its nested column at the row's index, because the
+    /// heap keeps its keys plain. The skip tests compare a replicated key column with the heap through `compareAt`, which
+    /// reads through the indexes as well.
+    static void insertSourceKey(IColumn & heap_key_column, const IColumn & source_column, size_t source_row);
 
     /// Ranks the set, moves the boundary to the k-th best key and drops everything below it.
     /// The dropped rows are left in `evictedRows`; they stay addressable in `heap_column` and

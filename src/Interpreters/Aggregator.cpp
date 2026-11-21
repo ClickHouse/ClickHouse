@@ -20,6 +20,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Common/memcpySmall.h>
 #include <bit>
@@ -1855,11 +1856,26 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     [[maybe_unused]] size_t top_k_rows_skipped = 0;
 
+    /// The key states whose rows are positions in a column of values, a `LowCardinality` dictionary or the nested
+    /// column of a replicated `String` key, so that the keys of a block are looked up once per position. The positions
+    /// of a replicated key repeat only as much as its values repeat within a granule, so its state tells whether they
+    /// repeat enough to pay (`positionsRepeat`).
+    static constexpr bool state_counts_positions = requires(State & s) { s.canCountPositions(size_t{}, size_t{}); };
+    [[maybe_unused]] const auto counts_positions = [&](size_t begin, size_t end)
+    {
+        if constexpr (requires(const State & s) { s.positionsRepeat(size_t{}, size_t{}); })
+            return state.canCountPositions(begin, end) && state.positionsRepeat(begin, end);
+        else if constexpr (state_counts_positions)
+            return state.canCountPositions(begin, end);
+        else
+            return false;
+    };
+
     if (is_simple_count)
     {
-        if constexpr (Method::low_cardinality_optimization && !top_k)
+        if constexpr (state_counts_positions && !top_k)
         {
-            if (!all_keys_are_const && state.canCountPositions(row_begin, row_end))
+            if (!all_keys_are_const && counts_positions(row_begin, row_end))
             {
                 if (!no_more_keys)
                 {
@@ -2043,8 +2059,62 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// Assign at the branch tails so `no_more_keys` is not live across either loop.
     bool all_places_are_non_null = false;
 
+    /// The rows of a replicated `String` key are positions in its nested column, whose entries are the strings, so the
+    /// key of each position is emplaced once, at its first row, and every row takes the place of its position.
+    bool rows_placed_by_position = false;
+    if constexpr (requires(const State & s) { s.positionAt(size_t{}); } && !top_k)
+    {
+        if (!no_more_keys && !all_keys_are_const && counts_positions(key_start, key_end))
+        {
+            PaddedPODArray<AggregateDataPtr> position_places(state.numPositions());
+            const auto emplace_position = [&](size_t first_row) ALWAYS_INLINE
+            {
+                auto emplace_result = state.emplaceKey(method.data, first_row, *aggregates_pool);
+                AggregateDataPtr aggregate_data = nullptr;
+                if (emplace_result.isInserted())
+                {
+                    /// The states are created as in the loop below, which explains the order.
+                    emplace_result.setMapped(nullptr);
+                    aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                    createAggregateStates(aggregate_data, use_compiled_functions);
+                    emplace_result.setMapped(aggregate_data);
+                }
+                else
+                    aggregate_data = emplace_result.getMapped();
+                position_places[state.positionAt(first_row)] = aggregate_data;
+            };
+
+            if constexpr (prefetch && requires { method.data.prefetchByHash(size_t{}); })
+            {
+                PODArrayWithStackMemory<UInt32, 4096> first_rows;
+                state.forEachPositionCount(key_start, key_end, [&](size_t first_row, UInt64)
+                {
+                    first_rows.push_back(static_cast<UInt32>(first_row));
+                });
+                for (size_t i = 0; i < first_rows.size(); ++i)
+                {
+                    if (i + prefetch_look_ahead < first_rows.size())
+                        method.data.prefetchByHash(state.getHash(method.data, first_rows[i + prefetch_look_ahead], *aggregates_pool));
+                    emplace_position(first_rows[i]);
+                }
+            }
+            else
+            {
+                state.forEachPositionCount(key_start, key_end, [&](size_t first_row, UInt64) { emplace_position(first_row); });
+            }
+
+            for (size_t i = key_start; i < key_end; ++i)
+                places[i] = position_places[state.positionAt(i)];
+            rows_placed_by_position = true;
+        }
+    }
+
     /// For all rows.
-    if (!no_more_keys)
+    if (rows_placed_by_position)
+    {
+        all_places_are_non_null = true;
+    }
+    else if (!no_more_keys)
     {
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
         if constexpr (top_k)
@@ -2264,6 +2334,10 @@ void Aggregator::executeAggregateInstructions(
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
         }
+        else if (inst->skips_repeated_rows && !inst->offsets)
+        {
+            addBatchSkippingRepeatedRows(row_begin, row_end, inst, places, aggregates_pool);
+        }
         else
         {
             addBatch(row_begin, row_end, inst, places, aggregates_pool, all_places_are_non_null);
@@ -2314,7 +2388,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     }
 #endif
 
-    /// Functions of the same `LowCardinality` argument share its used values.
+    /// Functions of the same `LowCardinality` or replicated argument share its used values.
     std::vector<std::pair<const IColumn *, ColumnPtr>> low_cardinality_values;
 
     /// Adding values
@@ -2331,7 +2405,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
             for (size_t added = 0; added < rows; added += inst->constant_argument_rows)
                 addBatchSinglePlace(0, std::min(inst->constant_argument_rows, rows - added), inst, res + inst->state_offset, arena);
         }
-        else if (inst->has_low_cardinality_argument)
+        else if (inst->has_low_cardinality_argument || inst->has_replicated_argument)
         {
             const IColumn * argument = inst->batch_arguments[0];
             auto it = std::find_if(
@@ -2340,7 +2414,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
                 it = low_cardinality_values.emplace(
                     low_cardinality_values.end(),
                     argument,
-                    assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin));
+                    inst->has_low_cardinality_argument
+                        ? assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin)
+                        : assert_cast<const ColumnReplicated &>(*argument).getUsedValues(row_begin, row_end - row_begin));
 
             /// The used values in the order of their first occurrence: the state is the same as after adding every row.
             const IColumn * values = it->second.get();
@@ -2385,6 +2461,47 @@ void Aggregator::addBatch(
             arena);
 }
 
+
+void Aggregator::addBatchSkippingRepeatedRows(
+    size_t row_begin, size_t row_end,
+    const AggregateFunctionInstruction * inst,
+    const AggregateDataPtr * places,
+    Arena * arena)
+{
+    const auto & argument = assert_cast<const ColumnReplicated &>(*inst->batch_arguments[0]);
+
+    /// The place of the last row of the batch at each position, and the places of the rows, null for a skipped one.
+    PaddedPODArray<AggregateDataPtr> last_places(argument.getNestedColumn()->size(), nullptr);
+    PaddedPODArray<AggregateDataPtr> distinct_places(row_end);
+    const auto skip_repeated = [&]<typename T>(const PaddedPODArray<T> & indexes)
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            AggregateDataPtr & last = last_places[indexes[i]];
+            if (places[i] == last)
+            {
+                distinct_places[i] = nullptr;
+            }
+            else
+            {
+                distinct_places[i] = places[i];
+                last = places[i];
+            }
+        }
+    };
+
+    const IColumn & indexes = *argument.getIndexesColumn();
+    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
+        skip_repeated(indexes_uint8->getData());
+    else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
+        skip_repeated(indexes_uint16->getData());
+    else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
+        skip_repeated(indexes_uint32->getData());
+    else
+        skip_repeated(assert_cast<const ColumnUInt64 &>(indexes).getData());
+
+    inst->batch_that->addBatch(row_begin, row_end, distinct_places.data(), inst->state_offset, inst->batch_arguments, arena);
+}
 
 void Aggregator::addBatchSinglePlace(
     size_t row_begin, size_t row_end,
@@ -2478,6 +2595,8 @@ void Aggregator::prepareAggregateInstructions(
         const bool allow_low_cardinality_argument
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
+        bool has_replicated_argument = false;
+        bool skips_repeated_rows = false;
 
         size_t constant_argument_rows = 0;
         if (params.keys_size == 0 && !aggregate_columns[i].empty())
@@ -2510,8 +2629,26 @@ void Aggregator::prepareAggregateInstructions(
             if (constant_argument_rows)
                 column = column->cloneResized(constant_argument_rows);
 
+            /// A replicated `String` argument keeps its representation when the function reads its used values once each,
+            /// for the same reason and on the same conditions as a `LowCardinality` one below.
+            const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get());
+            const bool replicated_string = replicated && typeid_cast<const ColumnString *>(replicated->getNestedColumn().get());
+            if (allow_low_cardinality_argument && replicated_string && replicated->getNestedColumn()->size() * 2 <= replicated->size())
+                has_replicated_argument = true;
+
+            /// A function that reads replicated arguments through their indexes also gets the column as it is.
+            const bool keep_replicated = has_replicated_argument || (replicated_string && aggregate_functions[i]->supportsReplicatedArguments());
+
+            /// With keys, the rows of one position and one place add one value to one state, which a function that ignores
+            /// repeated values needs only once. Skipping them pays when the positions repeat, on the bound above.
+            if (keep_replicated && params.keys_size > 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues()
+                && replicated->getNestedColumn()->size() * 2 <= replicated->size())
+                skips_repeated_rows = true;
+
             /// Only the converted columns have to be held here, the original ones are held by the caller.
-            auto converted_column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+            auto converted_column = keep_replicated
+                ? column->convertToFullColumnIfConst()
+                : column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
             if (converted_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.push_back(std::move(converted_column));
@@ -2554,6 +2691,8 @@ void Aggregator::prepareAggregateInstructions(
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
         aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
+        aggregate_functions_instructions[i].has_replicated_argument = has_replicated_argument;
+        aggregate_functions_instructions[i].skips_repeated_rows = skips_repeated_rows;
         aggregate_functions_instructions[i].constant_argument_rows = constant_argument_rows;
     }
 }
@@ -2671,12 +2810,25 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// running, so an active heap never sees key columns in a representation it cannot rank.
     const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
+    /// The methods of one `String` key and of fixed-width keys and one `String` read a replicated `String` key through its
+    /// indexes (see `HashMethodPackedString`), so the strings of a column with dictionary granules are not copied into a
+    /// full column. An active top-K heap ranks and keeps such a key through the indexes as well (see
+    /// `TopKAggregationHeapBase::insertSourceKey`).
+    const bool reads_replicated_strings_in_place = result.type == AggregatedDataVariants::Type::key_packed_string
+        || result.type == AggregatedDataVariants::Type::key_packed_string_two_level
+        || AggregatedDataVariants::isKeysAndPackedString(result.type);
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
+        const auto * replicated_key = typeid_cast<const ColumnReplicated *>(columns.at(keys_positions[i]).get());
         if (all_keys_are_const)
         {
             key_columns[i] = assert_cast<const ColumnConst &>(*columns.at(keys_positions[i])).getDataColumnPtr().get();
+        }
+        else if (reads_replicated_strings_in_place && replicated_key && typeid_cast<const ColumnString *>(replicated_key->getNestedColumn().get()))
+        {
+            key_columns[i] = replicated_key;
         }
         else
         {
