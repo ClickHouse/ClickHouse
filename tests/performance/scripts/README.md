@@ -157,6 +157,7 @@ There are some environment variables that influence what the test does:
 The `iceberg_suite_local_*` tests use the downloaded local Iceberg dataset; the `iceberg_suite_s3_*` tests use job-local SeaweedFS.
 The read and TPC-H S3 suites use one shared immutable `perf_s3_data` dataset uploaded from that same download, while S3 write tests use isolated left/right `perf_s3` namespaces.
 SeaweedFS's cross-request S3 chunk cache is disabled; the OS page cache and ClickHouse's intentionally test-controlled metadata cache still apply.
+SeaweedFS also limits the S3 upload data in flight to 1024 MB (`-s3.concurrentUploadLimitMB`; further uploads wait), because it shares the job's cgroup with both servers, whose memory trackers count the whole cgroup.
 
 From the workspace directory (extracted test output archive):
 ```
