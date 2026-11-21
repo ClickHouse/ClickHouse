@@ -1,0 +1,399 @@
+-- Regression test for issue #110862: TopK dynamic filtering must also be disabled
+-- when the read is made in-order by a selected sorting projection, not only by the
+-- base table's sorting-key prefix. Otherwise a redundant/counterproductive
+-- __topKFilter prewhere is installed on top of the projection read, re-reading the
+-- sort column that InOrder reading already provides.
+
+DROP TABLE IF EXISTS t_topk_proj_rio;
+
+CREATE TABLE t_topk_proj_rio (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_topk_proj_rio
+SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
+
+OPTIMIZE TABLE t_topk_proj_rio FINAL;
+
+-- Sorting projection ordered by (score, id): serves `ORDER BY score, id` in-order.
+ALTER TABLE t_topk_proj_rio ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_proj_rio MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
+
+-- Correctness: results are identical with and without dynamic filtering.
+SELECT id FROM t_topk_proj_rio ORDER BY score, id LIMIT 5
+SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
+
+-- The read is served in-order by the p_score projection, so NO __topKFilter must be
+-- installed (expected 0). Before the fix this reported 1.
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+-- The projection is still selected and the read is InOrder (the projection does the work).
+SELECT count() > 0 AS uses_projection_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- Dropping the prewhere reorders the columns the read must return, and a projection read is fed from
+-- an analysis made before that, so the source itself has to report the new order with the sort column
+-- first (expected 1); an order carried only on the plan side is repaired by a transform above the
+-- source and leaves the source's own header at the analysis order.
+WITH p AS (
+    SELECT rowNumberInAllBlocks() AS n, explain
+    FROM (
+        EXPLAIN PIPELINE header = 1
+        SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+        SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+    )
+)
+SELECT (SELECT explain FROM p WHERE n = (SELECT min(n) FROM p WHERE explain ILIKE '%MergeTreeSelect%') + 1)
+       ILIKE '%Header: score %' AS source_returns_sort_column_first;
+
+-- Sanity: with no projection able to serve the order (ORDER BY score without a matching
+-- projection covering all read columns), dynamic filtering must STILL be applied so the
+-- fix does not over-disable the optimization (expected 1).
+DROP TABLE IF EXISTS t_topk_noproj;
+CREATE TABLE t_topk_noproj (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_noproj SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
+OPTIMIZE TABLE t_topk_noproj FINAL;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_noproj ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+-- A filtered read is not made in-order by the projection, so dynamic filtering must STILL be
+-- applied (expected 1) and the read must not be in order (expected 0). The read-order assertion
+-- is what makes the first one meaningful: without it the arm passes whenever the filter is
+-- present, whatever the plan does.
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio WHERE k = 7 ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS filtered_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio WHERE k = 7 ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- A pin naming an existing projection narrows the candidate set to it, so the matching sorting
+-- projection is not selected, the read is not in order (expected 0) and dynamic filtering must
+-- STILL apply (expected 1).
+ALTER TABLE t_topk_proj_rio ADD PROJECTION p_other (SELECT id, k, score, payload ORDER BY (k, score));
+ALTER TABLE t_topk_proj_rio MATERIALIZE PROJECTION p_other SETTINGS mutations_sync = 2;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'p_other'
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS pinned_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'p_other'
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- A pin naming no existing projection does not narrow the candidate set, so the matching
+-- projection is still selected and serves the read in-order: dynamic filtering must be disabled
+-- (expected 0), and the projection must really be the one serving the read (expected 1, 1).
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'does_not_exist'
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS unpinned_uses_p_score
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'does_not_exist'
+)
+WHERE explain ILIKE '%p_score%';
+
+SELECT count() > 0 AS unpinned_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'does_not_exist'
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- A declared but never materialized projection has no parts, so the chooser drops it and the read
+-- stays on the base table: dynamic filtering must still apply (expected 1) and the read must not
+-- be in order (expected 0).
+DROP TABLE IF EXISTS t_topk_unmat;
+CREATE TABLE t_topk_unmat (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_unmat SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
+OPTIMIZE TABLE t_topk_unmat FINAL;
+ALTER TABLE t_topk_unmat ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_unmat ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS unmaterialized_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_unmat ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- With the projection materialized for only some parts, the chooser reads the rest from the base
+-- table under a union, and that branch is not in order, so dynamic filtering must still apply there.
+DROP TABLE IF EXISTS t_topk_mixed;
+CREATE TABLE t_topk_mixed (part UInt8, id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree PARTITION BY part ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_mixed SELECT 0, number, number % 128, sipHash64(number), toString(number) FROM numbers(512);
+INSERT INTO t_topk_mixed SELECT 1, number, number % 128, sipHash64(number + 99), toString(number) FROM numbers(512);
+OPTIMIZE TABLE t_topk_mixed FINAL;
+ALTER TABLE t_topk_mixed ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_mixed MATERIALIZE PROJECTION p_score IN PARTITION 0 SETTINGS mutations_sync = 2;
+
+-- Exactly one union child keeps the filter (the base-table child) and exactly one child reads in
+-- order (the projection child): the drop is per-branch, not all-or-nothing. This query carries no
+-- WHERE, PREWHERE or row policy, so the only prewhere either child can hold is the injected top-k
+-- one, and counting the per-step lines counts filtered children in every EXPLAIN format.
+SELECT countIf(explain ILIKE '%Prewhere filter column%') AS filtered_children
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+);
+
+SELECT countIf(explain ILIKE '%InOrder%') AS in_order_children
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+);
+
+-- The union assertion is what proves the counts above are over the two-branch plan.
+SELECT count() > 0 AS mixed_reads_base_table_branch
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%Union%';
+
+-- A sampled read never reaches a projection, so dynamic filtering must still apply (expected 1)
+-- and the read must not be in order (expected 0).
+DROP TABLE IF EXISTS t_topk_sample;
+CREATE TABLE t_topk_sample (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id) SAMPLE BY id
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_sample SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
+OPTIMIZE TABLE t_topk_sample FINAL;
+ALTER TABLE t_topk_sample ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_sample MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_sample SAMPLE 1/2 ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS sampled_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_sample SAMPLE 1/2 ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- A key column is stored ASC NULLS LAST, so `NULLS FIRST` is not the stored order: the projection
+-- cannot serve the read in order (expected 0) and dynamic filtering must stay on (expected 1).
+DROP TABLE IF EXISTS t_topk_nulls;
+CREATE TABLE t_topk_nulls (id UInt64, k UInt64, score Nullable(UInt64), payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_nulls SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
+OPTIMIZE TABLE t_topk_nulls FINAL;
+ALTER TABLE t_topk_nulls ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_nulls MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_nulls ORDER BY score ASC NULLS FIRST, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS nulls_first_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_nulls ORDER BY score ASC NULLS FIRST, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- A projection part that lacks a column the re-derived projection metadata expects (here after an
+-- ALTER re-points the ALIAS the projection selects) is served from the parent part, so no projection
+-- serves this read (expected 0) and dynamic filtering must stay on (expected 1).
+DROP TABLE IF EXISTS t_topk_drift;
+CREATE TABLE t_topk_drift (id UInt64, score UInt64, b UInt64, d UInt64, c UInt64 ALIAS b + 1,
+    PROJECTION p_score (SELECT id, score, c ORDER BY (score, id)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_drift (id, score, b, d)
+SELECT number, sipHash64(number), number, number + 1000 FROM numbers(1024);
+
+ALTER TABLE t_topk_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, c FROM t_topk_drift ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS drifted_projection_used
+FROM (
+    EXPLAIN projections = 1
+    SELECT id, c FROM t_topk_drift ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%p_score%';
+
+-- A cheaper projection that does NOT order wins the chooser's ranking, because a useful sort order
+-- only breaks ties between candidates of equal cost. The read is then not in order and dynamic
+-- filtering must stay on (expected 1). The selected-projection and read-order assertions are what
+-- keep the first one honest: without them the arm also passes when no projection is selected at all.
+DROP TABLE IF EXISTS t_topk_cheaper_competitor;
+CREATE TABLE t_topk_cheaper_competitor (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 8192, index_granularity_bytes = 4096, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_cheaper_competitor
+SELECT number, number % 128, sipHash64(number), repeat('x', 200) FROM numbers(1024);
+OPTIMIZE TABLE t_topk_cheaper_competitor FINAL;
+
+-- The wide payload and `index_granularity_bytes` make p_wide_ord cost the same marks as the parent,
+-- while p_narrow_noord stores only the two columns this query reads and is strictly cheaper.
+ALTER TABLE t_topk_cheaper_competitor ADD PROJECTION p_wide_ord (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_cheaper_competitor ADD PROJECTION p_narrow_noord (SELECT id, score ORDER BY (id));
+ALTER TABLE t_topk_cheaper_competitor MATERIALIZE PROJECTION p_wide_ord SETTINGS mutations_sync = 2;
+ALTER TABLE t_topk_cheaper_competitor MATERIALIZE PROJECTION p_narrow_noord SETTINGS mutations_sync = 2;
+
+SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 5
+SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS competitor_selected
+FROM (
+    EXPLAIN projections = 1
+    SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%p_narrow_noord%';
+
+SELECT count() > 0 AS competitor_in_order
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
+-- The hard read bound is zeroed for a read that carries a filter, so a query whose only filter was the
+-- withdrawn threshold has to get it back: the in-order read must stop at the LIMIT instead of scanning on
+-- until cancellation catches up. Measured against the same query with the mechanism off, which keeps the
+-- bound throughout, so both sides see the same randomized settings (expected 1). Before the fix the
+-- guarded query read the whole table whatever the LIMIT was. The granularity is small because the bound
+-- only changes what is read once the table holds many more granules than the LIMIT needs.
+DROP TABLE IF EXISTS t_topk_proj_bound;
+CREATE TABLE t_topk_proj_bound (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 8, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_proj_bound
+SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
+OPTIMIZE TABLE t_topk_proj_bound FINAL;
+ALTER TABLE t_topk_proj_bound ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_proj_bound MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
+
+SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1,
+         query_plan_max_limit_for_top_k_optimization = 100, log_comment = '04545_bound_guarded'
+FORMAT Null;
+
+SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 0,
+         query_plan_max_limit_for_top_k_optimization = 100, log_comment = '04545_bound_off'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    (SELECT read_rows FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+        AND log_comment = '04545_bound_guarded' ORDER BY event_time_microseconds DESC LIMIT 1)
+    <= 4 * (SELECT read_rows FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+        AND log_comment = '04545_bound_off' ORDER BY event_time_microseconds DESC LIMIT 1)
+    AS read_stops_at_the_limit;
+
+-- A bound that stops the read too early would drop rows the LIMIT still wants, so the bounded read must
+-- return exactly the rows a plain full sort returns (expected 1).
+SELECT groupArray(id) = (
+        SELECT groupArray(id) FROM (
+            SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+            SETTINGS optimize_read_in_order = 0, optimize_use_projections = 0, use_top_k_dynamic_filtering = 0
+        )
+    ) AS bounded_read_returns_same_rows
+FROM (
+    SELECT id FROM t_topk_proj_bound ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1,
+             query_plan_max_limit_for_top_k_optimization = 100
+);
+
+DROP TABLE t_topk_proj_rio;
+DROP TABLE t_topk_noproj;
+DROP TABLE t_topk_unmat;
+DROP TABLE t_topk_mixed;
+DROP TABLE t_topk_sample;
+DROP TABLE t_topk_nulls;
+DROP TABLE t_topk_drift;
+DROP TABLE t_topk_cheaper_competitor;
+DROP TABLE t_topk_proj_bound;
