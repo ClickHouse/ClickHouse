@@ -15,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # max_block_size = 8192: one granule per block. Without `PREWHERE` (randomized `optimize_move_to_prewhere = 0`),
 # `FilterTransform` records only chunks whose rows are all filtered out, and a bigger block would mix the
 # non-matching granules with the matching ones, so nothing would be cached even for a deterministic condition.
-common_settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, max_block_size = 8192"
+common_settings="use_query_condition_cache = true, use_query_condition_cache_for_changing_bounds = true, max_block_size = 8192"
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS tab;
