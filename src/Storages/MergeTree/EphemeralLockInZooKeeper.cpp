@@ -2,6 +2,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <IO/ReadHelpers.h>
@@ -115,6 +116,28 @@ void EphemeralLockInZooKeeper::unlock()
     getUnlockOp(ops);
     zookeeper->multi(ops);
     zookeeper = nullptr;
+}
+
+void EphemeralLockInZooKeeper::unlockAll(std::vector<EphemeralLockInZooKeeper> & locks)
+{
+    std::vector<std::pair<EphemeralLockInZooKeeper *, zkutil::ZooKeeper::FutureRemove>> in_flight;
+    in_flight.reserve(locks.size());
+    /// The callback of a request uses the lock's `zookeeper` and `path`, so a lock is released only after its response.
+    SCOPE_EXIT({
+        for (auto & [lock, future] : in_flight)
+        {
+            auto response = future.get();
+            if (Coordination::isHardwareError(response.error))
+                LOG_DEBUG(getLogger("EphemeralLockInZooKeeper"), "ZooKeeper communication error during unlock of {}: {}", lock->path, response.error);
+            else if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
+                LOG_WARNING(getLogger("EphemeralLockInZooKeeper"), "Cannot remove the node of lock {}: {}", lock->path, response.error);
+            lock->assumeUnlocked();
+        }
+    });
+
+    for (auto & lock : locks)
+        if (lock.isLocked())
+            in_flight.emplace_back(&lock, lock.zookeeper->asyncTryRemoveNoThrow(lock.path));
 }
 
 void EphemeralLockInZooKeeper::checkCreated() const
