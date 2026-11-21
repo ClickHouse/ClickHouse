@@ -27,6 +27,11 @@ void collectFoldedSourceColumns(const QueryTreeNodePtr & node, PlannerContextPtr
     if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
     {
         auto source_expression = constant->getSourceExpression();
+        /// the source of a folded scalar subquery is the subquery
+        auto source_type = source_expression->getNodeType();
+        if (source_type == QueryTreeNodeType::QUERY || source_type == QueryTreeNodeType::UNION)
+            return;
+
         collectSourceColumns(source_expression, planner_context, keep_alias_columns);
         collectFoldedSourceColumns(source_expression, planner_context, keep_alias_columns);
         return;
