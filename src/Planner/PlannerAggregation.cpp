@@ -94,7 +94,12 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
     return aggregate_descriptions;
 }
 
-Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const Names & keys, const AggregateDescriptions & aggregates, bool overflow_row)
+Aggregator::Params getAggregatorParams(
+    const ContextPtr & query_context,
+    const Names & keys,
+    const AggregateDescriptions & aggregates,
+    bool overflow_row,
+    bool group_by_each_block_no_merge)
 {
     const auto & settings = query_context->getSettingsRef();
 
@@ -144,7 +149,8 @@ Aggregator::Params getAggregatorParams(const ContextPtr & query_context, const N
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
         settings[Setting::adaptive_aggregator_disable_thaw],
-        settings[Setting::use_aggregation_memory_tracker]);
+        settings[Setting::use_aggregation_memory_tracker],
+        group_by_each_block_no_merge);
 }
 
 }

@@ -56,6 +56,9 @@ protected:
 
 private:
     void addToTotals(const Chunk & chunk, const IColumnFilter * filter);
+    /// Merges the aggregate states of `columns` (only the rows passing `filter`, if it is set) into the
+    /// single row of aggregate states in `target`.
+    void mergeAggregateStates(MutableColumns & target, const Columns & columns, const IColumnFilter * filter);
     void prepareTotals();
 
     /// Params
@@ -76,9 +79,13 @@ private:
 
     Block finalized_header;
 
-    /// Here are the values that did not pass max_rows_to_group_by.
+    /// Here are the values that did not pass max_rows_to_group_by, merged into a single row.
     /// They are added or not added to the current_totals, depending on the totals_mode.
-    Chunk overflow_aggregates;
+    /// Normally the aggregator emits at most one overflow chunk, but with `group_by_each_block_no_merge`
+    /// every input block can produce its own. Each of them is merged here as soon as it arrives instead of
+    /// being kept, so the memory stays bounded by a single overflow state rather than one per block.
+    MutableColumns overflow_aggregates;
+    bool has_overflow_aggregates = false;
 
     /// Here, total values are accumulated. After the work is finished, they will be placed in totals.
     MutableColumns current_totals;

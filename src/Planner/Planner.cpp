@@ -149,6 +149,7 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool group_by_each_block_no_merge;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
 }
 
@@ -1170,8 +1171,12 @@ void Planner::buildPlanForQueryNode()
             if (query_node.getSettingsChanges().tryGet("group_by_overflow_mode"))
                 query_settings[Setting::group_by_overflow_mode].setChanged(true);
 
+            /// `group_by_each_block_no_merge` aggregates every block on its own, while the kept-keys
+            /// cutoff shares one set of kept keys between all the blocks and streams of the query: the
+            /// first block that reaches the cutoff would decide which keys every later block may emit.
             std::optional<UInt64> trivial_group_by_limit;
             if (!query_settings[Setting::make_distributed_plan]
+                && !query_settings[Setting::group_by_each_block_no_merge]
                 && query_processing_info.isFirstStage() && query_processing_info.isSecondStage()
                 && hasAggregateFunctionNodes(query_node.getProjectionNode()))
             {

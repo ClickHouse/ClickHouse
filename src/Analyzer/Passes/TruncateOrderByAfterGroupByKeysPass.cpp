@@ -9,6 +9,7 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -16,6 +17,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_truncate_order_by_after_group_by_keys;
+    extern const SettingsBool group_by_each_block_no_merge;
 }
 
 namespace
@@ -37,6 +39,11 @@ public:
             return;
 
         if (!query->hasGroupBy() || !query->hasOrderBy())
+            return;
+
+        /// With `group_by_each_block_no_merge` the groups are flushed for every block separately, so the same
+        /// key can appear in many rows, and the sort expressions after the keys are still needed to order them.
+        if (query->getContext()->getSettingsRef()[Setting::group_by_each_block_no_merge])
             return;
 
         /// Do not optimize with CUBE, ROLLUP, GROUPING SETS — the effective key set varies per row.

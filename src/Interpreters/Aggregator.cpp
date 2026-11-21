@@ -113,6 +113,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char aggregator_merge_collect_states_throw[];
+    extern const char aggregator_convert_two_level_schedule_throw[];
 }
 
 }
@@ -458,7 +459,8 @@ Aggregator::Params::Params(
     UInt64 adaptive_aggregator_freeze_threshold_,
     UInt64 adaptive_aggregator_freeze_threshold_bytes_,
     bool adaptive_aggregator_disable_thaw_,
-    bool use_aggregation_memory_tracker_)
+    bool use_aggregation_memory_tracker_,
+    bool group_by_each_block_no_merge_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -466,9 +468,19 @@ Aggregator::Params::Params(
     , overflow_row(overflow_row_)
     , max_rows_to_group_by(max_rows_to_group_by_)
     , group_by_overflow_mode(group_by_overflow_mode_)
+    /// The streaming per-block flush only makes sense for a real `GROUP BY`: with several groups, flushing a block's
+    /// groups before the next block avoids merging them. Aggregation without keys (`SELECT count() FROM ...`) has a
+    /// single group, so per-block flushing would just split one result into several partial rows and, on empty input,
+    /// would drop the single empty-aggregation row that such queries must always return. Restrict the mode to queries
+    /// that actually have grouping keys; without keys the aggregation behaves exactly as if the setting were off.
+    , group_by_each_block_no_merge(group_by_each_block_no_merge_ && !keys_.empty())
     , group_by_two_level_threshold(group_by_two_level_threshold_)
     , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
-    , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
+    /// In the `group_by_each_block_no_merge` streaming mode the aggregation state is finalized and flushed for
+    /// every block separately, so only a single block is ever held in memory and external (on-disk) aggregation
+    /// is both pointless and incorrect: spilled data from different blocks would be merged together at the end,
+    /// violating the per-block flush contract. Disable it.
+    , max_bytes_before_external_group_by(group_by_each_block_no_merge ? 0 : max_bytes_before_external_group_by_)
     , min_bytes_before_external_group_by(min_bytes_before_external_group_by_)
     , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
     , tmp_data_scope(std::move(tmp_data_scope_))
@@ -482,7 +494,10 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
-    , enable_adaptive_aggregator(enable_adaptive_aggregator_)
+    /// The adaptive aggregator can defer records into a shared session backlog that is only drained during the
+    /// bucket-parallel merge. The `group_by_each_block_no_merge` mode never merges, so those deferred records
+    /// would never be aggregated at all. The two are mutually exclusive; the streaming mode wins.
+    , enable_adaptive_aggregator(enable_adaptive_aggregator_ && !group_by_each_block_no_merge)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
     , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
     , adaptive_aggregator_disable_thaw(adaptive_aggregator_disable_thaw_)
@@ -5148,17 +5163,27 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
             if (use_thread_pool)
+            {
+                fiu_do_on(FailPoints::aggregator_convert_two_level_schedule_throw,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault while scheduling the conversion of a two-level table");
+                });
                 /// Passing converter as a reference is fine, it will outlive runner. Also it's arguments will outlive it too
                 /// Even if it didn't we capture all exceptions and wait for all tasks, so all of them will be deleted before arguments
                 /// will be destroyed
                 runner.enqueueAndKeepTrack([&converter, thread_id]() { return converter(thread_id); }, Priority{});
+            }
             else
                 converter(thread_id);
         }
     }
     catch (...) // Ok: wait for parallel tasks to finish before rethrowing
     {
+        /// Rethrow the original exception if no task failed: it may come from the scheduling itself (e.g.
+        /// `CANNOT_SCHEDULE_TASK`) or from the synchronous `converter`. Returning normally would silently lose
+        /// the buckets that were not converted.
         runner.waitForAllToFinishAndRethrowFirstError();
+        throw;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();

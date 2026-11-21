@@ -81,6 +81,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
+    extern const QueryPlanSerializationSettingsBool group_by_each_block_no_merge;
 }
 
 namespace Setting
@@ -94,6 +95,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static bool memoryBoundMergingWillBeUsed(
@@ -614,6 +616,18 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.setReadStreamCountWasReduced(false);
 
     QueryPipelineProcessorsCollector collector(pipeline, this);
+
+    /// The per-block streaming flush of `group_by_each_block_no_merge` pushes the chunks produced by
+    /// `Aggregator::convertToChunks` directly, bypassing the bucket-ordering protocol that
+    /// `GroupingAggregatedTransform` relies on. The planners reject the combination up front
+    /// (`Planner::addAggregationStep`, `InterpreterSelectQuery::executeAggregation`), and the distributed
+    /// rewrites that clone a step and force bucket order skip it (`makeDistributed`, `applyParallelReplicas`,
+    /// the Cascades two-stage aggregation). This is the last line of defence for any other path, including a
+    /// deserialized plan, so an unsupported plan shape fails at pipeline-build time instead of merging wrongly.
+    if (params.group_by_each_block_no_merge && should_produce_results_in_order_of_bucket_number)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `group_by_each_block_no_merge` is not supported with bucket-ordered aggregation results");
 
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
     pipeline.dropTotalsAndExtremes();
@@ -1422,6 +1436,14 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
                 && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 
+    /// `group_by_each_block_no_merge` is written only when the mode is on, and the setting is `IMPORTANT`.
+    /// A peer that knows the name runs the per-block flush, and its default keeps the mode off when the name
+    /// is absent. A peer that does not know the name skips an ordinary name, so it would silently run a fully
+    /// merged aggregation instead of the requested per-block flush; for an `IMPORTANT` name it rejects the
+    /// plan. A plan with the mode off carries nothing, so such a peer reads it as before.
+    if (params.group_by_each_block_no_merge)
+        settings[QueryPlanSerializationSetting::group_by_each_block_no_merge] = true;
+
     /// The plan default of `enable_fixed_and_packed_string_keys_in_aggregation` is `false`: the
     /// serialized method, which an initiator predating the setting uses for these keys. So a peer that
     /// knows the name receives `true` whenever this step can choose the method, and aggregates as the
@@ -1743,7 +1765,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw],
         ctx.version >=DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER
             ? bool(ctx.settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker])
-            : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
+            : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker]),
+        ctx.settings[QueryPlanSerializationSetting::group_by_each_block_no_merge]};
 
     params.top_k = std::move(top_k);
 
