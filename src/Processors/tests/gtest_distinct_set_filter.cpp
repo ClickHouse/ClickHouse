@@ -495,6 +495,113 @@ TEST(DistinctLowCardinalityFilter, RetainsUsefulDictionaryState)
     EXPECT_EQ((*mask)[0], 1);
 }
 
+TEST(DistinctLowCardinalityFilter, DoesNotKeepUnrepeatedNonSharedDictionaries)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const size_t num_chunks = 50;
+    const size_t num_rows = 100;
+    /// Every chunk has a dictionary of its own, `{"", "u<i>", "v<i % 10>"}`: a unique value in the first row and
+    /// a value shared with other chunks in the rest.
+    const auto make_column = [&](size_t i)
+    {
+        auto column = type->createColumn();
+        const auto unique_value = "u" + std::to_string(i);
+        column->insertData(unique_value.data(), unique_value.size());
+        const auto repeated_value = "v" + std::to_string(i % 10);
+        for (size_t row = 1; row < num_rows; ++row)
+            column->insertData(repeated_value.data(), repeated_value.size());
+        return ColumnPtr(std::move(column));
+    };
+
+    const auto make_shared_column = [&](size_t dictionary_size)
+    {
+        const auto source = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+        const auto & source_lc = assert_cast<const ColumnLowCardinality &>(*source);
+        return ColumnLowCardinality::create(source_lc.getDictionaryPtr(), source_lc.getIndexesPtr(), /*is_shared=*/true);
+    };
+
+    DistinctLowCardinalityFilter lc_filter;
+
+    /// Shared dictionaries do not count towards the observation window, neither a new one nor one that recurs.
+    const auto early_shared_column = make_shared_column(4);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        const auto mask = lc_filter.buildMaskIfApplicable(*early_shared_column, 3);
+        ASSERT_TRUE(mask.has_value());
+        EXPECT_EQ(mask->size(), i == 0 ? 3 : 0);
+    }
+
+    size_t retained_bytes = lc_filter.getTotalByteCount();
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        const auto mask = lc_filter.buildMaskIfApplicable(*make_column(i), num_rows);
+        ASSERT_TRUE(mask.has_value());
+        ASSERT_EQ(mask->size(), num_rows);
+        for (size_t row = 0; row < num_rows; ++row)
+            ASSERT_EQ((*mask)[row], static_cast<UInt8>(row < 2)) << "chunk " << i << ", row " << row;
+
+        /// Only the states of the first five dictionaries are kept.
+        EXPECT_EQ(lc_filter.getTotalByteCount() > retained_bytes, i < 5) << "chunk " << i;
+        retained_bytes = lc_filter.getTotalByteCount();
+    }
+    EXPECT_EQ(lc_filter.estimateGrowthMemory(*make_column(num_chunks)), 0);
+
+    /// A shared dictionary is still identified by content: its second chunk reuses the state of the first.
+    const auto shared_column = make_shared_column(3);
+    EXPECT_GT(lc_filter.estimateGrowthMemory(*shared_column), 0);
+    const auto first_shared_mask = lc_filter.buildMaskIfApplicable(*shared_column, 3);
+    ASSERT_TRUE(first_shared_mask.has_value());
+    EXPECT_EQ(first_shared_mask->size(), 3);
+    EXPECT_GT(lc_filter.getTotalByteCount(), retained_bytes);
+    const auto second_shared_mask = lc_filter.buildMaskIfApplicable(*shared_column, 3);
+    ASSERT_TRUE(second_shared_mask.has_value());
+    EXPECT_EQ(second_shared_mask->size(), 0);
+
+    const Block header = {ColumnWithTypeAndName(type, "k")};
+    DistinctSetFilter filter(header, {}, SizeLimits{});
+    std::set<String> emitted;
+    size_t emitted_count = 0;
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        const auto result = filter.filter(Chunk({make_column(i)}, num_rows));
+        emitted_count += result.getNumRows();
+        for (size_t row = 0; row < result.getNumRows(); ++row)
+            emitted.insert((*result.getColumns().front())[row].safeGet<String>());
+    }
+
+    std::set<String> expected;
+    for (size_t i = 0; i < num_chunks; ++i)
+        expected.insert("u" + std::to_string(i));
+    for (size_t i = 0; i < 10; ++i)
+        expected.insert("v" + std::to_string(i));
+    EXPECT_EQ(emitted_count, expected.size());
+    EXPECT_EQ(emitted, expected);
+}
+
+TEST(DistinctLowCardinalityFilter, KeepsRecurringNonSharedDictionaries)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    DistinctLowCardinalityFilter filter;
+    /// Two separately built dictionaries with equal content: the second one finds the state of the first.
+    for (size_t i = 0; i < 2; ++i)
+    {
+        const auto mask = filter.buildMaskIfApplicable(*makeLowCardinalityColumnWithLargeDictionary(type, 3, 3), 3);
+        ASSERT_TRUE(mask.has_value());
+        EXPECT_EQ(mask->size(), i == 0 ? 3 : 0);
+    }
+
+    /// After a recurrence, more new dictionaries than the observation window still get a kept state.
+    for (size_t dictionary_size = 4; dictionary_size < 10; ++dictionary_size)
+    {
+        SCOPED_TRACE(dictionary_size);
+        const auto column = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+        EXPECT_GT(filter.estimateGrowthMemory(*column), 0);
+        const size_t bytes_before = filter.getTotalByteCount();
+        ASSERT_TRUE(filter.buildMaskIfApplicable(*column, 3).has_value());
+        EXPECT_GT(filter.getTotalByteCount(), bytes_before);
+    }
+}
+
 TEST(DistinctSetFilterSemantics, DisabledLowCardinalityStateDoesNotConsumeByteLimit)
 {
     const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());

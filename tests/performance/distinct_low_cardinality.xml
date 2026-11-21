@@ -7,6 +7,10 @@
         DROP TABLE IF EXISTS distinct_low_cardinality_lc;
     </drop_query>
 
+    <drop_query>
+        DROP TABLE IF EXISTS distinct_very_high_cardinality_lc;
+    </drop_query>
+
     <create_query>
         CREATE TABLE distinct_high_cardinality_lc
         (
@@ -43,6 +47,28 @@
         FROM numbers(10000000);
     </create_query>
 
+    <create_query>
+        CREATE TABLE distinct_very_high_cardinality_lc
+        (
+            id UInt32,
+            lc LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        ORDER BY id;
+    </create_query>
+
+    <create_query>
+        INSERT INTO distinct_very_high_cardinality_lc
+        SELECT
+            number AS id,
+            toString(cityHash64(number) % 200000) AS lc
+        FROM numbers(10000000);
+    </create_query>
+
+    <create_query>
+        OPTIMIZE TABLE distinct_very_high_cardinality_lc FINAL;
+    </create_query>
+
     <query>
         SELECT DISTINCT lc
         FROM distinct_high_cardinality_lc
@@ -55,11 +81,21 @@
         FORMAT NULL;
     </query>
 
+    <query>
+        SELECT DISTINCT lc
+        FROM distinct_very_high_cardinality_lc
+        FORMAT NULL;
+    </query>
+
     <drop_query>
         DROP TABLE IF EXISTS distinct_high_cardinality_lc;
     </drop_query>
 
     <drop_query>
         DROP TABLE IF EXISTS distinct_low_cardinality_lc;
+    </drop_query>
+
+    <drop_query>
+        DROP TABLE IF EXISTS distinct_very_high_cardinality_lc;
     </drop_query>
 </test>
