@@ -1,6 +1,7 @@
 GetDbSchemas OK
 GetTables OK
 GetTableTypes OK
+GetPrimaryKeys OK
 GetSchema of GetTables OK
 GetSessionOptions OK
 SELECT FROM system.one QUERY_CACHE_USED_WITH_SYSTEM_TABLE
