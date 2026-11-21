@@ -59,6 +59,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
+    configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
     /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
     /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
