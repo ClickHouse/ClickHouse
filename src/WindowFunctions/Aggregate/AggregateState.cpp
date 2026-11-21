@@ -19,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -60,24 +61,38 @@ AggregateState::AggregateState(AggregateFunctionPtr function_)
         arena = std::make_unique<Arena>();
 
     function->create(place.data());
+    created = true;
 }
 
 AggregateState::~AggregateState()
 {
-    function->destroy(place.data());
+    if (created)
+        function->destroy(place.data());
 }
 
 void AggregateState::recreate()
 {
-    function->destroy(place.data());
+    if (created)
+    {
+        function->destroy(place.data());
+        created = false;
+    }
+
     if (arena && arena->allocatedBytes() > arena_replace_bytes)
         arena = std::make_unique<Arena>();
 
     function->create(place.data());
+    created = true;
+}
+
+void AggregateState::throwNotCreated() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate state of window function {} is used after a failed creation", function->getName());
 }
 
 void AggregateState::add(const WindowArguments & arguments, Int64 begin, Int64 end)
 {
+    checkCreated();
     while (begin < end)
     {
         const ArgumentsSegment segment = arguments.segment(begin, end);
@@ -94,6 +109,7 @@ void AggregateState::insertResultInto(IColumn & result, Int64 frame_rows)
     /// capped, so that cheap finalizations of large frames (e.g. `sum`) do not check the time limit on every row.
     budget.chargeUnits(1 + static_cast<size_t>(std::clamp<Int64>(frame_rows, 0, max_finalization_units)));
 
+    checkCreated();
     if (is_state)
         function->insertMergeResultInto(place.data(), result, arena.get());
     else

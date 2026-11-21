@@ -102,7 +102,7 @@ struct SharedFileColumnChunks
     /// that needs it, the others wait for it. Protected by `bloom_filter_bounds_mutex`, which is
     /// taken before `mutex`.
     std::mutex bloom_filter_bounds_mutex;
-    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds;
+    std::shared_ptr<const VectorWithMemoryTracking<size_t>> bloom_filter_bounds TSA_GUARDED_BY(bloom_filter_bounds_mutex);
 };
 using SharedFileColumnChunksPtr = std::shared_ptr<SharedFileColumnChunks>;
 
@@ -381,7 +381,6 @@ struct Reader
         bool decode_dictionary_for_top_k = false;
 
         /// Prefetches.
-        /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
         /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
@@ -430,7 +429,7 @@ struct Reader
 
         VectorWithMemoryTracking<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
-        PageState page; // TODO [parquet]: deallocate when column chunk is done (and check other fields too)
+        PageState page;
         /// Offset from the start of `data_pages_prefetch`, if not using offset index (`data_pages` is empty).
         size_t next_page_offset = 0;
         size_t data_pages_idx = 0; // corresponding to `page`
@@ -697,10 +696,12 @@ struct Reader
     /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
     /// `shared_column_chunks_`, if not null, are taken from and filled with the column chunks of `footer`
     /// that are not in `cached_column_chunks`, so that other readers of the same file don't parse them again.
+    /// `kept_offset_indexes_` were read from the same file: a column chunk found there does not read its offset index.
     void setFileFooter(
         std::shared_ptr<const FileFooter> footer,
         VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_ = {},
-        SharedFileColumnChunksPtr shared_column_chunks_ = nullptr);
+        SharedFileColumnChunksPtr shared_column_chunks_ = nullptr,
+        KeptOffsetIndexesPtr kept_offset_indexes_ = nullptr);
     void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
@@ -735,6 +736,11 @@ struct Reader
     /// more than `max_key_condition_column_ranges_bytes`, it drops the column whose ranges take the most.
     VectorWithMemoryTracking<size_t> collect_key_condition_column_ranges;
     size_t max_key_condition_column_ranges_bytes = 0;
+
+    /// If non-zero before `init`, the offset indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
+    size_t max_read_offset_indexes_bytes = 0;
+    /// The offset indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
+    VectorWithMemoryTracking<KeptOffsetIndexes::Entry> takeReadOffsetIndexes();
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -807,7 +813,7 @@ struct Reader
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
-    void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);
+    void decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,
     /// adds pages that need prefetch to `out`. Must be called in order.
     /// May assign dictionary_page_prefetch.
@@ -904,6 +910,11 @@ private:
     /// See setFileFooter, released by prefilterAndInitRowGroups.
     VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks;
     SharedFileColumnChunksPtr shared_column_chunks;
+    KeptOffsetIndexesPtr kept_offset_indexes;
+
+    std::mutex read_offset_indexes_mutex;
+    VectorWithMemoryTracking<KeptOffsetIndexes::Entry> read_offset_indexes TSA_GUARDED_BY(read_offset_indexes_mutex);
+    size_t read_offset_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
 };
 
 }
