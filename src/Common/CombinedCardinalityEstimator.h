@@ -223,10 +223,7 @@ public:
                 insert(x.getValue());
         }
         else if (rhs_container_type == details::ContainerType::MEDIUM)
-        {
-            for (const auto & x : rhs.getContainer<Medium>())
-                insert(x.getValue());
-        }
+            insertFromMedium(rhs.getContainer<Medium>());
         else
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
@@ -241,15 +238,9 @@ public:
         if (container_type == details::ContainerType::SMALL)
             small.read(in);
         else if (container_type == details::ContainerType::MEDIUM)
-        {
-            toMedium();
-            getContainer<Medium>().read(in);
-        }
+            readMedium(in);
         else if (container_type == details::ContainerType::LARGE)
-        {
-            toLarge();
-            getContainer<Large>().read(in);
-        }
+            readLarge(in);
     }
 
     void write(DB::WriteBuffer & out) const
@@ -266,12 +257,47 @@ public:
     }
 
 private:
-    void toMedium()
+    /// Not inlined into `read`, so that reading a small set, which is common, stays cheap.
+    void NO_INLINE readMedium(DB::ReadBuffer & in)
+    {
+        /// `read` allocates the buffer for the size it reads.
+        auto tmp_medium = std::make_unique<Medium>(NoInitTag{});
+        tmp_medium->read(in);
+        toMedium(std::move(tmp_medium));
+    }
+
+    void NO_INLINE readLarge(DB::ReadBuffer & in)
+    {
+        toLarge(Large::createAndRead(in));
+    }
+
+    /// Inserts the values of `rhs` in the order of iteration, as `insert` for each value would,
+    /// but through `insertMany`, which dispatches on the type of our container once per chunk instead of once per value.
+    /// Not inlined into `merge`, so that the chunk on the stack does not make other merges more expensive.
+    void NO_INLINE insertFromMedium(const Medium & rhs)
+    {
+        static constexpr size_t chunk_elements = 4096 / sizeof(Key);
+        Key chunk[chunk_elements]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before use
+        size_t chunk_size = 0;
+
+        for (const auto & x : rhs)
+        {
+            chunk[chunk_size++] = x.getValue();
+            if (chunk_size == chunk_elements)
+            {
+                insertMany(chunk, chunk_size);
+                chunk_size = 0;
+            }
+        }
+
+        insertMany(chunk, chunk_size);
+    }
+
+    /// Inserts our values into `tmp_medium` (an empty set by default) and switches to it.
+    void toMedium(std::unique_ptr<Medium> tmp_medium = std::make_unique<Medium>())
     {
         if (getContainerType() != details::ContainerType::SMALL)
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        auto tmp_medium = std::make_unique<Medium>();
 
         for (const auto & x : small)
             tmp_medium->insert(x.getValue());
