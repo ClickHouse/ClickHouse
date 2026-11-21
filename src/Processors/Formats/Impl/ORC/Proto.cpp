@@ -337,22 +337,22 @@ StringStatistics parseStringStatistics(std::string_view data)
             if (exact && value.size() <= MAX_STRING_STATISTICS_SIZE)
                 res.minimum = std::string(value);
             else
-                res.lower_bound = std::string(truncateStringLowerBound(value));
+                res.lower_bound = std::string(UTF8::truncateStringLowerBound(value, MAX_STRING_STATISTICS_SIZE));
         };
         auto set_upper = [&](std::string_view value, bool exact)
         {
             res.maximum.reset();
             res.upper_bound.reset();
             if (size_t pos = value.find(REPLACEMENT_CHARACTER); pos != std::string_view::npos)
-                res.upper_bound = truncateStringUpperBound(value.substr(0, pos));
+                res.upper_bound = UTF8::truncateStringUpperBound(value.substr(0, pos), MAX_STRING_STATISTICS_SIZE);
             else if (!exact)
                 /// The Java writer copies a bound from the value except the last character, which it computes from
                 /// the value, also from invalid UTF-8, into any character. Increment the copied part instead.
-                res.upper_bound = truncateStringUpperBound(withoutLastCharacter(value));
+                res.upper_bound = UTF8::truncateStringUpperBound(withoutLastCharacter(value), MAX_STRING_STATISTICS_SIZE);
             else if (value.size() <= MAX_STRING_STATISTICS_SIZE)
                 res.maximum = std::string(value);
             else
-                res.upper_bound = truncateStringUpperBound(value);
+                res.upper_bound = UTF8::truncateStringUpperBound(value, MAX_STRING_STATISTICS_SIZE);
         };
 
         switch (field)
