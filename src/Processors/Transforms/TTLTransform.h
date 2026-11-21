@@ -26,7 +26,7 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        WriteBuffer * ttl_kept_flags_ = nullptr
+        std::shared_ptr<WriteBuffer> ttl_skip_flags_ = nullptr
     );
 
     String getName() const override { return "TTL"; }
@@ -48,8 +48,10 @@ private:
     VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
-    /// If set, `consume` writes one byte per input row to it: 1 if kept, 0 if dropped.
-    WriteBuffer * const ttl_kept_flags;
+    /// If set, `consume` writes one byte per input row to it: 1 if dropped, 0 if kept, as the skip flag of `RowSourcePart`.
+    const std::shared_ptr<WriteBuffer> ttl_skip_flags;
+    /// The column in which `consume` tags each row with its position in the chunk, if `ttl_skip_flags` is set.
+    String ttl_row_position_column_name;
 
     PreparedSets::Subqueries subqueries_for_sets;
 

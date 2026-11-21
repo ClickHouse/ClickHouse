@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Defines.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -10,6 +9,8 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/assert_cast.h>
+
+#include <deque>
 
 
 namespace DB
@@ -71,14 +72,13 @@ size_t MergeTask::rewriteRowsSources(
     ReadBuffer & in,
     WriteBuffer & out,
     std::vector<QueryPipeline> row_exists_per_part,
-    TemporaryDataBuffer * ttl_kept_flags,
+    std::unique_ptr<ReadBuffer> ttl_skip_flags,
     const MergeTask::GlobalRuntimeContext & global_ctx)
 {
-    const auto ttl_kept_flags_in = ttl_kept_flags ? ttl_kept_flags->read() : nullptr;
-
-    std::vector<std::unique_ptr<PartRowExists>> parts;
+    /// A deque: `emplace_back` never moves an element, and a `PartRowExists` can't move, as its executor refers to its pipeline.
+    std::deque<PartRowExists> parts;
     for (auto & pipeline : row_exists_per_part)
-        parts.push_back(std::make_unique<PartRowExists>(std::move(pipeline)));
+        parts.emplace_back(std::move(pipeline));
     size_t num_kept_row_sources = 0;
 
     auto write_row_source = [&](RowSourcePart row_source)
@@ -91,7 +91,7 @@ size_t MergeTask::rewriteRowsSources(
     /// Writes a skipped row source for each dropped row of the part from its cursor on, until the next kept row.
     auto write_dropped_input_rows = [&](size_t part_index)
     {
-        auto & part = *parts[part_index];
+        auto & part = parts[part_index];
         for (; part.hasRow() && !part.rowExists(); part.nextRow())
             write_row_source(RowSourcePart(part_index, /*skip_flag=*/ true));
     };
@@ -109,7 +109,7 @@ size_t MergeTask::rewriteRowsSources(
         {
             const size_t part_index = row_source.getSourceNum();
             write_dropped_input_rows(part_index);
-            auto & part = *parts[part_index];
+            auto & part = parts[part_index];
             if (!part.hasRow())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "rows_sources of a vertical merge refers to row {} of part {}, past its last row",
@@ -117,15 +117,15 @@ size_t MergeTask::rewriteRowsSources(
             part.nextRow();
         }
 
-        if (ttl_kept_flags_in && !row_source.getSkipFlag())
+        if (ttl_skip_flags && !row_source.getSkipFlag())
         {
-            if (ttl_kept_flags_in->eof())
+            if (ttl_skip_flags->eof())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "rows_sources of a vertical merge holds more emitted rows than TTLTransform emitted");
 
-            UInt8 kept = 0;
-            readBinary(kept, *ttl_kept_flags_in);
-            row_source.setSkipFlag(!kept);
+            UInt8 skip = 0;
+            readBinary(skip, *ttl_skip_flags);
+            row_source.setSkipFlag(skip);
         }
 
         num_kept_row_sources += !row_source.getSkipFlag();
@@ -135,13 +135,13 @@ size_t MergeTask::rewriteRowsSources(
     for (size_t part_index = 0; part_index < parts.size(); ++part_index)
     {
         write_dropped_input_rows(part_index);
-        if (parts[part_index]->hasRow())
+        if (parts[part_index].hasRow())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "rows_sources of a vertical merge ends at row {} of part {}, which has more rows",
-                parts[part_index]->cursor, part_index);
+                parts[part_index].cursor, part_index);
     }
 
-    if (ttl_kept_flags_in && !ttl_kept_flags_in->eof())
+    if (ttl_skip_flags && !ttl_skip_flags->eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "rows_sources of a vertical merge holds fewer emitted rows than TTLTransform emitted");
 

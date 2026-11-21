@@ -1230,12 +1230,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         {
             global_ctx->vertical_lightweight_delete = isVerticalLightweightDelete(*global_ctx);
 
-            std::shared_ptr<RowsSourcesInPart> rows_sources_temporary_file;
-            if (global_ctx->checkpoint)
+            if (!global_ctx->checkpoint)
+                ctx->rows_sources_temporary_file = std::make_shared<RowsSourcesOnTemporaryDisk>(global_ctx->context->getTempDataOnDisk());
+            else
             {
                 global_ctx->checkpoint_identity = makeMergeCheckpointIdentity(*global_ctx);
 
-                rows_sources_temporary_file = std::make_shared<RowsSourcesInPart>(
+                auto rows_sources_temporary_file = std::make_shared<RowsSourcesInPart>(
                     global_ctx->new_data_part->getDataPartStoragePtr(),
                     MergeCheckpoint::ROWS_SOURCES_FILE_NAME,
                     global_ctx->context->getReadSettings());
@@ -1272,20 +1273,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                         global_ctx->gathered_data.statistics[column_name] = statistics;
                     global_ctx->resumed_columns = state.completed_columns;
                 }
+
+                ctx->rows_sources_temporary_file = std::move(rows_sources_temporary_file);
             }
 
-            /// A resumed merge skips the horizontal stage and reads `rows_sources` already rewritten.
-            if (!global_ctx->resumed_columns && recordsTTLKeptFlags())
-                global_ctx->ttl_kept_flags = std::make_unique<TemporaryDataBuffer>(
-                    global_ctx->context->getTempDataOnDisk()->childScope({CurrentMetrics::TemporaryFilesForMerge}));
-            global_ctx->rewrites_rows_sources = !global_ctx->resumed_columns
-                && (global_ctx->vertical_lightweight_delete || global_ctx->ttl_kept_flags);
+            /// A resumed merge skips the horizontal stage and reads the final `rows_sources` that an earlier attempt wrote.
+            if (!global_ctx->resumed_columns)
+            {
+                if (recordsTTLSkipFlags())
+                    ctx->ttl_skip_flags = std::make_shared<TemporaryDataBuffer>(
+                        global_ctx->context->getTempDataOnDisk()->childScope({CurrentMetrics::TemporaryFilesForMerge}));
 
-            /// The rewrite writes the final `rows_sources`, so the horizontal stage of such a merge writes a temporary copy.
-            if (rows_sources_temporary_file && !global_ctx->rewrites_rows_sources)
-                ctx->rows_sources_temporary_file = std::move(rows_sources_temporary_file);
-            else
-                ctx->rows_sources_temporary_file = std::make_shared<RowsSourcesOnTemporaryDisk>(global_ctx->context->getTempDataOnDisk());
+                /// The merging algorithm writes `merged_rows_sources`; `finalizeRowsSources` rewrites it into the final file.
+                if (global_ctx->vertical_lightweight_delete || ctx->ttl_skip_flags)
+                    ctx->merged_rows_sources = std::make_shared<RowsSourcesOnTemporaryDisk>(global_ctx->context->getTempDataOnDisk());
+            }
 
             std::map<String, UInt64> local_merged_column_to_size;
             for (const auto & part : global_ctx->future_part->parts)
@@ -2078,6 +2080,87 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 }
 
 
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeRowsSources() const
+{
+    /// No need to execute this part if it is horizontal merge.
+    if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
+        return false;
+
+    /// A resumed merge did not write `rows_sources`: the attempt that did checked it.
+    if (global_ctx->resumed_columns)
+        return false;
+
+    size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->total_rows_count;
+    size_t input_rows_filtered = *global_ctx->input_rows_filtered;
+    const auto & written_rows_sources = ctx->merged_rows_sources ? ctx->merged_rows_sources : ctx->rows_sources_temporary_file;
+
+    /// Ensure data has written to disk.
+    size_t rows_sources_count = written_rows_sources->finalizeWriting();
+
+    /// In special case, when there is only one source part, and no rows were skipped, we may have
+    /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
+    /// number of input rows.
+    /// Note that only one byte index is written for each row, so number of rows is equals to the number of bytes written.
+    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
+        throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
+                        "of bytes written to rows_sources file ({}). It is a bug.",
+                        sum_input_rows_exact, input_rows_filtered, rows_sources_count);
+
+    if (!ctx->merged_rows_sources)
+        return false;
+
+    /// `rows_sources` gets the rows dropped outside the merging algorithm that the gather stage still reads: lightweight-deleted
+    /// rows when it reads without the mask, and the rows `TTLTransform` drops.
+    Stopwatch watch;
+    const size_t num_kept_row_sources = rewriteRowsSources(
+        *ctx->merged_rows_sources->getTemporaryFileForReading(RowsSourcesTemporaryFile::FILE_ID),
+        ctx->rows_sources_temporary_file->getTemporaryFileForWriting(RowsSourcesTemporaryFile::FILE_ID),
+        createPipelinesForReadingRowExists(), ctx->ttl_skip_flags ? ctx->ttl_skip_flags->read() : nullptr, *global_ctx);
+    const size_t num_row_sources = ctx->rows_sources_temporary_file->finalizeWriting();
+    LOG_DEBUG(getLogger("MergeTask"), "Rewrote rows_sources of {} in {} ms: {} row sources, {} kept",
+        global_ctx->future_part->name, watch.elapsedMilliseconds(), num_row_sources, num_kept_row_sources);
+    /// Free the temporary files before the gather stage.
+    ctx->merged_rows_sources.reset();
+    ctx->ttl_skip_flags.reset();
+    if (num_kept_row_sources != global_ctx->rows_written)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "rows_sources of a vertical merge keeps {} rows after the rewrite, but the horizontal stage wrote {} rows",
+            num_kept_row_sources, global_ctx->rows_written);
+
+    return false;
+}
+
+std::vector<QueryPipeline> MergeTask::ExecuteAndFinalizeHorizontalPart::createPipelinesForReadingRowExists() const
+{
+    std::vector<QueryPipeline> pipelines;
+    if (!global_ctx->vertical_lightweight_delete)
+        return pipelines;
+
+    size_t part_starting_offset = 0;
+    for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
+    {
+        const auto & part = global_ctx->future_part->parts[part_num];
+        pipelines.emplace_back(createMergeTreeSequentialSource(
+            MergeTreeSequentialSourceType::Merge,
+            *global_ctx->data,
+            global_ctx->storage_snapshot,
+            RangesInDataPart(part, nullptr, part_num, part_starting_offset),
+            global_ctx->alter_conversions[part_num],
+            global_ctx->merged_part_offsets,
+            Names{RowExistsColumn::name},
+            /*mark_ranges=*/ std::nullopt,
+            /*filtered_rows_count=*/ nullptr,
+            /*apply_deleted_mask=*/ false,
+            ctx->read_with_direct_io,
+            /*allow_remote_fs_prefetch=*/ false));
+        part_starting_offset += part->rows_count;
+    }
+    return pipelines;
+}
+
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 {
     mergeBuiltStatistics(std::move(ctx->build_statistics_transforms), global_ctx);
@@ -2102,29 +2185,8 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return false;
 
-    size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->total_rows_count;
-    size_t input_rows_filtered = *global_ctx->input_rows_filtered;
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_columns.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
-
-    /// A resumed merge did not write `rows_sources`: the attempt that did checked it.
-    if (!global_ctx->resumed_columns)
-    {
-        /// Ensure data has written to disk.
-        size_t rows_sources_count = ctx->rows_sources_temporary_file->finalizeWriting();
-
-        /// In special case, when there is only one source part, and no rows were skipped, we may have
-        /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
-        /// number of input rows.
-        /// Note that only one byte index is written for each row, so number of rows is equals to the number of bytes written.
-        if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
-            throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
-                            "of bytes written to rows_sources file ({}). It is a bug.",
-                            sum_input_rows_exact, input_rows_filtered, rows_sources_count);
-    }
-
 
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
@@ -2138,7 +2200,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
                 global_ctx->merge_list_element_ptr->columns_written += 1;
             }
         }
-        else if (!global_ctx->rewrites_rows_sources)
+        else
         {
             saveCheckpoint();
         }
@@ -2152,50 +2214,6 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     bool all_parts_on_remote_disks = std::ranges::all_of(global_ctx->future_part->parts, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
     ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
-    return false;
-}
-
-bool MergeTask::VerticalMergeStage::rewriteRowsSourcesForVerticalMerge() const
-{
-    /// No need to execute this part if it is horizontal merge.
-    if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        return false;
-
-    /// `rows_sources` gets the rows dropped outside the merging algorithm that the gather stage still reads: lightweight-deleted
-    /// rows when it reads without the mask, and the rows `TTLTransform` drops.
-    if (global_ctx->rewrites_rows_sources)
-    {
-        std::shared_ptr<RowsSourcesTemporaryFile> rewritten;
-        if (global_ctx->checkpoint)
-            rewritten = std::make_shared<RowsSourcesInPart>(
-                global_ctx->new_data_part->getDataPartStoragePtr(),
-                MergeCheckpoint::ROWS_SOURCES_FILE_NAME,
-                global_ctx->context->getReadSettings());
-        else
-            rewritten = std::make_shared<RowsSourcesOnTemporaryDisk>(global_ctx->context->getTempDataOnDisk());
-
-        Stopwatch watch;
-        const size_t num_kept_row_sources = rewriteRowsSources(
-            *ctx->rows_sources_temporary_file->getTemporaryFileForReading(RowsSourcesTemporaryFile::FILE_ID),
-            rewritten->getTemporaryFileForWriting(RowsSourcesTemporaryFile::FILE_ID),
-            createPipelinesForReadingRowExists(), global_ctx->ttl_kept_flags.get(), *global_ctx);
-        const size_t num_row_sources = rewritten->finalizeWriting();
-        LOG_DEBUG(getLogger("MergeTask"), "Rewrote rows_sources of {} in {} ms: {} row sources, {} kept",
-            global_ctx->future_part->name, watch.elapsedMilliseconds(), num_row_sources, num_kept_row_sources);
-        ctx->rows_sources_temporary_file = std::move(rewritten);
-        global_ctx->ttl_kept_flags.reset();
-        if (num_kept_row_sources != global_ctx->rows_written)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "rows_sources of a vertical merge keeps {} rows after the rewrite, but the horizontal stage wrote {} rows",
-                num_kept_row_sources, global_ctx->rows_written);
-
-        /// Checkpoint after the rewrite, so the saved `rows_sources` is the rewritten one.
-        if (global_ctx->checkpoint)
-            saveCheckpoint();
-    }
-
-    /// After the rewrite: building a column pipeline opens the `rows_sources` file.
     if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
     {
         ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
@@ -2276,34 +2294,6 @@ private:
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
 };
-
-std::vector<QueryPipeline> MergeTask::VerticalMergeStage::createPipelinesForReadingRowExists() const
-{
-    std::vector<QueryPipeline> pipelines;
-    if (!global_ctx->vertical_lightweight_delete)
-        return pipelines;
-
-    size_t part_starting_offset = 0;
-    for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
-    {
-        const auto & part = global_ctx->future_part->parts[part_num];
-        pipelines.emplace_back(createMergeTreeSequentialSource(
-            MergeTreeSequentialSourceType::Merge,
-            *global_ctx->data,
-            global_ctx->storage_snapshot,
-            RangesInDataPart(part, nullptr, part_num, part_starting_offset),
-            global_ctx->alter_conversions[part_num],
-            global_ctx->merged_part_offsets,
-            Names{RowExistsColumn::name},
-            /*mark_ranges=*/ std::nullopt,
-            /*filtered_rows_count=*/ nullptr,
-            /*apply_deleted_mask=*/ false,
-            ctx->read_with_direct_io,
-            /*allow_remote_fs_prefetch=*/ false));
-        part_starting_offset += part->rows_count;
-    }
-    return pipelines;
-}
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
@@ -3380,12 +3370,12 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        WriteBuffer * ttl_kept_flags_)
+        std::shared_ptr<WriteBuffer> ttl_skip_flags_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
             context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
-            ttl_kept_flags_);
+            std::move(ttl_skip_flags_));
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3858,7 +3848,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
             ctx->force_ttl,
-            global_ctx->ttl_kept_flags.get());
+            ctx->ttl_skip_flags);
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
@@ -3881,7 +3871,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
         auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
-        pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
+        pipeline_settings.temporary_file_lookup = ctx->merged_rows_sources ? ctx->merged_rows_sources : ctx->rows_sources_temporary_file;
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 
         // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.
@@ -3922,11 +3912,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::canCheckpointVerticalMerge() c
         && global_ctx->metadata_snapshot->getSecondaryIndices().empty();
 }
 
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::recordsTTLKeptFlags() const
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::recordsTTLSkipFlags() const
 {
     /// `rows_sources` marks every row the merging algorithm emits as kept, so the gather stage has to learn which ones
     /// `TTLTransform` drops after the merge. `TTLAggregationAlgorithm` rebuilds the block without the row positions,
-    /// so a table with a `GROUP BY` TTL records no kept flags.
+    /// so a table with a `GROUP BY` TTL records no skip flags.
     return global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical
         && (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
         && !global_ctx->metadata_snapshot->hasAnyGroupByTTL();

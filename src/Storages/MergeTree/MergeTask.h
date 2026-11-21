@@ -286,10 +286,6 @@ private:
 
         /// If lightweight delete mask is present then some input rows are filtered out right after reading.
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
-        /// For a vertical merge with TTL: which of the rows the merging algorithm emits `TTLTransform` keeps.
-        std::unique_ptr<TemporaryDataBuffer> ttl_kept_flags;
-        /// Whether the vertical stage rewrites `rows_sources` before gathering. False for a resumed merge: its file is rewritten.
-        bool rewrites_rows_sources{false};
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
@@ -338,6 +334,10 @@ private:
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
+        /// Set if `finalizeRowsSources` rewrites `rows_sources`: the merging algorithm writes here instead of `rows_sources_temporary_file`.
+        std::shared_ptr<RowsSourcesTemporaryFile> merged_rows_sources;
+        /// For a vertical merge with TTL: which of the rows the merging algorithm emits `TTLTransform` drops.
+        std::shared_ptr<TemporaryDataBuffer> ttl_skip_flags;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
         /// For projections to rebuild
@@ -390,14 +390,19 @@ private:
         [[nodiscard]] bool prepare() const;
         [[nodiscard]] bool executeImpl() const;
         void finalize() const;
+        /// Checks the `rows_sources` of a vertical merge; if the merging algorithm wrote `merged_rows_sources`, rewrites it into the final one.
+        [[nodiscard]] bool finalizeRowsSources() const;
+        /// Each part's `_row_exists` without the mask, for `rewriteRowsSources`; empty unless `vertical_lightweight_delete`.
+        [[nodiscard]] std::vector<QueryPipeline> createPipelinesForReadingRowExists() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 3>;
+        using ExecuteAndFinalizeHorizontalPartSubtasks = std::array<bool(ExecuteAndFinalizeHorizontalPart::*)()const, 4>;
 
         const ExecuteAndFinalizeHorizontalPartSubtasks subtasks
         {
             &ExecuteAndFinalizeHorizontalPart::prepare,
             &ExecuteAndFinalizeHorizontalPart::executeImpl,
+            &ExecuteAndFinalizeHorizontalPart::finalizeRowsSources,
             &ExecuteAndFinalizeHorizontalPart::executeMergeProjections
         };
 
@@ -412,8 +417,8 @@ private:
 
         [[nodiscard]] MergeAlgorithm chooseMergeAlgorithm() const;
         [[nodiscard]] bool canCheckpointVerticalMerge() const;
-        /// Whether `TTLTransform` writes `ttl_kept_flags` for the rewrite of `rows_sources`.
-        [[nodiscard]] bool recordsTTLKeptFlags() const;
+        /// Whether `TTLTransform` writes `ttl_skip_flags` for the rewrite of `rows_sources`.
+        [[nodiscard]] bool recordsTTLSkipFlags() const;
 
         struct SavedCheckpointLoadResult
         {
@@ -500,17 +505,15 @@ private:
         [[nodiscard]] ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeVerticalStageTotalMilliseconds; }
 
         [[nodiscard]] bool prepareVerticalMergeForAllColumns() const;
-        [[nodiscard]] bool rewriteRowsSourcesForVerticalMerge() const;
         [[nodiscard]] bool executeVerticalMergeForAllColumns() const;
         [[nodiscard]] bool finalizeVerticalMergeForAllColumns() const;
 
         /// NOTE: Using pointer-to-member instead of std::function and lambda makes stacktraces much more concise and readable
-        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 4>;
+        using VerticalMergeStageSubtasks = std::array<bool(VerticalMergeStage::*)()const, 3>;
 
         const VerticalMergeStageSubtasks subtasks
         {
             &VerticalMergeStage::prepareVerticalMergeForAllColumns,
-            &VerticalMergeStage::rewriteRowsSourcesForVerticalMerge,
             &VerticalMergeStage::executeVerticalMergeForAllColumns,
             &VerticalMergeStage::finalizeVerticalMergeForAllColumns
         };
@@ -523,8 +526,6 @@ private:
         void saveCheckpoint() const;
 
         [[nodiscard]] VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
-        /// Each part's `_row_exists` without the mask, for `rewriteRowsSources`; empty unless `vertical_lightweight_delete`.
-        [[nodiscard]] std::vector<QueryPipeline> createPipelinesForReadingRowExists() const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
@@ -659,7 +660,7 @@ private:
         ReadBuffer & in,
         WriteBuffer & out,
         std::vector<QueryPipeline> row_exists_per_part,
-        TemporaryDataBuffer * ttl_kept_flags,
+        std::unique_ptr<ReadBuffer> ttl_skip_flags,
         const GlobalRuntimeContext & global_ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
