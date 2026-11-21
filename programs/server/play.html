@@ -6804,7 +6804,9 @@ class QueryResultElement extends HTMLElement
 
     /// Reset coloring on both layers of every cell in a column: the inner `.cell-content` div
     /// (used by bar mode) and the `<td>` itself (used by heatmap/categorical to fill the whole cell).
-    /// Also drops any categorical same-value font-weight emphasis.
+    /// Also drops any categorical same-value font-weight emphasis, and forgets it when this is the
+    /// emphasized column: otherwise the next `_refreshCategoricalEmphasis` would see the same column
+    /// and value, take its fast path and leave the peers unemphasized after a repaint.
     _clearColumnColor(col_idx)
     {
         for (const row of this._colorTargetRows())
@@ -6815,6 +6817,18 @@ class QueryResultElement extends HTMLElement
             const div = cell.querySelector('.cell-content');
             if (div) { div.style.background = ''; div.style.fontWeight = ''; div.style.color = ''; }
         }
+        if (col_idx === this._emphasized_col_idx)
+        {
+            this._emphasized_col_idx = null;
+            this._emphasized_value = null;
+            this._emphasized_active_cell = null;
+        }
+    }
+
+    /// Selecting a `JSON` cell changes its display text but leaves its compact value intact.
+    _categoricalCellText(cell)
+    {
+        return cell._jsonText ?? (cell.querySelector('.cell-content') || cell).innerText;
     }
 
     /// Apply the current color coding mode to every cell of one column.
@@ -6845,7 +6859,7 @@ class QueryResultElement extends HTMLElement
                 /// detected from the original value (marked in `_renderCell`), not the rendered
                 /// glyph, so a real string value equal to the NULL glyph still gets a color.
                 if (cell.dataset.isNull !== undefined) { continue; }
-                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                const text = this._categoricalCellText(cell);
                 if (text === '') { continue; }
                 const hue = this._hashHue(text);
                 cell.style.background = `oklch(var(--viz-cell-lightness) var(--viz-cell-chroma) ${hue})`;
@@ -7071,7 +7085,7 @@ class QueryResultElement extends HTMLElement
                 /// selecting one emphasizes nothing. NULL is detected from the original value marked
                 /// in `_renderCell`, not the rendered glyph, so a real string value equal to the NULL
                 /// glyph is still a category.
-                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                const text = this._categoricalCellText(cell);
                 if (cell.dataset.isNull === undefined && text !== '')
                 {
                     col_idx = idx;
@@ -7106,8 +7120,7 @@ class QueryResultElement extends HTMLElement
             /// A real NULL peer must not match a real string equal to the NULL glyph, so exclude
             /// NULL cells from grouping just like `_applyColumnColor` does. Empty cells never match
             /// here because `active_text` is guaranteed non-empty above.
-            const target = c.querySelector('.cell-content') || c;
-            this._setCellEmphasis(c, c !== cell && c.dataset.isNull === undefined && target.innerText === active_text);
+            this._setCellEmphasis(c, c !== cell && c.dataset.isNull === undefined && this._categoricalCellText(c) === active_text);
         }
         this._emphasized_col_idx = col_idx;
         this._emphasized_value = active_text;
