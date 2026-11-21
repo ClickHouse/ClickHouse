@@ -2255,7 +2255,7 @@ protected:
     template <typename AddedParts, typename RemovedParts>
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
 
-    SerializationInfoByName getSerializationHints() const override;
+    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
