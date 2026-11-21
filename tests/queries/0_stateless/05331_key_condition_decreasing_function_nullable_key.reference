@@ -1,0 +1,40 @@
+all NULL
+1
+1
+1
+1
+1
+1
+1
+1
+1
+values and NULL
+1
+1
+1
+1
+1
+1
+1
+1
+1
+a function mapping NULL to a value
+1
+1
+Decimal key
+1
+descending key
+1
+1
+1
+NULL-matching set over an increasing function or the bare key
+1
+1
+1
+1
+1
+1
+1
+minmax skip index and column statistics
+1
+1
