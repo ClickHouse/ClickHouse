@@ -4864,6 +4864,10 @@ Number of times parquet metadata has been found in the cache.
 
 Number of times parquet metadata has not been found in the cache and had to be read from disk.
 
+### ParquetMetadataCacheOffsetIndexHits {#parquetmetadatacacheoffsetindexhits}
+
+Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.
+
 ### ParquetMetadataCacheWeightLost {#parquetmetadatacacheweightlost}
 
 Approximate number of bytes evicted from the parquet metadata cache.
