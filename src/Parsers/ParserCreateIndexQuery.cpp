@@ -17,6 +17,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
 {
     ParserKeyword s_type(Keyword::TYPE);
     ParserKeyword s_granularity(Keyword::GRANULARITY);
+    ParserKeyword s_where(Keyword::WHERE);
     ParserToken open_p(TokenType::OpeningRoundBracket);
     ParserToken close_p(TokenType::ClosingRoundBracket);
     ParserOrderByExpressionList order_list_p;
@@ -28,6 +29,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     ASTPtr expr;
     ASTPtr type;
     ASTPtr granularity;
+    ASTPtr where;
 
     if (open_p.ignore(pos, expected))
     {
@@ -81,8 +83,15 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
             return false;
     }
 
+    /// WHERE needs an explicit TYPE (the AST keeps the condition after the type).
+    if (type && s_where.ignore(pos, expected))
+    {
+        if (!expression_p.parse(pos, where, expected))
+            return false;
+    }
+
     /// name is set below in ParserCreateIndexQuery
-    auto index = make_intrusive<ASTIndexDeclaration>(expr, type, "");
+    auto index = make_intrusive<ASTIndexDeclaration>(expr, type, "", where);
     index->part_of_create_index_query = true;
     index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;

@@ -511,7 +511,7 @@ protected:
 };
 
 
-/** name BY expr TYPE typename(arg1, arg2, ...) GRANULARITY value */
+/** name BY expr TYPE typename(arg1, arg2, ...) GRANULARITY value [WHERE cond] */
 class ParserIndexDeclaration : public IParserBase
 {
 public:

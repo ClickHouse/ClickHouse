@@ -6,7 +6,7 @@ namespace DB
 {
 
 /** Query like this:
-  * CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON [db].name (expression) TYPE type GRANULARITY value
+  * CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON [db].name (expression) TYPE type GRANULARITY value [WHERE cond]
   */
 
 class ParserCreateIndexQuery : public IParserBase

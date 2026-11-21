@@ -1096,6 +1096,7 @@ void AlterCommand::apply(
             ++insert_it;
         }
 
+        checkPartialIndexConditionAsUser(index_decl, metadata.columns, context);
         metadata.secondary_indices.emplace(
             insert_it,
             IndexDescription::getIndexFromAST(

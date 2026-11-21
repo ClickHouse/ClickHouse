@@ -1,0 +1,39 @@
+format setting of the indexed expression
+1
+1
+1
+1
+1
+field name given by an alias
+1
+1
+1
+subexpression of the indexed expression
+1
+1
+1
+1
+1
+1
+signed zero in a constant of the condition
+1
+1
+1
+1
+1
+same calculation: the index is used
+1
+1
+0
+1
+0
+1
+a column named like the indexed expression
+1
+1
+1
+1
+1
+the column itself is indexed: the index is used
+1
+0
