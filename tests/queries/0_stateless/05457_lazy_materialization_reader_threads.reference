@@ -1,0 +1,8 @@
+2
+1
+1
+1
+05457 lazy read after a one-stream main read	1
+05457 lazy read after a two-stream main read	8
+05457 lazy read over a join after a two-stream main read	8
+05457 main read alone	2

@@ -662,6 +662,7 @@ public:
         {
             QueryPlan lazy_plan;
             ILazyMaterializingRowsPtr lazy_materializing_rows;
+            const bool reads_merge_tree = lazy.merge_tree_reading != nullptr;
             if (lazy.merge_tree_reading)
             {
                 /// The main read fills the rows when it builds its pipeline, see `ReadFromMergeTree::hasLazilyReadColumns`.
@@ -701,6 +702,7 @@ public:
 
             auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(
                 main_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows, makeRowIndexName(source));
+            join_lazy_columns->setLazyReadExpands(reads_merge_tree);
 
             QueryPlan joined;
             QueryPlanPtrs plans;
