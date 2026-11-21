@@ -1296,7 +1296,7 @@ public:
         bool prev;
     };
 
-    const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
+    const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *query_privileges_info; }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
     /// Share the privilege-accounting object with another context, so privileges checked on this context are
     /// reported for the same query in `system.query_log`. Used when a background worker (e.g. RESTORE) runs on

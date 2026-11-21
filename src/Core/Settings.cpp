@@ -11166,6 +11166,10 @@ transaction on this replica. On expiry they throw `TIMEOUT_EXCEEDED`.
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_show_grants_for_query, false, R"(
+Allows the `FOR QUERY <select_query>` clause of `SHOW GRANTS`, which shows only the grants that the access checks of the given `SELECT` query consult.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
 )", EXPERIMENTAL, \

@@ -19,12 +19,16 @@ ASTPtr ASTShowGrantsQuery::clone() const
     if (for_roles)
         res->for_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(for_roles->clone());
 
+    /// Re-add the children in the order the parser produces them: the query first, then the output options.
+    res->for_query = nullptr;
+    if (for_query)
+        res->set(res->for_query, for_query->clone());
     cloneOutputOptions(*res);
     return res;
 }
 
 
-void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << "SHOW GRANTS"
                  ;
@@ -50,6 +54,12 @@ void ASTShowGrantsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
     {
         ostr << " FINAL"
                      ;
+    }
+
+    if (for_query)
+    {
+        ostr << " FOR QUERY" << settings.nl_or_ws;
+        for_query->format(ostr, settings, state, frame);
     }
 }
 }
