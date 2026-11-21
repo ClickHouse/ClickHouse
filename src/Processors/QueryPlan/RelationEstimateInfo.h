@@ -29,13 +29,17 @@ enum class RowEstimateSource : UInt8
     HashTableCache,
     /// Row count from data lake metadata (Iceberg manifest files).
     DataLakeMetadata,
+    /// The read is filtered on a column that is neither in the primary key nor has statistics,
+    /// so its estimate ignores or guesses that filter.
+    UnestimatedFilter,
 };
 
 /// Imprecise specifically because column statistics are missing (excludes the synthetic test sources).
 constexpr bool isMissingStatisticsSource(RowEstimateSource source)
 {
     return source == RowEstimateSource::PrimaryIndex
-        || source == RowEstimateSource::NoStatistics;
+        || source == RowEstimateSource::NoStatistics
+        || source == RowEstimateSource::UnestimatedFilter;
 }
 
 /// EXPLAIN prefix for the row count, e.g. `no_stats` in `a[no_stats~1000]`; empty for precise sources.
@@ -45,6 +49,7 @@ constexpr std::string_view rowEstimateSourceTag(RowEstimateSource source)
     {
         case RowEstimateSource::PrimaryIndex:
         case RowEstimateSource::NoStatistics:
+        case RowEstimateSource::UnestimatedFilter:
             return "no_stats";
         case RowEstimateSource::Hint:
             return "hint";

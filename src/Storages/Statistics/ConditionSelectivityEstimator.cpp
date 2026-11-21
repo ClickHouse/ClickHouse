@@ -308,6 +308,13 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
     return parent_name;
 }
 
+bool ConditionSelectivityEstimator::hasStatisticsForAllRows(const StorageMetadataPtr & metadata, const String & column_name) const
+{
+    auto it = column_estimators.find(column_name);
+    return it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name)
+        && it->second.stats->getNumRows() == total_rows;
+}
+
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals"

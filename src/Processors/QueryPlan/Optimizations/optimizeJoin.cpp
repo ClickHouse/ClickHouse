@@ -442,6 +442,14 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+static void optimizeJoinsBelow(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get()); join_step && !join_step->isOptimized())
+        optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+    for (auto * child : node.children)
+        optimizeJoinsBelow(*child, nodes, optimization_settings);
+}
+
 constexpr bool isInnerOrCross(JoinKind kind)
 {
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
@@ -630,21 +638,9 @@ static size_t addChildQueryGraph(
         }
     }
 
-    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
-    /// those child Join to get proper statistics to use in the parent Join reordering.
-    {
-        auto * child_node = node;
-        while (child_node->children.size() == 1)
-        {
-            child_node = child_node->children[0];
-        }
-
-        auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
-        if (child_join_step && !child_join_step->isOptimized())
-        {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
-        }
-    }
+    /// Joins below the leaf (in a subquery, below a set operation or below a join that is not reordered) are not added to the graph.
+    /// Optimize them first, so the estimate of the leaf uses their result.
+    optimizeJoinsBelow(*node, nodes, graph.context->optimization_settings);
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(
@@ -1206,10 +1202,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     Strings relations_without_statistics;
     Strings relations_estimated_from_data_lake_metadata;
     VectorWithMemoryTracking<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    BitSet relations_with_unestimated_filter;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         leaf_imprecise[i] = rel.imprecise_estimate;
+        if (rel.source == RowEstimateSource::UnestimatedFilter)
+            relations_with_unestimated_filter.set(i);
 
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
@@ -1224,6 +1223,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         else if (rel.source == RowEstimateSource::DataLakeMetadata && rel.imprecise_estimate && rel.column_stats.empty())
             relations_estimated_from_data_lake_metadata.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
     }
+    /// Two relations have no order to keep.
+    query_graph.keep_written_join_order = query_graph.relation_stats.size() > 2 && relations_with_unestimated_filter;
 
     /// `ALTER TABLE ... MATERIALIZE STATISTICS` does not apply to data lake tables, so they get their own message.
     if (!relations_estimated_from_data_lake_metadata.empty())
@@ -1591,7 +1592,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .composite = true,
                 .column_stats = entry->column_stats};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            join_step->setOptimized(
+                entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id,
+                areIntersecting(entry->relations, relations_with_unestimated_filter));
 
             auto & new_node = nodes.emplace_back();
 

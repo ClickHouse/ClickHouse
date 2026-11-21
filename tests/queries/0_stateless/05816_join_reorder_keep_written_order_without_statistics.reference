@@ -1,0 +1,56 @@
+filter on a column without statistics
+Join: orders ⋈ (customer ⋈ nation)
+Join: customer ⋈ nation
+0
+50000
+filter on the primary key
+Join: orders ⋈ (customer ⋈ nation)
+Join: customer ⋈ nation
+primary key and another column
+Join: orders ⋈ (customer ⋈ nation)
+Join: customer ⋈ nation
+sub-join reordered on its own
+Join: orders ⋈ (cn) ⋈ n2
+Join: orders ⋈ (cn)
+Join: customer ⋈ nation
+sub-join not reordered
+Join: orders ⋈ (cn) ⋈ n2
+Join: orders ⋈ (cn)
+Join: customer ⋈ n
+statistics of some parts
+Join: orders ⋈ customer ⋈ nation_partial
+Join: orders ⋈ customer
+aggregation without keys
+Join: customer ⋈ m ⋈ orders
+Join: customer ⋈ m
+filter above an aggregation
+Join: customer ⋈ h ⋈ orders
+Join: customer ⋈ h
+subcolumn of a column with statistics
+Join: orders ⋈ (customer ⋈ nation_stats)
+Join: customer ⋈ nation_stats
+subcolumn of a column without statistics
+Join: orders ⋈ customer ⋈ nation
+Join: orders ⋈ customer
+filter below DISTINCT
+Join: orders ⋈ customer ⋈ d
+Join: orders ⋈ customer
+filter below UNION ALL
+Join: orders ⋈ customer ⋈ u
+Join: orders ⋈ customer
+filter below DISTINCT on a column with statistics
+Join: customer ⋈ d ⋈ orders
+Join: customer ⋈ d
+row policy on a column with statistics
+1	1
+row policy on a column without statistics
+Join: orders ⋈ customer ⋈ nation_rp0
+Join: orders ⋈ customer
+build_rows_empty	0
+build_rows_one_nation	10001
+statistics below an ASOF join
+1	1
+statistics below an ASOF join, filters on columns with statistics
+1	1
+statistics below DISTINCT, filter on a column with statistics
+1

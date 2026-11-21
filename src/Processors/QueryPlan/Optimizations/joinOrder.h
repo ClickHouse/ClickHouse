@@ -176,6 +176,8 @@ struct QueryGraph
     bool runtime_filter_prunes_probe = false;
     /// A sort-merge join of inputs read in order by their primary key runs sharded by key ranges (`query_plan_join_shard_by_pk_ranges`).
     bool shard_merge_by_pk_ranges = false;
+    /// Build the join tree as the query wrote it instead of reordering it.
+    bool keep_written_join_order = false;
 
     /// How a relation can be read in order: the longest sequence of its `candidates`, and how many of its leading columns
     /// are the leading primary key columns themselves, which a sharded merge splits by (`optimizeJoinByShards`).
