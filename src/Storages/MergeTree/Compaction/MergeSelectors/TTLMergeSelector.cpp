@@ -300,4 +300,23 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.recompression_ttl_info->will_change_codec;
 }
 
+/// `TTLClearIndex` merges don't wait for `merge_with_ttl_timeout`, like `TTLDrop` merges, because the new part has
+/// no expired index files left.
+TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_)
+    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_, /*max_parts_to_merge_at_once_=*/1)
+{
+}
+
+time_t TTLIndexClearMergeSelector::getTTLForPart(const PartProperties & part) const
+{
+    return part.next_index_clear_ttl;
+}
+
+bool TTLIndexClearMergeSelector::canConsiderPart(const PartProperties & part) const
+{
+    /// `TTLClearIndex` merges hardlink the part's files, so neither the part size nor a volume that avoids
+    /// merges matters.
+    return part.can_clear_indexes;
+}
+
 }

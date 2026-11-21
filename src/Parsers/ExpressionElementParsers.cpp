@@ -3032,6 +3032,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_group_by(Keyword::GROUP_BY);
     ParserKeyword s_set(Keyword::SET);
     ParserKeyword s_recompress(Keyword::RECOMPRESS);
+    ParserKeyword s_clear_index(Keyword::CLEAR_INDEX);
     ParserKeyword s_codec(Keyword::CODEC);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
     ParserKeyword s_remove_ttl(Keyword::REMOVE_TTL);
@@ -3080,6 +3081,10 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         mode = TTLMode::RECOMPRESS;
     }
+    else if (s_clear_index.ignore(pos, expected))
+    {
+        mode = TTLMode::CLEAR_INDEX;
+    }
     else
     {
         /// DELETE is the default mode.
@@ -3090,6 +3095,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr where_expr;
     ASTPtr group_by_key;
     ASTPtr recompression_codec;
+    ASTPtr index_name_ast;
     ASTPtr group_by_assignments;
     bool if_exists = false;
 
@@ -3131,6 +3137,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_codec.parse(pos, recompression_codec, expected))
             return false;
     }
+    else if (mode == TTLMode::CLEAR_INDEX)
+    {
+        if (!parser_identifier.parse(pos, index_name_ast, expected))
+            return false;
+    }
 
     auto ttl_element = make_intrusive<ASTTTLElement>(mode, destination_type, destination_name, if_exists);
     ttl_element->setTTL(std::move(ttl_expr));
@@ -3146,6 +3157,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (mode == TTLMode::RECOMPRESS)
         ttl_element->recompression_codec = recompression_codec;
+
+    if (mode == TTLMode::CLEAR_INDEX)
+        ttl_element->index_name = index_name_ast->as<ASTIdentifier &>().name();
 
     node = ttl_element;
     return true;
