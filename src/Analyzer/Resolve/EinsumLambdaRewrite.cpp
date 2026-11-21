@@ -241,6 +241,11 @@ struct AliasScope
     /// The nodes are owned, because the elements of tensors are replaced in the expression while the scope is used.
     std::unordered_map<String, QueryTreeNodePtr> aliases;
     std::unordered_set<String> parameters;
+    /// The parameters are known to be values, not functions: the lambda function is an argument of a builtin function.
+    /// The analyzer does not look at such a parameter when it resolves the name of a called function.
+    bool parameters_are_scalars = false;
+    /// The indices of einsum, in the scope of the lambda function of einsum.
+    const Names * indices = nullptr;
     const AliasScope * parent = nullptr;
 };
 
@@ -300,6 +305,9 @@ struct FunctionBinding
     bool is_lambda = false;
     /// The name is bound by an alias inside the lambda function of einsum, so it means something else outside of it.
     bool is_local = false;
+    /// The name is a parameter of a nested lambda function, and it is unknown if the parameter is a function or a value,
+    /// like `f` in `invoke(f -> f(0), x -> [x])` with `(g, h) -> g(h) AS invoke`. It is assumed to be a function.
+    bool is_ambiguous_parameter = false;
     /// The lambda function inside the lambda function of einsum and its scope, if the name refers to it.
     const IQueryTreeNode * lambda = nullptr;
     const AliasScope * lambda_scope = nullptr;
@@ -323,10 +331,12 @@ FunctionBinding resolveFunctionName(
         for (const AliasScope * current = lookup_scope; current && !expression; current = current->parent)
         {
             /// A parameter of a nested lambda function can be a lambda function, like `f` in `invoke(f -> f(0), x -> [x])`.
-            if (current->parameters.contains(name))
+            /// A parameter that is a value, like `x` in `arrayMap(x -> ..., arr)`, does not hide a function, as in the analyzer.
+            if (current->parameters.contains(name) && !current->parameters_are_scalars)
             {
                 binding.is_lambda = true;
                 binding.is_local = true;
+                binding.is_ambiguous_parameter = true;
                 return binding;
             }
             if (auto it = current->aliases.find(name); it != current->aliases.end() && isFunctionAliasExpression(*it->second))
@@ -370,6 +380,16 @@ bool isLocalName(const String & name, const AliasScope & scope)
     return false;
 }
 
+/// Whether the name is an index of einsum: a parameter of the lambda function of einsum.
+/// The nested lambda functions cannot have parameters with the names of the indices.
+bool isIndexName(const String & name, const AliasScope & scope)
+{
+    for (const AliasScope * current = &scope; current; current = current->parent)
+        if (current->indices && std::find(current->indices->begin(), current->indices->end(), name) != current->indices->end())
+            return true;
+    return false;
+}
+
 /// Collects the free names in the expression: the first parts of the identifiers, the names of the columns and of the called
 /// functions, which are not the parameters of the lambda functions inside the expression (`bound`).
 void collectFreeNames(const IQueryTreeNode & node, std::unordered_set<String> & bound, std::unordered_set<String> & names)
@@ -402,13 +422,13 @@ void collectFreeNames(const IQueryTreeNode & node, std::unordered_set<String> & 
 
 /** The expression of a lambda function bound in the query outside of the lambda function of einsum, or of a SQL user defined function,
   * is resolved where it is called, so its free names are bound at the place of the call, like `a` in `WITH x -> a[x] AS get_a`
-  * called as `arrayMap(a -> get_a(1)[i], arrays)`. Returns a free name of the called function, also transitively, that is bound
-  * inside the lambda function of einsum (see `isLocalName`), or an empty string.
+  * called as `arrayMap(a -> get_a(1)[i], arrays)`. Returns a free name of the called function, also transitively,
+  * for which `is_wanted` is true, or an empty string. The names for which `is_skipped` is true are not looked at.
   */
-String findLocalNameInCalledFunction(
+String findFreeNameInCalledFunction(
     const String & called_name,
-    const AliasScope & scope,
-    const std::unordered_set<String> & inner_parameters,
+    const std::function<bool(const String &)> & is_skipped,
+    const std::function<bool(const String &)> & is_wanted,
     const ScopedFunctionLookup & get_called_lambda,
     std::unordered_set<String> & visited_functions)
 {
@@ -425,15 +445,32 @@ String findLocalNameInCalledFunction(
     collectFreeNames(*called_lambda, bound, free_names);
     for (const auto & name : free_names)
     {
-        /// A parameter of a lambda function inside the element is computed together with the element.
-        if (inner_parameters.contains(name))
+        if (is_skipped(name))
             continue;
-        if (isLocalName(name, scope))
+        if (is_wanted(name))
             return name;
-        if (String res = findLocalNameInCalledFunction(name, scope, inner_parameters, get_called_lambda, visited_functions); !res.empty())
+        if (String res = findFreeNameInCalledFunction(name, is_skipped, is_wanted, get_called_lambda, visited_functions); !res.empty())
             return res;
     }
     return {};
+}
+
+/// A free name of the called function, also transitively, that is bound inside the lambda function of einsum (see `isLocalName`)
+/// or is an index of einsum (see `isIndexName`), or an empty string.
+String findLocalNameInCalledFunction(
+    const String & called_name,
+    const AliasScope & scope,
+    const std::unordered_set<String> & inner_parameters,
+    const ScopedFunctionLookup & get_called_lambda,
+    std::unordered_set<String> & visited_functions)
+{
+    return findFreeNameInCalledFunction(
+        called_name,
+        /// A parameter of a lambda function inside the element is computed together with the element.
+        [&](const String & name) { return inner_parameters.contains(name); },
+        [&](const String & name) { return isLocalName(name, scope) || isIndexName(name, scope); },
+        get_called_lambda,
+        visited_functions);
 }
 
 /** A name in the expression that is bound inside the lambda function of einsum (see `isLocalName`), or an empty string.
@@ -537,7 +574,9 @@ public:
         {
             /// The names of the aliases are used before the elements are replaced, the expressions of the aliases are not.
             AliasScope scope;
+            scope.indices = &indices;
             collectScopeAliases(body, scope);
+            findLambdasWithScalarParameters(*body, scope);
             replaceTensorElements(body, scope);
         }
 
@@ -642,6 +681,74 @@ private:
     QueryTreeNodes arrays;
     std::vector<bool> is_summation;
     String value_prefix;
+    /// The nested lambda functions that are arguments of builtin functions, see `AliasScope::parameters_are_scalars`.
+    std::unordered_set<const IQueryTreeNode *> lambdas_with_scalar_parameters;
+
+    /// The scope of the expression of a nested lambda function inside `parent`.
+    [[nodiscard]] AliasScope makeScope(const LambdaNode & nested_lambda, const AliasScope & parent) const
+    {
+        auto scope = makeLambdaScope(nested_lambda, parent);
+        scope.parameters_are_scalars = lambdas_with_scalar_parameters.contains(&nested_lambda);
+        return scope;
+    }
+
+    /** A builtin function calls its lambda function with values, so the parameters of a lambda function that is its argument
+      * are not functions, like `x` in `arrayMap(x -> ..., arr)`. A lambda function bound in the query or a SQL user defined function
+      * can call its argument with a function, like `invoke` in `(g, h) -> g(h) AS invoke`, and a lambda function with an alias
+      * can be called by the alias as well.
+      */
+    void findLambdasWithScalarParameters(const IQueryTreeNode & node, const AliasScope & scope)
+    {
+        checkStackSize();
+
+        if (const auto * nested_lambda = node.as<LambdaNode>())
+        {
+            auto lambda_scope = makeScope(*nested_lambda, scope);
+            findLambdasWithScalarParameters(*nested_lambda->getExpression(), lambda_scope);
+            return;
+        }
+
+        if (isSubquery(node))
+        {
+            auto subquery_scope = makeSubqueryScope(node, scope);
+            for (const auto & child : node.getChildren())
+                if (child)
+                    findLambdasWithScalarParameters(*child, subquery_scope);
+            return;
+        }
+
+        if (const auto * function = node.as<FunctionNode>())
+        {
+            const auto & function_name = function->getFunctionName();
+            auto binding = resolveFunctionName(function_name, scope, is_scoped_function);
+            if (!binding.is_lambda && !binding.is_local && !get_called_lambda(function_name))
+                for (const auto & argument : function->getArguments().getNodes())
+                    if (argument->getNodeType() == QueryTreeNodeType::LAMBDA && !argument->hasAlias())
+                        lambdas_with_scalar_parameters.insert(argument.get());
+        }
+
+        for (const auto & child : node.getChildren())
+            if (child)
+                findLambdasWithScalarParameters(*child, scope);
+    }
+
+    /// The expression of a function called outside of the elements of tensors is resolved inside the lambda function, where
+    /// an index is not a value: `get_a(0)` with `WITH x -> a[i] AS get_a` would use the index not as a subscript of a tensor.
+    void checkCalledFunctionDoesNotUseIndices(const String & called_name, const AliasScope & scope) const
+    {
+        std::unordered_set<String> visited_functions;
+        String index = findFreeNameInCalledFunction(
+            called_name,
+            [](const String &) { return false; },
+            [&](const String & free_name) { return isIndexName(free_name, scope); },
+            get_called_lambda,
+            visited_functions);
+        if (!index.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The function '{}' called in einsum depends on the index '{}', but an index of einsum can be used only as an array subscript "
+                "in the lambda function of einsum",
+                called_name, index);
+    }
 
     [[nodiscard]] String getValueName(size_t element) const { return value_prefix + std::to_string(element + 1); }
 
@@ -747,7 +854,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A lambda function inside einsum cannot have an argument with the name of the index '{}'", name);
 
-            auto lambda_scope = makeLambdaScope(*nested_lambda, scope);
+            auto lambda_scope = makeScope(*nested_lambda, scope);
             replaceTensorElements(nested_lambda->getExpression(), lambda_scope);
             return;
         }
@@ -761,13 +868,32 @@ private:
             return;
         }
 
+        /// The names bound inside the lambda function of einsum are not the functions bound outside of it.
+        if (const auto * function = node->as<FunctionNode>())
+        {
+            if (!resolveFunctionName(function->getFunctionName(), scope, is_scoped_function).is_local)
+                checkCalledFunctionDoesNotUseIndices(function->getFunctionName(), scope);
+        }
+        else if (const auto * identifier = node->as<IdentifierNode>(); identifier && identifier->getIdentifier().isShort())
+        {
+            /// A function passed to a higher-order function by its name, like `g` in `arrayMap(g, arr)`.
+            if (!isLocalName(identifier->getIdentifier().getFullName(), scope))
+                checkCalledFunctionDoesNotUseIndices(identifier->getIdentifier().getFullName(), scope);
+        }
+
         for (auto & child : node->getChildren())
             if (child)
                 replaceTensorElements(child, scope);
     }
 
-    [[noreturn]] static void throwLocalNameInsideTensorElement(const String & name, const IQueryTreeNode & element)
+    [[noreturn]] void throwLocalNameInsideTensorElement(const String & name, const IQueryTreeNode & element) const
     {
+        if (std::find(indices.begin(), indices.end(), name) != indices.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The element {} of a tensor in einsum calls a function that depends on the index '{}', "
+                "but an index of einsum can be used only as an array subscript in the lambda function of einsum",
+                element.formatASTForErrorMessage(), name);
+
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The element {} of a tensor in einsum depends on '{}', which is an alias or a parameter of a lambda function inside einsum. "
             "This is not supported, because the array and its subscripts that are not indices are computed outside of the lambda function",
@@ -831,8 +957,16 @@ private:
     [[nodiscard]] bool isMultiply(const IQueryTreeNode & node, const AliasScope & scope) const
     {
         const auto * function = node.as<FunctionNode>();
-        return function && function->getFunctionName() == "multiply" && function->getArguments().getNodes().size() == 2
-            && !resolveFunctionName("multiply", scope, is_scoped_function).is_lambda;
+        if (!function || function->getFunctionName() != "multiply" || function->getArguments().getNodes().size() != 2)
+            return false;
+
+        auto binding = resolveFunctionName("multiply", scope, is_scoped_function);
+        /// It is unknown if this is a product, and the summation depends on it.
+        if (binding.is_ambiguous_parameter)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The lambda form of einsum is not supported when the name 'multiply' is a parameter of a lambda function "
+                "that is not an argument of a builtin function, because the parameter can be a function");
+        return !binding.is_lambda;
     }
 
     void flattenProduct(const QueryTreeNodePtr & node, const AliasScope & scope, QueryTreeNodes & factors) const
@@ -872,7 +1006,7 @@ private:
 
         if (const auto * nested_lambda = node.as<LambdaNode>())
         {
-            auto lambda_scope = makeLambdaScope(*nested_lambda, scope);
+            auto lambda_scope = makeScope(*nested_lambda, scope);
             collectIndices(*nested_lambda->getExpression(), lambda_scope, used, visited_aliases);
             return;
         }
@@ -912,7 +1046,7 @@ private:
 
         if (const auto * nested_lambda = node->as<LambdaNode>())
         {
-            auto lambda_scope = makeLambdaScope(*nested_lambda, scope);
+            auto lambda_scope = makeScope(*nested_lambda, scope);
             findSummationIndicesImpl(nested_lambda->getExpression(), lambda_scope);
             return;
         }
