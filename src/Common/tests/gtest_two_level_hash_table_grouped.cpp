@@ -34,7 +34,7 @@ struct Grouped : Base
     }
 
     bool bucketInArena(size_t bucket) { return this->isBucketInArena(bucket); }
-    bool bucketAtFillLimit(size_t bucket) const { return this->isBucketAtFillLimit(bucket); }
+    [[nodiscard]] bool bucketAtFillLimit(size_t bucket) const { return this->isBucketAtFillLimit(bucket); }
     static constexpr bool supports() { return Base::supports_grouped_growth; }
 };
 
