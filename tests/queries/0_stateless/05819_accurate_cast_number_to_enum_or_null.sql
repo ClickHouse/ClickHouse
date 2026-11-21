@@ -36,7 +36,7 @@ SELECT accurateCastOrNull(tuple(materialize([toFloat64(1.5)])), 'Nullable(Tuple(
 SELECT accurateCastOrNull(tuple(materialize(map('k', toFloat64(1.5)))), 'Nullable(Tuple(Map(String, Enum8(\'a\' = 1))))'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT accurateCast(materialize(toFloat64(1)), 'Enum8(\'a\' = 1)'), CAST(materialize(toFloat64(1.5)), 'Enum8(\'a\' = 1)');
 
--- `accurateCastOrNull` does not depend on `check_conversion_from_numbers_to_enum`.
+-- With `check_conversion_from_numbers_to_enum = 0`, `accurateCastOrNull` still checks the range.
 SELECT accurateCastOrNull(materialize(toUInt16(257)), 'Enum8(\'a\' = 1)') SETTINGS check_conversion_from_numbers_to_enum = 0;
 
 -- A number that is not a value of the `Enum` key of a set is not a member.
@@ -52,3 +52,8 @@ SELECT materialize([1.5]) IN (SELECT [CAST('a', 'Enum8(\'a\' = 1)')]); -- { serv
 SELECT materialize(map('k', toUInt16(257))) IN (SELECT map('k', CAST('a', 'Enum8(\'a\' = 1)'))); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT tuple(materialize([toUInt16(257)])) IN (SELECT tuple([CAST('a', 'Enum8(\'a\' = 1)')])); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT accurateCast(materialize(toUInt16(257)), 'Enum8(\'a\' = 1)') SETTINGS check_conversion_from_numbers_to_enum = 0; -- { serverError CANNOT_CONVERT_TYPE }
+
+-- With `check_conversion_from_numbers_to_enum = 0`, a set key can hold a value that is not in the `Enum`, and a number with that value is a member.
+SELECT materialize(toUInt8(2)) IN (SELECT CAST(materialize(toUInt8(2)), 'Enum8(\'a\' = 1)')), materialize(toUInt8(2)) NOT IN (SELECT CAST(materialize(toUInt8(2)), 'Enum8(\'a\' = 1)')) SETTINGS check_conversion_from_numbers_to_enum = 0;
+SELECT materialize(toUInt16(2)) IN (SELECT CAST(materialize(toUInt8(2)), 'Enum16(\'a\' = 1)')) SETTINGS check_conversion_from_numbers_to_enum = 0;
+SELECT tuple(materialize(toUInt8(2))) IN (SELECT tuple(CAST(materialize(toUInt8(2)), 'Enum8(\'a\' = 1)'))) SETTINGS check_conversion_from_numbers_to_enum = 0;

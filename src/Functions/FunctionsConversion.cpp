@@ -2905,7 +2905,8 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper(bool requested
             else if (accurate_or_null)
             {
                 FieldType converted_value;
-                if (isFinite(in_data[i]) && accurate::convertNumeric(in_data[i], converted_value) && result_type.hasValue(converted_value))
+                if (isFinite(in_data[i]) && accurate::convertNumeric(in_data[i], converted_value)
+                    && (!check_value || result_type.hasValue(converted_value)))
                 {
                     out_data[i] = converted_value;
                 }
