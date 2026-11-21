@@ -72,7 +72,7 @@ public:
     bool isTransactional() const override;
     bool isPlain() const override;
     bool isWriteOnce() const override;
-    bool cachesObjectMetadata() const override;
+    [[nodiscard]] bool cachesObjectMetadata() const override;
     bool supportsHardLinks() const override;
     bool supportWritingWithAppend() const override;
 

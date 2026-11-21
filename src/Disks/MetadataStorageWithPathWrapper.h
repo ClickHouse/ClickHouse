@@ -284,7 +284,7 @@ public:
         return delegate->isRemote();
     }
 
-    bool cachesObjectMetadata() const override
+    [[nodiscard]] bool cachesObjectMetadata() const override
     {
         return delegate->cachesObjectMetadata();
     }
