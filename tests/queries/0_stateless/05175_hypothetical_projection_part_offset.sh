@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-parallel-replicas
 # Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
-# an offset predicate prunes a real projection read, so the estimate has to prune by it too
+# a projection that does not store parent offsets cannot serve an offset predicate, one that stores them is not pruned by its own offsets
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,11 +36,14 @@ compare()
         | grep -oE 'Granules: [0-9]+$' | grep -oE '[0-9]+'
 }
 
-echo "--- _part_offset drops the granule the key kept ---"
-compare p_b "(SELECT a, b, v ORDER BY b)" "SELECT a FROM TABLE WHERE b >= 34 AND b <= 70 AND _part_offset < 100"
-
-echo "--- the same predicate through _part_starting_offset ---"
-compare p_b "(SELECT a, b, v ORDER BY b)" "SELECT a FROM TABLE WHERE b >= 34 AND b <= 70 AND _part_offset + _part_starting_offset < 100"
+# a projection that does not store parent offsets cannot serve an offset predicate, so the estimate does not apply
+echo "--- a projection that does not store parent offsets cannot serve _part_offset ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_b ON t_off_est (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a FROM t_off_est WHERE b >= 34 AND b <= 70 AND _part_offset < 100 SETTINGS ${PIN};
+" | grep -A 3 '^With p_b ' | grep -oE 'does not contain column _part_offset'
+$CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT a FROM t_off_real WHERE b >= 34 AND b <= 70 AND _part_offset < 100 SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_b', force_optimize_projection = 1" 2>&1 \
+    | grep -oE 'PROJECTION_NOT_USED' | head -1
 
 echo "--- the key alone, for comparison ---"
 compare p_b "(SELECT a, b, v ORDER BY b)" "SELECT a FROM TABLE WHERE b >= 34 AND b <= 70"
