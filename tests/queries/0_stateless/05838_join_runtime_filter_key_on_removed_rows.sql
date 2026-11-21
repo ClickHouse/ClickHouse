@@ -154,3 +154,11 @@ INSERT INTO fi SELECT number FROM numbers(10);
 CREATE TABLE ff (k Float64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO ff SELECT number FROM numbers(10);
 SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM fi JOIN ff ON fi.k = ff.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
+-- A conversion to a float only rounds, also of an `Enum` or a `Decimal`, so these keys keep their runtime filter.
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM pe JOIN ff ON pe.e = ff.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM fi JOIN ff ON toFloat64(fi.k) = ff.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+SELECT countIf(explain LIKE '%Build runtime join filter on%') FROM (EXPLAIN SELECT count() FROM pdec JOIN ff ON toFloat64(pdec.d) = ff.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_limit = 0, query_plan_join_swap_table = 'false');
+
+-- A conversion function to a float of a `String` parses it, so it can throw.
+SELECT count() FROM pn JOIN g ON pn.id = g.id JOIN r ON toFloat64(pn.n) = toFloat64(r.k) WHERE pn.b + g.flag = 2;

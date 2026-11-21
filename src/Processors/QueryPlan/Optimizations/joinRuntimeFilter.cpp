@@ -277,7 +277,7 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
     if (clamps_dates && isDateOrDate32OrDateTimeOrDateTime64(from_nested) && isDateOrDate32OrDateTimeOrDateTime64(to_nested))
         return true;
 
-    if (isFloat(to_nested) && (isInteger(from_nested) || isFloat(from_nested)))
+    if (isFloat(to_nested) && (isNumber(from_nested) || isEnum(from_nested)))
         return true;
 
     return (isInteger(from_nested) || isEnum(from_nested)) && isInteger(to_nested);
@@ -286,14 +286,15 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
 /// A cast written in the query follows `date_time_overflow_behavior`, so it may throw on a date.
 static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
 {
-    static constexpr std::string_view integer_conversions[] = {
+    static constexpr std::string_view numeric_conversions[] = {
         "toInt8", "toInt16", "toInt32", "toInt64", "toInt128", "toInt256",
-        "toUInt8", "toUInt16", "toUInt32", "toUInt64", "toUInt128", "toUInt256"};
+        "toUInt8", "toUInt16", "toUInt32", "toUInt64", "toUInt128", "toUInt256",
+        "toBFloat16", "toFloat32", "toFloat64"};
 
     const auto & name = node.function_base->getName();
     const bool is_cast = name == "_CAST" || name == "CAST";
-    const bool is_integer_conversion = node.children.size() == 1 && std::ranges::find(integer_conversions, name) != std::end(integer_conversions);
-    if (node.children.empty() || (!is_cast && !is_integer_conversion))
+    const bool is_numeric_conversion = node.children.size() == 1 && std::ranges::find(numeric_conversions, name) != std::end(numeric_conversions);
+    if (node.children.empty() || (!is_cast && !is_numeric_conversion))
         return false;
 
     return canCastWithoutThrowing(node.children.front()->result_type, node.result_type, /*clamps_dates=*/false);
