@@ -47,6 +47,10 @@ void ProgressIndication::resetProgress()
         watch.restart();
         cpu_usage_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         waited_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        gpu_sm_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        gpu_tensor_meter.reset(static_cast<double>(getElapsedNanoseconds()));
+        gpu_sm_active_us = 0;
+        gpu_tensor_active_us = 0;
         hosts_data.clear();
     }
 }
@@ -69,15 +73,23 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
 
     UInt64 total_cpu_ns = 0;
     UInt64 total_waited_ns = 0;
+    UInt64 total_gpu_sm_us = 0;
+    UInt64 total_gpu_tensor_us = 0;
     for (auto & new_host : new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
         total_waited_ns += us_to_ns * new_host.second.waited_us;
+        total_gpu_sm_us += new_host.second.gpu_sm_active_us;
+        total_gpu_tensor_us += new_host.second.gpu_tensor_active_us;
         hosts_data[new_host.first] = new_host.second;
     }
     double now = static_cast<double>(getElapsedNanoseconds());
     cpu_usage_meter.add(now, static_cast<double>(total_cpu_ns));
     waited_meter.add(now, static_cast<double>(total_waited_ns));
+    gpu_sm_meter.add(now, static_cast<double>(us_to_ns * total_gpu_sm_us));
+    gpu_tensor_meter.add(now, static_cast<double>(us_to_ns * total_gpu_tensor_us));
+    gpu_sm_active_us += total_gpu_sm_us;
+    gpu_tensor_active_us += total_gpu_tensor_us;
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::sumMemoryUsage(const HostToTimesMap & hosts)
@@ -100,6 +112,15 @@ ProgressIndication::TempDataOnDiskUsage ProgressIndication::sumTempDataOnDiskUsa
         });
 }
 
+ProgressIndication::GPUMemoryUsage ProgressIndication::sumGPUMemoryUsage(const HostToTimesMap & hosts)
+{
+    return std::accumulate(hosts.cbegin(), hosts.cend(), GPUMemoryUsage{},
+        [](GPUMemoryUsage const & acc, auto const & host_data)
+        {
+            return GPUMemoryUsage{.total = acc.total + host_data.second.gpu_memory_usage, .peak = acc.peak + host_data.second.gpu_peak_memory_usage};
+        });
+}
+
 ProgressIndication::ProfileSnapshot ProgressIndication::getProfileSnapshot()
 {
     std::lock_guard lock(profile_events_mutex);
@@ -110,6 +131,10 @@ ProgressIndication::ProfileSnapshot ProgressIndication::getProfileSnapshot()
         .waited = waited_meter.rate(now),
         .memory = sumMemoryUsage(hosts_data),
         .temp_data_on_disk = sumTempDataOnDiskUsage(hosts_data),
+        .gpu_memory = sumGPUMemoryUsage(hosts_data),
+        .gpu_sm = gpu_sm_meter.rate(now),
+        .gpu_tensor = gpu_tensor_meter.rate(now),
+        .gpu_activity = gpu_sm_active_us > 0 || gpu_tensor_active_us > 0,
     };
 }
 
@@ -123,6 +148,12 @@ ProgressIndication::TempDataOnDiskUsage ProgressIndication::getTempDataOnDiskUsa
 {
     std::lock_guard lock(profile_events_mutex);
     return sumTempDataOnDiskUsage(hosts_data);
+}
+
+ProgressIndication::GPUMemoryUsage ProgressIndication::getGPUMemoryUsage() const
+{
+    std::lock_guard lock(profile_events_mutex);
+    return sumGPUMemoryUsage(hosts_data);
 }
 
 void ProgressIndication::writeFinalProgress()
@@ -145,6 +176,23 @@ void ProgressIndication::writeFinalProgress()
     auto peak_memory_usage = getMemoryUsage().peak;
     if (peak_memory_usage >= 0)
         output_stream << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
+
+    if (auto peak_gpu_memory_usage = getGPUMemoryUsage().peak)
+        output_stream << "\nPeak VRAM usage: " << formatReadableSizeWithBinarySuffix(peak_gpu_memory_usage) << ".";
+
+    UInt64 gpu_sm_us = 0;
+    UInt64 gpu_tensor_us = 0;
+    {
+        std::lock_guard profile_lock(profile_events_mutex);
+        gpu_sm_us = gpu_sm_active_us;
+        gpu_tensor_us = gpu_tensor_active_us;
+    }
+    if ((gpu_sm_us > 0 || gpu_tensor_us > 0) && elapsed_ns)
+    {
+        const double elapsed_us = static_cast<double>(elapsed_ns) / 1000;
+        output_stream << "\nGPU busy: SMs " << fmt::format("{:.0f}", 100.0 * static_cast<double>(gpu_sm_us) / elapsed_us) << "%, tensor cores "
+                      << fmt::format("{:.0f}", 100.0 * static_cast<double>(gpu_tensor_us) / elapsed_us) << "% of the time.";
+    }
 }
 
 void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
@@ -209,11 +257,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     double waited = std::max(profile.waited, 0.);
     auto [memory_usage, max_host_usage, peak_usage] = profile.memory;
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = profile.temp_data_on_disk;
+    const UInt64 gpu_memory_usage = profile.gpu_memory.total;
+    const double gpu_sm = std::max(profile.gpu_sm, 0.);
+    const double gpu_tensor = std::max(profile.gpu_tensor, 0.);
 
     /// Mostly waiting instead of working: yellow instead of green.
     bool stalled = waited > cpu_usage;
 
-    if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
+    if (cpu_usage > 0 || waited > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0 || gpu_memory_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
@@ -225,6 +276,10 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
         if (max_host_usage < memory_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
+        if (gpu_memory_usage > 0)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(gpu_memory_usage) << " VRAM";
+        if (profile.gpu_activity)
+            profiling_msg_builder << ", GPU " << fmt::format("{:.0f}", 100 * gpu_sm) << "% SM " << fmt::format("{:.0f}", 100 * gpu_tensor) << "% tensor";
         if (temp_data_on_disk_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(temp_data_on_disk_usage) << " disk";
         if (max_host_temp_data_on_disk_usage < temp_data_on_disk_usage)

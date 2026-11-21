@@ -3,6 +3,7 @@
 #if USE_GPU
 
 #include <GPU/GPUDevice.h>
+#include <GPU/GPUMemoryTracking.h>
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
@@ -137,7 +138,10 @@ void appendFromDevice(PinnedBuffer & buffer, const char * device_bytes, size_t b
 DeviceBuffer::~DeviceBuffer()
 {
     if (memory != nullptr)
+    {
+        trackDeviceDeallocation(memory);
         cudaFreeAsync(memory, stream.get());
+    }
 }
 
 DeviceBuffer::DeviceBuffer(DeviceBuffer && other) noexcept
@@ -153,7 +157,10 @@ DeviceBuffer & DeviceBuffer::operator=(DeviceBuffer && other) noexcept
     if (this != &other)
     {
         if (memory != nullptr)
+        {
+            trackDeviceDeallocation(memory);
             cudaFreeAsync(memory, stream.get());
+        }
         stream = other.stream;
         memory = std::exchange(other.memory, nullptr);
         capacity = std::exchange(other.capacity, 0);
@@ -175,6 +182,7 @@ void DeviceBuffer::reserve(size_t bytes)
         cudaMallocFromPoolAsync(&fresh, grown.capacity, GPUResources::get().memory_pool, stream.get()),
         "Cannot allocate device memory");
     grown.memory = static_cast<char *>(fresh);
+    trackDeviceAllocation(fresh, grown.capacity);
 
     if (used != 0)
         checkCuda(

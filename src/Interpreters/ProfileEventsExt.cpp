@@ -119,6 +119,24 @@ static void dumpTempDataOnDiskUsage(ProfileEventsSnapshot const & snapshot, DB::
     columns[i]->insert(snapshot.temp_data_on_disk_usage);
 }
 
+static void dumpGPUMemoryUsage(ProfileEventsSnapshot const & snapshot, DB::MutableColumns & columns, String const & host_name)
+{
+    if (snapshot.gpu_peak_memory_usage == 0)
+        return;
+
+    for (const auto & [name, value] : {std::pair{GPU_MEMORY_USAGE_EVENT_NAME, snapshot.gpu_memory_usage},
+                                       std::pair{GPU_MEMORY_PEAK_USAGE_EVENT_NAME, snapshot.gpu_peak_memory_usage}})
+    {
+        size_t i = 0;
+        columns[i++]->insertData(host_name.data(), host_name.size());
+        columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
+        columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
+        columns[i++]->insert(Type::GAUGE);
+        columns[i++]->insertData(name, strlen(name));
+        columns[i]->insert(value);
+    }
+}
+
 void subtractIncrements(DB::Block & block, Event event, UInt64 & amount)
 {
     using namespace DB;
@@ -189,6 +207,8 @@ DB::Block getProfileEvents(
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
         group_snapshot.peak_memory_usage = thread_group->memory_tracker.getPeak();
         group_snapshot.temp_data_on_disk_usage = 0;
+        group_snapshot.gpu_memory_usage = thread_group->gpu_memory_usage.load(std::memory_order_relaxed);
+        group_snapshot.gpu_peak_memory_usage = thread_group->gpu_peak_memory_usage.load(std::memory_order_relaxed);
         if (auto query_context = thread_group->query_context.lock())
         {
             /// Report only the per-query scope (not the root scope, which would aggregate across all queries).
@@ -213,6 +233,7 @@ DB::Block getProfileEvents(
     dumpProfileEvents(group_snapshot, columns, host_name);
     dumpMemoryTracker(group_snapshot, columns, host_name);
     dumpTempDataOnDiskUsage(group_snapshot, columns, host_name);
+    dumpGPUMemoryUsage(group_snapshot, columns, host_name);
 
     Block curr_block;
 
