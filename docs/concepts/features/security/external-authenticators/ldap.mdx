@@ -32,6 +32,9 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <port>636</port>
             <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
             <verification_cooldown>300</verification_cooldown>
+            <operation_timeout>40</operation_timeout>
+            <network_timeout>30</network_timeout>
+            <search_timeout>20</search_timeout>
             <follow_referrals>false</follow_referrals>
             <enable_tls>yes</enable_tls>
             <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
@@ -70,9 +73,13 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `auth_dn_prefix` | — | **Deprecated.** An alternative to `bind_dn`. Cannot be used together with `bind_dn`. When specified, the bind DN is constructed as `auth_dn_prefix + {user_name} + auth_dn_suffix`. For example, setting `auth_dn_prefix` to `uid=` and `auth_dn_suffix` to `,ou=users,dc=example,dc=com` is equivalent to setting `bind_dn` to `uid={user_name},ou=users,dc=example,dc=com`. |
 | `auth_dn_suffix` | — | **Deprecated.** See `auth_dn_prefix`. |
 | `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
+| `operation_timeout` | `40` | Maximum time, in seconds, to wait for the result of a bind or of a StartTLS negotiation on an established connection. Searches are bounded by `search_timeout` instead. Must be greater than `0`. |
+| `network_timeout` | `30` | Maximum time, in seconds, to wait for the TCP connection to the LDAP server, including the TLS handshake, to be established. Must be greater than `0`. An unreachable server that silently drops packets makes every authentication attempt wait for the whole timeout, see [Transport security and timeouts](#ldap-server-tls-and-timeouts). |
+| `search_timeout` | `20` | Time limit, in seconds, for each LDAP search request (user DN detection and role mapping). It is sent to the server as the requested time limit and enforced on the client as well; `operation_timeout` does not apply to searches. Must be greater than `0`. |
 | `follow_referrals` | `false` | A flag to allow the LDAP client library to automatically chase LDAP referrals returned by the server. Mostly relevant for Microsoft Active Directory environments where subtree searches at a high-level base DN (e.g. `DC=example,DC=com`) can return referrals/search references (e.g. `DC=DomainDnsZones,...`). Set to `true` only when you explicitly need cross-partition searches. |
 | `enable_tls` | `yes` | A flag to trigger the use of the secure connection to the LDAP server. Specify `no` for plain text `ldap://` protocol (not recommended), `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended), or `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS). |
-| `tls_minimum_protocol_version` | `tls1.2` | The minimum protocol version of SSL/TLS. Accepted values: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`. |
+| `tls_minimum_protocol_version` | `tls1.2` | The minimum protocol version of SSL/TLS. Accepted values: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`, `tls1.3`. |
+| `tls_maximum_protocol_version` | — | The maximum protocol version of SSL/TLS. Accepted values are the same as for `tls_minimum_protocol_version`, and the value must not be lower than the minimum. When unset, the newest version supported by both sides is negotiated. |
 | `tls_require_cert` | `demand` | SSL/TLS peer certificate verification behavior. Accepted values: `never`, `allow`, `try`, `demand`. |
 | `tls_cert_file` | — | Path to certificate file. |
 | `tls_key_file` | — | Path to certificate key file. |
@@ -80,16 +87,33 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `tls_ca_cert_dir` | — | Path to the directory containing CA certificates. |
 | `tls_cipher_suite` | — | Allowed cipher suite (in OpenSSL notation). |
 | `search_limit` | `256` | Maximum number of entries that can be returned by LDAP search queries performed by this server definition (for user DN detection and role mapping). |
+| `lookup_bind_dn` | — | Optional. DN of a service account used to resolve user names without the user's own password. Required by `EXECUTE AS` so an LDAP-backed user can be impersonated before they have authenticated against this server. Requires `user_dn_detection` to also be configured, and the `user_dn_detection` query must be target-specific — its `base_dn` or `search_filter` must depend on the requested user, either directly via `{user_name}`, or transitively via `{bind_dn}` / `{user_dn}` when the `bind_dn` template itself contains `{user_name}`. A static `user_dn_detection` query that returns the same DN for every requested user is rejected at parse time with `BAD_ARGUMENTS`. Must be provided together with `lookup_password`. |
+| `lookup_password` | — | Password for `lookup_bind_dn`. Cannot be empty when `lookup_bind_dn` is set; an empty value is rejected with `BAD_ARGUMENTS` to avoid issuing an LDAP unauthenticated (anonymous) simple bind. |
 
 **`user_dn_detection` sub-parameters**
 
 Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated to the actual detected user DN value.
+
+When `user_dn_detection` is used together with `lookup_bind_dn`, the search must be target-specific: `base_dn` or `search_filter` must depend on the requested user via `{user_name}`, or via `{bind_dn}` / `{user_dn}` whose underlying `bind_dn` template contains `{user_name}`. A static query that returns the same single entry for every requested user is rejected at parse time, because it would let the service-bind path resolve `EXECUTE AS some_other_name` to an unrelated entry's DN.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search. |
 | `scope` | `subtree` | Scope of the LDAP search. Accepted values: `base`, `one_level`, `children`, `subtree`. |
 | `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note that special characters must be escaped properly in XML. |
+
+### Transport security and timeouts {#ldap-server-tls-and-timeouts}
+
+Recommended production settings:
+
+- `enable_tls` set to `yes` (LDAPS), `tls_require_cert` set to `demand`, and `tls_ca_cert_file` pointing at the CA that issued the LDAP server certificate. The certificate must contain the value of `host` as a DNS or IP subject alternative name. `never` disables certificate verification and leaves the connection open to interception; use it only for testing.
+- `tls_minimum_protocol_version` left at `tls1.2`, or raised to `tls1.3` once every LDAP server supports it.
+- `tls_maximum_protocol_version` left unset. Set it only to pin a version for a server whose newer protocol implementation misbehaves, for example `tls1.2`. A maximum lower than the minimum is rejected when the server definition is parsed.
+- `network_timeout` lowered to a few seconds where the LDAP server may become unreachable. Every authentication attempt against a server that silently drops packets holds its ClickHouse connection for the whole timeout, so a long timeout combined with clients that reconnect aggressively can exhaust `max_connections` and lock out users of other user directories as well.
+
+If you are migrating from another LDAP client configuration: `TLSv1_2` / `TLSv1.2` is `tls1.2` and `TLSv1_3` / `TLSv1.3` is `tls1.3`; `useSsl` or `useLdapSsl` is `enable_tls` set to `yes`; StartTLS is `enable_tls` set to `starttls`; the Active Directory Global Catalog listens on `3269` (LDAPS) and `3268` (LDAP), which go into `port`.
+
+A TLS failure (an untrusted or mismatching server certificate, or no protocol version acceptable to both sides) is reported in the server log as `LDAP_ERROR` with the message `Can't contact LDAP server` followed by the diagnostic message of the LDAP library; the client only sees a generic authentication failure. A server definition with an invalid value is reported in the server log at startup and on `SYSTEM RELOAD CONFIG`, and cannot be used for authentication until it is fixed.
 
 ## LDAP external authenticator {#ldap-external-authenticator}
 
