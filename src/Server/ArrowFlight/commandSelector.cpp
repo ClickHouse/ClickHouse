@@ -381,6 +381,8 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
     {"PaimonS3", "REMOTE TABLE"},
     {"JDBC", "REMOTE TABLE"},
     {"Kafka", "REMOTE TABLE"},
+    {"LanceLocal", "REMOTE TABLE"},
+    {"LanceS3", "REMOTE TABLE"},
     {"MaterializedPostgreSQL", "REMOTE TABLE"},
     {"MongoDB", "REMOTE TABLE"},
     {"MySQL", "REMOTE TABLE"},

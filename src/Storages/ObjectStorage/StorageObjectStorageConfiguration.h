@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -186,6 +187,39 @@ public:
 
     [[nodiscard]] virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
+    virtual std::optional<Pipe> read(
+        ObjectInfoPtr,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        FormatParserSharedResourcesPtr,
+        FormatFilterInfoPtr,
+        bool,
+        std::optional<size_t> limit) const
+    {
+        (void)limit;
+        return std::nullopt;
+    }
+
+    virtual std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr &,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        size_t,
+        FormatFilterInfoPtr,
+        bool,
+        std::optional<size_t>,
+        bool) const
+    {
+        return std::nullopt;
+    }
+
+    /// Optional cap for concurrent outer readers of custom per-object pipelines.
+    virtual std::optional<size_t> getMaxCustomReadThreads(bool) const { return std::nullopt; }
+
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     virtual void addDeleteTransformers(
@@ -212,6 +246,7 @@ public:
     [[nodiscard]] virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
     [[nodiscard]] virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
     [[nodiscard]] virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
+    [[nodiscard]] virtual bool supportsDistributedReadWithExplicitSchema() const { return false; }
     [[nodiscard]] virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     [[nodiscard]] virtual bool supportsFileIterator() const { return false; }
