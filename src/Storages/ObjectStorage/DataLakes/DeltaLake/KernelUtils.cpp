@@ -86,7 +86,7 @@ namespace
 {
 
 std::mutex mutex;
-std::unordered_map<uintptr_t, std::string> allocated_errors;
+[[clang::no_destroy]] std::unordered_map<uintptr_t, std::string> allocated_errors;
 
 uintptr_t ptrToInt(void * error)
 {
