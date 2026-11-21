@@ -38,10 +38,17 @@ public:
 
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// The first argument is the value, it keeps its type even if it is `FixedArray`.
+    /// The other arguments only provide the sizes, and `FixedArray` is processed as `Array` there.
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
+
     [[nodiscard]] String getSignatureString() const override
     {
         return "(T, Array, ...) -> Array(T)";
     }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override;
 };

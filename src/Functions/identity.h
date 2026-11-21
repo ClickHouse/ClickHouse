@@ -48,6 +48,7 @@ public:
     /// to the column; this override stays authoritative on the type path, so the signature above is
     /// documentation-only.
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     /// Same reasoning for `Variant`: the adaptor reassembles a bare `Variant` and drops a custom name
     /// such as `Geometry`, which would no longer match the passed-through column.
@@ -95,6 +96,7 @@ public:
     /// array-returning convention deliberately strips nested LowCardinality. Restore the default
     /// behavior so the base-class override applies only to user-facing identity()/__scalarSubqueryResult.
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 };
 
 
@@ -110,6 +112,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     /// Override the inherited signature: `__actionName` takes two String
     /// arguments, not one. The base `(T) -> T` is wrong here (wrong arity),

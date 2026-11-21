@@ -123,6 +123,9 @@ public:
     bool isDeterministic() const override { return false; }
     String getName() const override { return function_name; }
 
+    /// The keys are compared with the stored keys of the exact types, so `FixedArray` must not be converted to `Array`.
+    bool useDefaultImplementationForFixedArray() const override { return false; }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return {}; } // Not used
 

@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT --query="SELECT [1,]::Array(UInt8)"  2>&1 | grep -o -m1 'Synt
 $CLICKHOUSE_CLIENT --query="SELECT [1, 2]]::Array(UInt8)"  2>&1 | grep -o -m1 'Syntax error'
 $CLICKHOUSE_CLIENT --query="SELECT [[1, 2]::Array(UInt8)"  2>&1 | grep -o -m1 'Syntax error'
 $CLICKHOUSE_CLIENT --query="SELECT [[1, 2],, []]::Array(Array(UInt8))"  2>&1 | grep -o -m1 'Syntax error'
-$CLICKHOUSE_CLIENT --query="SELECT [[1, 2][]]::Array(Array(UInt8))"  2>&1 | grep -o -m1 'Syntax error'
+$CLICKHOUSE_CLIENT --query="SELECT [[1, 2][,]]::Array(Array(UInt8))"  2>&1 | grep -o -m1 'Syntax error'
 $CLICKHOUSE_CLIENT --query="SELECT [1,,2]::Array(UInt8)"  2>&1 | grep -o -m1 'Syntax error'
 $CLICKHOUSE_CLIENT --query="SELECT [1 2]::Array(UInt8)"  2>&1 | grep -o -m1 'Syntax error'
 

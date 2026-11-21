@@ -1,0 +1,73 @@
+-- names
+FixedArray(3, UInt8)
+FixedArray(3, 2, Float32)
+FixedArray(3, 2, Float32)
+FixedArray(2, 1, LowCardinality(String))
+FixedArray(1, Tuple(\n    x UInt8,\n    s String))
+FixedArray(2, Nullable(UInt8))
+-- values
+[1,2,3]	1	3	3	0
+[[1,2,3],[4,5,6]]	[4,5,6]	FixedArray(3, Int16)	6	6	3
+[[1,2],[3,4]]	FixedArray(2, 2, UInt8)
+[[0,0,0],[0,0,0]]
+-- conversions
+[1,2,3]	Array(Float64)
+[['1','2'],['3','4']]	Array(Array(String))
+[1,2,3]	FixedArray(3, Float32)
+[1,2,3]
+-- functions of arrays
+3	6	1	[2,3]	[3,2,1]	Array(UInt8)	1	1
+[10,20,30]	FixedArray(3, UInt16)	[3,7]	FixedArray(2, UInt64)	[[1,2],[3,4]]	FixedArray(2, 2, UInt8)
+[2,4,6]	FixedArray(3, UInt16)	[2,3,4]	Array(UInt16)
+[1,2,3,4]	Array(UInt8)
+[1,2]	FixedArray(2, UInt8)
+[3,4]	FixedArray(2, UInt8)
+[1,2]	Array(UInt8)
+[3,4,5]	Array(UInt8)
+[[1,2],[3,4]]	Array(FixedArray(2, UInt8))
+([1,2])	Tuple(FixedArray(2, UInt8))	FixedArray(2, UInt8)
+1
+2
+[1,2]	FixedArray(2, UInt8)
+[3,4]	FixedArray(2, UInt8)
+[1,2]	FixedArray(2, UInt8)
+[3,4]	FixedArray(2, UInt8)
+0	[0,1]
+0	[2,3]
+1	[1,1]
+1	[2,3]
+[1,2]	a
+[3,4]	b
+-- table
+1	[1,2,3,4]	[[1,2,3],[4,5,6]]	['a','b']	[1,NULL]
+2	[5,6,7,8]	[[7,8,9],[10,11,12]]	['c','dd']	[NULL,2]
+10	[0,0,0,0]	[[1,2,3],[4,5,6]]	['x','0']	[0,NULL]
+11	[1,1,1,1]	[[1,2,3],[4,5,6]]	['x','1']	[1,NULL]
+12	[2,2,2,2]	[[1,2,3],[4,5,6]]	['x','2']	[2,NULL]
+1	2	[4,5,6]	4	b	1
+2	6	[10,11,12]	10	dd	\N
+10	0	[4,5,6]	4	0	0
+11	1	[4,5,6]	4	1	1
+12	2	[4,5,6]	4	2	2
+[[1,2,3],[4,5,6]]	4
+[[7,8,9],[10,11,12]]	1
+[5,6,7,8]
+[2,2,2,2]
+2
+[0,1]
+[1,0]
+[0,1]
+[0,1]
+[0,1]
+48	10
+Array(Float64)	[1,2,3,4]
+FixedArray(4, Float64)	[1,2,3,4]
+-- the size of a part: no offsets are stored
+m	FixedArray(100, 3, UInt8)	300000
+-- formats
+{"m":[[1,2],[3,4]],"s":["a","b"]}
+"[[1,2],[3,4]]"
+[[1,2],[3,4]]
+[1,2]
+[1,2,3]
+[1,2]	FixedArray(2, UInt8)

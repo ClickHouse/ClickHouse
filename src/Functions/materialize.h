@@ -40,6 +40,7 @@ public:
     [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
     [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
 
     [[nodiscard]] bool useDefaultImplementationForSparseColumns() const override { return false; }
 

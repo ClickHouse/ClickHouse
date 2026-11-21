@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -28,6 +29,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 UInt128 SerializationArray::getHash(const SerializationPtr & nested_)
@@ -510,16 +512,68 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 }
 
 
+/** The text formats of `Array` and `FixedArray` are the same, and `SerializationFixedArray` uses the text
+  * serialization of `Array` for them. So the code below works with the elements of a row of either column.
+  */
+namespace
+{
+
+struct ArrayRowElements
+{
+    const IColumn & nested_column;
+    size_t offset;
+    size_t next_offset;
+};
+
+ArrayRowElements getArrayRowElements(const IColumn & column, size_t row_num)
+{
+    if (const auto * column_fixed_array = typeid_cast<const ColumnFixedArray *>(&column))
+    {
+        size_t n = column_fixed_array->getArraySize();
+        return {column_fixed_array->getData(), row_num * n, (row_num + 1) * n};
+    }
+
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+    return {column_array.getData(), offsets[row_num - 1], offsets[row_num]};
+}
+
+IColumn & getArrayNestedColumn(IColumn & column)
+{
+    if (auto * column_fixed_array = typeid_cast<ColumnFixedArray *>(&column))
+        return column_fixed_array->getData();
+    return assert_cast<ColumnArray &>(column).getData();
+}
+
+/// Completes a row whose `size` elements were appended to the nested column.
+/// For `FixedArray` the size has to match the size of the type, otherwise the elements are removed.
+template <bool throw_exception>
+bool finishArrayRow(IColumn & column, size_t size)
+{
+    if (auto * column_fixed_array = typeid_cast<ColumnFixedArray *>(&column))
+    {
+        size_t n = column_fixed_array->getArraySize();
+        if (size == n)
+            return true;
+
+        column_fixed_array->getData().popBack(size);
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "Cannot read array of size {} as FixedArray({}, ...): the sizes don't match", size, n);
+        return false;
+    }
+
+    ColumnArray::Offsets & offsets = assert_cast<ColumnArray &>(column).getOffsets();
+    offsets.push_back(offsets.back() + size);
+    return true;
+}
+
+}
+
 template <typename Writer>
 static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && write_nested)
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
+    auto [nested_column, offset, next_offset] = getArrayRowElements(column, row_num);
 
     writeChar('[', ostr);
     for (size_t i = offset; i < next_offset; ++i)
@@ -537,10 +591,7 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    ColumnArray & column_array = assert_cast<ColumnArray &>(column);
-    ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    IColumn & nested_column = column_array.getData();
+    IColumn & nested_column = getArrayNestedColumn(column);
 
     /// Rolling back to the recorded size (instead of popping the elements this loop counted)
     /// also drops rows a failing nested reader appended before it threw or returned false.
@@ -638,8 +689,7 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
         return ReturnType(false);
     }
 
-    offsets.push_back(offsets.back() + size);
-    return ReturnType(true);
+    return ReturnType(finishArrayRow<throw_exception>(column, size));
 }
 
 void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void()> && read_func)
@@ -671,13 +721,7 @@ void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void(
 
 void SerializationArray::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
+    auto [nested_column, offset, next_offset] = getArrayRowElements(column, row_num);
 
     const size_t level = settings.hive_text.nesting_level;
     const char separator = getHiveTextDelimiter(settings, level);
@@ -744,13 +788,7 @@ bool SerializationArray::tryDeserializeText(IColumn & column, ReadBuffer & istr,
 
 void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
+    auto [nested_column, offset, next_offset] = getArrayRowElements(column, row_num);
 
     writeChar('[', ostr);
     for (size_t i = offset; i < next_offset; ++i)
@@ -764,13 +802,7 @@ void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_nu
 
 void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
+    auto [nested_column, offset, next_offset] = getArrayRowElements(column, row_num);
 
     if (offset == next_offset)
     {
@@ -778,9 +810,10 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
         return;
     }
 
-    auto nested_column_type = removeNullable(column_array.getDataPtr())->getDataType();
+    auto nested_column_type = removeNullable(nested_column.getPtr())->getDataType();
     bool print_each_element_on_separate_line =
         nested_column_type == TypeIndex::Array ||
+        nested_column_type == TypeIndex::FixedArray ||
         nested_column_type == TypeIndex::Map ||
         nested_column_type == TypeIndex::Object ||
         nested_column_type == TypeIndex::Tuple;
@@ -857,13 +890,7 @@ bool SerializationArray::tryDeserializeTextJSON(IColumn & column, ReadBuffer & i
 
 void SerializationArray::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-    const ColumnArray::Offsets & offsets = column_array.getOffsets();
-
-    size_t offset = offsets[row_num - 1];
-    size_t next_offset = offsets[row_num];
-
-    const IColumn & nested_column = column_array.getData();
+    auto [nested_column, offset, next_offset] = getArrayRowElements(column, row_num);
 
     writeCString("<array>", ostr);
     for (size_t i = offset; i < next_offset; ++i)

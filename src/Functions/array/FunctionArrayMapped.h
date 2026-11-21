@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
@@ -14,6 +15,8 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
+#include <Functions/FunctionFixedArrayAdaptor.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -105,9 +108,69 @@ public:
             return {};
     }
 
+    /// `FixedArray(N, T)` arguments are processed as `Array(T)` without converting `T`, so the arguments of the lambda
+    /// keep their types: for a multidimensional `FixedArray` they are `FixedArray` as well.
+    /// The functions that map every element to a new one (`arrayMap`) return `FixedArray` of the same size.
+    static constexpr bool keeps_fixed_array_size = requires { Impl::keeps_fixed_array_size; };
+
+    [[nodiscard]] [[nodiscard]] bool useDefaultImplementationForFixedArray() const override { return false; }
+
+    void getLambdaArgumentTypes(DataTypes & arguments) const override
+    {
+        DataTypes arguments_without_fixed_array = arguments;
+        for (auto & argument : arguments_without_fixed_array)
+            argument = removeOuterFixedArray(argument);
+
+        getLambdaArgumentTypesForArrays(arguments_without_fixed_array);
+        arguments[0] = arguments_without_fixed_array[0];
+    }
+
+    [[nodiscard]] [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto return_type = getReturnTypeForArrays(removeFixedArrayFromArguments(arguments));
+        if (auto size = getSizeOfFixedArrayResult(arguments))
+            return std::make_shared<DataTypeFixedArray>(*size, assert_cast<const DataTypeArray &>(*return_type).getNestedType());
+        return return_type;
+    }
+
+private:
+    static ColumnsWithTypeAndName removeFixedArrayFromArguments(const ColumnsWithTypeAndName & arguments)
+    {
+        ColumnsWithTypeAndName res;
+        res.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            res.push_back(removeOuterFixedArray(argument));
+        return res;
+    }
+
+    /// The result is `FixedArray` if the function keeps the size and all the arrays are `FixedArray` of the same size.
+    [[nodiscard]] [[nodiscard]] std::optional<size_t> getSizeOfFixedArrayResult(const ColumnsWithTypeAndName & arguments) const
+    {
+        if constexpr (!keeps_fixed_array_size)
+            return {};
+
+        if (arguments.size() < 2 + num_fixed_params)
+            return {};
+
+        std::optional<size_t> size;
+        for (size_t i = 1 + num_fixed_params; i < arguments.size(); ++i)
+        {
+            const auto * fixed_array_type = typeid_cast<const DataTypeFixedArray *>(arguments[i].type.get());
+            if (!fixed_array_type)
+                return {};
+
+            if (size && *size != fixed_array_type->getArraySize())
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Arrays passed to {} must have equal size, got {} and {}",
+                    getName(), arguments[1 + num_fixed_params].type->getName(), arguments[i].type->getName());
+            size = fixed_array_type->getArraySize();
+        }
+        return size;
+    }
+
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
-    void getLambdaArgumentTypes(DataTypes & arguments) const override
+    void getLambdaArgumentTypesForArrays(DataTypes & arguments) const
     {
         if (arguments.empty())
             throw Exception(
@@ -192,7 +255,7 @@ public:
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeForArrays(const ColumnsWithTypeAndName & arguments) const
     {
         /// When the Impl exposes a declarative `signature`, defer to the base
         /// IFunction path so that the DSL applies it (both argument validation
@@ -304,6 +367,7 @@ public:
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
+public:
     [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Documentation-only signatures must not take the base types-only
@@ -328,7 +392,29 @@ public:
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    [[nodiscard]] ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/, bool dry_run) const
+private:
+    [[nodiscard]] ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    {
+        /// Only the functions that keep the size return `FixedArray` instead of `Array`. The result type of other
+        /// functions can also be `FixedArray`, e.g. `arrayLast` for `FixedArray(M, FixedArray(N, T))` returns an element,
+        /// and then the result column is already a `ColumnFixedArray`.
+        auto size = getSizeOfFixedArrayResult(arguments);
+        DataTypePtr result_type_for_arrays = result_type;
+        if (size)
+            result_type_for_arrays = std::make_shared<DataTypeArray>(assert_cast<const DataTypeFixedArray &>(*result_type).getNestedType());
+
+        auto result = executeForArrays(removeFixedArrayFromArguments(arguments), result_type_for_arrays, dry_run);
+
+        if (size)
+        {
+            const auto & result_array = assert_cast<const ColumnArray &>(*result);
+            chassert(result_array.size() == input_rows_count);
+            return ColumnFixedArray::create(result_array.getDataPtr(), *size);
+        }
+        return result;
+    }
+
+    [[nodiscard]] ColumnPtr executeForArrays(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, bool dry_run) const
     {
         if (arguments.size() == 1 + num_fixed_params)
         {
