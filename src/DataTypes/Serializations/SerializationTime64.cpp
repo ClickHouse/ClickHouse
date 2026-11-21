@@ -22,6 +22,25 @@ extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+
+/// An integer token is a number of ticks; out-of-range values saturate to the `Time64` range.
+template <typename ReturnType>
+ReturnType readTime64TicksText(Time64 & x, UInt32 scale, ReadBuffer & istr)
+{
+    Int128 ticks = 0;
+    if constexpr (std::is_same_v<ReturnType, void>)
+        readIntText128Saturating(ticks, istr);
+    else if (!readIntText128Saturating<bool>(ticks, istr))
+        return false;
+    const Int128 max_ticks = Int128(3600000) * DecimalUtils::scaleMultiplier<Time64::NativeType>(scale) - 1;
+    x = static_cast<Int64>(std::clamp(ticks, -max_ticks, max_ticks));
+    return ReturnType(true);
+}
+
+}
+
 
 SerializationTime64::SerializationTime64(UInt32 scale_)
     : SerializationDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_)
@@ -171,7 +190,7 @@ void SerializationTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & i
     {
         try
         {
-            readIntText(x, istr);
+            readTime64TicksText<void>(x, scale, istr);
         }
         catch (const Exception &)
         {
@@ -195,7 +214,7 @@ bool SerializationTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuffer 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!readTime64TicksText<bool>(x, scale, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x); /// It's important to do this at the end - for exception safety.
@@ -220,7 +239,7 @@ void SerializationTime64::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     }
     else
     {
-        readIntText(x, istr);
+        readTime64TicksText<void>(x, scale, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -235,7 +254,7 @@ bool SerializationTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!readTime64TicksText<bool>(x, scale, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
