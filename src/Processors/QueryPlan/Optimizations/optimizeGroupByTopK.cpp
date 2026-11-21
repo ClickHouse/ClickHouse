@@ -359,8 +359,8 @@ static Aggregator::Params::TopKParams topKByAllKeys(size_t num_key_columns, size
 {
     return Aggregator::Params::TopKParams{
         .k = limit,
-        .directions = VectorWithMemoryTracking<int>(num_key_columns, 1),
-        .nulls_directions = VectorWithMemoryTracking<int>(num_key_columns, 1),
+        .directions = std::vector<int>(num_key_columns, 1),
+        .nulls_directions = std::vector<int>(num_key_columns, 1),
         .key_columns = num_key_columns,
         .observation_rows = 0,
         .shared_boundary = settings.top_k_optimization_shared_boundary,
@@ -400,7 +400,7 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
         return;
 
     QueryPlan::Node * input_node = merging_node->children.front();
-    VectorWithMemoryTracking<QueryPlan::Node *> sources;
+    std::vector<QueryPlan::Node *> sources;
     if (typeid_cast<const UnionStep *>(input_node->step.get()))
         sources = input_node->children;
     else
