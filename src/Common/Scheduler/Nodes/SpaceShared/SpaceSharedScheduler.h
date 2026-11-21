@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -47,6 +48,9 @@ public:
             scheduler.join();
             if (graceful)
             {
+                // Callbacks run in this thread, which must not throw either
+                LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 while (true)
                 {
@@ -145,10 +149,13 @@ public:
     }
 
 private:
-    void schedulerThread(ThreadName name)
+    /// An exception would leave every waiter hanging, so it terminates the server. MemoryTracker does not throw here.
+    void schedulerThread(ThreadName name) noexcept
     {
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
         setThreadName(name);
         EventQueue::SchedulerThread scheduler_thread(&events);
+
         while (!stop_flag.load())
         {
             if (events.tryProcess()) // Priority 0: process events

@@ -228,6 +228,7 @@ private:
 
     /// Resource request failed.
     void failed(const std::exception_ptr & ptr);
+    void failImpl(std::unique_lock<std::mutex> & lock, const std::exception_ptr & ptr);
 
     /// Grant a slot and enqueue another resource request if necessary.
     void grant();
