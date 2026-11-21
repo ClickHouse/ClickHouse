@@ -161,17 +161,17 @@ void ColumnQBit::forEachSubcolumnRecursively(RecursiveColumnCallback callback) c
     tuple->forEachSubcolumnRecursively(callback);
 }
 
-void ColumnQBit::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnQBit::prepareForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
-    VectorWithMemoryTracking<ColumnPtr> source_tuple_columns;
+    ColumnRawPtrsWithStackMemory source_tuple_columns;
     source_tuple_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto * source_qbit = typeid_cast<const ColumnQBit *>(source_column.get());
+        const auto * source_qbit = typeid_cast<const ColumnQBit *>(source_column);
         if (!source_qbit)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not QBit, but {}", getName(), source_column->getName());
 
-        source_tuple_columns.push_back(source_qbit->getTuple());
+        source_tuple_columns.push_back(source_qbit->getTuple().get());
     }
     tuple->prepareForSquashing(source_tuple_columns, factor);
 }

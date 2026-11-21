@@ -726,13 +726,13 @@ size_t ColumnString::capacity() const
     return offsets.capacity();
 }
 
-void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnString::prepareForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
     size_t new_size = size();
     size_t new_chars_size = chars.size();
     for (const auto & source_column : source_columns)
     {
-        const auto * source_string_column = typeid_cast<const ColumnString *>(source_column.get());
+        const auto * source_string_column = typeid_cast<const ColumnString *>(source_column);
         if (!source_string_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not String, but {}", getName(), source_column->getName());
 

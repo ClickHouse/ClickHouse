@@ -667,19 +667,19 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(std::span<const IColumn * const> source_columns, size_t factor)
 {
     size_t new_size = size();
-    VectorWithMemoryTracking<ColumnPtr> source_data_columns;
+    ColumnRawPtrsWithStackMemory source_data_columns;
     source_data_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto * source_array_column = typeid_cast<const ColumnArray *>(source_column.get());
+        const auto * source_array_column = typeid_cast<const ColumnArray *>(source_column);
         if (!source_array_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for squashing of {} is not Array, but {}", getName(), source_column->getName());
 
         new_size += source_array_column->size();
-        source_data_columns.push_back(source_array_column->getDataPtr());
+        source_data_columns.push_back(&source_array_column->getData());
     }
 
     getOffsets().reserve_exact(new_size * factor);
@@ -1888,17 +1888,17 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnArray::chooseDynamicStructureForMerge(std::span<const IColumn * const> source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    ColumnRawPtrsWithStackMemory nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
-        const auto * source_array = typeid_cast<const ColumnArray *>(source_column.get());
+        const auto * source_array = typeid_cast<const ColumnArray *>(source_column);
         if (!source_array)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column for merge of {} is not Array, but {}", getName(), source_column->getName());
 
-        nested_source_columns.push_back(source_array->getDataPtr());
+        nested_source_columns.push_back(&source_array->getData());
     }
 
     data->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
@@ -1913,20 +1913,20 @@ void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
     data->takeExactDynamicStructureFrom(source_array->getData());
 }
 
-void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnArray::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    ColumnRawPtrsWithStackMemory nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
         if (!source_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
 
-        const auto * array_column = typeid_cast<const ColumnArray *>(source_column.get());
+        const auto * array_column = typeid_cast<const ColumnArray *>(source_column);
         if (!array_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Array, but {}", source_column->getName());
 
-        nested_source_columns.push_back(array_column->getDataPtr());
+        nested_source_columns.push_back(&array_column->getData());
     }
 
     if (!data)

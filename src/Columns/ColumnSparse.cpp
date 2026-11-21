@@ -1098,12 +1098,12 @@ const ColumnSparse & getSourceSparseColumn(const IColumn & source, const ColumnS
 
 }
 
-void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnSparse::chooseDynamicStructureForMerge(std::span<const IColumn * const> source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<ColumnPtr> values_source_columns;
+    ColumnRawPtrsWithStackMemory values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "merge").getValuesPtr());
+        values_source_columns.push_back(&getSourceSparseColumn(*source_column, *this, "merge").getValuesColumn());
     values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
 }
 
@@ -1112,12 +1112,12 @@ void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
     values->takeExactDynamicStructureFrom(getSourceSparseColumn(source, *this, "dynamic structure").getValuesColumn());
 }
 
-void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnSparse::takeOrCalculateStatisticsFrom(std::span<const IColumn * const> source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> values_source_columns;
+    ColumnRawPtrsWithStackMemory values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        values_source_columns.push_back(getSourceSparseColumn(*source_column, *this, "statistics").getValuesPtr());
+        values_source_columns.push_back(&getSourceSparseColumn(*source_column, *this, "statistics").getValuesColumn());
     values->takeOrCalculateStatisticsFrom(values_source_columns);
 }
 
