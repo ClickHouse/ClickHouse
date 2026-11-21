@@ -1,0 +1,6 @@
+--- two record variables whose slabs begin at the same offset of the record
+1
+--- two record variables whose slabs overlap partially
+1
+--- two record variables whose slabs sit side by side read back correctly
+1	2

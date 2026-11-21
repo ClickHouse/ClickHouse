@@ -1,0 +1,11 @@
+a	Int32					
+b	Int32					
+a.nc	0	0
+a.nc	1	0
+a.nc	2	0
+b.nc	0	0
+b.nc	0	10
+0	\N
+1	\N
+2	\N
+THERE_IS_NO_COLUMN

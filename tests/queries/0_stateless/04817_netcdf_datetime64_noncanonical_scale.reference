@@ -1,0 +1,18 @@
+--- scale 1 becomes milliseconds
+1
+981173106700	2001-02-03 04:05:06.700
+--- scale 4 becomes microseconds
+1
+981173106789100	2001-02-03 04:05:06.789100
+--- scale 7 becomes nanoseconds, before the epoch as well
+1
+-470519693210876600	1955-02-03 04:05:06.789123400
+--- a named scale is written as it is
+1
+981173106789123
+--- a NULL is not rescaled and the fill value avoids the rescaled data
+981173106700
+\N
+981173106700
+--- a value that does not fit after the rescale throws
+1

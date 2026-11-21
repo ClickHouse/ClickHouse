@@ -1,0 +1,6 @@
+--- a result set with two columns of the same name cannot be written
+1
+--- the same through a file
+1
+--- distinct names are written and read back
+1	2

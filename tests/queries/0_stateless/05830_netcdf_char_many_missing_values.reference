@@ -1,0 +1,6 @@
+--- without the setting, the sentinels are values
+65536	16384	16384
+--- with the setting, every sentinel is NULL
+Nullable(String)	65536	32768	['a','d']
+--- the first row does not wait for comparisons of every value with every sentinel
+0	a
