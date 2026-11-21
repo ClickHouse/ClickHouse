@@ -1,0 +1,26 @@
+<test>
+    <create_query>
+        CREATE TABLE bench_single_row_groups
+        (
+            key UInt64,
+            mx SimpleAggregateFunction(max, UInt32),
+            mn SimpleAggregateFunction(min, UInt32),
+            ba SimpleAggregateFunction(groupBitAnd, UInt32),
+            al SimpleAggregateFunction(anyLast, UInt32)
+        )
+        ENGINE = AggregatingMergeTree()
+        ORDER BY key
+    </create_query>
+
+    <!-- Several parts with disjoint keys: every group in FINAL consists of a single row. -->
+    <fill_query>SYSTEM STOP MERGES bench_single_row_groups</fill_query>
+    <fill_query>INSERT INTO bench_single_row_groups SELECT number * 4, number, number, number, number FROM numbers_mt(2500000)</fill_query>
+    <fill_query>INSERT INTO bench_single_row_groups SELECT number * 4 + 1, number, number, number, number FROM numbers_mt(2500000)</fill_query>
+    <fill_query>INSERT INTO bench_single_row_groups SELECT number * 4 + 2, number, number, number, number FROM numbers_mt(2500000)</fill_query>
+    <fill_query>INSERT INTO bench_single_row_groups SELECT number * 4 + 3, number, number, number, number FROM numbers_mt(2500000)</fill_query>
+
+    <query>SELECT * FROM bench_single_row_groups FINAL FORMAT Null</query>
+    <query>SELECT * FROM bench_single_row_groups FINAL SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_single_row_groups</drop_query>
+</test>
