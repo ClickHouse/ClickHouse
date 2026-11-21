@@ -53,3 +53,7 @@ SELECT hex(CAST(d AS String)), toTypeName(d) FROM file(currentDatabase() || '_05
 CREATE TABLE v (k UInt32, m SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree ORDER BY k;
 INSERT INTO v VALUES (1, 1 + 1);
 SELECT m, if(k > 0, m, m), CASE WHEN k > 0 THEN m ELSE m END, toTypeName(if(k > 0, m, m)) FROM v;
+CREATE TABLE b (k UInt32, v SimpleAggregateFunction(sumWithOverflow, Bool), a SimpleAggregateFunction(any, Bool), s SimpleAggregateFunction(sumWithOverflow, SimpleAggregateFunction(any, Bool))) ENGINE = Memory;
+INSERT INTO b SELECT 1, toUInt16(2), toUInt16(2), toUInt16(2);
+INSERT INTO b SELECT 2, toNullable(toUInt16(2)), toNullable(toUInt16(2)), toNullable(toUInt16(2)) SETTINGS insert_null_as_default = 1;
+SELECT k, toUInt8(v), toUInt8(a), toUInt8(s), toUInt16(2) IN (SELECT v FROM b WHERE k = 1), toUInt16(2) IN (SELECT a FROM b WHERE k = 1), toUInt16(2) IN (SELECT s FROM b WHERE k = 1) FROM b ORDER BY k;

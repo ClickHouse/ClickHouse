@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -207,6 +208,8 @@ DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
     DataTypePtr result = type;
     while (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(result->getCustomName()))
         result = DataTypeFactory::instance().get(simple->getArgumentsDataTypes()[0]->getName());
+    if (result != type && isBool(result) && !isSimpleAggregateFunctionOfBool(*type))
+        return std::make_shared<DataTypeUInt8>();
     return result;
 }
 
