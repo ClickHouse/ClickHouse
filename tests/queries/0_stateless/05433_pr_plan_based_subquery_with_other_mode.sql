@@ -63,17 +63,18 @@ SET parallel_replicas_plan_based = 0;
 (SELECT sum(x) FROM t_05433 SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1) UNION ALL SELECT sum(x) FROM t_05433;
 SET parallel_replicas_plan_based = DEFAULT;
 
--- Distributed `INSERT SELECT` is query-based, so the setting has no effect there.
+-- Distributed `INSERT SELECT` is query-based, so the setting has no effect there. Only a replicated target
+-- takes that path.
 SELECT '-- distributed insert';
-DROP TABLE IF EXISTS t_05433_dst;
-CREATE TABLE t_05433_dst (x UInt64) ENGINE = Memory;
+DROP TABLE IF EXISTS t_05433_dst SYNC;
+CREATE TABLE t_05433_dst (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_05433_dst', 'r1') ORDER BY ();
 INSERT INTO t_05433_dst SELECT x FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 1)
 SETTINGS parallel_replicas_plan_based = 1, parallel_distributed_insert_select = 2;
 SELECT count() FROM t_05433_dst;
 INSERT INTO t_05433_dst SELECT x FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 1)
 SETTINGS parallel_replicas_plan_based = 0, parallel_distributed_insert_select = 2;
 SELECT count() FROM t_05433_dst;
-DROP TABLE t_05433_dst;
+DROP TABLE t_05433_dst SYNC;
 
 -- The query's setting applies to its subqueries.
 SELECT '-- whole query';
