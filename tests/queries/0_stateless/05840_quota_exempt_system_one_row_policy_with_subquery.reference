@@ -1,0 +1,4 @@
+no row policy	0	0
+row policy	0	0
+row policy with subquery	1	1
+row policy with subquery, no FROM	1	1
