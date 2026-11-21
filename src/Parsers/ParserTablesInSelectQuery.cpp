@@ -1603,6 +1603,30 @@ If `ORDER BY` starts with the columns of the sorting key of a `MergeTree` table,
 
 The [arrayJoin](/reference/functions/regular-functions/array-join) function also produces the elements of each array in their order in the array. But if a query has more than one `arrayJoin` call, the first call is not always the outer loop. For more information, see [Row order](/reference/functions/regular-functions/array-join#row-order).
 
+## CROSS JOIN unnest {#cross-join-unnest}
+
+`FROM t CROSS JOIN unnest(t.arr)` is the PostgreSQL `LATERAL` shape. ClickHouse rewrites it to `ARRAY JOIN t.arr AS unnest`. The original array column is kept. Empty arrays drop rows, same as `ARRAY JOIN`.
+
+`ARRAY JOIN` remains the native ClickHouse form.
+
+```sql
+SELECT id, unnest, arr
+FROM
+(
+    SELECT 1 AS id, [10, 20] AS arr
+) AS t
+CROSS JOIN unnest(t.arr);
+```
+
+```response
+┌─id─┬─unnest─┬─arr────┐
+│  1 │     10 │ [10,20] │
+│  1 │     20 │ [10,20] │
+└────┴────────┴─────────┘
+```
+
+This rewrite requires the analyzer (enabled by default). For a constant array without a left table, use the [`unnest`](/reference/functions/table-functions/unnest) table function: `SELECT * FROM unnest([1, 2, 3])`.
+
 ## Implementation Details {#implementation-details}
 
 The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](/reference/statements/select/where)/[PREWHERE](/reference/statements/select/prewhere) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.
@@ -1616,6 +1640,7 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 ## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+- Table function: [`unnest`](/reference/functions/table-functions/unnest)
 )DOCS_MD",
         .syntax = R"(
 SELECT <expr_list>
