@@ -98,10 +98,12 @@ public:
 /// a non-NULL value: `LowCardinality` or `Nullable` added or dropped, at any depth of `Array`.
 /// Dropping `Nullable` throws on NULL, but an index may skip such granules and the query will not throw.
 /// Pass `allow_drop_nullable = false` when the predicate is replaced and must still throw, e.g. by direct read from a text index.
-bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable = true);
+/// `allow_conversion_functions` also accepts a built-in one-argument conversion to the argument's own type, e.g. `toFloat64`
+/// of a `Float64`. Index conditions must not pass it: they match the unwrapped key, so an index on `toString(s)` would be missed.
+bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable = true, bool allow_conversion_functions = false);
 
 /// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
-RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true, bool allow_conversion_functions = false);
 const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
