@@ -87,9 +87,15 @@ WorkloadResourceManager::Resource::~Resource()
 
 void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 {
+    // The node of the root workload entity is the implicit root, which always exists. It has no parent, priority or
+    // precedence, so `updateNode` sets its settings in place.
     if (info.name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload must have a name in resource '{}'",
-            resource_name);
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        updateNode(defaults, info);
+        return;
+    }
 
     if (info.name == info.parent)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Self-referencing workload '{}' is not allowed in resource '{}'",
@@ -117,6 +123,14 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 
 void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 {
+    if (info.name.empty())
+    {
+        NodeInfo defaults = info;
+        defaults.settings = {};
+        updateNode(info, defaults);
+        return;
+    }
+
     if (!node_for_workload.contains(info.name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for removing workload '{}' does not exist in resource '{}'",
             info.name, resource_name);

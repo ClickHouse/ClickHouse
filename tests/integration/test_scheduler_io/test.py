@@ -981,6 +981,45 @@ def test_resource_any_disk():
     )
 
 
+def test_replaced_resource_releases_disk_operations():
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_resource';
+        insert into data select * from numbers(1e6);
+    """
+    )
+
+    node.query(
+        """
+        create resource io (read disk s3_no_resource);
+        create workload all settings max_bytes_inflight = 1000000;
+    """
+    )
+
+    def dequeued():
+        return int(
+            node.query(
+                "select sum(dequeued_requests) from system.scheduler where resource='io' and type='request_queue'"
+            )
+        )
+
+    node.query("select sum(key*key) from data settings workload='all'")
+    read_requests = dequeued()
+    assert read_requests > 0
+
+    # After the replacement `io` serves writes only, so the reads of the same query are no longer scheduled through
+    # it (the query may still schedule a request that is not a read)
+    node.query("create or replace resource io (write disk s3_no_resource)")
+    before = dequeued()
+    node.query("select sum(key*key) from data settings workload='all'")
+    assert dequeued() - before < read_requests
+
+    before = dequeued()
+    node.query("insert into data select * from numbers(1e5) settings workload='all'")
+    assert dequeued() > before
+
+
 def test_workload_entity_keeper_storage():
     node.query("create resource io_write (write disk s3_no_resource);")
     node.query("create resource io_read (read disk s3_no_resource);")
@@ -1173,11 +1212,12 @@ def test_config_based_workloads_and_resources():
         == "2\n"
     )
 
+    # The root workload (empty name) is always present
     assert (
         node.query(
             "SELECT count() FROM system.workloads"
         )
-        == "2\n"
+        == "3\n"
     )
 
     # Verify scheduler nodes exist for config entities
@@ -1250,11 +1290,12 @@ def test_config_based_workloads_and_resources():
         )
         == "1\n"
     )
+    # The root workload (empty name) is always present
     assert (
         node.query(
             "SELECT count() FROM system.workloads"
         )
-        == "2\n"
+        == "3\n"
     )
 
     # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
@@ -1264,7 +1305,7 @@ def test_config_based_workloads_and_resources():
 def test_config_and_sql_root_workloads_coexist():
     # A root workload defined in the server configuration and a root workload created via SQL must
     # coexist as independent roots of the workload forest. This exercises the configuration carrier
-    # (loaded via setLocalEntities) alongside the SQL carrier (storeEntity) - two different paths.
+    # (loaded via setOwnEntities) alongside the SQL carrier (storeEntity) - two different paths.
     update_workloads_config(node, resources_and_workloads="CREATE WORKLOAD config_root")
     node.query("CREATE WORKLOAD sql_root")
 

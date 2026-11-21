@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT -m -q "
     DROP RESOURCE 04409_mem;
 "
 
-echo '--- counts after drop (expect 0 and 0) ---'
+echo '--- counts after drop (expect 1, the root workload, and 0) ---'
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.workloads"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.resources"
 
