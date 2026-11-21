@@ -17,6 +17,7 @@ namespace DB
 
     class ActionsDAG;
     struct FormatSettings;
+    struct SelectQueryInfo;
 
     struct ReadFromFormatInfo
     {
@@ -147,4 +148,7 @@ namespace DB
     /// *Cluster read steps and drives pipes.reserve()/pipe.resize(); unbounded it can overflow the pipe
     /// vector (std::length_error) or exhaust memory.
     size_t clampClusterFunctionNumStreams(UInt64 num_streams);
+
+    /// True if nothing reads the values of the columns of this read: a cached row count can then be returned as one chunk.
+    bool readsOnlyRowCount(const SelectQueryInfo & query_info, const ReadFromFormatInfo & info);
 }
