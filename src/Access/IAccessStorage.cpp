@@ -761,6 +761,12 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     if (!authenticationTypeIsVerifiedLocally(other_method.getType()))
                         continue;
 
+                    /// An AWS signature can be checked only against the plaintext password, so a restricting method storing
+                    /// a hash of the password could not take part in this combination, and the login would regain the broader
+                    /// rights or lifetime of the matched method. See `Authentication::awsSignatureV4CannotVerify`.
+                    if (typeid_cast<const AWSSignatureV4Credentials *>(&credentials) && Authentication::awsSignatureV4CannotVerify(other_method))
+                        throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
+
                     SettingsChanges discarded_settings;
                     if (areCredentialsValid(user->getName(), other_method, credentials, external_authenticators, client_info, discarded_settings, /* check_valid_until = */ false)
                         != Authentication::CredentialsCheckResult::Success)
