@@ -105,7 +105,7 @@ ORDER BY log_comment;
 -- The probe analyzes the parts on several threads, and their per-partition conditions leave too few marks to load the statistics.
 SELECT DISTINCT message_format_string
 FROM system.text_log
-WHERE event_date >= yesterday() AND query_id IN (
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id IN (
         SELECT query_id FROM system.query_log
         WHERE current_database = currentDatabase() AND log_comment = '05339_statistics' AND type = 'QueryFinish')
     AND message_format_string IN (
