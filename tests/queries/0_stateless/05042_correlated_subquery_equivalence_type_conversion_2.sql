@@ -114,7 +114,7 @@ SELECT s FROM t_outer_21 AS o WHERE EXISTS (SELECT 1 FROM t_inner_21 AS i WHERE 
 -- Scalar count() through the accurate-cast pre-filter: the outer default value (0) is
 -- sensitive to non-convertible inner values folding into the nested default, so the counts
 -- (not only the plan probes) must show that they are filtered out. Unmatched outer rows
--- print NULL, as established in case 5.
+-- print 0, the empty-input value of count(), as in case 5.
 
 SELECT '-- Case 22: scalar count() through narrowing, outer Int32 vs inner Int64; outer 0 must count only the genuine inner 0 (non-convertible values must not fold into it), and 705032704 (= 5000000000 mod 2^32) must not count 5000000000';
 CREATE TABLE t_outer_22 (x Int32) ENGINE = MergeTree ORDER BY tuple();

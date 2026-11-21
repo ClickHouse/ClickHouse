@@ -259,11 +259,11 @@ Subquery - Scalar subquery
 6	\N	44
 Subquery - Correlated
 1	11	2
-2	\N	\N
+2	\N	0
 3	33	1
 4	44	1
 5	11	2
-6	\N	\N
+6	\N	0
 CASE - On NULL
 1	low
 2	null tuple

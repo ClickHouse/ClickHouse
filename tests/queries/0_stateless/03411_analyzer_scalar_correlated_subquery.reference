@@ -30,5 +30,3 @@ QUERY id: 0
                   LIST id: 15, nodes: 2
                     COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
                     CONSTANT id: 16, constant_value: UInt64_2, constant_value_type: UInt8
-0
-1
