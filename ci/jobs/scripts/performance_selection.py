@@ -12,9 +12,10 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
-from ci.jobs.performance_coverage_sharding import test_identity
+from ci.jobs.performance_coverage_sharding import assign_tests, load_timings, test_identity
 from ci.jobs.scripts.coverage_selection import (
     attach_bracket_owners,
     build_bracket_owners_queries,
@@ -704,3 +705,46 @@ class PerformanceSelection(Targeting):
         )
         selected_files = sorted(available[name] for name in selected)
         return selected_files, set(selected_files)
+
+    def shard_tests(self, test_files, shard, shards, arch, directory=Path("tests/performance")):
+        # Selected tests run all their queries; balance the runtimes of the earlier PR runs that did too.
+        # Every attempt of the run reads the same rows, so a rerun of some shards with the same selection keeps the assignment of the others.
+        start = datetime.fromtimestamp(self.info.workflow_start_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        cutoff = sql_string(start)
+        rows = self.rows(f"""
+            SELECT test, quantileExact(wall_clock_sec) AS seconds
+            FROM (
+                SELECT test, wall_clock_sec, queries, max(queries) OVER (PARTITION BY test) AS all_queries
+                FROM perf_test_times_v1
+                WHERE arch = {sql_string(arch)} AND workflow_name = 'PR' AND wall_clock_sec > 0
+                  AND check_start_time >= toDateTime({cutoff}, 'UTC') - INTERVAL 8 DAY
+                  AND check_start_time < toDateTime({cutoff}, 'UTC') - INTERVAL 1 DAY
+            )
+            WHERE queries = all_queries
+            GROUP BY test FORMAT JSONEachRow
+        """)
+        coverage = load_timings()
+        timings = {
+            "job_overhead_seconds": 0,
+            "tests": {
+                row["test"] + ".xml": {
+                    "seconds": float(row["seconds"]),
+                    "kind": "measured_wall",
+                    # A test changed since the coverage table was measured keeps the changed-input floor.
+                    "input_sha256": coverage["tests"].get(row["test"] + ".xml", {}).get("input_sha256"),
+                }
+                for row in rows
+            },
+        }
+        buckets, plan = assign_tests(
+            [directory / name for name in test_files],
+            shards,
+            timings if timings["tests"] else coverage,
+            skip_shell_queries=False,
+        )
+        self.selection_diagnostics["shard_balance"] = {
+            "weights_before": start,
+            "weighted_tests": len(timings["tests"]),
+            "predicted_seconds": plan["predicted_job_seconds"],
+        }
+        return sorted(path.name for path in buckets[shard])
