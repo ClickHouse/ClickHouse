@@ -336,6 +336,16 @@ void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(table_id.table_name);
     hash_state.update(table_id.uuid);
     hash_state.update(format);
+
+    /// The children are folded below in order, without their roles, and an absent member is skipped. Several members
+    /// have the same type (`select` and `returning` are both `ASTSelectWithUnionQuery`, `infile` and `compression`
+    /// are both literals), so hash which members are present: otherwise `INSERT INTO t FROM INFILE 'f' SELECT 1`
+    /// and `INSERT INTO t RETURNING (SELECT 1) FROM INFILE 'f'` would have the same hash.
+    UInt16 present_members = 0;
+    for (const auto & member : {infile, compression, table_function, partition_by, database, table, columns, select, returning, settings_ast})
+        present_members = static_cast<UInt16>((present_members << 1) | (member != nullptr));
+    hash_state.update(present_members);
+
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
