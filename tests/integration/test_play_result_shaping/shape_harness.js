@@ -62,16 +62,47 @@ const HELPERS = [
     'sortOrderExpression', 'filterExpression', 'shapeQueryKey',
     'applySortToggle', 'resetPagination', 'clearResultShape',
     'shapeUrlParams', 'resolveShapeForRun', 'shapeContextKey',
-    'snapshotShapeContext', 'duplicateColumnNames', 'resultIsWorthShaping',
+    'snapshotShapeContext', 'sameShapeContext', 'duplicateColumnNames', 'resultIsWorthShaping',
 ];
+
+/// The connection-identity functions `sameShapeContext` compares the account with, defined elsewhere
+/// in the page script, plus `rememberImplicitUser` for a scenario to learn the implicit user.
+const IDENTITY_FUNCTIONS = [
+    'effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
+    'resolvedImplicitUser', 'sameConnectionUser', 'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser',
+];
+
+/// The source of a top-level `function NAME(` declaration, up to its matching closing brace (string
+/// literals and comments are skipped while matching braces).
+function extractFunction(js, name) {
+    const m = js.match(new RegExp(`(?:^|\\n)function\\s+${name}\\s*\\(`));
+    if (!m) throw new Error(`function ${name} not found in the page script`);
+    const start = m.index + (m[0].startsWith('\n') ? 1 : 0);
+    let i = js.indexOf('{', start);
+    let depth = 0;
+    for (; i < js.length; ++i) {
+        const c = js[i];
+        if (c === '/' && js[i + 1] === '/') { i = js.indexOf('\n', i); continue; }
+        if (c === '/' && js[i + 1] === '*') { i = js.indexOf('*/', i) + 1; continue; }
+        if (c === '\'' || c === '"' || c === '`') {
+            for (++i; i < js.length && js[i] !== c; ++i) if (js[i] === '\\') ++i;
+            continue;
+        }
+        if (c === '{') ++depth;
+        if (c === '}' && --depth === 0) return js.slice(start, i + 1);
+    }
+    throw new Error(`unbalanced braces in function ${name}`);
+}
 
 function extractShapeHelpers(js) {
     const start = js.indexOf('function sanitizeSortColumns(');
     const end = js.indexOf('function commitResultShape(', start);
     if (start < 0 || end < 0) throw new Error('shape helper markers not found in the page script');
-    const sandbox = {};
-    vm.runInNewContext(js.slice(start, end), sandbox, { filename: 'shape_helpers.js' });
-    for (const name of HELPERS) {
+    /// `restampPendingImplicitUser` rewrites the page state recorded with a marker; there is none here.
+    const sandbox = { URL, location: { href: 'http://localhost:8123/play' }, restampPendingImplicitUser() {} };
+    const identity = IDENTITY_FUNCTIONS.map(name => extractFunction(js, name)).join('\n\n');
+    vm.runInNewContext(js.slice(start, end) + '\n\n' + identity, sandbox, { filename: 'shape_helpers.js' });
+    for (const name of HELPERS.concat(IDENTITY_FUNCTIONS)) {
         if (typeof sandbox[name] !== 'function') throw new Error(name + ' is missing from the extracted helpers');
     }
     return sandbox;
@@ -425,6 +456,52 @@ async function main() {
         check('snapshot-context', 'a snapshot without a producing query stays unbound',
             H.snapshotShapeContext({ data: '1' }), null);
         check('snapshot-context', 'a missing snapshot stays unbound', H.snapshotShapeContext(null), null);
+    }
+
+    /// Contract 16: the account of the run context is compared like the connection identity
+    /// (`sameConnectionUser`), not by the spelling of the `user` field. A result produced by an
+    /// implicit login (an empty field, stamped with the account the server reported) and rerun after
+    /// the password manager refilled that account's name is the same account, so the shape (filters,
+    /// sort, page) is kept - dropping it would turn a filtered or paginated query into an unrestricted
+    /// one. Another refilled account, or a stamp that denotes no known account, still drops it.
+    {
+        const server = 'http://localhost:8123/';
+        const snapshot = {
+            query: 'SELECT * FROM events',
+            database: 'a', url: server, user: '', implicitUser: 'alice', params: {},
+        };
+        const shaped = () => {
+            const tab = makeTab(snapshot.query, H.snapshotShapeContext(snapshot));
+            tab.sortColumns.push({ name: 'EventTime', desc: false });
+            tab.filters.UserID = '42';
+            tab.pagination.page = 2;
+            tab.pagination.size = 100;
+            return tab;
+        };
+        const refilled = H.shapeContextKey('a', server, 'alice', {}, H.implicitUserStamp(server, 'alice'));
+        const expected = H.shapeUrlParams(shaped());
+        check('implicit-account', 'a restored implicit result rerun after the refill keeps the shape',
+            H.resolveShapeForRun(shaped(), snapshot.query, refilled), expected);
+        check('implicit-account', 'a refill of another account drops the shape',
+            H.resolveShapeForRun(shaped(), snapshot.query, H.shapeContextKey('a', server, 'bob', {}, '')), '');
+        check('implicit-account', 'a stamp that denotes no known account does not match the refilled name',
+            H.sameShapeContext(H.shapeContextKey('a', server, '', {}, ''), refilled), false);
+
+        /// A run launched before this visit learned the implicit name is stamped with a marker of the
+        /// visit; once the name is learned, the marker denotes that account, so a rerun under the
+        /// learned stamp or the refilled name keeps the shape.
+        const marker_context = H.shapeContextKey('a', server, '', {}, H.implicitUserStamp(server, ''));
+        check('implicit-account', 'the same marker is the same context before the name is learned',
+            H.sameShapeContext(marker_context, H.shapeContextKey('a', server, '', {}, H.implicitUserStamp(server, ''))), true);
+        check('implicit-account', 'a marker does not match a named account before the name is learned',
+            H.sameShapeContext(marker_context, refilled), false);
+        H.rememberImplicitUser(server, 'alice');
+        check('implicit-account', 'a marker matches the refilled name once the name is learned',
+            H.sameShapeContext(marker_context, refilled), true);
+        check('implicit-account', 'a marker matches the learned stamp once the name is learned',
+            H.sameShapeContext(marker_context, H.shapeContextKey('a', server, '', {}, H.implicitUserStamp(server, ''))), true);
+        check('implicit-account', 'the account does not make another database the same context',
+            H.sameShapeContext(marker_context, H.shapeContextKey('b', server, 'alice', {}, '')), false);
     }
 
     /// Contract 14: a result can legitimately carry one column name twice (`SELECT 1 AS x, 2 AS x`, a
