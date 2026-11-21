@@ -182,6 +182,11 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
+    /// The index of the shard of every sharding key slot (`Cluster::SlotToShard`), which was used to compute `optimized_cluster`.
+    /// It comes either from the shard weights or from the bucket map of the table.
+    ///
+    /// Configured in StorageDistributed::getQueryProcessingStage() together with `optimized_cluster`.
+    std::shared_ptr<const std::vector<UInt64>> slot_to_shard;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 

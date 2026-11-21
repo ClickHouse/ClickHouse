@@ -20,6 +20,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -49,6 +50,12 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsUInt64 bucket_map_buckets;
+    extern const DistributedSettingsString bucket_map_zookeeper_path;
 }
 
 namespace ErrorCodes
@@ -759,6 +766,11 @@ StoragePtr DatabaseRemote::fetchTable(
     if (table_cluster->getShardsInfo().size() > 1)
         sharding_key = makeASTFunction("rand");
 
+    /// A table proxy has no definition, so it does not take the bucket map from the server configuration.
+    DistributedSettings distributed_settings = local_context->getDistributedSettings();
+    distributed_settings[DistributedSetting::bucket_map_zookeeper_path] = "";
+    distributed_settings[DistributedSetting::bucket_map_buckets] = 0;
+
     return std::make_shared<StorageDistributed>(
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -771,7 +783,7 @@ StoragePtr DatabaseRemote::fetchTable(
         sharding_key,
         /* storage_policy_name_ = */ "default",
         /* relative_data_path_ = */ String{},
-        local_context->getDistributedSettings(),
+        distributed_settings,
         LoadingStrictnessLevel::ATTACH,
         /// The sharding key is synthesized here, not supplied by the user.
         /* is_fresh_definition = */ false,
