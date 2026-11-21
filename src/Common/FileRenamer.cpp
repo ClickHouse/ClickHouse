@@ -1,17 +1,15 @@
 #include <Common/FileRenamer.h>
+#include <base/pathToString.h>
 
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/re2.h>
 
 #include <chrono>
-#include <filesystem>
 #include <map>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -32,8 +30,8 @@ FileRenamer::FileRenamer(const String & renaming_rule)
 String FileRenamer::generateNewFilename(const String & filename) const
 {
     // Split filename and extension
-    String file_base = fs::path(filename).stem();
-    String file_ext = fs::path(filename).extension();
+    String file_base = pathToString(pathFromString(filename).stem());
+    String file_ext = pathToString(pathFromString(filename).extension());
 
     // Get current timestamp in microseconds
     String timestamp;

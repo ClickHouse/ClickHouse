@@ -4,6 +4,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <filesystem>
+
 
 namespace DB
 {
@@ -36,10 +38,10 @@ private:
     void createDirectory();
     void loadEntitiesImpl();
     ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name);
-    ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const String & file_path, bool check_file_exists);
-    String getFilePath(WorkloadEntityType entity_type, const String & entity_name) const;
+    ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const std::filesystem::path & file_path, bool check_file_exists);
+    std::filesystem::path getFilePath(WorkloadEntityType entity_type, const String & entity_name) const;
 
-    String dir_path;
+    std::filesystem::path dir_path;
     std::atomic<bool> entities_loaded = false;
 };
 

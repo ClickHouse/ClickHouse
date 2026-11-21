@@ -1,13 +1,18 @@
+#include <base/pathToString.h>
 #include <Server.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
+#if !defined(OS_WINDOWS)
 #include <sys/resource.h>
+#endif
 #include <sys/stat.h>
 #include <sys/types.h>
+#if !defined(OS_WINDOWS)
 #include <pwd.h>
+#endif
 #include <unistd.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -667,7 +672,7 @@ std::string getCanonicalPath(std::string && path, const std::string & base = {})
     if (path.empty())
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "path configuration parameter is empty");
     if (!base.empty() && fs::path(path).is_relative())
-        path = fs::weakly_canonical(fs::path(base) / path);
+        path = pathToGenericString(fs::weakly_canonical(fs::path(base) / path));
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -1898,7 +1903,7 @@ try
 
     global_context->setPath(path_str);
 
-    StatusFile status{path / "status", StatusFile::write_full_info};
+    StatusFile status{pathToGenericString(path / "status"), StatusFile::write_full_info};
 
     ServerUUID::load(path / "uuid", log);
 
@@ -2124,6 +2129,11 @@ try
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
 
+#if defined(OS_WINDOWS)
+    /// There is no equivalent limit to raise: Windows caps the number of *stdio streams*
+    /// (`_setmaxstdio`, and only for the CRT's own layer), not the number of open handles, which
+    /// is bounded by memory rather than by a per-process rlimit.
+#else
     /// Try to increase limit on number of open files.
     {
         rlimit rlim{};
@@ -2145,6 +2155,7 @@ try
                 LOG_DEBUG(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
         }
     }
+#endif
 
 #if defined(RLIMIT_NPROC)
     /// Try to increase limit on number of threads.
@@ -2201,7 +2212,7 @@ try
     {
         auto flags_path = path / "flags/";
         fs::create_directories(flags_path);
-        global_context->setFlagsPath(flags_path);
+        global_context->setFlagsPath(pathToGenericString(flags_path));
     }
 
     /** Directory with user provided files that are usable by 'file' table function.
@@ -2209,7 +2220,7 @@ try
     {
         const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
         std::string user_files_path = user_files_path_setting.changed
-            ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
+            ? getCanonicalPath(String(user_files_path_setting.value), path_str) : pathToGenericString(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
@@ -2217,14 +2228,14 @@ try
     {
         const auto & user_scripts_path_setting = server_settings[ServerSetting::user_scripts_path];
         std::string user_scripts_path = user_scripts_path_setting.changed
-            ? getCanonicalPath(String(user_scripts_path_setting.value), path_str) : String(path / "user_scripts/");
+            ? getCanonicalPath(String(user_scripts_path_setting.value), path_str) : pathToGenericString(path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
     {
         const auto & dynamic_udf_path_setting = server_settings[ServerSetting::dynamic_user_defined_executable_functions_path];
         std::string dynamic_udf_path = dynamic_udf_path_setting.changed
-            ? getCanonicalPath(String(dynamic_udf_path_setting.value), path_str) : String(path / "dynamic_user_defined_executable_functions/");
+            ? getCanonicalPath(String(dynamic_udf_path_setting.value), path_str) : pathToGenericString(path / "dynamic_user_defined_executable_functions/");
         global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
         fs::create_directories(dynamic_udf_path);
     }
@@ -2233,8 +2244,8 @@ try
     {
         const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
         std::string top_level_domains_path = top_level_domains_path_setting.changed
-            ? getCanonicalPath(String(top_level_domains_path_setting.value), path_str) : String(path / "top_level_domains/");
-        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
+            ? getCanonicalPath(String(top_level_domains_path_setting.value), path_str) : pathToGenericString(path / "top_level_domains/");
+        TLDListsHolder::getInstance().parseConfig(pathToGenericString(fs::path(top_level_domains_path) / ""), config());
     }
 
     {
@@ -3237,7 +3248,9 @@ try
             if (global_context->isServerCompletelyStarted())
                 CannotAllocateThreadFaultInjector::setFaultProbability(new_server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
 
-            /// Update core dump size limit.
+#if !defined(OS_WINDOWS)
+            /// Update core dump size limit. Windows writes a minidump through Windows Error
+            /// Reporting instead, whose size is a policy setting rather than an rlimit.
             {
                 rlimit rlim{};
                 if (getrlimit(RLIMIT_CORE, &rlim) == 0)
@@ -3247,6 +3260,7 @@ try
                         LOG_WARNING(log, "Cannot set max size of core file to {}", rlim.rlim_cur);
                 }
             }
+#endif
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
@@ -3509,7 +3523,7 @@ try
     {
         const auto & tmp_path_setting = server_settings[ServerSetting::tmp_path];
         std::string temporary_path = tmp_path_setting.changed
-            ? getCanonicalPath(String(tmp_path_setting.value), path_str) : String(path / "tmp/");
+            ? getCanonicalPath(String(tmp_path_setting.value), path_str) : pathToGenericString(path / "tmp/");
         global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
 
@@ -3600,12 +3614,12 @@ try
     const auto & format_schema_path_setting = server_settings[ServerSetting::format_schema_path];
     fs::path format_schema_path(format_schema_path_setting.changed
         ? fs::path(getCanonicalPath(String(format_schema_path_setting.value), path_str)) : path / "format_schemas/");
-    global_context->setFormatSchemaPath(format_schema_path);
+    global_context->setFormatSchemaPath(pathToGenericString(format_schema_path));
     fs::create_directories(format_schema_path);
 
     /// Set the path for google proto files
     if (server_settings[ServerSetting::google_protos_path].changed)
-        global_context->setGoogleProtosPath(fs::weakly_canonical(server_settings[ServerSetting::google_protos_path].value));
+        global_context->setGoogleProtosPath(pathToGenericString(fs::weakly_canonical(server_settings[ServerSetting::google_protos_path].value)));
 
     /// Set path for filesystem caches
     {

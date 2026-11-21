@@ -2,6 +2,7 @@
 
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
@@ -144,7 +145,7 @@ private:
 
 void syncPath(const std::string & path)
 {
-    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    int fd = platformOpenFile(path, O_RDONLY | O_CLOEXEC);
     if (fd == -1)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} to fsync", path);
 
@@ -172,11 +173,7 @@ void syncPath(const std::string & path)
     {
         ProfileEvents::increment(ProfileEvents::FileSync);
         Stopwatch watch;
-#if defined(OS_DARWIN)
-        res = ::fsync(fd);
-#else
-        res = ::fdatasync(fd);
-#endif
+        res = platformFDataSync(fd);
         ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
         fiu_do_on(FailPoints::parallel_sync_paths_interrupt_fsync,

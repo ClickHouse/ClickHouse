@@ -3,6 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <vector>
+
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -27,6 +29,81 @@ String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with
     }
 
     return zookeeper_path;
+}
+
+String joinZooKeeperPath(std::string_view parent, std::string_view child)
+{
+    if (parent.empty())
+        return String(child);
+    if (child.empty())
+        return String(parent);
+    if (parent.ends_with('/'))
+    {
+        if (child.starts_with('/'))
+            child.remove_prefix(1);
+        return String(parent) + String(child);
+    }
+    if (child.starts_with('/'))
+        return String(parent) + String(child);
+    return String(parent) + "/" + String(child);
+}
+
+String parentZooKeeperPath(std::string_view path)
+{
+    const auto pos = path.rfind('/');
+    if (pos == std::string_view::npos)
+        return {};
+    if (pos == 0)
+        return "/";
+    return String(path.substr(0, pos));
+}
+
+String zooKeeperNodeName(std::string_view path)
+{
+    const auto pos = path.rfind('/');
+    if (pos == std::string_view::npos)
+        return String(path);
+    return String(path.substr(pos + 1));
+}
+
+String lexicallyNormalizeZooKeeperPath(std::string_view path)
+{
+    const bool absolute = path.starts_with('/');
+
+    std::vector<std::string_view> components;
+    size_t pos = absolute ? 1 : 0;
+    while (pos < path.size())
+    {
+        const size_t next = path.find('/', pos);
+        const std::string_view component
+            = path.substr(pos, next == std::string_view::npos ? std::string_view::npos : next - pos);
+
+        if (component == "..")
+        {
+            if (!components.empty() && components.back() != "..")
+                components.pop_back();
+            else if (!absolute)
+                components.push_back(component);
+            /// A `..` at the root of an absolute path has nothing to go up to, so it is dropped.
+        }
+        else if (!component.empty() && component != ".")
+        {
+            components.push_back(component);
+        }
+
+        if (next == std::string_view::npos)
+            break;
+        pos = next + 1;
+    }
+
+    String result = absolute ? "/" : "";
+    for (size_t i = 0; i < components.size(); ++i)
+    {
+        if (i != 0)
+            result += '/';
+        result += components[i];
+    }
+    return result;
 }
 
 String extractZooKeeperName(const String & path)

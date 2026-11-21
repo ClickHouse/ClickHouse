@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -63,11 +64,11 @@ static std::pair<FileCachePtr, FileCacheSettings> getCache(
                     "in server configuration file");
             }
             /// Compatibility prefix.
-            cache_path_prefix_if_relative = fs::path(context->getPath()) / "caches";
+            cache_path_prefix_if_relative = pathToGenericString(pathFromString(context->getPath()) / "caches");
         }
         else
         {
-            cache_path_prefix_if_relative = cache_path_prefix_if_absolute = fs::path(custom_cached_disk_path_prefix);
+            cache_path_prefix_if_relative = cache_path_prefix_if_absolute = pathToGenericString(pathFromString(custom_cached_disk_path_prefix));
         }
     }
     else if (!config_fs_caches_dir.empty())
@@ -76,7 +77,7 @@ static std::pair<FileCachePtr, FileCacheSettings> getCache(
     }
     else
     {
-        cache_path_prefix_if_relative =  fs::path(context->getPath()) / "caches";
+        cache_path_prefix_if_relative =  pathToGenericString(pathFromString(context->getPath()) / "caches");
     }
 
     if (predefined_configuration)

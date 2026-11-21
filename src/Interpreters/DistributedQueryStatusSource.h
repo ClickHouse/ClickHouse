@@ -1,13 +1,10 @@
 #pragma once
 
-#include <filesystem>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DDLTask.h>
 #include <Processors/ISource.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -41,7 +38,7 @@ protected:
     /// When node_exists is provided it reports whether the status node was present. An absent node yields the same
     /// (-1, "Cannot obtain error message") sentinel as a present-but-unreadable one, so callers that must tell the
     /// two apart (see ReplicatedDatabaseQueryStatusSource::checkStatus) pass node_exists.
-    ExecutionStatus getExecutionStatus(const fs::path & status_path, bool * node_exists = nullptr);
+    ExecutionStatus getExecutionStatus(const String & status_path, bool * node_exists = nullptr);
 
     ZooKeeperRetriesInfo getRetriesInfo() const;
     static std::pair<String, UInt16> parseHostAndPort(const String & host_id);

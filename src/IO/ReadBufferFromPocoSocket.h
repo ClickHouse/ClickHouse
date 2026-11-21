@@ -2,7 +2,7 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
-#include <Common/AsyncTaskExecutor.h>
+#include <Common/AsyncCallback.h>
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
 #include <Poco/Net/Socket.h>

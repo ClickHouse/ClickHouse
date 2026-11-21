@@ -3,8 +3,11 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
 #include <Common/getRandomASCIIString.h>
+
 #include <base/find_symbols.h>
+#include <base/pathToString.h>
 
 #include <fmt/format.h>
 
@@ -26,37 +29,40 @@ PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_k
 
 std::string PlainRewritableLayout::constructMetadataDirectoryKey() const
 {
-    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN;
+    return appendObjectStorageKeySegment(object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN);
 }
 
 std::string PlainRewritableLayout::constructSnapshotObjectKey() const
 {
-    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / SNAPSHOT_FILE_NAME;
+    return appendObjectStorageKeySegment(
+        appendObjectStorageKeySegment(object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN), SNAPSHOT_FILE_NAME);
 }
 
 std::string PlainRewritableLayout::constructRootFilesDirectoryKey() const
 {
-    return object_storage_common_key_prefix / ROOT_DIRECTORY_TOKEN;
+    return appendObjectStorageKeySegment(object_storage_common_key_prefix, ROOT_DIRECTORY_TOKEN);
 }
 
 std::string PlainRewritableLayout::constructFilesDirectoryKey(const std::string & directory_remote_path) const
 {
-    return object_storage_common_key_prefix / directory_remote_path;
+    return appendObjectStorageKeySegment(object_storage_common_key_prefix, directory_remote_path);
 }
 
 std::string PlainRewritableLayout::constructFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const
 {
-    return object_storage_common_key_prefix / directory_remote_path / file_name;
+    return appendObjectStorageKeySegment(appendObjectStorageKeySegment(object_storage_common_key_prefix, directory_remote_path), file_name);
 }
 
 std::string PlainRewritableLayout::constructBlobObjectKey(const std::string & blob_key) const
 {
-    return object_storage_common_key_prefix / blob_key;
+    return appendObjectStorageKeySegment(object_storage_common_key_prefix, blob_key);
 }
 
 std::string PlainRewritableLayout::constructDirectoryObjectKey(const std::string & directory_remote_path) const
 {
-    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / directory_remote_path / PREFIX_PATH_FILE_NAME;
+    return appendObjectStorageKeySegment(
+        appendObjectStorageKeySegment(appendObjectStorageKeySegment(object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN), directory_remote_path),
+        PREFIX_PATH_FILE_NAME);
 }
 
 std::string PlainRewritableLayout::generateRemovedName()
@@ -102,7 +108,8 @@ std::string PlainRewritableLayout::restoreLocalPathOfPendingRemoval(const std::s
         relative_path /= *it;
 
     /// The same shape as the paths `MoveDirectoryOperation` writes: `path_from / subdir / ""`.
-    return (std::filesystem::path(original_local_path) / relative_path / "").string();
+    /// Read back as generic UTF-8: the result is a logical `/`-separated path, not a path of the local filesystem.
+    return pathToGenericString(pathFromString(original_local_path) / relative_path / "");
 }
 
 std::string PlainRewritableLayout::makeCommittedTombstoneContent(const std::string & removed_name)
@@ -172,12 +179,12 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
 
 std::string PlainRewritableLayout::constructTombstoneDirectoryKey() const
 {
-    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / TOMBSTONE_DIRECTORY_TOKEN;
+    return appendObjectStorageKeySegment(appendObjectStorageKeySegment(object_storage_common_key_prefix, METADATA_DIRECTORY_TOKEN), TOMBSTONE_DIRECTORY_TOKEN);
 }
 
 std::string PlainRewritableLayout::constructTombstoneMarkerKey(const std::string & removed_name) const
 {
-    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / TOMBSTONE_DIRECTORY_TOKEN / removed_name;
+    return appendObjectStorageKeySegment(constructTombstoneDirectoryKey(), removed_name);
 }
 
 std::optional<std::string> PlainRewritableLayout::parseTombstoneMarkerKey(const std::string & key) const

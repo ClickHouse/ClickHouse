@@ -5,9 +5,17 @@
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/NetException.h>
 
+#if defined(OS_WINDOWS)
+/// `ws2tcpip.h` covers what <arpa/inet.h>, <netdb.h> and <netinet/in.h> provide here
+/// (`inet_pton`, `in6_addr`, the `EAI_*` codes).
+#include <Poco/UnWindows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#endif
 
 namespace DB
 {

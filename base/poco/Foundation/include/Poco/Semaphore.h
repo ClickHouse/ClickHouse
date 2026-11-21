@@ -22,7 +22,11 @@
 #include "Poco/Foundation.h"
 
 
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#    include "Poco/Semaphore_WIN32.h"
+#else
 #    include "Poco/Semaphore_POSIX.h"
+#endif
 
 
 namespace Poco

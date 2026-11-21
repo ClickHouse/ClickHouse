@@ -19,7 +19,9 @@
 #include <algorithm>
 
 
-#if defined(POCO_OS_FAMILY_UNIX)
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#include "Path_WIN32U.cpp"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #include "Path_UNIX.cpp"
 #endif
 
@@ -164,7 +166,13 @@ Path& Path::assign(const Path& path)
 
 Path& Path::assign(const std::string& path)
 {
+	/// The native style, as `separator` and `pathSeparator`: the Windows implementation
+	/// (`Path_WIN32U.cpp`) produces and expects Windows paths.
+#if defined(POCO_OS_FAMILY_WINDOWS)
+	parseWindows(path);
+#else
 	parseUnix(path);
+#endif
 	return *this;
 }
 
@@ -203,7 +211,11 @@ Path& Path::assign(const char* path)
 
 std::string Path::toString() const
 {
+#if defined(POCO_OS_FAMILY_WINDOWS)
+	return buildWindows();
+#else
 	return buildUnix();
+#endif
 }
 
 

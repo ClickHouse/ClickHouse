@@ -52,6 +52,12 @@ public:
     explicit ReplxxLineReader(Options && options);
     ~ReplxxLineReader() override;
 
+    /// Whether this reader can render to `out_fd`. The Windows backend of replxx renders through
+    /// the console screen buffer of the output handle and does not check that it is one, so with
+    /// the output redirected to a file or a pipe it would work with garbage geometry. Every user of
+    /// this reader has to fall back to the basic `LineReader` when this is false.
+    static bool canRenderTo(int out_fd);
+
     void enableBracketedPaste() override;
     void disableBracketedPaste() override;
 

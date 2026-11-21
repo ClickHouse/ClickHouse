@@ -15,7 +15,7 @@ namespace DB
 class BackupReaderFile : public BackupReaderDefault
 {
 public:
-    explicit BackupReaderFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_);
+    explicit BackupReaderFile(const std::filesystem::path & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_);
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
@@ -34,8 +34,8 @@ class BackupWriterFile : public BackupWriterDefault
 {
 public:
     BackupWriterFile(
-        const String & root_path_,
-        const String & allowed_path_,
+        const std::filesystem::path & root_path_,
+        const std::filesystem::path & allowed_path_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_);
 

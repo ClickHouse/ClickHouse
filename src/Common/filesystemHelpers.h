@@ -8,7 +8,21 @@
 #include <memory>
 #include <string>
 #include <sys/stat.h>
+#if defined(OS_WINDOWS)
+/// Windows has no `statvfs`. Only these six fields are read anywhere in the codebase, and
+/// `GetDiskFreeSpaceEx` supplies the ones that describe blocks; see `getStatVFS`.
+struct statvfs
+{
+    unsigned long long f_bsize;   /// Preferred I/O block size.
+    unsigned long long f_frsize;  /// Fragment size, i.e. the unit `f_blocks`/`f_bavail` count in.
+    unsigned long long f_blocks;  /// Total number of fragments.
+    unsigned long long f_bavail;  /// Fragments available to an unprivileged process.
+    unsigned long long f_files;   /// Total number of inodes.
+    unsigned long long f_favail;  /// Inodes available to an unprivileged process.
+};
+#else
 #include <sys/statvfs.h>
+#endif
 #include <Poco/TemporaryFile.h>
 
 namespace fs = std::filesystem;
@@ -66,6 +80,10 @@ bool pathStartsWith(const String & path, const String & prefix_path);
 
 /// Same as pathStartsWith, but without canonization, i.e. allowed to check symlinks.
 /// (Path is made absolute and normalized.)
+bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path);
+
+/// Same as pathStartsWith, but without canonization, i.e. allowed to check symlinks.
+/// (Path is made absolute and normalized.)
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path);
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
@@ -93,11 +111,17 @@ catch (const fs::filesystem_error & e)
 /// Will not work correctly if filesystem does not support inodes.
 Int64 getINodeNumberFromPath(const String & path);
 
-/// Version token of a local file: modification time with nanoseconds, inode number and size.
-String computeFileCacheVersionToken(const struct stat & file_stat);
+struct PlatformFileVersion;
 
-/// Whether the last modification is far enough in the past that any later write changes the token.
-bool isFileCacheVersionTokenSettled(const struct stat & file_stat);
+/// Version token of a local file: modification time with nanoseconds, device, file identity and size.
+/// Built from `PlatformFileVersion` rather than `stat`, because on Windows the CRT's `stat` carries
+/// whole seconds and reports `st_ino` as zero - which would collapse the token for exactly the
+/// same-size in-place rewrite it exists to distinguish.
+String computeFileCacheVersionToken(const PlatformFileVersion & version);
+
+/// Whether the last modification (`mtime_sec`, in whole seconds) is far enough in the past that any
+/// later write changes the token.
+bool isFileCacheVersionTokenSettled(Int64 mtime_sec);
 
 }
 

@@ -96,7 +96,15 @@ SocketImpl* SocketImpl::acceptConnection(SocketAddress& clientAddr)
 	while (sd == POCO_INVALID_SOCKET && lastError() == POCO_EINTR);
 	if (sd != POCO_INVALID_SOCKET)
 	{
-#ifndef SOCK_CLOEXEC
+#if defined(POCO_OS_FAMILY_WINDOWS)
+		// A socket is a handle on Windows, and Winsock creates it inheritable.
+		if (!::SetHandleInformation(reinterpret_cast<HANDLE>(sd), HANDLE_FLAG_INHERIT, 0))
+		{
+			int err = static_cast<int>(::GetLastError());
+			poco_closesocket(sd);
+			error(err); // will throw
+		}
+#elif !defined(SOCK_CLOEXEC)
 		if (::fcntl(sd, F_SETFD, FD_CLOEXEC) == -1)
 		{
 			int err = lastError();
@@ -279,6 +287,42 @@ void SocketImpl::shutdown()
 }
 
 
+bool SocketImpl::emulatedDontWaitWouldBlock([[maybe_unused]] int flags, [[maybe_unused]] int mode)
+{
+#if defined(POCO_MSG_DONTWAIT_IS_EMULATED)
+	/// Winsock has no per-call nonblocking flag: whether a call blocks is a property of the
+	/// socket, set with `ioctlsocket(FIONBIO)`. `MSG_DONTWAIT` is therefore stripped before every
+	/// syscall (`stripEmulatedSocketFlags`), and without the check below that would silently turn
+	/// a "do not wait" call into a blocking one. Instead ask, with a zero timeout, whether the
+	/// socket is ready, and report the would-block case exactly as the platform would - the same
+	/// shape as `connectionOpen` above and `DB::Socket::peek`.
+	///
+	/// Flipping the socket to nonblocking around the call would be exact rather than
+	/// approximate, but it mutates state shared with every other user of the same socket,
+	/// including one already parked in a blocking call on another thread. Readiness can in
+	/// principle be lost between the poll and the syscall if a second thread drains the socket
+	/// first, which no caller of `MSG_DONTWAIT` does - it exists to serve one reader or writer
+	/// that does not want to wait.
+	if ((flags & MSG_DONTWAIT) == 0)
+		return false;
+
+	/// A socket Winsock already considers nonblocking needs no emulation: the syscall returns
+	/// `WSAEWOULDBLOCK` by itself.
+	if (!_blocking)
+		return false;
+
+	Poco::Timespan noWait(0);
+	if (pollImpl(noWait, mode))
+		return false;
+
+	WSASetLastError(WSAEWOULDBLOCK);
+	return true;
+#else
+	return false;
+#endif
+}
+
+
 /// Socket I/O functions (sendBytes, receiveBytes, sendTo, receiveFrom) use poll()
 /// with manual timeout tracking before each syscall to handle EINTR correctly.
 ///
@@ -312,9 +356,17 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, flags);
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_WRITE))
+		{
+			rc = -1;
 			err = lastError();
+		}
+		else
+		{
+			rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags));
+			if (rc < 0)
+				err = lastError();
+		}
 		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
@@ -362,9 +414,17 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, flags);
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_READ))
+		{
+			rc = -1;
 			err = lastError();
+		}
+		else
+		{
+			rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags));
+			if (rc < 0)
+				err = lastError();
+		}
 		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
@@ -392,7 +452,9 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& address, int flags)
 {
-	throttleSend(length, _blocking);
+	bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
+
+	throttleSend(length, blocking);
 
 	Poco::Timespan remainingTime(_sndTimeout);
 	bool needPoll = false;
@@ -410,10 +472,18 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, flags, address.addr(), address.length());
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_WRITE))
+		{
+			rc = -1;
 			err = lastError();
-		if (_blocking && rc < 0 && err == POCO_EINTR)
+		}
+		else
+		{
+			rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags), address.addr(), address.length());
+			if (rc < 0)
+				err = lastError();
+		}
+		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
 			if (remainingTime.totalMicroseconds() <= 0)
@@ -421,8 +491,16 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 			needPoll = true;
 		}
 	}
-	while (_blocking && rc < 0 && err == POCO_EINTR);
-	if (rc < 0) error(err);
+	while (blocking && rc < 0 && err == POCO_EINTR);
+	if (rc < 0)
+	{
+		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
+			;
+		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
+			throw TimeoutException();
+		else
+			error(err);
+	}
 
 	useSendThrottlerBudget(rc);
 
@@ -432,10 +510,11 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 
 int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, int flags)
 {
+	bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
 	Poco::Timespan remainingTime(_recvTimeout);
-	bool needPoll = true;
+	bool needPoll = blocking;
 
-	throttleRecv(length, _blocking);
+	throttleRecv(length, blocking);
 
 	sockaddr_storage abuffer;
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&abuffer);
@@ -454,10 +533,18 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::recvfrom(_sockfd, reinterpret_cast<char*>(buffer), length, flags, pSA, &saLen);
-		if (rc < 0)
+		if (emulatedDontWaitWouldBlock(flags, SELECT_READ))
+		{
+			rc = -1;
 			err = lastError();
-		if (_blocking && rc < 0 && err == POCO_EINTR)
+		}
+		else
+		{
+			rc = ::recvfrom(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags), pSA, &saLen);
+			if (rc < 0)
+				err = lastError();
+		}
+		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
 			if (remainingTime.totalMicroseconds() <= 0)
@@ -465,14 +552,14 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 			needPoll = true;
 		}
 	}
-	while (_blocking && rc < 0 && err == POCO_EINTR);
+	while (blocking && rc < 0 && err == POCO_EINTR);
 	if (rc >= 0)
 	{
 		address = SocketAddress(pSA, saLen);
 	}
 	else
 	{
-		if (err == POCO_EAGAIN && !_blocking)
+		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
 			throw TimeoutException(err);
@@ -527,7 +614,18 @@ bool SocketImpl::connectionOpen()
 		return false;
 
 	char b = 0;
-	int rc = ::recv(_sockfd, &b, 1, MSG_DONTWAIT | MSG_PEEK);
+
+#if defined(POCO_MSG_DONTWAIT_IS_EMULATED)
+	/// `MSG_DONTWAIT` does not reach Winsock, so a bare `MSG_PEEK` on a blocking socket would
+	/// wait for data to arrive. Ask first whether anything is readable, with no timeout: if
+	/// nothing is, the connection is open and simply idle, which is what `POCO_EAGAIN` stands
+	/// for below.
+	Poco::Timespan noWait(0);
+	if (!pollImpl(noWait, SELECT_READ))
+		return true;
+#endif
+
+	int rc = ::recv(_sockfd, &b, 1, stripEmulatedSocketFlags(MSG_DONTWAIT | MSG_PEEK));
 	if (rc > 0)
 		return true;
 	if (rc == 0)
@@ -764,11 +862,16 @@ void SocketImpl::setOption(int level, int option, const IPAddress& value)
 
 void SocketImpl::setOption(int level, int option, const Poco::Timespan& value)
 {
+#if defined(_WIN32)
+	DWORD timeout = static_cast<DWORD>(value.totalMilliseconds());
+	setRawOption(level, option, &timeout, sizeof(timeout));
+#else
 	struct timeval tv;
 	tv.tv_sec  = (long) value.totalSeconds();
 	tv.tv_usec = (long) value.useconds();
 
 	setRawOption(level, option, &tv, sizeof(tv));
+#endif
 }
 
 
@@ -804,10 +907,17 @@ void SocketImpl::getOption(int level, int option, unsigned char& value)
 
 void SocketImpl::getOption(int level, int option, Poco::Timespan& value)
 {
+#if defined(_WIN32)
+	DWORD timeout;
+	poco_socklen_t len = sizeof(timeout);
+	getRawOption(level, option, &timeout, len);
+	value = Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(timeout) * 1000);
+#else
 	struct timeval tv;
 	poco_socklen_t len = sizeof(tv);
 	getRawOption(level, option, &tv, len);
 	value.assign(tv.tv_sec, tv.tv_usec);
+#endif
 }
 
 
@@ -1007,14 +1117,22 @@ void SocketImpl::initSocket(int af, int type, int proto)
 
 void SocketImpl::ioctl(poco_ioctl_request_t request, int& arg)
 {
+#if defined(POCO_OS_FAMILY_WINDOWS)
+	int rc = ioctlsocket(_sockfd, request, reinterpret_cast<u_long*>(&arg));
+#else
 	int rc = ::ioctl(_sockfd, request, &arg);
+#endif
 	if (rc != 0) error();
 }
 
 
 void SocketImpl::ioctl(poco_ioctl_request_t request, void* arg)
 {
+#if defined(POCO_OS_FAMILY_WINDOWS)
+	int rc = ioctlsocket(_sockfd, request, reinterpret_cast<u_long*>(arg));
+#else
 	int rc = ::ioctl(_sockfd, request, arg);
+#endif
 	if (rc != 0) error();
 }
 
