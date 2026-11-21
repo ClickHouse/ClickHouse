@@ -36,6 +36,7 @@
 #include <Columns/ColumnSet.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
@@ -2292,6 +2293,9 @@ void StorageDistributed::flushAndPrepareForShutdown()
     }
     catch (...)
     {
+        /// A killed DROP must not go on to delete a spool that was never sent.
+        if (auto query_context = CurrentThread::tryGetQueryContext(); query_context && query_context->isCurrentQueryKilled())
+            throw;
         tryLogCurrentException(log, "Cannot flush");
     }
 }

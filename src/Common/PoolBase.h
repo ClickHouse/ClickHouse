@@ -12,13 +12,13 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/logger_useful.h>
-#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedDuration.h>
+#include <Common/waitCancellable.h>
 
 namespace ProfileEvents
 {
@@ -177,31 +177,20 @@ public:
 
             /// Waiting in slices is what makes cancellation observable: `available` is only notified
             /// when an object is returned, so a caller holding one would otherwise pin this thread
-            /// for the whole wait. checkIfNotCancelled() is a no-op off-query.
-            while (true)
+            /// for the whole wait.
+            /// TWaiter is only required to offer the two-argument wait_for(), so the predicate
+            /// is tested here rather than passed in.
+            auto wait_available = [&](auto slice)
             {
-                DB::CurrentThread::checkIfNotCancelled();
-
-                const auto now = std::chrono::steady_clock::now();
-                auto slice = std::chrono::duration_cast<std::chrono::steady_clock::duration>(wait_slice);
-                if (has_deadline)
-                {
-                    if (now >= deadline)
-                        throw DB::Exception(
-                            DB::ErrorCodes::NO_FREE_CONNECTION,
-                            "No free connection in pool of size {} after waiting {} ms",
-                            max_items,
-                            max_wait.count());
-                    /// Clamped, so the total wait cannot overrun the deadline by up to a slice.
-                    slice = std::min(slice, deadline - now);
-                }
-
-                /// TWaiter is only required to offer the two-argument wait_for(), so the predicate
-                /// is tested here rather than passed in.
                 available.wait_for(lock, slice);
-                if (hasAvailableObjectUnlocked())
-                    break;
-            }
+                return hasAvailableObjectUnlocked();
+            };
+            if (!DB::waitCancellable(wait_available, has_deadline ? std::optional(deadline) : std::nullopt, wait_slice))
+                throw DB::Exception(
+                    DB::ErrorCodes::NO_FREE_CONNECTION,
+                    "No free connection in pool of size {} after waiting {} ms",
+                    max_items,
+                    max_wait.count());
         }
     }
 
