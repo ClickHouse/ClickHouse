@@ -64,6 +64,21 @@ public:
       */
     virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
+    /** Return true if `function_name` is a special wrapper argument of this table function (for example, `body` of `url`).
+      * Its index must be returned by `skipAnalysisForArguments`, because the wrapper itself is not a regular function,
+      * but its first argument is still resolved in the enclosing scope, so that it can use `WITH` aliases and CTEs
+      * of the enclosing query. The first argument must resolve to a constant or to a non-correlated subquery.
+      */
+    virtual bool isWrapperWithResolvedFirstArgument(const String & /*function_name*/) const { return false; }
+
+    /** Called by the analyzer before `parseArguments` when the resolved first argument of a wrapper reported by
+      * `isWrapperWithResolvedFirstArgument` is a subquery. The AST passed to `parseArguments` is printed from the
+      * resolved query tree, and it does not keep everything the resolution did: positional arguments are already
+      * replaced by the expressions they refer to, and inlined `SQL SECURITY DEFINER` views lose the definer's context.
+      * So a table function that executes the subquery later has to keep and plan this resolved query tree instead.
+      */
+    virtual void setResolvedSubqueryOfWrapper(const String & /*function_name*/, const QueryTreeNodePtr & /*subquery*/) {}
+
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
     /** The identity of the source this call reads, if a parallel-replicas read can be coordinated over it.

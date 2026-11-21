@@ -162,7 +162,11 @@ VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configur
     /// positional and named arguments (see `S3SecretArguments` and the S3/Azure `Configuration` parsers), so their
     /// nested `key = value` arguments (e.g. `role_arn = ...`) are skipped with them.
     VectorWithMemoryTracking<size_t> result;
-    appendNamedArgumentIndexes(query_node_table_function, result, {"headers", "extra_credentials"});
+    /// `body` is skipped together with `headers` so that the shared URL/S3 argument parser
+    /// sees it as an AST function and can reject it with a clear message (it is supported only
+    /// by the `url` table function). Otherwise the analyzer fails earlier with a confusing
+    /// `UNKNOWN_FUNCTION` error for `body`.
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers", "extra_credentials", "body"});
     return result;
 }
 
