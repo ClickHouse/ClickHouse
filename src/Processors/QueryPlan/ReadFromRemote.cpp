@@ -830,7 +830,8 @@ void ReadFromRemote::addLazyPipe(
                     local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
 
                 auto plan = createLocalPlan(
-                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
+                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count, false, {},
+                    my_shard.main_table_filtered_by_partition_id ? &my_shard.main_table : nullptr);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }

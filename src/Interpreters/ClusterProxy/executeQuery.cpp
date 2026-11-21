@@ -667,6 +667,13 @@ void executeQuery(
         const auto & addresses = cluster->getShardsAddresses().at(i);
         const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
 
+        const Strings * partitions_to_skip = nullptr;
+        if (query_info.partitions_to_skip_by_shard)
+        {
+            if (auto it = query_info.partitions_to_skip_by_shard->find(shard_info.shard_num); it != query_info.partitions_to_skip_by_shard->end())
+                partitions_to_skip = &it->second;
+        }
+
         stream_factory.createForShard(
             shard_info,
             query_for_shard,
@@ -678,7 +685,8 @@ void executeQuery(
             static_cast<UInt32>(shards),
             parallel_replicas_enabled,
             shard_filter_generator,
-            unavailable_shard_tracker);
+            unavailable_shard_tracker,
+            partitions_to_skip);
     }
 
     if (!remote_shards.empty())

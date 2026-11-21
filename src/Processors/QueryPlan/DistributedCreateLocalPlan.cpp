@@ -20,7 +20,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     size_t shard_num,
     size_t shard_count,
     bool build_logical_plan,
-    const std::string & default_database)
+    const std::string & default_database,
+    const StorageID * table_filtered_by_partition_id)
 {
     checkStackSize();
 
@@ -50,6 +51,9 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     /// A logical plan is serialized and shipped to a shard, which sends the blocks back over the
     /// network, so it must keep marshalling. Only the plan executed in this process must skip it.
     select_query_options.is_local_plan_for_distributed_query = !build_logical_plan;
+
+    if (table_filtered_by_partition_id)
+        select_query_options.table_filtered_by_partition_id = *table_filtered_by_partition_id;
 
     /// The query is printed from the initiator's resolved query tree.
     select_query_options.positional_arguments_already_resolved = true;

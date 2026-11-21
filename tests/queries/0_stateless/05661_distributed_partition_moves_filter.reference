@@ -1,0 +1,44 @@
+9
+-- a read-only user reads one copy from the source, from local and from remote shards
+6	39
+5
+1	3
+2	3
+6	39
+5
+1	3
+2	3
+-- a read-only user reads one copy from the destination, from local and from remote shards
+6	39
+5
+2	6
+6	39
+5
+2	6
+-- the copy is skipped before a join that keeps the rows of the left table
+2
+6
+This JOIN is not supported for table
+-- the copy is skipped wherever the table is in the query for the shard
+6	39
+5	38
+6	39
+6	39
+6	39
+2
+6
+4
+6
+4
+-- a query that also reads the remote table directly fails
+7
+7
+is read directly by a query
+is read directly by a query
+-- a table as the right argument of IN and another Distributed table replaced by its local table fail
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+7

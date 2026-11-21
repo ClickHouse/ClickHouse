@@ -811,9 +811,17 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     NameSet columns_names_allowed_to_select;
     if (table_node)
     {
-        const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
+        auto column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
+
+        /// The condition that skips the moving partitions is added by the initiator, not by the user.
+        const auto & filtered_table = select_query_options.table_filtered_by_partition_id;
+        const auto & storage_id = table_node->getStorageID();
+        if (filtered_table && filtered_table->table_name == storage_id.table_name
+            && (filtered_table->database_name.empty() || filtered_table->database_name == storage_id.database_name))
+            std::erase(column_names_with_aliases, "_partition_id");
+
         columns_names_allowed_to_select = checkAccessRights(
-            table_node->getStorage(), table_node->getStorageID(), table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
+            table_node->getStorage(), storage_id, table_node->getStorageSnapshot(), column_names_with_aliases, query_context);
 
         checkAccessRightsForColumnsResolvedAway(*table_node, table_expression_data, query_context);
     }

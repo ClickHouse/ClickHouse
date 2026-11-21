@@ -1,0 +1,20 @@
+-- queries read the source
+2
+2
+2
+2	2
+UNABLE_TO_SKIP_UNUSED_SHARDS
+-- queries read the destination
+2
+2
+2
+2	2
+UNABLE_TO_SKIP_UNUSED_SHARDS
+-- the source copy is dropped and the move is removed
+2
+2
+2
+2	2
+UNABLE_TO_SKIP_UNUSED_SHARDS
+1	2	2
+2	1	2

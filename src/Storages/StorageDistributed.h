@@ -40,6 +40,7 @@ class ConnectionPoolWithFailover;
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 
 class IStorageCluster;
+class DistributedPartitionMovesWatcher;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -134,6 +135,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     void initializeFromDisk();
+    void startup() override;
     void shutdown(bool is_drop) override;
     void flushAndPrepareForShutdown() override;
     void drop() override;
@@ -154,6 +156,12 @@ public:
     void flushClusterNodesAllData(ContextPtr context, const SettingsChanges & settings_changes);
 
     size_t getShardCount() const;
+
+    /// Used by StorageSystemDistributedPartitionMoves. Returns nullptr if the table does not have partition moves.
+    DistributedPartitionMovesWatcher * getPartitionMovesWatcher() const { return partition_moves_watcher.get(); }
+
+    /// Whether the queries of the table skip partitions on some shards now.
+    [[nodiscard]] bool skipsPartitions() const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
@@ -200,6 +208,9 @@ private:
     std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
     static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
+
+    /// The partitions that queries skip on every shard of `cluster`, the full cluster of the table, while they are moved.
+    std::shared_ptr<const std::unordered_map<UInt32, Strings>> getPartitionsToSkipByShard(const ClusterPtr & cluster) const;
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
@@ -305,6 +316,9 @@ private:
     VolumePtr data_volume;
 
     std::unique_ptr<DistributedSettings> distributed_settings;
+
+    /// Is set if the table has the `partition_moves_zookeeper_path` setting.
+    std::unique_ptr<DistributedPartitionMovesWatcher> partition_moves_watcher;
 
     struct ClusterNodeData
     {

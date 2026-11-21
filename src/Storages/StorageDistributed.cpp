@@ -21,6 +21,7 @@
 
 #include <Disks/IVolume.h>
 
+#include <Storages/Distributed/DistributedPartitionMoves.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
@@ -169,6 +170,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_expanded_ast_elements;
+    extern const SettingsBool allow_experimental_distributed_partition_moves;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
@@ -210,6 +212,7 @@ namespace DistributedSetting
     extern const DistributedSettingsBool flush_on_detach;
     extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
+    extern const DistributedSettingsString partition_moves_zookeeper_path;
 }
 
 namespace ErrorCodes
@@ -232,6 +235,7 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -663,6 +667,19 @@ StorageDistributed::StorageDistributed(
             throw Exception(ErrorCodes::INFINITE_LOOP, "Distributed table {} looks at itself", id_.table_name);
     }
 
+    if (const String & moves_path = (*distributed_settings)[DistributedSetting::partition_moves_zookeeper_path].value; !moves_path.empty())
+    {
+        /// The copies are skipped by the partitions of the remote table, which a table function does not have.
+        if (remote_table_function_ptr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `partition_moves_zookeeper_path` is not supported for a table function target");
+
+        partition_moves_watcher = std::make_unique<DistributedPartitionMovesWatcher>(getContext(), id_, moves_path);
+
+        /// The node is created by the query that creates the table, and not on server startup, to not depend on ZooKeeper there.
+        if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
+            partition_moves_watcher->createIfNotExists();
+    }
+
     initializeFromDisk();
 }
 
@@ -917,8 +934,10 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
 {
+    /// A moved partition is not on the shard of its sharding key, so a table with partition moves does not use the key for reads.
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+        && hasShardingKeyForReads() && !partition_moves_watcher
+        && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -1146,6 +1165,33 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 }
 
+/// `distributed_product_mode = 'local'` replaces other `Distributed` tables of the query by their local tables.
+/// The partitions skipped while they are moved between shards are known only for the tables of `distributed_table` itself.
+static void checkPartitionMovesOfReplacedTables(const QueryTreeNodePtr & node, const StorageID & distributed_table, const String * remote_table_with_moves)
+{
+    if (!node)
+        return;
+
+    const auto * table_node = node->as<TableNode>();
+    const auto * dummy = table_node ? typeid_cast<const StorageDummy *>(table_node->getStorage().get()) : nullptr;
+    if (dummy && dummy->getReplacedDistributedTable() && !(*dummy->getReplacedDistributedTable() == distributed_table))
+    {
+        const auto & other_table = *dummy->getReplacedDistributedTable();
+        if (dummy->replacedDistributedTableSkipsPartitions())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} cannot be read by a query of table {} with `distributed_product_mode = 'local'` while its partitions are moved between shards",
+                other_table.getNameForLogs(), distributed_table.getNameForLogs());
+
+        if (remote_table_with_moves && dummy->getStorageID().table_name == *remote_table_with_moves)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Table {} cannot be read by a query of table {} with `distributed_product_mode = 'local'` while the partitions of {} are moved between shards",
+                other_table.getNameForLogs(), distributed_table.getNameForLogs(), distributed_table.getNameForLogs());
+    }
+
+    for (const auto & child : node->getChildren())
+        checkPartitionMovesOfReplacedTables(child, distributed_table, remote_table_with_moves);
+}
+
 void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
 {
     if (!is_remote_database_proxy)
@@ -1216,6 +1262,13 @@ void StorageDistributed::read(
             return;
         }
     }
+
+    /// Taken once, so all shards skip the copies of the same version of the moves.
+    if (partition_moves_watcher)
+        modified_query_info.partitions_to_skip_by_shard = getPartitionsToSkipByShard(getCluster());
+
+    const bool skips_partitions = modified_query_info.partitions_to_skip_by_shard && !modified_query_info.partitions_to_skip_by_shard->empty();
+    checkPartitionMovesOfReplacedTables(modified_query_info.query_tree, getStorageID(), skips_partitions ? &remote_table : nullptr);
 
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
@@ -1741,6 +1794,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
 
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
     {
+        /// The shards would read the local tables directly, including the copies of moving partitions that queries skip.
+        if (src_distributed->partition_moves_watcher && !src_distributed->partition_moves_watcher->get()->moves.empty())
+            return {};
+
         src_distributed->checkLocalShardAccess(AccessType::SELECT, local_context);
         return distributedWriteBetweenDistributedTables(*src_distributed, query, local_context);
     }
@@ -1842,8 +1899,17 @@ void StorageDistributed::initializeFromDisk()
 }
 
 
+void StorageDistributed::startup()
+{
+    if (partition_moves_watcher)
+        partition_moves_watcher->startup();
+}
+
 void StorageDistributed::shutdown(bool)
 {
+    if (partition_moves_watcher)
+        partition_moves_watcher->shutdown();
+
     auto holder = async_insert_blocker.cancel();
 
     std::lock_guard lock(cluster_nodes_mutex);
@@ -2166,6 +2232,23 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
+bool StorageDistributed::skipsPartitions() const
+{
+    return partition_moves_watcher && !partition_moves_watcher->get()->partitions_to_skip_by_shard.empty();
+}
+
+std::shared_ptr<const std::unordered_map<UInt32, Strings>> StorageDistributed::getPartitionsToSkipByShard(const ClusterPtr & cluster) const
+{
+    auto moves = partition_moves_watcher->get();
+    size_t num_shards = cluster->getShardsInfo().size();
+    if (moves->max_shard_num > num_shards)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Version {} of partition moves {} has a move with shard {}, but cluster {} has {} shards",
+            moves->version, partition_moves_watcher->getFullZooKeeperPath(), moves->max_shard_num, getClusterName(), num_shards);
+
+    return std::shared_ptr<const std::unordered_map<UInt32, Strings>>(moves, &moves->partitions_to_skip_by_shard);
+}
+
 ClusterPtr StorageDistributed::getOptimizedCluster(
     ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
@@ -2174,7 +2257,8 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
 
-    bool sharding_key_is_usable = !sharding_key_has_unbuilt_set
+    /// A moved partition is not on the shard of its sharding key, and stays there after the move is removed.
+    bool sharding_key_is_usable = !partition_moves_watcher && !sharding_key_has_unbuilt_set
         && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     if (hasShardingKeyForReads() && sharding_key_is_usable)
@@ -2189,6 +2273,9 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     {
         if (!hasShardingKeyForReads())
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
+        if (partition_moves_watcher)
+            throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS,
+                "Shards of a table with `partition_moves_zookeeper_path` cannot be skipped: a moved partition is not on the shard of its sharding key");
         checkShardingKeySetsAreBuilt();
         if (!sharding_key_is_usable)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
@@ -2483,6 +2570,16 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
             = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
 }
 
+/// Both the `Distributed` and the `Remote`/`RemoteSecure` engines accept the experimental settings, so both must check them.
+static void checkExperimentalDistributedSettings(const DistributedSettings & distributed_settings, const StorageFactory::Arguments & args)
+{
+    if (!distributed_settings[DistributedSetting::partition_moves_zookeeper_path].value.empty()
+        && isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+        && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_distributed_partition_moves])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Partition moves of `Distributed` tables are experimental. Set `allow_experimental_distributed_partition_moves` to enable it");
+}
+
 namespace
 {
 
@@ -2648,6 +2745,8 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
+        checkExperimentalDistributedSettings(distributed_settings, args);
+
         /// Infer an omitted structure here, so a fresh definition resolves under the user's context
         /// and the local-shard `SHOW_COLUMNS` check applies to them. A definition restored from
         /// metadata (including a short `ATTACH`) has no user, so it keeps the global context.
@@ -2780,6 +2879,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
 | `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
+| `partition_moves_zookeeper_path`           | Experimental. Path in ZooKeeper of the partitions that are being moved between shards. See [Moving partitions between shards](#distributed-partition-moves).                                                                         | `''`          |
 
 <Note>
 **Durability settings** (`fsync_...`):
@@ -2937,6 +3037,35 @@ If the server ceased to exist or had a rough restart (for example, due to a hard
 
 When querying a `Distributed` table, `SELECT` queries are sent to all shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you do not have to transfer old data into it. Instead, you can write new data to it by using a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
+### Moving partitions between shards {#distributed-partition-moves}
+
+<Note>
+This is an experimental feature. Enable it with the [`allow_experimental_distributed_partition_moves`](/reference/settings/session-settings/allow-experimental#allow_experimental_distributed_partition_moves) setting.
+</Note>
+
+A partition of a `MergeTree` table can be moved to another shard to balance the shards, for example after a shard is added: copy it to the destination with `FETCH PARTITION` and `ATTACH PARTITION`, then drop it on the source. Between the copy and the drop both shards have the partition, and a query reads its rows twice. With the `partition_moves_zookeeper_path` setting, the table reads only one copy of a moving partition. The moves are a text node in ZooKeeper, shared by the tables of the same path on all servers:
+
+```text
+format version: 1
+202401 1 3 source
+```
+
+Every line after the header is a move: the partition ID (`partition_id` in `system.parts`), the source and the destination shard numbers (`shard_num` in [system.clusters](/reference/system-tables/clusters)), and the copy that queries read, `source` or `destination`. The other copy is skipped with a condition on the `_partition_id` virtual column in the query sent to the shard, so a query where the table is on the left of a `RIGHT`, `FULL` or `PASTE` join fails while a shard has a copy to skip, and so does a query that also reads the remote table directly or has the table as the right argument of `IN` without a subquery. With `distributed_product_mode = 'local'` a query cannot read another `Distributed` table over the same remote table, and a query of another `Distributed` table cannot read this table. On a remote shard, the user of the query needs a `SELECT` grant on `_partition_id` of the table. A partition can be in one move at a time. A `Remote` table over a table function does not accept the setting. When the table is created, an empty node is created if it does not exist. The table watches the node, and the loaded version is shown in [system.distributed_partition_moves](/reference/system-tables/distributed_partition_moves).
+
+To move partition `202401` from shard 1 to shard 3:
+
+1. Add the line `202401 1 3 source`, wait until the tables on all servers load this version, and wait for the queries that started before.
+2. On shard 3, run `ALTER TABLE ... FETCH PARTITION ID '202401' FROM '<ZooKeeper path of the table on shard 1>'` and `ALTER TABLE ... ATTACH PARTITION ID '202401'`. `ATTACH PARTITION` does not wait for the other replicas of the shard, with any `alter_sync`: run `SYSTEM SYNC REPLICA` on each of them, so that all replicas have the partition.
+3. Change the line to `202401 1 3 destination`, wait until the tables on all servers load this version, and wait for the queries that started before.
+4. On shard 1, run `ALTER TABLE ... DROP PARTITION ID '202401' SETTINGS alter_sync = 2`, so that all replicas of the shard drop the partition.
+5. Remove the line.
+
+A query uses the version of the moves that its server had loaded when the query started, and it can send its queries to the shards later. So a query that started before step 1 does not skip the copy on the destination, and a query that started before step 3 reads the copy on the source: steps 2 and 4 must not start while such queries run (see `system.processes` on all servers).
+
+The destination must not have the partition before the move, and no rows may be inserted into the partition on either shard during the move: rows inserted on the source after the copy are dropped with it. So move partitions that no longer receive inserts. Only `SELECT` queries through the `Distributed` table skip the copies; the `remote`, `remoteSecure`, `cluster` and `clusterAllReplicas` table functions read both and do not accept `partition_moves_zookeeper_path`.
+
+A moved partition is not on the shard that the sharding key gives, during the move and after it. So a table with `partition_moves_zookeeper_path` does not use the sharding key for reads: [`optimize_skip_unused_shards`](/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards), `optimize_skip_unused_shards_rewrite_in` and `optimize_distributed_group_by_sharding_key` have no effect, every query is sent to all shards, and a query with [`force_optimize_skip_unused_shards`](/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) fails. The settings that rely on the placement of rows without checking it, such as `distributed_group_by_no_merge` and `parallel_distributed_insert_select = 2`, must not be used if the query depends on the sharding key.
+
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](/reference/settings/session-settings/max#max_parallel_replicas).
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/reference/statements/in#distributed-subqueries) documentation.
@@ -2992,6 +3121,7 @@ void registerStorageRemote(StorageFactory & factory)
             distributed_settings.loadFromQuery(*args.storage_def);
 
         finalizeDistributedSettings(distributed_settings, args.getContext());
+        checkExperimentalDistributedSettings(distributed_settings, args);
 
         bool has_local_shard = false;
         for (const auto & shard_info : parsed.cluster->getShardsInfo())

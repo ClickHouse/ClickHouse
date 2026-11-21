@@ -1,0 +1,12 @@
+-- the tables have partition moves
+hidden
+visible
+-- a user without access to the tables does not see them
+0
+0
+0
+-- SHOW TABLES on one table shows only this table
+visible
+visible
+visible
+0

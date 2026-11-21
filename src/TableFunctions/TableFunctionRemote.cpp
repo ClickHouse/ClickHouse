@@ -12,8 +12,14 @@
 
 namespace DB
 {
+namespace DistributedSetting
+{
+    extern const DistributedSettingsString partition_moves_zookeeper_path;
+}
+
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -36,7 +42,12 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     /// Validate the settings early, so that a misspelled setting is reported during parsing
     /// rather than at the first read from the storage.
-    DistributedSettings{}.applyChanges(settings_changes);
+    DistributedSettings distributed_settings;
+    distributed_settings.applyChanges(settings_changes);
+
+    /// The moves are created in ZooKeeper and watched by a table, which a table function does not have.
+    if (!distributed_settings[DistributedSetting::partition_moves_zookeeper_path].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `partition_moves_zookeeper_path` is not supported by table function '{}'", name);
 }
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
