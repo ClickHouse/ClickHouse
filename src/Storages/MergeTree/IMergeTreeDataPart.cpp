@@ -3002,8 +3002,8 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         loadColumnsSubstreams(/*validate_against_loaded_columns=*/false);
 
         /// The file is only ever written non-empty, so present-but-empty means its content was
-        /// discarded as corrupted. Presence would then be inferred from the default serialization,
-        /// dropping every column stored in another layout.
+        /// discarded as corrupted or the file itself is empty. Presence would then be inferred from
+        /// the default serialization, dropping every column stored in another layout.
         if (getColumnsSubstreams().empty() && getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
                 "Cannot rebuild columns.txt of part {}: {} was discarded as corrupted",
@@ -3126,7 +3126,22 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
 
 void IMergeTreeDataPart::loadColumnsSubstreams(bool validate_against_loaded_columns)
 {
-    if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
+    auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME);
+
+    /** Like `columns.txt` and `metadata_version.txt` (see `loadColumns`), this file is not covered by the
+      * part checksums, so a power loss can leave it at length zero while the rest of the part survives.
+      * It is only ever written non-empty, and an empty one carries exactly as much as an absent one, so
+      * take the same path for it instead of failing to parse it and detaching the whole part as broken.
+      * Where the file is mandatory (a compact part with substream marks), that path still fails.
+      */
+    if (in && in->eof())
+    {
+        LOG_WARNING(storage.log, "Ignoring empty {} in part {}, treating it as absent",
+            COLUMNS_SUBSTREAMS_FILE_NAME, name);
+        in.reset();
+    }
+
+    if (in)
     {
         ColumnsSubstreams loaded_columns_substreams;
         loaded_columns_substreams.readText(*in);
