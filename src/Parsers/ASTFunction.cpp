@@ -1105,6 +1105,11 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     bool is_plain_not_call = !frame.allow_operators && equalsCaseInsensitive(name, "not") && arguments
         && arguments->children.size() == 1 && !parameters && getNullsAction() == NullsAction::EMPTY && !isWindowFunction();
 
+    /// `not(` is the prefix operator `NOT`, so it takes the parentheses an operator would get, e.g. as an operand of `|`.
+    const bool plain_not_call_needs_parens = is_plain_not_call && frame.need_parens;
+    if (plain_not_call_needs_parens)
+        ostr << '(';
+
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (is_plain_not_call)
         ostr << name;
@@ -1259,6 +1264,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     }
 
     if (need_parens)
+        ostr << ')';
+
+    if (plain_not_call_needs_parens)
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);

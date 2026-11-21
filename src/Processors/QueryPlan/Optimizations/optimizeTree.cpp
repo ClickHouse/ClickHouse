@@ -69,7 +69,7 @@ namespace QueryPlanOptimizations
 /// `ExtraSettings` reads every field as zero, which silently turns the gated behaviour off - a filter that
 /// stops short of a read, or a step description truncated to nothing - and the two passes had already
 /// drifted apart by three fields. Build it here instead of at each call site, where one is easy to forget.
-static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimizationSettings & optimization_settings)
+static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan & query_plan)
 {
     return {
         optimization_settings.max_step_description_length,
@@ -92,10 +92,12 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
         optimization_settings.top_k_optimization_shared_boundary,
+        optimization_settings.max_rows_to_group_by,
         optimization_settings.enable_group_by_top_k_dynamic_filtering,
         optimization_settings.use_query_condition_cache_for_top_k,
         optimization_settings.is_explain,
         optimization_settings.max_block_size,
+        &query_plan,
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
@@ -120,9 +122,13 @@ static String describeProjectionRejections(const UnorderedMapWithMemoryTracking<
     return fmt::format("{}", fmt::join(formatted_reasons, "; "));
 }
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Node & root,
+    QueryPlan::Nodes & nodes,
+    const QueryPlan & query_plan)
 {
-    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings));
+    lowerArrayJoinFunctions(root, nodes, makeExtraSettings(optimization_settings, query_plan));
 
     if (!optimization_settings.optimize_plan)
         return;
@@ -143,7 +149,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     size_t total_applied_optimizations = 0;
 
 
-    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
+    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings, query_plan);
 
     /// Whether the limit of optimizations is reached, checked before each optimization. EXPLAIN stops there and shows
     /// the plan as it is; a query throws.
@@ -278,7 +284,11 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void applyParallelReplicas(
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const Optimization::ExtraSettings & extra_settings);
 
 /// Rule for passes under `make_distributed_plan`: a pass that can turn a serializable step into a
 /// non-serializable one, or insert one (read-in-order, distinct-in-order, aggregation-in-order,
@@ -296,7 +306,7 @@ void optimizeTreeSecondPass(
     UnorderedMapWithMemoryTracking<String, String> projection_reject_reasons;
     bool has_reading_from_mt = false;
 
-    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings);
+    const Optimization::ExtraSettings extra_settings = makeExtraSettings(optimization_settings, query_plan);
 
     Stack stack;
 
@@ -496,7 +506,7 @@ void optimizeTreeSecondPass(
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
-    applyParallelReplicas(query_plan, nodes, optimization_settings);
+    applyParallelReplicas(query_plan, nodes, optimization_settings, extra_settings);
 
     /// Lazy materialization for plans with joins works on the join expressions, so it runs while the joins
     /// are still logical. That is after PREWHERE optimization, which needs a filter right above the read,
@@ -541,7 +551,7 @@ void optimizeTreeSecondPass(
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order && !make_distributed_plan)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+                optimizeDistinctInOrder(stack, nodes, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -696,13 +706,13 @@ void optimizeTreeSecondPass(
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
             /// After `optimizeReadInOrder`: a window sorting converted to `FinishSorting` (see
-            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges to a single stream and
-            /// must not request per-partition reading.
+            /// `query_plan_reuse_storage_ordering_for_window_functions`) merges the streams read in order
+            /// and must not request per-partition reading.
             if (optimization_settings.window_partitions_independently)
                 optimizeWindowPerPartition(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.distinct_in_order && !cascades_active)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+                optimizeDistinctInOrder(stack, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)
                 optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
@@ -781,7 +791,7 @@ void optimizeTreeSecondPass(
             /// The local plan was optimized under `local_optimization_settings`, so merge the seam it
             /// forms with the outer plan under the same ones.
             if (local_optimization_settings.merge_expressions)
-                tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings));
+                tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings, query_plan));
 
             /// The merge after the join runtime filters ran while this plan was still opaque, so give it the
             /// same merge, or it keeps steps the single-node plan has merged (e.g. the part of an expression
@@ -790,7 +800,7 @@ void optimizeTreeSecondPass(
             if (join_runtime_filters_were_added)
             {
                 Stack local_stack;
-                const auto local_extra_settings = makeExtraSettings(local_optimization_settings);
+                const auto local_extra_settings = makeExtraSettings(local_optimization_settings, query_plan);
                 traverseQueryPlan(local_stack, *local_plan_node,
                     [&](auto & frame_node)
                     {
@@ -1000,6 +1010,10 @@ void optimizeTreeSecondPass(
             it != projection_reject_reasons.end() ? it->second : "the projection was not considered by any read");
     }
 
+    /// Before `applyOrder`: a window sorting read by layers keeps one stream per layer, which it may advertise.
+    if (optimization_settings.read_in_order && !make_distributed_plan)
+        optimizeWindowByLayers(root);
+
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 
@@ -1037,6 +1051,25 @@ void optimizeTreeSecondPass(
     /// After every pass that converts a full sorting or gives it partitions.
     traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
 
+    /// Run after every optimization that can rewrite aggregation, sorting, projections,
+    /// distributed fragments, or parallel replicas. This placement makes the pass a pure
+    /// admission check: no later optimization needs to retract the heap or its synthetic sort.
+    /// Automatic parallel replicas runs later, but replaces the whole plan by one optimized on its own.
+    if (optimization_settings.enable_group_by_top_k_optimization)
+    {
+        if (optimization_settings.distributed_group_by_top_k)
+            applyGroupByTopKOfInitiator(root, nodes, optimization_settings.distributed_group_by_top_k, extra_settings);
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
+    }
+
+    /// Runs behind every rewrite of the HAVING filter it reads, and behind the pass above, whose `top_k` it refuses.
+    if (optimization_settings.aggregation_having_prefilter)
+    {
+        traverseQueryPlan(
+            stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
+    }
+
+    /// After every pass that changes the plan, so that the plan it measures and switches is the settled one.
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
     /// After every optimization that can replace the reading step: the aggregation relies on the layers of the read.
@@ -1047,21 +1080,6 @@ void optimizeTreeSecondPass(
     /// Keep `SortingStep` while building distributed fragments; replace it only when optimizing a local executable plan.
     if (optimization_settings.use_shuffle_for_order_by_rand && !optimization_settings.make_distributed_plan)
         traverseQueryPlan(stack, root, [&](auto & frame_node) { useShuffleForOrderByRand(frame_node); });
-
-    /// Run after every optimization that can rewrite aggregation, sorting, projections,
-    /// distributed fragments, or parallel replicas. This placement makes the pass a pure
-    /// admission check: no later optimization needs to retract the heap or its synthetic sort.
-    if (optimization_settings.enable_group_by_top_k_optimization)
-    {
-        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
-    }
-
-    /// Runs behind every rewrite of the HAVING filter it reads, and behind the pass above, whose `top_k` it refuses.
-    if (optimization_settings.aggregation_having_prefilter)
-    {
-        traverseQueryPlan(
-            stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
-    }
 
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);

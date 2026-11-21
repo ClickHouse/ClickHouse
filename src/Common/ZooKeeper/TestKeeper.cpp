@@ -57,7 +57,7 @@ using Undo = std::function<void()>;
 
 struct TestKeeperRequest : virtual Request
 {
-    virtual ResponsePtr createResponse() const = 0;
+    [[nodiscard]] virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(
         TestKeeper::Watches & /*watches*/,
@@ -151,7 +151,7 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 {
     TestKeeperCreateRequest() = default;
     explicit TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
@@ -167,7 +167,7 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
     explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
@@ -183,7 +183,7 @@ struct TestKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, TestKeep
 {
     TestKeeperRemoveRecursiveRequest() = default;
     explicit TestKeeperRemoveRecursiveRequest(const RemoveRecursiveRequest & base) : RemoveRecursiveRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
@@ -203,7 +203,7 @@ struct TestKeeperListRecursiveRequest final : ListRecursiveRequest, TestKeeperRe
 {
     TestKeeperListRecursiveRequest() = default;
     explicit TestKeeperListRecursiveRequest(const ListRecursiveRequest & base) : ListRecursiveRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -211,7 +211,7 @@ struct TestKeeperListWithOptionsRequest final : ListWithOptionsRequest, TestKeep
 {
     TestKeeperListWithOptionsRequest() = default;
     explicit TestKeeperListWithOptionsRequest(const ListWithOptionsRequest & base) : ListWithOptionsRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -219,7 +219,7 @@ struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 {
     TestKeeperExistsRequest() = default;
     explicit TestKeeperExistsRequest(const ExistsRequest & base) : ExistsRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -227,7 +227,7 @@ struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
     TestKeeperGetRequest() = default;
     explicit TestKeeperGetRequest(const GetRequest & base) : GetRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -235,7 +235,7 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
     explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
     void processWatches(
@@ -253,7 +253,7 @@ struct TestKeeperListRequest : ListRequest, TestKeeperRequest
 {
     TestKeeperListRequest() = default;
     explicit TestKeeperListRequest(const ListRequest & base) : ListRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -261,7 +261,7 @@ struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
     explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -269,7 +269,7 @@ struct TestKeeperSyncRequest final : SyncRequest, TestKeeperRequest
 {
     TestKeeperSyncRequest() = default;
     explicit TestKeeperSyncRequest(const SyncRequest & base) : SyncRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -277,7 +277,7 @@ struct TestKeeperReconfigRequest final : ReconfigRequest, TestKeeperRequest
 {
     TestKeeperReconfigRequest() = default;
     explicit TestKeeperReconfigRequest(const ReconfigRequest & base) : ReconfigRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -285,7 +285,7 @@ struct TestKeeperGetACLRequest final : GetACLRequest, TestKeeperRequest
 {
     TestKeeperGetACLRequest() = default;
     explicit TestKeeperGetACLRequest(const GetACLRequest & base) : GetACLRequest(base) {}
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
@@ -378,7 +378,7 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
         }
     }
 
-    ResponsePtr createResponse() const override;
+    [[nodiscard]] ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
     std::pair<ResponsePtr, Undo> processMultiWrite(TestKeeper::Container & container, int64_t zxid) const;
     std::pair<ResponsePtr, Undo> processMultiRead(TestKeeper::Container & container, int64_t zxid) const;
