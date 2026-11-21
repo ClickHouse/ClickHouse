@@ -1720,8 +1720,11 @@ bool allowParallelReplicasForJoinTree(
     if (!join_node)
         return true;
 
-    const auto & left_table_expr = join_node->getLeftTableExpressionNode();
-    const auto * left_table = typeid_cast<const TableNode *>(left_table_expr.get());
+    /// An `ARRAY JOIN` expands each row of its table expression on its own, so the table under it is checked.
+    const IQueryTreeNode * left_table_expr = join_node->getLeftTableExpressionNode().get();
+    while (const auto * array_join_node = left_table_expr->as<ArrayJoinNode>())
+        left_table_expr = array_join_node->getTableExpressionNode().get();
+    const auto * left_table = typeid_cast<const TableNode *>(left_table_expr);
     if (left_table && left_table->getStorage()->isView())
         return false;
 
@@ -1742,7 +1745,6 @@ bool allowParallelReplicasForJoinTree(
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
             && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
             && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN
-            && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN
             && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
     }
 
@@ -3965,13 +3967,12 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     /// In case of n-way JOINs the table expression stack contains several join nodes;
     /// the parent JOIN node of the leftmost leaf is needed to evaluate parallel-replicas
-    /// eligibility for the whole join tree.
+    /// eligibility for the whole join tree. An ARRAY JOIN is not that node: the check looks through it.
     QueryTreeNodePtr parent_join_tree_for_leftmost = join_tree_node;
     for (const auto & node : table_expressions_stack)
     {
         if (node->getNodeType() == QueryTreeNodeType::JOIN ||
-            node->getNodeType() == QueryTreeNodeType::CROSS_JOIN ||
-            node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            node->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
         {
             parent_join_tree_for_leftmost = node;
             break;
