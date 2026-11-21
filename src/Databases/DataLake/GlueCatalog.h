@@ -67,8 +67,6 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
-
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
@@ -88,8 +86,7 @@ public:
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
     /// fails with `ExpiredToken`, so that a long-running read can recover without
     /// the user having to restart the query.
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
-        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
     /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
     /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is

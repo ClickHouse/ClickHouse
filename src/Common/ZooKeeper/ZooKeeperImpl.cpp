@@ -2294,64 +2294,41 @@ int64_t ZooKeeper::getConnectionXid() const
 }
 
 
-bool ZooKeeper::resolveSystemLogs()
-{
-    while (true)
-    {
-        auto state = system_logs_state.load();
-        if (state == SystemLogsState::Resolved)
-            return true;
-        if (state == SystemLogsState::Unresolved && system_logs_state.compare_exchange_strong(state, SystemLogsState::InProgress))
-            break;
-        system_logs_state.wait(SystemLogsState::InProgress);
-    }
-
-    auto set_state = [&](SystemLogsState state)
-    {
-        system_logs_state = state;
-        system_logs_state.notify_all();
-    };
-
-    try
-    {
-        if (const auto global_context = Context::getGlobalContextInstance())
-        {
-            if (!global_context->hasSystemLogs())
-            {
-                set_state(SystemLogsState::Unresolved);
-                return false;
-            }
-
-            if (!zk_log)
-                zk_log = global_context->getZooKeeperLog();
-            if (!aggregated_zookeeper_log)
-                aggregated_zookeeper_log = global_context->getAggregatedZooKeeperLog();
-        }
-    }
-    catch (...)
-    {
-        set_state(SystemLogsState::Unresolved);
-        throw;
-    }
-
-    set_state(SystemLogsState::Resolved);
-    return true;
-}
-
 std::shared_ptr<ZooKeeperLog> ZooKeeper::getZooKeeperLog()
 {
-    if (!resolveSystemLogs())
-        return nullptr;
+    if (auto maybe_zk_log = std::atomic_load_explicit(&zk_log, std::memory_order_relaxed))
+    {
+        return maybe_zk_log;
+    }
 
-    return zk_log;
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_zk_log = maybe_global_context->getZooKeeperLog())
+        {
+            std::atomic_store_explicit(&zk_log, maybe_zk_log, std::memory_order_relaxed);
+            return maybe_zk_log;
+        }
+    }
+
+    return nullptr;
 }
-
 std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 {
-    if (!resolveSystemLogs())
-        return nullptr;
+    if (auto maybe_aggregated_zookeeper_log = std::atomic_load_explicit(&aggregated_zookeeper_log, std::memory_order_relaxed))
+    {
+        return maybe_aggregated_zookeeper_log;
+    }
 
-    return aggregated_zookeeper_log;
+    if (const auto maybe_global_context = Context::getGlobalContextInstance())
+    {
+        if (auto maybe_aggregated_zookeeper_log = maybe_global_context->getAggregatedZooKeeperLog())
+        {
+            std::atomic_store_explicit(&aggregated_zookeeper_log, maybe_aggregated_zookeeper_log, std::memory_order_relaxed);
+            return maybe_aggregated_zookeeper_log;
+        }
+    }
+
+    return nullptr;
 }
 
 #ifdef ZOOKEEPER_LOG

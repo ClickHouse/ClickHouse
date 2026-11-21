@@ -1,6 +1,8 @@
 #include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -56,6 +58,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -231,9 +234,6 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     /// limit per shard under the pushdown instead of once globally on the normal path, changing the
     /// result. The WITH TOTALS/ROLLUP/CUBE/GROUPING SETS modifiers are likewise aggregation markers,
     /// and limitByLength()/limitByOffset() carry the N/OFFSET of a LIMIT BY — all rejected fail-close.
-    /// A `LIMIT [n] AFTER/UNTIL` range is applied once on the initiator on the normal path
-    /// (StorageDistributed::getOptimizedQueryProcessingStageAnalyzer keeps the default stage for it), whereas
-    /// the pushdown would apply it on every shard to that shard's rows, so it is rejected as well.
     ///
     /// ORDER BY ALL differs: the parser populates orderBy() with a placeholder `all` element in
     /// addition to setting order_by_all, so the orderBy() check above already rejects it (ORDER BY ALL
@@ -248,7 +248,6 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->having() || select->qualify()
         || select->orderBy() || select->order_by_all
         || select->limitLength() || select->limitOffset()
-        || select->limitAfter() || select->limitUntil()
         || select->limitBy() || select->limit_by_all
         || select->limitByLength() || select->limitByOffset()
         || select->distinct || select->arrayJoinExpressionList().first
@@ -456,7 +455,6 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()
-                        || query_node.hasLimitAfter() || query_node.hasLimitUntil()
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
@@ -558,12 +556,29 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
             current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        auto view_context = getViewContext(context, storage_snapshot, this);
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        interpreter.buildQueryPlan(query_plan);
+
+        /// It's expected that the columns read from storage are not constant.
+        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+        ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+        materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
+
+        auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
+        materializing->setStepDescription("Materialize constants after VIEW subquery");
+        query_plan.addStep(std::move(materializing));
     }
 
     /// And also convert to expected structure.
@@ -603,8 +618,7 @@ void StorageView::drop()
 void StorageView::alter(
     const AlterCommands & params,
     ContextPtr context,
-    AlterLockHolder &,
-    DDLGuardPtr &)
+    AlterLockHolder &)
 {
     auto table_id = getStorageID();
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
@@ -654,7 +668,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
         if (table_expression->table_function)
         {
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
-            if (table_function_name == "view" || table_function_name == "viewIfPermitted" || table_function_name == "eval")
+            if (table_function_name == "view" || table_function_name == "viewIfPermitted")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__view");
             else if (table_function_name == "merge")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__merge");

@@ -104,7 +104,7 @@ def set_default_env():
             "KEEPER_RUN_NO_FAULT_TESTS": "true",
             # TODO: re-enable the lsmt backend after the memory usage of huge RemoveRecursive
             # preprocessing is bounded (a whole-tree remove at bench cleanup OOMs the container).
-            "KEEPER_MATRIX_BACKENDS": "default,lsmt",
+            "KEEPER_MATRIX_BACKENDS": "default",
             "KEEPER_INCLUDE_IDS": "prod-mix-no-fault,read-multi-no-fault,write-multi-no-fault",
             "KEEPER_METRICS_INTERVAL_S": "5",
             "KEEPER_JOB_TYPE": "pr",
@@ -179,10 +179,7 @@ def get_commit_sha(env):
         if os.environ.get(k):
             return os.environ.get(k)
     try:
-        _tools_dir = os.path.join(REPO_DIR, "ci", "tools")
-        if _tools_dir not in sys.path:
-            sys.path.insert(0, _tools_dir)
-        from pr_info import PRInfo
+        from tests.ci.pr_info import PRInfo
         if getattr(PRInfo(), "sha", None):
             return PRInfo().sha
     except Exception:

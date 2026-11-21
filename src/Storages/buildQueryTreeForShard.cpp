@@ -13,9 +13,7 @@
 #include <Analyzer/SortNode.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerCorrelatedSubqueries.h>
 
-#include <limits>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -330,9 +328,6 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            ++query_node_depth;
-
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
 
@@ -341,7 +336,7 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
         }
@@ -351,7 +346,7 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            in_function_or_join_entry.subquery_depth = getSubqueryDepth();
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
         }
@@ -362,9 +357,6 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            --query_node_depth;
-
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
     }
@@ -409,27 +401,14 @@ private:
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
-            /** A single `IN` function or `JOIN` is reached once per distributed table inside of it.
-              * For example, the right argument of an `IN` function can be a `UNION` of several
-              * distributed tables. Only the first of them rewrites the node, and the node has to be
-              * collected only once, otherwise the same subquery is prepared twice.
-              * A node on the stack is `GLOBAL` only if we made it `GLOBAL` ourselves, because
-              * `enterImpl` puts a node on the stack only while it is local.
-              */
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
             {
-                if (isNameOfGlobalInFunction(in_function_to_modify->getFunctionName()))
-                    return;
-
                 auto global_in_function_name = getGlobalInFunctionNameForLocalInFunctionName(in_function_to_modify->getFunctionName());
                 auto global_in_function_resolver = FunctionFactory::instance().get(global_in_function_name, getContext());
                 in_function_to_modify->resolveAsFunction(global_in_function_resolver->build(in_function_to_modify->getArgumentColumns()));
             }
             else if (auto * join_node_to_modify = in_or_join_node_to_modify->as<JoinNode>())
             {
-                if (join_node_to_modify->getLocality() == JoinLocality::Global)
-                    return;
-
                 join_node_to_modify->setLocality(JoinLocality::Global);
             }
 
@@ -448,9 +427,6 @@ private:
         }
     }
 
-    /// Number of enclosing SELECT queries; a UNION is not a level. `max_subquery_depth` is checked against
-    /// this same count for a plain IN/JOIN, so a GLOBAL subquery recorded here needs no higher limit.
-    size_t query_node_depth = 0;
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
@@ -938,7 +914,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     auto replacement_map = visitor.getReplacementMap();
     const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
 
-    QueryTreeNodePtrWithHashIgnoreAliasesMap<TableNodePtr> global_in_temporary_tables;
+    QueryTreeNodePtrWithHashMap<TableNodePtr> global_in_temporary_tables;
 
     bool enable_add_distinct_to_in_subqueries = planner_context->getQueryContext()->getSettingsRef()[Setting::enable_add_distinct_to_in_subqueries];
 
@@ -1244,88 +1220,6 @@ private:
     std::unordered_map<String, String> & translation;
 };
 
-/// Collect, for every `ALIAS` column in the query tree, the inlined clone of its defining expression, keyed by the
-/// column's identifier-based action name (the name `expected_header` uses). Nested `ALIAS` columns are inlined in the
-/// clone as well, so its `COLUMN` leaves are named as the shard header names them and it can be built on that header.
-class CollectInlinedAliasExpressionsVisitor : public InDepthQueryTreeVisitor<CollectInlinedAliasExpressionsVisitor>
-{
-public:
-    CollectInlinedAliasExpressionsVisitor(
-        const PlannerContext & planner_context_, std::unordered_map<String, QueryTreeNodePtr> & alias_expressions_)
-        : planner_context(planner_context_)
-        , alias_expressions(alias_expressions_)
-    {
-    }
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (node->getNodeType() != QueryTreeNodeType::COLUMN)
-            return;
-
-        auto inlined = getInlineableAliasColumnExpression(node);
-        if (!inlined)
-            return;
-
-        auto identifier_name = calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true);
-        if (alias_expressions.contains(identifier_name))
-            return;
-
-        inlineAliasColumnsInExpression(inlined);
-        alias_expressions.emplace(std::move(identifier_name), std::move(inlined));
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
-    {
-        auto child_type = child->getNodeType();
-        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION
-            && child_type != QueryTreeNodeType::TABLE_FUNCTION && child_type != QueryTreeNodeType::TABLE;
-    }
-
-private:
-    const PlannerContext & planner_context;
-    std::unordered_map<String, QueryTreeNodePtr> & alias_expressions;
-};
-
-/// Collect the identifier-based action name of every `COLUMN` leaf of an already-inlined expression. These are the
-/// names `PlannerActionsVisitor` will look up when it builds the expression, so they are what has to resolve to the
-/// shard header's columns.
-void collectLeafColumnActionNames(
-    const QueryTreeNodePtr & node, const PlannerContext & planner_context, std::unordered_set<String> & leaf_names)
-{
-    if (node->getNodeType() == QueryTreeNodeType::COLUMN)
-    {
-        leaf_names.emplace(calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true));
-        return;
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectLeafColumnActionNames(child, planner_context, leaf_names);
-}
-
-/// True if `node`'s value depends on which server evaluates it: a function that is not deterministic (`rand`, `now`,
-/// ...), or a `ConstantNode` the analyzer produced by folding a server-local call (`hostName`, `tcpPort`, ...), which
-/// the fold marks non-deterministic while a plain literal stays deterministic.
-bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return false;
-
-    if (const auto * function_node = node->as<FunctionNode>())
-        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
-            return true;
-
-    if (const auto * constant_node = node->as<ConstantNode>())
-        if (!constant_node->isDeterministic())
-            return true;
-
-    for (const auto & child : node->getChildren())
-        if (containsNonDeterministicFunction(child))
-            return true;
-
-    return false;
-}
-
 /// Collect the set of genuine column-name tails of analyzer-generated table qualifiers in the query tree. A real
 /// qualifier in a column identifier has the form `__tableN.<tail>`, where `__tableN` is the alias
 /// `createUniqueAliasesIfNecessary` assigns to a table expression and `<tail>` is the rendered column name
@@ -1481,20 +1375,16 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     if (!planner_context || !query_tree)
         return {};
 
-    /// A zero-column shard header carries no expression to map from, so nothing here can explain it.
-    if (shard_header.columns() == 0)
+    /// The shard-side deduplication can only remove columns, so a recognized collapse has a strictly smaller shard header.
+    if (shard_header.columns() == 0 || shard_header.columns() >= expected_header.columns())
         return {};
 
     std::unordered_map<String, String> identifier_to_inlined_name;
-    std::unordered_map<String, QueryTreeNodePtr> identifier_to_alias_expression;
     std::unordered_set<String> genuine_qualifier_tails;
     {
         QueryTreeNodePtr query_tree_for_visit = query_tree;
         CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name);
         visitor.visit(query_tree_for_visit);
-
-        CollectInlinedAliasExpressionsVisitor alias_visitor(*planner_context, identifier_to_alias_expression);
-        alias_visitor.visit(query_tree_for_visit);
 
         CollectGenuineQualifierTailsVisitor tails_visitor(*planner_context, genuine_qualifier_tails);
         tails_visitor.visit(query_tree_for_visit);
@@ -1507,25 +1397,15 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     /// shard but `__tableK.x` (K > 1) in the initiator's tree. Erasing the genuine qualifier number on both sides
     /// removes exactly that difference, so corresponding columns match while every other difference (including user
     /// text that merely looks like a qualifier) is preserved. Matching is by name, not position, so it tolerates the
-    /// shard returning its columns in a different order than the initiator expects. Two shard columns sharing a
-    /// normalized name make it undecidable which of them feeds an expected column resolving to that name, so such names
-    /// are recorded and any expected column hitting one is rejected below.
+    /// shard returning its deduplicated columns in a different order than the initiator expects. If two shard columns
+    /// share a normalized name we keep the first; the "every shard column used" guard below then rejects the ambiguous
+    /// case and we fall back safely.
     std::unordered_map<String, size_t> shard_normalized_to_index;
-    std::unordered_set<String> ambiguous_shard_names;
     shard_normalized_to_index.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
-    {
-        auto normalized = normalizeGenuineQualifiers(shard_header.getByPosition(i).name, genuine_qualifier_tails);
-        if (!shard_normalized_to_index.emplace(normalized, i).second)
-            ambiguous_shard_names.emplace(std::move(normalized));
-    }
-
-    /// Sentinel in `shard_index_for_expected`: this expected column has no single shard column feeding it and is
-    /// computed from the shard header by `expression_for_expected` instead.
-    static constexpr size_t computed_from_expression = std::numeric_limits<size_t>::max();
+        shard_normalized_to_index.emplace(normalizeGenuineQualifiers(shard_header.getByPosition(i).name, genuine_qualifier_tails), i);
 
     std::vector<size_t> shard_index_for_expected(expected_header.columns());
-    std::vector<QueryTreeNodePtr> expression_for_expected(expected_header.columns());
     std::vector<bool> shard_column_used(shard_header.columns(), false);
     bool collapse_detected = false;
 
@@ -1538,67 +1418,34 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
             inlined_name = it->second;
 
         /// Match by normalized name so the independent shard/initiator qualifier numbering does not matter.
-        auto normalized_inlined_name = normalizeGenuineQualifiers(inlined_name, genuine_qualifier_tails);
-        if (ambiguous_shard_names.contains(normalized_inlined_name))
-            return {}; /// Two shard columns share this name, so which one feeds this column is undecidable.
-
-        auto shard_it = shard_normalized_to_index.find(normalized_inlined_name);
-        if (shard_it != shard_normalized_to_index.end())
-        {
-            shard_index_for_expected[i] = shard_it->second;
-            shard_column_used[shard_it->second] = true;
-            /// The matched shard column carries a name different from the initiator-side `expected_name` (whether by
-            /// the ALIAS inlining or only by the qualifier renumbering); that is the signature of an
-            /// inlined/deduplicated ALIAS column the shard collapsed.
-            if (shard_header.getByPosition(shard_it->second).name != expected_name)
-                collapse_detected = true;
-            continue;
-        }
-
-        /// An `ALIAS` whose declared type differs from its body's inlines to `_CAST(<body>, '<Type>')`, and one over an
-        /// expression to that expression; neither is a column the shard emits at a mergeable-state boundary. The body's
-        /// leaves are raw columns the shard does send, so evaluate the body here instead of looking the column up.
-        auto alias_it = identifier_to_alias_expression.find(expected_name);
-        if (alias_it == identifier_to_alias_expression.end())
+        auto shard_it = shard_normalized_to_index.find(normalizeGenuineQualifiers(inlined_name, genuine_qualifier_tails));
+        if (shard_it == shard_normalized_to_index.end())
             return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
 
-        /// Evaluating the body here reproduces what the shard would have computed only while the body is a function of
-        /// the shard's columns alone. One whose value depends on the evaluating server would take this server's value.
-        if (containsNonDeterministicFunction(alias_it->second))
-            return {};
-
-        shard_index_for_expected[i] = computed_from_expression;
-        expression_for_expected[i] = alias_it->second;
-        collapse_detected = true;
+        shard_index_for_expected[i] = shard_it->second;
+        shard_column_used[shard_it->second] = true;
+        /// The matched shard column carries a name different from the initiator-side `expected_name` (whether by the
+        /// ALIAS inlining or only by the qualifier renumbering); that is the signature of an inlined/deduplicated
+        /// ALIAS column the shard collapsed.
+        if (shard_header.getByPosition(shard_it->second).name != expected_name)
+            collapse_detected = true;
     }
 
     if (!collapse_detected)
         return {};
 
-    /// Every expected column reads the shard column at its own position and nothing has to be computed, so the caller's
-    /// positional reconciliation already produces exactly this mapping. Decline, to leave such plans untouched.
-    if (shard_header.columns() == expected_header.columns())
-    {
-        bool identity_mapping = true;
-        for (size_t i = 0; i < expected_header.columns() && identity_mapping; ++i)
-            identity_mapping = shard_index_for_expected[i] == i;
-        if (identity_mapping)
-            return {};
-    }
+    for (bool used : shard_column_used)
+        if (!used)
+            return {}; /// Some shard column is unaccounted for; fall back to be safe.
 
     ActionsDAG dag;
     std::vector<const ActionsDAG::Node *> shard_input_nodes;
-    std::unordered_set<std::string_view> shard_column_names;
     shard_input_nodes.reserve(shard_header.columns());
-    shard_column_names.reserve(shard_header.columns());
     for (size_t i = 0; i < shard_header.columns(); ++i)
     {
         const auto & column = shard_header.getByPosition(i);
         shard_input_nodes.push_back(&dag.addInput(column.name, column.type));
-        shard_column_names.emplace(shard_input_nodes.back()->result_name);
     }
-    /// Leaf names already aliased onto a shard column by an earlier computed expression, so the alias is added once.
-    std::unordered_set<String> renamed_leaves;
 
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(expected_header.columns());
@@ -1606,52 +1453,10 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
     /// mapping onto the same shard column is a duplicate of that representative. Report those duplicates so a downstream
     /// aggregation merge can bucket by only the representative key columns (matching the shard's collapsed bucketing).
     std::unordered_map<size_t, String> representative_for_shard_index;
-    /// Collected locally and published to `duplicate_to_representative` only on the successful return, so that a
-    /// declining return always leaves the caller's map empty however many decline paths there are.
-    std::unordered_map<String, String> duplicates;
-    ColumnNodePtrWithHashSet empty_correlated_columns_set;
     for (size_t i = 0; i < expected_header.columns(); ++i)
     {
-        const auto & expected_column = expected_header.getByPosition(i);
-        const auto & expected_name = expected_column.name;
+        const auto & expected_name = expected_header.getByPosition(i).name;
         const size_t shard_index = shard_index_for_expected[i];
-
-        if (shard_index == computed_from_expression)
-        {
-            /// The body's leaves are named by the initiator's column identifiers, while the shard header carries the
-            /// shard's own independently renumbered qualifiers (see `normalizeGenuineQualifiers`). Aliasing the shard
-            /// column under the initiator's name resolves the expression onto an existing input instead of adding one.
-            std::unordered_set<String> leaf_names;
-            collectLeafColumnActionNames(expression_for_expected[i], *planner_context, leaf_names);
-            for (const auto & leaf_name : leaf_names)
-            {
-                /// Two shard columns share this name, so which one the leaf reads is undecidable. An exact-name hit
-                /// does not settle it either: the shard column of that exact name may belong to the other source.
-                auto normalized_leaf_name = normalizeGenuineQualifiers(leaf_name, genuine_qualifier_tails);
-                if (ambiguous_shard_names.contains(normalized_leaf_name))
-                    return {};
-                /// Already resolvable: the leaf names a shard column directly, or an earlier expression aliased it.
-                if (shard_column_names.contains(leaf_name) || !renamed_leaves.emplace(leaf_name).second)
-                    continue;
-                auto leaf_it = shard_normalized_to_index.find(normalized_leaf_name);
-                if (leaf_it == shard_normalized_to_index.end())
-                    continue;
-                dag.addAlias(*shard_input_nodes[leaf_it->second], leaf_name);
-            }
-
-            PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, /*use_column_identifier_as_action_node_name=*/true);
-            auto [expression_outputs, correlated_subtrees] = actions_visitor.visit(dag, expression_for_expected[i]);
-            if (correlated_subtrees.notEmpty() || expression_outputs.size() != 1)
-                return {};
-
-            const auto * computed_node = expression_outputs.front();
-            if (!computed_node->result_type->equals(*expected_column.type))
-                return {};
-
-            outputs.push_back(&dag.addAlias(*computed_node, expected_name));
-            continue;
-        }
-
         const auto * source_node = shard_input_nodes[shard_index];
         outputs.push_back(&dag.addAlias(*source_node, expected_name));
 
@@ -1659,39 +1464,9 @@ std::optional<ActionsDAG> buildShardCollapseFanOut(
         {
             auto [it, inserted] = representative_for_shard_index.emplace(shard_index, expected_name);
             if (!inserted && it->second != expected_name)
-                duplicates.emplace(expected_name, it->second);
+                duplicate_to_representative->emplace(expected_name, it->second);
         }
     }
-
-    /// The resulting DAG runs on the shard header, so every input it reads must be a column of that header. Building a
-    /// computed expression adds an input for any leaf that did not resolve above, and such a DAG would throw
-    /// `NOT_FOUND_COLUMN_IN_BLOCK` while the plan is built. Decline instead and let the caller reconcile.
-    for (const auto * input : dag.getInputs())
-        if (!shard_column_names.contains(input->result_name))
-            return {};
-
-    /// Every shard column must be accounted for: either it feeds an expected column directly, or a computed expression
-    /// above reads it. A leftover column means the mapping does not explain this header, so fall back to be safe.
-    {
-        std::unordered_set<const ActionsDAG::Node *> reachable;
-        std::vector<const ActionsDAG::Node *> to_visit = outputs;
-        while (!to_visit.empty())
-        {
-            const auto * node = to_visit.back();
-            to_visit.pop_back();
-            if (!reachable.emplace(node).second)
-                continue;
-            for (const auto * child : node->children)
-                to_visit.push_back(child);
-        }
-
-        for (size_t i = 0; i < shard_header.columns(); ++i)
-            if (!shard_column_used[i] && !reachable.contains(shard_input_nodes[i]))
-                return {};
-    }
-
-    if (duplicate_to_representative)
-        *duplicate_to_representative = std::move(duplicates);
 
     dag.getOutputs() = std::move(outputs);
     return dag;

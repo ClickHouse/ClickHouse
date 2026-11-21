@@ -73,9 +73,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not recommended.
 
-<Note title="Zero-copy replication is not ready for production">
+<Info>
+**Zero-copy replication is not ready for production**
+
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-</Note>
+</Info>
 
 **Globs in path**
 

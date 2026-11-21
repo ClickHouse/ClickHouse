@@ -30,10 +30,6 @@ struct ColumnForPatch
 using ColumnsForPatch = std::vector<ColumnForPatch>;
 using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
-/// Cached for the same reason as `getMergeTreeRangeReaderLogger`: a readers chain is built for every
-/// read task, and `getLogger` would take a process-global mutex each time.
-LoggerPtr getMergeTreeReadersChainLogger();
-
 class MergeTreeReadersChain
 {
     using DataflowCacheUpdateCallback = std::function<void(
@@ -120,7 +116,7 @@ private:
     NameSet columns_consumed_by_chain_actions;
 
     bool is_initialized = false;
-    LoggerPtr log = getMergeTreeReadersChainLogger();
+    LoggerPtr log = getLogger("MergeTreeReadersChain");
 };
 
 };

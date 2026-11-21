@@ -52,10 +52,6 @@ struct BaseSettingsHelpers
         IMPORTANT = 0x01,  /// Setting affects query results, cannot be ignored by older versions
         CUSTOM = 0x02,     /// User-defined custom setting
         TIER = 0x1c,       /// 0b11100 == 3 bits for tier level (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL)
-        /// Flag indicating that the setting is baked into a client object built from the settings (e.g. the S3 client
-        /// of an object storage), so a change of the setting requires rebuilding that client.
-        /// See `hasChangesAffectingClient`. Currently only used in S3RequestSettings.
-        AFFECTS_CLIENT = 0x20,
         /// Flag indicating that changes from config can be picked up without server restart.
         /// Currently only works in CoordinationSettings.
         HOT_RELOAD = 0x80,
@@ -144,7 +140,6 @@ struct SettingsOwner;
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) \
   *     DECLARE(String, s, "default", "Description of s", 0) \
   *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
-  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, old_name, older_name)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MY_SETTINGS_SUPPORTED_TYPES)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
@@ -249,11 +244,6 @@ public:
     /// Resets specified setting to its default value
     void resetToDefault(std::string_view name);
 
-    /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
-    /// The setting keeps acting locally (readers see the value) but is no longer serialized to a
-    /// remote server, which only receives changed settings. No-op for custom settings.
-    void markUnchanged(std::string_view name);
-
     /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
 
@@ -306,11 +296,6 @@ public:
     /// Copy settings with HOT_RELOAD flag from `new_settings` into `this`.
     /// Leave other settings unchanged.
     void updateHotReloadableSettings(const BaseSettings & new_settings);
-
-    /// Returns true if some setting with the AFFECTS_CLIENT flag is changed in `new_settings` and has a different value
-    /// than in `this`. Mirrors the semantics of the `updateIfChanged` methods of the settings wrappers (only the settings
-    /// changed in `new_settings` are applied): tells whether applying `new_settings` requires rebuilding the client.
-    bool hasChangesAffectingClient(const BaseSettings & new_settings) const;
 
     /// Convert all settings to a human-readable string (for debugging)
     std::string toString() const;
@@ -557,15 +542,6 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 
     if constexpr (Traits::allow_custom_settings)
         custom_settings_map.erase(String{resolveCustomSettingName<TTraits>(name)});
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::markUnchanged(std::string_view name)
-{
-    name = TTraits::resolveName(name);
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        accessor.setValueChanged(*this, index, false);
 }
 
 template <typename TTraits>
@@ -833,20 +809,6 @@ void BaseSettings<TTraits>::updateHotReloadableSettings(const BaseSettings & new
         Field value = accessor.getValue(new_settings, index);
         accessor.setValue(*this, index, value);
     }
-}
-
-template <typename TTraits>
-bool BaseSettings<TTraits>::hasChangesAffectingClient(const BaseSettings & new_settings) const
-{
-    const auto & accessor = Traits::Accessor::instance();
-    for (size_t index = 0; index < accessor.size(); ++index)
-    {
-        if (!accessor.affectsClient(index) || !accessor.isValueChanged(new_settings, index))
-            continue;
-        if (accessor.getValue(*this, index) != accessor.getValue(new_settings, index))
-            return true;
-    }
-    return false;
 }
 
 template <typename TTraits>
@@ -1375,7 +1337,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             bool isHotReload(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::HOT_RELOAD; } \
-            bool affectsClient(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::AFFECTS_CLIENT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
             /* Value conversion utilities — use type-level ops (no Data instance needed) */ \
@@ -1425,11 +1386,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             { \
                 const auto & fi = field_infos[index]; \
                 return fi.ops->is_changed(settingPtr(data, fi.data_offset)); \
-            } \
-            void setValueChanged(Data & data, size_t index, bool changed) const \
-            { \
-                const auto & fi = field_infos[index]; \
-                fi.ops->set_changed(settingPtr(data, fi.data_offset), changed); \
             } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
@@ -1525,11 +1481,10 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 #define SETTING_SKIP_TRAIT(...)
 
 
-/// Generates one or two alias mapping entries.
+/// Generates an alias mapping entry
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
-    { #ALIAS, #NAME }, \
-    __VA_OPT__({ #__VA_ARGS__, #NAME },)
+#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
+    { #ALIAS, #NAME },
 
 /// Implement the full settings infrastructure for a settings class.
 /// Generates: Impl struct, Data constructor, Accessor singleton, and
@@ -1624,7 +1579,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         static const Accessor the_instance = [] \
         { \
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
-            [[maybe_unused]] constexpr int AFFECTS_CLIENT = 0x20; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             Accessor res; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \

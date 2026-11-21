@@ -111,13 +111,6 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
     return !response.get("x-amz-bucket-region").empty();
 }
 
-String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code)
-{
-    if (response_code == Aws::Http::HttpResponseCode::REQUEST_NOT_MADE)
-        return "none (no response from the server)";
-    return std::to_string(static_cast<std::underlying_type_t<Aws::Http::HttpResponseCode>>(response_code));
-}
-
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
     const String & force_region_,
@@ -701,21 +694,12 @@ void PocoHTTPClient::makeRequestInternalImpl(
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(poco_response.getContentType());
 
-            /// GCS answers in its own spelling and the SDK parses only the `x-amz-` one, so add
-            /// that alongside for the headers the request side renames. The original is kept too.
-            const auto add_response_header = [&](const std::string & name, const std::string & value)
-            {
-                response->AddHeader(name, value);
-                if (auto amz_name = translateHeaderNameFromGCS(name))
-                    response->AddHeader(*amz_name, value);
-            };
-
             if (enable_s3_requests_logging)
             {
                 WriteBufferFromOwnString headers_ss;
                 for (const auto & [header_name, header_value] : poco_response)
                 {
-                    add_response_header(header_name, header_value);
+                    response->AddHeader(header_name, header_value);
                     headers_ss << header_name << ": " << header_value << "; ";
                 }
                 LOG_TEST(log, "Received headers: {}", headers_ss.str());
@@ -723,7 +707,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
             else
             {
                 for (const auto & [header_name, header_value] : poco_response)
-                    add_response_header(header_name, header_value);
+                    response->AddHeader(header_name, header_value);
             }
 
             /// Request is successful but for some special requests we can have actual error message in body

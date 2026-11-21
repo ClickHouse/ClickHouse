@@ -113,16 +113,6 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 
-/// Whether 'max_execution_time_leaf' requires all leaf reading of a parallel-replicas query to happen on
-/// remote replicas. The local replica executes inside the initiator's pipeline and shares the initiator's
-/// 'QueryStatus', so it cannot be bounded by the leaf timeout separately - the leaf timeout is substituted
-/// into 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
-/// settings. Remote-only reading is therefore needed exactly when the leaf timeout is stricter than the
-/// initiator's own 'max_execution_time': when the initiator's timeout is at most the leaf timeout, it already
-/// bounds the local reading at least as tightly (a profile that caps both settings to the same value, like the
-/// one used by the Fast test job, must not disable the local plan for every query).
-bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
-
 /// Parallel-replicas state captured from the `ReadFromParallelRemoteReplicasStep` removed from the local
 /// INSERT SELECT plan. Carrying it into the remote-pool pass lets that pass reuse the exact coordinator,
 /// connection pools, and local replica numbering decided while building the local pipeline, instead of
@@ -184,6 +174,14 @@ void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
     QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    std::shared_ptr<const StorageLimitsList> storage_limits);
+
+void executeQueryWithParallelReplicas(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    QueryProcessingStage::Enum processed_stage,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
@@ -212,6 +210,15 @@ void executeQueryWithParallelReplicasCustomKey(
     const QueryTreeNodePtr & query_tree,
     ContextPtr context);
 
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    SelectQueryInfo query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context);
 }
 
 }

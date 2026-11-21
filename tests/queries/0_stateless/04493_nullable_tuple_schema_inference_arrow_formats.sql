@@ -1,12 +1,10 @@
 -- Tags: no-fasttest
 -- no-fasttest: Arrow, ORC and Parquet formats are not available in fasttest builds
 
--- With the Nullable(Tuple) type disabled, schema inference must not return Nullable(Tuple) for an
--- optional (nullable) struct column, because otherwise DESCRIBE would return a type that CREATE TABLE
--- rejects. The struct null map is propagated into the tuple elements instead.
--- Dropping the struct null map turns a NULL row into a visible one, whose element values the Arrow spec
--- leaves undefined; the Arrow readers therefore show the type defaults there (ORC, whose null map does
--- reach the elements, shows NULLs) rather than whatever the producer left under the null slot.
+-- Schema inference must not return Nullable(Tuple) for an optional (nullable) struct column
+-- unless the Nullable(Tuple) type is allowed by allow_experimental_nullable_tuple_type, because otherwise
+-- DESCRIBE would return a type that CREATE TABLE rejects. The struct null map is propagated
+-- into the tuple elements instead, as it worked before Nullable(Tuple) was supported.
 -- The Parquet queries with input_format_parquet_use_native_reader_v3 = 0 exercise the legacy
 -- Arrow-based Parquet reader in releases that still have it; in newer releases the setting is
 -- obsolete and they run on the native reader.
@@ -22,8 +20,8 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.arrowstream', 'Arro
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.orc', 'ORC', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.parquet', 'Parquet', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
 
--- With the type disabled, inference must not return Nullable(Tuple), and CREATE TABLE from the inferred schema must work.
-SET allow_experimental_nullable_tuple_type = 0;
+-- The default settings must not infer Nullable(Tuple), and CREATE TABLE from the inferred schema must work.
+SET allow_experimental_nullable_tuple_type = DEFAULT;
 
 -- Arrow
 DESCRIBE file(currentDatabase() || '_04493.arrow', 'Arrow');

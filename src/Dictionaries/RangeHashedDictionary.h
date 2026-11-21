@@ -184,7 +184,6 @@ private:
             AttributeContainerType<Object>>
             container;
 
-        /// `VectorWithMemoryTracking<bool>` instantiates the bit-packed `std::vector<bool>` specialization.
         std::optional<VectorWithMemoryTracking<bool>> is_value_nullable;
     };
 
@@ -669,7 +668,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
             bytes_allocated += container.size() * sizeof(ValueType);
 
             if (attribute.is_value_nullable)
-                bytes_allocated += ((*attribute.is_value_nullable).capacity() + 7) / 8;
+                bytes_allocated += (*attribute.is_value_nullable).size() * sizeof(bool);
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);

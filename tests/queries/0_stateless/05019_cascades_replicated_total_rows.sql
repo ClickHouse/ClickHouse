@@ -1,5 +1,6 @@
--- Tags: no-darwin, zookeeper
+-- Tags: no-darwin, no-old-analyzer, zookeeper
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+-- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 -- zookeeper: the estimated table is ReplicatedMergeTree.
 
 SET enable_analyzer = 1;
@@ -8,6 +9,7 @@ SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET distributed_plan_workers_num = 4;
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so the functional-test
 -- profile's non-zero limit would leave a single-node local aggregation and no distributed read.
 SET max_rows_to_group_by = 0;

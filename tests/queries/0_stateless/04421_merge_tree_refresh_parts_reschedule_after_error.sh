@@ -61,10 +61,6 @@ do
     sleep 0.5
 done
 
-# On the buggy version the fail point is never reached, so disarm it instead of counting on it
-# having fired: a fail point left armed is server-global state that outlives this test.
-${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT merge_tree_refresh_parts_throw_once"
-
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM reader WHERE s = 'World'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE reader SYNC"

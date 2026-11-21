@@ -497,7 +497,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 ## Data formatting {#tabseparated-data-formatting}
 
-Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting), and leading zeros are ignored when parsing (`007` is read as `7`). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
+Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
 Floating-point numbers are written in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are 'inf', '+inf', '-inf', and 'nan'. An entry of floating-point numbers may begin or end with a decimal point.
 During formatting, accuracy may be lost on floating-point numbers.
@@ -648,9 +648,9 @@ The output will be in tab separated format:
 
 Differs from the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format in that rows are written without escaping.
 
-<Note>
+:::note
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-</Note>
+:::
 
 For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](/reference/formats/RawBLOB#raw-formats-comparison)
 
@@ -732,9 +732,9 @@ The output will be in tab separated format:
 Differs from the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format,
 in that the rows are written without escaping.
 
-<Note>
+:::note
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 
@@ -816,9 +816,9 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 Differs from the [`TabSeparatedWithNamesAndTypes`](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format,
 in that the rows are written without escaping.
 
-<Note>
+:::note
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 

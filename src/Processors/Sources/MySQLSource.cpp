@@ -220,27 +220,6 @@ void MySQLWithFailoverSource::onCancel() noexcept
         tryLogCurrentException(log, "Unexpected error in MySQLWithFailoverSource::onCancel");
     }
 }
-
-UInt64 parseMySQLBitValue(std::string_view value)
-{
-    /// The length comes from the MySQL wire protocol, while a `BIT` value holds at most 64 bits.
-    const size_t n = value.size();
-    if (n > sizeof(UInt64))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
-            n, sizeof(UInt64));
-
-    /// The value is transferred in the big-endian order, most significant byte first. Assembling it
-    /// by shifting keeps the result independent of the endianness of the host: writing the bytes
-    /// into the object representation instead would left-align a value shorter than 8 bytes on a
-    /// big-endian host.
-    UInt64 val = 0;
-    for (char c : value)
-        val = (val << 8) | static_cast<UInt8>(c);
-
-    return val;
-}
-
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
@@ -346,8 +325,25 @@ namespace
             {
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
-                    const size_t n = value.size();
-                    assert_cast<ColumnUInt64 &>(column).insertValue(parseMySQLBitValue({value.data(), n}));
+                    size_t n = value.size();
+                    /// A `BIT` column holds at most 64 bits, so a value of it never needs more than
+                    /// eight bytes. The length comes from the wire and is not otherwise validated,
+                    /// so a malicious or broken server could overflow `val` below.
+                    if (n > sizeof(UInt64))
+                        throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
+                            n, sizeof(UInt64));
+                    UInt64 val = 0UL;
+                    char * to = reinterpret_cast<char *>(&val);
+                    memcpy(to, const_cast<char *>(value.data()), n);
+
+                    if constexpr (std::endian::native == std::endian::little)
+                    {
+                        char * start = to;
+                        char * end = to + n;
+                        std::reverse(start, end);
+                    }
+                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }
                 else

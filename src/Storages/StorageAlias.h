@@ -34,12 +34,6 @@ public:
     }
 
     bool readsFromOtherTables() const override { return true; }
-    std::vector<StoragePtr> getUnderlyingStorages() const override
-    {
-        if (auto target = tryGetTargetTable())
-            return {target};
-        return {};
-    }
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
@@ -76,8 +70,7 @@ public:
     void alter(
         const AlterCommands & params,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder,
-        DDLGuardPtr & ddl_guard) override;
+        AlterLockHolder & table_lock_holder) override;
 
     /// Truncate target table
     void truncate(

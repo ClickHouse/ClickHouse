@@ -491,16 +491,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
             compound_expression_from_error_message += compound_expression_source;
         }
 
-        /// The hint is the actionable part of the message, so it goes before the formatted query, which
-        /// can be many kilobytes long.
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-            "Identifier {} nested path {} cannot be resolved from type {}{}{}. In scope {}",
+            "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
             expression_identifier,
             nested_path,
             expression_type->getName(),
             compound_expression_from_error_message,
-            getHintsErrorMessageSuffix(hints),
-            scope.scope_node->formatASTForErrorMessage());
+            scope.scope_node->formatASTForErrorMessage(),
+            getHintsErrorMessageSuffix(hints));
     }
 
     return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
@@ -536,10 +534,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
         if (it == scope.expression_argument_name_to_node.end())
             return {};
     }
-
-    /// The argument is invisible while an expression written outside of this lambda is resolved through it.
-    if (scope.hidden_expression_arguments.contains(it->first))
-        return {};
 
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
@@ -779,30 +773,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     bool clone_is_needed = true;
 
-    /// `table_expression_name` is the alias when the table expression has one, so a query that lost a comma
-    /// in the FROM clause - `FROM date_dim AS dt, store_sales item` - reports that `item.i_brand` cannot be
-    /// resolved from "table with name item" while a table named `item` does exist. Name the table the alias
-    /// actually refers to, which is what makes the mistake visible.
     String table_expression_source = table_expression_data.table_expression_description;
     if (!table_expression_data.table_expression_name.empty())
-    {
         table_expression_source += " with name " + table_expression_data.table_expression_name;
-
-        /// A materialized CTE is a table node over a temporary table whose name is generated, so use the
-        /// name the user wrote instead of leaking `_materialized_cte_<name>_<rng>`.
-        String underlying_name = table_expression_data.table_name;
-        if (const auto * table_node = table_expression_node->as<TableNode>())
-            if (table_node->isMaterializedCTE())
-                underlying_name = table_node->getMaterializedCTE()->cte_name;
-
-        const bool name_is_an_alias = !underlying_name.empty()
-            && table_expression_data.table_expression_name != underlying_name
-            && table_expression_data.table_expression_name
-                != table_expression_data.database_name + "." + underlying_name;
-
-        if (name_is_an_alias)
-            table_expression_source += " (an alias of " + underlying_name + ")";
-    }
 
     if (!result_expression)
     {
@@ -830,11 +803,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
         auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
 
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
             identifier.getFullName(),
             table_expression_source,
-            getHintsErrorMessageSuffix(hints),
-            scope.scope_node->formatASTForErrorMessage());
+            scope.scope_node->formatASTForErrorMessage(),
+            getHintsErrorMessageSuffix(hints));
     }
 
     if (clone_is_needed)
@@ -1164,8 +1137,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
     {
         auto expr = from_cross_join_node.getTableExpressionTypedAt(i);
         auto identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, expr, scope);
-        if (identifier.ambiguous_in_join_tree)
-            return identifier;
         if (!identifier)
             continue;
 
@@ -1202,9 +1173,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         }
         else if (!prefer_left_table)
         {
-            if (identifier_lookup.allow_ambiguous_join_tree_identifier)
-                return IdentifierResolveResult::ambiguousInJoinTree();
-
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "JOIN {} ambiguous identifier '{}'. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
@@ -1440,7 +1408,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
-    bool ambiguous_in_join_tree = false;
     auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
         /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
@@ -1456,7 +1423,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         SCOPE_EXIT({ if (pushed) scope.join_using_columns.pop_back(); });
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
-        ambiguous_in_join_tree |= res.ambiguous_in_join_tree;
 
         return std::move(res.resolved_identifier);
     };
@@ -1491,9 +1457,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (!binds_left || binds_right)
         right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
 
-    if (ambiguous_in_join_tree)
-        return IdentifierResolveResult::ambiguousInJoinTree();
-
     /** The alias / table-name qualifier can restrict resolution to one side while the identifier is
       * actually a database-qualified reference (`db.table.column`) to the pruned side (the same token
       * is the table name of one side and the database name of the other). The database-qualified
@@ -1507,9 +1470,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
         else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
             left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
-
-        if (ambiguous_in_join_tree)
-            return IdentifierResolveResult::ambiguousInJoinTree();
     }
 
     if (!identifier_lookup.isExpressionLookup())
@@ -1712,10 +1672,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
-        }
-        else if (identifier_lookup.allow_ambiguous_join_tree_identifier)
-        {
-            return IdentifierResolveResult::ambiguousInJoinTree();
         }
         else
         {
@@ -1945,8 +1901,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 {
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
     auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpressionNodeTyped(), scope);
-    if (resolve_result.ambiguous_in_join_tree)
-        return resolve_result;
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;

@@ -100,9 +100,9 @@ namespace DatabaseDataLakeSetting
 
 namespace Setting
 {
-    extern const SettingsBool allow_database_iceberg;
-    extern const SettingsBool allow_database_unity_catalog;
-    extern const SettingsBool allow_database_glue_catalog;
+    extern const SettingsBool allow_experimental_database_iceberg;
+    extern const SettingsBool allow_experimental_database_unity_catalog;
+    extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
@@ -502,8 +502,7 @@ void DatabaseDataLake::resetCatalog(String reason) const
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
-    DataLakeStorageSettingsPtr storage_settings,
-    DataLake::DataLakeTableFormat /* table_format */) const
+    DataLakeStorageSettingsPtr storage_settings) const
 {
     /// TODO: add tests for azure, local storage types.
 
@@ -853,7 +852,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
 
-    const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
+    const auto configuration = getConfiguration(storage_type, storage_settings);
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -935,7 +934,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             return std::nullopt;
         if (!with_vended_credentials && !catalog_manages_provider_chain)
             return std::nullopt;
-        return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
+        return catalog->getCredentialsConfigurationCallback(storage_id);
     };
 
     const auto catalog_uuid = table_metadata.getTableUUID();
@@ -1385,7 +1384,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
-    storage->engine->name = String(catalog->getTableEngineName(table_metadata));
+    if (!table_metadata.isDefaultReadableTable())
+        storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
 
     storage->settings = {};
 
@@ -1520,7 +1520,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
@@ -1611,30 +1611,33 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                         throw_invalid_auth();
                 }
 
+                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::GLUE:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_database_glue_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Glue catalog is beta. "
                                     "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
+                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::UNITY:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_database_unity_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DataLake database with Unity catalog catalog is beta. "
                                     "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
+                engine_func->name = "DeltaLake";
                 break;
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -1647,6 +1650,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_hms_catalog");
                 }
 
+                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
@@ -1659,18 +1663,20 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
                 }
 
+                engine_func->name = "Paimon";
                 break;
             }
             case DatabaseDataLakeCatalogType::S3_TABLES:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with S3 Tables catalog (Iceberg REST) is beta. "
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
+                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
@@ -1708,7 +1714,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,
-        .has_builtin_setting_fn = DatabaseDataLakeSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 The `DataLakeCatalog` database engine enables you to connect ClickHouse to external
@@ -1730,9 +1735,9 @@ The `DataLakeCatalog` engine supports the following data catalogs:
 You will need to enable the relevant settings below to use the `DataLakeCatalog` engine:
 
 ```sql
-SET allow_database_iceberg = 1;
-SET allow_database_unity_catalog = 1;
-SET allow_database_glue_catalog = 1;
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
@@ -1776,7 +1781,7 @@ See below sections for examples of using the `DataLakeCatalog` engine:
 * [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
 * [Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
-    Can be used by enabling `allow_database_iceberg`.
+    Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint)
