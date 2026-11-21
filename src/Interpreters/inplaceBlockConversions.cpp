@@ -150,6 +150,11 @@ void addDefaultRequiredExpressionsRecursively(
             auto cast_expr = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(columns.get(required_column_name).type->getName()));
             expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(cast_expr));
         }
+        else if (isNullableOrLowCardinalityNullable(column.type))
+        {
+            /// Preserve the nested type of NULL defaults used by dependent expressions.
+            expr = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(column.type->getName()));
+        }
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
     }
