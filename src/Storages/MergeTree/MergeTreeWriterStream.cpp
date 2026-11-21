@@ -38,6 +38,9 @@ namespace
   * buffers above see exactly the bytes that end up on disk (whether packed or per-file), so
   * the per-substream checksums are correct in either branch.
   *
+  * The staging buffer uses the same adaptive sizing as the per-file buffers; the packing
+  * decision depends only on the accumulated byte count, not on the staging granularity.
+  *
   * Whether a substream ended packed or spilled is reported back through @coupled_spilled
   * (see constructor); MergeTreeWriterStream::isPacked reads that flag to pick the checksum path.
   */
@@ -55,6 +58,8 @@ public:
     SizeAdaptiveSpoolBuffer(
         size_t spill_threshold_,
         size_t buf_size_,
+        bool use_adaptive_buffer_size_,
+        size_t adaptive_buffer_initial_size_,
         OpenPerFileFunc open_per_file_,
         ClaimArchiveBaseFunc claim_archive_base_,
         PackedFilesWriter * packed_writer_,
@@ -62,7 +67,10 @@ public:
         const WriteSettings & packed_write_settings_,
         const String & display_file_name_,
         bool & coupled_spilled_)
-        : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+        : WriteBufferFromFileBase(
+              adaptiveBufferInitialSize(use_adaptive_buffer_size_, adaptive_buffer_initial_size_, buf_size_),
+              nullptr,
+              0)
         , spill_threshold(spill_threshold_)
         , open_per_file(std::move(open_per_file_))
         , claim_archive_base(std::move(claim_archive_base_))
@@ -72,6 +80,7 @@ public:
         , display_file_name(display_file_name_)
         , coupled_spilled(coupled_spilled_)
     {
+        enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size_);
     }
 
     ~SizeAdaptiveSpoolBuffer() override = default;
@@ -126,6 +135,7 @@ void SizeAdaptiveSpoolBuffer::nextImpl()
     if (spilled)
     {
         per_file_writer->write(working_buffer.begin(), bytes_in_buffer);
+        growAdaptiveBufferAfterFlush();
         return;
     }
 
@@ -137,6 +147,8 @@ void SizeAdaptiveSpoolBuffer::nextImpl()
 
     if (accumulator.size() > spill_threshold)
         promoteToPerFile();
+
+    growAdaptiveBufferAfterFlush();
 }
 
 void SizeAdaptiveSpoolBuffer::promoteToPerFile()
@@ -258,6 +270,8 @@ static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
         return std::make_unique<SizeAdaptiveSpoolBuffer>(
             packed_spill_threshold,
             buf_size,
+            write_settings.use_adaptive_write_buffer,
+            write_settings.adaptive_write_buffer_initial_size,
             std::move(open_per_file),
             std::move(claim_archive_base),
             packed_writer,

@@ -50,6 +50,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compress_primary_key;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
+    extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_skip_indexes;
     extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
@@ -119,6 +120,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
     , map_buckets_min_avg_size((*storage_settings)[MergeTreeSetting::map_buckets_min_avg_size])
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
+    , use_adaptive_write_buffer_for_skip_indexes((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_skip_indexes])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
     , max_memory_ratio_to_activate_adaptive_write_buffer(query_write_settings_.allow_adaptive_write_buffer_by_memory_ratio

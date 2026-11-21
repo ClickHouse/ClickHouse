@@ -80,6 +80,10 @@ makeOutputStreams(
     MergeTreeIndexOutputStreams streams;
     std::vector<std::unique_ptr<MergeTreeIndexWriterStream>> streams_holders;
 
+    WriteSettings index_write_settings = settings.query_write_settings;
+    index_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_skip_indexes;
+    index_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
+
     for (const auto & index_substream : index_substreams)
     {
         auto stream_name = index_name + index_substream.suffix;
@@ -95,7 +99,7 @@ makeOutputStreams(
             settings.max_compress_block_size,
             marks_compression_codec,
             settings.marks_compress_block_size,
-            settings.query_write_settings);
+            index_write_settings);
 
         streams[index_substream.type] = stream.get();
         streams_holders.push_back(std::move(stream));
