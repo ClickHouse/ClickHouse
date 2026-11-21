@@ -217,6 +217,20 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
     }
 }
 
+/// A `Distributed` read is planned on the shards, which evaluate its PREWHERE there against the
+/// external table a `GLOBAL IN` materialized for them; `ReadFromRemote` never reads `prewhere_info`.
+/// Exact type, not `isRemote()`: a wrapper storage reports a remote child while reading locally.
+bool isDistributedTableExpression(const QueryTreeNodePtr & table_expression_node)
+{
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        return typeid_cast<const StorageDistributed *>(table_node->getStorage().get()) != nullptr;
+
+    if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+        return typeid_cast<const StorageDistributed *>(table_function_node->getStorage().get()) != nullptr;
+
+    return false;
+}
+
 /// The `GROUP BY` top-K heap (`enable_group_by_top_k_optimization`) and the shared kept-keys
 /// cutoff target the same `GROUP BY ... LIMIT n` shape and exclude each other: both top-K entry
 /// points (`applyTopKPushdownToPartialAggregation` and `tryOptimizeGroupByTopK`) bail out on
@@ -1074,9 +1088,12 @@ void Planner::buildPlanForQueryNode()
 
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
-    for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    for (auto & [table_expression_node, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
-        if (table_expression_data.getPrewhereFilterActions())
+        /// In `build_logical_plan` mode PREWHERE becomes a filter step in this plan rather than the
+        /// `prewhere_info` handed to the storage, so its sets need sources even for a remote read.
+        if (table_expression_data.getPrewhereFilterActions()
+            && (select_query_options.build_logical_plan || !isDistributedTableExpression(table_expression_node)))
             appendSetsFromActionsDAG(*table_expression_data.getPrewhereFilterActions(), useful_sets);
 
         if (table_expression_data.getRowLevelFilterActions())
