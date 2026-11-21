@@ -559,15 +559,16 @@ struct integer<Bits, Signed>::_impl
         return is_negative(n) ? integer<B, S>(operator_unary_minus(n)) : n;
     }
 
-    /// Whether the value equals its lowest item, sign-extended for a signed type or zero-extended for an unsigned one.
-    constexpr static bool fits_in_lowest_item(const integer<Bits, Signed> & n) noexcept
+    /// Whether the value equals its `count` lowest items, sign-extended for a signed type or zero-extended for an unsigned one.
+    template <unsigned count>
+    constexpr static bool fits_in_lowest_items(const integer<Bits, Signed> & n) noexcept
     {
         base_type extension = 0;
         if constexpr (std::is_same_v<Signed, signed>)
-            extension = static_cast<signed_base_type>(n.items[little(0)]) < 0 ? base_type(-1) : base_type(0);
+            extension = static_cast<signed_base_type>(n.items[little(count - 1)]) < 0 ? base_type(-1) : base_type(0);
 
         base_type mismatch = 0;
-        for (unsigned i = 1; i < item_count; ++i)
+        for (unsigned i = count; i < item_count; ++i)
             mismatch |= n.items[little(i)] ^ extension;
         return mismatch == 0;
     }
@@ -598,12 +599,16 @@ struct integer<Bits, Signed>::_impl
     }
 
     /// x87 converts two items in a few instructions, which costs less than a branch on the value that mixed values mispredict.
+    /// A wider value that fits in two items converts the same way: the higher items of its magnitude are zero, so the general
+    /// conversion rounds it once too.
+    static constexpr bool x87_converts_two_items = item_count >= 2 && std::numeric_limits<long double>::digits == 64;
+
     constexpr static bool use_lowest_item(const integer<Bits, Signed> & n) noexcept
     {
-        if constexpr (two_items_convert_in_one_rounding && std::numeric_limits<long double>::digits == 64)
+        if constexpr (x87_converts_two_items)
             return false;
         else
-            return lowest_item_converts_directly && fits_in_lowest_item(n);
+            return lowest_item_converts_directly && fits_in_lowest_items<1>(n);
     }
 
     template <typename T>
@@ -1768,6 +1773,10 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 
     if constexpr (_impl::two_items_convert_in_one_rounding)
         return _impl::two_items_to_long_double(*this);
+
+    if constexpr (_impl::x87_converts_two_items)
+        if (_impl::template fits_in_lowest_items<2>(*this))
+            return _impl::two_items_to_long_double(*this);
 
     if (_impl::operator_eq(*this, 0))
         return 0;
