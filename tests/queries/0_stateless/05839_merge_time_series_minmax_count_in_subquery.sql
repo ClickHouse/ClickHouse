@@ -1,12 +1,11 @@
--- Tags: no-fasttest, distributed
--- Tag no-fasttest: the TimeSeries table engine is experimental and disabled in the fast-test build.
+-- Tags: distributed
 -- Tag distributed: reads a Distributed table.
 
 -- The Distributed child makes the Merge table run GROUP BY in every child. The TimeSeries child has neither
 -- column, so its rows read as (0, 0), and its read is spliced into the plan only after the projections were
 -- tried, so the set of the subquery is first needed when the child plan is optimized again.
 
-SET allow_experimental_time_series_table = 1;
+SET enable_time_series_table = 1;
 
 DROP TABLE IF EXISTS m;
 DROP TABLE IF EXISTS ts;
