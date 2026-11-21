@@ -617,6 +617,76 @@ TEST(MemoryTracker, ReparentChecksTheLimitOfTheNewParent)
     runInThread(hierarchy, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
 }
 
+TEST(MemoryTracker, TakeOverFromServerChargesOnlyTheQueryAndTheUser)
+{
+    constexpr Int64 size = 40 * MB;
+    MemoryTracker server{nullptr, VariableContext::Global, false};
+    MemoryTracker user{&server, VariableContext::User, false};
+    MemoryTracker query{&user, VariableContext::Process, false};
+    server.adjustWithUntrackedMemory(size);
+
+    DB::ProcessList process_list;
+    DB::ProcessListForUser user_process_list(&process_list);
+    UserOvercommitTrackerForTest overcommit_tracker(&process_list, &user_process_list);
+    auto query_selected = overcommit_tracker.getSelectionFuture();
+    server.setOvercommitTracker(&overcommit_tracker);
+    user.setOvercommitTracker(&overcommit_tracker);
+    query.setOvercommitWaitingTime(1000);
+
+    auto expect_usage = [&](Int64 expected, Int64 expected_peak)
+    {
+        for (const auto * tracker : {&query, &user})
+        {
+            EXPECT_EQ(tracker->get(), expected);
+            EXPECT_EQ(tracker->getPeak(), expected_peak);
+        }
+        EXPECT_EQ(server.get(), size);
+        EXPECT_EQ(server.getRSS(), size);
+        EXPECT_EQ(server.getPeak(), size);
+    };
+
+    for (auto * tracker : {&query, &user})
+    {
+        tracker->setHardLimit(size - 1);
+        try
+        {
+            query.takeOverFromServer(size);
+            FAIL() << "Expected the charge to exceed the limit";
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+        }
+        expect_usage(0, 0);
+        tracker->setHardLimit(size);
+    }
+
+    /// The memory fits into the limit of the server once, but not twice.
+    server.setHardLimit(LIMIT);
+    query.takeOverFromServer(size);
+    expect_usage(size, size);
+
+    std::thread([&] { query.handOverToServer(size); }).join();
+    expect_usage(0, size);
+    EXPECT_EQ(query_selected.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+}
+
+TEST(MemoryTracker, HandOverToServerFromNestedTrackerReleasesTheQuery)
+{
+    MemoryTrackerHierarchy hierarchy;
+    MemoryTracker view{&hierarchy.process, VariableContext::Process, false};
+    hierarchy.process.adjustWithUntrackedMemory(10 * MB);
+
+    /// The view frees what the query allocated, so it holds less than it was charged.
+    view.takeOverFromServer(10 * MB);
+    view.adjustWithUntrackedMemory(-10 * MB);
+    view.handOverToServer(10 * MB);
+
+    EXPECT_EQ(view.get(), 0);
+    EXPECT_EQ(hierarchy.process.get(), 0);
+    EXPECT_EQ(hierarchy.user.get(), 0);
+}
+
 TEST(MemoryTracker, QuerySettlesWhatItStillHoldsWhenItEnds)
 {
     const Int64 total_before = total_memory_tracker.get();

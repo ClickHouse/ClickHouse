@@ -691,6 +691,19 @@ void SharedPartColumnsHolder::release() noexcept
     bundle = SharedPartColumns::getEmpty();
 }
 
+/// The memory of an index is not accounted as memory usage of the query that loads it, so it must not be subtracted from memory usage
+/// of the query that frees it. A column of the index must not be held longer than the index.
+static std::shared_ptr<IMergeTreeDataPart::Index> makeIndex(Columns columns)
+{
+    return {
+        new IMergeTreeDataPart::Index(std::move(columns)),
+        [](const IMergeTreeDataPart::Index * index)
+        {
+            MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+            delete index;
+        }};
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
 {
     std::scoped_lock lock(index_mutex);
@@ -701,7 +714,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     if (auto index_cache = storage.getPrimaryIndexCache())
         return loadIndexToCache(*index_cache);
 
-    index = loadIndex();
+    keepIndex(loadIndex());
     return index;
 }
 
@@ -711,11 +724,21 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
     return index;
 }
 
+UInt128 IMergeTreeDataPart::getIndexCacheKey() const
+{
+    return PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+}
+
+void IMergeTreeDataPart::keepIndex(IndexPtr index_) const
+{
+    kept_index = index_.get();
+    index = std::move(index_);
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     auto callback = [this] { return loadIndex(); };
-    return index_cache.getOrSet(key, callback);
+    return index_cache.getOrSet(getIndexCacheKey(), callback);
 }
 
 void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
@@ -724,9 +747,8 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    index_cache.set(key, std::const_pointer_cast<Index>(index));
-    index.reset();
+    index_cache.set(getIndexCacheKey(), std::const_pointer_cast<Index>(index));
+    keepIndex(nullptr);
 
     for (const auto & [_, projection] : projection_parts)
         projection->moveIndexToCache(index_cache);
@@ -737,8 +759,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    index_cache->remove(key);
+    index_cache->remove(getIndexCacheKey());
 }
 
 /// Remove all vector similarity index cache entries for this part.
@@ -752,7 +773,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
 }
 
-void IMergeTreeDataPart::setIndex(Columns index_columns)
+void IMergeTreeDataPart::setIndex(Columns index_columns, bool is_accounted)
 {
     std::scoped_lock lock(index_mutex);
     if (index)
@@ -764,13 +785,13 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     MemoryTrackerBlockerInThread not_charged_to_the_query;
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
-    index = std::make_shared<Index>(std::move(index_columns));
+    keepIndex(is_accounted ? std::make_shared<Index>(std::move(index_columns)) : makeIndex(std::move(index_columns)));
 }
 
 void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
-    index.reset();
+    keepIndex(nullptr);
 }
 
 bool IMergeTreeDataPart::isIndexLoaded() const
@@ -1795,7 +1816,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
             /// It's important to load index after index granularity.
             if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
-                index = loadIndex();
+                keepIndex(loadIndex());
 
             loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
 
@@ -2063,7 +2084,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
         getReadSettings(),
         [&](MutableColumns & index_columns) { optimizeIndexColumns(marks_count, index_columns); });
 
-    return std::make_shared<Index>(std::move(loaded_index));
+    return makeIndex(std::move(loaded_index));
 }
 
 NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const

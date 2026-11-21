@@ -541,12 +541,18 @@ public:
     /// It doesn't check cache
     IndexPtr tryGetIndex() const;
 
+    UInt128 getIndexCacheKey() const;
+
+    /// Returns true if the part keeps this index itself. Does not wait for an index that is being loaded.
+    [[nodiscard]] bool keepsIndex(const IndexPtr & index_) const { return kept_index == index_.get(); }
+
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
     /// The path that identifies the part in the caches shared between tables.
     String getPathForCacheKey() const;
 
-    void setIndex(Columns index_columns);
+    /// `is_accounted` means that the columns are accounted as memory usage of the query.
+    void setIndex(Columns index_columns, bool is_accounted = false);
     void unloadIndex();
     bool isIndexLoaded() const;
     /// Whether `getIndex` returns the index without reading it from disk: it is loaded, or in the primary index cache.
@@ -857,13 +863,17 @@ protected:
 
     static Strings getCommonMetadataFiles() { return Strings(COMMON_METADATA_FILES.begin(), COMMON_METADATA_FILES.end()); }
 
+private:
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
     mutable IndexPtr index;
+    /// The address of `index`, which can be read without the mutex.
+    mutable std::atomic<const Index *> kept_index = nullptr;
 
-private:
+    void keepIndex(IndexPtr index_) const;
+
     void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
 
     /// Columns and secondary indices sizes can be calculated lazily on first request.

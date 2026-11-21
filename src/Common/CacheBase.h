@@ -6,6 +6,7 @@
 #include <Common/SLRUCachePolicy.h>
 #include <Common/SIEVECachePolicy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -159,6 +160,18 @@ public:
         std::lock_guard lock(mutex);
         for (size_t i = 0; i < keys.size(); ++i)
             result[i] = cache_policy->contains(keys[i]);
+        return result;
+    }
+
+    /// Which of the keys have these very values in the cache, under one lock. Does not touch the priorities.
+    VectorWithMemoryTracking<bool>
+    containsMany(const VectorWithMemoryTracking<Key> & keys, const VectorWithMemoryTracking<const TMapped *> & mapped) const
+    {
+        chassert(keys.size() == mapped.size());
+        VectorWithMemoryTracking<bool> result(keys.size());
+        std::lock_guard lock(mutex);
+        for (size_t i = 0; i < keys.size(); ++i)
+            result[i] = cache_policy->contains(keys[i], mapped[i]);
         return result;
     }
 

@@ -1,0 +1,13 @@
+enable
+1
+enable and drop
+MEMORY_LIMIT_EXCEEDED
+disable first and drop
+1
+disable last
+1
+unload last
+MEMORY_LIMIT_EXCEEDED
+unload always
+MEMORY_LIMIT_EXCEEDED
+3

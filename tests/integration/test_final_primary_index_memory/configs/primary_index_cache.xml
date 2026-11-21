@@ -1,0 +1,8 @@
+<clickhouse>
+    <primary_index_cache_size>1000000</primary_index_cache_size>
+    <!-- Never replace the total memory usage by the resident size, so that it depends only on allocations. -->
+    <memory_worker_period_ms>1000000000</memory_worker_period_ms>
+    <memory_worker_dynamic_hard_limit>0</memory_worker_dynamic_hard_limit>
+    <!-- Its merges take a lot of memory. -->
+    <query_metric_log remove="1"/>
+</clickhouse>
