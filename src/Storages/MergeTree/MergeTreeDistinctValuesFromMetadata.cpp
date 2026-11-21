@@ -76,6 +76,26 @@ bool hasGeneralPurposeDefaultCodec(const IMergeTreeDataPart & part)
     return hasOnlyGeneralPurposeCodecs(part.default_codec->getFullCodecDescription(), uses_default) && !uses_default;
 }
 
+/// Whether the column of the part is stored by general purpose codecs. The codec declared for the column is the
+/// current one, while a codec-only `ALTER` leaves the parts as they were written: a part written with
+/// `CODEC(Delta, ZSTD)` keeps it under a column altered to `CODEC(ZSTD)`. So the codec is taken from the data files of
+/// the column, which costs a small read per file, once for a part.
+///
+/// On a remote disk that is a request per file of every part, too much for the planning of a query, so there the
+/// declaration is taken instead. A replicated table tells whether a part was written with the current metadata, and
+/// a part written with another one leaves the column without an estimate. The metadata version of other tables does
+/// not change, so on a remote disk their parts are taken as declared: a codec-only `ALTER` is not noticed there.
+bool isStoredWithGeneralPurposeCodecs(const IMergeTreeDataPart & part, const String & column_name, const StorageInMemoryMetadata & metadata)
+{
+    if (!part.isStoredOnRemoteDisk())
+        return part.isColumnStoredWithGeneralPurposeCodecs(column_name);
+
+    if (!part.storage.supportsReplication())
+        return true;
+
+    return !part.old_part_with_no_metadata_version_on_disk && part.getMetadataVersion() == metadata.getMetadataVersion();
+}
+
 }
 
 std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
@@ -139,15 +159,27 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
             return {};
 
         const auto part_sizes = data_part->getColumnSizes();
-        for (auto & [column_name, size] : sizes)
+        for (auto it = sizes.begin(); it != sizes.end();)
         {
+            auto & [column_name, size] = *it;
             /// A part without the column (added by `ALTER` and not materialized) keeps no size for it.
-            const auto it = part_sizes->find(column_name);
-            if (it == part_sizes->end() || it->second.data_compressed == 0)
+            const auto size_it = part_sizes->find(column_name);
+            if (size_it == part_sizes->end() || size_it->second.data_compressed == 0)
+            {
+                ++it;
                 continue;
+            }
+
+            /// A part that stores the column by another codec than the declared one leaves it without an estimate.
+            if (!isStoredWithGeneralPurposeCodecs(*data_part, column_name, *metadata))
+            {
+                it = sizes.erase(it);
+                continue;
+            }
 
             size.rows += data_part->rows_count;
-            size.compressed_bytes += it->second.data_compressed;
+            size.compressed_bytes += size_it->second.data_compressed;
+            ++it;
         }
     }
 
