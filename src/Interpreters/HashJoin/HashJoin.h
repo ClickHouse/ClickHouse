@@ -724,8 +724,8 @@ public:
     class ReleasedJoinedBlocks
     {
     public:
-        bool empty() const { return columns_list.empty(); }
-        size_t size() const { return columns_list.size(); }
+        [[nodiscard]] bool empty() const { return columns_list.empty(); }
+        [[nodiscard]] size_t size() const { return columns_list.size(); }
 
         /// Produces the next block. Must not be called when `empty`.
         Block next();
