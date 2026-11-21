@@ -4749,6 +4749,38 @@ bool convertNestedGroupByKeysToNullable(
     }
 
     auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::CONSTANT)
+    {
+        /// A constant produced by folding a function over a key that becomes Nullable under
+        /// `group_by_use_nulls` (for example `isNull(x)` folded to 0 while `x` was not yet
+        /// Nullable) keeps its source expression. Re-resolve that expression with the nested
+        /// keys converted to Nullable, so nullable-sensitive folds (isNull) reappear as
+        /// functions: the registered key shapes then match what the projection is re-resolved
+        /// into after GROUP BY, instead of being re-evaluated over the NULL-filled keys.
+        const auto * constant_node = node->as<ConstantNode>();
+        if (!constant_node || !constant_node->hasSourceExpression())
+            return false;
+
+        auto source_expression = constant_node->getSourceExpression()->clone();
+        bool converted = false;
+        for (auto & child : source_expression->getChildren())
+        {
+            if (child && convertNestedGroupByKeysToNullable(child, nullable_group_by_keys, context))
+                converted = true;
+        }
+
+        if (!converted)
+            return false;
+
+        auto * source_function = source_expression->as<FunctionNode>();
+        if (!source_function)
+            return false;
+
+        rerunFunctionResolve(source_function, context);
+        node = std::move(source_expression);
+        return true;
+    }
+
     if (node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::LAMBDA && node_type != QueryTreeNodeType::LIST)
         return false;
 
