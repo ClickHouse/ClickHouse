@@ -7,6 +7,8 @@
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -75,6 +77,22 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
     if ((*impl)[FileLogSetting::poll_max_batch_size] > max_sane_block_rows_size)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", (*impl)[FileLogSetting::poll_max_batch_size].value);
+}
+
+SettingsChanges FileLogSettings::getFormatSettings() const
+{
+#define FILELOG_SETTING_NAME(TYPE, NAME, ...) #NAME,
+    static constexpr std::string_view filelog_setting_names[] = {FILELOG_RELATED_SETTINGS(FILELOG_SETTING_NAME, FILELOG_SETTING_NAME)};
+#undef FILELOG_SETTING_NAME
+
+    SettingsChanges values;
+    for (const auto & setting : *impl)
+    {
+        const auto & setting_name = setting.getName();
+        if (!std::ranges::contains(filelog_setting_names, setting_name))
+            values.emplace_back(setting_name, setting.getValue());
+    }
+    return values;
 }
 
 bool FileLogSettings::hasBuiltin(std::string_view name)
