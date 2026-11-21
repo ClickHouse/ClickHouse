@@ -68,6 +68,8 @@ static struct InitFiu
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
+    REGULAR(parallel_gzip_compression_fail) \
+    REGULAR(parallel_gzip_compression_late_fail) \
     REGULAR(file_checker_update_and_save_fail_reading_sizes) \
     REGULAR(file_checker_update_and_save_fail_persisting) \
     REGULAR(file_checker_repair_memory_limit_exceeded) \
