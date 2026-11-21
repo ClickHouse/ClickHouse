@@ -2753,15 +2753,17 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
     if ((validate_etag_on_read || pin_read_to_etag_for_page_cache) && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
-    /// The distributed cache keys on the etag whether or not this read validates it. The cache server also checks
-    /// the etag of its own `GET` against it, so an immutable content id, which is not an etag, goes into a separate
-    /// field that is used only for the key.
+    /// The distributed cache keys on the content cache token whether or not this read validates the etag. The cache
+    /// server also checks the etag of its own `GET` against the token if it is an etag, so it needs to know the kind.
     if (use_distributed_cache)
     {
-        if (object_info.metadata->isEtagUsableAsCacheKey())
-            stored_object.etag_hash = getETagHash(object_info.metadata->etag);
-        else
-            stored_object.immutable_content_id_hash = getImmutableContentIdHash(object_info.metadata->immutable_content_id);
+        if (const auto content_token = object_info.metadata->getContentCacheToken())
+        {
+            stored_object.cache_token_hash = getCacheTokenHash(*content_token);
+            stored_object.cache_token_kind = object_info.metadata->isEtagUsableAsCacheKey()
+                ? StoredObject::CacheTokenKind::ETag
+                : StoredObject::CacheTokenKind::ImmutableContentId;
+        }
     }
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
