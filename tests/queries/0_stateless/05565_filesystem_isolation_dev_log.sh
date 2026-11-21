@@ -96,15 +96,17 @@ if ! grep -q 'Isolated the filesystem' "$DIR/log/server.log" 2>/dev/null; then
     cat "$DIR/server.out" "$DIR/log/server.err.log" >&2
     exit 1
 fi
+# The supervisor stays outside of the namespaces, and its child, the init of the PID namespace, is inside.
+INSIDE=$(cut -d' ' -f1 "/proc/$PID/task/$PID/children")
 
 # What the server sees, from outside through its root.
-echo "dev: $(ls "/proc/$PID/root/dev" | paste -sd ' ')"
-echo "dev/pts: $(ls "/proc/$PID/root/dev/pts" | paste -sd ' ')"
+echo "dev: $(ls "/proc/$INSIDE/root/dev" | paste -sd ' ')"
+echo "dev/pts: $(ls "/proc/$INSIDE/root/dev/pts" | paste -sd ' ')"
 # The files mapped into the process stay visible, and a coverage build maps its profile, which the test runner names
 # relative to the working directory.
-echo "working directory: $(ls "/proc/$PID/root$DIR/work" | grep -v '\.profraw$' | paste -sd ' ')"
-echo "definitions: $(ls "/proc/$PID/root$DIR/work/definitions" | paste -sd ' ')"
-echo "cache from a named collection: $([ -d "/proc/$PID/root$DIR/cache_from_named_collection" ] && echo visible || echo invisible)"
+echo "working directory: $(ls "/proc/$INSIDE/root$DIR/work" | grep -v '\.profraw$' | paste -sd ' ')"
+echo "definitions: $(ls "/proc/$INSIDE/root$DIR/work/definitions" | paste -sd ' ')"
+echo "cache from a named collection: $([ -d "/proc/$INSIDE/root$DIR/cache_from_named_collection" ] && echo visible || echo invisible)"
 # The checks above see the root of a running server only.
 if ! kill -0 "$PID" 2>/dev/null; then
     echo "The server exited"

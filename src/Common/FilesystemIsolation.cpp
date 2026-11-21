@@ -1,5 +1,9 @@
 #include <Common/FilesystemIsolation.h>
+#include <Common/FilesystemIsolationSupervisor.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/SeccompFilter.h>
+#include <Common/hasLinuxCapability.h>
 
 #include <atomic>
 #include <chrono>
@@ -63,6 +67,13 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
     return saved_status;
 }
 
+void setFilesystemIsolationServingHostPid(int pid)
+{
+    std::lock_guard lock(status_mutex);
+    if (saved_status)
+        saved_status->serving_host_pid = pid;
+}
+
 }
 
 #if defined(OS_LINUX)
@@ -72,6 +83,7 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
+#include <base/errnoToString.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 
@@ -135,107 +147,6 @@ constexpr std::array dangerous_capabilities = {
     CAP_MAC_OVERRIDE, CAP_SYS_TIME, CAP_SYSLOG, CAP_AUDIT_CONTROL, CAP_SYS_PACCT, CAP_SYS_TTY_CONFIG,
     /// Newer than some kernel headers: `CAP_PERFMON`, `CAP_BPF`, `CAP_CHECKPOINT_RESTORE`.
     38, 39, 40};
-
-constexpr std::array capability_names = {
-    "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_DAC_READ_SEARCH", "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_SETGID",
-    "CAP_SETUID", "CAP_SETPCAP", "CAP_LINUX_IMMUTABLE", "CAP_NET_BIND_SERVICE", "CAP_NET_BROADCAST", "CAP_NET_ADMIN",
-    "CAP_NET_RAW", "CAP_IPC_LOCK", "CAP_IPC_OWNER", "CAP_SYS_MODULE", "CAP_SYS_RAWIO", "CAP_SYS_CHROOT",
-    "CAP_SYS_PTRACE", "CAP_SYS_PACCT", "CAP_SYS_ADMIN", "CAP_SYS_BOOT", "CAP_SYS_NICE", "CAP_SYS_RESOURCE",
-    "CAP_SYS_TIME", "CAP_SYS_TTY_CONFIG", "CAP_MKNOD", "CAP_LEASE", "CAP_AUDIT_WRITE", "CAP_AUDIT_CONTROL",
-    "CAP_SETFCAP", "CAP_MAC_OVERRIDE", "CAP_MAC_ADMIN", "CAP_SYSLOG", "CAP_WAKE_ALARM", "CAP_BLOCK_SUSPEND",
-    "CAP_AUDIT_READ", "CAP_PERFMON", "CAP_BPF", "CAP_CHECKPOINT_RESTORE"};
-
-std::string capabilityName(unsigned capability)
-{
-    if (capability < capability_names.size())
-        return capability_names[capability];
-    return fmt::format("capability {}", capability);
-}
-
-struct Capabilities
-{
-    uint64_t effective = 0;
-    uint64_t permitted = 0;
-    uint64_t inheritable = 0;
-};
-
-Capabilities getCapabilities()
-{
-    __user_cap_header_struct header{_LINUX_CAPABILITY_VERSION_3, 0};
-    __user_cap_data_struct data[2]{};
-    if (0 != syscall(SYS_capget, &header, data))
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot get the capabilities of the process");
-    return {
-        .effective = data[0].effective | (static_cast<uint64_t>(data[1].effective) << 32),
-        .permitted = data[0].permitted | (static_cast<uint64_t>(data[1].permitted) << 32),
-        .inheritable = data[0].inheritable | (static_cast<uint64_t>(data[1].inheritable) << 32)};
-}
-
-void setCapabilities(const Capabilities & capabilities)
-{
-    __user_cap_header_struct header{_LINUX_CAPABILITY_VERSION_3, 0};
-    __user_cap_data_struct data[2]{};
-    data[0].effective = static_cast<uint32_t>(capabilities.effective);
-    data[1].effective = static_cast<uint32_t>(capabilities.effective >> 32);
-    data[0].permitted = static_cast<uint32_t>(capabilities.permitted);
-    data[1].permitted = static_cast<uint32_t>(capabilities.permitted >> 32);
-    data[0].inheritable = static_cast<uint32_t>(capabilities.inheritable);
-    data[1].inheritable = static_cast<uint32_t>(capabilities.inheritable >> 32);
-    if (0 != syscall(SYS_capset, &header, data))
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set the capabilities of the process");
-}
-
-bool hasCapability(uint64_t set, unsigned capability)
-{
-    return (set >> capability) & 1;
-}
-
-std::vector<std::string> capabilityNames(uint64_t set)
-{
-    std::vector<std::string> names;
-    for (unsigned capability = 0; capability < 64; ++capability)
-        if (hasCapability(set, capability))
-            names.push_back(capabilityName(capability));
-    return names;
-}
-
-/// Leaves only the capabilities in `keep` in every set, including the bounding set when that is allowed (it needs
-/// `CAP_SETPCAP`). The bounding set matters only to a program the process executes, and no program can gain a
-/// capability anyway: `PR_SET_NO_NEW_PRIVS` is set right after, and every mount is `nosuid`, which disables file
-/// capabilities as well.
-void restrictCapabilities(uint64_t keep)
-{
-    const Capabilities current = getCapabilities();
-
-    if (hasCapability(current.effective, CAP_SETPCAP))
-    {
-        for (unsigned capability = 0; capability < 64; ++capability)
-        {
-            const int in_bounding_set = prctl(PR_CAPBSET_READ, capability, 0, 0, 0);
-            if (in_bounding_set < 0)
-                break; /// Past the last capability the kernel knows.
-            if (in_bounding_set == 0 || hasCapability(keep, capability))
-                continue;
-            if (0 != prctl(PR_CAPBSET_DROP, capability, 0, 0, 0))
-                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot drop {} from the capability bounding set", capabilityName(capability));
-        }
-    }
-
-    /// The ambient set is cleared by the kernel of every capability that leaves the permitted or inheritable set.
-    setCapabilities({
-        .effective = current.effective & keep,
-        .permitted = current.permitted & keep,
-        .inheritable = current.inheritable & keep});
-
-    if (0 != prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot set PR_SET_NO_NEW_PRIVS");
-}
-
-void closeDescriptor(int fd)
-{
-    [[maybe_unused]] const int err = ::close(fd);
-    chassert(!err || errno == EINTR);
-}
 
 std::string readFile(const std::string & path)
 {
@@ -463,8 +374,14 @@ struct MountInfo
 {
     uint64_t id = 0;
     uint64_t parent_id = 0;
+    /// `major:minor` of the filesystem.
+    std::string device;
+    /// The directory of the filesystem that is mounted, which differs from `/` for a bind mount.
+    std::string root;
     std::string mount_point;
     std::string filesystem_type;
+    /// The options of the filesystem, such as `upperdir=` of an overlay, without the unescaping of each option.
+    std::string super_options;
 };
 
 /// Every mount in `/proc/self/mountinfo`.
@@ -502,12 +419,21 @@ std::vector<MountInfo> readMountInfo()
         MountInfo mount;
         mount.id = parseFromString<uint64_t>(fields[0]);
         mount.parent_id = parseFromString<uint64_t>(fields[1]);
+        mount.device = std::string(fields[2]);
+        mount.root = decodeMountInfoPath(fields[3]);
         mount.mount_point = decodeMountInfoPath(fields[4]);
         /// The type of the filesystem is the field after the separator ` - `, which follows the optional fields.
         if (const size_t separator = line.find(" - ", field_begin); separator != std::string_view::npos)
         {
             const size_t type_begin = separator + 3;
-            mount.filesystem_type = std::string(line.substr(type_begin, line.find(' ', type_begin) - type_begin));
+            const size_t type_end = line.find(' ', type_begin);
+            mount.filesystem_type = std::string(line.substr(type_begin, type_end - type_begin));
+            /// Then the source and the options.
+            if (type_end != std::string_view::npos)
+            {
+                if (const size_t source_end = line.find(' ', type_end + 1); source_end != std::string_view::npos)
+                    mount.super_options = std::string(line.substr(source_end + 1));
+            }
         }
         mounts.push_back(std::move(mount));
     }
@@ -733,42 +659,65 @@ void mountDevpts(const std::string & path)
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot mount a devpts at {}", path);
 }
 
-/// Enters a new mount namespace (and a new user namespace, if `with_user_namespace`) in which no mount propagates
-/// to the original one.
-void enterNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
+/// In a new user namespace, maps only the user and group of the process to themselves. An unprivileged process can
+/// map only its own user and group, and only after it gives up `setgroups`.
+void writeIdMaps(uid_t uid, gid_t gid)
 {
-    if (0 != ::unshare(CLONE_NEWNS | (with_user_namespace ? CLONE_NEWUSER : 0)))
-        throw ErrnoException(
-            ErrorCodes::SYSTEM_ERROR, "Cannot create a {}", with_user_namespace ? "user and a mount namespace" : "mount namespace");
+    writeFile("/proc/self/setgroups", "deny");
+    writeFile("/proc/self/uid_map", fmt::format("{0} {0} 1\n", uid));
+    writeFile("/proc/self/gid_map", fmt::format("{0} {0} 1\n", gid));
+}
 
-    if (with_user_namespace)
-    {
-        /// An unprivileged process can map only its own user and group, and only after it gives up `setgroups`.
-        writeFile("/proc/self/setgroups", "deny");
-        writeFile("/proc/self/uid_map", fmt::format("{0} {0} 1\n", uid));
-        writeFile("/proc/self/gid_map", fmt::format("{0} {0} 1\n", gid));
-    }
-
+/// In a new mount namespace, so that no mount propagates to the original one.
+void makeMountsPrivate()
+{
     if (0 != ::mount(nullptr, "/", nullptr, MS_REC | MS_PRIVATE, nullptr))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot make the mounts private");
 }
 
-/// Checks in a child process whether this process would be allowed to create the namespaces and to mount a
-/// filesystem in them. Returns the reason if not. The current process is left untouched: once it enters a user
+/// Moves the current process into new user and mount namespaces, in which no mount propagates to the original one.
+void enterUserAndMountNamespaces(uid_t uid, gid_t gid)
+{
+    if (::unshare(CLONE_NEWNS | CLONE_NEWUSER) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a user and a mount namespace");
+    writeIdMaps(uid, gid);
+    makeMountsPrivate();
+}
+
+/// A new instance of `proc` for the PID namespace of the calling process, which must be inside it. Only the processes
+/// of that namespace are in it, so `/proc/<pid>/root`, `/proc/<pid>/cwd` and `/proc/<pid>/fd` lead nowhere outside.
+void mountProc(const std::string & path)
+{
+    if (::mount("proc", path.c_str(), "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr) != 0)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot mount a new proc at {}", path);
+}
+
+/// Checks in a child process whether this process would be allowed to create the namespaces and to mount the
+/// filesystems in them. Returns the reason if not. The current process is left untouched: once it enters a user
 /// namespace, it loses its capabilities of the initial one for good, even if nothing can be mounted there (as with
-/// the restriction of unprivileged user namespaces by AppArmor in Ubuntu).
+/// the restriction of unprivileged user namespaces by AppArmor in Ubuntu). Without a user namespace, also the new PID
+/// namespace with a new `proc` in it, and what the supervisor outside of it needs.
 std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
 {
+    if (!with_user_namespace)
+    {
+        if (std::string reason = getSupervisorUnavailableReason(); !reason.empty())
+            return reason;
+    }
+
     int pipe_fds[2];
     if (0 != ::pipe2(pipe_fds, O_CLOEXEC))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create a pipe");
 
-    const pid_t pid = ::fork();
+    const pid_t pid = with_user_namespace ? ::fork() : cloneIntoPidAndMountNamespaces();
     if (pid < 0)
     {
+        const int error = errno;
         closeDescriptor(pipe_fds[0]);
         closeDescriptor(pipe_fds[1]);
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork a process to check whether the filesystem can be isolated");
+        if (with_user_namespace)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork a process to check whether the filesystem can be isolated");
+        return fmt::format("cannot create the PID and mount namespaces: {}", errnoToString(error));
     }
 
     if (pid == 0)
@@ -778,13 +727,30 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
         int exit_code = 0;
         try
         {
-            enterNamespaces(with_user_namespace, uid, gid);
+            if (with_user_namespace)
+                enterUserAndMountNamespaces(uid, gid);
+            else
+                makeMountsPrivate();
             mountTmpfs(staging_directory, MS_NOSUID | MS_NODEV, "mode=0755");
             const std::string pts = std::string(staging_directory) + "/pts";
             createDirectories(pts);
             mountDevpts(pts);
-            /// In its own mount namespace, so the original one is untouched.
-            remountReadOnly("/proc/sys");
+            if (with_user_namespace)
+            {
+                /// In its own mount namespace, so the original one is untouched.
+                remountReadOnly("/proc/sys");
+            }
+            else
+            {
+                /// In the new PID namespace, whose init this child is.
+                const std::string proc = std::string(staging_directory) + "/proc";
+                createDirectories(proc);
+                mountProc(proc);
+                /// The controls of the new `proc`, as the server makes them read-only.
+                remountReadOnly(proc + "/sys");
+                /// The filter of the supervisor, which a policy outside may refuse. Last, because it allows no mount.
+                installSupervisorSeccompFilter();
+            }
         }
         catch (const Exception & e)
         {
@@ -1297,9 +1263,253 @@ std::vector<Mount> planMounts(const std::vector<FilesystemIsolationPath> & paths
     return mounts;
 }
 
+/// Where a path is in its filesystem: its mount, and the path inside the filesystem, without a trailing slash. Both
+/// are the same under every name that bind mounts give the path.
+struct FilesystemLocation
+{
+    MountInfo mount;
+    std::string path;
+
+    [[nodiscard]] bool isSameOrInside(const FilesystemLocation & other) const
+    {
+        return mount.device == other.mount.device && DB::isSameOrInside(path, other.path);
+    }
+};
+
+/// The location of `path`, an existing path without symbolic links, or nothing if it does not exist.
+std::optional<FilesystemLocation> getFilesystemLocation(const std::string & path, const std::vector<MountInfo> & mount_info)
+{
+    const auto id = getMountIdOfPath(path);
+    if (!id)
+        return {};
+    for (const auto & mount : mount_info)
+    {
+        if (mount.id != *id)
+            continue;
+        if (!isSameOrInside(path, mount.mount_point))
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "The path {} is not inside its mount point {}", path, mount.mount_point);
+        std::string location = (fs::path(mount.root) / fs::path(path).lexically_relative(mount.mount_point)).lexically_normal().string();
+        while (location.size() > 1 && location.ends_with('/'))
+            location.pop_back();
+        return FilesystemLocation{mount, std::move(location)};
+    }
+    throw Exception(ErrorCodes::SYSTEM_ERROR, "There is no mount with the ID {} of {} in /proc/self/mountinfo", *id, path);
 }
 
-FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector & collect_paths)
+/// The upper directory of an overlay from its options, where `\,` is a comma and `\\` a backslash.
+std::optional<std::string> getOverlayUpperDirectory(const std::string & super_options)
+{
+    std::string option;
+    for (size_t i = 0; i <= super_options.size(); ++i)
+    {
+        if (i == super_options.size() || super_options[i] == ',')
+        {
+            if (option.starts_with("upperdir="))
+                return decodeMountInfoPath(option.substr(std::string_view("upperdir=").size()));
+            option.clear();
+            continue;
+        }
+        if (super_options[i] == '\\' && i + 1 < super_options.size() && (super_options[i + 1] == ',' || super_options[i + 1] == '\\'))
+            ++i;
+        option += super_options[i];
+    }
+    return {};
+}
+
+/// Why the pid file cannot be used with the isolation, or empty. The supervisor outside creates and removes it, so code
+/// inside must not be able to change the pid file or a directory on the way to it, or it could make the supervisor write
+/// or remove another file of the host at its next start. Such a directory is found by its path, by its location in its
+/// filesystem, which a bind mount on the host can give another path, and through the upper directory of an overlay. A
+/// storage can be visible under other names in ways that cannot be found, so a symbolic link is followed only where
+/// nobody but root can change it, as `/var/run -> /run`: then code inside can only move directories within what it can
+/// write anyway. Sets `resolved_pid_file` to the path without links, which the supervisor opens without following any.
+std::string checkPidFile(const std::string & pid_file, const std::vector<Mount> & mounts, std::string & resolved_pid_file)
+{
+    if (pid_file.empty())
+        return {};
+
+    /// Component by component, as the kernel resolves it: `..` after a link is the parent of its target. Every
+    /// directory visited is checked, including the directory of each link.
+    constexpr size_t max_links = 40;
+    size_t links = 0;
+    std::vector<fs::path> on_the_way = {"/"};
+    fs::path current = "/";
+    std::deque<fs::path> remaining;
+    for (const auto & component : fs::absolute(pid_file).relative_path())
+        remaining.push_back(component);
+    while (!remaining.empty())
+    {
+        const fs::path component = std::move(remaining.front());
+        remaining.pop_front();
+        if (component.empty() || component == ".")
+            continue;
+        if (component == "..")
+        {
+            current = current.parent_path();
+            continue;
+        }
+        const fs::path entry = current / component;
+        struct stat st{};
+        if (::lstat(entry.c_str(), &st) == 0 && S_ISLNK(st.st_mode))
+        {
+            /// Only root can replace a link owned by root in a directory owned by root that nobody else can write.
+            struct stat directory{};
+            if (remaining.empty() || ++links > max_links || st.st_uid != 0 || ::lstat(current.c_str(), &directory) != 0
+                || directory.st_uid != 0 || (directory.st_mode & (S_IWGRP | S_IWOTH)))
+                return fmt::format(
+                    "the pid file {} has the symbolic link {} on its way, which code inside could change if the directory "
+                    "of the link is writable inside under any name, and make the supervisor outside, which creates and "
+                    "removes the pid file, write or remove another file. A link is allowed only to a directory on the way, "
+                    "if the link and its directory are owned by root and the directory is not writable by the group or by "
+                    "others",
+                    pid_file, entry.string());
+            const fs::path target = FS::readSymlink(entry);
+            if (target.is_absolute())
+                current = "/";
+            const fs::path target_components = target.relative_path();
+            remaining.insert(remaining.begin(), target_components.begin(), target_components.end());
+            continue;
+        }
+        current = entry;
+        on_the_way.push_back(entry);
+    }
+    resolved_pid_file = current.string();
+
+    const std::vector<MountInfo> mount_info = readMountInfo();
+    /// What is written to an overlay goes to its upper directory.
+    std::optional<std::string> relative_upper_directory;
+    auto get_upper_location = [&](const FilesystemLocation & location) -> std::optional<FilesystemLocation>
+    {
+        const auto upper = location.mount.filesystem_type == "overlay" ? getOverlayUpperDirectory(location.mount.super_options) : std::nullopt;
+        if (!upper)
+            return {};
+        /// The option keeps the path as it was given to `mount`. A relative one is relative to the working directory of
+        /// the process that mounted the overlay, which is not known.
+        if (fs::path(*upper).is_relative())
+        {
+            relative_upper_directory = *upper;
+            return {};
+        }
+        /// An absolute one can have symbolic links, or lead nowhere here, as the upper directory of the root of a
+        /// container, which is only on the host: then no path here leads to it by that name.
+        std::error_code error;
+        const fs::path upper_directory = fs::canonical(*upper, error);
+        if (error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory)
+            return {};
+        if (error)
+            throw fs::filesystem_error("Cannot resolve the upper directory of an overlay", *upper, error);
+        return getFilesystemLocation((upper_directory / fs::path(location.path).relative_path()).string(), mount_info);
+    };
+    std::vector<std::pair<const Mount *, FilesystemLocation>> writable_locations;
+    auto add_writable_location = [&](const Mount & mount, FilesystemLocation location)
+    {
+        if (auto upper_location = get_upper_location(location))
+            writable_locations.emplace_back(&mount, std::move(*upper_location));
+        writable_locations.emplace_back(&mount, std::move(location));
+    };
+    for (const auto & mount : mounts)
+    {
+        if (mount.access != FilesystemIsolationPath::Access::ReadWrite)
+            continue;
+        if (auto location = getFilesystemLocation(mount.path, mount_info))
+            add_writable_location(mount, std::move(*location));
+        /// The recursive bind mount brings along the mounts inside, which are writable inside as well.
+        for (const auto & info : mount_info)
+        {
+            if (info.mount_point != mount.path && isSameOrInside(info.mount_point, mount.path))
+                add_writable_location(mount, FilesystemLocation{info, fs::path(info.root).lexically_normal().string()});
+        }
+    }
+
+    for (const auto & entry : on_the_way)
+    {
+        const Mount * writable = nullptr;
+        for (const auto & mount : mounts)
+        {
+            if (mount.access == FilesystemIsolationPath::Access::ReadWrite && isSameOrInside(entry.string(), mount.path))
+                writable = &mount;
+        }
+        const auto location = writable ? std::nullopt : getFilesystemLocation(entry.string(), mount_info);
+        const auto upper_location = location ? get_upper_location(*location) : std::nullopt;
+        for (const auto & [mount, writable_location] : writable_locations)
+        {
+            if ((location && location->isSameOrInside(writable_location))
+                || (upper_location && upper_location->isSameOrInside(writable_location)))
+                writable = mount;
+        }
+        if (writable)
+            return fmt::format(
+                "the pid file {} is in a path writable inside the isolation ({}, {}), where code inside could replace a "
+                "directory on its way, and make the supervisor outside, which creates and removes the pid file, write or "
+                "remove another file. Move the pid file out of it",
+                pid_file, writable->path, writable->source);
+    }
+    if (relative_upper_directory)
+        return fmt::format(
+            "the pid file {} cannot be checked against an overlay with the relative upper directory {}: the directory "
+            "it is relative to is not known, so code inside could write the pid file through the overlay. Mount the "
+            "overlay with an absolute upper directory",
+            pid_file, *relative_upper_directory);
+    return {};
+}
+
+/// Why the paths cannot be made visible in a new PID namespace, or empty: a `proc` other than the new one, as a
+/// `/host/proc` of a monitoring agent, would show the processes outside of the PID namespace, and their files through
+/// `/proc/<pid>/root`. So no bind mount may be of a path in a `proc`, or have a `proc` inside, which its recursive bind
+/// mount would bring along: the paths, `/sys` and the devices.
+std::string findProcMount(const std::vector<Mount> & mounts)
+{
+    std::vector<std::pair<std::string, std::string>> sources = {{"/sys", "system"}};
+    for (const auto * device : devices)
+        sources.emplace_back(fmt::format("/dev/{}", device), "system");
+    for (const auto & mount : mounts)
+        sources.emplace_back(mount.path, mount.source);
+
+    const std::vector<MountInfo> mount_info = readMountInfo();
+    for (const auto & [path, source] : sources)
+    {
+        const auto id = getMountIdOfPath(path);
+        for (const auto & info : mount_info)
+        {
+            if (info.filesystem_type != "proc")
+                continue;
+            if ((id && info.id == *id) || isSameOrInside(info.mount_point, path))
+                return fmt::format(
+                    "the path {} ({}) {} a mount of `proc` at {}, which would show the processes outside of the isolation, "
+                    "and their files through `/proc/<pid>/root`",
+                    path, source, isSameOrInside(info.mount_point, path) ? "has" : "is in", info.mount_point);
+        }
+    }
+    return {};
+}
+
+/// The filesystem cannot be isolated: refuses the startup with `enforce`, and runs without the isolation otherwise.
+FilesystemIsolationStatus cannotIsolate(FilesystemIsolationMode mode, std::string reason)
+{
+    if (mode == FilesystemIsolationMode::Enforce)
+        throw Exception(
+            ErrorCodes::SYSTEM_ERROR,
+            "Cannot isolate the filesystem: {}. Set the `filesystem_isolation` server setting to `best_effort` or `disabled` "
+            "to run without the isolation",
+            reason);
+    FilesystemIsolationStatus status;
+    status.not_isolated_reason = std::move(reason);
+    return rememberStatus(mode, std::move(status));
+}
+
+/// The capabilities the server keeps when it has `CAP_SYS_ADMIN`: all but `dangerous_capabilities`.
+uint64_t getCapabilitiesToKeep()
+{
+    uint64_t keep = ~uint64_t(0);
+    for (const auto capability : dangerous_capabilities)
+        keep &= ~(uint64_t(1) << capability);
+    return keep;
+}
+
+}
+
+FilesystemIsolationStatus isolateFilesystem(
+    FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector & collect_paths, const std::string & pid_file)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
 
@@ -1309,8 +1519,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 #if defined(THREAD_SANITIZER)
     /// The runtime of the thread sanitizer starts its own background thread in the child of every `fork`, even if the
     /// parent did not have one, as in the process that `--daemon` forks, and there is no way to stop it then. It is
-    /// not a thread of the server, and it does not prevent entering a new mount namespace. A user namespace cannot be
-    /// entered with it, which `probeNamespaces` finds out, as its child has the same thread.
+    /// not a thread of the server, and it does not prevent creating a child in new namespaces.
     constexpr size_t max_threads = 2;
 #else
     constexpr size_t max_threads = 1;
@@ -1325,26 +1534,16 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 
     const uid_t uid = ::geteuid();
     const gid_t gid = ::getegid();
-    const Capabilities capabilities = getCapabilities();
-    const bool with_user_namespace = !hasCapability(capabilities.effective, CAP_SYS_ADMIN);
+    const LinuxCapabilities capabilities = getLinuxCapabilities();
+    const bool with_user_namespace = !((capabilities.effective >> CAP_SYS_ADMIN) & 1);
 
-    if (const std::string reason = probeNamespaces(with_user_namespace, uid, gid); !reason.empty())
-    {
-        if (mode == FilesystemIsolationMode::Enforce)
-            throw Exception(
-                ErrorCodes::SYSTEM_ERROR,
-                "Cannot isolate the filesystem: {}. Set the `filesystem_isolation` server setting to `best_effort` or `disabled` "
-                "to run without the isolation",
-                reason);
-
-        FilesystemIsolationStatus status;
-        status.not_isolated_reason = reason;
-        return rememberStatus(mode, std::move(status));
-    }
+    if (std::string reason = probeNamespaces(with_user_namespace, uid, gid); !reason.empty())
+        return cannotIsolate(mode, std::move(reason));
 
     /// Everything that needs the original filesystem is done before entering the namespaces.
     Traversal traversal;
-    std::vector<FilesystemIsolationPath> all_paths = collect_paths ? collect_paths() : std::vector<FilesystemIsolationPath>{};
+    std::vector<FilesystemIsolationPath> all_paths
+        = collect_paths ? collect_paths(/* with_supervisor= */ !with_user_namespace) : std::vector<FilesystemIsolationPath>{};
     const std::vector<std::string> mapped_files = getMappedFiles();
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
@@ -1376,6 +1575,17 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
             all_paths.push_back({std::move(directory), FilesystemIsolationPath::Access::ReadOnly, "the sockets of a service of the Name Service Switch"});
     }
     const std::vector<Mount> mounts = planMounts(all_paths, traversal);
+
+    /// In a user namespace, the kernel refuses the server the files of the processes outside of it through any `proc`,
+    /// and there is no supervisor: the server creates the pid file itself, inside.
+    std::string resolved_pid_file;
+    if (!with_user_namespace)
+    {
+        if (std::string reason = findProcMount(mounts); !reason.empty())
+            return cannotIsolate(mode, std::move(reason));
+        if (std::string reason = checkPidFile(pid_file, mounts, resolved_pid_file); !reason.empty())
+            return cannotIsolate(mode, std::move(reason));
+    }
     for (auto & alias : getLibraryAliases(mapped_files))
         traversal.links.push_back(std::move(alias));
     for (auto & alias : getLibraryAliases(executable_dependencies))
@@ -1390,10 +1600,18 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     status.isolated = true;
     status.created_user_namespace = with_user_namespace;
     if (with_user_namespace)
-        status.lost_capabilities = capabilityNames(capabilities.effective);
+        status.lost_capabilities = getLinuxCapabilityNames(capabilities.effective);
 
-    /// From here on, any failure is final: the process cannot return to the original filesystem.
-    enterNamespaces(with_user_namespace, uid, gid);
+    /// From here on, in the server, any failure is final: the process cannot return to the original filesystem.
+    if (with_user_namespace)
+        enterUserAndMountNamespaces(uid, gid);
+    else
+    {
+        status.created_pid_namespace = true;
+        status.supervisor_pid = ::getpid();
+        startSupervisedServer(resolved_pid_file);
+        makeMountsPrivate();
+    }
 
     mountTmpfs(staging_directory, MS_NOSUID | MS_NODEV, "mode=0755");
     const std::string put_old = std::string(staging_directory) + old_root;
@@ -1404,12 +1622,24 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (0 != ::chdir("/"))
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot change the directory to the new root");
 
-    /// A new `proc` cannot be mounted without a new PID namespace, so the original one is mounted, with its mounts
-    /// inside, which a user namespace requires. It goes first, because the other mounts read `/proc/self/mountinfo`.
-    bindMount("/proc", 0);
+    /// It goes first, because the other mounts read `/proc/self/mountinfo`. Without a user namespace, a new `proc` of the
+    /// new PID namespace, in which no process outside is visible: the server keeps the capabilities it uses, and a
+    /// process outside of the same user and without capabilities would let it reach its filesystem through
+    /// `/proc/<pid>/root`. In a user namespace, the kernel refuses that to the server for every process outside of it,
+    /// and a new `proc` cannot be mounted without a new PID namespace, which a container that hides some of the files of
+    /// `/proc` refuses as well: the original one is mounted, with its mounts inside, which a user namespace requires.
+    if (with_user_namespace)
+        bindMount("/proc", 0);
+    else
+    {
+        createDirectories("/proc");
+        mountProc("/proc");
+    }
     for (const auto * control : proc_global_controls)
         remountReadOnly(control);
-    status.visible_paths.push_back("/proc (with /proc/sys, /proc/sysrq-trigger, /proc/bus, /proc/fs, /proc/irq read-only)");
+    status.visible_paths.push_back(with_user_namespace
+        ? "/proc (with /proc/sys, /proc/sysrq-trigger, /proc/bus, /proc/fs, /proc/irq read-only)"
+        : "/proc (a new instance for the PID namespace, with /proc/sys, /proc/sysrq-trigger, /proc/bus, /proc/fs, /proc/irq read-only)");
 
     /// A private `/tmp`, empty and not shared with anything outside. Mounted first, so that the paths inside `/tmp`
     /// are mounted on top of it.
@@ -1451,9 +1681,12 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
         status.visible_paths.push_back(fmt::format("{} ({}, {})", mount.path, describeAccess(mount.access), mount.source));
     }
 
-    /// A link inside a bind mount exists there already.
+    /// A link inside a bind mount exists there already. One in `/proc` or `/sys`, as `/proc/self` on the way of
+    /// `/dev/stdout`, is what these filesystems show, and the PIDs in the new `proc` differ from the original ones.
     for (const auto & link : traversal.links)
     {
+        if (isSameOrInside(link.path, "/proc") || isSameOrInside(link.path, "/sys"))
+            continue;
         struct stat st{};
         if (0 == ::lstat(link.path.c_str(), &st))
             continue;
@@ -1465,6 +1698,8 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     /// A directory inside a bind mount exists there already.
     for (const auto & directory : traversal.directories)
     {
+        if (isSameOrInside(directory, "/proc") || isSameOrInside(directory, "/sys"))
+            continue;
         struct stat st{};
         if (0 != ::lstat(directory.c_str(), &st))
             createDirectories(directory);
@@ -1492,12 +1727,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
         restrictCapabilities(0);
     }
     else
-    {
-        uint64_t keep = ~uint64_t(0);
-        for (const auto capability : dangerous_capabilities)
-            keep &= ~(uint64_t(1) << capability);
-        restrictCapabilities(keep);
-    }
+        restrictCapabilities(getCapabilitiesToKeep());
 
     return rememberStatus(mode, std::move(status));
 }
@@ -1509,7 +1739,7 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
 namespace DB
 {
 
-FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector &)
+FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const FilesystemIsolationPathsCollector &, const std::string &)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
 
@@ -1519,6 +1749,15 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (mode == FilesystemIsolationMode::BestEffort)
         status.not_isolated_reason = "the filesystem isolation is implemented only on Linux";
     return rememberStatus(mode, std::move(status));
+}
+
+bool notifyFilesystemIsolationSupervisor(std::string_view)
+{
+    return false;
+}
+
+void registerFilesystemIsolationServingProcess()
+{
 }
 
 }

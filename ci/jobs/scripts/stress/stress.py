@@ -1135,6 +1135,24 @@ def make_query_command(query: str) -> str:
     )
 
 
+def serving_server_pid() -> str:
+    """The PID of the process that serves. With the filesystem isolation and `CAP_SYS_ADMIN`, the pid file has the PID
+    of its supervisor, whose child is the init of the PID namespace, whose child is the watchdog or the server."""
+
+    def comm(pid: str) -> str:
+        return Path(f"/proc/{pid}/comm").read_text().strip()
+
+    def first_child(pid: str) -> str:
+        return Path(f"/proc/{pid}/task/{pid}/children").read_text().split()[0]
+
+    pid = Path("/var/run/clickhouse-server/clickhouse-server.pid").read_text().strip()
+    if comm(pid) == "clickhouse-isol":
+        pid = first_child(first_child(pid))
+        if comm(pid) == "ClickHouseWatch":
+            pid = first_child(pid)
+    return pid
+
+
 def prepare_for_hung_check(drop_databases: bool) -> bool:
     # FIXME this function should not exist, but...
 
@@ -1158,7 +1176,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
+        f"kill -CONT {serving_server_pid()} && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures

@@ -1002,9 +1002,11 @@
 
     <!-- Isolate the server from the filesystem of the host at startup (Linux only): it moves into a new mount
          namespace where only the paths it needs according to this configuration are visible - its data, logs,
-         configuration, certificates, a few system files - and nothing else, in particular no shell.
+         configuration, certificates, a few system files - and nothing else, in particular no shell. With CAP_SYS_ADMIN
+         it runs in a new PID namespace too, and the original process stays outside as a supervisor, with the PID of the
+         pid file.
          With "best_effort", if the kernel or a container runtime does not allow it, the server logs a warning and
-         runs without the isolation; with "enforce", it does not start then. "disabled" (the default without this
+         runs without any isolation; with "enforce", it does not start then. "disabled" (the default without this
          line) turns it off.
          Executable user defined functions and dictionaries that run scripts need their interpreters and libraries:
          list them in "filesystem_isolation_paths", or disable the isolation.
