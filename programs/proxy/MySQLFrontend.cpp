@@ -22,6 +22,14 @@
 #include <random>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LIMIT_EXCEEDED;
+}
+}
+
 namespace DB::Proxy
 {
 
@@ -66,6 +74,29 @@ String drainBuffered(ReadBuffer & in)
     return rest;
 }
 
+/// Reads one packet of the authentication phase. Neither peer is trusted at this point: the client is not authenticated,
+/// and the backend may be faulty or chosen by the client (a dynamic backend). The packet readers of `PacketEndpoint`
+/// join continuation packets and grow the strings of a packet without a total bound, so the payload size is checked
+/// before the payload is read, as in `MySQLHandler::finishHandshake`. The bound also excludes continuation packets,
+/// which only follow a payload of `0xffffff` bytes.
+void receiveBoundedPacket(ReadBuffer & in, uint8_t & sequence_id, IMySQLReadPacket & packet, const char * description)
+{
+    constexpr size_t max_payload_size = 64 * 1024;
+    String data(4, '\0');
+    in.readStrict(data.data(), 4);
+    const size_t payload_size = static_cast<UInt8>(data[0])
+        | (static_cast<size_t>(static_cast<UInt8>(data[1])) << 8)
+        | (static_cast<size_t>(static_cast<UInt8>(data[2])) << 16);
+    if (payload_size > max_payload_size)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "The MySQL {} declares a payload of {} bytes, while it must be at most {} bytes",
+            description, payload_size, max_payload_size);
+    data.resize(4 + payload_size);
+    in.readStrict(data.data() + 4, payload_size);
+
+    ReadBufferFromString data_in(data);
+    packet.readPayload(data_in, sequence_id);
+}
+
 /// Terminate the MySQL handshake to learn the user and the database, route on them, then re-originate
 /// the connection to the chosen backend. The client authenticated against the proxy's throwaway
 /// scramble, so the proxy rebinds authentication to the backend's scramble with an auth-switch: the
@@ -90,28 +121,8 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
         "mysql_native_password", proxy_scramble, /*charset=*/ 33);
     client_ep.sendPacket(greeting, true);
 
-    /// The client is not authenticated yet, so the size of its `HandshakeResponse` is bounded before it is read,
-    /// as in `MySQLHandler::finishHandshake`: otherwise its strings could grow over continuation packets.
-    constexpr size_t max_handshake_response_payload_size = 64 * 1024;
-    String handshake_packet(4, '\0');
-    client_in.readStrict(handshake_packet.data(), 4);
-    const size_t handshake_payload_size = static_cast<UInt8>(handshake_packet[0])
-        | (static_cast<size_t>(static_cast<UInt8>(handshake_packet[1])) << 8)
-        | (static_cast<size_t>(static_cast<UInt8>(handshake_packet[2])) << 16);
-    if (handshake_payload_size > max_handshake_response_payload_size)
-    {
-        LOG_WARNING(ctx.log, "MySQL handshake response declares a payload of {} bytes, while it must be at most {} bytes",
-            handshake_payload_size, max_handshake_response_payload_size);
-        return;
-    }
-    handshake_packet.resize(4 + handshake_payload_size);
-    client_in.readStrict(handshake_packet.data() + 4, handshake_payload_size);
-
     HandshakeResponse response;
-    {
-        ReadBufferFromString handshake_in(handshake_packet);
-        response.readPayload(handshake_in, client_seq);
-    }
+    receiveBoundedPacket(client_in, client_seq, response, "handshake response of the client");
 
     RouteAttributes attributes;
     attributes.protocol = ListenerProtocol::MySQL;
@@ -154,14 +165,14 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
 
     /// Read the backend greeting to learn its scramble.
     Handshake backend_greeting;
-    backend_ep.receivePacket(backend_greeting);
+    receiveBoundedPacket(backend_in, backend_seq, backend_greeting, "greeting of the backend");
 
     /// Rebind: ask the client to re-authenticate against the backend's scramble. The scramble is
     /// sent NUL-terminated (20 bytes + NUL), as clients expect in an auth-switch request.
     AuthSwitchRequest auth_switch("mysql_native_password", backend_greeting.auth_plugin_data + '\0');
     client_ep.sendPacket(auth_switch, true);
     AuthSwitchResponse auth_switch_response;
-    client_ep.receivePacket(auth_switch_response);
+    receiveBoundedPacket(client_in, client_seq, auth_switch_response, "auth-switch response of the client");
 
     /// Log in to the backend as the user, with the response now bound to the backend's scramble.
     /// The command phase is spliced byte for byte after authentication, so capability bits that
@@ -185,7 +196,7 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
     /// per leg by the two endpoints). On success both legs enter the command phase with a reset
     /// sequence, so the rest of the connection can be spliced byte for byte.
     RawPacket auth_result;
-    backend_ep.receivePacket(auth_result);
+    receiveBoundedPacket(backend_in, backend_seq, auth_result, "authentication result of the backend");
     const UInt8 result_type = auth_result.payload.empty() ? 0xFF : static_cast<UInt8>(auth_result.payload[0]);
     client_ep.sendPacket(auth_result, true);
 
