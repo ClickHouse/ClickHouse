@@ -9,7 +9,8 @@ CREATE TABLE t_03291_collapsing_invalid_sign
     sign Int8
 )
 ENGINE = CollapsingMergeTree(sign)
-ORDER BY x;
+ORDER BY x
+SETTINGS add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 INSERT INTO t_03291_collapsing_invalid_sign VALUES (1, 1), (1, -1), (1, 2), (1, 1); -- { serverError INCORRECT_DATA }
 
@@ -28,7 +29,7 @@ DROP TABLE t_03291_collapsing_invalid_sign;
 DROP TABLE IF EXISTS t0;
 
 -- From https://github.com/ClickHouse/ClickHouse/issues/70964
-CREATE TABLE t0 (c0 Int64, c1 Int8) ENGINE = CollapsingMergeTree(c1) ORDER BY tuple();
+CREATE TABLE t0 (c0 Int64, c1 Int8) ENGINE = CollapsingMergeTree(c1) ORDER BY tuple() SETTINGS add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 INSERT INTO TABLE t0 (c0, c1) VALUES (3113015407243198120, 1), (-5920792414778679906, 1), (-5884299248894554057, -1), (-5350317157177243253, 1);
 INSERT INTO TABLE t0 (c0, c1) VALUES (6441560602946720835, 1), (214113373379542270, 1), (3450274783568693535, 1), (1229915363377101410, 1), (NULL, 1), (-3790756411322064052, 1), (-6476097574609257986, -1), (8340200647406930909, 1), (901374356156240451, 1), (-7937301880510480569, -1), (2718049489997799810, 1), (-7046070647647655389, 1), (NULL, 1), (NULL, -1), (539551042235977697, 1), (-6680126182402620465, -1), (-545071884260589694, 1), (-1609843843077275108, -1), (-2307499311918146032, 1), (-5800479665755413671, -1), (3122130530598217471, -1), (-4898541304738768940, -1), (1800869867489008348, -1), (6828243795825354769, 1), (4633856863838964429, 1), (5387774862927778951, -1), (71439926420223535, DEFAULT), (-291862315794351910, -1), (5204497349871065609, 1), (2815893477348202253, 1), (-2025994286668060087, -1), (1292848446755680198, 1), (2319903341156302022, -1), (5957514701048533074, -1), (1640080969736049288, 1), (-3213144610890525779, 1), (3054901382518697286, 1), (-6476734360473598468, 1), (-4863659638853829529, -1), (-8396840173526540909, -1), (9064411074374728617, 1);
 INSERT INTO TABLE t0 (c0, c1) VALUES (-7330260992317873624, -1), (-3940238436997132320, -1), (2067369422305733562, 1), (-2941185840448845891, -1), (-6558865023141323556, -1), (-5421824708847807728, 1), (NULL, 1), (312212090923478057, 1), (-6725679606605613683, -1), (1446537700060712436, -1), (8173868172223781772, 1), (-1681206259557367358, -1), (-4906346581586950660, 1), (4365639853271319101, -1), (NULL, 1), (-4789376951758674727, -1);
@@ -49,7 +50,8 @@ DROP TABLE t0;
 DROP TABLE IF EXISTS t_03291_collapsing_invalid_sign_vertical_merge;
 
 CREATE TABLE t_03291_collapsing_invalid_sign_vertical_merge (c0 Int64, c1 Int8) ENGINE = CollapsingMergeTree(c1) ORDER BY tuple()
-SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0, min_bytes_for_wide_part = 0;
+SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0, min_bytes_for_wide_part = 0,
+    add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 INSERT INTO TABLE t_03291_collapsing_invalid_sign_vertical_merge VALUES (1, 0);
 
@@ -62,7 +64,7 @@ DROP TABLE t_03291_collapsing_invalid_sign_vertical_merge;
 -- CI found a SEGV, testing for it here: https://github.com/ClickHouse/ClickHouse/issues/74219
 DROP TABLE IF EXISTS t0;
 
-CREATE TABLE t0 (c0 Int8, c1 Int) ENGINE = CollapsingMergeTree(c0) ORDER BY (c1);
+CREATE TABLE t0 (c0 Int8, c1 Int) ENGINE = CollapsingMergeTree(c0) ORDER BY (c1) SETTINGS add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 INSERT INTO TABLE t0 (c1, c0) VALUES (69938204, 1), (-968049277, 1), (-1302413209, -1), (1059244139, DEFAULT);
 
@@ -83,7 +85,8 @@ CREATE TABLE t_03291_invalid_sign_read_order_vertical (id UInt64, sign Int8, c1 
 ENGINE = CollapsingMergeTree(sign) ORDER BY id
 SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1,
          vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 1,
-         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+         add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 -- Key 1 meets the invalid row after the only selected row, key 2 before any and as the key's first
 -- row, key 4 between both selected rows, and key 5 after a lone negative one.
@@ -110,7 +113,8 @@ DROP TABLE IF EXISTS t_03291_invalid_sign_read_order_horizontal;
 
 CREATE TABLE t_03291_invalid_sign_read_order_horizontal (id UInt64, sign Int8, c1 UInt64, c2 UInt64)
 ENGINE = CollapsingMergeTree(sign) ORDER BY id
-SETTINGS enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS enable_vertical_merge_algorithm = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+         add_implicit_sign_column_constraint_for_collapsing_engine = 0;
 
 INSERT INTO t_03291_invalid_sign_read_order_horizontal VALUES
     (1,  1, 101, 201), (1,  0, 111, 211),

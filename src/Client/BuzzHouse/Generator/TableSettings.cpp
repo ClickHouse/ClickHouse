@@ -49,6 +49,7 @@ static const auto bucketsRangeNonZeroSetting = CHSetting(
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"adaptive_codec_selection_period", bucketsRangeNonZeroSetting},
     {"adaptive_write_buffer_initial_size", bytesRangeNonZeroSetting},
+    {"add_implicit_is_deleted_column_constraint_for_replacing_engine", trueOrFalseSetting},
     {"add_implicit_sign_column_constraint_for_collapsing_engine", trueOrFalseSetting},
     {"add_minmax_index_for_block_number_column", trueOrFalseSetting},
     {"add_minmax_index_for_block_offset_column", trueOrFalseSetting},
