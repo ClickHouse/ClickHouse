@@ -98,34 +98,39 @@ public:
             return;
         }
 
-        /// A rare unsorted argument joins the unsorted tail: `other` belongs to another state and is kept intact.
-        if (!other.isSorted())
-        {
-            if (isSorted())
-                unsorted_begin = buffer.size();
-            buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
-            sort();
-            return;
-        }
-
         sort();
 
+        /// Both the prefix and the tail of `other` are inserted; one reservation saves a second reallocation.
+        buffer.reserve(buffer.size() + other.buffer.size());
+
+        /// The sorted prefix of `other` is merged first, so its order is kept; the unsorted tail of `other`, if any, then becomes the tail of this buffer.
+        /// `other` belongs to another state and is kept intact.
+        const auto other_prefix_begin = other.buffer.begin();
+        const auto other_prefix_end = other.isSorted() ? other.buffer.end() : other.buffer.begin() + other.unsorted_begin;
+
         /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append or prepend.
-        if (buffer.back().first < other.buffer.front().first)
+        if (buffer.back().first < other_prefix_begin->first)
         {
-            buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
-            return;
+            buffer.insert(buffer.end(), other_prefix_begin, other_prefix_end);
         }
-        if (other.buffer.back().first < buffer.front().first)
+        else if ((other_prefix_end - 1)->first < buffer.front().first)
         {
-            buffer.insert(buffer.begin(), other.buffer.begin(), other.buffer.end());
-            return;
+            buffer.insert(buffer.begin(), other_prefix_begin, other_prefix_end);
+        }
+        else
+        {
+            /// Overlapping ranges: the prefix samples are appended and merged into this buffer in place.
+            const size_t tail_begin = buffer.size();
+            buffer.insert(buffer.end(), other_prefix_begin, other_prefix_end);
+            mergeSortedTail(buffer, tail_begin);
         }
 
-        /// Overlapping ranges: the other samples are appended and merged into the prefix in place.
-        const size_t tail_begin = buffer.size();
-        buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
-        mergeSortedTail(buffer, tail_begin);
+        if (other_prefix_end != other.buffer.end())
+        {
+            unsorted_begin = buffer.size();
+            buffer.insert(buffer.end(), other_prefix_end, other.buffer.end());
+            sort();
+        }
     }
 
     void serialize(WriteBuffer & buf) const
@@ -225,7 +230,7 @@ private:
         return lhs.first < rhs.first;
     }
 
-    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
+    /// Collapses each run of adjacent samples with equal timestamps into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
     /// Samples before `start_pos` are already unique.
     static void deduplicateSorted(Buffer & buf, size_t start_pos = 0)
     {
@@ -247,20 +252,21 @@ private:
     {
         chassert(start_pos <= buf.size());
         ::sort(buf.begin() + start_pos, buf.end(), lessByTimestamp);
+        /// Many series with equal timestamps in one bucket collapse to the distinct timestamps here; only those are merged into the prefix.
+        deduplicateSorted(buf, start_pos);
         mergeSortedTail(buf, start_pos);
     }
 
-    /// Merges the sorted tail `[tail_begin, size)` into the sorted and unique prefix `[0, tail_begin)` in place.
+    /// Merges the sorted and unique tail `[tail_begin, size)` into the sorted and unique prefix `[0, tail_begin)` in place.
     static void mergeSortedTail(Buffer & buf, size_t tail_begin)
     {
         chassert(tail_begin <= buf.size());
         if (tail_begin == buf.size())
             return;
 
-        /// A tail that lies entirely before the prefix, such as an older part read after a newer one, is deduplicated and moved in front of it.
+        /// A tail that lies entirely before the prefix, such as an older part read after a newer one, is moved in front of it.
         if ((buf.end() - 1)->first < buf.begin()->first)
         {
-            deduplicateSorted(buf, tail_begin);
             std::rotate(buf.begin(), buf.begin() + tail_begin, buf.end());
             return;
         }
@@ -269,6 +275,9 @@ private:
         /// and the merge and the deduplication start at `merge_begin`.
         auto tail = buf.begin() + tail_begin;
         auto merge_begin = std::lower_bound(buf.begin(), tail, *tail, lessByTimestamp);
+        /// With the tail after the prefix there is nothing to merge, and a unique tail leaves nothing to deduplicate.
+        if (merge_begin == tail)
+            return;
         std::inplace_merge(merge_begin, tail, buf.end(), lessByTimestamp);
         deduplicateSorted(buf, merge_begin - buf.begin());
     }
