@@ -19,3 +19,10 @@ IN with +0.0
 0	1
 1	0
 2	1
+LowCardinality key
+a	0	0	1
+b	1	0	0
+c	1	0	0
+a	0	0	1
+b	1	0	0
+c	1	0	0
