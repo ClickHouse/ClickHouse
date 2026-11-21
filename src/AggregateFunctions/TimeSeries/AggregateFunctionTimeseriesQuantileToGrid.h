@@ -50,6 +50,8 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
         /// grid point only: it is kept unsorted, and `getResult` selects the quantile from it.
         bool one_bucket_windows;
         mutable VectorWithMemoryTracking<ValueType> one_bucket_values;
+        /// The end of the bucket in `one_bucket_values`, only to check that `removeBefore` drops a bucket out of the window.
+        GridScaleTimestampType one_bucket_end{};
 
         explicit Aggregator(bool one_bucket_windows_)
             : one_bucket_windows(one_bucket_windows_)
@@ -70,6 +72,7 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
             if (one_bucket_windows)
             {
                 one_bucket_values = std::move(values);
+                one_bucket_end = bucket_end_timestamp;
                 return;
             }
 
@@ -83,6 +86,7 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
             if (one_bucket_windows)
             {
                 /// The bucket of the previous grid point is out of the window, and the bucket of this one is added after.
+                chassert(one_bucket_values.empty() || one_bucket_end <= cut_off);
                 one_bucket_values.clear();
                 return;
             }

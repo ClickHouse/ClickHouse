@@ -53,6 +53,8 @@ struct AggregateFunctionTimeseriesMadToGridTraits
         /// grid point only: `add` computes the result from it unsorted, and only the result is kept.
         bool one_bucket_windows;
         std::optional<ResultType> one_bucket_result;
+        /// The end of the bucket of `one_bucket_result`, only to check that `removeBefore` drops a bucket out of the window.
+        GridScaleTimestampType one_bucket_end{};
 
         explicit Aggregator(bool one_bucket_windows_)
             : one_bucket_windows(one_bucket_windows_)
@@ -73,6 +75,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             if (one_bucket_windows)
             {
                 one_bucket_result = calculateTimeseriesMad(std::move(values));
+                one_bucket_end = bucket_end_timestamp;
                 return;
             }
 
@@ -86,6 +89,7 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             if (one_bucket_windows)
             {
                 /// The bucket of the previous grid point is out of the window, and the bucket of this one is added after.
+                chassert(!one_bucket_result || one_bucket_end <= cut_off);
                 one_bucket_result.reset();
                 return;
             }
