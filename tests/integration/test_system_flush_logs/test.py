@@ -14,6 +14,9 @@ node = cluster.add_instance(
         "configs/config.xml",
     ],
     stay_alive=True,
+    # The tests count the rows of `system.query_log` and the queue overflows of
+    # the log; the export's own queries and flushes would be counted too
+    with_ci_logs_export=False,
 )
 
 

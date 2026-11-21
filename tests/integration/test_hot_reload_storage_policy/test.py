@@ -152,7 +152,9 @@ def test_hot_reload_policy_distributed_table(started_cluster):
         "INSERT INTO TABLE t_d SETTINGS prefer_localhost_replica = 0 VALUES (2, 'bar') (12, 'bar')"
     )
     # t_d should create queue on disk0
-    queue_path = node.query("SELECT data_path FROM system.distribution_queue")
+    queue_path = node.query(
+        "SELECT data_path FROM system.distribution_queue WHERE database = 'default' AND table = 't_d'"
+    )
 
     assert (
         "disk0" in queue_path
@@ -172,7 +174,9 @@ def test_hot_reload_policy_distributed_table(started_cluster):
     )
 
     # t_d should create queue on disk1
-    queue_path = node.query("SELECT data_path FROM system.distribution_queue")
+    queue_path = node.query(
+        "SELECT data_path FROM system.distribution_queue WHERE database = 'default' AND table = 't_d'"
+    )
 
     assert (
         "disk1" in queue_path

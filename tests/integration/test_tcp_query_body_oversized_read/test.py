@@ -32,12 +32,16 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 # 1 GiB container memory limit. ClickHouse will detect this via cgroup v2 and
-# derive `max_server_memory_usage = 0.9 * 1 GiB = 921.6 MiB`.
+# derive `max_server_memory_usage = 0.9 * 1 GiB = 921.6 MiB`. An ASan build
+# fills that up to a couple of MiB at startup already, so the export of the
+# system logs to the CI Logs cluster (see helpers/ci_logs_export.py), which
+# materialises every log table, stays off.
 node = cluster.add_instance(
     "node",
     main_configs=["configs/no_log_noise.xml"],
     mem_limit="1g",
     stay_alive=True,
+    with_ci_logs_export=False,
 )
 
 
