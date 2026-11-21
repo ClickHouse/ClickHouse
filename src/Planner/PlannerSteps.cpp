@@ -33,6 +33,7 @@
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BypassExtremesSteps.h>
+#include <Processors/QueryPlan/ClusterMergingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -58,6 +59,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -842,7 +844,10 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         force_aggregation_in_order);
 
-    if (!query_analysis_result.aggregate_final)
+    /// `WITH CLUSTER` keeps the aggregation non-final only so that `ClusterMergingStep` can merge the
+    /// exact groups afterwards; it must still see every group, so the Top-K heap (which evicts groups
+    /// that fall outside `ORDER BY ... LIMIT`) is not allowed to prune them first.
+    if (!query_analysis_result.aggregate_final && !query_node.hasGroupByWithCluster())
         applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
 
     query_plan.addStep(std::move(aggregating_step));
@@ -1144,6 +1149,39 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
             query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls]);
         query_plan.addStep(std::move(cube_step));
     }
+}
+
+void addClusterMergingStepIfNeeded(QueryPlan & query_plan,
+    const AggregationAnalysisResult & aggregation_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context)
+{
+    if (!aggregation_analysis_result.cluster_key_info.has_value())
+        return;
+
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto aggregator_params = getAggregatorParams(planner_context,
+        aggregation_analysis_result,
+        query_analysis_result,
+        settings,
+        true /*aggregate_descriptions_remove_arguments*/);
+
+    const auto & cluster_info = *aggregation_analysis_result.cluster_key_info;
+
+    auto transform_params = std::make_shared<AggregatingTransformParams>(
+        query_plan.getCurrentHeader(),
+        std::move(aggregator_params),
+        /*final=*/true);
+
+    auto cluster_merging_step = std::make_unique<ClusterMergingStep>(
+        query_plan.getCurrentHeader(),
+        std::move(transform_params),
+        cluster_info.key_names,
+        cluster_info.distance,
+        cluster_info.dimensions);
+    query_plan.addStep(std::move(cluster_merging_step));
 }
 
 void addDistinctStep(QueryPlan & query_plan,

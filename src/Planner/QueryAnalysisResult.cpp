@@ -87,7 +87,8 @@ QueryAnalysisResult QueryAnalysisResult::create(const QueryTreeNodePtr & query_t
     result.aggregate_overflow_row = query_node.isGroupByWithTotals() && settings[Setting::max_rows_to_group_by]
         && settings[Setting::group_by_overflow_mode] == OverflowMode::ANY && settings[Setting::totals_mode] != TotalsMode::AFTER_HAVING_EXCLUSIVE;
     result.aggregate_final = query_processing_info.getToStage() > QueryProcessingStage::WithMergeableState
-        && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+        && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube()
+        && !query_node.hasGroupByWithCluster();
     result.aggregation_with_rollup_or_cube_or_grouping_sets = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() ||
         query_node.isGroupByWithGroupingSets();
     result.aggregation_should_produce_results_in_order_of_bucket_number

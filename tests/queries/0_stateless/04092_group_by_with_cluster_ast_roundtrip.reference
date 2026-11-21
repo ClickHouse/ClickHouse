@@ -1,0 +1,3 @@
+SELECT count()\nFROM\n(\n    SELECT\n        toUInt64(number) AS x,\n        toUInt64(multiply(number, 2)) AS y\n    FROM numbers(4)\n)\nGROUP BY tuple(x, y) WITH CLUSTER 1.
+SELECT count()\nFROM\n(\n    SELECT toUInt64(number) AS x\n    FROM numbers(4)\n)\nGROUP BY x WITH CLUSTER 1.
+SELECT count()\nFROM\n(\n    SELECT\n        toUInt64(1) AS k,\n        toUInt64(2) AS x,\n        toUInt64(3) AS y\n    FROM system.one\n)\nGROUP BY\n    k,\n    tuple(x, y) WITH CLUSTER 1.

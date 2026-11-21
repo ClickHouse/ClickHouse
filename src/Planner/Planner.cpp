@@ -1294,6 +1294,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+            addClusterMergingStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);

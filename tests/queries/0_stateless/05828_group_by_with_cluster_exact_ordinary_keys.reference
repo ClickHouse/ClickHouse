@@ -1,0 +1,29 @@
+numeric cluster key
+0	1
+1	1
+0	1
+1	1
+0	1
+1	1
+0	1
+1	1
+0	499	500
+0	499	500
+2
+string cluster key
+abc	1
+abd	1
+abc	1
+abd	1
+abc	1
+abd	1
+abc	1
+abd	1
+2D cluster key
+0	1
+1	1
+0	1
+1	1
+equal ordinary keys still merge
+0	2
+abc	2

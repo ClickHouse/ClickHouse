@@ -61,6 +61,11 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node);
 
+void addClusterMergingStepIfNeeded(QueryPlan & query_plan,
+    const AggregationAnalysisResult & aggregation_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context);
+
 void addDistinctStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
