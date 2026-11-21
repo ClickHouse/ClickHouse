@@ -2640,7 +2640,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         }
         else if (!metadata_is_fetched_by_this_read)
         {
+            /// This `HEAD` only authorizes the read. Keep the tags of the previous metadata: they are read for the
+            /// `_tags` virtual column, and a `HEAD` without tags would replace them with an empty map.
+            ObjectAttributes tags = std::move(object_info.metadata->tags);
             object_info.metadata = getObjectMetadataForRead(*object_storage, object_info, /*with_tags=*/ false);
+            object_info.metadata->tags = std::move(tags);
         }
     }
 
