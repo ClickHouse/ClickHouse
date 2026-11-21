@@ -4,6 +4,8 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
+#include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Common/logger_useful.h>
@@ -12,8 +14,10 @@
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
 #include <Common/Crypto/X509Certificate.h>
+#include <Common/DateLUT.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Core/UUID.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
@@ -60,6 +64,9 @@ struct NamedSessionData
     std::chrono::steady_clock::duration timeout;
     std::chrono::steady_clock::time_point close_time_bucket{};
     NamedSessionsStorage & parent;
+
+    /// Keep idle named sessions registered until they are closed or expire.
+    SessionRegistry::HandlePtr session_registry_handle;
 
     NamedSessionData(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessionsStorage & parent_)
         : key(std::move(key_)), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
@@ -539,7 +546,13 @@ void Session::setForwardedFor(const String & forwarded_for)
 void Session::setQuotaClientKey(const String & quota_key)
 {
     if (session_context)
+    {
         session_context->setQuotaClientKey(quota_key);
+        /// The native handshake supplies the key after the login snapshot was registered.
+        auto & handle = named_session ? named_session->session_registry_handle : session_registry_handle;
+        if (handle)
+            handle->updateQuotas(session_context->getAccess()->getQuotaUsages(/* check_client_key = */ false));
+    }
     else
         prepared_client_info->quota_key = quota_key;
 }
@@ -812,6 +825,11 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     /// Interserver does not create session context
     recordLoginSuccess(query_context);
 
+    /// Use this request's authentication ID: a named session can be acquired again while the
+    /// previous request is still finalizing its output. Detached queries do not execute in the session.
+    const auto & handle = named_session ? named_session->session_registry_handle : session_registry_handle;
+    query_context->getClientInfo().session_auth_id = !detached && handle ? auth_id : UUID{};
+
     return query_context;
 }
 
@@ -824,11 +842,11 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
     if (!login_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session or query context must be created");
 
+    const auto & settings   = login_context->getSettingsRef();
+    const auto access       = login_context->getAccess();
+
     if (auto session_log = getSessionLog())
     {
-        const auto & settings   = login_context->getSettingsRef();
-        const auto access       = login_context->getAccess();
-
         session_log->addLoginSuccess(auth_id,
                                      named_session ? named_session->key.second : "",
                                      settings,
@@ -837,6 +855,50 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      user,
                                      user_authenticated_with,
                                      certificate_info);
+    }
+
+    auto client_info = getClientInfo();
+    client_info.session_auth_id = auth_id;
+    auto & handle = named_session ? named_session->session_registry_handle : session_registry_handle;
+    if (handle)
+    {
+        /// Reacquiring a named session changes its connection, not its identity or login time.
+        handle->updateConnection(std::move(client_info), certificate_info, user_authenticated_with.getType(), access->getQuotaUsages(/* check_client_key = */ false));
+    }
+    else
+    {
+        SessionRegistry::Entry entry;
+        entry.auth_id = auth_id;
+        entry.session_id = named_session ? named_session->key.second : "";
+
+        const auto now = std::chrono::system_clock::now();
+        entry.event_time = timeInSeconds(now);
+        entry.event_time_microseconds = timeInMicroseconds(now);
+
+        if (user)
+        {
+            entry.user = user->getName();
+            entry.user_id = user_id;
+        }
+        entry.auth_type = user_authenticated_with.getType();
+
+        if (const auto roles_info = access->getRolesInfo())
+            entry.roles = roles_info->getCurrentRolesNames();
+        if (const auto profile_info = access->getDefaultProfileInfo())
+            entry.profiles = profile_info->getProfileNames();
+        SettingsChanges changes = settings.changes();
+        for (const auto & change : changes)
+        {
+            String value = Settings::valueToStringUtil(change.name, change.value);
+            CoreSettings::maskSettingValue(change.name, change.value, value);
+            entry.settings.emplace_back(change.name, value);
+        }
+        entry.quotas = access->getQuotaUsages(/* check_client_key = */ false);
+
+        entry.client_info = std::move(client_info);
+        entry.certificate_info = certificate_info;
+
+        handle = login_context->getSessionRegistry().registerSession(std::move(entry));
     }
 
     notified_session_log_about_login = true;

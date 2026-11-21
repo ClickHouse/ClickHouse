@@ -1,0 +1,3 @@
+named session: persistence, reuse and close OK
+named session: expiry OK
+query attribution: shared endpoint and concurrent requests OK

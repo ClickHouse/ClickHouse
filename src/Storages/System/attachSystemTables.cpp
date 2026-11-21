@@ -55,6 +55,7 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
 #include <Storages/System/StorageSystemConnections.h>
+#include <Storages/System/StorageSystemSessions.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
@@ -2740,6 +2741,7 @@ connected_time:  2026-03-17 09:18:14
 last_query_time: 2026-03-17 09:18:14
 ```
 )DOCS_MD");
+    attach<StorageSystemSessions>(context, system_database, "sessions", "Contains a list of currently logged-in sessions, one row per active connection.");
     attach<StorageSystemProcesses>(context, system_database, "processes", R"DOCS_MD(
 .description
 This system table is used for implementing the `SHOW PROCESSLIST` query.

@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <Common/HTTPFieldLess.h>
 #include <Common/OpenTelemetryTracingContext.h>
+#include <Core/Types_fwd.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Poco/Net/SocketAddress.h>
 
@@ -85,6 +86,9 @@ public:
     String current_user;
     String current_query_id;
     std::optional<Poco::Net::SocketAddress> current_address;
+
+    /// Server-local authentication ID for `system.sessions`, assigned by `Session` and never serialized.
+    UUID session_auth_id{};
 
     /// For IMPERSONATEd session, stores the original authenticated user
     String authenticated_user;

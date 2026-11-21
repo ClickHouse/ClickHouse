@@ -97,6 +97,7 @@
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
+#include <Interpreters/SessionRegistry.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
 #include <Core/ServerSettings.h>
@@ -811,6 +812,7 @@ struct ContextSharedPart : boost::noncopyable
     std::unique_ptr<GPU::GPUDevice> gpu;    /// Set at the start of the server, before any query, so read without the mutex.
 #endif
     ProcessList process_list;                                   /// Executing queries at the moment.
+    SessionRegistry session_registry;
     SessionTracker session_tracker;
     GlobalOvercommitTracker global_overcommit_tracker;
     MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
@@ -1826,6 +1828,7 @@ ProcessList & Context::getProcessList() { return shared->process_list; }
 const ProcessList & Context::getProcessList() const { return shared->process_list; }
 OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
 
+SessionRegistry & Context::getSessionRegistry() const { return shared->session_registry; }
 SessionTracker & Context::getSessionTracker() { return shared->session_tracker; }
 
 MergeList & Context::getMergeList() { return shared->merge_list; }
