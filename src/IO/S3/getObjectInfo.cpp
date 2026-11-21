@@ -1,6 +1,7 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
+#include <Common/FailPoint.h>
 
 #if USE_AWS_S3
 
@@ -12,6 +13,16 @@ namespace ProfileEvents
     extern const Event DiskS3HeadObject;
 }
 
+
+namespace DB::FailPoints
+{
+    extern const char s3_pause_between_head_object_and_get_object_tagging[];
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+}
 
 namespace DB::S3
 {
@@ -76,12 +87,65 @@ namespace
         object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
+        object_info.version_id = pinnableVersionId(result.GetVersionId());
+
+        object_info.headers.content_type = result.GetContentType();
+        object_info.headers.content_encoding = result.GetContentEncoding();
+        object_info.headers.content_language = result.GetContentLanguage();
+        object_info.headers.content_disposition = result.GetContentDisposition();
+        object_info.headers.cache_control = result.GetCacheControl();
+        object_info.headers.expires = result.GetExpires();
+        object_info.headers.website_redirect_location = result.GetWebsiteRedirectLocation();
 
         if (with_metadata)
             object_info.metadata = objectAttributesFromAwsMap(result.GetMetadata());
 
+        /// `HeadObject` reports the tag count, so untagged objects cost no `GetObjectTagging` call; callers that
+        /// need tags hidden from a restricted `HeadObject` ask via `getObjectTags`.
+        /// Without a `versionId` the tags are of the version that is the latest at the time of `GetObjectTagging`. If it
+        /// is not the version described by `HeadObject`, the object was rewritten in between, and the tags would not
+        /// belong to the reported size, `ETag` and version.
         if (with_tags && result.GetTagCount() > 0)
-            object_info.tags = getObjectTags(client, bucket, key, version_id);
+        {
+            FailPointInjection::pauseFailPoint(FailPoints::s3_pause_between_head_object_and_get_object_tagging);
+
+            String tags_version_id;
+            object_info.tags = getObjectTags(client, bucket, key, version_id, &tags_version_id);
+            if (version_id.empty())
+            {
+                if (!object_info.version_id.empty() && !tags_version_id.empty())
+                {
+                    if (tags_version_id != object_info.version_id)
+                        throw Exception(
+                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "The object {} in bucket {} was rewritten while its tags were read (version {} by `HeadObject`, {} by `GetObjectTagging`)",
+                            key, bucket, object_info.version_id, tags_version_id);
+                }
+                else
+                {
+                    /// Without versions `GetObjectTagging` names nothing that the tags could be checked against (it reports
+                    /// no `ETag`). So `HeadObject` is repeated: if it still describes the same generation, nothing was
+                    /// rewritten before the tags were read, and they are of that generation.
+                    auto recheck = headObject(client, bucket, key, version_id);
+                    if (!recheck.IsSuccess())
+                    {
+                        if (isNotFoundError(recheck.GetError().GetErrorType()))
+                            throw Exception(
+                                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                                "The object {} in bucket {} was removed while its tags were read", key, bucket);
+                        return {std::nullopt, recheck.GetError()};
+                    }
+                    const auto & recheck_result = recheck.GetResult();
+                    if (recheck_result.GetETag() != result.GetETag()
+                        || recheck_result.GetLastModified() != result.GetLastModified()
+                        || pinnableVersionId(recheck_result.GetVersionId()) != object_info.version_id)
+                        throw Exception(
+                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "The object {} in bucket {} was rewritten while its tags were read (`ETag` {} before `GetObjectTagging`, {} after it)",
+                            key, bucket, object_info.etag, recheck_result.GetETag());
+                }
+            }
+        }
 
         return {object_info, {}};
     }
@@ -111,7 +175,8 @@ ObjectAttributes getObjectTags(
     const S3::Client & client,
     std::string_view bucket,
     std::string_view key,
-    const String & version_id)
+    const String & version_id,
+    String * tags_version_id)
 {
     ObjectAttributes tags;
     auto tag_outcome = getObjectTagging(client, bucket, key, version_id);
@@ -131,6 +196,9 @@ ObjectAttributes getObjectTags(
 
     for (const auto & tag : tag_outcome.GetResult().GetTagSet())
         tags[String(tag.GetKey())] = tag.GetValue();
+
+    if (tags_version_id)
+        *tags_version_id = pinnableVersionId(tag_outcome.GetResult().GetVersionId());
 
     return tags;
 }
