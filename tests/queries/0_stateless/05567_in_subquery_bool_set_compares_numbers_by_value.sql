@@ -39,6 +39,13 @@ SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_
 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_variant WHERE x IN (SELECT true) SETTINGS transform_null_in = 1;
 SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_variant WHERE x NOT IN (SELECT true) SETTINGS transform_null_in = 1;
 
+-- A `Bool` holding the byte 2 is `true` for a `Bool` key, also one inside `SimpleAggregateFunction`.
+DROP TABLE IF EXISTS t_bool_byte;
+CREATE TABLE t_bool_byte (b Bool) ENGINE = Memory;
+INSERT INTO t_bool_byte SELECT reinterpret(toUInt8(2), 'Bool');
+SELECT b IN (SELECT true), b IN (SELECT anySimpleState(true)), b NOT IN (SELECT true), b NOT IN (SELECT anySimpleState(true)) FROM t_bool_byte;
+
 DROP TABLE t_bool_set;
 DROP TABLE t_bool_in_key;
 DROP TABLE t_bool_in_variant;
+DROP TABLE t_bool_byte;

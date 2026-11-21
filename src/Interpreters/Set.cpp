@@ -739,7 +739,7 @@ ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, C
         /// can hold such a byte, e.g. from `reinterpret`. With `transform_null_in = 1` the probe keeps its bytes,
         /// as primary-key analysis does, which matches a `Bool` member only against the byte 1 (see
         /// `KeyCondition::tryPrepareSetColumnsForIndex`).
-        const bool converts_bool_key = !transform_null_in && isBool(target_type);
+        const bool converts_bool_key = !transform_null_in && holdsBool(target_type);
         const bool cast_is_no_op = removeNullable(probe.type)->equals(*target_type) && !converts_bool_key;
         if (canBeAccurateCastOrNullTarget(key_type) && !cast_is_no_op)
         {
