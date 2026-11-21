@@ -86,7 +86,7 @@ class Connection
 public:
     enum class State : uint8_t
     {
-        TcpConnecting,
+        TCPConnecting,
         TlsHandshake,
         ConnectSent,
         Ready,
@@ -131,7 +131,7 @@ public:
 
 private:
     void startNextAddress();
-    void onTcpConnected();
+    void onTCPConnected();
     void sendConnect();
     void verifyPeerHostName();
     void processOutput();
@@ -148,7 +148,7 @@ private:
     Limits limits;
     LoggerPtr log;
 
-    State current_state = State::TcpConnecting;
+    State current_state = State::TCPConnecting;
     TimePoint step_started;
     size_t host_index = 0;
     VectorWithMemoryTracking<Poco::Net::SocketAddress> addresses;

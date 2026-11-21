@@ -158,7 +158,7 @@ void Connection::startNextAddress()
                 client.interrupter.add(registered_fd);
                 if (owner_interrupter)
                     owner_interrupter->add(registered_fd);
-                current_state = State::TcpConnecting;
+                current_state = State::TCPConnecting;
                 step_started = Clock::now();
                 LOG_TRACE(log, "Connecting to {} ({})", broker_address.toString(), address.toString());
                 return;
@@ -202,7 +202,7 @@ void Connection::startNextAddress()
     }
 }
 
-void Connection::onTcpConnected()
+void Connection::onTCPConnected()
 {
     pollfd poll_fd{.fd = registered_fd, .events = POLLOUT, .revents = 0};
     int res = ::poll(&poll_fd, 1, 0);
@@ -300,7 +300,7 @@ void Connection::close() noexcept
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// Best effort, the broker redelivers the unacknowledged messages anyway.
+        /// Ok: best effort, the broker redelivers the unacknowledged messages anyway.
     }
     current_state = State::Closed;
     output.clear();
@@ -313,7 +313,7 @@ void Connection::close() noexcept
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// The descriptor is released by the destructor anyway.
+        /// Ok: the descriptor is released by the destructor anyway.
     }
     socket.reset();
 }
@@ -489,8 +489,8 @@ void Connection::process(FrameHandler & handler)
 
     checkTimeouts();
 
-    if (current_state == State::TcpConnecting)
-        onTcpConnected();
+    if (current_state == State::TCPConnecting)
+        onTCPConnected();
 
     if (current_state == State::TlsHandshake)
     {
@@ -557,7 +557,7 @@ short Connection::pollEvents() const
 {
     switch (current_state)
     {
-        case State::TcpConnecting:
+        case State::TCPConnecting:
             return POLLOUT;
         case State::TlsHandshake:
             return tls_wants_write ? POLLOUT : POLLIN;
@@ -579,7 +579,8 @@ bool Connection::hasBufferedInput() const
     }
     catch (...)
     {
-        return true;
+        /// Ok: the next read reports the error.
+        return false;
     }
 }
 
@@ -588,7 +589,7 @@ TimePoint Connection::wakeUpTime() const
     const auto & configuration = client.configuration;
     switch (current_state)
     {
-        case State::TcpConnecting:
+        case State::TCPConnecting:
             return step_started + configuration.connection_timeout;
         case State::TlsHandshake:
         case State::ConnectSent:

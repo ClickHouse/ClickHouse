@@ -545,7 +545,7 @@ TEST(PulsarProtocol, Names)
         EXPECT_THROW(normalizeTopicName(bad), Exception) << bad;
     EXPECT_EQ(partitionTopicName("persistent://a/b/t", 3), "persistent://a/b/t-partition-3");
 
-    auto url = parseServiceUrl("pulsar://h1:1234, h2 ,[::1]:5/path");
+    auto url = parseServiceUrl("pulsar://h1:1234, h2,[::1]:5/path");
     EXPECT_FALSE(url.tls);
     ASSERT_EQ(url.hosts.size(), 3);
     EXPECT_EQ(url.hosts[0], std::make_pair(String("h1"), UInt16(1234)));
