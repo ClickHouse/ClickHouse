@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TimezoneMixin.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 #include <Columns/getLeastSuperColumn.h>
 #include <Columns/ColumnConst.h>
@@ -150,6 +152,57 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
     return common_header;
 }
 
+namespace
+{
+
+/// `equals` ignores a `Decimal` precision and a captured time zone, which a CAST between `equals` types only relabels;
+/// a leaf that differs in anything else keeps the branch's type for the whole column.
+DataTypePtr adoptCommonLeaf(const DataTypePtr & left, const DataTypePtr & right)
+{
+    if (WhichDataType(left).isDateTimeOrDateTime64())
+    {
+        const auto * left_zone = dynamic_cast<const TimezoneMixin *>(left.get());
+        const auto * right_zone = dynamic_cast<const TimezoneMixin *>(right.get());
+        if (left->getName() == right->getName() && left_zone && right_zone
+            && left_zone->getTimeZone().getTimeZone() == right_zone->getTimeZone().getTimeZone())
+            return left;
+        return right->equals(*left) ? right : nullptr;
+    }
+    if (isDecimal(left))
+        return left->getName() == right->getName() ? left : (right->equals(*left) ? right : nullptr);
+    /// The walk stops at `JSON`, whose `equals` compares the typed paths with `equals`; an `equals` pair has
+    /// the same paths, so its children line up by position.
+    if (isObject(left))
+    {
+        if (!left->equals(*right))
+            return nullptr;
+        DataTypes children;
+        children.reserve(left->getNumberOfChildren());
+        bool moved = false;
+        for (size_t i = 0; i < left->getNumberOfChildren(); ++i)
+        {
+            auto child = replaceNestedTypesInPair(left->getChild(i), right->getChild(i), adoptCommonLeaf);
+            if (!child)
+                return nullptr;
+            moved |= child.get() != left->getChild(i).get();
+            children.push_back(std::move(child));
+        }
+        return moved ? left->cloneWithChildren(children) : left;
+    }
+    return left->getName() == right->getName() ? left : nullptr;
+}
+
+DataTypePtr getBranchTargetType(const DataTypePtr & branch_type, const DataTypePtr & common_type)
+{
+    if (isVariant(branch_type))
+        return branch_type;
+
+    auto target = replaceNestedTypesInPair(branch_type, common_type, adoptCommonLeaf);
+    return target ? target : branch_type;
+}
+
+}
+
 void addConvertingToCommonHeaderActionsIfNeeded(
     VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
@@ -160,17 +213,54 @@ void addConvertingToCommonHeaderActionsIfNeeded(
     for (size_t i = 0; i < queries_size; ++i)
     {
         auto & query_node_plan = query_plans[i];
-        if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
+        const auto & plan_header = *query_node_plan->getCurrentHeader();
+
+        Block target_header = union_common_header;
+        std::vector<size_t> positions_to_cast;
+        if (plan_header.columns() == target_header.columns())
+        {
+            for (size_t position = 0; position < target_header.columns(); ++position)
+            {
+                const auto & branch = plan_header.getByPosition(position);
+                auto & target = target_header.getByPosition(position);
+                if (branch.type.get() == target.type.get() || !branch.type->equals(*target.type))
+                    continue;
+
+                auto adopted = getBranchTargetType(branch.type, target.type);
+                if (adopted.get() != branch.type.get())
+                {
+                    target.type = adopted;
+                    positions_to_cast.push_back(position);
+                }
+                else
+                {
+                    target.type = branch.type;
+                }
+            }
+        }
+
+        if (blocksHaveEqualStructure(plan_header, target_header) && positions_to_cast.empty())
             continue;
 
         auto actions_dag = ActionsDAG::makeConvertingActions(
-            query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
-            union_common_header.getColumnsWithTypeAndName(),
+            plan_header.getColumnsWithTypeAndName(),
+            target_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position,
             context,
             false /*ignore_constant_values*/,
             false /*add_cast_columns*/,
             nullptr /*new_names*/);
+
+        auto & outputs = actions_dag.getOutputs();
+        for (size_t position : positions_to_cast)
+        {
+            const auto & target = target_header.getByPosition(position);
+            if (outputs[position]->result_type.get() == target.type.get())
+                continue;
+            const auto & cast_node = actions_dag.addCast(*outputs[position], target.type, {}, context);
+            outputs[position] = &actions_dag.addAlias(cast_node, target.name);
+        }
+
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
