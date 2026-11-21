@@ -1,0 +1,3 @@
+<clickhouse>
+    <user_files_path>/var/lib/clickhouse/symlinked_user_files/</user_files_path>
+</clickhouse>

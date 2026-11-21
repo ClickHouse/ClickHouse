@@ -1,0 +1,10 @@
+--- Filesystem: alternatives beneath the directory
+1
+2
+--- Filesystem: an alternative in a sibling directory
+PATH_ACCESS_DENIED
+--- URL: alternatives beneath the directory of the base URL
+1
+2
+--- URL: an alternative in a sibling directory
+PATH_ACCESS_DENIED

@@ -97,7 +97,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
         if (old_file_size)
         {
             /// Append mode: we continue to use the same header.
-            auto read_buffer = delegate_disk->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+            /// The header must be read from the file as it is now. A rewrite generates a new header with a
+            /// new IV under the same name and does not invalidate the caches keyed by the path, so a cached
+            /// header would make the appended bytes encrypted with a stale IV.
+            auto read_settings = getReadSettings();
+            read_settings.disableCaches();
+            if (read_settings.local_fs_settings.method == LocalFSReadMethod::mmap)
+                read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+            auto read_buffer = delegate_disk->readFile(wrapped_path, read_settings.adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
             key = current_settings.findKeyByFingerprint(header.key_fingerprint, path);
         }
