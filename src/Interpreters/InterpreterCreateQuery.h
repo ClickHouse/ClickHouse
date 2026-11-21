@@ -110,7 +110,8 @@ public:
     /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
     /// Both routes converting a table to a replicated engine call it: `ATTACH TABLE ... AS REPLICATED` and the
     /// `convert_to_replicated` flag `DatabaseOrdinary` acts upon while loading the table.
-    static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
+    /// A broken disk outside `storage_policy` is skipped; a broken disk inside it makes the conversion fail.
+    static void clearTransactionMetadata(const String & table_data_path, const StoragePolicyPtr & storage_policy, ContextPtr local_context);
 
 private:
     struct TableProperties

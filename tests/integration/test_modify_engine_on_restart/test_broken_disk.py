@@ -1,0 +1,397 @@
+import re
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
+from test_modify_engine_on_restart.common import get_table_path, set_convert_flags
+
+cluster = ClickHouseCluster(__file__)
+ch1 = cluster.add_instance(
+    "ch1",
+    main_configs=[
+        "configs/config.d/clusters.xml",
+        "configs/config.d/distributed_ddl.xml",
+        "configs/config.d/system_tables_storage_policy.xml",
+    ],
+    with_zookeeper=True,
+    macros={"replica": "node1"},
+    env_variables={"INLINE_DISK_PATH": "/var/lib/clickhouse/custom_disks/inline_env/"},
+    stay_alive=True,
+)
+
+database_name = "modify_engine_broken_disk"
+
+LOOPED_DISK_XML = """<clickhouse>
+    <local_disk_check_period_ms>1000</local_disk_check_period_ms>
+    <custom_local_disks_base_directory>/var/lib/clickhouse/custom_disks/</custom_local_disks_base_directory>
+    <storage_configuration>
+        <disks>
+            <looped>
+                <type>local</type>
+                <path>/var/lib/clickhouse/loop_a/disk/</path>
+            </looped>
+            <flaky>
+                <type>local</type>
+                <path>/var/lib/clickhouse/flaky_disk/</path>
+            </flaky>
+            <extra>
+                <type>local</type>
+                <path>/var/lib/clickhouse/extra_disk/</path>
+            </extra>
+        </disks>
+        <policies>
+            <with_looped>
+                <volumes>
+                    <main><disk>default</disk></main>
+                    <broken><disk>looped</disk></broken>
+                </volumes>
+            </with_looped>
+            <with_flaky>
+                <volumes>
+                    <main><disk>flaky</disk></main>
+                </volumes>
+            </with_flaky>
+            <looped_first>
+                <volumes>
+                    <broken><disk>looped</disk></broken>
+                    <main><disk>default</disk></main>
+                </volumes>
+            </looped_first>
+            <extra_first>
+                <volumes>
+                    <extra><disk>extra</disk></extra>
+                    <main><disk>default</disk></main>
+                </volumes>
+            </extra_first>
+        </policies>
+    </storage_configuration>
+</clickhouse>"""
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        # A `local` disk whose path is a symlink loop is broken.
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "ln -sfn loop_b /var/lib/clickhouse/loop_a && ln -sfn loop_a /var/lib/clickhouse/loop_b",
+            ]
+        )
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat > /etc/clickhouse-server/config.d/looped_disk.xml << 'EOF'\n{LOOPED_DISK_XML}\nEOF",
+            ]
+        )
+        ch1.restart_clickhouse()
+        assert (
+            ch1.query("SELECT is_broken FROM system.disks WHERE name = 'looped'")
+            == "1\n"
+        )
+        yield cluster
+
+    finally:
+        cluster.shutdown()
+
+
+def q(query):
+    return ch1.query(database=database_name, sql=query)
+
+
+def engine_of(table):
+    return q(
+        f"SELECT engine FROM system.tables WHERE database = '{database_name}' AND name = '{table}'"
+    ).strip()
+
+
+def test_broken_disk_outside_storage_policy(started_cluster):
+    # A broken disk that the table's storage policy does not use holds none of its parts,
+    # so neither conversion route fails on it.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name}")
+
+    q("CREATE TABLE attached ( A Int64 ) ENGINE = MergeTree ORDER BY A")
+    q("INSERT INTO attached SELECT number FROM numbers(10)")
+    q("DETACH TABLE attached")
+    q("ATTACH TABLE attached AS REPLICATED")
+    assert engine_of("attached") == "ReplicatedMergeTree"
+    assert q("SELECT count() FROM attached").strip() == "10"
+
+    q("CREATE TABLE flagged ( A Int64 ) ENGINE = MergeTree ORDER BY A")
+    q("INSERT INTO flagged SELECT number FROM numbers(10)")
+    set_convert_flags(ch1, database_name, ["flagged"])
+    ch1.restart_clickhouse()
+    assert engine_of("flagged") == "ReplicatedMergeTree"
+    assert q("SELECT count() FROM flagged").strip() == "10"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+def test_broken_disk_in_storage_policy(started_cluster):
+    # A broken disk in the policy may hold parts with transaction metadata that would load into
+    # the replicated table once the disk is back, so the conversion is still refused.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name}")
+
+    q(
+        "CREATE TABLE on_looped ( A Int64 ) ENGINE = MergeTree ORDER BY A "
+        "SETTINGS storage_policy = 'with_looped'"
+    )
+    q("INSERT INTO on_looped SELECT number FROM numbers(10)")
+    q("DETACH TABLE on_looped")
+    assert "CANNOT_RESTORE_TABLE" in ch1.query_and_get_error(
+        "ATTACH TABLE on_looped AS REPLICATED", database=database_name
+    )
+    q("ATTACH TABLE on_looped")
+    assert engine_of("on_looped") == "MergeTree"
+    assert q("SELECT count() FROM on_looped").strip() == "10"
+
+    # The last `storage_policy` assignment is the one the table uses.
+    q(
+        "CREATE TABLE on_looped_last ( A Int64 ) ENGINE = MergeTree ORDER BY A "
+        "SETTINGS storage_policy = 'default', storage_policy = 'with_looped'"
+    )
+    assert (
+        q(
+            f"SELECT storage_policy FROM system.tables WHERE database = '{database_name}' AND name = 'on_looped_last'"
+        ).strip()
+        == "with_looped"
+    )
+    q("INSERT INTO on_looped_last SELECT number FROM numbers(10)")
+    q("DETACH TABLE on_looped_last")
+    assert "CANNOT_RESTORE_TABLE" in ch1.query_and_get_error(
+        "ATTACH TABLE on_looped_last AS REPLICATED", database=database_name
+    )
+    q("ATTACH TABLE on_looped_last")
+    assert engine_of("on_looped_last") == "MergeTree"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+def test_broken_disk_with_readable_table_in_storage_policy(started_cluster):
+    # The disk check marks a disk broken while its table directory stays readable.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name}")
+
+    q(
+        "CREATE TABLE on_flaky ( A Int64 ) ENGINE = MergeTree ORDER BY A "
+        "SETTINGS storage_policy = 'with_flaky'"
+    )
+    q("INSERT INTO on_flaky SELECT number FROM numbers(10)")
+    q("DETACH TABLE on_flaky")
+
+    # A directory in place of the disk check file fails its write probe with EISDIR.
+    # Rotated logs also list earlier server runs, so take the newest check file.
+    check_file = max(
+        re.findall(
+            r"(\d{4}\.\d{2}\.\d{2} [\d:.]+) .*(clickhouse_disk_checker_[0-9a-f-]+)",
+            ch1.grep_in_log("Disk check for disk flaky started"),
+        )
+    )[1]
+    check_path = f"/var/lib/clickhouse/flaky_disk/{check_file}"
+    ch1.exec_in_container(
+        ["bash", "-c", f"until mkdir {check_path} 2>/dev/null; do sleep 0.1; done"]
+    )
+    assert_eq_with_retry(
+        ch1,
+        "SELECT is_broken FROM system.disks WHERE name = 'flaky'",
+        "1",
+        retry_count=30,
+        sleep_time=1,
+    )
+    assert "CANNOT_RESTORE_TABLE" in ch1.query_and_get_error(
+        "ATTACH TABLE on_flaky AS REPLICATED", database=database_name
+    )
+
+    ch1.exec_in_container(["rmdir", check_path])
+    assert_eq_with_retry(
+        ch1,
+        "SELECT is_broken FROM system.disks WHERE name = 'flaky'",
+        "0",
+        retry_count=30,
+        sleep_time=1,
+    )
+    q("ATTACH TABLE on_flaky")
+    assert engine_of("on_flaky") == "MergeTree"
+    assert q("SELECT count() FROM on_flaky").strip() == "10"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+DEFAULTS_XML = """<clickhouse>
+    <merge_tree><storage_policy>looped_first</storage_policy></merge_tree>
+    <replicated_merge_tree><storage_policy>default</storage_policy></replicated_merge_tree>
+</clickhouse>"""
+
+
+def test_broken_disk_in_merge_tree_defaults_only(started_cluster):
+    # A replicated table starts from the `replicated_merge_tree` defaults, so with `lazy_load_tables`
+    # a broken disk that only the `merge_tree` defaults use does not fail its startup.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+
+    q(
+        "CREATE TABLE replicated ( A Int64 ) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/replicated', '{replica}') ORDER BY A"
+    )
+    q("INSERT INTO replicated SELECT number FROM numbers(10)")
+
+    defaults_path = "/etc/clickhouse-server/config.d/merge_tree_defaults.xml"
+    try:
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat > {defaults_path} << 'EOF'\n{DEFAULTS_XML}\nEOF",
+            ]
+        )
+        ch1.restart_clickhouse()
+        assert q("SELECT count() FROM replicated").strip() == "10"
+        assert engine_of("replicated") == "ReplicatedMergeTree"
+    finally:
+        ch1.exec_in_container(["rm", "-f", defaults_path])
+        ch1.restart_clickhouse()
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+
+
+REPLICATED_DEFAULTS_XML = """<clickhouse>
+    <replicated_merge_tree><storage_policy>extra_first</storage_policy></replicated_merge_tree>
+</clickhouse>"""
+
+
+@pytest.mark.parametrize("lazy_load_tables", [0, 1])
+def test_flag_found_with_different_replicated_defaults(
+    started_cluster, lazy_load_tables
+):
+    # The flag is put on the first disk of the `merge_tree` defaults policy, and the restore after the
+    # conversion has to look for it there, not on the first disk of the `replicated_merge_tree` one.
+    defaults_path = "/etc/clickhouse-server/config.d/replicated_merge_tree_defaults.xml"
+    try:
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat > {defaults_path} << 'EOF'\n{REPLICATED_DEFAULTS_XML}\nEOF",
+            ]
+        )
+        ch1.restart_clickhouse()
+
+        ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+        ch1.query(
+            f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = {lazy_load_tables}"
+        )
+
+        flag_paths = {}
+        for table in ["flagged", "half_converted"]:
+            q(f"CREATE TABLE {table} ( A Int64 ) ENGINE = MergeTree ORDER BY A")
+            q(f"INSERT INTO {table} SELECT number FROM numbers(10)")
+            flag_paths[table] = (
+                get_table_path(ch1, table, database_name) + "convert_to_replicated"
+            )
+            assert "/var/lib/clickhouse/extra_disk/" not in flag_paths[table]
+
+        set_convert_flags(ch1, database_name, ["flagged"])
+
+        # The state a restart between the conversion and the restore leaves: the definition is
+        # already replicated, the flag is still there, and Keeper has no metadata for the table.
+        q("DETACH TABLE half_converted")
+        q("ATTACH TABLE half_converted AS REPLICATED")
+        ch1.exec_in_container(["touch", flag_paths["half_converted"]])
+
+        ch1.restart_clickhouse()
+
+        for table in ["flagged", "half_converted"]:
+            assert engine_of(table) == "ReplicatedMergeTree"
+            q(f"INSERT INTO {table} SELECT number FROM numbers(10, 10)")
+            assert q(f"SELECT count() FROM {table}").strip() == "20"
+            assert (
+                ch1.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"test -e {flag_paths[table]} && echo exists || echo gone",
+                    ]
+                ).strip()
+                == "gone"
+            )
+    finally:
+        ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+        ch1.exec_in_container(["rm", "-f", defaults_path])
+        ch1.restart_clickhouse()
+
+
+LOOPED_DEFAULTS_XML = """<clickhouse>
+    <merge_tree><storage_policy>looped_first</storage_policy></merge_tree>
+    <replicated_merge_tree><storage_policy>with_looped</storage_policy></replicated_merge_tree>
+</clickhouse>"""
+
+
+@pytest.mark.parametrize("lazy_load_tables", [0, 1])
+def test_broken_secondary_disk_of_existing_replica(started_cluster, lazy_load_tables):
+    # An existing replicated table with no conversion pending starts although a disk of its
+    # policy, the first one of the `merge_tree` defaults policy, is broken.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS lazy_load_tables = {lazy_load_tables}"
+    )
+    q(
+        "CREATE TABLE replicated ( A Int64 ) "
+        "ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/replicated', '{replica}') ORDER BY A"
+    )
+    q("INSERT INTO replicated SELECT number FROM numbers(10)")
+
+    defaults_path = "/etc/clickhouse-server/config.d/looped_defaults.xml"
+    try:
+        ch1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cat > {defaults_path} << 'EOF'\n{LOOPED_DEFAULTS_XML}\nEOF",
+            ]
+        )
+        ch1.restart_clickhouse()
+        q("INSERT INTO replicated SELECT number FROM numbers(10, 10)")
+        assert q("SELECT count() FROM replicated").strip() == "20"
+        assert engine_of("replicated") == "ReplicatedMergeTree"
+    finally:
+        ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+        ch1.exec_in_container(["rm", "-f", defaults_path])
+        ch1.restart_clickhouse()
+
+
+def test_attach_as_replicated_checks_dynamic_disk_restrictions(started_cluster):
+    # `ATTACH TABLE ... AS REPLICATED` creates an inline disk with the restrictions of the user
+    # who runs it, and a refused query leaves the table definition unchanged.
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
+    ch1.query(f"CREATE DATABASE {database_name}")
+
+    allowed = {"dynamic_disk_allow_from_env": 1}
+    ch1.query(
+        "CREATE TABLE inline_env ( A Int64 ) ENGINE = MergeTree ORDER BY A "
+        "SETTINGS disk = disk(type = local, path = 'from_env INLINE_DISK_PATH')",
+        database=database_name,
+        settings=allowed,
+    )
+    q("INSERT INTO inline_env SELECT number FROM numbers(10)")
+    q("DETACH TABLE inline_env")
+
+    error = ch1.query_and_get_error(
+        "ATTACH TABLE inline_env AS REPLICATED",
+        database=database_name,
+        settings={"dynamic_disk_allow_from_env": 0},
+    )
+    assert "ACCESS_DENIED" in error and "dynamic_disk_allow_from_env" in error, error
+
+    ch1.query("ATTACH TABLE inline_env", database=database_name, settings=allowed)
+    assert engine_of("inline_env") == "MergeTree"
+    assert q("SELECT count() FROM inline_env").strip() == "10"
+
+    ch1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
