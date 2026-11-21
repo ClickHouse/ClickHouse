@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
@@ -25,6 +26,7 @@
 #endif
 #include <Poco/Net/NetException.h>
 
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -225,13 +227,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
     Poco::Logger * log = &Poco::Logger::get("checkDataPart");
 
-    /// `O_DIRECT` is chosen by the read hint, so it has to be the file size.
-    auto read_file = [&read_settings](const IDataPartStorage & storage, const String & name)
+    /// `O_DIRECT` is chosen by the read hint, so it has to be the file size. The file is read through the disk,
+    /// because the part storage reads the `skp_idx.packed` index through the page cache.
+    auto read_file = [&read_settings](const IDataPartStorage & storage, const String & name) -> std::unique_ptr<ReadBufferFromFileBase>
     {
-        if (read_settings.local_fs_settings.direct_io_threshold && storage.existsFile(name))
+        if (read_settings.local_fs_settings.direct_io_threshold)
         {
-            size_t size = storage.getFileSize(name);
-            return storage.readFile(name, read_settings.adjustBufferSize(size), size);
+            if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&storage))
+            {
+                auto disk = disk_storage->getDisk();
+                auto path = fs::path(storage.getRelativePath()) / name;
+                if (disk->existsFile(path))
+                {
+                    size_t size = disk->getFileSize(path);
+                    return disk->readFile(path, read_settings.adjustBufferSize(size), size);
+                }
+            }
         }
         return storage.readFile(name, read_settings, std::nullopt);
     };
