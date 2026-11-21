@@ -793,6 +793,7 @@ void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
                 factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
                 {
                     auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+                    result += fmt::format(", allow_variable_number_of_columns={}", settings.json.compact_allow_variable_number_of_columns);
                     if (!with_names)
                         result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
                     return result;
