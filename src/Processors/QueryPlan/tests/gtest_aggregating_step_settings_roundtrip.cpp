@@ -295,6 +295,38 @@ TEST(AggregatingStepSettingsRoundTrip, UseAggregationMemoryTrackerNotWrittenToOl
     EXPECT_FALSE(current_peer[QueryPlanSerializationSetting::use_aggregation_memory_tracker]);
 }
 
+/// `aggregation_direct_index_max_cells` is taken from the plan as well, so a subquery-level `SETTINGS` of the initiator
+/// reaches the deserialized step whatever the receiver's session says.
+TEST(AggregatingStepSettingsRoundTrip, DirectIndexMaxCellsTravels)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    for (UInt64 value : {UInt64{0}, UInt64{1000}, UInt64{65536}})
+    {
+        auto params = makeParams(true);
+        params.aggregation_direct_index_max_cells = value;
+        auto step = makeAggregatingStepFromParams(std::move(params));
+
+        String bytes = serializeStep(*step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        QueryPlanSerializationSettings settings = writeAndReadSettings(*step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+        auto receiver_context = Context::createCopy(getContext().context);
+        receiver_context->setSetting("aggregation_direct_index_max_cells", Field(UInt64{777}));
+
+        ReadBufferFromString in(bytes);
+        DeserializedSetsRegistry registry;
+        auto header = makeHeader();
+        SharedHeaders input_headers{header};
+        IQueryPlanStep::Deserialization ctx{
+            in, registry, {}, receiver_context, input_headers, header, settings, 0, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, 0, false};
+
+        auto restored = AggregatingStep::deserialize(ctx);
+        EXPECT_EQ(typeid_cast<AggregatingStep &>(*restored).getParams().aggregation_direct_index_max_cells, value)
+            << "value " << value;
+    }
+}
+
 /// Version gates of the `only_merge` flag (bit 128 on `AggregatingStep`, introduced in
 /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION`): only a gtest can
 /// drive a peer version below it. End-to-end round-trip coverage of the flag itself is carried

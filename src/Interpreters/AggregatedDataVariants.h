@@ -67,6 +67,14 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Stats can be used to disable the cache in case of a lot of misses.
     ColumnsHashing::LastElementCacheStats consecutive_keys_cache_stats;
 
+    /// See `Aggregator::executeDirectIndexBlock`: blocks in a row that did not qualify, and blocks skipped since.
+    struct DirectIndexBackoff
+    {
+        size_t failed_blocks = 0;
+        size_t skipped_blocks = 0;
+    };
+    DirectIndexBackoff direct_index_backoff;
+
     // Disable consecutive key optimization for Uint8/16, because they use a FixedHashMap
     // and the lookup there is almost free, so we don't need to cache the last lookup result
     std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, false>>           key8;

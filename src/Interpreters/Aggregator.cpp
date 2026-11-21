@@ -1047,6 +1047,34 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     merge_blocks_method = chooseMergeBlocksMethod(method_chosen);
     merge_blocks_state_cache = AggregatedDataVariants::createCache(merge_blocks_method, cache_settings);
 
+    direct_index_max_cells = std::min<UInt64>(params.aggregation_direct_index_max_cells, UInt64{1} << 24);
+    if (direct_index_max_cells && params.aggregates_size && params.keys_size >= 2
+        && (method_chosen == AggregatedDataVariants::Type::keys32 || method_chosen == AggregatedDataVariants::Type::keys64
+            || method_chosen == AggregatedDataVariants::Type::keys128))
+    {
+        for (size_t i = 0; i < params.keys_size; ++i)
+        {
+            const size_t size = key_sizes[i];
+            if (!key_types[i]->isValueRepresentedByInteger() || (size != 1 && size != 2 && size != 4 && size != 8))
+            {
+                direct_index_keys.clear();
+                break;
+            }
+            direct_index_keys.push_back({.size = size, .is_signed = !key_types[i]->isValueRepresentedByUnsignedInteger()});
+        }
+
+        /// A cell finds its group only if the table's keys are packed as `packFixedLongestFirst` packs them.
+        bool packs_longest_first = false;
+        if (method_chosen == AggregatedDataVariants::Type::keys32)
+            packs_longest_first = decltype(AggregatedDataVariants::keys32)::element_type::State::packedKeysOrder(key_sizes).has_value();
+        else if (method_chosen == AggregatedDataVariants::Type::keys64)
+            packs_longest_first = decltype(AggregatedDataVariants::keys64)::element_type::State::packedKeysOrder(key_sizes).has_value();
+        else
+            packs_longest_first = decltype(AggregatedDataVariants::keys128)::element_type::State::packedKeysOrder(key_sizes).has_value();
+        if (!packs_longest_first)
+            direct_index_keys.clear();
+    }
+
     if (params.enable_adaptive_aggregator)
         adaptive_packed_key_bytes = std::accumulate(key_sizes.begin(), key_sizes.end(), size_t{0});
 
@@ -1290,6 +1318,293 @@ void Aggregator::mergeOnBlockSmall(
     CurrentMemoryTracker::check();
 }
 
+namespace
+{
+
+template <typename Method>
+constexpr bool isDirectIndexMethod
+    = std::is_same_v<Method, decltype(AggregatedDataVariants::keys32)::element_type>
+    || std::is_same_v<Method, decltype(AggregatedDataVariants::keys64)::element_type>
+    || std::is_same_v<Method, decltype(AggregatedDataVariants::keys128)::element_type>
+    || std::is_same_v<Method, decltype(AggregatedDataVariants::keys32_two_level)::element_type>
+    || std::is_same_v<Method, decltype(AggregatedDataVariants::keys64_two_level)::element_type>
+    || std::is_same_v<Method, decltype(AggregatedDataVariants::keys128_two_level)::element_type>;
+
+template <typename F>
+void dispatchDirectIndexKey(size_t size, bool is_signed, F && f)
+{
+    switch (size)
+    {
+        case 1: is_signed ? f.template operator()<Int8>() : f.template operator()<UInt8>(); break;
+        case 2: is_signed ? f.template operator()<Int16>() : f.template operator()<UInt16>(); break;
+        case 4: is_signed ? f.template operator()<Int32>() : f.template operator()<UInt32>(); break;
+        case 8: is_signed ? f.template operator()<Int64>() : f.template operator()<UInt64>(); break;
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected key size {} of a direct index", size);
+    }
+}
+
+/// Rows per chunk of the passes over the keys, so that a block is given up after the chunk that decides it.
+constexpr size_t direct_index_chunk_rows = 4096;
+
+/// The smallest key of `data[begin, end)` and the number of values from it to the largest; false if that exceeds `max_range`.
+template <typename T>
+bool directIndexKeyRange(const T * __restrict data, size_t begin, size_t end, UInt64 max_range, UInt64 & min_out, UInt64 & range_out)
+{
+    T min_value = data[begin];
+    T max_value = data[begin];
+    for (size_t chunk_begin = begin; chunk_begin < end; chunk_begin += direct_index_chunk_rows)
+    {
+        const size_t chunk_end = std::min(end, chunk_begin + direct_index_chunk_rows);
+        for (size_t i = chunk_begin; i < chunk_end; ++i)
+        {
+            min_value = std::min(min_value, data[i]);
+            max_value = std::max(max_value, data[i]);
+        }
+        /// The difference of the two's complement representations is right for signed keys as well.
+        if (static_cast<UInt64>(max_value) - static_cast<UInt64>(min_value) >= max_range)
+            return false;
+    }
+    min_out = static_cast<UInt64>(min_value);
+    range_out = static_cast<UInt64>(max_value) - static_cast<UInt64>(min_value) + 1;
+    return true;
+}
+
+/// Rows of a group that a lone `count` adds at once when they share one cell.
+constexpr size_t direct_index_count_group_rows = 16;
+
+template <typename T>
+void addDirectIndexKey(const T * __restrict data, size_t rows, UInt64 min_value, UInt32 stride, UInt32 * __restrict row_cells, bool first)
+{
+    if (first)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            row_cells[i] = static_cast<UInt32>(static_cast<UInt64>(data[i]) - min_value) * stride;
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+            row_cells[i] += static_cast<UInt32>(static_cast<UInt64>(data[i]) - min_value) * stride;
+    }
+}
+
+}
+
+template <typename Method>
+bool NO_INLINE Aggregator::executeDirectIndexBlock(
+    Method & method,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    const ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    AggregatedDataVariants::DirectIndexBackoff & backoff,
+    UInt64 max_cells) const
+{
+    /// Fewer rows do not pay for the passes over the keys.
+    static constexpr size_t min_rows = 256;
+    /// After this many blocks in a row that do not qualify, only one block in `retry_period` tries.
+    static constexpr size_t max_failed_blocks = 8;
+    static constexpr size_t retry_period = 64;
+    /// Below this many rows per distinct key of a block, the hash table aggregates the block faster.
+    static constexpr size_t min_rows_per_key = 32;
+
+    const size_t rows = row_end - row_begin;
+    if (rows < min_rows || max_cells == 0 || rows > std::numeric_limits<UInt32>::max())
+        return false;
+    if (backoff.failed_blocks >= max_failed_blocks && ++backoff.skipped_blocks % retry_period != 0)
+        return false;
+
+    const size_t keys_size = direct_index_keys.size();
+    chassert(keys_size == params.keys_size && keys_size <= 16);
+    std::array<UInt64, 16> mins{};
+    std::array<UInt64, 16> ranges{};
+    UInt64 cells = 1;
+    for (size_t j = 0; j < keys_size; ++j)
+    {
+        const char * data = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>();
+        bool fits = false;
+        dispatchDirectIndexKey(direct_index_keys[j].size, direct_index_keys[j].is_signed, [&]<typename T>()
+        {
+            fits = directIndexKeyRange(reinterpret_cast<const T *>(data), row_begin, row_end, max_cells / cells, mins[j], ranges[j]);
+        });
+        if (!fits)
+        {
+            ++backoff.failed_blocks;
+            return false;
+        }
+        cells *= ranges[j];
+    }
+
+    /// The cell of a row: the offsets of its keys from the smallest ones, the last key varying fastest.
+    std::array<UInt32, 16> strides{};
+    UInt32 stride = 1;
+    for (size_t j = keys_size; j-- > 0;)
+    {
+        strides[j] = stride;
+        stride *= static_cast<UInt32>(ranges[j]);
+    }
+
+    /// `used_cells` holds the cells that the block uses, in the order of their first rows.
+    PaddedPODArray<UInt32> row_cells_array(rows);
+    PaddedPODArray<UInt32> counts_array;
+    counts_array.resize_fill(cells, 0);
+    PaddedPODArray<UInt32> first_rows_array(cells);
+    const size_t max_used_cells = rows / min_rows_per_key;
+    PaddedPODArray<UInt32> used_cells_array(max_used_cells);
+    UInt32 * __restrict row_cells = row_cells_array.data();
+    UInt32 * __restrict counts = counts_array.data();
+    UInt32 * __restrict first_rows = first_rows_array.data();
+    UInt32 * __restrict used_cells = used_cells_array.data();
+    size_t num_used_cells = 0;
+    /// Registers the first row of a cell; false when the block has too many distinct keys.
+    const auto use_cell = [&](UInt32 cell, size_t row) ALWAYS_INLINE
+    {
+        if (num_used_cells == max_used_cells)
+            return false;
+        first_rows[cell] = static_cast<UInt32>(row);
+        used_cells[num_used_cells++] = cell;
+        return true;
+    };
+    const auto give_up = [&]
+    {
+        ++backoff.failed_blocks;
+        return false;
+    };
+    for (size_t chunk_begin = 0; chunk_begin < rows; chunk_begin += direct_index_chunk_rows)
+    {
+        const size_t chunk_size = std::min(rows - chunk_begin, direct_index_chunk_rows);
+        const size_t chunk_end = chunk_begin + chunk_size;
+        for (size_t j = keys_size; j-- > 0;)
+        {
+            const char * data = static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>();
+            dispatchDirectIndexKey(direct_index_keys[j].size, direct_index_keys[j].is_signed, [&]<typename T>()
+            {
+                addDirectIndexKey(
+                    reinterpret_cast<const T *>(data) + row_begin + chunk_begin,
+                    chunk_size,
+                    mins[j],
+                    strides[j],
+                    row_cells + chunk_begin,
+                    j + 1 == keys_size);
+            });
+        }
+        if (!is_simple_count)
+        {
+            /// Only a lone `count` reads the number of rows of a cell, the other shapes only mark the used cells.
+            for (size_t i = chunk_begin; i < chunk_end; ++i)
+            {
+                const UInt32 cell = row_cells[i];
+                if (counts[cell] == 0)
+                {
+                    if (!use_cell(cell, i))
+                        return give_up();
+                    counts[cell] = 1;
+                }
+            }
+        }
+        else
+        {
+            /// A group of rows of one cell is added at once: counting it row by row makes each row wait for the previous store.
+            size_t i = chunk_begin;
+            for (; i + direct_index_count_group_rows <= chunk_end; i += direct_index_count_group_rows)
+            {
+                const UInt32 cell = row_cells[i];
+                UInt32 diff = 0;
+                for (size_t k = 1; k < direct_index_count_group_rows; ++k)
+                    diff |= row_cells[i + k] ^ cell;
+                if (diff == 0)
+                {
+                    if (counts[cell] == 0 && !use_cell(cell, i))
+                        return give_up();
+                    counts[cell] += static_cast<UInt32>(direct_index_count_group_rows);
+                    continue;
+                }
+                for (size_t k = i; k < i + direct_index_count_group_rows; ++k)
+                {
+                    const UInt32 row_cell = row_cells[k];
+                    if (counts[row_cell]++ == 0 && !use_cell(row_cell, k))
+                        return give_up();
+                }
+            }
+            for (; i < chunk_end; ++i)
+            {
+                const UInt32 cell = row_cells[i];
+                if (counts[cell]++ == 0 && !use_cell(cell, i))
+                    return give_up();
+            }
+        }
+    }
+    backoff.failed_blocks = 0;
+
+    /// The key of the first row of a cell, packed as the state of `method` packs it, looked up in the table.
+    const auto emplace_cell = [&](UInt32 cell, bool & inserted) -> AggregateDataPtr &
+    {
+        typename Method::Data::LookupResult it;
+        method.data.emplace(
+            packFixedLongestFirst<typename Method::Key>(row_begin + first_rows[cell], params.keys_size, key_columns, key_sizes),
+            it,
+            inserted);
+        return it->getMapped();
+    };
+
+    if (is_simple_count)
+    {
+        for (size_t k = 0; k < num_used_cells; ++k)
+        {
+            const UInt32 cell = used_cells[k];
+            bool inserted = false;
+            AggregateDataPtr & mapped = emplace_cell(cell, inserted);
+            if (inserted)
+                getInlineCountState(mapped) = counts[cell];
+            else
+                getInlineCountState(mapped) += counts[cell];
+        }
+        return true;
+    }
+
+    bool use_compiled_functions = false;
+#if USE_EMBEDDED_COMPILER
+    use_compiled_functions = compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions);
+#endif
+
+    PaddedPODArray<AggregateDataPtr> cell_places_array(cells);
+    AggregateDataPtr * __restrict cell_places = cell_places_array.data();
+    for (size_t k = 0; k < num_used_cells; ++k)
+    {
+        const UInt32 cell = used_cells[k];
+        bool inserted = false;
+        AggregateDataPtr & mapped = emplace_cell(cell, inserted);
+        if (inserted)
+        {
+            /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+            mapped = nullptr;
+            AggregateDataPtr aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(aggregate_data, use_compiled_functions);
+            mapped = aggregate_data;
+        }
+        cell_places[cell] = mapped;
+    }
+
+    /// As in `executeImplBatch`, the places are indexed by the row of the block.
+    PaddedPODArray<AggregateDataPtr> row_places_array(row_end);
+    AggregateDataPtr * __restrict places = row_places_array.data();
+    for (size_t i = 0; i < rows; ++i)
+        places[row_begin + i] = cell_places[row_cells[i]];
+
+    executeAggregateInstructions(
+        aggregates_pool,
+        row_begin,
+        row_end,
+        aggregate_instructions,
+        places,
+        /*key_start=*/row_begin,
+        /*has_only_one_value_since_last_reset=*/num_used_cells == 1,
+        /*all_keys_are_const=*/false,
+        /*all_places_are_non_null=*/true,
+        use_compiled_functions);
+    return true;
+}
+
 template <bool for_sub_range>
 void Aggregator::executeImpl(
     AggregatedDataVariants & result,
@@ -1306,7 +1621,7 @@ void Aggregator::executeImpl(
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
             executeImpl<for_sub_range && !(IS_TWO_LEVEL)>(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
-                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
+                        result.consecutive_keys_cache_stats, result.direct_index_backoff, no_more_keys, all_keys_are_const, overflow_row);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -1322,10 +1637,17 @@ void NO_INLINE Aggregator::executeImpl(
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
     LastElementCacheStats & consecutive_keys_cache_stats,
+    AggregatedDataVariants::DirectIndexBackoff & direct_index_backoff,
     bool no_more_keys,
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    if constexpr (!for_sub_range && isDirectIndexMethod<Method>)
+        if (!direct_index_keys.empty() && !no_more_keys && !all_keys_are_const && !params.top_k
+            && executeDirectIndexBlock(method, aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions,
+                direct_index_backoff, direct_index_max_cells))
+            return;
+
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
@@ -1566,6 +1888,16 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
             }
             return row_end;
         };
+
+        if constexpr (isDirectIndexMethod<Method>)
+        {
+            /// Taken whole only when its new keys cannot pass the threshold that the slices would detect within the block.
+            const size_t table_size = method.data.size();
+            if (!direct_index_keys.empty() && !params.top_k && table_size < threshold
+                && executeDirectIndexBlock(method, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions,
+                    result.direct_index_backoff, std::min<UInt64>(direct_index_max_cells, threshold - table_size)))
+                return row_end;
+        }
 
         UInt64 total_records = cache_stats.hits + cache_stats.misses;
         double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
