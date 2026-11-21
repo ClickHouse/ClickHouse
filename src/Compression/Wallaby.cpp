@@ -356,12 +356,12 @@ struct AnsEncodeSymbol
     UInt8 max_bits = 0;
 };
 
-/// log2 of the integers up to the largest frequency plus one.
+/// log2 of the integers up to the number of values of a chunk plus one.
 const double * log2Table()
 {
     struct Table
     {
-        double values[(1u << MAX_TABLE_LOG) + 2] = {};
+        double values[CHUNK_MAX + 2] = {};
 
         Table()
         {
@@ -1606,8 +1606,13 @@ struct StreamEncoder
     VectorWithMemoryTracking<UInt32> bin_counts;
     VectorWithMemoryTracking<std::pair<Int64, UInt32>> promoted;
     VectorWithMemoryTracking<UInt64> sort_scratch;
-    VectorWithMemoryTracking<UV> hash_keys;
-    VectorWithMemoryTracking<UInt32> hash_counts;
+    /// A distinct value and the number of its occurrences, together: one cache line per lookup.
+    struct Entry
+    {
+        UV key = 0;
+        UInt32 count = 0;
+    };
+    VectorWithMemoryTracking<Entry> entries;
     VectorWithMemoryTracking<UInt32> hash_slots;
     Scratch<UInt8> model_bytes;
     UInt64 model_bits = 0;
@@ -1712,20 +1717,17 @@ struct StreamEncoder
         {
             /// A narrow range: the value, counted from the minimum, is its slot. No hashing, no collisions.
             cap = UInt32(range) + 1;
-            if (hash_keys.size() < cap)
-                hash_keys.resize(cap);
-            hash_counts.assign(cap, 0);
+            entries.assign(cap, Entry());
             hash_slots.resize(std::min(cap, n));
-            UV * const keys = hash_keys.data();
-            UInt32 * const counts = hash_counts.data();
+            Entry * const slot_table = entries.data();
             UInt32 * const used = hash_slots.data();
             for (UInt32 i = 0; i < n; ++i)
             {
                 Int64 v = r[i];
                 UInt32 h = UInt32(UInt64(v) - UInt64(vmin));
-                if (counts[h]++ == 0)
+                if (slot_table[h].count++ == 0)
                 {
-                    keys[h] = UV(v);
+                    slot_table[h].key = UV(v);
                     used[num_slots++] = h;
                 }
                 slot_of[i] = UInt16(h);
@@ -1740,13 +1742,10 @@ struct StreamEncoder
             cap = many ? std::bit_ceil(n * 2) : std::min<UInt32>(std::bit_ceil(n * 2), 2 * MAX_ALPHABET);
             while (true)
             {
-                if (hash_keys.size() < cap)
-                    hash_keys.resize(cap);
-                hash_counts.assign(cap, 0);
+                entries.assign(cap, Entry());
                 const UInt32 limit = cap / 2;
                 hash_slots.resize(limit + 1);
-                UV * const keys = hash_keys.data();
-                UInt32 * const counts = hash_counts.data();
+                Entry * const slot_table = entries.data();
                 UInt32 * const used = hash_slots.data();
                 const UInt32 hmask = cap - 1;
                 const UInt32 hshift = 64 - std::countr_zero(cap);
@@ -1756,11 +1755,11 @@ struct StreamEncoder
                 {
                     Int64 v = r[i];
                     UInt32 h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> hshift);
-                    while (counts[h] && keys[h] != UV(v))
+                    while (slot_table[h].count && slot_table[h].key != UV(v))
                         h = (h + 1) & hmask;
-                    if (counts[h]++ == 0)
+                    if (slot_table[h].count++ == 0)
                     {
-                        keys[h] = UV(v);
+                        slot_table[h].key = UV(v);
                         used[num_slots++] = h;
                         if (num_slots > limit)
                         {
@@ -1832,13 +1831,13 @@ struct StreamEncoder
         if (direct_slots)
         {
             UInt64 h = UInt64(v) - UInt64(vmin);
-            return h < table_capacity && hash_counts[h] ? UInt32(h) : ~0u;
+            return h < table_capacity && entries[h].count ? UInt32(h) : ~0u;
         }
         const UInt32 hmask = table_capacity - 1;
         UInt32 h = UInt32((UInt64(v) * 0x9E3779B97F4A7C15ull) >> (64 - std::countr_zero(table_capacity)));
-        while (hash_counts[h] && hash_keys[h] != UV(v))
+        while (entries[h].count && entries[h].key != UV(v))
             h = (h + 1) & hmask;
-        return hash_counts[h] ? h : ~0u;
+        return entries[h].count ? h : ~0u;
     }
 
     /// Chooses the family of bins and the zero handling (the estimate of the size that it leaves does not know
@@ -1887,16 +1886,16 @@ struct StreamEncoder
             sampled = n;
             for (UInt32 h : hash_slots)
             {
-                Int64 v = V(hash_keys[h]);
+                Int64 v = V(entries[h].key);
                 if (v == 0)
                 {
-                    zeros = hash_counts[h];
+                    zeros = entries[h].count;
                     continue;
                 }
                 UInt32 id = (fine.classOf(magnitude(v)) << 1) | (v < 0);
                 if (fine_hist[id] == 0)
                     fine_used.push_back(id);
-                fine_hist[id] += hash_counts[h];
+                fine_hist[id] += entries[h].count;
             }
             if (zeros)
             {
@@ -2012,32 +2011,47 @@ struct StreamEncoder
 
         /// --- Logarithmic classes: derive every (split, msb) histogram from the fine one.
         {
+            /// The used classes of the finest pair in the order of the sign and the magnitude: the classes of
+            /// any other pair are then runs of them.
             const LayoutFolding & folding = layoutFolding();
-            tmp.assign(size_t(LayoutFolding::FINE_CLASSES) * 2, 0);
+            touched.clear();
+            for (UInt32 id : fine_used)
+                touched.push_back(((id & 1) << 16) | (id >> 1));
+            std::sort(touched.begin(), touched.end());
+            tmp.resize(touched.size());
+            for (size_t k = 0; k < touched.size(); ++k)
+                tmp[k] = fine_hist[((touched[k] & 0xffff) << 1) | (touched[k] >> 16)];
+            const UInt32 * const order = touched.data();
+            const UInt32 * const counts = tmp.data();
+            const size_t num_used = touched.size();
             for (UInt32 pair = 0; pair < LayoutFolding::PAIRS; ++pair)
             {
                 const UInt16 * coarse = folding.coarse[pair];
                 const UInt8 * raw_of = folding.raw[pair];
-                touched.clear();
                 UInt64 raw_bits = 0;
-                for (UInt32 id : fine_used)
-                {
-                    UInt32 cid = (UInt32(coarse[id >> 1]) << 1) | (id & 1);
-                    if (tmp[cid] == 0)
-                        touched.push_back(cid);
-                    tmp[cid] += fine_hist[id];
-                    raw_bits += UInt64(raw_of[id >> 1]) * fine_hist[id];
-                }
                 double sum_xlx = 0;
-                for (UInt32 cid : touched)
+                UInt32 used = 0;
+                UInt32 current = ~0u;
+                UInt32 members = 0;
+                for (size_t k = 0; k < num_used; ++k)
                 {
-                    sum_xlx += xlx[std::min<UInt32>(tmp[cid], CHUNK_MAX)];
-                    tmp[cid] = 0;
+                    UInt32 cls = order[k] & 0xffff;
+                    UInt32 cid = (order[k] & 0x10000) | coarse[cls];
+                    if (cid != current)
+                    {
+                        sum_xlx += xlx[std::min<UInt32>(members, CHUNK_MAX)];
+                        members = 0;
+                        current = cid;
+                        ++used;
+                    }
+                    members += counts[k];
+                    raw_bits += UInt64(raw_of[cls]) * counts[k];
                 }
+                sum_xlx += xlx[std::min<UInt32>(members, CHUNK_MAX)];
                 Choice c;
                 c.split = folding.split[pair];
                 c.msb = folding.msb[pair];
-                consider(sum_xlx, double(raw_bits), UInt32(touched.size()), ~0u, 0, c);
+                consider(sum_xlx, double(raw_bits), used, ~0u, 0, c);
             }
         }
 
@@ -2052,9 +2066,9 @@ struct StreamEncoder
             {
                 for (UInt32 h : hash_slots)
                 {
-                    Int64 v = V(hash_keys[h]);
+                    Int64 v = V(entries[h].key);
                     if (v != 0)
-                        fixed_hist[(UInt64(v) - UInt64(rmin)) >> s0] += hash_counts[h];
+                        fixed_hist[(UInt64(v) - UInt64(rmin)) >> s0] += entries[h].count;
                 }
             }
             else
@@ -2119,7 +2133,6 @@ struct StreamEncoder
     /// Leaves an estimate of the size in `counted_bits`, which is enough to compare candidates.
     void count()
     {
-        const double * xlx = xlog2xTable();
         const V * r = data;
         const bool runs = model.runs;
 
@@ -2140,13 +2153,13 @@ struct StreamEncoder
             UInt32 zeros = 0;
             for (UInt32 h : hash_slots)
             {
-                Int64 v = V(hash_keys[h]);
+                Int64 v = V(entries[h].key);
                 if (v == 0 && runs)
                 {
-                    zeros = hash_counts[h];
+                    zeros = entries[h].count;
                     continue;
                 }
-                bin_counts[binIdOf(v)] += hash_counts[h];
+                bin_counts[binIdOf(v)] += entries[h].count;
             }
             items = n - zeros;
             if (zeros)
@@ -2188,22 +2201,21 @@ struct StreamEncoder
             if (counted)
             {
                 slot_tok.assign(table_capacity, NO_TOKEN);
-                const double log_total = xlx[items] / items;
+                const double * lg = log2Table();
                 for (UInt32 h : hash_slots)
                 {
-                    UInt32 c = hash_counts[h];
+                    UInt32 c = entries[h].count;
                     if (c < 2)
                         continue;
-                    Int64 v = V(hash_keys[h]);
+                    Int64 v = V(entries[h].key);
                     if (v == 0 && runs)
                         continue;
                     UInt32 nb = valueBits(v);
                     if (nb == 0)
                         continue;
+                    /// A token of its own instead of the token of the bin and the raw bits.
                     UInt32 in_bin = bin_counts[binIdOf(v)];
-                    double class_cost = log_total - xlx[in_bin] / in_bin + nb;
-                    double exact_cost = log_total - xlx[c] / c;
-                    if (c * (class_cost - exact_cost) > DICT_HEADER_BITS)
+                    if (c * (lg[c] - lg[in_bin] + nb) > DICT_HEADER_BITS)
                         promoted.push_back({v, c});
                 }
                 /// Keep the alphabet within the limit: prefer the most frequent values.
@@ -2271,7 +2283,7 @@ struct StreamEncoder
         {
             for (UInt32 h : hash_slots)
             {
-                Int64 v = V(hash_keys[h]);
+                Int64 v = V(entries[h].key);
                 if (slot_tok[h] == NO_TOKEN && !(v == 0 && runs))
                     slot_tok[h] = id2tok[binIdOf(v)];
             }
@@ -3421,6 +3433,7 @@ struct Encoder
     VectorWithMemoryTracking<L> lat_bits;
     Converted conv;
     Converted conv_saved;
+    VectorWithMemoryTracking<UInt8> convert_flags;
     VectorWithMemoryTracking<L> diff[2];
     static constexpr UInt32 MAX_CANDIDATES = 3;
     static constexpr double PROXY_BAND = 1.35;        /// between the proxies of the candidates that are looked at
@@ -3558,17 +3571,19 @@ struct Encoder
             /// In-place differencing of every stripe: after `order` rounds, the elements from `order` on hold
             /// the differences of that order.
             UInt32 ns = 0;
+            UInt32 nm = 0;
             for (UInt32 s = 0; s < nstripes; ++s)
             {
                 L * x = buf + s * length;
                 for (UInt32 i = length - 1; i >= order; --i)
                     x[i] = L(UL(x[i]) - UL(x[i - 1]));
-                for (UInt32 i = order; i < length; ++i)
-                    sorted[ns++] = x[i];
+                ns += length - order;
+                /// Candidate center: the median of the differences; every fourth of them is enough for it.
+                for (UInt32 i = order; i < length; i += 4)
+                    sorted[nm++] = x[i];
             }
-            /// Candidate center: the median of the differences.
-            std::nth_element(sorted, sorted + ns / 2, sorted + ns);
-            Int64 med = sorted[ns / 2];
+            std::nth_element(sorted, sorted + nm / 2, sorted + nm);
+            Int64 med = sorted[nm / 2];
             UInt32 hist_c[PROXY_CLASSES];
             std::fill(hist, hist + PROXY_CLASSES, 0);
             std::fill(hist_c, hist_c + PROXY_CLASSES, 0);
@@ -3576,9 +3591,11 @@ struct Encoder
             {
                 const L * x = buf + s * length;
                 for (UInt32 i = order; i < length; ++i)
-                {
                     ++hist[proxyClass(x[i])];
-                    ++hist_c[proxyClass(L(UL(x[i]) - UL(med)))];
+                if (med)
+                {
+                    for (UInt32 i = order; i < length; ++i)
+                        ++hist_c[proxyClass(L(UL(x[i]) - UL(med)))];
                 }
             }
             double scale = double(n - order) / ns;
@@ -3594,7 +3611,7 @@ struct Encoder
             }
             /// Higher orders are tried only while they keep helping, and not at all when the first one is far
             /// behind no differencing.
-            if ((order >= 2 && !improved) || (order == 1 && p > zero.class_proxy * 1.25))
+            if ((order >= 2 && !improved) || (order == 1 && p > zero.class_proxy))
                 break;
         }
         plans.push_back(zero);
@@ -3810,38 +3827,75 @@ struct Encoder
 
     void convert(const UInt8 * src, UInt32 n, double den, bool mul, bool single, double scale, Converted & c)
     {
-        c.lat.clear();
-        c.adj.clear();
         c.exc_pos.clear();
         c.inexact.clear();
         c.mul = mul;
         c.single = single;
         c.scale = scale;
         c.den = den;
-        c.lat.reserve(n);
-        c.adj.reserve(n);
+        c.lat.resize(n);
+        convert_flags.resize(n);
+        L * const lat = c.lat.data();
+        UInt8 * const flags = convert_flags.data();
+
+        /// The first pass has no branches and no dependencies between the values, so that it is vectorized: the
+        /// integer of every value, and a flag: 2 if the value has no integer, 1 if it is not reproduced exactly.
+        auto pass = [&](auto && reconstruction)
+        {
+            UInt8 any = 0;
+            for (UInt32 i = 0; i < n; ++i)
+            {
+                F v = loadFloat<F>(src + size_t(i) * sizeof(F));
+                double scaled = double(v) * den;
+                bool has = std::fabs(scaled) < FloatTraits<F>::MAX_CANDIDATE;
+                Int64 q = std::llround(has ? scaled : 0.0);
+                UInt8 flag = has ? UInt8(floatBits(reconstruction(q)) != floatBits(v)) : UInt8(2);
+                lat[i] = L(q);
+                flags[i] = flag;
+                any |= flag;
+            }
+            return any;
+        };
+        UInt8 any = 0;
+        if (single && mul)
+            any = pass([fs = float(scale)](Int64 q) { return F(float(q) * fs); });
+        else if (single)
+            any = pass([fs = float(scale)](Int64 q) { return F(float(q) / fs); });
+        else if (mul)
+            any = pass([scale](Int64 q) { return F(double(q) * scale); });
+        else
+            any = pass([scale](Int64 q) { return F(double(q) / scale); });
+        if (!any)
+            return;     /// all exact: the adjustments are not looked at
+
+        /// The second pass, for a chunk that is not all exact: the values with no integer are taken out, and the
+        /// inexact ones get their adjustments.
+        c.adj.resize(n);
+        L * const adj = c.adj.data();
+        UInt32 regular = 0;
         for (UInt32 i = 0; i < n; ++i)
         {
-            F v = loadFloat<F>(src + size_t(i) * sizeof(F));
-            Int64 q = 0;
-            if (!integerCandidate(v, den, q))
+            if (flags[i] == 2)
             {
                 c.exc_pos.push_back(UInt16(i));
                 continue;
             }
-            F r = reconstruct<F>(q, mul, single, scale);
-            U vb = floatBits(v);
-            U rb = floatBits(r);
-            Int64 a = 0;
-            if (vb != rb)
+            L q = lat[i];
+            L a = 0;
+            if (flags[i])
             {
+                U vb = loadBits<F>(src + size_t(i) * sizeof(F));
+                U rb = floatBits(reconstruct<F>(q, mul, single, scale));
                 U d = U(orderedBits<F>(vb) - orderedBits<F>(rb));
-                a = sizeof(F) == 4 ? Int64(Int32(d)) : Int64(d);
+                a = sizeof(F) == 4 ? L(Int32(d)) : L(d);
                 c.inexact.push_back(UInt16(i));
             }
-            c.lat.push_back(L(q));
-            c.adj.push_back(L(a));
+            lat[regular] = q;
+            adj[regular] = a;
+            ++regular;
         }
+        c.lat.resize(regular);
+        c.adj.resize(regular);
     }
 
     /// The residuals of the plan for the latent, into `resid`; fills the initial values of the predictor.
@@ -3855,6 +3909,15 @@ struct Encoder
         {
             std::copy(lat.begin(), lat.end(), out.begin());
             return n;
+        }
+        if (p.order == 1)
+        {
+            /// The usual case in one pass.
+            p.initial[0] = lat[0];
+            const UL center = UL(p.center);
+            for (UInt32 i = 1; i < n; ++i)
+                out[i - 1] = L(UL(lat[i]) - UL(lat[i - 1]) - center);
+            return n - 1;
         }
         VectorWithMemoryTracking<L> & a = diff[0];
         VectorWithMemoryTracking<L> & b = diff[1];
