@@ -22,12 +22,12 @@ drop table t_custom_type_name;
 -- The same when the custom name is nested inside another type, which `IDataType::equals` also ignores.
 drop table if exists t_nested_custom_type_name;
 
-create table t_nested_custom_type_name (id UInt64, v Nullable(UInt8)) engine = MergeTree order by id
+create table t_nested_custom_type_name (id UInt64, v Nullable(UInt64)) engine = MergeTree order by id
 settings max_bytes_to_merge_at_max_space_in_pool = 1;
 
 insert into t_nested_custom_type_name values (1, 1);
 
-alter table t_nested_custom_type_name modify column v Nullable(Bool);
+alter table t_nested_custom_type_name modify column v Nullable(SimpleAggregateFunction(sum, UInt64));
 
 insert into t_nested_custom_type_name values (2, 0);
 

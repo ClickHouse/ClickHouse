@@ -14,22 +14,24 @@ SET use_statistics_for_part_pruning = 0;
 SELECT '-- 19. the carrier of a SUBCOLUMN index is its parent, whose type the cache also erases';
 -- p.x is not a top-level column of the part, so the part-side type must be derived from the part's
 -- OWN Tuple type. DataTypeTuple::equals() recurses into DataTypeNumber<UInt8>::equals(), a bare
--- typeid test, so Tuple(x UInt8) and Tuple(x Bool) share one interned entry while toString(p.x)
--- changes '0'/'1' to 'false'/'true'. ATTACH PARTITION FROM makes the collision deterministic the
+-- typeid test, so Tuple(x Bool) equals Tuple(x UInt8) while toString(p.x)
+-- changes 'false'/'true' to '0'/'1'. ATTACH PARTITION FROM makes the collision deterministic the
 -- same way case 15 (in 04870_skip_index_stale_type_metadata_only_alter) does.
+-- Only this direction attaches: a UInt8 part is refused under a Bool column.
 DROP TABLE IF EXISTS t_sub_src;
-CREATE TABLE t_sub_src (k UInt64, p Tuple(x UInt8), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
+CREATE TABLE t_sub_src (k UInt64, p Tuple(x Bool), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
 INSERT INTO t_sub_src SELECT number, tuple(number % 2) FROM numbers(64);
 SYSTEM STOP MERGES t_sub_src;
 DROP TABLE IF EXISTS t_sub_dst;
-CREATE TABLE t_sub_dst (k UInt64, p Tuple(x Bool), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
+CREATE TABLE t_sub_dst (k UInt64, p Tuple(x UInt8), INDEX idx toString(p.x) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k SETTINGS index_granularity = 4;
 INSERT INTO t_sub_dst SELECT 1000 + number, tuple(number % 2) FROM numbers(4);
 SYSTEM STOP MERGES t_sub_dst;
 ALTER TABLE t_sub_dst ATTACH PARTITION 0 FROM t_sub_src SETTINGS alter_sync = 2;
-SELECT count() FROM t_sub_dst WHERE toString(p.x) = 'true' AND k < 1000 SETTINGS use_query_condition_cache = 0;
-SELECT count() FROM t_sub_dst WHERE toString(p.x) = 'true' AND k < 1000 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0;
+ALTER TABLE t_sub_src ATTACH PARTITION 1 FROM t_sub_dst; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT count() FROM t_sub_dst WHERE toString(p.x) = '1' AND k < 1000 SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM t_sub_dst WHERE toString(p.x) = '1' AND k < 1000 SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0;
 
 SELECT '-- 20. over-fire control: an UNCHANGED subcolumn index must keep pruning';
 -- The refusal is about a parent type that CHANGED, not about the requirement being a subcolumn: a
