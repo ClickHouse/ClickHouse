@@ -137,7 +137,8 @@ public:
 
     /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
     /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
-    /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
+    /// read that builds the query it sends to an external database or rewrites the query per underlying
+    /// table. Wrappers answer for the table they forward to.
     virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
 
     /// Returns true for storages that do not store data themselves but read it from other tables,

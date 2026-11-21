@@ -260,9 +260,11 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+        auto read_context = Context::createCopy(context);
+        read_context->setReadFromReceivedQueryPlan();
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), read_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
-        reading_plan.addInterpreterContext(context);
+        reading_plan.addInterpreterContext(read_context);
     }
     else
     {
