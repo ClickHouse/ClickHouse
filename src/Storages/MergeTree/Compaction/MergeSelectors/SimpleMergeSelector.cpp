@@ -278,7 +278,7 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
     auto mean = static_cast<double>(parts_count);
     std::normal_distribution<double> distribution{mean, mean / 4};
 
-    size_t right_boundary = static_cast<size_t>(distribution(thread_local_rng));
+    size_t right_boundary = static_cast<size_t>(std::clamp(distribution(thread_local_rng), 0.0, static_cast<double>(2 * parts_count)));
     if (right_boundary > parts_count)
         right_boundary = 2 * parts_count - right_boundary;
 
