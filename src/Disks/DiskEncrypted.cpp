@@ -12,6 +12,7 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/copyData.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Common.h>
 #include <boost/algorithm/hex.hpp>
@@ -564,8 +565,43 @@ size_t DiskEncrypted::getEncryptedFileSize(size_t unencrypted_size) const
 
 void DiskEncrypted::truncateFile(const String & path, size_t size)
 {
-    auto wrapped_path = wrappedPath(path);
-    delegate->truncateFile(wrapped_path, size ? (size + FileEncryption::Header::kSize) : 0);
+    /// Truncating to zero removes the header too, and the next write generates a new initialization vector.
+    if (size == 0)
+    {
+        delegate->truncateFile(wrappedPath(path), 0);
+        return;
+    }
+
+    size_t current_size = getFileSize(path);
+    if (size == current_size)
+        return;
+
+    if (size > current_size)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Extending a file by truncation is not supported on encrypted disk {}. File: {}, size: {}, new size: {}",
+            name, path, current_size, size);
+
+    /// Cutting the file in place would keep the header with its initialization vector, and the next append would
+    /// encrypt the new data from the cut-off offset with the same keystream as the data that was cut off: anyone
+    /// holding both ciphertexts would learn the XOR of both plaintexts. Instead, the retained prefix is rewritten
+    /// into a new file, which gets a fresh header with a new initialization vector, and the new file replaces the
+    /// old one. This is what `FileChecker::repair` relies on to roll back `Log` and `StripeLog` files.
+    const String tmp_path = path + ".truncate.tmp";
+    try
+    {
+        auto in = readFile(path, getReadSettings());
+        auto out = writeFile(tmp_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        copyData(*in, *out, size);
+        out->finalize();
+        out->sync();
+    }
+    catch (...)
+    {
+        removeFileIfExists(tmp_path);
+        throw;
+    }
+
+    replaceFile(tmp_path, path);
 }
 
 SyncGuardPtr DiskEncrypted::getDirectorySyncGuard(const String & path) const
