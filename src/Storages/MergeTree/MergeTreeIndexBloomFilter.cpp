@@ -483,11 +483,26 @@ Names collectJSONIndexColumns(const Block & header, const ActionsDAG::NodeRawCon
 std::optional<size_t> findMapIndexPosition(
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const NameToNameMap & map_subcolumn_index_columns,
     const String & function_name,
     const String & map_column_name,
     const ActionsDAG::Node * map_node)
 {
-    auto position = header.findPositionByName(fmt::format("{}({})", function_name, map_column_name));
+    auto function_column_name = fmt::format("{}({})", function_name, map_column_name);
+
+    /// The index is declared on the `keys` / `values` subcolumn of the table column `map_column_name`.
+    if (auto it = map_subcolumn_index_columns.find(function_column_name); it != map_subcolumn_index_columns.end())
+    {
+        if (map_node)
+        {
+            map_node = map_node->getWithoutAlias();
+            if (map_node->type != ActionsDAG::ActionType::INPUT || map_node->result_name != map_column_name)
+                return std::nullopt;
+        }
+        return header.findPositionByName(it->second);
+    }
+
+    auto position = header.findPositionByName(function_column_name);
     if (!position)
         return std::nullopt;
 
@@ -519,10 +534,11 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
     const DataTypePtr & map_key_type,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const NameToNameMap & map_subcolumn_index_columns,
     const ActionsDAG::Node * map_node)
 {
-    auto keys_position = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, map_node);
-    auto values_position = findMapIndexPosition(header, index_nodes, "mapValues", map_column_name, map_node);
+    auto keys_position = findMapIndexPosition(header, index_nodes, map_subcolumn_index_columns, "mapKeys", map_column_name, map_node);
+    auto values_position = findMapIndexPosition(header, index_nodes, map_subcolumn_index_columns, "mapValues", map_column_name, map_node);
 
     if (!keys_position && !values_position)
         return std::nullopt;
@@ -576,6 +592,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     const String & column_name,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const NameToNameMap & map_subcolumn_index_columns,
     const IsShadowingColumn & is_shadowing_column)
 {
     auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
@@ -584,9 +601,9 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 
     auto & [map_column_name, serialized_key] = *parsed;
 
-    auto keys_position = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, nullptr);
+    auto keys_position = findMapIndexPosition(header, index_nodes, map_subcolumn_index_columns, "mapKeys", map_column_name, nullptr);
     if (!keys_position)
-        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header, index_nodes, nullptr);
+        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header, index_nodes, map_subcolumn_index_columns, nullptr);
 
     /// Deserialize the key from its text representation using the key type from the index header.
     const DataTypePtr & index_type = header.getByPosition(*keys_position).type;
@@ -600,7 +617,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header, index_nodes, nullptr);
+    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header, index_nodes, map_subcolumn_index_columns, nullptr);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
@@ -609,6 +626,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
     const RPNBuilderTreeNode & key_node,
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const NameToNameMap & map_subcolumn_index_columns,
     const IsShadowingColumn & is_shadowing_column)
 {
     if (key_node.isFunction())
@@ -632,11 +650,12 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
                     map_key_type = map_type->getKeyType();
 
             return tryResolveMapIndexInfo(
-                first_argument.getColumnName(), constant_value, map_key_type, header, index_nodes, first_argument.getDAGNode());
+                first_argument.getColumnName(), constant_value, map_key_type, header, index_nodes, map_subcolumn_index_columns,
+                first_argument.getDAGNode());
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, is_shadowing_column);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, map_subcolumn_index_columns, is_shadowing_column);
 }
 
 }
@@ -647,6 +666,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const Block & header_,
     size_t hash_functions_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
+    NameToNameMap map_subcolumn_index_columns_,
     JSONIndexArgumentTypes json_argument_types_,
     IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
     ActionsDAG::NodeRawConstPtrs index_nodes_)
@@ -654,6 +674,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , header(header_)
     , hash_functions(hash_functions_)
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
+    , map_subcolumn_index_columns(std::move(map_subcolumn_index_columns_))
     , json_argument_types(std::move(json_argument_types_))
     , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
     , index_nodes(std::move(index_nodes_))
@@ -1072,7 +1093,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, map_subcolumn_index_columns, is_column_shadowing_map_subcolumn))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1572,7 +1593,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
     {
         auto map_index_position = findMapIndexPosition(
-            header, index_nodes, function_name == "mapContainsValue" ? "mapValues" : "mapKeys", key_column_name, key_node.getDAGNode());
+            header,
+            index_nodes,
+            map_subcolumn_index_columns,
+            function_name == "mapContainsValue" ? "mapValues" : "mapKeys",
+            key_column_name,
+            key_node.getDAGNode());
         if (!map_index_position)
             return false;
 
@@ -1649,7 +1675,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, map_subcolumn_index_columns, is_column_shadowing_map_subcolumn))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1787,9 +1813,8 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
-        getJSONSubcolumnShadowingCheck(),
-        index.expression->getActionsDAG().getOutputs());
+        predicate, context, index.sample_block, hash_functions, getMapSubcolumnShadowingCheck(), getMapSubcolumnIndexColumns(),
+        collectJSONIndexArgumentTypes(*index.expression), getJSONSubcolumnShadowingCheck(), index.expression->getActionsDAG().getOutputs());
 }
 
 static void assertIndexColumnsType(const Block & header)

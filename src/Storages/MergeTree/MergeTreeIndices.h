@@ -382,6 +382,10 @@ struct IMergeTreeIndex
     /// Tells whether a name that looks like a subcolumn of a `JSON` column can belong to another column.
     [[nodiscard]] IsShadowingJSONSubcolumn getJSONSubcolumnShadowingCheck() const;
 
+    /// Maps `mapKeys(<m>)` / `mapValues(<m>)` to the index column declared on the `keys` / `values`
+    /// subcolumn of the top-level Map column `<m>`, which holds the same elements.
+    [[nodiscard]] NameToNameMap getMapSubcolumnIndexColumns() const;
+
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
 };
@@ -467,6 +471,11 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
+
+/// The name of the index column holding `<function_name>(<map_column_name>)`, where `function_name` is
+/// `mapKeys` or `mapValues`. See `IMergeTreeIndex::getMapSubcolumnIndexColumns`.
+String getMapIndexColumnName(
+    const NameToNameMap & map_subcolumn_index_columns, std::string_view function_name, const String & map_column_name);
 
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
