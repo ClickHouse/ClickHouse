@@ -11148,6 +11148,10 @@ Enables the `ZXC` compression codec.
 )", BETA, \
         {"26.11", false, false, "The `ZXC` compression codec was moved to Beta."}, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_bytereverse_codec, false, R"(
+Enables the `ByteReverse` compression codec.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `ByteReverse` compression codec."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \
