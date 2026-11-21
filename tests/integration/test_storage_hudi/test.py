@@ -342,9 +342,16 @@ def test_types(started_cluster):
 
 
 def write_hudi_table(
-    spark, path, rows, operation, table_version, partitioned, extra_options={}
+    spark,
+    path,
+    rows,
+    operation,
+    table_version,
+    partitioned,
+    extra_options={},
+    schema=None,
 ):
-    schema = (
+    schema = schema or (
         "id long, p string, v long, ts long"
         if partitioned
         else "id long, v long, ts long"
@@ -423,6 +430,113 @@ def assert_rows(instance, source, columns, expected):
     result = instance.query(f"SELECT {columns} FROM {source} ORDER BY id")
     assert result == "".join("\t".join(map(str, row)) + "\n" for row in expected)
     assert int(instance.query(f"SELECT count() FROM {source}")) == len(expected)
+
+
+def assert_columns(instance, source, columns):
+    """The meta fields of Hudi, then `columns` as (name, type) pairs."""
+    meta_fields = [
+        "commit_time",
+        "commit_seqno",
+        "record_key",
+        "partition_path",
+        "file_name",
+    ]
+    described = instance.query(
+        f"DESCRIBE {source} SETTINGS describe_compact_output = 1"
+    )
+    assert described == TSV(
+        [[f"_hoodie_{field}", "Nullable(String)"] for field in meta_fields]
+        + [list(column) for column in columns]
+    )
+
+
+@pytest.mark.parametrize("table_version", [6, 9])
+def test_table_without_base_file(started_cluster, table_version):
+    """`hudi` reads a table that has a commit and no base file: it has the columns
+    of the commit and no row."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    name = f"test_table_without_base_file_{table_version}_{uuid.uuid4().hex[:8]}"
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        path = os.path.join(tmp_dir, name)
+        prefix = f"{name}/"
+        source = f"hudi(s3, filename='{prefix}')"
+        write_hudi_table(spark, path, [], "upsert", table_version, False)
+        assert parquet_files(path) == set()
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_columns(
+            instance,
+            source,
+            [
+                ("id", "Nullable(Int64)"),
+                ("v", "Nullable(Int64)"),
+                ("ts", "Nullable(Int64)"),
+            ],
+        )
+        assert_rows(instance, source, "id, v", [])
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        remove_directory(minio_client, bucket, name)
+
+
+@pytest.mark.parametrize("table_version", [6, 9])
+def test_column_added_by_a_later_write(started_cluster, table_version):
+    """The second write adds the column `c1` in a second file group, so the base
+    file of the first write does not have it. `hudi` returns this column."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    name = f"test_column_added_{table_version}_{uuid.uuid4().hex[:8]}"
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        path = os.path.join(tmp_dir, name)
+        prefix = f"{name}/"
+        source = f"hudi(s3, filename='{prefix}')"
+        two_file_groups = {"hoodie.parquet.small.file.limit": "0"}
+        write_hudi_table(
+            spark,
+            path,
+            [(1, 10, 1), (2, 20, 1)],
+            "insert",
+            table_version,
+            False,
+            two_file_groups,
+        )
+        write_hudi_table(
+            spark,
+            path,
+            [(3, 30, 2, "three"), (4, 40, 2, "four")],
+            "insert",
+            table_version,
+            False,
+            two_file_groups,
+            "id long, v long, ts long, c1 string",
+        )
+        assert len(parquet_files(path)) == 2
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_columns(
+            instance,
+            source,
+            [
+                ("id", "Nullable(Int64)"),
+                ("v", "Nullable(Int64)"),
+                ("ts", "Nullable(Int64)"),
+                ("c1", "Nullable(String)"),
+            ],
+        )
+        assert_rows(
+            instance,
+            source,
+            "id, v, c1",
+            [(1, 10, "\\N"), (2, 20, "\\N"), (3, 30, "three"), (4, 40, "four")],
+        )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        remove_directory(minio_client, bucket, name)
 
 
 @pytest.mark.parametrize("table_version", [6, 9])

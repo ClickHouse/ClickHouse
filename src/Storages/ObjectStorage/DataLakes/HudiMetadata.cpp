@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -16,15 +18,16 @@
 #include <Common/re2.h>
 
 #if USE_AVRO
+#include <Compiler.hh>
 #include <GenericDatum.hh>
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <ValidSchema.hh>
 #endif
 
 #if USE_PARQUET
 #include <Core/Block.h>
 #include <Core/Defines.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -32,6 +35,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #endif
 
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -252,16 +256,14 @@ std::optional<std::unordered_map<String, String>> parseJavaProperties(std::strin
     return properties;
 }
 
-/// The timeline Hudi reads, chosen by `hoodie.timeline.layout.version` of `hoodie.properties`, else of its backup.
-/// Nothing if neither is readable or the version is absent.
-std::optional<ActiveTimeline> getActiveTimeline(
+/// `hoodie.properties`, else its backup. Nothing if neither is readable.
+std::optional<std::unordered_map<String, String>> readTableProperties(
     std::optional<RelativePathWithMetadata> & properties_file,
     std::optional<RelativePathWithMetadata> & backup_file,
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context,
     const LoggerPtr & log)
 {
-    std::optional<std::unordered_map<String, String>> properties;
     for (auto * file : {&properties_file, &backup_file})
     {
         if (!*file)
@@ -269,26 +271,42 @@ std::optional<ActiveTimeline> getActiveTimeline(
         auto buf = createReadBuffer(**file, object_storage, context, log);
         String content;
         readStringUntilEOF(content, *buf);
-        properties = parseJavaProperties(content);
-        if (properties)
-            break;
+        if (auto properties = parseJavaProperties(content))
+            return properties;
     }
-    if (!properties)
-        return std::nullopt;
+    return std::nullopt;
+}
 
-    auto layout = properties->find("hoodie.timeline.layout.version");
-    if (layout == properties->end())
+/// The timeline Hudi reads, chosen by `hoodie.timeline.layout.version`. Nothing if the version is absent.
+std::optional<ActiveTimeline> getActiveTimeline(const std::unordered_map<String, String> & properties)
+{
+    auto layout = properties.find("hoodie.timeline.layout.version");
+    if (layout == properties.end())
         return std::nullopt;
     if (layout->second == "0" || layout->second == "1")
         return ActiveTimeline{".hoodie", false, {}};
     if (layout->second != "2")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported Hudi timeline layout version {}", layout->second);
 
-    if (auto path = properties->find("hoodie.timeline.path"); path != properties->end() && path->second != "timeline")
+    if (auto path = properties.find("hoodie.timeline.path"); path != properties.end() && path->second != "timeline")
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED, "Reading a Hudi table with a custom hoodie.timeline.path ('{}') is not supported", path->second);
-    auto history = properties->find("hoodie.timeline.history.path");
-    return ActiveTimeline{".hoodie/timeline", true, ".hoodie/timeline/" + (history == properties->end() ? "history" : history->second)};
+    auto history = properties.find("hoodie.timeline.history.path");
+    return ActiveTimeline{".hoodie/timeline", true, ".hoodie/timeline/" + (history == properties.end() ? "history" : history->second)};
+}
+
+/// The content of a completed instant that Hudi wrote as JSON.
+Poco::JSON::Object::Ptr readJSONInstant(
+    RelativePathWithMetadata & instant, const ObjectStoragePtr & object_storage, const ContextPtr & context, const LoggerPtr & log)
+{
+    auto buf = createReadBuffer(instant, object_storage, context, log);
+    String content;
+    readStringUntilEOF(content, *buf);
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(content);
+    if (json.type() != typeid(Poco::JSON::Object::Ptr))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Hudi instant {} is not a JSON object", instant.relative_path);
+    return json.extract<Poco::JSON::Object::Ptr>();
 }
 
 void collectReplacedFileGroups(
@@ -354,14 +372,7 @@ void collectReplacedFileGroups(
     }
     else
     {
-        auto buf = createReadBuffer(instant, object_storage, context, log);
-        String content;
-        readStringUntilEOF(content, *buf);
-        Poco::JSON::Parser parser;
-        auto json = parser.parse(content);
-        if (json.type() != typeid(Poco::JSON::Object::Ptr))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Hudi instant {} is not a JSON object", instant.relative_path);
-        const auto & root = json.extract<Poco::JSON::Object::Ptr>();
+        const auto root = readJSONInstant(instant, object_storage, context, log);
         /// An absent or null field means that nothing is replaced.
         if (root->has("partitionToReplaceFileIds") && !root->isNull("partitionToReplaceFileIds"))
         {
@@ -384,6 +395,89 @@ void collectReplacedFileGroups(
 
     LOG_TRACE(log, "Hudi instant {} replaces {} file groups", instant.relative_path, num_replaced);
 }
+
+#if USE_AVRO
+/// `extraMetadata.schema` of a completed commit: the Avro schema of the table after this commit. Empty without one.
+String readSchemaOfCommit(
+    RelativePathWithMetadata & instant, const ObjectStoragePtr & object_storage, const ContextPtr & context, const LoggerPtr & log)
+{
+    /// Hudi reads an empty instant as empty metadata.
+    if (instant.metadata && instant.metadata->is_size_known && instant.metadata->size_bytes == 0)
+        return {};
+
+    auto incorrect_field = [&]
+    {
+        return Exception(ErrorCodes::INCORRECT_DATA, "Unexpected type of extraMetadata in Hudi instant {}", instant.relative_path);
+    };
+
+    /// Only a layout 2 instant with a completion time is Avro, the others are JSON.
+    if (!instant.getFileName().contains('_'))
+    {
+        const auto root = readJSONInstant(instant, object_storage, context, log);
+        /// An absent or null field means that the commit has no schema.
+        if (!root->has("extraMetadata") || root->isNull("extraMetadata"))
+            return {};
+        auto extra_metadata = root->getObject("extraMetadata");
+        if (!extra_metadata)
+            throw incorrect_field();
+        return extra_metadata->optValue<String>("schema", {});
+    }
+
+    String schema;
+    /// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
+    /// A false positive on the `*std::any_cast` of `avro::GenericDatum::value`.
+    Iceberg::forEachAvroEntry(
+        instant.relative_path,
+        object_storage,
+        context,
+        "HudiMetadata",
+        [&](const avro::GenericDatum & datum)
+        {
+            const auto & record = datum.value<avro::GenericRecord>();
+            if (!record.hasField("extraMetadata"))
+                return;
+            const auto & field = record.field("extraMetadata");
+            if (field.type() == avro::AVRO_NULL)
+                return;
+            if (field.type() != avro::AVRO_MAP)
+                throw incorrect_field();
+            for (const auto & [key, value] : field.value<avro::GenericMap>().value())
+            {
+                if (key != "schema")
+                    continue;
+                if (value.type() != avro::AVRO_STRING)
+                    throw incorrect_field();
+                schema = value.value<std::string>();
+            }
+        });
+    /// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
+    return schema;
+}
+
+/// The columns of the Avro schema `schema` of a Hudi table.
+NamesAndTypesList getColumnsOfAvroSchema(const String & schema, const String & table_path)
+{
+    avro::NodePtr root;
+    try
+    {
+        root = avro::compileJsonSchemaFromString(schema, MAX_AVRO_SCHEMA_DEPTH).root();
+    }
+    catch (const avro::Exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse the Avro schema of Hudi table {}: {}", table_path, e.what());
+    }
+    if (root->type() != avro::AVRO_RECORD)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The Avro schema of Hudi table {} is not a record", table_path);
+
+    /// A base file can be written before the table is read, and the Parquet reader cannot read every optional struct of a
+    /// base file as `Nullable`.
+    NamesAndTypesList columns;
+    for (int i = 0; i != static_cast<int>(root->leaves()); ++i)
+        columns.emplace_back(root->nameAt(i), AvroSchemaReader::avroNodeToDataType(root->leafAt(i), /*allow_nullable_tuple_type=*/ false));
+    return columns;
+}
+
+#endif
 
 /// The files of the latest snapshot of the timeline history: the manifest named by `_version_`, else the newest one, as
 /// Hudi reads it. The other files in `history_path` are superseded by a compaction of the history or not committed.
@@ -596,8 +690,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     /// A completed `replacecommit` (insert_overwrite, clustering) removes file groups, whose files stay on
     /// storage until the cleaner deletes them.
     std::optional<ActiveTimeline> timeline;
-    if (properties_file || backup_file)
-        timeline = getActiveTimeline(properties_file, backup_file, object_storage, local_context, log);
+    if (auto properties = readTableProperties(properties_file, backup_file, object_storage, local_context, log))
+        timeline = getActiveTimeline(*properties);
     if (!timeline && !instants.empty())
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -746,13 +840,23 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
                 log_file.key);
     }
 
-    Strings result;
+    std::vector<FileInfo> base_files;
     for (auto & [partition, partition_data] : files)
     {
         LOG_TRACE(log, "Adding {} data files from partition {}", partition, partition_data.size());
         for (auto & [file_id, file_data] : partition_data)
-            result.push_back(std::move(file_data.key));
+            base_files.push_back(std::move(file_data));
     }
+    /// The structure of a table is inferred from the first file, so the files of the latest write come first.
+    std::ranges::sort(base_files, [](const FileInfo & lhs, const FileInfo & rhs)
+    {
+        if (lhs.timestamp != rhs.timestamp)
+            return lhs.timestamp > rhs.timestamp;
+        return lhs.key < rhs.key;
+    });
+    Strings result;
+    for (auto & base_file : base_files)
+        result.push_back(std::move(base_file.key));
     return result;
 }
 
@@ -762,6 +866,98 @@ HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorag
     , table_path(configuration_->getPathForRead().path)
     , format(configuration_->format)
 {
+}
+
+/// The structure of a table that has base files is inferred from the newest one, so nothing is returned for it. Without a
+/// base file, the schema is the one of the latest completed commit that has one, then `hoodie.table.create.schema`, as in Hudi.
+NamesAndTypesList HudiMetadata::getTableSchema(ContextPtr local_context) const
+{
+#if USE_AVRO
+    if (!getDataFiles(nullptr, local_context).empty())
+        return {};
+
+    auto log = getLogger("HudiMetadata");
+    std::optional<RelativePathWithMetadata> properties_file;
+    std::optional<RelativePathWithMetadata> backup_file;
+    std::vector<RelativePathWithMetadata> instants;
+    listFiles(
+        *object_storage,
+        table_path,
+        ".hoodie/",
+        [&](const RelativePathWithMetadata & object)
+        {
+            const String & key = object.relative_path;
+            if (!key.starts_with(table_path))
+                return false;
+            std::string_view path_in_table = std::string_view(key).substr(table_path.size());
+            std::string_view directory = directoryInTable(key, table_path);
+            if (path_in_table == ".hoodie/hoodie.properties")
+                properties_file.emplace(object);
+            else if (path_in_table == ".hoodie/hoodie.properties.backup")
+                backup_file.emplace(object);
+            else if (directory == ".hoodie" || directory == ".hoodie/timeline")
+                instants.push_back(object);
+            return false;
+        });
+
+    auto properties = readTableProperties(properties_file, backup_file, object_storage, local_context, log);
+    if (!properties)
+        return {};
+    auto timeline = getActiveTimeline(*properties);
+    if (!timeline)
+        return {};
+    /// Only the base files of `format` are listed, and a table whose base files have another format is not empty. Hudi
+    /// reads this format from `hoodie.table.base.file.format`, then from its former name, and Parquet is the default.
+    auto declared_format = properties->find("hoodie.table.base.file.format");
+    if (declared_format == properties->end())
+        declared_format = properties->find("hoodie.table.ro.file.format");
+    const String base_file_format = declared_format == properties->end() ? "parquet" : declared_format->second;
+    if (Poco::toLower(base_file_format) != Poco::toLower(format))
+        return {};
+
+    /// Requested time -> completed commit, the latest first.
+    std::map<UInt64, RelativePathWithMetadata *, std::greater<>> commits;
+    for (auto & instant : instants)
+    {
+        if (directoryInTable(instant.relative_path, table_path) != timeline->directory)
+            continue;
+        const String file_name = instant.getFileName();
+        auto completed = parseCompletedInstantName(file_name, timeline->layout_2);
+        if (!completed || (completed->action != "commit" && completed->action != "deltacommit" && completed->action != "replacecommit"))
+            continue;
+        if (UInt64 requested = 0; tryParse(requested, completed->requested))
+            commits.emplace(requested, &instant);
+    }
+
+    String schema;
+    for (const auto & [requested, commit] : commits)
+    {
+        schema = readSchemaOfCommit(*commit, object_storage, local_context, log);
+        if (!schema.empty())
+            break;
+    }
+    if (auto created = properties->find("hoodie.table.create.schema"); schema.empty() && created != properties->end())
+        schema = created->second;
+    if (schema.empty())
+        return {};
+
+    /// As Hudi does, the meta fields come first.
+    static constexpr std::string_view meta_fields[]
+        = {"_hoodie_commit_time", "_hoodie_commit_seqno", "_hoodie_record_key", "_hoodie_partition_path", "_hoodie_file_name"};
+    NamesAndTypesList columns;
+    auto populate_meta_fields = properties->find("hoodie.populate.meta.fields");
+    if (populate_meta_fields == properties->end() || Poco::toLower(populate_meta_fields->second) == "true")
+        for (const auto & field : meta_fields)
+            columns.emplace_back(String(field), std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+    for (auto & column : getColumnsOfAvroSchema(schema, table_path))
+        if (!std::ranges::contains(meta_fields, column.name))
+            columns.push_back(std::move(column));
+    return columns;
+#else
+    /// The schema of a commit is Avro.
+    UNUSED(local_context);
+    return {};
+#endif
 }
 
 Strings HudiMetadata::getDataFiles(const ActionsDAG *, const ContextPtr & local_context) const

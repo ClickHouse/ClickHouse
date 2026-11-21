@@ -21,7 +21,7 @@ public:
 
     HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_);
 
-    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
+    NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {

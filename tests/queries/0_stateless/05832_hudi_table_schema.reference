@@ -1,0 +1,37 @@
+A table without a base file has the columns of its latest commit and no row
+_hoodie_commit_time	Nullable(String)
+_hoodie_commit_seqno	Nullable(String)
+_hoodie_record_key	Nullable(String)
+_hoodie_partition_path	Nullable(String)
+_hoodie_file_name	Nullable(String)
+id	Nullable(Int64)
+name	Nullable(String)
+0
+The engine is created on a table without a base file only with a structure
+CANNOT_EXTRACT_TABLE_STRUCTURE
+0
+7	Int64
+A table that was never written has the columns of hoodie.table.create.schema
+id	Nullable(Int64)
+name	Nullable(String)
+0
+The schema is the one of the latest completed commit that has one
+id	Nullable(Int64)
+name	Nullable(String)
+An optional struct of a table without a base file is not Nullable
+point	Tuple(x Int32)
+A column that only the newest base file has is not omitted
+id	Int64
+id	Int64
+name	String
+1,""
+2,"two"
+id	Int64
+id	Int64
+name	String
+1,""
+2,"two"
+A table is not read as empty with another format than the one of its base files
+CANNOT_EXTRACT_TABLE_STRUCTURE
+CANNOT_EXTRACT_TABLE_STRUCTURE
+CANNOT_EXTRACT_TABLE_STRUCTURE
