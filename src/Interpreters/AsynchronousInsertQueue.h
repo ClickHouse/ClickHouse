@@ -333,6 +333,9 @@ private:
         QueueIteratorByKey iterators TSA_GUARDED_BY(mutex);
 
         OptionalTimePoint last_insert_time TSA_GUARDED_BY(mutex);
+        /// Time of the last insert, including those flushed without batching, which `last_insert_time` skips so that they
+        /// do not raise the busy timeout. A stream of such inserts must not make the shard look idle for that long.
+        OptionalTimePoint last_arrival_time TSA_GUARDED_BY(mutex);
         std::chrono::milliseconds busy_timeout_ms TSA_GUARDED_BY(mutex) {};
 
         struct KeyState

@@ -887,11 +887,11 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
 
         auto max_busy_timeout_exceeded = [&shard, &settings, &now, &flush_time_points]() -> bool
         {
-            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) || !flush_time_points.first)
+            if (!settings[Setting::async_insert_use_adaptive_busy_timeout] || !TSA_SUPPRESS_WARNING_FOR_READ(shard.last_arrival_time) || !flush_time_points.first)
                 return false;
 
             auto max_ms = saturatedMilliseconds(settings[Setting::async_insert_busy_timeout_max_ms].totalMilliseconds());
-            return *TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
+            return *TSA_SUPPRESS_WARNING_FOR_READ(shard.last_arrival_time) + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
         };
 
         /// A client that waits for each insert sends the next one only after the previous one is flushed, so the busy timeout
@@ -984,6 +984,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
             shard.last_insert_time = now;
             shard.busy_timeout_ms = timeout_ms;
         }
+        shard.last_arrival_time = now;
 
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
