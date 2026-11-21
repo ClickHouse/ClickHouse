@@ -14,6 +14,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/indexHint.h>
@@ -1200,9 +1201,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// Whether a conjunct might fix a column to a single value, and so let a read go in order:
 /// `tenant = 42` can, `tenant > 42` or a join runtime filter cannot. Any column counts, in the sorting
 /// key or not: the read is inside the fragment and its key is not looked up here. A superset of what
-/// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, can find: an `equals` or an
-/// `isNotDistinctFrom` anywhere inside, or an input reached the way it looks for one - through aliases and
-/// `and`. Such an input is a column of the fragment, which may compute it as an equality.
+/// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, can find: an `equals`, an
+/// `isNotDistinctFrom`, or `empty` of a String or FixedString anywhere inside, or an input reached the
+/// way it looks for one - through aliases and `and`. Such an input is a column of the fragment, which
+/// may compute it as an equality.
 static bool mayFixColumn(const ActionsDAG::Node * conjunct)
 {
     VectorWithMemoryTracking<const ActionsDAG::Node *> stack{conjunct};
@@ -1223,6 +1225,12 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
         {
             const auto & name = node->function_base->getName();
             if (name == "equals" || name == "isNotDistinctFrom")
+                return true;
+            /// `empty(x)` fixes a String or FixedString the same way `x = ''` does. After
+            /// `ConvertEmptyStringComparisonToFunctionPass` the predicate has this shape, so a
+            /// conjunct the replicas were not sent must stay above, as an `equals` would.
+            if (name == "empty" && node->children.size() == 1 && node->children[0]->result_type
+                && isStringOrFixedString(removeLowCardinalityAndNullable(node->children[0]->result_type)))
                 return true;
         }
         return false;

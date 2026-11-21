@@ -11,6 +11,7 @@
 #include <Core/Block.h>
 #include <Core/ConstantValue.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -761,6 +762,24 @@ namespace
 
                 if (auto val = analyzeConstant(rhs_node, lhs_node, matches))
                     return DisjunctionList{ConjunctionMap{std::move(*val)}};
+            }
+            /// `empty(x)` on String or FixedString is exactly `x = ''` (N zero bytes for FixedString),
+            /// including under Nullable and LowCardinality. `ConvertEmptyStringComparisonToFunctionPass`
+            /// rewrites the comparison into this form. `KeyCondition` already analyzes it as `equals`
+            /// for primary keys; substitute the same constant so shard pruning can see it.
+            /// `notEmpty(x)` is not one value, so it stays unrecognized.
+            else if (node->function_base->getName() == "empty" && node->children.size() == 1)
+            {
+                const auto * arg_node = node->children[0];
+                if (arg_node->result_type && isStringOrFixedString(removeNullable(removeLowCardinality(arg_node->result_type))))
+                {
+                    ActionsDAG::Node empty_const;
+                    empty_const.type = ActionsDAG::ActionType::COLUMN;
+                    empty_const.result_type = std::make_shared<DataTypeString>();
+                    empty_const.column = empty_const.result_type->createColumnConst(1, Field(String()));
+                    if (auto val = analyzeConstant(arg_node, &empty_const, matches))
+                        return DisjunctionList{ConjunctionMap{std::move(*val)}};
+                }
             }
             else if (node->function_base->getName() == "in")
             {
