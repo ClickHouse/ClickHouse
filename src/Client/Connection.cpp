@@ -71,6 +71,8 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionReconnectCount;
     extern const Event DistributedConnectionConnectCount;
+    extern const Event NativeProtocolDataReceiveBytes;
+    extern const Event NativeProtocolDataBytes;
 }
 
 namespace DB
@@ -1286,6 +1288,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, std::make_shared<const Block>(block.cloneEmpty()), optionalFormatSettings());
     }
 
+    const size_t packet_start = out->count();
     if (scalar)
         writeVarUInt(Protocol::Client::Scalar, *out);
     else
@@ -1300,6 +1303,10 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     if (block.empty())
         out->finishChunk();
     out->next();
+
+    /// Blocks with rows sent by a server, e.g. by a distributed `INSERT`, count to its live IO meter.
+    if (!scalar && block.rows() > 0)
+        ProfileEvents::increment(ProfileEvents::NativeProtocolDataBytes, out->count() - packet_start);
 
     if (throttler)
         throttler->throttle(out->count() - prev_bytes);
@@ -1341,6 +1348,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     if (input.eof())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Buffer is empty (some kind of corruption)");
 
+    const size_t packet_start = out->count();
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
 
@@ -1351,6 +1359,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
     out->finishChunk();
     out->next();
+    ProfileEvents::increment(ProfileEvents::NativeProtocolDataBytes, out->count() - packet_start);
 }
 
 
@@ -1548,6 +1557,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
         UInt64 packet_type = 0;
+        last_input_packet_start = in->count() + in->chunkFramingBytes();
         readVarUInt(packet_type, *in);
 
         last_input_packet_type.emplace(packet_type);
@@ -1567,6 +1577,7 @@ UInt64 Connection::receivePacketType()
     ensureConnected();
 
     UInt64 type = 0;
+    last_input_packet_start = in->count() + in->chunkFramingBytes();
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
 }
@@ -1586,12 +1597,14 @@ Packet Connection::receivePacket()
         ensureConnected();
 
         Packet res;
+        size_t packet_start = in->count() + in->chunkFramingBytes();
 
         /// Have we already read packet type?
         if (last_input_packet_type)
         {
             res.type = *last_input_packet_type;
             last_input_packet_type.reset();
+            packet_start = last_input_packet_start;
         }
         else
         {
@@ -1604,6 +1617,11 @@ Packet Connection::receivePacket()
             case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
                 res.block = receiveData();
+                /// Only a block with rows is query data for the client's IO meter, not the other packets of the server.
+                /// The chunk framing of the packet counts too.
+                if (res.block.rows() > 0)
+                    ProfileEvents::increment(ProfileEvents::NativeProtocolDataReceiveBytes,
+                        in->count() + in->chunkFramingBytes() - packet_start);
                 return res;
 
             case Protocol::Server::Exception:
