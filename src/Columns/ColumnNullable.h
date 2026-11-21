@@ -57,15 +57,30 @@ public:
     /// `null_map_` can be nullptr, which means the column has no NULLs.
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
     {
+        /// Per the doc comment above, the caller may keep its own immutable references — the
+        /// underlying columns may be shared. `assumeMutable` here would `chassert(use_count() == 1)`
+        /// and abort, while `IColumn::mutate` would deep-clone and break invariants of composite
+        /// types like `LowCardinality(Nullable(...))`: inside `ColumnUnique::forEachMutableSubcolumn`,
+        /// after deep-cloning `column_holder`, the recursive call recreates `nested_column_nullable`
+        /// via `ColumnNullable::create(column_holder, nested_null_mask)`. With the cloning variant
+        /// of this overload, `nested_null_mask` (which still aliases the original `ColumnUnique`)
+        /// would be deep-cloned into the new `ColumnNullable`, so subsequent `updateNullMask`
+        /// resizes on `nested_null_mask` no longer propagate to `nested_column_nullable.null_map`.
+        /// Bypass the assertion via const_cast `+ getPtr` — equivalent to the old `assumeMutable`
+        /// fast path. The result is returned as `Ptr` (immutable), and any mutation must go through
+        /// `IColumn::mutate`, which deep-clones shared sub-columns at the proper time.
         if (!null_map_)
-            return ColumnNullable::create(nested_column_->assumeMutable());
-        return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
+            return ColumnNullable::create(const_cast<IColumn *>(nested_column_.get())->getPtr());
+        return ColumnNullable::create(
+            const_cast<IColumn *>(nested_column_.get())->getPtr(),
+            const_cast<IColumn *>(null_map_.get())->getPtr());
     }
 
     /// Creates a column without NULLs and without a null map.
     static Ptr create(const ColumnPtr & nested_column_)
     {
-        return ColumnNullable::create(nested_column_->assumeMutable());
+        /// The nested column may be shared, see the comment above.
+        return ColumnNullable::create(const_cast<IColumn *>(nested_column_.get())->getPtr());
     }
 
     template <typename ... Args>

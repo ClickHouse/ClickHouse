@@ -3569,7 +3569,8 @@ FunctionBasePtr createFunctionBaseCast(
     }
     else if (isBool(monotonicity_result_type) || isSimpleAggregateFunctionOfBool(*monotonicity_result_type))
     {
-        /// Every nonzero value becomes 1, so the cast is not injective.
+        /// Every nonzero value becomes 1, so the cast is not injective, and unlike the cast into `UInt8`
+        /// it does not throw for a `DateTime64` outside of the `UInt8` range.
         monotonicity = [](const IDataType & type, const Field & left, const Field & right)
         {
             auto result = detail::ToNumberMonotonicity<UInt8>::get(type, left, right);

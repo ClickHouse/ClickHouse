@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #if USE_ORC
 

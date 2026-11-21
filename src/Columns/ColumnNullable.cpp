@@ -25,6 +25,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #if USE_EMBEDDED_COMPILER
@@ -55,12 +56,17 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    nested_column = nested_column->convertToFullColumnIfConst();
+    /// Read the subcolumns through the const view, so we go through `immutable_ptr::operator->`/`operator*`
+    /// rather than the `WrappedPtr`'s mutable accessors. The latter call `assumeMutableRef`,
+    /// which now `chassert(use_count() == 1)`. When this constructor is reached via
+    /// `ColumnNullable::create(const ColumnPtr &, const ColumnPtr &)`, the caller still holds an immutable
+    /// reference to the underlying column, so `use_count()` is at least 2 and the assertion would fire.
+    nested_column = std::as_const(nested_column)->convertToFullColumnIfConst();
 
-    if (!nested_column->canBeInsideNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", nested_column->getName());
+    if (!std::as_const(nested_column)->canBeInsideNullable())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", std::as_const(nested_column)->getName());
 
-    if (null_map && isColumnConst(*null_map))
+    if (null_map && isColumnConst(*std::as_const(null_map)))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");
 }
 
@@ -88,7 +94,8 @@ void updateHashWithZeros(SipHash & hash, size_t size)
 
 void ColumnNullable::materializeNullMapSlow()
 {
-    null_map = ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0));
+    /// The nested column may be shared, read its size through the const view.
+    null_map = ColumnUInt8::create(std::as_const(nested_column)->size(), static_cast<UInt8>(0));
     ProfileEvents::increment(ProfileEvents::NullableNullMapMaterializations);
 }
 
@@ -1090,8 +1097,11 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
 
 void ColumnNullable::shrinkToFit()
 {
-    nested_column->shrinkToFit();
-    if (hasNullMap())
+    /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
+    /// to avoid violating the `assumeMutableRef` deep ownership check.
+    if (std::as_const(nested_column)->use_count() == 1)
+        nested_column->shrinkToFit();
+    if (hasNullMap() && std::as_const(null_map)->use_count() == 1)
         getNullMapColumn().shrinkToFit();
 }
 

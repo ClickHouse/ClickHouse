@@ -33,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -216,14 +217,54 @@ void PuffinColumnThetaSketch::update(const IColumn & column)
     impl->update(nested, null_map);
 }
 
-PuffinColumnThetaSketch::Serialized PuffinColumnThetaSketch::serialize() const
+namespace
 {
-    const auto compact = impl->compact();
+
+PuffinColumnThetaSketch::Serialized serializeCompact(const datasketches::compact_theta_sketch & compact)
+{
     const auto bytes = compact.serialize();
-    Serialized result{.bytes = String(reinterpret_cast<const char *>(bytes.data()), bytes.size()), .ndv = static_cast<UInt64>(compact.get_estimate())};
+    PuffinColumnThetaSketch::Serialized result{
+        .bytes = String(reinterpret_cast<const char *>(bytes.data()), bytes.size()), .ndv = static_cast<UInt64>(compact.get_estimate())};
     if (static_cast<UInt8>(result.bytes[0]) >= 2)
         unalignedStoreLittleEndian<Float32>(result.bytes.data() + 12, 1.0f);
     return result;
+}
+
+datasketches::compact_theta_sketch deserializeThetaSketch(std::string_view bytes)
+{
+    try
+    {
+        auto sketch = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
+        /// A zero theta, or hashes not below theta, give an estimate the UInt64 `ndv` property cannot hold.
+        const double estimate = sketch.get_estimate();
+        if (!(estimate < 0x1p64))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Theta sketch: theta {}, {} hashes, estimate {}",
+                sketch.get_theta64(), sketch.get_num_retained(), estimate);
+        return sketch;
+    }
+    catch (const std::logic_error & e)
+    {
+        /// `datasketches` throws `std::logic_error` on malformed input, which `tryLogCurrentException` reports as a bug.
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize Theta sketch: {}", e.what());
+    }
+}
+
+}
+
+PuffinColumnThetaSketch::Serialized PuffinColumnThetaSketch::serialize() const
+{
+    return serializeCompact(impl->compact());
+}
+
+PuffinColumnThetaSketch::Serialized unionThetaSketches(const VectorWithMemoryTracking<std::string_view> & sketches)
+{
+    /// A union keeps at most the default number of hashes, which would drop precision from a single larger sketch.
+    if (sketches.size() == 1)
+        return serializeCompact(deserializeThetaSketch(sketches.front()));
+    auto sketch_union = datasketches::theta_union::builder().build();
+    for (const auto bytes : sketches)
+        sketch_union.update(deserializeThetaSketch(bytes));
+    return serializeCompact(sketch_union.get_result());
 }
 
 void PuffinColumnThetaSketch::reset()
@@ -254,6 +295,11 @@ void PuffinColumnThetaSketch::update(const IColumn &)
 PuffinColumnThetaSketch::Serialized PuffinColumnThetaSketch::serialize() const
 {
     return {};
+}
+
+PuffinColumnThetaSketch::Serialized unionThetaSketches(const VectorWithMemoryTracking<std::string_view> &)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Theta sketches are disabled, ClickHouse was built without DataSketches");
 }
 
 void PuffinColumnThetaSketch::reset()
