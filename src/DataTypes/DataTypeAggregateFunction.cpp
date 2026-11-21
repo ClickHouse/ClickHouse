@@ -160,15 +160,12 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
-bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant)
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
 {
     const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
     const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
 
     if (!lhs_state || !rhs_state)
-        return false;
-
-    if (!ignore_variant && lhs_state->function->getStateVariant() != rhs_state->function->getStateVariant())
         return false;
 
     if (lhs_state->function->getName() != rhs_state->function->getName())
@@ -190,18 +187,8 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
         return false;
 
     for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
-    {
-        const auto & lhs_argument = lhs_state->argument_types[i];
-        const auto & rhs_argument = rhs_state->argument_types[i];
-        /// An argument can be a state itself (for example the element states of `-Tuple`), whose layout must be ignored too.
-        if (ignore_variant && typeid_cast<const DataTypeAggregateFunction *>(lhs_argument.get()))
-        {
-            if (!strictEquals(lhs_argument, rhs_argument, /*ignore_variant=*/ true))
-                return false;
-        }
-        else if (!lhs_argument->equals(*rhs_argument))
+        if (!lhs_state->argument_types[i]->equals(*rhs_state->argument_types[i]))
             return false;
-    }
 
     return true;
 }
@@ -230,18 +217,6 @@ void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
         arg_type->updateHash(hash);
     if (version)
         hash.update(*version);
-    hash.update(static_cast<UInt8>(function->getStateVariant()));
-}
-
-bool DataTypeAggregateFunction::equalsIgnoringVariant(const IDataType & rhs) const
-{
-    if (typeid(rhs) != typeid(*this))
-        return false;
-
-    auto lhs_state_type = function->getNormalizedStateType();
-    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
-
-    return strictEquals(lhs_state_type, rhs_state_type, /*ignore_variant=*/ true);
 }
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
