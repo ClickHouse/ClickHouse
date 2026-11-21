@@ -37,9 +37,12 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeMap.h>
+#include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -181,8 +184,13 @@ void TextSearchQuery::initializeHash()
         hash_state.update(patterns.size());
         for (const auto & pattern : patterns)
         {
-            if (const auto & re2 = pattern.getRE2())
+            /// Each pattern is hashed with its size and whether it has a re2 pattern, otherwise a list of patterns
+            /// would hash the same as another list with the same concatenation, e.g. `^a.b`, `c.d$` and `^a.bc`, `.d$`.
+            const auto & re2 = pattern.getRE2();
+            hash_state.update(re2 != nullptr);
+            if (re2)
             {
+                hash_state.update(re2->pattern().size());
                 hash_state.update(re2->pattern());
             }
             else
@@ -191,6 +199,7 @@ void TextSearchQuery::initializeHash()
                 bool is_trivial = false;
                 bool required_substring_is_prefix = false;
                 pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+                hash_state.update(required_substring.size());
                 hash_state.update(required_substring);
                 hash_state.update(is_trivial);
                 hash_state.update(required_substring_is_prefix);
@@ -262,6 +271,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     ContextPtr context_,
     const Block & index_sample_block,
     const std::optional<String> & normalized_index_column_name_,
+    const std::optional<String> & map_element_subcolumn_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -275,6 +285,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_column_is_array(isIndexedColumnArray(header))
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
+    , map_element_subcolumn_name(map_element_subcolumn_name_)
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
@@ -326,7 +337,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         context_,
         [&](const RPNBuilderTreeNode & node, RPNElement & out)
         {
-            return this->traverseAtomNode(node, out);
+            const bool result = this->traverseAtomNode(node, out);
+            /// This query only rewrites the function, there is nothing to analyze.
+            if (out.function == RPNElement::FUNCTION_UNKNOWN)
+                out.text_search_queries.clear();
+            return result;
         }).extractRPN());
 
     NameSet all_search_tokens_set;
@@ -396,6 +411,9 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "hasPhrase"
+        || function_name == "hasAnyTokenLike"
+        || function_name == "hasAllTokenLike"
+        || function_name == "hasAnyTokenRegexp"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -417,10 +435,17 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
+/// `hasAnyTokenLike`, `hasAllTokenLike` and `hasAnyTokenRegexp` apply their patterns to each token separately.
+bool MergeTreeIndexConditionText::isPerTokenPatternFunction(const String & function_name)
+{
+    return function_name == "hasAnyTokenLike" || function_name == "hasAllTokenLike" || function_name == "hasAnyTokenRegexp";
+}
+
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
 {
     /// The third argument of hasToken is a start position, not a tokenizer.
-    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
+    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase"
+        && !isPerTokenPatternFunction(function_name))
         return false;
 
     Field const_value;
@@ -457,7 +482,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens")
+        || function_name == "hasAllTokens"
+        || isPerTokenPatternFunction(function_name))
     {
         return TextIndexDirectReadMode::Exact;
     }
@@ -1305,6 +1331,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
+    /// The per-token pattern functions take the tokenizer of the index on their input, so `m['key']` and `m.key_<key>` must
+    /// find the same index. Otherwise `optimize_functions_to_subcolumns` changes their result.
+    if (!has_index_column && isPerTokenPatternFunction(function_name))
+        has_index_column = hasIndexForMapElementSubcolumn(index_column_node);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
@@ -1939,6 +1969,68 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
         return true;
     }
+    if (isPerTokenPatternFunction(function_name))
+    {
+        /// A NULL needle gives NULL, and a map element or a JSON path is not the indexed column, so neither is rewritten.
+        if (!(value_data_type.isString() || value_data_type.isArray()) || !candidate_for_exact_mode)
+            return false;
+
+        /// The function is rewritten even when the index is not used, so these cases return a query without patterns.
+        auto rewrite_only = [&]
+        {
+            out.function = RPNElement::FUNCTION_UNKNOWN;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>()));
+            return true;
+        };
+
+        /// A String is one pattern, it is not split into tokens.
+        std::vector<String> needles;
+        if (value_data_type.isString())
+        {
+            needles.push_back(value_field.safeGet<String>());
+        }
+        else
+        {
+            for (const auto & element : value_field.safeGet<Array>())
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+                needles.push_back(element.safeGet<String>());
+            }
+        }
+
+        /// Compile all patterns like the function does, so an invalid one always throws.
+        std::vector<OptimizedRegularExpression> patterns;
+        for (const auto & needle : needles)
+        {
+            if (function_name == "hasAnyTokenRegexp")
+                patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*similar_to*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+            else
+                patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*similar_to*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+        }
+
+        /// The index is used only if the function sees the stored tokens (no preprocessor, no postprocessor)
+        /// and no needle is empty, since an empty needle or array matches every token or none.
+        const bool has_empty_needle = std::ranges::any_of(needles, [](const String & needle) { return needle.empty(); });
+        if (has_preprocessor || has_postprocessor || needles.empty() || has_empty_needle
+            || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
+            return rewrite_only();
+
+        /// Direct read returns UInt8 and loses a NULL result, which `NOT` would turn into true.
+        auto pattern_read_mode = affix_patterns_allowed ? direct_read_mode : TextIndexDirectReadMode::None;
+
+        /// With several patterns the index only finds the rows where one of them matches, the function checks the rest.
+        if (function_name == "hasAllTokenLike" && patterns.size() > 1 && pattern_read_mode != TextIndexDirectReadMode::None)
+            pattern_read_mode = getHintOrNoneMode();
+
+        out.function = RPNElement::FUNCTION_LIKE;
+        out.text_search_queries.emplace_back(
+            std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, pattern_read_mode,
+                VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
+        return true;
+    }
     if (function_name == "has")
     {
         auto tokens = stringToTokens(value_field, /*compact=*/ true);
@@ -2006,6 +2098,21 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
+/// Whether the value has no tokens with any tokenizer: `forEachToken` finds none in an empty string.
+static bool hasNoTokensWithAnyTokenizer(const Field & value)
+{
+    if (value.isNull())
+        return true;
+
+    if (value.getType() == Field::Types::String)
+        return value.safeGet<String>().empty();
+
+    if (value.getType() == Field::Types::Array)
+        return std::ranges::all_of(value.safeGet<Array>(), [](const Field & element) { return hasNoTokensWithAnyTokenizer(element); });
+
+    return false;
+}
+
 /// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
 /// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
 /// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
@@ -2015,17 +2122,33 @@ static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
     ActionsDAG::IntermediateExecutionResult default_input;
     default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
 
+    /// The query plan may give the per-token pattern functions another tokenizer, which can find a token in the default value.
+    /// So their result is known only if their input has no tokens with any tokenizer.
+    ActionsDAG::NodeRawConstPtrs outputs = subdag.getOutputs();
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.children.size() == 2
+            && MergeTreeIndexConditionText::isPerTokenPatternFunction(node.function_base->getName()))
+            outputs.push_back(node.children.front());
+    }
+
     ColumnsWithTypeAndName result;
     try
     {
-        result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
+        result = ActionsDAG::evaluatePartialResult(default_input, outputs, /*input_rows_count=*/ 1);
     }
     catch (const Exception &)
     {
         return true;
     }
 
-    return !result.front().column || result.front().column->getBool(0);
+    if (!result.front().column || result.front().column->getBool(0))
+        return true;
+
+    return std::ranges::any_of(result.begin() + 1, result.end(), [](const ColumnWithTypeAndName & per_token_function_input)
+    {
+        return !per_token_function_input.column || !hasNoTokensWithAnyTokenizer((*per_token_function_input.column)[0]);
+    });
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
@@ -2326,6 +2449,104 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
     return hasIndexForColumn(fmt::format("mapValues({})", map_column_name));
+}
+
+std::optional<String> getMapElementSubcolumnName(const String & map_column_name, const DataTypeMap & map_type, Field key)
+{
+    /// An Enum key is written either as its name or as its number, the subcolumn always has the name.
+    const auto & key_type = map_type.getKeyType();
+    if (isEnum(key_type))
+        key = tryConvertFieldToType(key, *key_type);
+
+    /// A short `FixedString` key would be padded here, but the lookup compares it unpadded.
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(removeLowCardinality(key_type).get());
+        fixed_string_type && key.getType() == Field::Types::String && key.safeGet<String>().size() != fixed_string_type->getN())
+        return {};
+
+    auto key_column = key_type->createColumn();
+    if (key.isNull() || !key_column->tryInsert(key))
+        return {};
+
+    WriteBufferFromOwnString buf;
+    key_type->getDefaultSerialization()->serializeText(*key_column, 0, buf, FormatSettings());
+    return fmt::format("{}.{}{}", map_column_name, DataTypeMap::KEY_SUBCOLUMN_PREFIX, buf.str());
+}
+
+/// Returns the name of the subcolumn that reads `tupleElement(t, element)`, or `std::nullopt` if there is none.
+static std::optional<String> getTupleElementSubcolumnName(const String & tuple_column_name, const DataTypeTuple & tuple_type, const Field & element)
+{
+    const auto & names = tuple_type.getElementNames();
+    String name;
+    if (element.getType() == Field::Types::String && tuple_type.tryGetPositionByName(element.safeGet<String>()))
+        name = element.safeGet<String>();
+    else if (element.getType() == Field::Types::UInt64 && element.safeGet<UInt64>() >= 1 && element.safeGet<UInt64>() <= names.size())
+        name = names[element.safeGet<UInt64>() - 1];
+    else if (element.getType() == Field::Types::Int64)
+    {
+        /// A negative position counts from the end of the tuple.
+        const Int64 index = element.safeGet<Int64>();
+        const Int64 size = names.size();
+        if (index >= 1 && index <= size)
+            name = names[index - 1];
+        else if (index < 0 && index >= -size)
+            name = names[size + index];
+    }
+
+    /// A dotted element name can also be read as a nested path.
+    if (name.empty() || name.contains('.'))
+        return {};
+
+    return tuple_column_name + "." + name;
+}
+
+bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const RPNBuilderTreeNode & node) const
+{
+    /// A physical column of that name shadows the subcolumn.
+    String column_name = node.getColumnName();
+    if (map_element_subcolumn_name && column_name == *map_element_subcolumn_name)
+        return !is_column_shadowing_map_subcolumn(column_name);
+
+    auto function = node.toFunctionNodeOrNull();
+    if (!function || function->getArgumentsSize() != 2)
+        return false;
+
+    const auto function_name = function->getFunctionName();
+    if (function_name != "arrayElement" && function_name != "tupleElement")
+        return false;
+
+    auto parent_node = function->getArgumentAt(0);
+    const auto * parent_dag_node = parent_node.getDAGNode();
+    Field key;
+    DataTypePtr key_type;
+    if (!parent_dag_node || parent_node.isConstant() || !function->getArgumentAt(1).tryGetConstant(key, key_type))
+        return false;
+
+    /// An index built on the subcolumn itself serves the same element of a table column.
+    const auto * parent_column = parent_dag_node;
+    while (parent_column->type == ActionsDAG::ActionType::ALIAS)
+        parent_column = parent_column->children.front();
+    const bool is_table_column = parent_column->type == ActionsDAG::ActionType::INPUT;
+
+    if (function_name == "arrayElement")
+    {
+        /// `m[1]` and `m['k']` are the same element of a map with the key `Enum8('k' = 1)`.
+        const auto * map_type = typeid_cast<const DataTypeMap *>(parent_dag_node->result_type.get());
+        auto subcolumn_name = map_type ? getMapElementSubcolumnName(parent_node.getColumnName(), *map_type, key) : std::nullopt;
+        if (!subcolumn_name)
+            return false;
+
+        return subcolumn_name == map_element_subcolumn_name
+            || (is_table_column && hasIndexForColumn(*subcolumn_name) && !is_column_shadowing_map_subcolumn(*subcolumn_name));
+    }
+
+    /// The subcolumn of a `Nullable` tuple keeps the values under NULL, `tupleElement` replaces them if it cannot return NULL.
+    const auto & parent_type = parent_dag_node->result_type;
+    if (!is_table_column || (parent_type->isNullable() && !canContainNull(*node.getDAGNode()->result_type)))
+        return false;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(parent_type).get());
+    auto subcolumn_name = tuple_type ? getTupleElementSubcolumnName(parent_node.getColumnName(), *tuple_type, key) : std::nullopt;
+    return subcolumn_name && hasIndexForColumn(*subcolumn_name);
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(
