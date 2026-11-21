@@ -4811,6 +4811,12 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             || key_condition.getUsedKeyPrefixSize() > 2)
             return false;
 
+        /// Nor if the read drops rows that the condition does not describe: deleted rows, mutations or patch parts applied on the fly.
+        if ((mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            || std::ranges::any_of(
+                analysis->parts_with_ranges, [](const RangesInDataPart & part) { return part.data_part->hasLightweightDelete(); }))
+            return false;
+
         read_in_order_split_values = std::move(split_values);
     }
 

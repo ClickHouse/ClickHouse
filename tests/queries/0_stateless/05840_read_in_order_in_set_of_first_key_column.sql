@@ -115,7 +115,46 @@ SELECT k, ts, v FROM t_in_set_order_proj WHERE k IN ('1', '2') AND v = 1 ORDER B
 SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts, v FROM t_in_set_order_proj WHERE k IN ('1', '2') ORDER BY ts LIMIT 2 SETTINGS optimize_use_projections = 1)
 WHERE explain ILIKE '%Read in order by values%';
 
+SELECT 'rows dropped when read';
+-- Deleted rows, a mutation applied on the fly and a patch part keep the usual plan.
+DROP TABLE IF EXISTS t_in_set_order_del;
+CREATE TABLE t_in_set_order_del (k String, ts UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY (k, ts) SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_in_set_order_del SELECT toString(number % 3), number, number FROM numbers(3000);
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_del WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20)
+WHERE explain ILIKE '%Read in order by values%';
+DELETE FROM t_in_set_order_del WHERE k = '1' AND ts % 2 = 0 SETTINGS lightweight_delete_mode = 'alter_update', lightweight_deletes_sync = 2;
+SYSTEM STOP MERGES t_in_set_order_del;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_del WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20)
+WHERE explain ILIKE '%Read in order by values%';
+
+DROP TABLE IF EXISTS t_in_set_order_mut;
+CREATE TABLE t_in_set_order_mut (k String, ts UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY (k, ts) SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_in_set_order_mut SELECT toString(number % 3), number, number FROM numbers(3000);
+SYSTEM STOP MERGES t_in_set_order_mut;
+ALTER TABLE t_in_set_order_mut DELETE WHERE ts % 2 = 0 SETTINGS mutations_sync = 0;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_mut WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20 SETTINGS apply_mutations_on_fly = 0)
+WHERE explain ILIKE '%Read in order by values%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_mut WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20 SETTINGS apply_mutations_on_fly = 1)
+WHERE explain ILIKE '%Read in order by values%';
+
+DROP TABLE IF EXISTS t_in_set_order_patch;
+CREATE TABLE t_in_set_order_patch (k String, ts UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY (k, ts)
+SETTINGS index_granularity = 16, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_in_set_order_patch SELECT toString(number % 3), number, number FROM numbers(3000);
+SYSTEM STOP MERGES t_in_set_order_patch;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_patch WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20 SETTINGS apply_patch_parts = 1)
+WHERE explain ILIKE '%Read in order by values%';
+UPDATE t_in_set_order_patch SET v = 0 WHERE k = '1' SETTINGS enable_lightweight_update = 1;
+SELECT count() FROM (EXPLAIN actions = 1 SELECT k, ts FROM t_in_set_order_patch WHERE k IN ('1', '2') ORDER BY ts DESC LIMIT 20 SETTINGS apply_patch_parts = 1)
+WHERE explain ILIKE '%Read in order by values%';
+
 DROP TABLE t_in_set_order_name;
 DROP TABLE t_in_set_order_key_name;
 DROP TABLE t_in_set_order_proj;
+DROP TABLE t_in_set_order_del;
+DROP TABLE t_in_set_order_mut;
+DROP TABLE t_in_set_order_patch;
 DROP TABLE t_in_set_order;
