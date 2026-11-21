@@ -8,6 +8,7 @@
 #include <Storages/StorageTableProxy.h>
 #include <Common/typeid_cast.h>
 
+#include <unordered_set>
 #include <vector>
 
 
@@ -55,15 +56,25 @@ StoragePtr lockKey(const StoragePtr & table)
 /// caller is not allowed to make it do. The lookup runs with `lookup_context`, the caller's context, rather
 /// than with the forwarding storage's own global one, so that the source access checks of the target's
 /// database (for example, `READ ON URL` for a `URL` database) apply to the caller.
+/// The actions on the refresher of a materialized view (`ViewRefresh`, `ViewRefreshPause`) belong to the view
+/// itself rather than to its inner table: the view is the one that resumes the refresher when the action is
+/// released, so the walk does not go past it for them.
 StoragePtr resolveActionLockOwner(
-    StoragePtr table, const ActionLocksManager::OwnerReleaseCheck & may_resolve, const ContextPtr & lookup_context)
+    StoragePtr table,
+    StorageActionBlockType action_type,
+    const ActionLocksManager::OwnerReleaseCheck & may_resolve,
+    const ContextPtr & lookup_context)
 {
-    /// Bound the walk in case of a cycle of aliases.
-    for (size_t depth = 0; depth < 16 && table; ++depth)
+    const bool view_owns_action = action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause;
+
+    /// A chain of forwarding storages may be of any length, and every hop of it is checked. Remember the
+    /// visited storages to stop on a cycle of aliases.
+    std::unordered_set<const IStorage *> visited;
+    while (table && visited.insert(table.get()).second)
     {
         const auto * alias = typeid_cast<const StorageAlias *>(table.get());
         const auto * view = alias ? nullptr : typeid_cast<const StorageMaterializedView *>(table.get());
-        if (!alias && !(view && view->hasInnerTable()))
+        if (!alias && !(view && view->hasInnerTable() && !view_owns_action))
             break;
 
         const StorageID target_id = alias ? alias->getTargetTableId() : view->getTargetTableId();
@@ -91,15 +102,20 @@ StoragePtr resolveActionLockOwner(
 /// target is looked up with `lookup_context`, the caller's context, rather than with the alias's own global
 /// one, so that the source access checks of the target's database (for example, `READ ON URL` for a `URL`
 /// database) apply to the caller, as when the target is named directly.
+/// The result is never an alias: the caller asks it for the lock, and `StorageAlias::getActionLock` would
+/// resolve the rest of the chain on its own, with neither the check nor the caller's context. So the chain is
+/// followed to its end whatever its length, and a cycle of aliases, which resolves to no storage, gives null.
 StoragePtr resolveAliases(
     StoragePtr table, const ActionLocksManager::OwnerReleaseCheck & may_resolve, const ContextPtr & lookup_context)
 {
-    /// Bound the walk in case of a cycle of aliases.
-    for (size_t depth = 0; depth < 16 && table; ++depth)
+    std::unordered_set<const IStorage *> visited;
+    while (table)
     {
         const auto * alias = typeid_cast<const StorageAlias *>(table.get());
         if (!alias)
             break;
+        if (!visited.insert(table.get()).second)
+            return nullptr;
         const StorageID target_id = alias->getTargetTableId();
         if (may_resolve && !may_resolve(target_id))
             return nullptr;
@@ -198,7 +214,7 @@ void ActionLocksManager::remove(
     if (auto recorded_owner = tryGetRecordedOwner(table.get(), action_type))
         owner = std::move(*recorded_owner);
     else if (resolve_forwarding_target_context)
-        owner = lockKey(resolveActionLockOwner(table, may_release_owner, resolve_forwarding_target_context));
+        owner = lockKey(resolveActionLockOwner(table, action_type, may_release_owner, resolve_forwarding_target_context));
 
     if (owner == table)
         owner.reset();
