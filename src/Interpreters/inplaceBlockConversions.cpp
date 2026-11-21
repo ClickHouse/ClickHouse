@@ -123,11 +123,29 @@ const ASTs * tryGetLambdaParameters(const ASTFunction & function)
     return &parameters->arguments->children;
 }
 
+/// Finds the column of the table that owns the subcolumn `name`, and the name of the subcolumn inside it.
+/// Several columns may own a subcolumn with the same full name, e.g. `x.n.v` is a subcolumn of both
+/// `x Tuple(n Tuple(v UInt8))` and `` `x.n` Tuple(v UInt8) ``. The owner is chosen exactly as the analyzer does it
+/// (see `TableExpressionData::tryGetSubcolumnInfo`): the shortest prefix that names a column whose type has such
+/// a subcolumn. The choice must not depend on the set of columns in the block or on the order of the columns
+/// in the table, otherwise the same default expression would read different columns for different inserts.
+std::optional<std::pair<String, String>> tryGetColumnOwningSubcolumn(const ColumnsDescription & columns, const String & name)
+{
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        auto column = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), String(column_name));
+        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
+            return std::pair{String(column_name), String(subcolumn_name)};
+    }
+    return {};
+}
+
 /// A default expression may reference a subcolumn of another column, e.g. `c.n.x` of the column `c.n`.
 /// When that column is missing from the block, it is computed by its own default expression under its
 /// name as an alias. An identifier is bound to an alias by its first part, so `c.n.x` cannot be bound to
 /// the alias `c.n`. Rewrite such a reference as an explicit `getSubcolumn` of its column, which then is
 /// a required column of the default expression as well.
+/// A reference whose owning column is in the block is left as is: the analyzer binds it to the same column.
 /// Identifiers bound to aliases or lambda parameters of the expression itself are not references to columns.
 void replaceReferencesToSubcolumnsOfMissingColumnsImpl(
     ASTPtr & ast, const Block & block, const ColumnsDescription & columns, const BoundNames & bound_names)
@@ -142,14 +160,14 @@ void replaceReferencesToSubcolumnsOfMissingColumnsImpl(
         if (block.has(name) || columns.has(name) || isBoundInExpression(*identifier, bound_names))
             return;
 
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-        if (!column || !column->isSubcolumn() || block.has(column->getNameInStorage()))
+        auto owner = tryGetColumnOwningSubcolumn(columns, name);
+        if (!owner || block.has(owner->first))
             return;
 
         auto subcolumn = makeASTFunction(
             "getSubcolumn",
-            make_intrusive<ASTIdentifier>(column->getNameInStorage()),
-            make_intrusive<ASTLiteral>(column->getSubcolumnName()));
+            make_intrusive<ASTIdentifier>(owner->first),
+            make_intrusive<ASTLiteral>(owner->second));
         subcolumn->setAlias(identifier->tryGetAlias());
         ast = std::move(subcolumn);
         return;
