@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
@@ -1707,6 +1708,25 @@ def test_use_extended_date_and_time_types_setting_table_engine_rejected(started_
         f"""
         SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int32, d Date)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_use_extended_date_and_time_types = 0
+        """
+    )
+    assert (
+        "materialized_postgresql_use_extended_date_and_time_types" in error
+        and "table engine" in error
+    ), error
+
+
+def test_attach_table_with_extended_date_and_time_types_setting_rejected(started_cluster):
+    # A full-definition ATTACH is fresh user input, just like CREATE. It must not
+    # persist a table-engine setting that would be silently ignored.
+    table = "test_date_types_table_engine_attach"
+    error = instance.query_and_get_error(
+        f"""
+        SET enable_materialized_postgresql_table=1;
+        ATTACH TABLE {table} UUID '00000000-0000-0000-0000-000000001234' (key Int32, d Date)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
         SETTINGS materialized_postgresql_use_extended_date_and_time_types = 0
@@ -3537,6 +3557,154 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_plain_engines_reject_database_rename_and_truncate_all_tables(started_cluster):
+    # RENAME DATABASE renames the nested tables, but the wrappers and the replication handler keep their IDs
+    # with the old database name, so reads would fail until a restart. TRUNCATE ALL TABLES of an Atomic
+    # database with a standalone table truncates its nested table while the slot stays at its position, so
+    # the rows that do not change in PostgreSQL would never come back. Both must be refused for the plain
+    # (non-coordinated) engines too, before anything is changed.
+    table = "plain_rename_truncate"
+    database = "plain_rename_truncate_database"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table}'"],
+    )
+    check_tables_are_synchronized(instance, table)
+
+    error = instance.query_and_get_error(
+        "RENAME DATABASE test_database TO test_database_renamed"
+    )
+    assert "RENAME DATABASE is not supported" in error
+    assert "test_database" in instance.query("SHOW DATABASES").split()
+    assert int(instance.query(f"SELECT count() FROM test_database.{table}")) == 100
+
+    instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+    instance.query(f"CREATE DATABASE {database} ENGINE = Atomic")
+    try:
+        instance.query(
+            f"""
+            SET enable_materialized_postgresql_table=1;
+            CREATE TABLE {database}.{table} (key Int64, value Int64)
+            ENGINE = MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+            PRIMARY KEY key
+            """
+        )
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {database}.{table}",
+            "100\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        error = instance.query_and_get_error(
+            f"RENAME DATABASE {database} TO {database}_renamed"
+        )
+        assert "RENAME DATABASE is not supported" in error
+        assert database in instance.query("SHOW DATABASES").split()
+
+        error = instance.query_and_get_error(f"TRUNCATE ALL TABLES FROM {database}")
+        assert "TRUNCATE ALL TABLES is not supported" in error
+        assert int(instance.query(f"SELECT count() FROM {database}.{table}")) == 100
+
+        # Nothing was truncated or renamed, and both keep replicating.
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100, 100)"
+        )
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {database}.{table}",
+            "200\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+        check_tables_are_synchronized(instance, table)
+    finally:
+        instance.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+    pg_manager.drop_materialized_db()
+
+
+def test_plain_single_table_engine_refused_drop_recovers(started_cluster):
+    # The plain (non-coordinated) single-table engine drops its local nested table BEFORE the authoritative
+    # PostgreSQL teardown: if the nested-table drop is refused (throws), the outer DROP TABLE fails and the
+    # table stays mounted, so the replication slot/publication must survive and the handler must resume
+    # consuming from the existing slot instead of leaving the table dead until a server restart.
+    table = "plain_refused_drop"
+
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100)"
+    )
+    instance.query(
+        f"""
+        SET enable_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int64, value Int64)
+        ENGINE = MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        PRIMARY KEY key
+        """
+    )
+    try:
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {table}",
+            "100\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        try:
+            instance.query(
+                "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+            )
+            error = instance.query_and_get_error(f"DROP TABLE {table} SYNC")
+            assert "Injected failure while dropping the local nested table" in error
+            assert table in instance.query("SHOW TABLES").split()
+        finally:
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+            )
+
+        # The slot and publication survived the refused drop, and replication resumes from the existing
+        # slot without a server restart: new PostgreSQL rows must arrive.
+        instance.query(
+            f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(100, 100)"
+        )
+        assert_eq_with_retry(
+            instance,
+            f"SELECT count() FROM {table}",
+            "200\n",
+            retry_count=120,
+            sleep_time=1,
+        )
+
+        # A retried drop succeeds and removes the PostgreSQL objects.
+        instance.query(f"DROP TABLE {table} SYNC")
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+    )
+    cursor = conn.cursor()
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE slot_name LIKE '%{table}%'"
+    )
+    assert cursor.fetchall() == []
+    cursor.execute(
+        f"SELECT pubname FROM pg_publication WHERE pubname LIKE '%{table}%'"
+    )
+    assert cursor.fetchall() == []
+
+
 def test_whole_schema_database_restart_after_new_postgresql_table(started_cluster):
     # A table created in PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
     # `ATTACH TABLE`, so it has no nested table. On restart, the whole-schema database used to take
@@ -3679,9 +3847,35 @@ def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
     for database in databases:
         check_tables_are_synchronized(instance, good, materialized_database=database)
 
+    # Reads of a nested table are served even before the background startup has populated the list of the
+    # replicated tables, while a backup is refused until then, so retry it for that reason only.
+    for attempt in range(60):
+        try:
+            instance.query(
+                f"BACKUP DATABASE {databases[1]} TO Disk('backups', 'mpg_explicit_tables_list_shared_publication_backup_{attempt}')"
+            )
+            break
+        except QueryRuntimeException as e:
+            if "has not finished its initial synchronization" not in str(e):
+                raise
+            time.sleep(1)
+    else:
+        raise AssertionError(
+            f"The backup of {databases[1]} was still refused after the restart"
+        )
+
+    # Reattaching the other database compares its tables list (without `later`) with the shared publication.
+    # It must not remove `later` from the publication, which the first database still replicates through it.
+    instance.query(f"DETACH DATABASE {databases[1]}")
+    instance.query(f"ATTACH DATABASE {databases[1]}")
+    check_tables_are_synchronized(instance, good, materialized_database=databases[1])
     instance.query(
-        f"BACKUP DATABASE {databases[1]} TO Disk('backups', 'mpg_explicit_tables_list_shared_publication_backup')"
+        f"INSERT INTO postgres_database.{later} SELECT number, number FROM numbers(5, 5)"
     )
+    instance.query(f"INSERT INTO postgres_database.{good} SELECT number, number FROM numbers(5, 5)")
+    for database in databases:
+        check_tables_are_synchronized(instance, good, materialized_database=database)
+    check_tables_are_synchronized(instance, later, materialized_database=databases[0])
 
     for database in databases:
         pg_manager.drop_materialized_db(database)

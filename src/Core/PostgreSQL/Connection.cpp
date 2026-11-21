@@ -63,6 +63,7 @@ void Connection::updateConnection()
 
     /// Always throws if there is no connection.
     connection = std::make_unique<pqxx::connection>(connection_info.connection_string);
+    ++generation;
 
     if (replication)
         connection->set_variable("default_transaction_isolation", "'repeatable read'");

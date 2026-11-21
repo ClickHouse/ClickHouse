@@ -1,4 +1,5 @@
 import random
+import threading
 
 import pytest
 
@@ -591,6 +592,382 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
         schema_name=f"schema{altered_schema}",
         postgres_database=clickhouse_postgres_db,
     )
+
+
+def test_failed_attach_rolls_back_setting_and_table(started_cluster):
+    # A failed ATTACH TABLE must not leave the database claiming the table is attached. The persisted
+    # `materialized_postgresql_tables_list` is altered and the wrapper is published before
+    # `addTableToReplication` makes the attach durable, so on failure both are rolled back together
+    # with the already created nested table - otherwise SHOW TABLES and the persisted tables list
+    # would keep the table although it never joined the publication and nothing would replicate
+    # into it.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+        error = instance.query_and_get_error(
+            f"ATTACH TABLE test_database.{attached_table_name}"
+        )
+        assert "Injected failure while adding table" in error, error
+
+        # Nothing of the failed attach is left behind: neither the table itself...
+        assert (
+            attached_table_name
+            not in instance.query("SHOW TABLES FROM test_database").split()
+        )
+        # ...nor a mention in the persisted tables list.
+        assert attached_table_name not in instance.query(
+            "SHOW CREATE DATABASE test_database"
+        )
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+
+    # A retry after the failure starts from a clean state and succeeds.
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{attached_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert attached_table_name in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_failed_attach_with_failed_cleanup_keeps_table_attached(started_cluster):
+    # When the cleanup of a failed ATTACH TABLE cannot drop the nested table it created (a disk error, or
+    # Keeper disappearing while a replicated nested table removes its metadata), the visible state must NOT
+    # be rolled back: a rolled-back attach plus a surviving nested table is unrecoverable, because the table
+    # is invisible while every retry of the ATTACH collides with it. Instead the attach stays visible, so the
+    # wrapper, the persisted tables list and the nested table keep describing the same table, and
+    # DETACH TABLE ... PERMANENTLY can remove it (it tolerates a table that never reached the publication),
+    # after which the ATTACH can be retried.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_drop_on_attach"
+        )
+        error = instance.query_and_get_error(
+            f"ATTACH TABLE test_database.{attached_table_name}"
+        )
+        assert "Injected failure while adding table" in error, error
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_drop_on_attach"
+        )
+
+    # The attach stayed visible: both the table and its entry in the persisted tables list.
+    assert (
+        attached_table_name in instance.query("SHOW TABLES FROM test_database").split()
+    )
+    assert attached_table_name in instance.query("SHOW CREATE DATABASE test_database")
+
+    # The already replicating table is unaffected.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    # And the state is recoverable: the table can be detached from replication and attached again.
+    instance.query(f"DETACH TABLE test_database.{attached_table_name} PERMANENTLY")
+    assert (
+        attached_table_name
+        not in instance.query("SHOW TABLES FROM test_database").split()
+    )
+    assert attached_table_name not in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{attached_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, attached_table_name)
+
+    pg_manager.drop_materialized_db()
+
+
+def test_attach_table_keeps_changes_made_while_loading_snapshot(started_cluster):
+    # ATTACH TABLE reloads the table from a snapshot and replicates its changes after that snapshot. PostgreSQL
+    # decides whether a change is published by the publication membership at the moment of that change, so the
+    # table must be published before the snapshot is exported: a row deleted while the snapshot is being
+    # loaded would otherwise never reach the consumer and would stay in ClickHouse for good.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+
+    failpoint = "materialized_postgresql_pause_in_load_from_snapshot"
+    errors = []
+
+    def attach():
+        try:
+            instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+        except Exception as e:
+            errors.append(e)
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    attach_thread = threading.Thread(target=attach)
+    try:
+        attach_thread.start()
+        assert instance.wait_for_log_line(
+            f"Pausing while loading table `{attached_table_name}` from a snapshot"
+        )
+        # The snapshot has been exported already, so it still contains these rows.
+        pg_manager.execute(f'DELETE FROM "{attached_table_name}" WHERE key < 10')
+        pg_manager.execute(
+            f'UPDATE "{attached_table_name}" SET value = value + 1000 WHERE key >= 40'
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        attach_thread.join()
+    assert not errors, errors
+
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM test_database.{attached_table_name} WHERE key < 10"
+            )
+        )
+        == 0
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_attach_table_skips_changes_made_before_snapshot_export(started_cluster):
+    # ATTACH TABLE publishes the table before it exports the snapshot, so the changes committed in between
+    # are both in the snapshot and in the replication stream. The consumer must skip them until the
+    # snapshot LSN. Otherwise an update with an unchanged TOAST value of a row deleted before the export
+    # cannot find the previous row (it is not in the snapshot), and the table would stop replicating.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach_toast"
+    pg_manager.create_postgres_table(
+        attached_table_name,
+        "",
+        """CREATE TABLE "{}" (key integer PRIMARY KEY, toast_value text, other text)""",
+    )
+    pg_manager.execute(
+        f'ALTER TABLE "{attached_table_name}" ALTER COLUMN toast_value SET STORAGE EXTERNAL'
+    )
+    pg_manager.execute(
+        f"INSERT INTO \"{attached_table_name}\" SELECT number, repeat('a', 30000), 'initial' "
+        "FROM generate_series(1, 3) AS number"
+    )
+
+    failpoint = "materialized_postgresql_pause_before_snapshot_export"
+    errors = []
+
+    def attach():
+        try:
+            instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+        except Exception as e:
+            errors.append(e)
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    attach_thread = threading.Thread(target=attach)
+    try:
+        attach_thread.start()
+        assert instance.wait_for_log_line(
+            f"Pausing before exporting the snapshot of table `{attached_table_name}`"
+        )
+        # The table is already published, but the snapshot is not exported yet.
+        pg_manager.execute(
+            f"UPDATE \"{attached_table_name}\" SET other = 'updated' WHERE key = 1"
+        )
+        pg_manager.execute(f'DELETE FROM "{attached_table_name}" WHERE key = 1')
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        attach_thread.join()
+    assert not errors, errors
+
+    # Changes after the snapshot must still be applied, including ones that keep the TOAST value unchanged.
+    pg_manager.execute(
+        f"UPDATE \"{attached_table_name}\" SET other = 'later' WHERE key = 2"
+    )
+    pg_manager.execute(
+        f"INSERT INTO \"{attached_table_name}\" VALUES (4, repeat('b', 30000), 'inserted')"
+    )
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert (
+        instance.query(
+            f"SELECT key, other, length(toast_value) FROM test_database.{attached_table_name} ORDER BY key"
+        )
+        == "2\tlater\t30000\n3\tinitial\t30000\n4\tinserted\t30000\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_attach_table_changes_before_and_after_snapshot_export_in_one_batch(
+    started_cluster,
+):
+    # The consumer does not read the slot while ATTACH TABLE runs, so the changes made before the snapshot
+    # export and the ones made after it (while the snapshot is loading) arrive in one batch. PostgreSQL
+    # sends the definition of the table only once per batch, together with the first change, which is
+    # skipped here. The definition must be kept for the changes after the snapshot LSN, and the changes
+    # before it must stay skipped.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach_toast_one_batch"
+    pg_manager.create_postgres_table(
+        attached_table_name,
+        "",
+        """CREATE TABLE "{}" (key integer PRIMARY KEY, toast_value text, other text)""",
+    )
+    pg_manager.execute(
+        f'ALTER TABLE "{attached_table_name}" ALTER COLUMN toast_value SET STORAGE EXTERNAL'
+    )
+    pg_manager.execute(
+        f"INSERT INTO \"{attached_table_name}\" SELECT number, repeat('a', 30000), 'initial' "
+        "FROM generate_series(1, 3) AS number"
+    )
+
+    export_failpoint = "materialized_postgresql_pause_before_snapshot_export"
+    load_failpoint = "materialized_postgresql_pause_in_load_from_snapshot"
+    errors = []
+
+    def attach():
+        try:
+            instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+        except Exception as e:
+            errors.append(e)
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {export_failpoint}")
+    instance.query(f"SYSTEM ENABLE FAILPOINT {load_failpoint}")
+    attach_thread = threading.Thread(target=attach)
+    try:
+        attach_thread.start()
+        assert instance.wait_for_log_line(
+            f"Pausing before exporting the snapshot of table `{attached_table_name}`"
+        )
+        # The table is already published, but the snapshot is not exported yet.
+        pg_manager.execute(
+            f"UPDATE \"{attached_table_name}\" SET other = 'updated' WHERE key = 1"
+        )
+        pg_manager.execute(f'DELETE FROM "{attached_table_name}" WHERE key = 1')
+
+        instance.query(f"SYSTEM DISABLE FAILPOINT {export_failpoint}")
+        assert instance.wait_for_log_line(
+            f"Pausing while loading table `{attached_table_name}` from a snapshot"
+        )
+        # The snapshot is exported, but ATTACH TABLE has not finished, so the consumer is still stopped.
+        pg_manager.execute(
+            f"UPDATE \"{attached_table_name}\" SET other = 'later' WHERE key = 2"
+        )
+        pg_manager.execute(
+            f"INSERT INTO \"{attached_table_name}\" VALUES (4, repeat('b', 30000), 'inserted')"
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {export_failpoint}")
+        instance.query(f"SYSTEM DISABLE FAILPOINT {load_failpoint}")
+        attach_thread.join()
+    assert not errors, errors
+
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert (
+        instance.query(
+            f"SELECT key, other, length(toast_value) FROM test_database.{attached_table_name} ORDER BY key"
+        )
+        == "2\tlater\t30000\n3\tinitial\t30000\n4\tinserted\t30000\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_attached_table_can_be_detached_permanently(started_cluster):
+    # A table added by ATTACH TABLE gets a freshly built wrapper, which never went through
+    # `startSynchronization`. It must still be marked as belonging to a database whose replication has
+    # started, or the startup-window guard of `checkTableCanBeDetachedPermanently` refuses every later
+    # DETACH TABLE ... PERMANENTLY of it, and the supported attach/detach round trip is broken.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+
+    # Without a server restart in between: the wrapper published by the attach is the one being checked.
+    instance.query(f"DETACH TABLE test_database.{attached_table_name} PERMANENTLY")
+    assert (
+        attached_table_name
+        not in instance.query("SHOW TABLES FROM test_database").split()
+    )
+    assert attached_table_name not in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    # The rest of the database keeps replicating.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    pg_manager.drop_materialized_db()
 
 
 if __name__ == "__main__":

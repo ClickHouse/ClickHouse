@@ -106,6 +106,14 @@ bool isTransientConnectionError(std::string_view message)
     return false;
 }
 
+String fetchSystemIdentifier(pqxx::transaction_base & tx)
+{
+    /// `pg_control_system` is executable by every role. It returns the identifier as a signed `bigint`,
+    /// while `IDENTIFY_SYSTEM` prints it as an unsigned 64-bit number, so convert it to compare them.
+    pqxx::result result{tx.exec("SELECT system_identifier FROM pg_control_system()")};
+    return std::to_string(static_cast<UInt64>(result[0][0].as<Int64>()));
+}
+
 }
 
 #endif
