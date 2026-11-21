@@ -22,11 +22,11 @@ namespace
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Null"; }
+    [[nodiscard]] String getName() const override { return "Null"; }
 
-    bool isForInternalUsageOnly() const override { return true; }
+    [[nodiscard]] bool isForInternalUsageOnly() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         size_t size = arguments.size();
         DataTypes res(size);
@@ -42,7 +42,7 @@ public:
     }
 
     template <typename T>
-    std::optional<AggregateFunctionPtr> tryTransformStateFunctionImpl(const AggregateFunctionPtr & nested_function,
+    [[nodiscard]] std::optional<AggregateFunctionPtr> tryTransformStateFunctionImpl(const AggregateFunctionPtr & nested_function,
                                                        const AggregateFunctionProperties & properties,
                                                        const DataTypes & arguments,
                                                        const Array & params) const
@@ -59,7 +59,7 @@ public:
         return {};
     }
 
-    AggregateFunctionPtr tryTransformStateFunction(const AggregateFunctionPtr & nested_function,
+    [[nodiscard]] AggregateFunctionPtr tryTransformStateFunction(const AggregateFunctionPtr & nested_function,
                                                    const AggregateFunctionProperties & properties,
                                                    const DataTypes & arguments,
                                                    const Array & params) const
@@ -69,7 +69,7 @@ public:
             .value_or(nullptr);
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties & properties,
         const DataTypes & arguments,

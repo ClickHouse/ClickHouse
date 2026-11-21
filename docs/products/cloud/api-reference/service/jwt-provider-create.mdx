@@ -1,7 +1,7 @@
 ---
 title: "Create service JWT provider"
 openapi: "/_specs/cloud-openapi.json POST /v1/organizations/{organizationId}/services/{serviceId}/jwtProviders"
-description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a valid RS256 key set, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration."
+description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a key set with a supported signing key, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration."
 tag: "Beta"
 ---
 
@@ -12,7 +12,7 @@ tag: "Beta"
 **This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.
 
 Errors:
-- 400: invalid field values, the JWKS URL is unreachable or does not return a valid RS256 key set, or the service already has 5 providers.
+- 400: invalid field values, the JWKS URL is unreachable or does not return a key set with a supported signing key, or the service already has 5 providers.
 - 401: missing, invalid, or disabled API key.
 - 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).
 - 404: service does not exist or is not visible to the caller.

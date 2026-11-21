@@ -210,6 +210,12 @@ DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
     return result;
 }
 
+bool isSimpleAggregateFunctionOfBool(const IDataType & type)
+{
+    const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName());
+    return simple && isBool(simple->getArgumentsDataTypes().front()) && isBool(simple->getFunction()->getResultType());
+}
+
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataTypeCustom("SimpleAggregateFunction", create, DataTypeFactory::Case::Sensitive, Documentation{

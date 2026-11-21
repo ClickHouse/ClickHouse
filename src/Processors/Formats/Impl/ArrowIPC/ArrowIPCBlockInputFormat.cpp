@@ -581,12 +581,12 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
     batch_decoder.validateBatchLayout(*dict_batch.data(), value_fields);
     message_reader->readBody(*dict_batch.data(), body_length, body_buffer);
 
-    /// Decode the values once for each position of a field encoding this dictionary, so every field gets
-    /// the decoding it would get for inline values in a record batch. The registered type must describe the
-    /// registered column: the raw-byte rewrite the record-batch columns go through reinterprets
-    /// fixed_size_binary values under an IPv6 / big-integer hint and re-declares values the decoder already
-    /// converted or read raw, so `decodeDictionary` later builds its `LowCardinality` from a consistent
-    /// (values, type) pair.
+    /// Decode the values once for each use of this dictionary (the position of a field encoding it, with the
+    /// requested type the field resolves there), so every field gets the decoding it would get for inline
+    /// values in a record batch. The registered type must describe the registered column: the raw-byte
+    /// rewrite the record-batch columns go through reinterprets fixed_size_binary values under an IPv6 /
+    /// big-integer hint and re-declares values the decoder already converted or read raw, so
+    /// `decodeDictionary` later builds its `LowCardinality` from a consistent (values, type) pair.
     for (const ArrowIPC::DictionaryUse & use : dictionary_uses.at(id))
     {
         auto decoded = batch_decoder.decodeDictionaryValues(
@@ -600,7 +600,7 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
 
         /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`
         /// builds a `LowCardinality` by inserting the values into its own unique dictionary and remapping the indexes.
-        dictionaries.set(id, use.position, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
+        dictionaries.set(id, use, {values.column, values.type, std::move(decoded.null_map)}, dict_batch.isDelta());
     }
 }
 
@@ -1314,7 +1314,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowIPCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), false, params.max_block_size_rows, format_settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",
@@ -1325,7 +1325,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowIPCBlockInputFormat>(
                 buf, std::make_shared<const Block>(sample), true, params.max_block_size_rows, format_settings);
-        });
+        }, /*supports_reset_parser=*/ true);
     factory.markFormatSupportsSubsetOfColumns("ArrowStream");
 
     factory.setDocumentation("Arrow", Documentation{
