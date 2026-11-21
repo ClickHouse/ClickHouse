@@ -85,6 +85,7 @@ struct Optimization
         bool is_explain{};
 
         size_t max_block_size{};
+        size_t max_streams_per_hierarchical_merge{};
 
         /// The plan being optimized. Standalone plans extracted by optimizations inherit its execution
         /// limits and its resource holder (table locks, storage holders, interpreter contexts), because
