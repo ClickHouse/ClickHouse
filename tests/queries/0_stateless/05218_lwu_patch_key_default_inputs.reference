@@ -1,0 +1,10 @@
+select	5	5
+select_reading_input	5	5	w0
+prewhere	5	w0
+delete	5
+delete_key_column	0	2	w0
+merge	5	5
+merge_merged_part	5	5
+merge_algorithm	1	0
+materialized	5	5
+low_cardinality_input	5	5
