@@ -9,15 +9,13 @@ namespace DB
 {
 
 class ActionsDAG;
-
-template <typename T, UInt8 small_set_size>
-class RoaringBitmapWithSmallSet;
+class DeletionVectorBitmap;
 
 struct DataLakeObjectMetadata
 {
     std::shared_ptr<ActionsDAG> schema_transform;
 
-    using ExcludedRows = RoaringBitmapWithSmallSet<size_t, 32>;
+    using ExcludedRows = DeletionVectorBitmap;
     using ExcludedRowsPtr = std::shared_ptr<ExcludedRows>;
 
     /// Excluded rows indexes from selection vector
