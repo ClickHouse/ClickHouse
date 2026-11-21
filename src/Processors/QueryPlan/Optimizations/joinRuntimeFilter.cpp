@@ -219,9 +219,11 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
-/// Whether a cast from `from` to `to` cannot throw: it keeps every value, or converts an integer to another integer type,
-/// which wraps around, or a number to a float. Arrays and tuples are checked element by element, paired as `CAST` pairs them.
-static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to)
+/// Whether a cast from `from` to `to` cannot throw: it keeps every value, or converts an integer or an `Enum` to an integer
+/// type, which wraps around, or a number to a float. Arrays and tuples are checked element by element, paired as `CAST`
+/// pairs them. A cast built by `ActionsDAG::addCast` clamps a date out of the range of its target type, so with
+/// `clamps_dates` a conversion between date types cannot throw either.
+static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to, bool clamps_dates)
 {
     /// A NULL cannot be converted to a type that is not `Nullable`.
     if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
@@ -237,7 +239,7 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
     const auto * from_array = typeid_cast<const DataTypeArray *>(from_nested.get());
     const auto * to_array = typeid_cast<const DataTypeArray *>(to_nested.get());
     if (from_array && to_array)
-        return canCastWithoutThrowing(from_array->getNestedType(), to_array->getNestedType());
+        return canCastWithoutThrowing(from_array->getNestedType(), to_array->getNestedType(), clamps_dates);
 
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_nested.get());
     const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_nested.get());
@@ -249,7 +251,7 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
         for (size_t i = 0; i < positions->size(); ++i)
         {
             const auto & position = (*positions)[i];
-            if (position && !canCastWithoutThrowing(from_tuple->getElements()[*position], to_tuple->getElements()[i]))
+            if (position && !canCastWithoutThrowing(from_tuple->getElements()[*position], to_tuple->getElements()[i], clamps_dates))
                 return false;
         }
         return true;
@@ -257,15 +259,18 @@ static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr &
 
     if (canBeSafelyCast(from, to))
         return true;
+    if (clamps_dates && isDateOrDate32OrDateTimeOrDateTime64(from_nested) && isDateOrDate32OrDateTimeOrDateTime64(to_nested))
+        return true;
 
     /// A number converted to a float is rounded, never rejected.
     if (isFloat(to_nested) && (isInteger(from_nested) || isFloat(from_nested)))
         return true;
 
-    return isInteger(from_nested) && isInteger(to_nested);
+    return (isInteger(from_nested) || isEnum(from_nested)) && isInteger(to_nested);
 }
 
 /// A cast, or a conversion function to an integer type (`toInt32`, ...), whose conversion cannot throw.
+/// A cast written in the query follows `date_time_overflow_behavior`, so dates are not exempt here.
 static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
 {
     static constexpr std::string_view integer_conversions[] = {
@@ -278,7 +283,7 @@ static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
     if (node.children.empty() || (!is_cast && !is_integer_conversion))
         return false;
 
-    return canCastWithoutThrowing(node.children.front()->result_type, node.result_type);
+    return canCastWithoutThrowing(node.children.front()->result_type, node.result_type, /*clamps_dates=*/false);
 }
 
 /// Whether the key can be computed on any row without throwing. Its runtime filter computes it below the steps that
@@ -685,11 +690,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    /// The probe key as written is cast to the common type, by `preCalculateKeys` or by the filter itself
-    /// (see `createRuntimeFilterCondition`).
+    /// The probe key as written is cast to the common type by `ActionsDAG::addCast`, in `preCalculateKeys` or in the filter
+    /// itself (see `createRuntimeFilterCondition`).
     for (size_t i = common_types.size(); i-- > 0;)
     {
-        if (canCastWithoutThrowing(join_key_probe_types_as_written[i], common_types[i]))
+        if (canCastWithoutThrowing(join_key_probe_types_as_written[i], common_types[i], /*clamps_dates=*/true))
             continue;
         if (check_left_does_not_contain)
             return false;
