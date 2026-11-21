@@ -1,17 +1,27 @@
 #pragma once
 
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/MMapReadBufferFromFile.h>
+#include <base/defines.h>
 
 #include <string>
 #include <optional>
 #include <functional>
+#include <mutex>
+#include <span>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 
 enum class SectionHeaderType : uint32_t
 {
+    PROGBITS = 1,
     SYMTAB = 2,
     STRTAB = 3,
     NOTE = 7,
+    NOBITS = 8,
     DYNSYM = 11,
 };
 
@@ -73,6 +83,20 @@ struct __attribute__((__packed__)) ElfSectionHeader
     uint32_t info;
     uint64_t addralign;
     uint64_t entsize;
+};
+
+enum class ElfCompressionType : uint32_t
+{
+    ZLIB = 1,
+    ZSTD = 2,
+};
+
+struct __attribute__((__packed__)) ElfCompressionHeader
+{
+    ElfCompressionType type;
+    uint32_t reserved;
+    uint64_t size;
+    uint64_t addralign;
 };
 
 struct __attribute__((__packed__)) ElfProgramHeader
@@ -149,6 +173,10 @@ public:
     const char * end() const { return mapped + elf_size; }
     size_t size() const { return elf_size; }
 
+    /// Contents of the named sections, in order; an absent section is an empty view. SHF_COMPRESSED sections (zlib, zstd)
+    /// are decompressed together and kept for the lifetime of this object. nullopt if any of them cannot be read.
+    std::optional<std::vector<std::string_view>> getSectionsData(std::span<const char * const> names) const;
+
     /// Obtain build id from SHT_NOTE of section headers (fallback to PT_NOTES section of program headers).
     /// Return empty string if does not exist.
     /// The string is returned in binary. Note that "readelf -n ./clickhouse-server" prints it in hex.
@@ -169,7 +197,13 @@ private:
     const char * section_names = nullptr;
     size_t section_names_size = 0; // bytes available starting at `section_names`, for bounds checking
 
+    mutable std::mutex decompression_mutex;
+    /// By section index.
+    mutable std::unordered_map<size_t, Memory<>> decompressed_sections TSA_GUARDED_BY(decompression_mutex);
+    mutable std::unordered_set<size_t> unreadable_sections TSA_GUARDED_BY(decompression_mutex);
+
     void init(const char * data, size_t size, const std::string & path_);
+    bool decompressSections(const std::vector<size_t> & indices) const TSA_REQUIRES(decompression_mutex);
 };
 
 }

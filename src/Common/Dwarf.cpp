@@ -19,6 +19,8 @@
 /** This file was edited for ClickHouse.
   */
 
+#include "config.h"
+
 #include <cstring>
 
 #include <Common/Elf.h>
@@ -98,7 +100,6 @@
 #define DW_AT_str_offsets_base 0x72
 #define DW_AT_addr_base 0x73
 #define DW_AT_rnglists_base 0x74
-#define DW_AT_loclists_base 0x8c
 #define DW_AT_GNU_ranges_base 0x2132
 #define DW_AT_GNU_addr_base 0x2133
 
@@ -146,18 +147,32 @@ namespace ErrorCodes
 
 Dwarf::Dwarf(const std::shared_ptr<Elf> & elf)
     : elf_(elf)
-    , abbrev_(getSection(".debug_abbrev"))
-    , addr_(getSection(".debug_addr"))
-    , aranges_(getSection(".debug_aranges"))
-    , info_(getSection(".debug_info"))
-    , line_(getSection(".debug_line"))
-    , line_str_(getSection(".debug_line_str"))
-    , loclists_(getSection(".debug_loclists"))
-    , ranges_(getSection(".debug_ranges"))
-    , rnglists_(getSection(".debug_rnglists"))
-    , str_(getSection(".debug_str"))
-    , str_offsets_(getSection(".debug_str_offsets"))
 {
+    static constexpr const char * names[] = {".debug_abbrev", ".debug_addr", ".debug_aranges", ".debug_info", ".debug_line",
+        ".debug_line_str", ".debug_ranges", ".debug_rnglists", ".debug_str", ".debug_str_offsets"};
+    std::string_view * const sections[] = {&abbrev_, &addr_, &aranges_, &info_, &line_, &line_str_, &ranges_, &rnglists_, &str_, &str_offsets_};
+
+#if USE_FUZZING_MODE
+    /// Under libFuzzer's RSS limit, decompressing the debug info would turn every finding into an out-of-memory report.
+    for (const char * name : names)
+    {
+        if (auto section = elf->findSectionByName(name); section && (section->header.flags & SectionHeaderFlag::COMPRESSED))
+        {
+            elf_ = nullptr;
+            return;
+        }
+    }
+#endif
+
+    auto data = elf->getSectionsData(names);
+    if (!data)
+    {
+        elf_ = nullptr;
+        return;
+    }
+    for (size_t i = 0; i < std::size(names); ++i)
+        *sections[i] = (*data)[i];
+
     // Optional sections:
     //  - debugAranges_: for fast address range lookup.
     //     If missing .debug_info can be used - but it's much slower (linear
@@ -181,7 +196,6 @@ Dwarf::Dwarf(const std::shared_ptr<MachO> & macho)
     , info_(getSection(".debug_info"))
     , line_(getSection(".debug_line"))
     , line_str_(getSection(".debug_line_str"))
-    , loclists_(getSection(".debug_loclists"))
     , ranges_(getSection(".debug_ranges"))
     , rnglists_(getSection(".debug_rnglists"))
     , str_(getSection(".debug_str"))
@@ -474,30 +488,17 @@ bool Dwarf::Section::next(std::string_view & chunk)
     return true;
 }
 
+#if defined(OS_DARWIN)
 std::string_view Dwarf::getSection(const char * name) const
 {
-#if defined(OS_DARWIN)
-    if (macho_)
-    {
-        auto section = macho_->findSectionByName(name);
-        if (!section)
-            return {};
-        return {section->begin(), section->size()};
-    }
-#endif
-
-    if (!elf_)
+    if (!macho_)
         return {};
-
-    std::optional<Elf::Section> elf_section = elf_->findSectionByName(name);
-    if (!elf_section)
+    auto section = macho_->findSectionByName(name);
+    if (!section)
         return {};
-
-    if (elf_section->header.flags & SectionHeaderFlag::COMPRESSED)
-        return {};
-
-    return { elf_section->begin(), elf_section->size()};
+    return {section->begin(), section->size()};
 }
+#endif
 
 // static
 bool Dwarf::readAbbreviation(std::string_view & section, DIEAbbreviation & abbr)
@@ -731,17 +732,9 @@ Dwarf::Attribute Dwarf::readAttribute(const CompilationUnit & cu,
             return {spec, die, *cu.rnglists_base + offset};
         }
 
-        case DW_FORM_loclistx: {
-            auto index = readULEB(info);
-            if (!cu.loclists_base.has_value())
-            {
-                return {spec, die, 0ULL};
-            }
-            const uint64_t offset_size = cu.is64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
-            auto sp = loclists_.substr(*cu.loclists_base + index * offset_size);
-            auto offset = readOffset(sp, cu.is64Bit);
-            return {spec, die, *cu.loclists_base + offset};
-        }
+        case DW_FORM_loclistx:
+            /// Location lists are never read, so the index is not resolved.
+            return {spec, die, readULEB(info)};
 
         case DW_FORM_data16:
             return {spec, die, readBytes(info, 16)};
@@ -846,9 +839,6 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
                 case DW_AT_addr_base:
                 case DW_AT_GNU_addr_base:
                     cu.addr_base = std::get<uint64_t>(attr.attr_value);
-                    break;
-                case DW_AT_loclists_base:
-                    cu.loclists_base = std::get<uint64_t>(attr.attr_value);
                     break;
                 case DW_AT_rnglists_base:
                 case DW_AT_GNU_ranges_base:

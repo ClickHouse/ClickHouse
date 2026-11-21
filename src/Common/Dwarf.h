@@ -275,9 +275,6 @@ private:
         // The beginning of the CU's contribution to .debug_addr
         std::optional<uint64_t> addr_base; // DW_AT_addr_base (DWARF 5)
         // The beginning of the offsets table (immediately following the
-        // header) of the CU's contribution to .debug_loclists
-        std::optional<uint64_t> loclists_base; // DW_AT_loclists_base (DWARF 5)
-        // The beginning of the offsets table (immediately following the
         // header) of the CU's contribution to .debug_rnglists
         std::optional<uint64_t> rnglists_base; // DW_AT_rnglists_base (DWARF 5)
         // Points to the first string offset of the compilation unit's
@@ -461,8 +458,10 @@ private:
     using AttributeValue = std::variant<uint64_t, std::string_view>;
     AttributeValue readAttributeValue(std::string_view & sp, uint64_t form, bool is64_bit) const;
 
-    // Get an ELF section by name, return true if found
+#if defined(OS_DARWIN)
+    // Get a Mach-O section by name, empty if not found
     std::string_view getSection(const char * name) const;
+#endif
 
     [[nodiscard]] CompilationUnit getCompilationUnit(uint64_t offset) const;
     // Finds the Compilation Unit starting at offset.
@@ -488,7 +487,6 @@ private:
     std::string_view info_; // .debug_info                         /// NOLINT
     std::string_view line_; // .debug_line                         /// NOLINT
     std::string_view line_str_; // .debug_line_str (DWARF 5)       /// NOLINT
-    std::string_view loclists_; // .debug_loclists (DWARF 5)       /// NOLINT
     std::string_view ranges_; // .debug_ranges                     /// NOLINT
     std::string_view rnglists_; // .debug_rnglists (DWARF 5)       /// NOLINT
     std::string_view str_; // .debug_str                           /// NOLINT
