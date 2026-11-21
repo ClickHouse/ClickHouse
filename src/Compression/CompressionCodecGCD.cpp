@@ -201,7 +201,9 @@ UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW decompressDataForType(const char * source, 
     {
         if (dest + sizeof(T) > dest_end) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
-        unalignedStore<T>(dest, unalignedLoad<T>(source) * gcd_multiplier);
+        /// A type narrower than `int` is promoted to the signed `int`, where the product of two large values overflows.
+        using Product = std::conditional_t<(sizeof(T) < sizeof(unsigned)), unsigned, T>;
+        unalignedStore<T>(dest, static_cast<T>(static_cast<Product>(unalignedLoad<T>(source)) * static_cast<Product>(gcd_multiplier)));
 
         source += sizeof(T);
         dest += sizeof(T);
