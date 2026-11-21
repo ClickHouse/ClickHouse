@@ -1,0 +1,20 @@
+SELECT x FROM t WHERE a > 1	SELECT x FROM t WHERE a > -1	1	1
+SELECT x FROM t WHERE a IN (1, 2)	SELECT x FROM t WHERE a IN (1, -2)	1	1
+SELECT x FROM t WHERE a IN (1, 2)	SELECT x FROM t WHERE a IN (-1, +2)	1	1
+SELECT f(1, 2)	SELECT f(-1, - 2)	1	1
+SELECT x FROM t WHERE a = 1 AND b = 2	SELECT x FROM t WHERE a = -1 AND b = -2	1	1
+SELECT a / 2 FROM t	SELECT a / -2 FROM t	1	1
+SELECT a - 1 FROM t	SELECT a + 1 FROM t	0	0
+SELECT a - 1 FROM t	SELECT a 1 FROM t	0	0
+SELECT x - y FROM t	SELECT x y FROM t	0	0
+SELECT * - 1 FROM numbers(1)	SELECT * + 1 FROM numbers(1)	0	0
+SELECT t.* - 1 FROM t	SELECT t.* + 1 FROM t	0	0
+SELECT TOP 1 * - 1 FROM numbers(1)	SELECT TOP 1 * + 1 FROM numbers(1)	0	0
+SELECT TOP (1) * - 1 FROM numbers(1)	SELECT TOP (1) * + 1 FROM numbers(1)	0	0
+SELECT DISTINCT ON (number) * - 1 FROM numbers(1)	SELECT DISTINCT ON (number) * + 1 FROM numbers(1)	0	0
+SELECT TOP 1 WITH TIES * - 1 FROM numbers(1) ORDER BY number	SELECT TOP 1 WITH TIES * + 1 FROM numbers(1) ORDER BY number	0	0
+1
+SELECT x FROM t WHERE a > ? AND b IN (?..)
+SELECT x FROM t WHERE a > ?
+SELECT a - ? FROM t
+SELECT TOP ? * - ? FROM t
