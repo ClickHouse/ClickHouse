@@ -153,13 +153,7 @@ void PostgreSQLSource<T>::onStart()
         std::shared_ptr<T> new_tx;
         try
         {
-            auto & conn = connection_holder->get();
-            new_tx = std::make_shared<T>(conn);
-        }
-        catch (const pqxx::broken_connection &)
-        {
-            connection_holder->update();
-            new_tx = std::make_shared<T>(connection_holder->get());
+            new_tx = connection_holder->execWithReconnect([](pqxx::connection & conn) { return std::make_shared<T>(conn); });
         }
         catch (...)
         {

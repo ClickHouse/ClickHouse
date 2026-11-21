@@ -141,10 +141,13 @@ ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     auto connection_holder = pool_->get();
 
     if (table_or_query.isQuery())
-        return doQueryResultStructure(connection_holder->get(), table_or_query.getQuery(), use_nulls);
+        return connection_holder->execWithReconnect(
+            [&](pqxx::connection & connection) { return doQueryResultStructure(connection, table_or_query.getQuery(), use_nulls); });
 
-    auto columns_info = fetchPostgreSQLTableStructure(
-            connection_holder->get(), table_or_query.getTableName(), schema, use_nulls).physical_columns;
+    auto columns_info = connection_holder->execWithReconnect([&](pqxx::connection & connection)
+    {
+        return fetchPostgreSQLTableStructure(connection, table_or_query.getTableName(), schema, use_nulls).physical_columns;
+    });
 
     if (!columns_info)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
@@ -316,19 +319,18 @@ public:
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         if (!inserter)
         {
-            if (on_conflict.empty())
+            /// Nothing is sent before the inserter is created, so it is safe to retry its creation.
+            inserter = connection_holder->execWithReconnect([&](pqxx::connection & connection) -> std::unique_ptr<Inserter>
             {
-                inserter = std::make_unique<StreamTo>(connection_holder->get(),
-                        remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
-                                                    : pqxx::table_path({remote_table_schema, remote_table_name}), block.getNames());
-            }
-            else
-            {
-                inserter = std::make_unique<PreparedInsert>(connection_holder->get(),
+                if (on_conflict.empty())
+                    return std::make_unique<StreamTo>(connection,
+                            remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
+                                                        : pqxx::table_path({remote_table_schema, remote_table_name}), block.getNames());
+                return std::make_unique<PreparedInsert>(connection,
                         remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
                                                     : pqxx::table_path({remote_table_schema, remote_table_name}),
                         block.getNames(), on_conflict);
-            }
+            });
         }
 
         const auto columns = block.getColumns();

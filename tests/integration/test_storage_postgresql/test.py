@@ -1924,6 +1924,76 @@ def test_postgres_strict_query_local_only_column(started_cluster):
     started_cluster.postgres_conn.commit()
 
 
+def test_pooled_connection_dropped_by_server(started_cluster):
+    """A connection idle in the pool can be closed by the server (e.g. on restart), and libpq notices it
+    only on the next query. The first query after that must reconnect instead of failing.
+    https://github.com/ClickHouse/ClickHouse/issues/62709
+    """
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=False
+    )
+    cursor = conn.cursor()
+    database_name = "dropped_pooled_connection"
+    cursor.execute(f"DROP DATABASE IF EXISTS {database_name}")
+    cursor.execute(f"CREATE DATABASE {database_name}")
+    db_conn = get_postgres_conn(
+        started_cluster.postgres_ip,
+        started_cluster.postgres_port,
+        database=True,
+        database_name=database_name,
+    )
+    db_conn.cursor().execute("CREATE TABLE test_table (key integer, value integer)")
+    db_conn.close()
+
+    node1.query(
+        f"""
+        CREATE TABLE test.pg_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='test_table')
+        """
+    )
+    node1.query(
+        f"CREATE DATABASE pg_database ENGINE = PostgreSQL('postgres1:5432', '{database_name}', 'postgres', '{pg_pass}')"
+    )
+
+    def drop_server_connections():
+        backends = (
+            f"FROM pg_stat_activity WHERE datname = '{database_name}' "
+            "AND backend_type = 'client backend' AND pid <> pg_backend_pid()"
+        )
+        # Termination is asynchronous: wait until the backends are gone. Terminate again on each
+        # iteration in case a background task of ClickHouse has connected in the meantime.
+        for _ in range(100):
+            cursor.execute(f"SELECT pg_terminate_backend(pid) {backends}")
+            cursor.execute(f"SELECT count(*) {backends}")
+            if cursor.fetchone()[0] == 0:
+                return
+            time.sleep(0.1)
+        raise AssertionError("the server connections were not terminated")
+
+    try:
+        # Put connections into the pools of the table and the database.
+        node1.query("INSERT INTO test.pg_table SELECT number, number FROM numbers(10)")
+        assert node1.query("SELECT count() FROM test.pg_table") == "10\n"
+        assert node1.query("SELECT count() FROM pg_database.test_table") == "10\n"
+
+        drop_server_connections()
+        node1.query("INSERT INTO test.pg_table SELECT number, number FROM numbers(10)")
+
+        drop_server_connections()
+        assert node1.query("SELECT count() FROM test.pg_table") == "20\n"
+
+        drop_server_connections()
+        assert node1.query("SHOW TABLES FROM pg_database") == "test_table\n"
+
+        drop_server_connections()
+        assert node1.query("SELECT count() FROM pg_database.test_table") == "20\n"
+    finally:
+        node1.query("DROP DATABASE IF EXISTS pg_database")
+        node1.query("DROP TABLE IF EXISTS test.pg_table")
+        cursor.execute(f"DROP DATABASE {database_name} WITH (FORCE)")
+        conn.close()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
