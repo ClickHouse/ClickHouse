@@ -110,8 +110,10 @@
                 "reference/statements/create/masking-policy",
                 "reference/statements/create/function",
                 "reference/statements/create/handler",
+                "reference/statements/create/skipping-index",
                 "reference/statements/create/named-collection",
                 "reference/statements/create/quota",
+                "reference/statements/create/resource",
                 "reference/statements/create/role",
                 "reference/statements/create/row-policy",
                 "reference/statements/create/settings-profile",
@@ -127,7 +129,8 @@
                 },
                 "reference/statements/create/token",
                 "reference/statements/create/user",
-                "reference/statements/create/view"
+                "reference/statements/create/view",
+                "reference/statements/create/workload"
               ]
             },
             "reference/statements/delete",
