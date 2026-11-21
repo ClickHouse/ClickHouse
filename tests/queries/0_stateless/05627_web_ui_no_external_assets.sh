@@ -20,10 +20,11 @@ do
     echo "${html}" | grep -n -E 'cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|integrity=' ||:
 done
 
-# The rewritten links point to the embedded copies.
-${CLICKHOUSE_CURL} -sS "${URL}/binary" | grep -oE '"/js/leaflet\.(js|css)"'
-${CLICKHOUSE_CURL} -sS "${URL}/jemalloc" | grep -oE '"/js/uplot(\.min\.css|\.js)"'
-${CLICKHOUSE_CURL} -sS "${URL}/dashboard" | grep -oE '"/js/(uplot|lz-string)\.js"'
+# The rewritten links point to the embedded copies, relative to the page (so that they also work behind a
+# reverse proxy that exposes the server under a path prefix).
+${CLICKHOUSE_CURL} -sS "${URL}/binary" | grep -oE '"\./js/leaflet\.(js|css)"'
+${CLICKHOUSE_CURL} -sS "${URL}/jemalloc" | grep -oE '"\./js/uplot(\.min\.css|\.js)"'
+${CLICKHOUSE_CURL} -sS "${URL}/dashboard" | grep -oE '"\./js/(uplot|lz-string)\.js"'
 
 # The embedded copies are served.
 ${CLICKHOUSE_CURL} -sS "${URL}/js/leaflet.js" | grep -oF 'Leaflet 1.9.4' | head -n1

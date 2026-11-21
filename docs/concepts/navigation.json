@@ -274,6 +274,7 @@
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/notebook",
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/color-coding",
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/pinned-columns",
+                    "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/embedding",
                     "concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql/result-shaping"
                   ]
                 },

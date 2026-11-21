@@ -21,7 +21,7 @@ echo "--- test 4: unknown coding (compress) -> no Content-Encoding ---"
 ${CLICKHOUSE_CURL} -sS -I -H "Accept-Encoding: compress" "${BASE_URL}/play" | grep -oF 'Content-Encoding:' || echo "no Content-Encoding (expected)"
 
 echo "--- test 5: unknown coding (compress) body is valid uncompressed HTML ---"
-${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: compress" "${BASE_URL}/play" | grep -o -F 'clickhouse.com'
+${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: compress" "${BASE_URL}/play" | grep -o -F '<title>ClickHouse Query</title>'
 
 echo "--- test 6: body is valid uncompressed HTML (identity) ---"
-${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: identity" "${BASE_URL}/play" | grep -o -F 'clickhouse.com'
+${CLICKHOUSE_CURL} -sS -H "Accept-Encoding: identity" "${BASE_URL}/play" | grep -o -F '<title>ClickHouse Query</title>'
