@@ -1,0 +1,15 @@
+ <clickhouse>
+    <profiles>
+        <default>
+            <!-- The generated deletes must wait for their mutation whatever the profile says:
+                 `test_bulk_write_command_reply_counts_are_truthful` checks it. -->
+            <lightweight_deletes_sync>0</lightweight_deletes_sync>
+        </default>
+    </profiles>
+
+     <users>
+         <default>
+             <password>123</password>
+         </default>
+     </users>
+ </clickhouse>

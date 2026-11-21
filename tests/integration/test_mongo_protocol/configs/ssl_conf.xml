@@ -1,0 +1,14 @@
+<clickhouse>
+    <openSSL>
+        <server>
+            <!-- The key and the certificate of `helpers/fake_cert.pem`; the client does not verify them. -->
+            <certificateFile>/etc/clickhouse-server/config.d/fake_cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/fake_cert.pem</privateKeyFile>
+            <verificationMode>none</verificationMode>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+    </openSSL>
+</clickhouse>

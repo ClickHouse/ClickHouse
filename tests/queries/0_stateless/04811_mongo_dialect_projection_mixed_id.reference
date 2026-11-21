@@ -1,0 +1,18 @@
+-- find: an inclusion may exclude _id
+alpha
+beta
+alpha	30
+beta	40
+1	alpha	30
+2	beta	40
+-- find: any other exclusion inside an inclusion is an error
+Code: 36. A projection must not mix inclusion and exclusion of fields, except an exclusion of '_id'
+Code: 36. A projection must not mix inclusion and exclusion of fields, except an exclusion of '_id'
+-- $project: an inclusion may exclude _id
+alpha
+beta
+1	alpha
+2	beta
+-- $project: any other exclusion inside an inclusion is an error
+Code: 36. The argument of '$project' must not mix inclusion and exclusion of fields, except an exclusion of '_id'
+Code: 36. The argument of '$project' must not mix inclusion and exclusion of fields, except an exclusion of '_id'

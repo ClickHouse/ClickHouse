@@ -1,0 +1,30 @@
+-- $size of a Dynamic in a filter, short_circuit_function_evaluation = enable
+{"id":2}
+{"id":5}
+{"id":3}
+-- $size of a Dynamic in an expression, short_circuit_function_evaluation = enable
+{"n":2}
+{"n":2}
+{"n":0}
+{"n":1}
+{"n":2}
+{"n":0}
+{"n":1}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- $size of a Dynamic in a filter, short_circuit_function_evaluation = disable
+{"id":2}
+{"id":5}
+{"id":3}
+-- $size of a Dynamic in an expression, short_circuit_function_evaluation = disable
+{"n":2}
+{"n":2}
+{"n":0}
+{"n":1}
+{"n":2}
+{"n":0}
+{"n":1}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+-- a dot in a field name of an inserted document
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+{"a.b":2}

@@ -1,0 +1,45 @@
+-- a variable and a field of the same name stay apart
+{"r":[11,12]}
+-- a field with the prefix of the generated names cannot be referred to
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- a string that is not a field path is still a value
+{"r":"__mongo_value"}
+1	10	[1,2]	10	4
+-- $size takes a number
+{"id":1}
+{"id":2}
+{"id":1}
+{"id":2}
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+1	[7]
+2	[7,8]
+-- $options next to a BSON regular expression
+{"id":1}
+{"id":1}
+{"id":2}
+-- the legacy form of a BSON regular expression, as the wire protocol passes it on
+{"id":1}
+{"id":1}
+(BAD_ARGUMENTS)
+-- the negated match deletes only the document that does not match
+1	Alpha
+-- options in both places, and options that are not a string
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+1	Alpha

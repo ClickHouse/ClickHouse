@@ -1,0 +1,34 @@
+-- find projections
+{"label":"a","ref":7,"total":8,"lit":"$a"}
+{"id":1,"x":14}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"x":4}
+-- $switch without a default
+{"r":"matched"}
+{"r":"matched"}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"r":"one"}
+{"r":null}
+{"r":1}
+{"r":2}
+-- booleans in numeric accumulators
+{"_id":null,"s":0,"a":null,"p":null,"q":null,"n":3,"m":1.5,"c":2}
+-- domains of $divide and $sqrt
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"d":3.5,"r":4}
+-- integers into a Bool column
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+(UNKNOWN_ELEMENT_OF_ENUM)
+0
+1	true	[true]
+2	true	[false]
+3	true	[false,true]
+4	true	[]

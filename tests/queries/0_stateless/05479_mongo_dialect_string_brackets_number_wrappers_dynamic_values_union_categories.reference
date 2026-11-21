@@ -1,0 +1,39 @@
+-- type brackets
+{"id":1}
+{"id":2}
+{"id":1}
+{"id":1}
+{"id":2}
+{"id":2}
+1	1
+2	0
+-- $numberInt
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+{"id":1}
+2
+-- Dynamic
+{"_id":null,"s":3.5,"a":1.1666666666666667,"p":0.8498365855987975,"n":1.0408329997330665}
+{"_id":null,"s":0,"a":null}
+{"id":1,"t":null}
+{"id":2,"t":true}
+{"id":3,"t":false}
+{"id":4,"t":false}
+{"id":5,"t":true}
+{"id":6,"t":true}
+{"id":7,"t":true}
+{"id":2}
+{"id":5}
+{"id":6}
+{"id":7}
+1
+3
+4
+-- $unionWith
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"_id":null,"s":2}
+{"_id":null,"n":2}

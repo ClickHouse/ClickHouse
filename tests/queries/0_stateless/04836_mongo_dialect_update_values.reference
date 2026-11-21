@@ -1,0 +1,5 @@
+1	$other	beta
+1	['white','black']
+1	y	20
+1	z	20
+1	['white','black','$other']

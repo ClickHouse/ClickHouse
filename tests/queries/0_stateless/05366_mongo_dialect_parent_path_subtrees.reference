@@ -1,0 +1,19 @@
+find, inclusion and exclusion of a parent path
+alpha	30
+beta	40
+1	5
+2	6
+30	1
+40	2
+aggregate, $project, $unset and $set of a parent path
+alpha	30
+beta	40
+1	5
+2	6
+1	5	replaced
+2	6	replaced
+1	30	5	replaced
+2	40	6	replaced
+updateMany, $set of a parent path resets the leaves it does not name
+1	gamma	0	5
+2	beta	40	6
