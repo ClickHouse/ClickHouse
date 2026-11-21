@@ -15,6 +15,9 @@ struct SelectQueryInfo;
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
+class ITableExpressionNode;
+using TableExpressionNodePtr = std::shared_ptr<ITableExpressionNode>;
+
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
@@ -47,6 +50,13 @@ bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, co
 void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify);
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
+
+/** Rewrites `query_tree` as shipping it to parallel replicas does before `buildQueryTreeForShard` materializes
+  * subqueries: `rewriteJoinToGlobalJoin`, then `IN` and `JOIN` per `distributed_product_mode`, which never throws
+  * here for `deny`. Returns, unapplied, the tables `distributed_product_mode = 'local'` replaces.
+  */
+std::unordered_map<const ITableExpressionNode *, TableExpressionNodePtr>
+rewriteAsShippedToParallelReplicas(QueryTreeNodePtr query_tree, const ContextPtr & context);
 
 /** When a Distributed/parallel-replicas query is executed up to `WithMergeableState`, the shard's query tree has its
   * `ALIAS` columns inlined into their defining expressions. The shard header can then differ from the header the
