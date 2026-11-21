@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Processors/QueryPlan/Profiling/Capture/PlanIndexStats.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -142,64 +144,15 @@ struct HypotheticalProjection;
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-    enum class IndexType : uint8_t
-    {
-        None,
-        MinMax,
-        Partition,
-        PrimaryKey,
-        Skip,
-        PrimaryKeyExpand,
-        Statistics,
-        NonIntersectingSplit,
-    };
-
-    struct DistributedIndexStat
-    {
-        std::string address;
-        size_t num_parts_send;
-        size_t num_parts_received;
-        size_t num_granules_send;
-        size_t num_granules_received;
-        /// Note, probably need to include the following as well:
-        /// - search_algorithm
-    };
-
-    /// This is a struct with information about applied indexes.
-    /// Is used for introspection only, in EXPLAIN query.
-    struct IndexStat
-    {
-        IndexType type;
-        std::string name = {};
-        std::string part_name = {};
-        std::string description = {};
-        std::string condition = {};
-        std::vector<std::string> used_keys = {}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- filled from `KeyCondition::Description::used_keys` and `StatisticsPartPruner::getUsedColumns`
-        size_t num_parts_after;
-        size_t num_granules_after;
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-
-        VectorWithMemoryTracking<DistributedIndexStat> distributed = {};
-    };
-
-    using IndexStats = VectorWithMemoryTracking<IndexStat>;
+    using IndexType = PlanIndexType;
+    using DistributedIndexStat = PlanDistributedIndexStat;
+    using IndexStat = PlanIndexStat;
+    using IndexStats = PlanIndexStats;
 
     /// Information about used projections.
-    struct ProjectionStat
-    {
-        std::string name = {};
-        std::string description = {};
-        std::string condition = {};
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-        UInt64 selected_parts = 0;
-        UInt64 selected_ranges = 0;
-        UInt64 selected_marks = 0;
-        UInt64 selected_rows = 0;
-        UInt64 filtered_parts = 0;
-    };
+    using ProjectionStat = PlanProjectionStat;
 
-    /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = DequeWithMemoryTracking<ProjectionStat>;
+    using ProjectionStats = PlanProjectionStats;
 
     using ReadType = MergeTreeReadType;
 
@@ -334,6 +287,9 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
+
+    const IndexStats & getIndexStats() const;
+    const ProjectionStats & getProjectionStats() const;
     void describeProjections(JSONBuilder::JSONMap & map) const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
@@ -406,12 +362,14 @@ public:
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
         bool check_row_limits,
-        bool skip_ranges_analysis);
+        bool skip_ranges_analysis,
+        bool report_index_usage,
+        bool stop_at_first_match);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
-    /// or memoizing the result. The executed read analyzes again after its final mode is known.
+    /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits,
+    /// memoizing the result or reporting the index usage. The executed read analyzes again after its final mode is known.
     /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
     /// before `tryOptimizeTopK`, so the `use_query_condition_cache_for_top_k` gate is not yet known.
     AnalysisResultPtr selectRangesToReadForEstimation(bool allow_query_condition_cache_) const;
@@ -467,6 +425,8 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
     void requestOutputEachPartitionThroughSeparatePortForWindow();
+    /// Whether `requestOutputEachPartitionThroughSeparatePortForWindow` would apply, without applying it.
+    bool canOutputEachPartitionThroughSeparatePortForWindow() const;
     bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
@@ -477,6 +437,9 @@ public:
     bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
+    /// The last result of `selectRangesToReadForEstimation`. It is never the analysis of the executed read; the probe
+    /// plan of automatic parallel replicas estimates its joins from it to choose what this plan chose.
+    AnalysisResultPtr getAnalyzedResultForEstimation() const { return analyzed_result_for_estimation_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     /// Adopt from another read of the same table, for the same query, everything that
@@ -746,9 +709,16 @@ public:
     std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
         const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<size_t> & lazy_output_positions);
 
-    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
-    /// their part offsets. Reading a projection instead would address other rows.
-    bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
+    /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by their part
+    /// offsets. The read puts the parts it reads where the lazy read reads them from, when it builds its pipeline.
+    bool hasLazilyReadColumns() const { return !columns_read_lazily.empty(); }
+    /// The columns the lazy read reads for the rows of this one.
+    const Names & getColumnsReadLazily() const { return columns_read_lazily; }
+    /// Makes this read, which replaces `other` or serves some of its parts, put its parts where the lazy read of `other`
+    /// reads them from.
+    void shareLazyReadOf(const ReadFromMergeTree & other);
+    /// The rows the lazy read of the columns this read leaves out reads, or null without such a lazy read.
+    const LazyMaterializingRowsPtr & getLazyReadRows() const { return lazy_read_rows; }
 
     /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
     /// them. The columns the output header had keep their order.
@@ -804,6 +774,9 @@ public:
 private:
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
+
+    /// `ClusterProxy::getReplicasCountForParallelReplicas`, cached: it may read Keeper.
+    size_t getReplicasCountForParallelReading();
 
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
@@ -895,7 +868,8 @@ private:
         ReadType read_type,
         size_t max_streams,
         size_t min_marks_for_concurrent_read,
-        bool use_uncompressed_cache);
+        bool use_uncompressed_cache,
+        size_t min_marks_per_task_at_read_end = 0);
 
     Pipe readFromPool(
         RangesInDataParts parts_with_range,
@@ -1001,6 +975,7 @@ private:
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_for_estimation_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
 
@@ -1014,11 +989,15 @@ private:
     bool no_rows_needed = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    bool has_lazily_read_columns = false;
+
+    /// The rows the lazy read of the columns this read leaves out reads, and those columns. See `hasLazilyReadColumns`.
+    LazyMaterializingRowsPtr lazy_read_rows;
+    Names columns_read_lazily;
 
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+    std::optional<size_t> replicas_count_for_parallel_reading;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     std::shared_ptr<HypotheticalProjection> hypothetical_projection;
