@@ -4,6 +4,8 @@
 #include <Core/Types.h>
 #include <Poco/Dynamic/Var.h>
 
+#include <optional>
+
 namespace DataLake
 {
 
@@ -21,5 +23,7 @@ String icebergTypeToGlueType(const Poco::Dynamic::Var & type);
 /// `A.B.C.D` is a table "namespace".
 /// `E` is a table name.
 std::pair<std::string, std::string> parseTableName(const std::string & name);
+
+std::optional<std::pair<std::string, std::string>> tryParseTableName(const std::string & name);
 
 }

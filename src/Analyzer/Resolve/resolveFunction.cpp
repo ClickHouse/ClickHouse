@@ -541,7 +541,7 @@ bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const Identif
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, scope.allow_compound_table_identifier_qualification);
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -577,7 +577,7 @@ bool hasLateAttachedTableFilter(
     if (const auto * identifier = join_tree->as<IdentifierNode>())
     {
         auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier->getIdentifier(), scope.context);
+            identifier->getIdentifier(), scope.context, scope.allow_compound_table_identifier_qualification);
         resolved_table = std::move(resolve_result.resolved_identifier);
     }
 
@@ -1801,7 +1801,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context, replaced_storage).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    identifier, scope.context, scope.allow_compound_table_identifier_qualification, replaced_storage).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",

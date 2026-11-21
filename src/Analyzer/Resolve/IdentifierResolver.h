@@ -115,9 +115,12 @@ public:
         const IdentifierResolveScope & scope);
 
     /// `replaced_storage` is the view source that the caller swaps into the query tree after the analysis.
+    /// Checks access to the table metadata.
+    /// `allow_compound_table_identifier_qualification` is the scope's value; the context can forbid it as well.
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        bool allow_compound_table_identifier_qualification,
         const StoragePtr & replaced_storage = nullptr);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
@@ -131,7 +134,15 @@ public:
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
         const ContextPtr & context,
+        bool allow_compound_table_identifier_qualification,
         const StoragePtr & replaced_storage = nullptr);
+
+    /// True if the user may see at least one column of the table.
+    static bool hasAccessToTableMetadata(
+        const StoragePtr & storage,
+        const StorageID & storage_id,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context);
 
     /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
     static void checkAccessToTableMetadata(
@@ -146,6 +157,24 @@ public:
     static std::pair<String, String> tryGetTableNameHint(
         const Identifier & table_identifier,
         const ContextPtr & context);
+
+    /// E.g. "table with name item (an alias of store_sales)".
+    static String describeTableExpressionForErrorMessage(
+        const TableExpressionNodePtr & table_expression_node,
+        const AnalysisTableExpressionData & table_expression_data);
+
+    struct QualifyingTableExpression
+    {
+        TableExpressionNodePtr node;
+        const AnalysisTableExpressionData * data = nullptr;
+    };
+
+    /// The first table expression, in join tree order of `scope` and then of its parent scopes, whose alias,
+    /// table path, materialized CTE name, or database and table path is a proper prefix of `identifier`.
+    /// Returns an empty `node` when there is none.
+    static QualifyingTableExpression tryFindTableExpressionByQualifier(
+        const Identifier & identifier,
+        const IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,
@@ -176,13 +205,19 @@ public:
 private:
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
+    static std::shared_ptr<TableNode> tryResolveTableIdentifier(
+        const std::string & database_name,
+        const std::string & table_name,
+        const ContextPtr & context,
+        const StoragePtr & replaced_storage);
+
+    /// Returns an empty result when the table expression has no such column, subcolumn or Nested prefix.
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,
-        size_t identifier_column_qualifier_parts,
-        bool can_be_not_found = false);
+        size_t identifier_column_qualifier_parts);
 
     IdentifierResolveResult tryResolveIdentifierFromTableExpression(
         const IdentifierLookup & identifier_lookup,

@@ -355,6 +355,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         }
 
         context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));
+        /// The source query is stored in the dictionary definition: its table names are read as written.
+        context->setAllowCompoundTableIdentifierQualification(false);
 
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");

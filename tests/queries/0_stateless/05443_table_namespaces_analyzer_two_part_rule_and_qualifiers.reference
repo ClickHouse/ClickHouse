@@ -1,0 +1,25 @@
+-- two-part rule: a plain current database is not consulted for the dotted table
+Code: 60
+Code: 60
+-- two-part rule: both exist, the table of the specified database is read
+5
+-- two-part rule: only the table of the other database exists
+5
+5
+-- two-part rule: neither exists
+Code: 60
+-- two-part rule: the explicit database does not exist
+Code: 81
+-- multipart column qualifiers
+1	10
+2	20
+1	10
+2	20
+1
+2
+2	2000
+7
+-- multipart column qualifiers, setting off
+Code: 47
+Code: 47
+Code: 47

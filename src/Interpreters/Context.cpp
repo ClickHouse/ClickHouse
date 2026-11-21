@@ -1727,6 +1727,7 @@ ContextData::ContextData(const ContextData &o) :
     is_analyzing_background_expressions(o.is_analyzing_background_expressions),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
+    allow_compound_table_identifier_qualification(o.allow_compound_table_identifier_qualification),
     is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
@@ -1810,6 +1811,24 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
     if (!ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
     return createCopy(ptr);
+}
+
+ContextPtr Context::createCopyForStoredDefinition(const ContextPtr & other)
+{
+    if (!other->isCompoundTableIdentifierQualificationAllowed())
+        return other;
+
+    auto copy = createCopy(other);
+    copy->setAllowCompoundTableIdentifierQualification(false);
+    if (other->hasQueryContext())
+        other->getQueryContext()->holdStoredDefinitionContext(copy);
+    return copy;
+}
+
+void Context::holdStoredDefinitionContext(ContextPtr context)
+{
+    std::lock_guard lock(mutex);
+    stored_definition_contexts.push_back(std::move(context));
 }
 
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
@@ -3681,6 +3700,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            /// The view body is stored SQL: read table names in it as written.
+            view_context->setAllowCompoundTableIdentifierQualification(false);
             if (hasQueryContext())
                 getQueryContext()->addSQLSecurityOverriddenBody(table->getStorageID(), view_context, query);
             auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
@@ -3975,6 +3996,8 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    /// The view body is stored SQL: read table names in it as written.
+    view_context->setAllowCompoundTableIdentifierQualification(false);
     if (hasQueryContext())
         getQueryContext()->addSQLSecurityOverriddenBody(original_view->getStorageID(), view_context, query);
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);

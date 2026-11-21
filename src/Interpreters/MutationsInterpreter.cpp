@@ -130,6 +130,9 @@ void checkNoRowPolicyForSetOperands(
     AddDefaultDatabaseVisitor visitor(context, default_database);
     visitor.visit(ast);
 
+    /// Read table names as the mutation will when it is executed.
+    const auto stored_definition_context = Context::createCopyForStoredDefinition(context);
+
     const auto check = [&](const ASTPtr & node, const auto & self) -> void
     {
         if (const auto * function = node->as<ASTFunction>();
@@ -140,7 +143,9 @@ void checkNoRowPolicyForSetOperands(
             if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
             {
                 auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-                    Identifier(table_identifier->name_parts), context);
+                    Identifier(table_identifier->name_parts),
+                    stored_definition_context,
+                    /*allow_compound_table_identifier_qualification=*/ true);
                 if (!resolved.resolved_identifier && throw_if_unresolved)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
@@ -298,6 +303,9 @@ IsStorageTouched isStorageTouchedByMutations(
     std::function<void(const Progress & value)> check_operation_is_not_cancelled,
     std::function<void()> on_exception)
 {
+    /// Read table names in the commands as written, like `MutationsInterpreter` does.
+    context = Context::createCopyForStoredDefinition(context);
+
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
     static constexpr IsStorageTouched some_rows = {.any_rows_affected = true, .all_rows_affected = false};
@@ -706,6 +714,8 @@ MutationsInterpreter::MutationsInterpreter(
     /// Mutation source reads build a synthetic `SELECT` without a table expression,
     /// so parallel replicas must not be used for them.
     new_context->setSetting("enable_parallel_replicas", Field(0));
+    /// Mutation commands are stored SQL: read table names in them as written.
+    new_context->setAllowCompoundTableIdentifierQualification(false);
     /// A mutation runs locally, its set subqueries too.
     new_context->setSetting("make_distributed_plan", Field(0));
     /// `JOIN` -> `IN` in a set subquery would make the right side of the join the source of a new set,
@@ -2784,6 +2794,8 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
             for (const auto & name_resolution_settings : name_resolution_settings_variants)
             {
                 auto analysis_context = Context::createCopy(context);
+                /// Read table names in the mutation as written, like its execution does.
+                analysis_context->setAllowCompoundTableIdentifierQualification(false);
                 analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
                 analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
 

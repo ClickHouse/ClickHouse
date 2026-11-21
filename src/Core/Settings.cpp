@@ -10260,6 +10260,32 @@ Cloud default value: `1`.
 )", BETA, allow_experimental_database_iceberg, \
         {"25.8", false, false, "Added an alias for setting `allow_experimental_database_iceberg`"}, \
         {"24.12", false, false, "New setting. At the time the setting was named `allow_experimental_database_iceberg`, which is now an alias of it."}) \
+    DECLARE(Bool, allow_experimental_table_namespaces, false, R"(
+Allow namespace-aware resolution of dotted table identifiers.
+
+When the setting is enabled, a dotted table path such as `db.ns.table` in a table expression names table `ns.table`
+of database `db`, the same as the quoted name ``db.`ns.table` ``. Without the setting a query that reads from such
+a table expression is rejected with `INVALID_IDENTIFIER` and the quoted name has to be used. The check is made by
+the analyzer on the table expression as written. Statements that name their target table directly (`INSERT`,
+`CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) accept the path regardless of the setting. So do definitions
+that are stored (queries of views and materialized views, column expressions, `ALTER` commands, SQL functions):
+they keep the quoted name. Statements that the server rewrites before analysis, such as `SHOW ... WHERE`, may
+accept the path as well.
+When the setting is enabled, the analyzer additionally:
+- resolves a two-part name `a.b` in a table expression as table `b` of database `a`, and also as table `a.b`
+  of the current database if that database supports table namespaces (a data lake catalog) and `a` is not
+  `system`. It fails with `AMBIGUOUS_IDENTIFIER` when both exist and the user can access both;
+  if the user can access only one of them, that one is used. Database `a` must exist;
+  when it does not, the query fails with `UNKNOWN_DATABASE` even if the table `a.b` exists.
+  The current-database reading is not applied to SQL stored in definitions (view and materialized view
+  bodies, row policy conditions, mutations, column `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions,
+  `ClickHouse` dictionary source queries executed on the same server), where `a.b` is always table `b`
+  of database `a`, except in the query argument of table functions `view`, `viewIfPermitted`, `eval`,
+  `obfuscate` and `explain`;
+- lets a column qualifier span the parts of such a table name, so `ns.table.column` and
+  `db.ns.table.column` refer to a column of table `ns.table`.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New experimental setting for namespace-aware resolution of dotted table identifiers."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'unity'`
 

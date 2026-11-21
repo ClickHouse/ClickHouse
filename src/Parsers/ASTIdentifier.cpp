@@ -210,20 +210,22 @@ const String & ASTIdentifier::name() const
     return full_name;
 }
 
+static void formatIdentifierElement(WriteBuffer & ostr, const IAST::FormatSettings & settings, const String & elem_name)
+{
+    if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
+    {
+        ostr << special_delimiter_and_identifier->first;
+        settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+    }
+    else
+    {
+        settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
+    }
+}
+
 void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    auto format_element = [&](const String & elem_name)
-    {
-        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
-        {
-            ostr << special_delimiter_and_identifier->first;
-            settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
-        }
-        else
-        {
-            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
-        }
-    };
+    auto format_element = [&](const String & elem_name) { formatIdentifierElement(ostr, settings, elem_name); };
 
     if (compound())
     {
@@ -275,6 +277,13 @@ boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
     if (isParam())
         return nullptr;
 
+    if (name_parts.size() > 2)
+    {
+        if (const auto * table_identifier = dynamic_cast<const ASTTableIdentifier *>(this))
+            return make_intrusive<ASTTableIdentifier>(name_parts[0], table_identifier->getTableName());
+        return nullptr;
+    }
+
     if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
     if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
     return nullptr;
@@ -306,13 +315,29 @@ ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const Strin
 {
 }
 
+ASTTableIdentifier::ASTTableIdentifier(std::vector<String> && name_parts_, ASTs && name_params)
+    : ASTIdentifier(std::move(name_parts_), true, std::move(name_params))
+{
+}
+
 void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TableIdentifier");
     /// Mirror `ASTIdentifier`: serialize children when present so parametrised
     /// forms round-trip without loss.
     w.writeString("name", full_name);
-    if (name_parts.size() > 1)
+    if (name_parts.size() > 2)
+    {
+        /// A multipart table path is written folded: `db.ns.t` as (`db`, `ns.t`).
+        w.writeKey("name_parts");
+        auto & o = w.getOut();
+        o << '[';
+        writeJSONString(name_parts[0], o, w.getFormatSettings());
+        o << ',';
+        writeJSONString(getTableName(), o, w.getFormatSettings());
+        o << ']';
+    }
+    else if (name_parts.size() > 1)
     {
         w.writeKey("name_parts");
         auto & o = w.getOut();
@@ -361,11 +386,7 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTableIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
         name_parts = std::move(parts);
-        /// `ASTTableIdentifier` can only represent a one- or two-part table name
-        /// (`table` or `database.table`): `ParserCompoundIdentifier` rejects `parts.size() > 2`
-        /// for table identifiers. `getTableId`/`getDatabaseName` would otherwise mis-resolve a
-        /// longer name (treating `db.tbl.extra` as the single table `db`), formatting a different
-        /// target than execution uses. Reject the parser-impossible shape at the JSON boundary.
+        /// `writeJSON` always writes a table identifier as at most 2 parts.
         if (name_parts.size() > 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ASTTableIdentifier JSON 'name_parts' has {} parts, but a table identifier accepts at most 2 during AST JSON deserialization",
@@ -430,14 +451,31 @@ ASTPtr ASTTableIdentifier::clone() const
 
 StorageID ASTTableIdentifier::getTableId() const
 {
-    if (name_parts.size() == 2) return {name_parts[0], name_parts[1], uuid};
+    if (name_parts.size() >= 2) return {name_parts[0], getTableName(), uuid};
     return {{}, name_parts[0], uuid};
 }
 
 String ASTTableIdentifier::getDatabaseName() const
 {
-    if (name_parts.size() == 2) return name_parts[0];
+    if (name_parts.size() >= 2) return name_parts[0];
     return {};
+}
+
+String ASTTableIdentifier::getTableName() const
+{
+    if (name_parts.size() == 1)
+        return name_parts[0];
+    String table_name = name_parts[1];
+    for (size_t i = 2; i < name_parts.size(); ++i)
+        table_name += '.' + name_parts[i];
+    return table_name;
+}
+
+void ASTTableIdentifier::foldTablePath()
+{
+    if (name_parts.size() <= 2)
+        return;
+    name_parts = {name_parts[0], getTableName()};
 }
 
 ASTPtr ASTTableIdentifier::getTable() const
@@ -457,12 +495,14 @@ ASTPtr ASTTableIdentifier::getTable() const
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
         return make_intrusive<ASTIdentifier>(name_parts[0]);
     }
+    if (name_parts.size() > 2)
+        return make_intrusive<ASTIdentifier>(getTableName());
     return {};
 }
 
 ASTPtr ASTTableIdentifier::getDatabase() const
 {
-    if (name_parts.size() == 2)
+    if (name_parts.size() >= 2)
     {
         if (name_parts[0].empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
@@ -483,6 +523,29 @@ void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
 {
     hash_state.update(uuid);
     ASTIdentifier::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTTableIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (name_parts.size() <= 2)
+    {
+        ASTIdentifier::formatImplWithoutAlias(ostr, settings, state, frame);
+        return;
+    }
+    if (name_parts[0].empty() && !children.empty())
+        children[0]->format(ostr, settings, state, frame);
+    else
+        formatIdentifierElement(ostr, settings, name_parts[0]);
+    ostr << '.';
+    settings.writeIdentifier(ostr, getTableName(), /*ambiguous=*/false);
+}
+
+void foldTablePaths(IAST & ast)
+{
+    if (auto * table_identifier = ast.as<ASTTableIdentifier>())
+        table_identifier->foldTablePath();
+    for (const auto & child : ast.children)
+        foldTablePaths(*child);
 }
 
 String getIdentifierName(const IAST * ast)

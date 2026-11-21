@@ -32,6 +32,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         global_with_aliases = parent_scope->global_with_aliases;
         in_prewhere = parent_scope->in_prewhere;
         resolving_join_on_expression = parent_scope->resolving_join_on_expression;
+        allow_compound_table_identifier_qualification = parent_scope->allow_compound_table_identifier_qualification;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
@@ -45,6 +46,8 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
     {
         if (parent_scope && parent_scope->context)
             union_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
+        if (!allow_compound_table_identifier_qualification)
+            union_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
 
         context = union_node->getContext();
         in_prewhere = false;
@@ -53,6 +56,8 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
     {
         if (parent_scope && parent_scope->context)
             query_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
+        if (!allow_compound_table_identifier_qualification)
+            query_node->getMutableContext()->setAllowCompoundTableIdentifierQualification(false);
 
         context = query_node->getContext();
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]

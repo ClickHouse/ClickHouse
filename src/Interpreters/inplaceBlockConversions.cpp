@@ -233,6 +233,8 @@ struct ResolvedExpressionList
 ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
 {
     auto execution_context = Context::createCopy(context);
+    /// Column defaults are stored SQL: read table names in them as written.
+    execution_context->setAllowCompoundTableIdentifierQualification(false);
     auto expression = buildQueryTree(expr_list, execution_context);
 
     ColumnsDescription fake_column_descriptions{};

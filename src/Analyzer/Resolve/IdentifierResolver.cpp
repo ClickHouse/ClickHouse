@@ -1,4 +1,5 @@
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/Identifier.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -55,6 +56,7 @@ namespace Setting
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool semi_join_include_columns_from_both_sides;
     extern const SettingsBool anti_join_include_columns_from_both_sides;
 }
@@ -290,29 +292,102 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
 /// Resolve identifier functions implementation
 
+/// `a.b` is also read as table `a.b` of the current database only if that database has table namespaces.
+/// `system` always names the system database. The reading is also skipped when the context does not allow it
+/// (stored definitions).
+static bool canBeTablePathInCurrentDatabase(const Identifier & table_identifier, const ContextPtr & context)
+{
+    if (!context->isCompoundTableIdentifierQualificationAllowed())
+        return false;
+
+    if (table_identifier[0] == DatabaseCatalog::SYSTEM_DATABASE)
+        return false;
+
+    const String current_database = context->getCurrentDatabase();
+    if (current_database.empty())
+        return false;
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    return database && database->isDatalakeCatalog();
+}
+
+/// Temporary tables of the current session are always accessible.
+static bool isTableMetadataVisible(const TableNode & table_node, const ContextPtr & context)
+{
+    return !table_node.getTemporaryTableName().empty()
+        || IdentifierResolver::hasAccessToTableMetadata(
+            table_node.getStorage(), table_node.getStorageID(), table_node.getStorageSnapshot(), context);
+}
+
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
-    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool allow_compound_table_identifier_qualification,
+    const StoragePtr & replaced_storage)
 {
+    const bool allow_table_namespaces = context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
     size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1 || parts_size > 2)
+    if (parts_size < 1
+        || (parts_size > 2 && !allow_table_namespaces))
         throw Exception(ErrorCodes::INVALID_IDENTIFIER,
             "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
             table_identifier.getFullName());
 
-    std::string database_name;
-    std::string table_name;
-
-    if (table_identifier.isCompound())
+    std::shared_ptr<TableNode> result;
+    if (!table_identifier.isCompound())
     {
-        database_name = table_identifier[0];
-        table_name = table_identifier[1];
+        result = tryResolveTableIdentifier("", table_identifier[0], context, replaced_storage);
+    }
+    else if (!allow_table_namespaces)
+    {
+        result = tryResolveTableIdentifier(table_identifier[0], table_identifier[1], context, replaced_storage);
     }
     else
     {
-        table_name = table_identifier[0];
+        std::shared_ptr<TableNode> current_database_result;
+        if (allow_compound_table_identifier_qualification && canBeTablePathInCurrentDatabase(table_identifier, context))
+            current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context, replaced_storage);
+
+        IdentifierView table_identifier_view = table_identifier;
+        table_identifier_view.popFirst();
+        auto specified_database_result = tryResolveTableIdentifier(
+            table_identifier[0], std::string(table_identifier_view.getFullName()), context, replaced_storage);
+
+        if (current_database_result && specified_database_result)
+        {
+            const bool current_visible = isTableMetadataVisible(*current_database_result, context);
+            const bool specified_visible = isTableMetadataVisible(*specified_database_result, context);
+
+            /// A table the user cannot see does not make the name ambiguous.
+            if (current_visible && specified_visible)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Ambiguous table identifier '{}'", table_identifier.getFullName());
+            if (current_visible)
+                return current_database_result;
+            if (specified_visible)
+                return specified_database_result;
+
+            /// Neither is visible: deny the table the identifier means without table namespaces.
+            context->checkAccess(AccessType::SELECT, specified_database_result->getStorageID());
+            return specified_database_result;
+        }
+
+        result = current_database_result ? std::move(current_database_result) : std::move(specified_database_result);
     }
 
+    /// The standard check reports the table-level requirement without naming any column.
+    if (result && !isTableMetadataVisible(*result, context))
+        context->checkAccess(AccessType::SELECT, result->getStorageID());
+    return result;
+}
+
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const std::string & database_name,
+    const std::string & table_name,
+    const ContextPtr & context,
+    const StoragePtr & replaced_storage)
+{
     StorageID storage_id(database_name, table_name);
 
     /// The destination of `INSERT INTO FUNCTION ... RETURNING` is not in the database catalog,
@@ -371,7 +446,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
         // We try to get the table with the database name and the table name.
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
-            storage = database->tryGetTable(table_name, context);
+            storage = database->tryGetTable(storage_id.table_name, context);
         /// Adopt the replacement's identity so TableNode stays resolvable by UUID.
         if (storage)
             storage_id = storage->getStorageID();
@@ -431,17 +506,17 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
 /// check the planner performs later for the columns the query actually reads, and a query that
 /// can be executed can always be analyzed. Table expressions constructed programmatically
 /// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
-void IdentifierResolver::checkAccessToTableMetadata(
+bool IdentifierResolver::hasAccessToTableMetadata(
     const StoragePtr & storage,
     const StorageID & storage_id,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
     if (!storage_id.hasDatabase())
-        return;
+        return true;
 
     if (isInsertedDataOfTableFunction(storage, storage_id, context))
-        return;
+        return true;
 
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
@@ -475,7 +550,7 @@ void IdentifierResolver::checkAccessToTableMetadata(
     for (const auto & column : columns)
     {
         if (is_visible(column.name))
-            return;
+            return true;
 
         /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
         /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
@@ -486,7 +561,7 @@ void IdentifierResolver::checkAccessToTableMetadata(
         {
             if (!columns.getSubcolumnsWithExplicitGrant(
                      *access_rights, access_type, access_database, access_table_name, column.name).empty())
-                return;
+                return true;
         }
     }
     /// A grant on a virtual column alone is enough to read it. An `Alias` reports its target's virtual columns, so there
@@ -496,24 +571,30 @@ void IdentifierResolver::checkAccessToTableMetadata(
         if (is_visible(column.name)
             && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)
                 || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name)))
-            return;
+            return true;
 
-    /// Not a single column of the table is visible to the user. Report the denial through the
-    /// standard check, so the message and the query log get the table-level requirement without
-    /// naming any column.
-    context->checkAccess(AccessType::SELECT, storage_id);
+    return false;
+}
+
+void IdentifierResolver::checkAccessToTableMetadata(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context)
+{
+    /// Report the denial through the standard check, so the message names the table, not a column.
+    if (!hasAccessToTableMetadata(storage, storage_id, storage_snapshot, context))
+        context->checkAccess(AccessType::SELECT, storage_id);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool allow_compound_table_identifier_qualification,
+    const StoragePtr & replaced_storage)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context, replaced_storage))
-    {
-        /// Temporary tables of the current session are always accessible.
-        if (result->getTemporaryTableName().empty())
-            checkAccessToTableMetadata(result->getStorage(), result->getStorageID(), result->getStorageSnapshot(), context);
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, allow_compound_table_identifier_qualification, replaced_storage))
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
-    }
 
     return {};
 }
@@ -710,6 +791,41 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     return {};
 }
 
+namespace
+{
+
+/// Parts of the identifier consumed by the table name at `start`, "ns.t" eats 2 parts of
+/// ns.t.column, or 1 quoted dotted part. allow_multipart=0 keeps old single-part match
+size_t numberOfPartsMatchingTableName(const Identifier & identifier, size_t start, const String & table_name, bool allow_multipart)
+{
+    if (table_name.empty())
+        return 0;
+
+    if (!allow_multipart)
+        return (start < identifier.getPartsSize() && identifier[start] == table_name) ? 1 : 0;
+
+    const auto & parts = identifier.getParts();
+    size_t part = start;
+    size_t offset = 0;
+
+    while (part < parts.size())
+    {
+        const String & component = parts[part];
+        if (table_name.compare(offset, component.size(), component) != 0)
+            return 0;
+        offset += component.size();
+        ++part;
+        if (offset == table_name.size())
+            return part - start;
+        if (table_name[offset] != '.')
+            return 0;
+        ++offset;
+    }
+    return 0;
+}
+
+}
+
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
@@ -744,10 +860,12 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         if (table_node->isMaterializedCTE())
             materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
 
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
-        if (parts_size != 1 && parts_size != 2)
+        if (parts_size != 1 && parts_size != 2 && !allow_table_paths)
             throw Exception(ErrorCodes::INVALID_IDENTIFIER,
                 "Expected identifier '{}' to contain 1 or 2 parts to be resolved as table expression. In scope {}",
                 identifier_lookup.identifier.getFullName(),
@@ -757,8 +875,13 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
             return true;
         if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name)
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
-            return true;
+        if (parts_size > 1)
+        {
+            IdentifierView identifier_view = identifier;
+            identifier_view.popFirst();
+            if (identifier[0] == database_name && identifier_view.getFullName() == table_name)
+                return true;
+        }
         return false;
     }
 
@@ -768,7 +891,11 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 1)
         return false;
 
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    if (size_t consumed = numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths);
+        consumed > 0 && consumed < identifier.getPartsSize())
+        return true;
+
+    if (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias())
         return true;
 
     if (!materialized_cte_name.empty() && path_start == materialized_cte_name)
@@ -777,8 +904,12 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 2)
         return false;
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
-        return true;
+    if (!database_name.empty() && identifier[0] == database_name)
+    {
+        size_t consumed = numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths);
+        if (consumed > 0 && 1 + consumed < identifier.getPartsSize())
+            return true;
+    }
 
     return false;
 }
@@ -840,8 +971,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const TableExpressionNodePtr & table_expression_node,
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierResolveScope & scope,
-    size_t identifier_column_qualifier_parts,
-    bool can_be_not_found)
+    size_t identifier_column_qualifier_parts)
 {
     const auto & identifier = identifier_lookup.identifier;
 
@@ -882,31 +1012,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     bool clone_is_needed = true;
 
-    /// `table_expression_name` is the alias when the table expression has one, so a query that lost a comma
-    /// in the FROM clause - `FROM date_dim AS dt, store_sales item` - reports that `item.i_brand` cannot be
-    /// resolved from "table with name item" while a table named `item` does exist. Name the table the alias
-    /// actually refers to, which is what makes the mistake visible.
-    String table_expression_source = table_expression_data.table_expression_description;
-    if (!table_expression_data.table_expression_name.empty())
-    {
-        table_expression_source += " with name " + table_expression_data.table_expression_name;
-
-        /// A materialized CTE is a table node over a temporary table whose name is generated, so use the
-        /// name the user wrote instead of leaking `_materialized_cte_<name>_<rng>`.
-        String underlying_name = table_expression_data.table_name;
-        if (const auto * table_node = table_expression_node->as<TableNode>())
-            if (table_node->isMaterializedCTE())
-                underlying_name = table_node->getMaterializedCTE()->cte_name;
-
-        const bool name_is_an_alias = !underlying_name.empty()
-            && table_expression_data.table_expression_name != underlying_name
-            && table_expression_data.table_expression_name
-                != table_expression_data.database_name + "." + underlying_name;
-
-        if (name_is_an_alias)
-            table_expression_source += " (an alias of " + underlying_name + ")";
-    }
-
     if (!result_expression)
     {
         /// Here we try to create Nested from Array columns with the `identifier` prefix.
@@ -921,24 +1026,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     }
 
     if (!result_expression)
-    {
-        if (can_be_not_found)
-            return {};
-        std::unordered_set<Identifier> valid_identifiers;
-        TypoCorrection::collectTableExpressionValidIdentifiers(
-            identifier,
-            *table_expression_node,
-            table_expression_data,
-            valid_identifiers);
-
-        auto hints = TypoCorrection::collectIdentifierTypoHints(identifier, valid_identifiers);
-
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}{}. In scope {}",
-            identifier.getFullName(),
-            table_expression_source,
-            getHintsErrorMessageSuffix(hints),
-            scope.scope_node->formatASTForErrorMessage());
-    }
+        return {};
 
     if (clone_is_needed)
     {
@@ -998,10 +1086,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
-        if (parts_size != 1 && parts_size != 2)
+        if (parts_size != 1 && parts_size != 2 && !allow_table_paths)
             throw Exception(ErrorCodes::INVALID_IDENTIFIER,
                 "Expected identifier '{}' to contain 1 or 2 parts to be resolved as table expression. In scope {}",
                 identifier_lookup.identifier.getFullName(),
@@ -1010,9 +1100,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const auto & table_name = table_expression_data.table_name;
         const auto & database_name = table_expression_data.database_name;
 
-        if (parts_size == 1 && path_start == table_name)
+        if (numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths) == parts_size)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size > 1 && !database_name.empty() && path_start == database_name
+            && numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths) + 1 == parts_size)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
         /** A materialized CTE is stored under an internal temporary table name, but it has to be addressable
@@ -1028,6 +1119,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         }
 
+        /// longer identifiers fall through to CTE/parent-scope/catalog resolution, which handle table paths
         return {};
     }
 
@@ -1041,7 +1133,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         && identifier.getPartsSize() > 1)
     {
         const auto & table_name_compat = table_expression_data.table_name;
-        const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
+        const size_t table_name_parts = numberOfPartsMatchingTableName(identifier, 0, table_name_compat, allow_table_paths);
+        const bool prefix_matches_table_name = table_name_parts > 0 && table_name_parts < identifier.getPartsSize();
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
         /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
@@ -1057,21 +1150,31 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             prefix_matches_cte_name
                 = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
         }
-        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
+        /// An alias or a CTE name is a single qualifier part and takes priority over a table path (`ns.t`)
+        if (prefix_matches_alias || prefix_matches_cte_name)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
-                1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+                1 /*identifier_column_qualifier_parts*/);
             if (alias_prefix_result.resolved_identifier)
                 return alias_prefix_result;
+        }
+
+        if (prefix_matches_table_name)
+        {
+            auto table_prefix_result = tryResolveIdentifierFromStorage(
+                identifier_lookup, table_expression_node, table_expression_data, scope,
+                table_name_parts /*identifier_column_qualifier_parts*/);
+            if (table_prefix_result.resolved_identifier)
+                return table_prefix_result;
         }
     }
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
-       * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
-       * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
+       * 1. Try to bind identifier first part to column in table, if true get full identifier from table or return nothing.
+       * 2. Try to bind identifier first part to storage alias, then identifier first parts to table name (a table path takes as many parts as it has components), if true remove them and try to get the rest of the identifier from table or return nothing.
        * Storage alias works for subquery, table function as well.
-       * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
+       * 3. Try to bind identifier first parts to database name and table name, if true remove them and try to get the rest of the identifier from table or return nothing.
        */
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
@@ -1080,12 +1183,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
-          * In cases where the subcolumn cannot be found we want to have `nullptr` instead of exception.
-          * So, we set `can_be_not_found = true` to have an attempt to resolve the identifier from another table expression.
+          * When the subcolumn cannot be found, the lookup returns nothing, so another table expression is tried.
           * Example: `SELECT t.t from (SELECT 1 as t) AS a FULL JOIN (SELECT 1 as t) as t ON a.t = t.t;`
           * Initially, we will try to resolve t.t from `a` because `t.` is bound to `1 as t`. However, as it is not a nested column, we will need to resolve it from the second table expression.
           */
-        auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+        auto lookup_result = tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
         if (lookup_result.resolved_identifier)
             return lookup_result;
     }
@@ -1096,71 +1198,34 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    /** The identifier first part can match a table name or an alias of one table expression and at the same
-      * time be the database name of some table expression in the scope. Then the identifier as a whole can be
-      * qualified with the table name or the alias, with the database name and the table name, or refer to
-      * another table expression from that database.
-      * Resolution with a single-part qualifier is attempted first, but it must be allowed to fail, so that the
-      * other interpretations are attempted next.
+    /** A qualifier that matches this table expression does not own the identifier: a miss returns nothing, so that
+      * a database-qualified reading, another table expression, or a parent scope is tried.
       * Example: SELECT db1.db1.id FROM db1.db1;
-      * Example: SELECT db1.tbl.id FROM db1.db1 JOIN db1.tbl USING (id);
-      * Example: SELECT db1.tbl.id FROM (SELECT 1 AS id) AS db1 JOIN db1.tbl USING (id);
-      * Parent scopes participate as well: resolution from a parent scope (a correlated identifier) is
-      * attempted only after the current scope returns no result, so an early exception here would make
-      * the outer interpretation unreachable.
       * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
-      * The fall-through is only valid when there is an actual database-and-table interpretation to try:
-      * some table expression in this scope or in a parent scope is the table `identifier[1]` inside the
-      * database `path_start`. Without such a candidate a failed lookup must throw as before; e.g. a
-      * two-part `db.x` against the table `db` with no table `x` in the database `db` must not fall
-      * through to a column literally named `db.x` of a sibling table expression.
-      * For a two-part identifier the database-and-table interpretation is the table expression itself,
-      * which is not a valid column expression, so an expression lookup must still throw
-      * (e.g. plain `db.db` selected from the table `db.db`). The only exception is the qualifier of
-      * a qualified matcher (`db.db.*`): it is resolved as an expression first, and that lookup must be
-      * allowed to fail so that the matcher can resolve the qualifier as a table expression next.
-      * The candidate check is evaluated lazily, only after a failed qualifier lookup, to avoid
-      * scanning the scope chain on the hot path of successful resolution.
       */
-    auto identifier_can_fall_through_to_database_and_table = [&]() -> bool
-    {
-        if (identifier.getPartsSize() == 2 && !identifier_lookup.is_matcher_qualifier)
-            return false;
+    /// An alias is a single qualifier part; a table path ("ns.t") consumes as many parts as it has components.
+    const bool prefix_matches_alias = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+    const size_t table_name_parts = numberOfPartsMatchingTableName(identifier, 0, table_name, allow_table_paths);
+    const bool prefix_matches_table_name = table_name_parts > 0 && table_name_parts < identifier.getPartsSize();
 
-        for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-        {
-            for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
-            {
-                if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
-                    && identifier[1] == other_table_expression_data.table_name)
-                    return true;
-            }
-        }
-
-        return false;
-    };
-
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    /// The alias is tried first, the table path only if the alias lookup finds nothing.
+    if (prefix_matches_alias)
     {
         auto lookup_result = tryResolveIdentifierFromStorage(
-            identifier_lookup,
-            table_expression_node,
-            table_expression_data,
-            scope,
-            1 /*identifier_column_qualifier_parts*/,
-            true /*can_be_not_found*/);
+            identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
         if (lookup_result.resolved_identifier)
             return lookup_result;
+    }
 
-        /// No other interpretation is possible: repeat the lookup to throw the proper exception.
-        if (!identifier_can_fall_through_to_database_and_table())
-            return tryResolveIdentifierFromStorage(
-                identifier_lookup,
-                table_expression_node,
-                table_expression_data,
-                scope,
-                1 /*identifier_column_qualifier_parts*/);
+    /// A one-part table name equal to the alias is the lookup above.
+    if (prefix_matches_table_name && !(prefix_matches_alias && table_name_parts == 1))
+    {
+        auto lookup_result = tryResolveIdentifierFromStorage(
+            identifier_lookup, table_expression_node, table_expression_data, scope, table_name_parts /*identifier_column_qualifier_parts*/);
+
+        if (lookup_result.resolved_identifier)
+            return lookup_result;
     }
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
@@ -1173,27 +1238,105 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 table_expression_node,
                 table_expression_data,
                 scope,
-                1 /*identifier_column_qualifier_parts*/,
-                true /*can_be_not_found*/);
+                1 /*identifier_column_qualifier_parts*/);
 
             if (lookup_result.resolved_identifier)
                 return lookup_result;
-
-            if (!identifier_can_fall_through_to_database_and_table())
-                return tryResolveIdentifierFromStorage(
-                    identifier_lookup,
-                    table_expression_node,
-                    table_expression_data,
-                    scope,
-                    1 /*identifier_column_qualifier_parts*/);
         }
     }
 
     if (identifier.getPartsSize() == 2)
         return {};
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
-        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
+    if (!database_name.empty() && path_start == database_name)
+    {
+        if (size_t consumed = numberOfPartsMatchingTableName(identifier, 1, table_name, allow_table_paths);
+            consumed > 0 && consumed + 1 < identifier.getPartsSize())
+            return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, consumed + 1 /*identifier_column_qualifier_parts*/);
+    }
+
+    return {};
+}
+
+String IdentifierResolver::describeTableExpressionForErrorMessage(
+    const TableExpressionNodePtr & table_expression_node,
+    const AnalysisTableExpressionData & table_expression_data)
+{
+    /// Name the table an alias refers to, so that a lost comma in `FROM date_dim AS dt, store_sales item`
+    /// is visible from "cannot be resolved from table with name item (an alias of store_sales)".
+    String table_expression_source = table_expression_data.table_expression_description;
+    if (table_expression_data.table_expression_name.empty())
+        return table_expression_source;
+
+    table_expression_source += " with name " + table_expression_data.table_expression_name;
+
+    /// Use the CTE name instead of the generated `_materialized_cte_<name>_<rng>` of a materialized CTE.
+    String underlying_name = table_expression_data.table_name;
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        if (table_node->isMaterializedCTE())
+            underlying_name = table_node->getMaterializedCTE()->cte_name;
+
+    const bool name_is_an_alias = !underlying_name.empty()
+        && table_expression_data.table_expression_name != underlying_name
+        && table_expression_data.table_expression_name != table_expression_data.database_name + "." + underlying_name;
+
+    if (name_is_an_alias)
+        table_expression_source += " (an alias of " + underlying_name + ")";
+
+    return table_expression_source;
+}
+
+IdentifierResolver::QualifyingTableExpression IdentifierResolver::tryFindTableExpressionByQualifier(
+    const Identifier & identifier,
+    const IdentifierResolveScope & scope)
+{
+    const size_t parts_size = identifier.getPartsSize();
+    if (parts_size < 2)
+        return {};
+
+    const auto & path_start = identifier[0];
+
+    for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        TableExpressionNodePtr join_tree_node = current_scope->expression_join_tree_node;
+        if (!join_tree_node)
+            if (const auto * query_node = current_scope->scope_node->as<QueryNode>(); query_node && query_node->getJoinTreeNode())
+                join_tree_node = query_node->getJoinTreeNodeTyped();
+        if (!join_tree_node)
+            continue;
+
+        const bool allow_table_paths = current_scope->context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
+        for (const auto & table_expression_node : extractTableExpressions(join_tree_node))
+        {
+            auto it = current_scope->table_expression_node_to_data.find(table_expression_node);
+            if (it == current_scope->table_expression_node_to_data.end())
+                continue;
+
+            const auto & data = it->second;
+
+            bool matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+
+            if (!matches)
+            {
+                const size_t consumed = numberOfPartsMatchingTableName(identifier, 0, data.table_name, allow_table_paths);
+                matches = consumed > 0 && consumed < parts_size;
+            }
+
+            if (!matches)
+                if (const auto * table_node = table_expression_node->as<TableNode>())
+                    matches = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
+
+            if (!matches && !data.database_name.empty() && path_start == data.database_name)
+            {
+                const size_t consumed = numberOfPartsMatchingTableName(identifier, 1, data.table_name, allow_table_paths);
+                matches = consumed > 0 && consumed + 1 < parts_size;
+            }
+
+            if (matches)
+                return {table_expression_node, &data};
+        }
+    }
 
     return {};
 }
@@ -1279,9 +1422,12 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
 static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
-    const std::string & qualifier,
+    const Identifier & identifier,
     const IdentifierResolveScope & scope)
 {
+    const auto & qualifier = identifier.front();
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
     auto get_column_source = [](QueryTreeNodePtr resolved_identifier) -> TableExpressionNodePtr
     {
         while (const auto * function = resolved_identifier->as<FunctionNode>())
@@ -1323,7 +1469,7 @@ static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
         if (it == scope.table_expression_node_to_data.end())
             return false;
 
-        if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+        if (numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths) > 0)
             return true;
 
         if (const auto * table_node = source->as<TableNode>())
@@ -1397,7 +1543,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier.front(), scope))
+                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier, scope))
         {
             if (*qualifier_alias_side == JoinTableSide::Right)
                 resolve_result = identifier;
@@ -1724,8 +1870,8 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
 }
 
 /// With `database_qualified = false`, the qualifier is the first identifier part matched against
-/// aliases, table names and materialized CTE names. With `database_qualified = true`, the first two identifier parts are
-/// matched against the database and table names of the leaf table expressions (`db.table.column`);
+/// aliases, table names and materialized CTE names. With `database_qualified = true`, the database name and the parts the
+/// table name consumes are matched against the database and table names of the leaf table expressions (`db.table.column`);
 /// this binding is weaker and must not compete with a successful alias / table-name resolution,
 /// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
 static bool qualifierBindsToJoinSubtree(
@@ -1777,11 +1923,12 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
     if (database_qualified)
         return !it->second.database_name.empty() && it->second.database_name == qualifier
-            && it->second.table_name == identifier[1];
+            && numberOfPartsMatchingTableName(identifier, 1, it->second.table_name, allow_table_paths) > 0;
 
-    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+    if (numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths) > 0)
         return true;
 
     /// A materialized CTE is registered under its internal temporary table name;
@@ -2105,7 +2252,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier.front(), scope))
+                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier, scope))
         {
             resolved_side = qualifier_alias_side;
             resolved_identifier = (resolved_side == JoinTableSide::Left) ? left_resolved_identifier : right_resolved_identifier;
