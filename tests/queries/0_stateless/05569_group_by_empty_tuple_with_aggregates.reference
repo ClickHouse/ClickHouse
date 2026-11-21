@@ -1,0 +1,24 @@
+issue	0
+count	0
+tuple()	0
+two empty tuples	0
+aggregate in HAVING	1
+aggregate in ORDER BY	1
+totals	0
+
+totals	0
+subquery	1
+exists	1
+scalar	0
+non-empty	3
+keyed	0
+constant key	0
+cast	0
+grouping	0	3
+suppressed	0
+no aggregate, non-empty	1
+query tree	0
+several streams	0	0
+distributed	0
+distributed, non-empty	6
+grouping, distributed	0	6

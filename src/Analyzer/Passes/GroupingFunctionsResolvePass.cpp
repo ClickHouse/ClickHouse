@@ -21,6 +21,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/ValidationUtils.h>
 
 #include <ranges>
@@ -231,6 +232,18 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
                 query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node_typed.getNodes());
                 query_node_typed.setIsGroupByWithGroupingSets(false);
             }
+        }
+
+        /// `()` is the empty grouping set, not a constant key, so with aggregate functions `GROUP BY ()` is a query without `GROUP BY`.
+        if (!query_node_typed.isGroupByWithGroupingSets() && !query_node_typed.isGroupByWithRollup() && !query_node_typed.isGroupByWithCube()
+            && hasAggregateFunctionNodes(query_node) && !hasFunctionNode(query_node, "grouping"))
+        {
+            std::erase_if(query_node_typed.getGroupBy().getNodes(), [](const QueryTreeNodePtr & key)
+            {
+                const auto * constant = key->as<ConstantNode>();
+                const auto * source = constant && constant->hasSourceExpression() ? constant->getSourceExpression()->as<FunctionNode>() : nullptr;
+                return source && source->getFunctionName() == "tuple" && source->getArguments().getNodes().empty();
+            });
         }
 
         if (query_node_typed.isGroupByWithGroupingSets())
