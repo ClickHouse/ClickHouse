@@ -6,6 +6,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Operators.h>
@@ -17,6 +18,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Formats/FormatFactory.h>
@@ -42,10 +44,22 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
+
+/// The engine only reads files, and its tables are shared with every later caller.
+void setReadOnly(const StoragePtr & storage)
+{
+    if (!storage)
+        return;
+    auto * file = typeid_cast<StorageFile *>(storage.get());
+    if (!file)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A table of a Filesystem database is not a File storage: {}", storage->getName());
+    file->setReadOnly();
+}
 
 /// The archive and the path inside it a name resolves to through the archive path syntax
 /// (`archive.tar.zst::data.native`). The first part is empty if the name is a plain path in this
@@ -277,12 +291,15 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
             = query_context->getSettingsRef()[Setting::rename_files_after_processing].value
             == context_->getSettingsRef()[Setting::rename_files_after_processing].value;
 
-        return query_context->executeTableFunction(
+        auto storage = query_context->executeTableFunction(
             ast_function_ptr, table_function, rule_is_the_query_setting ? ContextPtr(query_context) : context_);
+        setReadOnly(storage);
+        return storage;
     }
 
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
+    setReadOnly(table_storage);
     if (table_storage && !renames_after_processing)
         return addTable(getCacheKey(name, context_), table_storage);
 

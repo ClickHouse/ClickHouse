@@ -3848,12 +3848,25 @@ private:
 };
 
 
+void StorageFile::throwIfReadOnly() const
+{
+    if (read_only)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
+}
+
+void StorageFile::checkInsertIsAllowed(ContextPtr) const
+{
+    throwIfReadOnly();
+}
+
 SinkToStoragePtr StorageFile::write(
     const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     bool /*async_insert*/)
 {
+    throwIfReadOnly();
+
     if (!use_table_fd && archive_info.has_value())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writing to archives is not supported");
 
@@ -4033,6 +4046,8 @@ void StorageFile::truncate(
     ContextPtr /* context */,
     TableExclusiveLockHolder &)
 {
+    throwIfReadOnly();
+
     if (is_path_with_globs)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't truncate table '{}' in readonly mode", getStorageID().getNameForLogs());
 
