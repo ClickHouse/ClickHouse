@@ -1,0 +1,54 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "580ae1f6-35ec-444a-9a34-623227d05f22",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1692789322627,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "identifier-field-ids" : [ 1 ],
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : true,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "data",
+      "required" : true,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "hive-conf-dir" : "/etc/hive/conf",
+    "write.merge.mode" : "merge-on-read",
+    "connector" : "iceberg",
+    "write.delete.mode" : "merge-on-read",
+    "catalog-database" : "test_db",
+    "write.upsert.enabled" : "true",
+    "catalog-type" : "hive",
+    "write.update.mode" : "merge-on-read",
+    "catalog-name" : "iceberg_hive_catalog"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

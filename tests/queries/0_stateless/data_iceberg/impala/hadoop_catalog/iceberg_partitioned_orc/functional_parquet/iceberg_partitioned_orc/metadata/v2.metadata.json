@@ -1,0 +1,66 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "ea1384cd-938f-4e85-86be-666434dedaaa",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/iceberg_partitioned_orc/functional_parquet/iceberg_partitioned_orc",
+  "last-updated-ms" : 1600952815220,
+  "last-column-id" : 3,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "user",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "action",
+      "required" : true,
+      "type" : "string"
+    } ]
+  },
+  "partition-spec" : [ {
+    "name" : "action",
+    "transform" : "identity",
+    "source-id" : 3,
+    "field-id" : 1000
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "action",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : 3506237933060603670,
+  "snapshots" : [ {
+    "snapshot-id" : 3506237933060603670,
+    "timestamp-ms" : 1600952815220,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1600952804995",
+      "added-data-files" : "20",
+      "added-records" : "20",
+      "changed-partition-count" : "3",
+      "total-records" : "20",
+      "total-data-files" : "20"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/iceberg_partitioned_orc/functional_parquet/iceberg_partitioned_orc/metadata/snap-3506237933060603670-1-02fb8198-e791-4d89-8afa-c75fb5443346.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1600952815220,
+    "snapshot-id" : 3506237933060603670
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1600952811299,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/iceberg_partitioned_orc/functional_parquet/iceberg_partitioned_orc/metadata/v1.metadata.json"
+  } ]
+}

@@ -1,0 +1,80 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "8dc6c024-06c2-4812-981f-8df7f0f07973",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_with_key_metadata",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1712590853544,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "write.merge.mode" : "merge-on-read",
+    "write.delete.mode" : "merge-on-read",
+    "bucketing_version" : "2",
+    "write.update.mode" : "merge-on-read",
+    "serialization.format" : "1",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler"
+  },
+  "current-snapshot-id" : 3079551887386250470,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 3079551887386250470,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 3079551887386250470,
+    "timestamp-ms" : 1712590853544,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "3",
+      "added-files-size" : "600",
+      "changed-partition-count" : "1",
+      "total-records" : "3",
+      "total-files-size" : "600",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_with_key_metadata/metadata/snap-3079551887386250470-1-64da0e56-efa3-4025-bef1-1047fdd9a2b0.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1712590853544,
+    "snapshot-id" : 3079551887386250470
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1712590842243,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_with_key_metadata/metadata/00000-b66acea3-39d8-4f9d-a326-0ce073f45944.metadata.json"
+  } ]
+}

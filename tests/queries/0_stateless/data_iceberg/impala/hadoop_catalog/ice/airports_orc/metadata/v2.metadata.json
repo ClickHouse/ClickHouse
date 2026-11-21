@@ -1,0 +1,99 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "6f36d4ad-321a-4359-87a0-fd9e31a034a7",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/airports_orc",
+  "last-updated-ms" : 1634575395550,
+  "last-column-id" : 7,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "iata",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 2,
+      "name" : "airport",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "city",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "state",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 5,
+      "name" : "country",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 6,
+      "name" : "lat",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "lon",
+      "required" : false,
+      "type" : "double"
+    } ]
+  },
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "last_modified_time" : "1634575394",
+    "numRows" : "0",
+    "rawDataSize" : "0",
+    "gc.enabled" : "TRUE",
+    "bucketing_version" : "2",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "numFilesErasureCoded" : "0",
+    "engine.hive.enabled" : "true",
+    "totalSize" : "101946",
+    "EXTERNAL" : "TRUE",
+    "write.format.default" : "orc",
+    "numFiles" : "1",
+    "table_type" : "ICEBERG"
+  },
+  "current-snapshot-id" : 4990977953383402321,
+  "snapshots" : [ {
+    "snapshot-id" : 4990977953383402321,
+    "timestamp-ms" : 1634575395550,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "3376",
+      "added-files-size" : "101946",
+      "changed-partition-count" : "1",
+      "total-records" : "3376",
+      "total-files-size" : "101946",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/airports_orc/metadata/snap-4990977953383402321-1-1ebf435e-7da7-41e7-bebf-eb3ebf1b1002.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1634575395550,
+    "snapshot-id" : 4990977953383402321
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1634575394783,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/airports_orc/metadata/v1.metadata.json"
+  } ]
+}

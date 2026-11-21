@@ -1,0 +1,108 @@
+trino_variant
+53	53
+2	true
+3	false
+4	42
+5	34
+6	-34
+7	1000
+8	-1234
+9	100000
+10	12345
+11	-12345
+12	10000000000
+13	14.3
+14	-14.3
+15	"hello"
+16	"impala"
+17	"context"
+18	"home"
+19	"mobile"
+20	"Alice"
+21	"iceberg"
+22	"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+23	"a\\t\\"\\\\\\u0000b"
+24	[1,2,3]
+25	[1,2,3,4,10]
+26	[]
+27	["iceberg","string"]
+28	[["string","iceberg"],["apple","banana"]]
+29	[["string","iceberg",34],[34,null],[],["string","iceberg"],34]
+30	[{"a":123456789,"c":"string"},{"a":123456789,"c":"string"},"iceberg",34]
+31	{"age":30,"name":"Alice"}
+32	{"active":true,"age":30,"name":"Alice"}
+33	{"page":"home","retries":3}
+34	{"data":{"items":[10,20,30]}}
+35	{"context":{"page":"home","retries":3},"device":"mobile","int_array":[1,2,3,4,10],"user":"Alice"}
+36	{"a\\"b":1,"c\\\\d":2,"e\\nf":3}
+37	{"a\\bb":10,"c\\fd":30,"e\\u0001f":20}
+38	{"f0":42,"f299":7}
+39	{}
+41	{"a":123456789,"c":["string","iceberg"]}
+50	3.14
+51	123456.789
+52	-123456789.987654321
+53	9876543210.123456789
+54	-10.11
+55	"2024-11-07"
+56	"1957-11-07"
+59	"2024-11-07 12:33:54.123456"
+60	"1957-11-07 12:33:54.123456789"
+Alice	30
+home	1
+31
+32
+trino_nested_variant
+1	scalars	42	[1,"a"]	{"k1":10,"k2":"x"}	{"age":30}	5	[7]
+2	objects/arrays	{"name":"Alice"}	[[1,2,3]]	{"obj":{"page":"home","retries":3}}	["iceberg","string"]	9	[{"k":1},null]
+iceberg_v3_spark_variant
+21	21
+1	{"a":1,"b":2}
+2	{"a":1,"b":2}
+3	{"a":1,"b":2,"c":3}
+4	{"a":{"x":2,"y":1},"b":0}
+5	{"a":1,"b":2,"c":3}
+6	{"B":2,"a":1}
+7	[{"a":1,"b":2},{"c":3,"d":4}]
+12	{"a":1,"b":2}
+13	{"a":1,"b":2}
+14	{}
+15	{"a":0,"z":{"y":{"x":[{"v":2,"w":1}]}}}
+16	{"a":1}
+20	{"a":7}
+21	[5,6]
+22	{"a":1,"b":2}
+9	1	300
+10	1	70000
+0	150	299	300
+hello	123456789012	1
+1	2024-01-02
+12
+iceberg_v3_variant_orc
+1	1	42
+2	1	"hello"
+3	1	{"age":30,"name":"Alice"}
+4	1	\N
+5	1	\N
+iceberg_v3_variant_avro
+1	1	42
+2	1	"hello"
+3	1	{"age":30,"name":"Alice"}
+4	1	\N
+5	1	\N
+iceberg_v3_variant_mixed
+1	1	42
+2	1	"hello"
+3	1	{"age":30,"name":"Alice"}
+4	1	\N
+5	1	\N
+1	1	42
+2	1	"hello"
+3	1	{"age":30,"name":"Alice"}
+4	1	\N
+5	1	\N
+6	2	42
+7	2	"hello"
+8	2	{"age":30,"name":"Alice"}
+9	2	\N
+10	2	\N

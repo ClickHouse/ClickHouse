@@ -1,0 +1,61 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "f575f129-24aa-41d0-ba95-029fd5aad53a",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_partitioned_position_deletes",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1660926675125,
+  "last-column-id" : 4,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "user",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "action",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "event_time",
+      "required" : false,
+      "type" : "timestamp"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "action",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "external.table.purge" : "TRUE",
+    "write.format.default" : "parquet",
+    "OBJCAPABILITIES" : "EXTREAD,EXTWRITE",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler"
+  },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

@@ -1,0 +1,51 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "ec1c2bce-1cc7-4449-be37-5fdc16d1233a",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_pos_and_multi_eq_ids",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1706016347276,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "identifier-field-ids" : [ 1, 2 ],
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "d",
+      "required" : true,
+      "type" : "date"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.parquet.compression-codec" : "zstd",
+    "write.upsert.enabled" : "true"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

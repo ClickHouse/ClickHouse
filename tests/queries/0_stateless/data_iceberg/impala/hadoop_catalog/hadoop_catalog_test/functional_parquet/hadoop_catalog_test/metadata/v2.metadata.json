@@ -1,0 +1,81 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "93723c31-c8f6-4af9-9a4e-fab24d6a141e",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/hadoop_catalog_test/functional_parquet/hadoop_catalog_test",
+  "last-updated-ms" : 1600170879287,
+  "last-column-id" : 4,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "user",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "action",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "event_time",
+      "required" : true,
+      "type" : "timestamptz"
+    } ]
+  },
+  "partition-spec" : [ {
+    "name" : "event_time_hour",
+    "transform" : "hour",
+    "source-id" : 4,
+    "field-id" : 1000
+  }, {
+    "name" : "action",
+    "transform" : "identity",
+    "source-id" : 3,
+    "field-id" : 1001
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "event_time_hour",
+      "transform" : "hour",
+      "source-id" : 4,
+      "field-id" : 1000
+    }, {
+      "name" : "action",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1001
+    } ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : 7412008513947276465,
+  "snapshots" : [ {
+    "snapshot-id" : 7412008513947276465,
+    "timestamp-ms" : 1600170879287,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1600170868953",
+      "added-data-files" : "20",
+      "added-records" : "20",
+      "changed-partition-count" : "3",
+      "total-records" : "20",
+      "total-data-files" : "20"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/hadoop_catalog_test/functional_parquet/hadoop_catalog_test/metadata/snap-7412008513947276465-1-2c2fa00b-eb20-460a-835b-d69b32560e21.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1600170879287,
+    "snapshot-id" : 7412008513947276465
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1600170874988,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/hadoop_catalog_test/functional_parquet/hadoop_catalog_test/metadata/v1.metadata.json"
+  } ]
+}
