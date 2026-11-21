@@ -200,6 +200,10 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+if (TARGET ch_contrib::aws_sdk_kinesis)
+    add_headers_and_sources(dbms Storages/Kinesis)
+endif()
+
 add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
@@ -755,6 +759,10 @@ endif()
 
 if (TARGET ch_contrib::nats_io)
     target_link_libraries(dbms PRIVATE ch_contrib::nats_io ch_contrib::uv)
+endif()
+
+if (TARGET ch_contrib::aws_sdk_kinesis)
+    target_link_libraries(dbms PRIVATE ch_contrib::aws_sdk_kinesis)
 endif()
 
 if (TARGET ch_contrib::sasl2)

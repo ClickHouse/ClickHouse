@@ -849,6 +849,7 @@ class ClickHouseCluster:
         self.base_kerberos_kdc_cmd = []
         self.base_rabbitmq_cmd = []
         self.base_nats_cmd = []
+        self.base_localstack_cmd = []
         self.base_cassandra_cmd = []
         self.base_jdbc_bridge_cmd = []
         self.base_postgres_cmd = []
@@ -883,6 +884,7 @@ class ClickHouseCluster:
         self.with_kerberos_kdc = False
         self.with_rabbitmq = False
         self.with_nats = False
+        self.with_localstack = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_mongo = False
@@ -1023,6 +1025,9 @@ class ClickHouseCluster:
         self.hdfs_dir = p.abspath(p.join(self.instances_dir, "hdfs"))
         self.hdfs_logs_dir = os.path.join(self.hdfs_dir, "logs")
         self.hdfs_api = None
+        # available when with_localstack == True
+        self.localstack_host = "localstack"
+        self.localstack_port = 4566
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1992,6 +1997,20 @@ class ClickHouseCluster:
         )
         return self.base_nats_cmd
 
+    def setup_localstack_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_localstack = True
+        env_variables["LOCALSTACK_PORT"] = str(self.localstack_port)
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_localstack.yml")]
+        )
+        self.base_localstack_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_localstack.yml"),
+        )
+        return self.base_localstack_cmd
+
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
@@ -2335,6 +2354,7 @@ class ClickHouseCluster:
         with_secrets=False,
         with_rabbitmq=False,
         with_nats=False,
+        with_localstack=False,
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
@@ -2490,6 +2510,7 @@ class ClickHouseCluster:
             with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
+            with_localstack=with_localstack,
             with_nginx=with_nginx,
             with_secrets=with_secrets
             or with_kerberos_kdc
@@ -2695,6 +2716,11 @@ class ClickHouseCluster:
         if with_hdfs and not self.with_hdfs:
             cmds.append(
                 self.setup_hdfs_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_localstack and not self.with_localstack:
+            cmds.append(
+                self.setup_localstack_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_nginx and not self.with_nginx:
@@ -3491,6 +3517,35 @@ class ClickHouseCluster:
 
     def run_rabbitmqctl(self, command):
         run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
+
+    def wait_localstack_to_start(self, timeout=60):
+        logging.debug("Wait LocalStack to start")
+        retries = 0
+        max_retries = timeout
+        while True:
+            try:
+                result = subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        self.get_instance_docker_id("localstack"),
+                        "curl",
+                        "-s",
+                        "http://localhost:4566/_localstack/health",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0 and "running" in result.stdout:
+                    logging.debug("LocalStack is available")
+                    break
+            except Exception:
+                pass
+            retries += 1
+            if retries > max_retries:
+                raise Exception("LocalStack is not available")
+            logging.debug("Waiting for LocalStack to start")
+            time.sleep(1)
 
     def wait_nats_is_available(self, max_retries=5):
         retries = 0
@@ -4410,6 +4465,11 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.make_hdfs_api()
                 self.wait_hdfs_to_start()
+            if self.with_localstack and self.base_localstack_cmd:
+                logging.debug("Setup LocalStack")
+                subprocess_check_call(self.base_localstack_cmd + common_opts)
+                self.up_called = True
+                self.wait_localstack_to_start()
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug("Setup nginx")
@@ -5338,6 +5398,7 @@ class ClickHouseInstance:
         with_kerberos_kdc,
         with_rabbitmq,
         with_nats,
+        with_localstack,
         with_nginx,
         with_secrets,
         with_mongo,
@@ -5465,6 +5526,7 @@ class ClickHouseInstance:
         self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
         self.with_nats = with_nats
+        self.with_localstack = with_localstack
         self.with_nginx = with_nginx
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
@@ -7248,6 +7310,9 @@ class ClickHouseInstance:
 
         if self.with_nats:
             depends_on.append("nats1")
+
+        if self.with_localstack:
+            depends_on.append("localstack")
 
         if self.with_zookeeper:
             depends_on += list(ZOOKEEPER_CONTAINERS)

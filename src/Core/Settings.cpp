@@ -11610,6 +11610,10 @@ With `make_distributed_plan`, send join runtime filters built in one stage to th
 When `send_logs_level` forwards stateless-worker task logs to the coordinator, each worker task buffers at most this many log lines between status polls. Lines beyond the bound are dropped and their count is reported to the client. `0` means unbounded (never drops, but a stalled status poll can grow the buffer without limit).
 )", EXPERIMENTAL, \
         {"26.10", 100000, 100000, "New setting bounding how many log lines a stateless-worker task buffers for forwarding to the coordinator between status polls; excess lines are dropped and counted. New feature, so the previous value equals the default."}) \
+    DECLARE(Bool, allow_experimental_kinesis_table, false, R"(
+Allow Kinesis table engine.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_engine, false, R"(
 Enable the `YTsaurus` table engine for integration with YTsaurus.
 )", EXPERIMENTAL, allow_experimental_ytsaurus_table_engine, \

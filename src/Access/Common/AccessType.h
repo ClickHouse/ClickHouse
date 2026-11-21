@@ -46,6 +46,7 @@ enum class Source : uint8_t
     M(BIGQUERY, "BigQuery") \
     M(ELASTICSEARCH, "Elasticsearch") \
     M(DISK, "Disk") \
+    M(KINESIS, "") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
 
@@ -459,6 +460,7 @@ enum class AccessType : uint16_t
     M(BIGQUERY, "", GLOBAL, ALL) \
     M(ELASTICSEARCH, "", GLOBAL, ALL) \
     M(DISK, "", GLOBAL, ALL) \
+    M(KINESIS, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
     /* AI functions */ \
