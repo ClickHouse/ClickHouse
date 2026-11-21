@@ -19,6 +19,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// ColumnVariant::getExtremes, which ColumnDynamic delegates to, ignores its rows and returns Null for
+/// both bounds; a nested Dynamic's Fields carry per-element type tags, which Field ordering compares first.
+static bool hasMeaningfulFieldExtremes(const IDataType & type)
+{
+    return !anyInTypeTree(type, [](const IDataType & subtype) { return isDynamic(subtype) || isVariant(subtype); });
+}
+
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
@@ -28,6 +35,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_na
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         serializations.push_back(type->getDefaultSerialization());
+        has_meaningful_extremes.push_back(hasMeaningfulFieldExtremes(*type));
     }
     datatypes = index_sample_block.getDataTypes();
 }
@@ -44,6 +52,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         serializations.push_back(type->getDefaultSerialization());
+        has_meaningful_extremes.push_back(hasMeaningfulFieldExtremes(*type));
     }
     datatypes = index_sample_block.getDataTypes();
 }
@@ -132,10 +141,22 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
         normalizeBoolFields(min_ref);
         normalizeBoolFields(max_ref);
 
+        /// A multi-column index writes both bounds of every column consecutively into one stream.
+        const bool whole_universe = !has_meaningful_extremes[i];
+
         if (update_in_place)
         {
+            if (whole_universe)
+            {
+                hyperrectangle[i].left = NEGATIVE_INFINITY;
+                hyperrectangle[i].right = POSITIVE_INFINITY;
+            }
             hyperrectangle[i].left_included = true;
             hyperrectangle[i].right_included = true;
+        }
+        else if (whole_universe)
+        {
+            hyperrectangle.emplace_back(Range::createWholeUniverse());
         }
         else
         {
@@ -500,15 +521,11 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                 column.type->getName(), column.name);
         }
 
-        auto check_not_dynamic_or_variant = [&](const IDataType & type)
-        {
-            if (isDynamic(type) || isVariant(type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "{} data type of column {} is not allowed in minmax index because the values of that data type can contain values "
-                    "with different data types. Consider using typed subcolumns or cast column to a specific data type",
-                    column.type->getName(), column.name);
-        };
-        forEachInTypeTree(*column.type, check_not_dynamic_or_variant);
+        if (!hasMeaningfulFieldExtremes(*column.type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{} data type of column {} is not allowed in minmax index because the values of that data type can contain values "
+                "with different data types. Consider using typed subcolumns or cast column to a specific data type",
+                column.type->getName(), column.name);
     }
 }
 
