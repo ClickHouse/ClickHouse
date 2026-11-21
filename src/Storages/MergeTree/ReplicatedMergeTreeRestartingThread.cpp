@@ -286,6 +286,9 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
 
     for (const auto & part_name : failed_parts)
     {
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
+        storage.queue.removeFailedQuorumPart(part_info);
+
         auto part = storage.getPartIfExists(
             part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
@@ -293,9 +296,10 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
         {
             LOG_DEBUG(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
             storage.forcefullyMovePartToDetachedAndRemoveFromMemory(part, "noquorum");
-            storage.queue.removeFailedQuorumPart(part->info);
         }
     }
+
+    storage.background_operations_assignee.trigger();
     FailPointInjection::disableFailPoint(FailPoints::finish_clean_quorum_failed_parts);
 }
 
