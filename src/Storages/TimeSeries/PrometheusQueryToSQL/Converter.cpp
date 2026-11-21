@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyUnaryOperator.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/collectAnnotations.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/finalizeSQL.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
@@ -72,6 +73,7 @@ namespace
                 {
                     arguments.push_back(visitNode(arg_node, context));
                 }
+                collectAnnotations(function, arguments, context, visitNode);
                 return applyFunction(function, std::move(arguments), context);
             }
 
@@ -90,7 +92,15 @@ namespace
                 {
                     const auto * aggregation
                         = static_cast<const PrometheusQueryTree::AggregationOperator *>(binary_operator->getLeftArgument());
+                    const size_t first_annotation = context.annotations ? context.annotations->size() : 0;
                     SQLQueryPiece argument = visitNode(aggregation->getArguments().at(0), context);
+
+                    /// Prometheus evaluates both arguments, so the right one adds the same annotations at its own positions.
+                    const auto * right_aggregation
+                        = static_cast<const PrometheusQueryTree::AggregationOperator *>(binary_operator->getRightArgument());
+                    repeatAnnotationsForEqualArgument(
+                        aggregation->getArguments().at(0), right_aggregation->getArguments().at(0), first_annotation, context);
+
                     return applyFusedAggregationBinaryOperator(binary_operator, std::move(argument), context);
                 }
 
@@ -107,6 +117,7 @@ namespace
                 {
                     arguments.push_back(visitNode(arg_node, context));
                 }
+                collectAnnotations(aggregation_operator, arguments, context, visitNode);
                 return applyAggregationOperator(aggregation_operator, std::move(arguments), context);
             }
         }
@@ -130,8 +141,17 @@ ColumnsDescription Converter::getResultColumns() const
 }
 
 
-ASTPtr Converter::getSQL() const
+ASTPtr Converter::getSQL(Annotations * annotations) const
 {
+    if (annotations)
+    {
+        /// Prometheus evaluates every operand and retains its annotations even if the final vector is empty, so collect
+        /// them from the original tree, independently of the result-only pushdown of label matchers.
+        ConverterContext annotation_context{promql_tree, settings};
+        annotation_context.annotations = annotations;
+        visitNode(promql_tree->getRoot(), annotation_context);
+    }
+
     auto promql_tree_to_convert = settings.push_down_label_matchers ? pushDownLabelMatchers(promql_tree) : promql_tree;
     ConverterContext context{promql_tree_to_convert, settings};
     auto query_piece = visitNode(promql_tree_to_convert->getRoot(), context);

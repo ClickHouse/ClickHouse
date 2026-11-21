@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Interpreters/StorageID.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/Annotation.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRangeGetter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
@@ -26,6 +27,12 @@ struct ConverterContext
     const ResultType result_type;
     const NodeEvaluationRangeGetter node_range_getter;
     SQLSubqueries subqueries;
+
+    /// Collects the annotations of the query, nullptr if they are not needed.
+    Annotations * annotations = nullptr;
+
+    /// A range selector which is read only for metric names without a counter suffix, see collectAnnotations().
+    const Node * non_counter_selector = nullptr;
 
     ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                      const PrometheusQueryEvaluationSettings & settings_);

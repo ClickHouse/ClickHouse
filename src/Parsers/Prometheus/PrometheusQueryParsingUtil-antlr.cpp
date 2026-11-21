@@ -54,6 +54,41 @@ namespace
             reinterpret_cast<const UInt8 *>(query.data()), query.size(), position);
     }
 
+    /// Maps ANTLR code-point positions to byte offsets of a UTF-8 query.
+    ///
+    /// `ANTLRInputStream` converts a UTF-8 query to code points, so `Token::getStartIndex` and other
+    /// parser positions are 0-based code-point indices, while the rest of the code works in byte
+    /// offsets. The tree builder asks for the position of every node, so the mapping is built once
+    /// per query: converting each position by scanning the query from the beginning made parsing
+    /// quadratic in the query length (a balanced scalar expression after a long comment rescanned
+    /// the comment for every literal and operator).
+    struct CodePointByteOffsets
+    {
+        /// `byte_offsets[i]` is the byte offset of code point `i`; the last entry is the query's byte
+        /// size, so a position past the last code point saturates to the end of the query.
+        std::vector<size_t> byte_offsets;
+
+        [[nodiscard]] size_t byteOffset(size_t code_point) const
+        {
+            return code_point < byte_offsets.size() ? byte_offsets[code_point] : byte_offsets.back();
+        }
+    };
+
+    CodePointByteOffsets computeCodePointByteOffsets(std::string_view query)
+    {
+        CodePointByteOffsets res;
+        res.byte_offsets.reserve(query.size() + 1);
+        for (size_t byte = 0; byte < query.size();)
+        {
+            res.byte_offsets.push_back(byte);
+            /// The builder is used only for queries the lexer accepted, so the input is valid UTF-8
+            /// and this walks the same code points ANTLR did.
+            byte += UTF8::seqLength(static_cast<UInt8>(query[byte]));
+        }
+        res.byte_offsets.push_back(query.size());
+        return res;
+    }
+
     /// Handles errors while a promql query is parsed.
     class ErrorListener : public antlr4::BaseErrorListener
     {
@@ -158,14 +193,26 @@ namespace
     class PrometheusQueryTreeBuilder : public antlr4_grammars::PromQLParserBaseVisitor
     {
     public:
-        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 time_scale_, ErrorListener & error_listener_)
-            : promql_query(promql_query_), time_scale(time_scale_), error_listener(error_listener_) {}
+        explicit PrometheusQueryTreeBuilder(
+            std::string_view promql_query_,
+            UInt32 time_scale_,
+            const CodePointByteOffsets & code_point_byte_offsets_,
+            ErrorListener & error_listener_)
+            : promql_query(promql_query_),
+              time_scale(time_scale_),
+              code_point_byte_offsets(code_point_byte_offsets_),
+              error_listener(error_listener_) {}
 
         Node * makeNode(antlr4::ParserRuleContext * expression)
         {
             std::any any = visit(expression);
             if (Node * node = anyToNodePtr(any))
+            {
+                /// The innermost expression sets it first, so parentheses around a node are not included, as in Prometheus.
+                if (!node->start_pos)
+                    node->start_pos = getStartPos(expression);
                 return node;
+            }
 
             chassert(error_listener.hasError());
             return nullptr;
@@ -176,6 +223,7 @@ namespace
     private:
         std::string_view promql_query;
         UInt32 time_scale;
+        const CodePointByteOffsets & code_point_byte_offsets;
         ErrorListener & error_listener;
         std::vector<std::unique_ptr<Node>> nodes;
 
@@ -195,7 +243,7 @@ namespace
 
         size_t getStartPos(const antlr4::tree::TerminalNode * ctx) const
         {
-            return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
+            return code_point_byte_offsets.byteOffset(ctx->getSymbol()->getStartIndex());
         }
 
         size_t getStartPos(const antlr4::ParserRuleContext * ctx) const
@@ -205,7 +253,7 @@ namespace
 
         size_t getStartPos(const antlr4::Token * token) const
         {
-            return convertCodePointPositionToByteOffset(promql_query, token->getStartIndex());
+            return code_point_byte_offsets.byteOffset(token->getStartIndex());
         }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
@@ -1074,6 +1122,21 @@ namespace
             return makeAggregationOperator(ctx, arguments);
         }
 
+        std::any visitParens(antlr4_grammars::PromQLParser::ParensContext * ctx) override
+        {
+            auto * expression_ctx = ctx->vectorOperation();
+            if (!expression_ctx)
+                throwInconsistentSchema("Parens", ctx->getText());
+
+            Node * node = makeNode(expression_ctx);
+            if (!node)
+            {
+                chassert(error_listener.hasError());
+                return {};
+            }
+            return node;
+        }
+
         /// Converts std::any to a pointer to a Node.
         static Node * anyToNodePtr(std::any any)
         {
@@ -1127,7 +1190,8 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);
 
-    PrometheusQueryTreeBuilder builder{input, time_scale, error_listener};
+    CodePointByteOffsets code_point_byte_offsets = computeCodePointByteOffsets(input);
+    PrometheusQueryTreeBuilder builder{input, time_scale, code_point_byte_offsets, error_listener};
     std::vector<std::unique_ptr<Node>> parsed_nodes;
     Node * parsed_root = nullptr;
     if (expression && !error_listener.hasError())
