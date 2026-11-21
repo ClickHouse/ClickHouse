@@ -1,0 +1,12 @@
+--- The objects of an insert are numbered from the generated name of its first object
+a	4	3	0	400	79800
+b.c	4	3	0	400	239800
+d	4	3	0	400	399800
+--- A smaller truncating rewrite of one partition appends: nothing is overwritten or deleted
+a	4	3	0	400	79800
+b.c	6	4	0	600	259700
+d	4	3	0	400	399800
+--- The same without splitting, for comparison
+a	5	3	0	450	81025
+b.c	6	4	0	600	259700
+d	4	3	0	400	399800

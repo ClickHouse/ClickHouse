@@ -1,0 +1,4 @@
+--- A large split insert, then a truncating rewrite with the splitting turned off
+engine table	100	0	99
+wildcard	100	0	99
+data.tsv

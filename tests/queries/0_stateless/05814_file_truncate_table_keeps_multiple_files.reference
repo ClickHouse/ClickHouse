@@ -1,0 +1,13 @@
+--- engine_file_allow_create_multiple_files only
+1
+2
+3
+0
+data.1.json 0
+data.2.json 0
+data.json 0
+--- engine_file_allow_create_multiple_files, then a split insert
+302	1
+0
+data.1.json 0
+data.json 0

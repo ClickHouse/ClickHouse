@@ -6,8 +6,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-#include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
@@ -33,11 +33,57 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char split_on_write_fail_to_publish_third_path[];
 }
 
 namespace Setting
 {
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+}
+
+void StorageObjectStorageConfiguration::appendPath(const Path & path, bool written_by_split)
+{
+    std::lock_guard lock(paths_mutex);
+    Paths & paths = getMutablePathsUnlocked();
+    const bool is_new_path = std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path.path; }) == paths.end();
+    const bool is_new_split_path = written_by_split && !paths_written_by_split.contains(path.path);
+    if (!is_new_path && !is_new_split_path)
+        return;
+
+    try
+    {
+        /// The third path: the failure happens after a split insert has already published a key of its own.
+        if (is_new_path && paths.size() == 2)
+        {
+            fiu_do_on(FailPoints::split_on_write_fail_to_publish_third_path,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure to publish the new path {}", path.path);
+            });
+        }
+        if (is_new_split_path)
+            paths_written_by_split.insert(path.path);
+        if (is_new_path)
+        {
+            paths.push_back(path);
+            onPathsUpdatedUnlocked();
+        }
+    }
+    catch (...)
+    {
+        if (is_new_split_path)
+            paths_written_by_split.erase(path.path);
+        if (is_new_path && !paths.empty() && paths.back().path == path.path)
+        {
+            paths.pop_back();
+            onPathsUpdatedUnlocked();
+        }
+        throw;
+    }
 }
 
 std::optional<String> StorageObjectStorageConfiguration::tryGetDiskConfigurationPrefix(
@@ -273,28 +319,6 @@ String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescrip
     return getSipHash128AsHexString(hash);
 }
 
-StorageObjectStorageConfiguration::Paths StorageObjectStorageConfiguration::getPaths() const
-{
-    SharedLockGuard lock(paths_mutex);
-    return getPathsImpl();
-}
-
-void StorageObjectStorageConfiguration::setPaths(const Paths & paths)
-{
-    std::lock_guard lock(paths_mutex);
-    setPathsImpl(paths);
-}
-
-void StorageObjectStorageConfiguration::addPath(const Path & path)
-{
-    std::lock_guard lock(paths_mutex);
-    auto paths = getPathsImpl();
-    if (std::ranges::find(paths, path.path, &Path::path) != paths.end())
-        return;
-    paths.push_back(path);
-    setPathsImpl(paths);
-}
-
 void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 {
     schema_hash = hash;
@@ -485,6 +509,19 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
     }
 
     return Path {partition_strategy->getPathForWrite(raw_path.path, partition_id)};
+}
+
+NumberedFileNames StorageObjectStorageConfiguration::getNumberedPathsForWrite(const std::string & partition_id, const std::string & path_for_write) const
+{
+    if (!partition_strategy)
+        return getNumberedFileNames(path_for_write);
+
+    /// The same pattern that `getPathForWrite` substitutes the partition key into.
+    auto raw_path = getRawPath();
+    if (!schema_hash.empty())
+        boost::replace_all(raw_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
+    return partition_strategy->getNumberedPathsForWrite(raw_path.path, partition_id, path_for_write);
 }
 
 bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const

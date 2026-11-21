@@ -66,6 +66,13 @@ public:
     /// The raw URI is only the authority, so grants never filter paths, and any path is checked as the authority.
     [[nodiscard]] String getURIForAccessCheck(const String & /*write_path*/) const override { return url; }
 
+    [[nodiscard]] const Paths & getPathsUnlocked() const override { return paths; }
+    Paths & getMutablePathsUnlocked() override { return paths; }
+    void setPathsUnlocked(const Paths & paths_) override
+    {
+        paths = paths_;
+    }
+
     [[nodiscard]] String getNamespace() const override { return ""; }
     [[nodiscard]] String getDataSourceDescription() const override { return url; }
 
@@ -80,13 +87,6 @@ public:
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
 
-protected:
-    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
-    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
-    {
-        paths = paths_;
-    }
-
 private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
     void setURL(const std::string & url_);
@@ -96,7 +96,7 @@ private:
 
     String url;
     Path path;
-    Paths paths TSA_GUARDED_BY(paths_mutex);
+    Paths paths;
     bool read_only = false;
 };
 }

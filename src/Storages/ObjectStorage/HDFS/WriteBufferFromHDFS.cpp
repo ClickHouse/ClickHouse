@@ -65,6 +65,22 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
             hdfsCloseFile(fs.get(), fout);
     }
 
+    /// `hdfsWrite` and `hdfsFlush` may keep incomplete chunks and packets buffered in the client, and the data becomes
+    /// complete only when the file is closed. So the file is closed at finalize, with the error propagated,
+    /// and not at destruction, where the error would be lost and the data would not be complete yet for a reader.
+    void close()
+    {
+        if (fout == nullptr)
+            return;
+
+        /// Not through `wrapErr`: the handle is freed by `hdfsCloseFile` even if it fails, so it cannot be retried.
+        int result = hdfsCloseFile(fs.get(), fout);
+        fout = nullptr;
+        if (result != 0)
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to close HDFS file: {}, hdfs_uri: {}, {}",
+                hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
+    }
+
     void removeFileOnCancel() noexcept
     {
         if (fout != nullptr)
@@ -155,6 +171,10 @@ void WriteBufferFromHDFS::sync()
 void WriteBufferFromHDFS::finalizeImpl()
 {
     WriteBufferFromFileBase::finalizeImpl();
+
+    Stopwatch stopwatch;
+    impl->close();
+    total_time_microseconds += stopwatch.elapsedMicroseconds();
 
     if (blob_log)
     {

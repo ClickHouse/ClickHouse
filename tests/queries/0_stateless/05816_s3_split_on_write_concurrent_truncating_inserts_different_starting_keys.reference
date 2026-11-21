@@ -1,0 +1,7 @@
+--- The first truncating insert is running
+1
+--- The truncating insert that is split is refused while the first one is running
+1
+--- Only the rows of the first insert are there, along with the base object it keeps
+101	0	1000099
+101	0	1000099
