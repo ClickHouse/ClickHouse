@@ -94,6 +94,9 @@ TEST(OptimizeRE, analyze)
     test_f(std::string("a\0b", 3), std::string("a\0b", 3), {}, true, false, true); /// literal NUL kept in the required substring
     test_f(std::string("\0*abc", 5), "abc", {}, false, false, false);             /// `\0*` is optional; "abc" stays the required substring
     test_f(std::string("\0*@(.*)$", 8), "", {}, false, true, false);              /// the analysis must not stop at the leading NUL
+    /// A `)` that closes no group makes the pattern invalid (re2: `unexpected )`), so nothing is known about it.
+    test_f("abc)", "");
+    test_f("a)|b(", "");
 }
 
 TEST(OptimizeRE, anchoredLiteral)
