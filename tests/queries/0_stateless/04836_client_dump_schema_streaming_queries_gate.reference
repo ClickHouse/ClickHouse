@@ -1,0 +1,6 @@
+dump rc=0
+SET enable_streaming_queries = 1;
+SET allow_materialized_view_with_bad_select = 1;
+SET data_type_default_nullable = 0;
+replay rc=0
+same definition: 1

@@ -1,0 +1,4 @@
+--- a table created AS a table function ---
+table_function: dump rc=0
+--- a table in the system database ---
+system_table: dump rc=0

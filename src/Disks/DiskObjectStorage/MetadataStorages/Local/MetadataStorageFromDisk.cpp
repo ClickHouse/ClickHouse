@@ -3,8 +3,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
+#include <Core/ServerSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <Common/logger_useful.h>
 
@@ -13,6 +15,11 @@
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
+}
 
 namespace ErrorCodes
 {
@@ -153,13 +160,17 @@ void MetadataStorageFromDisk::startup()
     if (!persist_removal_queue)
         return;
 
-    if (!disk->existsDirectory(String(SYSTEM_METADATA_DIR)))
+    /// `load_tables_readonly` loads the removal log as it is.
+    const auto global_context = Context::getGlobalContextInstance();
+    const bool readonly = global_context && global_context->getServerSettings()[ServerSetting::load_tables_readonly];
+
+    if (!readonly && !disk->existsDirectory(String(SYSTEM_METADATA_DIR)))
         disk->createDirectory(String(SYSTEM_METADATA_DIR));
 
     std::lock_guard guard(removed_objects_mutex);
     bool needs_compaction = loadRemovalLog();
 
-    if (needs_compaction)
+    if (needs_compaction && !readonly)
         compactRemovalLog();
 
     LOG_INFO(log, "Loaded {} blobs pending removal from {}", objects_to_remove.size(), REMOVAL_LOG_FILE);

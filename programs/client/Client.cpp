@@ -511,6 +511,9 @@ try
     auto & access_control = client_context->getAccessControl();
     access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
+    if (tryRunDumpSchema())
+        return 0;
+
     if (is_interactive && !delayed_interactive && !buzz_house)
     {
         runInteractive();
@@ -1492,6 +1495,19 @@ void Client::processConfig()
     if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
+    bool dump_schema = getClientConfiguration().has("dump-schema");
+    if (dump_schema && (!queries.empty() || !queries_files.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--query' or '--queries-file'");
+    /// Input on stdin or in `--external` is ignored by the dump; an empty pipe is not waited on, so `ssh host ... --dump-schema` runs.
+    if (dump_schema && (stdinHoldsInput() || !external_tables.empty() || !external_scalars.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option '--dump-schema' cannot be combined with '--external' or input on stdin");
+    if (!dump_schema && (getClientConfiguration().has("dump-schema-exclude") || getClientConfiguration().has("dump-schema-dir")))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--dump-schema-exclude'/'--dump-schema-dir' require '--dump-schema'");
+    if (dump_schema && !getClientConfiguration().getString("dump-schema", "").empty()
+        && getClientConfiguration().has("dump-schema-exclude"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`--dump-schema` with an explicit database list cannot be combined with `--dump-schema-exclude`");
+
     /// Batch mode is enabled if one of the following is true:
     /// - -q (--query) command line option is present.
     ///   The value of the option is used as the text of query (or of multiple queries).
@@ -1499,9 +1515,11 @@ void Client::processConfig()
     /// - stdin is not a terminal. In this case queries are read from it.
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
+    /// - --dump-schema is present. It always runs non-interactively, so its output can be
+    ///   redirected to a file without an interactive banner or warnings mixed into the SQL.
 
     delayed_interactive = config().has("interactive") && (!queries.empty() || !queries_files.empty());
-    if (stdin_is_a_tty && (delayed_interactive || (queries.empty() && queries_files.empty())))
+    if (!dump_schema && stdin_is_a_tty && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
     }

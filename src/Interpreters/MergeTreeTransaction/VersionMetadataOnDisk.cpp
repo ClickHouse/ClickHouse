@@ -82,6 +82,11 @@ bool VersionMetadataOnDisk::hasValidMetadata()
     }
 }
 
+bool VersionMetadataOnDisk::loadsPassively() const
+{
+    return merge_tree_data_part->storage.loadsPassively();
+}
+
 VersionInfo VersionMetadataOnDisk::loadMetadata()
 {
     LOG_TRACE(log, "Object {}, loading metadata", getObjectName());
@@ -385,7 +390,7 @@ void VersionMetadataOnDisk::removeTmpMetadataFile()
             fmt::format("Object {}, cannot read the content of {}", getObjectName(), TMP_TXN_VERSION_METADATA_FILE_NAME));
     }
 
-    if (!merge_tree_data_part->isStoredOnReadonlyDisk())
+    if (!merge_tree_data_part->isStoredOnReadonlyDisk() && !merge_tree_data_part->storage.loadsPassively())
         data_part_storage.removeFile(TMP_TXN_VERSION_METADATA_FILE_NAME);
     else
         LOG_WARNING(log, "Object {}, disk is readonly, will not remove {}", getObjectName(), TMP_TXN_VERSION_METADATA_FILE_NAME);

@@ -18,6 +18,7 @@ class StatusFile : private boost::noncopyable
 public:
     using FillFunction = std::function<void(WriteBuffer &)>;
 
+    /// An empty `fill` only locks the file and leaves one that already exists as it is.
     StatusFile(std::string path_, FillFunction fill);
     ~StatusFile();
 
@@ -27,6 +28,8 @@ public:
 
 private:
     const std::string path;
+    const bool lock_only;
+    bool existed = false;
     int fd = -1;
 };
 
