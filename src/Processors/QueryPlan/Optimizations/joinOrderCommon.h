@@ -30,8 +30,6 @@ struct SelectivityEstimate
     bool has_equi = false;
 };
 
-using SelectivityCache = UnorderedMapWithMemoryTracking<JoinActionRef, SelectivityEstimate>;
-
 struct ColumnDistinctValues
 {
     /// Number of distinct values from real statistics, or nullopt when there are none.
@@ -39,6 +37,19 @@ struct ColumnDistinctValues
     /// `ndv` if known, otherwise the row count of the column's relation; 0 when neither is known.
     UInt64 upper_bound = 0;
 };
+
+struct JoinKeyStats
+{
+    ColumnDistinctValues lhs;
+    ColumnDistinctValues rhs;
+    std::optional<UInt64> lhs_relation;
+    std::optional<UInt64> rhs_relation;
+    SelectivityEstimate base_estimate;
+};
+
+/// Base column statistics and relation ids are context-independent. Apply subtree row caps after
+/// reading the cache, because the same edge can join different subtrees in another candidate plan.
+using SelectivityCache = UnorderedMapWithMemoryTracking<JoinActionRef, JoinKeyStats>;
 
 /// Number of distinct values of a join-key column.
 inline ColumnDistinctValues getColumnStats(
@@ -51,7 +62,6 @@ inline ColumnDistinctValues getColumnStats(
     auto rel_id = rels.getSingleBit();
     if (!rel_id.has_value())
     {
-        /// Look up NDV from the dp_table entry's column_stats (propagated through joins).
         if (auto it = dp_table.find(rels); it != dp_table.end())
         {
             auto col_it = it->second->column_stats.find(column_name);
@@ -82,24 +92,72 @@ inline void applyEquiKeyDistinctValues(SelectivityEstimate & estimate, UInt64 ma
         estimate.reported_value = std::min(estimate.reported_value, 1.0 / static_cast<double>(max_ndv_upper_bound));
 }
 
-inline SelectivityEstimate computeSelectivity(
+/// The join side containing a relation and the statistics used to cap its NDV.
+struct JoinSideStats
+{
+    bool present = false;
+    bool on_left = false;
+    bool multi_relation = false;
+    std::optional<UInt64> rows;
+};
+
+/// Base-table NDV can exceed the rows of a multi-relation input, which cannot hold more distinct keys
+/// than rows. Cap it by those rows, but only while the input still has at least as many rows as the
+/// known NDV upper bound on the other side of the equality. `1 / max(NDV)` assumes that the keys of the side with
+/// fewer distinct values are contained in the other side. If the cap made the capped side the smaller
+/// one, the input, which is typically a filtered sample of a larger key domain (for example a primary
+/// key side filtered by a join with a dimension), would be assumed to match the other side completely,
+/// overestimating the join by up to the ratio of the base NDVs. DPsub does not propagate
+/// `column_stats`, so the bound is applied here, where the input is known.
+inline ColumnDistinctValues capColumnDistinctValuesBySubtreeRows(
+    ColumnDistinctValues stats, const JoinSideStats & side, const ColumnDistinctValues & other)
+{
+    if (!side.multi_relation || !side.rows || *side.rows == 0)
+        return stats;
+    const UInt64 rows = *side.rows;
+    if (stats.ndv && other.upper_bound > 0 && other.upper_bound <= rows)
+        stats.ndv = std::min(*stats.ndv, rows);
+    if (other.upper_bound <= rows)
+        stats.upper_bound = std::min(stats.upper_bound, rows);
+    return stats;
+}
+
+inline const JoinKeyStats & getJoinKeyStats(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
     const JoinActionRef & edge)
 {
     auto [it, inserted] = expression_selectivity.try_emplace(edge);
-    auto & estimate = it->second;
     if (!inserted)
-        return estimate;
+        return it->second;
 
     auto [op, lhs, rhs] = edge.asBinaryPredicate();
-
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return estimate;
+        return it->second;
 
-    auto lhs_ndv = getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName());
-    auto rhs_ndv = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
+    it->second = {
+        getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName()),
+        getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName()),
+        lhs.getSourceRelations().getSingleBit(),
+        rhs.getSourceRelations().getSingleBit(),
+        {}};
+    applyEquiKeyDistinctValues(
+        it->second.base_estimate,
+        std::max(it->second.lhs.ndv.value_or(0), it->second.rhs.ndv.value_or(0)),
+        std::max(it->second.lhs.upper_bound, it->second.rhs.upper_bound));
+    return it->second;
+}
+
+inline SelectivityEstimate computeSelectivity(
+    const JoinKeyStats & stats, const JoinSideStats & lhs_side, const JoinSideStats & rhs_side)
+{
+    if (!stats.base_estimate.has_equi || (!lhs_side.multi_relation && !rhs_side.multi_relation))
+        return stats.base_estimate;
+
+    SelectivityEstimate estimate;
+    auto lhs_ndv = capColumnDistinctValuesBySubtreeRows(stats.lhs, lhs_side, stats.rhs);
+    auto rhs_ndv = capColumnDistinctValuesBySubtreeRows(stats.rhs, rhs_side, stats.lhs);
     applyEquiKeyDistinctValues(
         estimate,
         std::max(lhs_ndv.ndv.value_or(0), rhs_ndv.ndv.value_or(0)),
@@ -107,16 +165,21 @@ inline SelectivityEstimate computeSelectivity(
     return estimate;
 }
 
-inline SelectivityEstimate computeSelectivity(
+template <typename SideOfRelation>
+inline SelectivityEstimate computeDirectSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
-    const VectorWithMemoryTracking<JoinActionRef *> & edges)
+    const VectorWithMemoryTracking<JoinActionRef *> & edges,
+    SideOfRelation && side)
 {
     SelectivityEstimate estimate;
     for (const auto & edge : edges)
     {
-        auto edge_estimate = computeSelectivity(query_graph, dp_table, expression_selectivity, *edge);
+        const auto & stats = getJoinKeyStats(query_graph, dp_table, expression_selectivity, *edge);
+        const auto lhs_side = side(stats.lhs_relation);
+        const auto rhs_side = side(stats.rhs_relation);
+        const auto edge_estimate = computeSelectivity(stats, lhs_side, rhs_side);
         estimate.value = std::min(estimate.value, edge_estimate.value);
         estimate.reported_value = std::min(estimate.reported_value, edge_estimate.reported_value);
         estimate.reliable |= edge_estimate.reliable;
@@ -124,6 +187,46 @@ inline SelectivityEstimate computeSelectivity(
     }
     return estimate;
 }
+
+/// Takes the maximum NDV of the members on each side, caps each side by its rows against the other
+/// side's maximum, then applies the larger of the two. This gives the minimum over all cross-side
+/// pairs because min(1 / max(l, r)) = 1 / max(all l's and r's), and the pair with the other side's
+/// maximum is the one that decides whether a side is capped.
+class EquivalenceClassSelectivity
+{
+public:
+    void add(const JoinSideStats & side, ColumnDistinctValues stats)
+    {
+        if (!side.present)
+            return;
+        auto & target = side.on_left ? left : right;
+        target.side = side;
+        if (stats.ndv)
+            target.stats.ndv = std::max(target.stats.ndv.value_or(0), *stats.ndv);
+        target.stats.upper_bound = std::max(target.stats.upper_bound, stats.upper_bound);
+    }
+
+    void apply(SelectivityEstimate & estimate) const
+    {
+        if (!left.side.present || !right.side.present)
+            return;
+        const auto left_ndv = capColumnDistinctValuesBySubtreeRows(left.stats, left.side, right.stats);
+        const auto right_ndv = capColumnDistinctValuesBySubtreeRows(right.stats, right.side, left.stats);
+        applyEquiKeyDistinctValues(
+            estimate,
+            std::max(left_ndv.ndv.value_or(0), right_ndv.ndv.value_or(0)),
+            std::max(left_ndv.upper_bound, right_ndv.upper_bound));
+    }
+
+private:
+    struct Side
+    {
+        JoinSideStats side;
+        ColumnDistinctValues stats;
+    };
+    Side left;
+    Side right;
+};
 
 /// Expected number of rows an inner join of `lhs_rows` x `rhs_rows` keeps under `selectivity`.
 /// When a side has no row estimate we cannot tell which side is the key, so the join is costed as

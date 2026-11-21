@@ -62,7 +62,7 @@ private:
 
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
-        const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges);
+        const VectorWithMemoryTracking<JoinActionRef *> & edges);
 
     struct MergeInputCandidate
     {
@@ -135,9 +135,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     else if (kind == JoinKind::Inner && !connected)
         kind = JoinKind::Cross;
 
-    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     const auto & left_entry = dp_table[lhs_subset];
     const auto & right_entry = dp_table[rhs_subset];
+    auto selectivity = optimizer.computeSelectivityMask(
+        edge, left_mask, right_mask, left_entry.estimated_rows, right_entry.estimated_rows);
     const double joined_rows = estimateJoinedRows(selectivity, left_entry.estimated_rows, right_entry.estimated_rows);
     const double rows_cost = left_entry.rows_cost + right_entry.rows_cost + joined_rows;
     const double plan_cost = left_entry.cost + right_entry.cost + joined_rows
@@ -170,7 +171,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     }
 
     if (optimizer.useInterestingOrders())
-        acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, selectivity, edge);
+        acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, edge);
 }
 
 template <class TDPTable, class TOptimizer>
@@ -207,7 +208,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UIn
 template <class TDPTable, class TOptimizer>
 void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
     const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
-    const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges)
+    const VectorWithMemoryTracking<JoinActionRef *> & edges)
 {
     const auto left_mask = static_cast<UInt32>(lhs_subset);
     const auto right_mask = static_cast<UInt32>(rhs_subset);
@@ -220,6 +221,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         const auto key = static_cast<Int32>(std::countr_zero(keys));
         const MergeInputCandidate * left = nullptr;
         const MergeInputCandidate * right = nullptr;
+        SelectivityEstimate selectivity;
         double cost = std::numeric_limits<double>::infinity();
         const auto left_candidates = mergeInputCandidates(lhs_subset, key);
         const auto right_candidates = mergeInputCandidates(rhs_subset, key);
@@ -227,13 +229,16 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
         {
             for (const auto & right_candidate : right_candidates)
             {
+                const auto candidate_selectivity = optimizer.computeSelectivityMask(
+                    edges, left_mask, right_mask, left_candidate.input.rows, right_candidate.input.rows);
                 const double candidate_cost = optimizer.mergeJoinCost(
-                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, key_classes, selectivity);
+                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, key_classes, candidate_selectivity);
                 if (candidate_cost < cost)
                 {
                     cost = candidate_cost;
                     left = &left_candidate;
                     right = &right_candidate;
+                    selectivity = candidate_selectivity;
                 }
             }
         }
