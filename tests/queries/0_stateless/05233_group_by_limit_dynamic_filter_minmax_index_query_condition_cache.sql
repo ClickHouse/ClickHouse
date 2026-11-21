@@ -26,6 +26,9 @@ SET max_rows_to_group_by = 0;
 -- One stream reading one granule per block, so the boundary is set after the first granule.
 SET max_threads = 1;
 SET max_block_size = 128;
+-- One read task per part. A part on a remote disk is cut into two tasks even for one stream, and the granule that
+-- holds the boundary at the end of each task is not recorded.
+SET merge_tree_min_read_task_size = 1000;
 
 DROP TABLE IF EXISTS t_desc;
 DROP TABLE IF EXISTS t_desc_unique;
