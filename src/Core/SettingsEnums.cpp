@@ -484,7 +484,8 @@ IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
-     {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
+     {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM},
+     {"with_dictionaries", MergeTreeStringSerializationVersion::WITH_DICTIONARIES}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeNullableSerializationVersion,

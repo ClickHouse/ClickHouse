@@ -204,6 +204,8 @@ struct MergeTreeWriterSettings
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;
     size_t map_buckets_min_avg_size = 0;
+    double string_dictionary_min_size_reduction = 0.1;
+    double string_dictionary_max_distinct_ratio = 0.75;
 
     /// When non-null, the writer borrows this `PackedFilesWriter` from an outer writer instead
     /// of creating its own. The borrower contributes its packed substreams to the shared

@@ -65,6 +65,13 @@ private:
 
     void deserializeWithoutStringData(
         IColumn & column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
+
+    void deserializeBinaryBulkWithDictionaries(
+        IColumn & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
 };
 
 }

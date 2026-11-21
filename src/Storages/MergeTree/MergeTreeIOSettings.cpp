@@ -71,6 +71,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 max_buckets_in_map;
     extern const MergeTreeSettingsMergeTreeMapBucketsStrategy map_buckets_strategy;
     extern const MergeTreeSettingsFloat map_buckets_coefficient;
+    extern const MergeTreeSettingsFloat string_dictionary_min_size_reduction;
+    extern const MergeTreeSettingsFloat string_dictionary_max_distinct_ratio;
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
@@ -118,6 +120,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , map_buckets_strategy((*storage_settings)[MergeTreeSetting::map_buckets_strategy])
     , map_buckets_coefficient(static_cast<double>((*storage_settings)[MergeTreeSetting::map_buckets_coefficient]))
     , map_buckets_min_avg_size((*storage_settings)[MergeTreeSetting::map_buckets_min_avg_size])
+    , string_dictionary_min_size_reduction(static_cast<double>((*storage_settings)[MergeTreeSetting::string_dictionary_min_size_reduction]))
+    , string_dictionary_max_distinct_ratio(static_cast<double>((*storage_settings)[MergeTreeSetting::string_dictionary_max_distinct_ratio]))
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])

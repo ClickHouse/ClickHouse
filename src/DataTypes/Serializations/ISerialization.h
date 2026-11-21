@@ -303,6 +303,12 @@ public:
         size_t low_cardinality_max_dictionary_size = 0;
         bool low_cardinality_use_single_dictionary_for_part = true;
 
+        /// With `MergeTreeStringSerializationVersion::WITH_DICTIONARIES`, a `String` granule is stored as a dictionary
+        /// only when that form is smaller than the plain form by this fraction of the plain size, and when its distinct
+        /// values are at most `string_dictionary_max_distinct_ratio` of its rows.
+        double string_dictionary_min_size_reduction = 0.1;
+        double string_dictionary_max_distinct_ratio = 0.75;
+
         bool position_independent_encoding = true;
 
         bool use_compact_variant_discriminators_serialization = false;
