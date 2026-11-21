@@ -11,6 +11,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/getColumnFromBlock.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -185,6 +186,17 @@ ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & reques
                 requested_column.name, block.dumpNames());
 
     return result_column;
+}
+
+ColumnWithTypeAndName getColumnOrSubcolumnFromBlock(const Block & block, const String & name, const ColumnsDescription & columns)
+{
+    if (const auto * column = block.findByName(name))
+        return *column;
+
+    if (auto subcolumn = columns.tryGetSubcolumn(name, GetColumnsOptions::AllPhysical))
+        return {getColumnFromBlock(block, *subcolumn), subcolumn->type, name};
+
+    return block.getColumnOrSubcolumnByName(name);
 }
 
 }
