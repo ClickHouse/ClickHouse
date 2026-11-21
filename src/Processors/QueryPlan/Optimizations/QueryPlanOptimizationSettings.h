@@ -314,6 +314,7 @@ struct QueryPlanOptimizationSettings
     float automatic_parallel_replicas_max_duplicated_read_ratio;
     float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
+    UInt64 automatic_parallel_replicas_undecided_retry_after_executions = 0;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
     /// plan; see `parallelReplicasBoundarySettingsHash`.
     UInt64 parallel_replicas_boundary_settings_hash = 0;
