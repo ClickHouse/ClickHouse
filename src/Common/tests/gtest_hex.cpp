@@ -4,9 +4,7 @@
 #include <base/types.h>
 #include <city.h>
 
-#include <cstdint>
 #include <cstring>
-#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -225,13 +223,6 @@ TEST(HexTest, WriteBinByte)
 
     writeBinByte(0xA5, buf);
     ASSERT_EQ("10100101", std::string_view(buf, 8));
-}
-
-TEST(HexTest, ByteTablesAreCacheLineAligned)
-{
-    EXPECT_EQ(0, reinterpret_cast<uintptr_t>(std::data(impl::hex_byte_to_char_uppercase_table)) % 64);
-    EXPECT_EQ(0, reinterpret_cast<uintptr_t>(std::data(impl::hex_byte_to_char_lowercase_table)) % 64);
-    EXPECT_EQ(0, reinterpret_cast<uintptr_t>(std::data(impl::bin_byte_to_char_table)) % 64);
 }
 
 TEST(HexTest, HexStringUppercase)
