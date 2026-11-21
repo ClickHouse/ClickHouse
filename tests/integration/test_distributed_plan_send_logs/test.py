@@ -46,6 +46,8 @@ def started_cluster():
 
 DISTRIBUTED_SETTINGS = (
     "make_distributed_plan = 1, "
+    # The workers hold the tables, so the reads of `MergeTree` tables distribute.
+    "distributed_plan_workers_have_local_tables = 1, "
     "enable_parallel_replicas = 0, "
     "distributed_plan_default_shuffle_join_bucket_count = 2, "
     "distributed_plan_default_reader_bucket_count = 2, "

@@ -11612,6 +11612,10 @@ order. Only shapes where no exchange survives between the read and the sort are 
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
+    DECLARE(Bool, distributed_plan_workers_have_local_tables, false, R"(
+With `make_distributed_plan` on remote workers (`distributed_plan_execute_locally = 0`), declares that the workers are this server or replicas that hold its tables. Only then a distributed plan reads a table that is not shared, or parts on a local disk; otherwise such a read keeps the plan local, as a stateless worker cannot read it.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting: a distributed plan on remote workers reads a table that is not shared only when the workers hold the local tables."}) \
     DECLARE(String, distributed_plan_worker_cluster, "", R"(
 Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
 )", PRIVATE_PREVIEW, \

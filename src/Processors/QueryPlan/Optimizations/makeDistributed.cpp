@@ -49,6 +49,8 @@
 #include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <fmt/ranges.h>
@@ -229,7 +231,8 @@ std::optional<PreformattedMessage> getReasonChildPlanSetsCannotBeShipped(QueryPl
 
 
 /// Returns the reason a `ReadFromMergeTree` cannot ship as a distributed read, or nullopt.
-std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFromMergeTree * read);
+std::optional<PreformattedMessage>
+getReasonReadCannotBeDistributed(const ReadFromMergeTree * read, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Returns the reason a single step cannot run in a distributed plan, or nullopt: WITH TOTALS
 /// (TotalsHaving) and extremes need a separate stream that the exchange protocol does not carry,
@@ -250,11 +253,28 @@ std::optional<PreformattedMessage> getReasonStepCannotBeDistributed(const IQuery
 }
 
 
-/// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
+/// Rejects distributed reads a worker cannot reproduce: a table remote workers cannot read, a pinned snapshot boundary
 /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
 /// `_part_starting_offset`. Done at planning time so it fails cleanly before the pipeline is built.
-std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFromMergeTree * read)
+std::optional<PreformattedMessage>
+getReasonReadCannotBeDistributed(const ReadFromMergeTree * read, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    /// Stateless workers read only parts on a remote disk of a shared table; local execution runs the tasks in this process.
+    /// TODO AI made this decision: refuse unless the workers are declared to hold the local tables, off by default.
+    if (!optimization_settings.distributed_plan_execute_locally && !optimization_settings.distributed_plan_workers_have_local_tables)
+    {
+        const auto & data = read->getMergeTreeData();
+        if (!data.isSharedStorage())
+            return std::make_optional(PreformattedMessage::create(
+                "make_distributed_plan does not support a distributed read on remote workers of the table {}, which is not shared",
+                data.getStorageID().getFullTableName()));
+        for (const auto & part : read->getParts())
+            if (!part.data_part->getDataPartStorage().isStoredOnRemoteDisk())
+                return std::make_optional(PreformattedMessage::create(
+                    "make_distributed_plan does not support a distributed read on remote workers of the part {} of the table {}, which is on a local disk",
+                    part.data_part->name, data.getStorageID().getFullTableName()));
+    }
+
     /// The read-in-order optimization is skipped while a distributed plan is being made, so a read
     /// that already carries an order was ordered before this pass (for example, a child plan that was
     /// optimized on its own). It is the read half of the FinishSorting rejected in
@@ -384,12 +404,10 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
         if (auto reason = getReasonSetsCannotBeShipped(*delayed); reason.has_value())
             return reason;
 
-    /// Rejects distributed reads a worker cannot reproduce: a pinned snapshot boundary
-    /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
-    /// `_part_starting_offset`.
+    /// Rejects distributed reads a worker cannot reproduce (see `getReasonReadCannotBeDistributed`).
     if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
     {
-        if (auto reason = getReasonReadCannotBeDistributed(read); reason.has_value())
+        if (auto reason = getReasonReadCannotBeDistributed(read, optimization_settings); reason.has_value())
             return reason;
         if (auto reason = getReasonColumnDefaultsCannotBeShipped(*read, optimization_settings); reason.has_value())
             return reason;

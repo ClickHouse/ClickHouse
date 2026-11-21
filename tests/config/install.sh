@@ -377,6 +377,7 @@ ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/
 case "$(uname -s)" in
     Linux|Darwin)
         ln -sf $SRC_PATH/config.d/distributed_query.xml $DEST_SERVER_PATH/config.d/
+        ln -sf $SRC_PATH/users.d/distributed_plan_workers.xml $DEST_SERVER_PATH/users.d/
         ;;
 esac
 

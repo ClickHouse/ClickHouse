@@ -157,6 +157,7 @@ namespace Setting
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
+    extern const SettingsBool distributed_plan_workers_have_local_tables;
     extern const SettingsBool distributed_plan_join_runtime_filters;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
@@ -414,6 +415,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_partial_aggregation_before_shuffle = from[Setting::distributed_plan_partial_aggregation_before_shuffle];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
+    distributed_plan_workers_have_local_tables = from[Setting::distributed_plan_workers_have_local_tables];
     distributed_plan_join_runtime_filters = from[Setting::distributed_plan_join_runtime_filters];
     exact_rows_before_limit = from[Setting::exact_rows_before_limit];
 
