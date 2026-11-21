@@ -1,0 +1,11 @@
+-- the owner sees the exact database total
+43
+-- a partial grant makes the database visible, but not its row total
+1	\N
+visible	3
+-- SHOW TABLES on a single table is still a partial grant
+\N
+-- SHOW TABLES on the whole database reveals the total
+43
+-- ... and so does the global grant
+43

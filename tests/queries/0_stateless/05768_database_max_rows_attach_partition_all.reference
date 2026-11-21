@@ -1,0 +1,12 @@
+-- 30 rows of headroom: each partition of 20 rows fits alone, both together do not
+70
+0
+70
+70
+-- an already attached partition is not charged again
+20
+0	20
+1	20
+110
+-- repeating it at the limit is a no-op
+40

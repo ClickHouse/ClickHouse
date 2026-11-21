@@ -26,7 +26,11 @@ ReplicatedMergeTreeSinkPatch::ReplicatedMergeTreeSinkPatch(
         /*max_parts_per_block=*/ 0,
         /*quorum_parallel=*/ false,
         /*majority_quorum=*/ false,
-        std::move(context_))
+        std::move(context_),
+        /*is_attach=*/ false,
+        /*allow_attach_while_readonly=*/ false,
+        /*keeper_retries_info=*/ std::nullopt,
+        /*check_database_rows_limit=*/ false)
     , update_holder(std::move(update_holder_))
     , patch_metadata(std::move(patch_metadata_))
 {
