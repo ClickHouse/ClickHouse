@@ -70,6 +70,9 @@ A `CancelRequest` arrives on a new connection, and the proxy does not track whic
 session it cancels. Its key is a random secret, so the proxy delivers the request to every backend
 the listener can route to (including the backends currently marked down, which may still serve
 sessions started before), and only the backend that issued the key acts on it.
+The backends receive the request concurrently, in batches of 64, those that are not marked down
+first. The whole delivery is bounded by `handshake_timeout_ms` and stops when the proxy shuts down,
+so with hundreds of unreachable backends the request may not reach the last ones.
 
 MySQL and PostgreSQL negotiate TLS in-band, and the proxy does not mediate that on the backend leg,
 while SSH is not layered over TLS at all: a backend marked `<secure>1</secure>` cannot be used for these protocols. Such configurations are
@@ -263,6 +266,16 @@ parameter already contains the first keyword, such a request has no query type a
 the rules without `query_type`. The same holds when the inspected beginning of the query ends before
 its first keyword, for example within a long leading comment, and for `multipart/form-data` requests,
 whose query is assembled from all the `query` parameters of the URL and of the form.
+A body without `Content-Length` and chunked encoding, which the server reads up to the end of the stream,
+is not inspected either.
+The proxy has to read the head of an HTTP request exactly as the backend does, or a request could be
+routed by one user, database or query and executed with another. So it accepts only what both read the
+same way and rejects the rest with `400 Bad Request`: a request line that is not
+`method SP request-target SP HTTP-version`, a line of the request head that does not end with CRLF or
+contains a CR or a NUL, a header line without a name or with whitespace in or around the name,
+a `Content-Length` that is not a plain number or is repeated with another value, and a `decompress`
+parameter that is not a boolean. A `Transfer-Encoding` other than a single `chunked` is rejected with
+`501 Not Implemented`.
 A rule without `protocol` applies only to the protocols whose connections can have the attributes it
 matches on: `query_type` is known only for `http`, `authorized_key` only for `ssh`, and `host` only for
 `http`, `native` (the SNI of a secure listener) and `tls`, while `user` and `database` are not known
