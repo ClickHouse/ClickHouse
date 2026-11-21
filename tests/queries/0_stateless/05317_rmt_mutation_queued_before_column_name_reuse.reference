@@ -1,0 +1,22 @@
+readd pending	1	10	7	100
+readd pending	2	20	7	200
+readd	1	11	7	100
+readd	2	21	7	200
+1
+drop rename pending	1	10	100
+drop rename pending	2	20	200
+drop rename	1	11	100
+drop rename	2	21	200
+1
+readd rename pending	1	10	7	100
+readd rename pending	2	20	7	200
+readd rename	1	11	7	100
+readd rename	2	21	7	200
+1
+rename readd drop pending	1	10	42	100
+rename readd drop pending	2	20	43	200
+rename readd drop	1	11	42	100
+rename readd drop	2	21	43	200
+1
+drop nested	1	[5,6]
+1
