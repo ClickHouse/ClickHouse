@@ -630,6 +630,7 @@
     \
     M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
     \
+    M(AccessEntities, "The total number of all access entities (users, roles, quotas, etc.).") \
     M(MergeTreeSnapshotCommitThreads, "Number of threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsActive, "Number of active threads used to commit snapshot") \
     M(MergeTreeSnapshotCommitThreadsScheduled, "Number of scheduled threads used to commit snapshot") \

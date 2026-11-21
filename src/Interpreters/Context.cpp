@@ -246,6 +246,7 @@ namespace ProfileEvents
 
 namespace CurrentMetrics
 {
+    extern const Metric AccessEntities;
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
     extern const Metric BackgroundMovePoolSize;
@@ -459,6 +460,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
+    extern const ServerSettingsUInt64 max_access_entity_num_to_throw;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -909,6 +911,7 @@ struct ContextSharedPart : boost::noncopyable
     std::atomic_size_t max_##ename##_num_to_throw = throw_default;
     APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(DEFINE_ENTITY_LIMIT_THROW_FIELD)
 #undef DEFINE_ENTITY_LIMIT_THROW_FIELD
+    std::atomic_size_t max_access_entity_num_to_warn = 10000lu;
     // these variables are used in inserting warning message into system.warning table based on asynchronous metrics
     size_t max_pending_mutations_to_warn = 500lu;
     size_t max_pending_mutations_execution_time_to_warn = 86400lu;
@@ -1986,6 +1989,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
         common_warnings = shared->warnings;
 
         auto active_parts = CurrentMetrics::get(CurrentMetrics::PartsActive);
+        auto access_entitites = CurrentMetrics::get(CurrentMetrics::AccessEntities);
 
         auto check_entity_limit = [&](Int64 attached_count,
                                       std::atomic_size_t ContextSharedPart::* warn_field,
@@ -2109,6 +2113,18 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create(
                 "The number of active parts ({}) exceeds the warning limit of {}.",
                 active_parts, shared->max_part_num_to_warn.load());
+
+        if (access_entitites > static_cast<Int64>(shared->max_access_entity_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_access_entity_num_to_throw]; limit > shared->max_access_entity_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ACCESS_ENTITIES] = PreformattedMessage::create(
+                    "The number of access entities ({}) exceeds the warning limit of {}. You will not be able to create new access entities once the limit of {} is reached.",
+                    access_entitites, shared->max_access_entity_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ACCESS_ENTITIES] = PreformattedMessage::create(
+                    "The number of access entities ({}) exceeds the warning limit of {}.",
+                    access_entitites, shared->max_access_entity_num_to_warn.load());
+        }
     }
     if ((*settings)[Setting::ast_fuzzer_runs] > 0)
         common_warnings[Context::WarningType::AST_FUZZER_IS_ENABLED] = PreformattedMessage::create(
@@ -7947,6 +7963,12 @@ APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(IMPLEMENT_ENTITY_LIMIT_WITH_WARN
 APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(IMPLEMENT_ENTITY_LIMIT_WITH_THROW_GETTER)
 #undef IMPLEMENT_ENTITY_LIMIT_WITH_THROW_GETTER
 
+size_t Context::getMaxAccessEntitiesNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_access_entity_num_to_warn;
+}
+
 void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
 {
     std::lock_guard lock(shared->mutex);
@@ -7982,6 +8004,12 @@ APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(IMPLEMENT_ENTITY_LIMIT_WITH_WARN
     }
 APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(IMPLEMENT_ENTITY_LIMIT_WITH_THROW_SETTER)
 #undef IMPLEMENT_ENTITY_LIMIT_WITH_THROW_SETTER
+
+void Context::setMaxAccessEntitiesNumToWarn(size_t max_access_entity_to_warn)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->max_access_entity_num_to_warn = max_access_entity_to_warn;
+}
 
 double Context::getMinOSCPUWaitTimeRatioToDropConnection() const
 {

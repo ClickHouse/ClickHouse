@@ -921,6 +921,7 @@ public:
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
         LINUX_RSEQ_UNAVAILABLE,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        MAX_ACCESS_ENTITIES,
         MAX_ACTIVE_PARTS,
         MAX_ATTACHED_DATABASES,
         MAX_ATTACHED_DICTIONARIES,
@@ -1528,6 +1529,7 @@ public:
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
     size_t getMaxPendingMutationsExecutionTimeToWarn() const;
+    size_t getMaxAccessEntitiesNumToWarn() const;
 
 #define APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(M) \
     M(named_collection, NamedCollection, 1000lu, max_named_collection_num_to_warn, "max_named_collection_num_to_warn") \
@@ -1557,6 +1559,7 @@ public:
 #undef DECLARE_ENTITY_LIMIT_WITH_THROW
 
     void setMaxPartNumToWarn(size_t max_part_to_warn);
+    void setMaxAccessEntitiesNumToWarn(size_t max_access_entity_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
     void setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn);

@@ -368,8 +368,11 @@ private:
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
+
     std::atomic_bool allow_impersonate_user = false;
     std::atomic_bool readonly_restricts_set_role = false;
+
+    UInt64 access_entities_num_limit = 0;
 };
 
 }

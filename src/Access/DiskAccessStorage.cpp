@@ -205,8 +205,8 @@ namespace
 }
 
 
-DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_)
-    : IAccessStorage(storage_name_), memory_storage(storage_name_, changes_notifier_, /* allow_backup_= */ true)
+DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_, UInt64 access_entities_num_limit_)
+    : IAccessStorage(storage_name_), memory_storage(storage_name_, changes_notifier_, /* allow_backup_= */ true, access_entities_num_limit_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
@@ -674,6 +674,10 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             *conflicting_id = id;
         return false;
     }
+
+    /// Check the limit of the number of access entities before anything is written to disk.
+    if (!name_collision && !id_collision && memory_storage.entityLimitReached())
+        memory_storage.throwTooManyEntities();
 
     std::optional<UUID> old_id_to_delete;
     if (name_collision && (id_by_name != id))

@@ -1845,6 +1845,7 @@ The table can be configured with these settings:
 - [max_pending_mutations_to_warn](/reference/settings/server-settings/settings/max-pending#max_pending_mutations_to_warn)
 - [max_pending_mutations_execution_time_to_warn](/reference/settings/server-settings/settings/max-pending#max_pending_mutations_execution_time_to_warn)
 - [max_named_collection_num_to_warn](/reference/settings/server-settings/settings/max-named#max_named_collection_num_to_warn)
+- [max_access_entity_num_to_warn](/reference/settings/server-settings/settings/max-access#max_access_entity_num_to_warn)
 - [resource_overload_warnings](/concepts/features/configuration/settings/server-overload#resource-overload-warnings)
 
 .examples
