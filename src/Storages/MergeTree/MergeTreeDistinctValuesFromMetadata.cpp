@@ -219,7 +219,7 @@ bool isStoredWithGeneralPurposeCodecs(const IMergeTreeDataPart & part, const Str
 
 }
 
-std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
+UnorderedMapWithMemoryTracking<String, UInt64> estimateDistinctValuesFromMetadata(
     const RangesInDataParts & parts, const StorageMetadataPtr & metadata, const Names & column_names)
 {
     const auto & columns = metadata->getColumns();
@@ -227,7 +227,7 @@ std::unordered_map<String, UInt64> estimateDistinctValuesFromMetadata(
     if (parts.empty())
         return {};
 
-    std::unordered_map<String, UInt64> result;
+    UnorderedMapWithMemoryTracking<String, UInt64> result;
 
     /// The first column of the primary key is sorted in every part, so the marks of the primary key index tell its
     /// number of distinct values. Its compressed size does not (see below).
