@@ -228,7 +228,8 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimatePlainParq
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, query_settings, object_storage, storage_snapshot->metadata, /*distributed_processing=*/ false,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr,
-        /*file_progress_callback=*/ {}, /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ false);
+        /*file_progress_callback=*/ {}, /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ false,
+        format_settings);
 
     ObjectInfos files;
     while (auto object_info = iterator->next(0))
