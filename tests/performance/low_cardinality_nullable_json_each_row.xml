@@ -7,6 +7,6 @@
     <query>
         SELECT count(s)
         FROM format(JSONEachRow, 's LowCardinality(Nullable(String))',
-            repeat('{"s":"alpha"}\n{"s":"beta"}\n{"s":null}\n', 250000))
+            repeat('{{"s":"alpha"}}\n{{"s":"beta"}}\n{{"s":null}}\n', 250000))
     </query>
 </test>
