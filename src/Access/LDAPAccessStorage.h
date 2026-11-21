@@ -7,6 +7,7 @@
 #include <base/scope_guard.h>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -55,10 +56,10 @@ private: // IAccessStorage implementations.
 
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
-    void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
+    bool updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
     std::set<String> mapExternalRolesNoLock(const LDAPClient::SearchResultsList & external_roles) const;
     bool areLDAPCredentialsValidNoLock(const User & user, const Credentials & credentials,
-        const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & role_search_results) const;
+        const ExternalAuthenticators & external_authenticators, std::optional<LDAPClient::SearchResultsList> & role_search_results) const;
 
     mutable std::recursive_mutex mutex; // Note: Reentrace possible by internal role lookup via access_control
     AccessControl & access_control;
