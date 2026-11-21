@@ -1,6 +1,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFormatting.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/UTF8Helpers.h>
 
 
@@ -16,25 +19,28 @@ size_t displayWidth(std::string_view text, size_t prefix = 0)
 }
 
 /// Whether every line of `text` fits into `width`, if the first line starts at `column`.
-bool fitsWidth(std::string_view text, size_t column, size_t width)
+/// Lines indented by more than `max_indent` spaces are not checked.
+bool fitsWidth(std::string_view text, size_t column, size_t width, size_t max_indent = std::string_view::npos)
 {
     for (size_t newline = 0; newline != std::string_view::npos; text.remove_prefix(newline + 1), column = 0)
     {
         newline = text.find('\n');
-        if (column + displayWidth(text.substr(0, newline), column) > width)
+        const std::string_view line = text.substr(0, newline);
+        if (line.find_first_not_of(' ') <= max_indent && column + displayWidth(line, column) > width)
             return false;
     }
     return true;
 }
 
-bool fitsOnLine(const IAST::FormatState & state, std::string_view text)
+/// Lines indented deeper than `indent` levels are not checked (see ASTFormatting.h).
+bool fitsOnLine(const IAST::FormatState & state, std::string_view text, size_t indent)
 {
-    return fitsWidth(text, state.formatting->column(), state.formatting->width);
+    return fitsWidth(text, state.formatting->column(), state.formatting->width, 4 * indent);
 }
 
 }
 
-void ASTFormatting::update()
+size_t ASTFormatting::column()
 {
     std::string_view added = out.stringView().substr(scanned);
     scanned += added.size();
@@ -42,28 +48,9 @@ void ASTFormatting::update()
     {
         added.remove_prefix(newline + 1);
         line_column = 0;
-        line_indent = 0;
-        line_indent_complete = false;
-    }
-    if (!line_indent_complete)
-    {
-        size_t spaces = std::min(added.find_first_not_of(' '), added.size());
-        line_indent += spaces;
-        line_indent_complete = spaces < added.size();
     }
     line_column += displayWidth(added, line_column);
-}
-
-size_t ASTFormatting::column()
-{
-    update();
     return line_column;
-}
-
-size_t ASTFormatting::lineIndent()
-{
-    update();
-    return line_indent / 4;
 }
 
 bool shouldWrapAST(
@@ -76,15 +63,17 @@ bool shouldWrapAST(
         return false;
     /// When the indentation alone takes the whole width, wrapping does not help
     /// and would only make the output grow quadratically with the nesting depth.
-    const size_t width = state.formatting->width;
-    if (4 * (frame.indent + 1) >= width || 4 * (state.formatting->lineIndent() + 1) >= width)
+    if (4 * (frame.indent + 1) >= state.formatting->width)
         return false;
-    return !fitsOnLine(state, flat_text());
+    return !fitsOnLine(state, flat_text(), frame.indent);
 }
 
-UInt16 wrappedIndentAST(const IAST::FormatState & state, UInt16 min_indent)
+bool arePlainValuesAST(const ASTs & elements)
 {
-    return static_cast<UInt16>(std::max<size_t>(state.formatting->lineIndent(), min_indent) + 1);
+    return std::ranges::all_of(elements, [](const ASTPtr & element)
+    {
+        return (element->as<ASTLiteral>() || element->as<ASTIdentifier>()) && element->tryGetAlias().empty();
+    });
 }
 
 String formatASTWithoutWrapping(const std::function<void(WriteBuffer &, IAST::FormatState &)> & format)
@@ -104,10 +93,49 @@ void writeASTNewLine(WriteBuffer & out, size_t indent)
 
 void writeASTListSpace(WriteBuffer & out, const IAST::FormatState & state, size_t indent, bool wrap, std::string_view packed_next_item)
 {
-    if (!wrap || (!packed_next_item.empty() && fitsOnLine(state, " " + String(packed_next_item))))
+    if (!wrap || (!packed_next_item.empty() && fitsOnLine(state, " " + String(packed_next_item), indent)))
         out.write(' ');
     else
         writeASTNewLine(out, indent);
+}
+
+void formatASTList(
+    const IAST & list,
+    std::string_view open,
+    char close,
+    bool wrap,
+    WriteBuffer & out,
+    const IAST::FormatSettings & settings,
+    IAST::FormatState & state,
+    IAST::FormatStateStacked frame)
+{
+    const ASTs & elements = list.children;
+    const bool pack = wrap && arePlainValuesAST(elements);
+    if (wrap)
+        ++frame.indent;
+    out.write(open.data(), open.size());
+    if (wrap)
+        writeASTNewLine(out, frame.indent);
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        frame.list_element_index = i;
+        if (i != 0)
+        {
+            out.write(',');
+            writeASTListSpace(out, state, frame.indent, wrap, pack ? formatASTWithoutWrapping([&](WriteBuffer & flat, IAST::FormatState & flat_state)
+            {
+                elements[i]->format(flat, settings, flat_state, frame);
+                if (i + 1 < elements.size())
+                    flat.write(',');
+            }) : "");
+        }
+        if (elements[i]->as<ASTSetQuery>())
+            out.write("SETTINGS ", 9);
+        elements[i]->format(out, settings, state, frame);
+    }
+    if (wrap)
+        writeASTNewLine(out, frame.indent - 1);
+    out.write(close);
 }
 
 void formatASTListInParentheses(
@@ -117,8 +145,7 @@ void formatASTListInParentheses(
     IAST::FormatState & state,
     IAST::FormatStateStacked frame)
 {
-    const auto * expression_list = list.as<ASTExpressionList>();
-    const bool wrap = expression_list && !list.children.empty() && shouldWrapAST(out, state, frame, [&]
+    const bool wrap = list.as<ASTExpressionList>() && !list.children.empty() && shouldWrapAST(out, state, frame, [&]
     {
         return formatASTWithoutWrapping([&](WriteBuffer & flat, IAST::FormatState & flat_state)
         {
@@ -128,17 +155,14 @@ void formatASTListInParentheses(
         });
     });
 
-    out.write('(');
     if (wrap)
-    {
-        frame.indent = static_cast<UInt16>(wrappedIndentAST(state) - 1);
-        frame.expression_list_always_start_on_new_line = true;
-        expression_list->formatImplMultiline(out, settings, state, frame);
-        writeASTNewLine(out, frame.indent);
-    }
+        formatASTList(list, "(", ')', /*wrap=*/ true, out, settings, state, frame);
     else
+    {
+        out.write('(');
         list.format(out, settings, state, frame);
-    out.write(')');
+        out.write(')');
+    }
 }
 
 String formatASTWithWrapping(const IAST & ast, const IAST::FormatSettings & settings, size_t wrap_width)

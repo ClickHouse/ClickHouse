@@ -87,7 +87,8 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     format_frame.expression_list_prepend_whitespace = false;
     bool need_space = false;
 
-    /// If the definition does not fit on the current line, every next clause starts on a new line (see ASTFormatting.h).
+    /// If the definition does not fit on the current line, every clause starts on a new line
+    /// and the closing bracket is on its own line, as for function arguments (see ASTFormatting.h).
     const bool wrap = shouldWrapAST(ostr, state, format_frame, [&]
     {
         return formatASTWithoutWrapping([&](WriteBuffer & out, FormatState & flat_state)
@@ -96,7 +97,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         });
     });
     if (wrap)
-        format_frame.indent = wrappedIndentAST(state, format_frame.indent);
+        ++format_frame.indent;
     const auto write_space = [&]
     {
         if (wrap)
@@ -104,6 +105,9 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         else
             ostr << " ";
     };
+
+    if (wrap)
+        writeASTNewLine(ostr, format_frame.indent);
 
     if (!parent_window_name.empty())
     {
@@ -178,6 +182,9 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
                 << (!frame_end_preceding ? "FOLLOWING" : "PRECEDING");
         }
     }
+
+    if (wrap)
+        writeASTNewLine(ostr, format_frame.indent - 1);
 }
 
 std::string ASTWindowDefinition::getDefaultWindowName() const

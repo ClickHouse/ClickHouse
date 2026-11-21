@@ -340,7 +340,7 @@ void formatWrappedField(
         const auto type = element.getType();
         return type == Field::Types::Array || type == Field::Types::Tuple || type == Field::Types::Map;
     });
-    frame.indent = wrappedIndentAST(state);
+    ++frame.indent;
     ostr << open;
     writeASTNewLine(ostr, frame.indent);
     for (size_t i = 0; i < elements->size(); ++i)

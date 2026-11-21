@@ -17,6 +17,11 @@ SELECT user_id FROM events WHERE (first_long_column = 1 OR second_long_column = 
 SELECT arrayMap(x -> concat(x, '_first_suffix', '_second_suffix', '_third_suffix'), labels) FROM events;
 SELECT (a, b, c) > (first_long_identifier, second_long_identifier, third_long_identifier) FROM events;
 SELECT f(first_parameter, second_parameter, third_parameter)(first_argument, second_argument) FROM events;
+SELECT id, quantilesTDigest(0.5, 0.9, 0.99, 0.999)(response_time_ms) AS latency FROM t;
+SELECT 1 FROM t WHERE x IN (1, 5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12) AND y = '1512';
+SELECT 1 FROM t WHERE id IN (SELECT id FROM u WHERE name = 'a long string literal that cannot be split') AND x = 1;
+SELECT f((SELECT 1), first_long_argument_name, second_long_argument, (SELECT 2));
+SELECT id, sum(value) OVER (PARTITION BY customer_id ORDER BY event_time ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS s FROM events;
 SELECT sum(value) OVER w FROM events WINDOW w AS (PARTITION BY customer_identifier ORDER BY event_timestamp ROWS BETWEEN 2 PRECEDING AND CURRENT ROW);
 SELECT a.value FROM first_table AS a INNER JOIN second_table AS b ON a.identifier = b.identifier AND a.tenant_id = b.tenant_id;
 SELECT f((SELECT name FROM persons WHERE enabled = 1), first_long_argument, second_long_argument);

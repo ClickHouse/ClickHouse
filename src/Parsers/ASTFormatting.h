@@ -16,10 +16,11 @@ class WriteBufferFromOwnString;
 /// A construct that can be wrapped (function arguments and parameters, an array, tuple or map, an AND/OR chain,
 /// a window definition, the columns of INSERT) is first formatted in one line into a temporary buffer.
 /// If this text does not fit on the current line, the construct starts its items on new lines
-/// and formats them with the indentation of the next level.
+/// and formats them one level deeper than the construct itself.
 /// The decision is made before the construct is written, so nested multiline parts (like subqueries)
-/// get the right indentation by themselves. Text after the construct (like a closing parenthesis
-/// or an alias) is not taken into account, so the width is a soft limit.
+/// get the right indentation by themselves. The lines of the text indented deeper than the construct are not checked:
+/// they belong to nested subqueries, which wrapping cannot make shorter.
+/// Text after the construct (like a closing parenthesis) is not taken into account, so the width is a soft limit.
 ///
 /// Wrapping is active only inside `formatASTWithWrapping`, so other formatting (e.g. `formatQuery`) is not affected.
 class ASTFormatting
@@ -30,18 +31,13 @@ public:
     const WriteBufferFromOwnString & out;
     const size_t width;
 
-    /// Display width and indentation of the current line of `out`.
+    /// Display width of the current line of `out`.
     /// Only the text written since the previous call is scanned, so the total cost is linear in the output size.
     size_t column();
-    size_t lineIndent();
 
 private:
-    void update();
-
     size_t scanned = 0;
     size_t line_column = 0;
-    size_t line_indent = 0;
-    bool line_indent_complete = false;
 };
 
 /// Whether a construct written at the current position of `out` has to be wrapped,
@@ -52,9 +48,8 @@ bool shouldWrapAST(
     const IAST::FormatStateStacked & frame,
     const std::function<String()> & flat_text);
 
-/// Indentation level of the items of a construct wrapped at the current line: one level deeper than the line,
-/// and not less than one level deeper than `min_indent`.
-UInt16 wrappedIndentAST(const IAST::FormatState & state, UInt16 min_indent = 0);
+/// Whether all `elements` are plain values (literals and identifiers), which are packed several per line when wrapped.
+bool arePlainValuesAST(const ASTs & elements);
 
 /// Text written by `format` without wrapping.
 String formatASTWithoutWrapping(const std::function<void(WriteBuffer &, IAST::FormatState &)> & format);
@@ -67,7 +62,19 @@ void writeASTNewLine(WriteBuffer & out, size_t indent);
 void writeASTListSpace(
     WriteBuffer & out, const IAST::FormatState & state, size_t indent, bool wrap, std::string_view packed_next_item = {});
 
-/// Writes `(list)`. If `list` is an expression list that does not fit on the current line, every element starts a new line.
+/// Writes the elements of `list` between `open` and `close`. If `wrap`, the elements start on new lines
+/// one level deeper than `frame`, and the closing bracket is on its own line.
+void formatASTList(
+    const IAST & list,
+    std::string_view open,
+    char close,
+    bool wrap,
+    WriteBuffer & out,
+    const IAST::FormatSettings & settings,
+    IAST::FormatState & state,
+    IAST::FormatStateStacked frame);
+
+/// Writes `(list)`. If `list` is an expression list that does not fit on the current line, it is wrapped (see `formatASTList`).
 void formatASTListInParentheses(
     const IAST & list,
     WriteBuffer & out,
