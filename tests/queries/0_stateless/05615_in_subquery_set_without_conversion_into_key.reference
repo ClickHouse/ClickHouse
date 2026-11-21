@@ -1,0 +1,14 @@
+Int128	1
+UInt128	7
+Int256	1
+UInt256	7
+Nullable(Int128)	1
+Decimal128(0)	1
+partition key	7
+minmax index	1
+set index	1
+tuple key	a
+Enum8 Int128	a
+Enum8 Date	b
+IPv4 UInt128	0.0.0.1
+Parquet	1
