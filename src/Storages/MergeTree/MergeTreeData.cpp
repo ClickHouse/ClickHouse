@@ -96,6 +96,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/RenameColumnVisitor.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -1589,6 +1590,11 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
         /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
         /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
         (void)index.expression->getActionsDAG().updateHeader(header);
+    }
+    catch (const Exception & e)
+    {
+        rethrowIfQueryCancelled(e);
+        return std::current_exception();
     }
     catch (...)
     {
@@ -5255,6 +5261,9 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts) const
 try
 {
+    /// The outcome of a cancelled operation is recorded too, so its cancellation must not stop this.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     auto table_id = getStorageID();
     if (auto part_log = getContext()->getPartLog())
@@ -14613,6 +14622,9 @@ void MergeTreeData::writePartLog(
     const std::map<String, UInt64> & projections_duration_ms)
 try
 {
+    /// The outcome of a cancelled operation is recorded too, so its cancellation must not stop this.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
     auto table_id = getStorageID();
     auto part_log = getContext()->getPartLog();
     if (!part_log)

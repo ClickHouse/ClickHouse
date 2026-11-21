@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -2020,8 +2021,9 @@ static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
     {
         result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        rethrowIfQueryCancelled(e);
         return true;
     }
 
