@@ -111,6 +111,12 @@ public:
     /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
     void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
 
+    void setMapColumnsReadByOneSide(const NameSet & by_keys, const NameSet & by_values) override
+    {
+        read_options.map_columns_read_by_keys = by_keys;
+        read_options.map_columns_read_by_values = by_values;
+    }
+
 private:
     Chunk read() override;
 
@@ -158,6 +164,8 @@ private:
     /// Only a cell found in the cache keeps statistics: counting them moves the cell, which only a hit may do.
     ParquetMetadataCache::MappedPtr metadata_cache_cell;
     std::optional<ParquetMetadataCacheKey> metadata_cache_key;
+    /// The cell found in the cache (under `footer_cache_key`) that keeps the offset indexes the reader reads, see `read`.
+    ParquetMetadataCache::MappedPtr offset_indexes_cache_cell;
 };
 
 /// Skips a file version, without opening it, if the kept statistics show that the reader would prune every row group.

@@ -13,7 +13,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Poco/Event.h>
 
 
 namespace DB
@@ -73,6 +72,7 @@ bool isSegmentatorParsingFinished();
  *  2) take the blocks from the processing unit to return them to the caller
  *  3) signal that the processing unit is empty
  *  4) repeat until it encounters unit that is marked as "past_the_end"
+ * The reader thread cuts and parses the first unit itself and starts the segmentator only if more data follows.
  * All threads must also check for cancel/eof/exception flags.
  */
 class ParallelParsingInputFormat final : public IInputFormat
@@ -224,6 +224,8 @@ private:
     const InternalParserCreator internal_parser_creator;
     /// Function to segment the file. Then "parsers" will parse that segments.
     FormatFactory::FileSegmentationEngineCreator file_segmentation_engine_creator;
+    /// Created once per stream: an engine may keep state across segments (e.g. Avro caches the file header).
+    FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const FormatSettings format_settings;
     const size_t min_chunk_bytes;
@@ -255,8 +257,6 @@ private:
 
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
-
-    Poco::Event first_parser_finished;
 
     std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
@@ -304,7 +304,7 @@ private:
     /// (and only for the first exception, whose rethrow the value must match).
     std::optional<size_t> background_exception_rows_reached;
     /// The header rows read by the parser of the first unit (see IInputFormat::getNumberOfHeaderRows).
-    /// Written before `first_parser_finished` is set, and the later units are scheduled only after that.
+    /// Written by the reading thread while it parses the first unit itself, before any other parser is scheduled.
     size_t header_rows_in_first_unit = 0;
 
     /// We use deque instead of vector, because it does not require a move
@@ -317,13 +317,11 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
+        chassert(ticket_number != 0);
         runner.enqueueAndKeepTrack([this, ticket_number]()
         {
             parserThreadFunction(ticket_number);
         });
-        /// We have to wait here to possibly extract ColumnMappingPtr from the first parser.
-        if (ticket_number == 0)
-            first_parser_finished.wait();
     }
 
     void finishAndWait() noexcept
@@ -362,6 +360,9 @@ private:
 
     void segmentatorThreadFunction(ThreadGroupPtr thread_group);
     void parserThreadFunction(size_t current_ticket_number);
+
+    /// Cuts the next segment of the input into `unit`. Returns whether more data follows.
+    bool segmentUnit(ProcessingUnit & unit);
 
     /// Save/log a background exception, set termination flag, wake up all
     /// threads. This function is used by segmentator and parsed threads.

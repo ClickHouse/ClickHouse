@@ -84,6 +84,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char async_insert_pause_before_schedule[];
+    extern const char async_insert_flush_pause_after_set_user[];
 }
 
 namespace Setting
@@ -127,7 +128,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_PARAMETER;
 }
 
-static const NameSet settings_to_skip
+[[clang::no_destroy]] static const NameSet settings_to_skip
 {
     /// We don't consider this setting because it is only for deduplication,
     /// which means we can put two inserts with different tokens in the same block safely.
@@ -1309,18 +1310,6 @@ try
 
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
-    /// Fail closed if the authentication method that queued this insert has expired between enqueue
-    /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
-    /// deferred flush has no session, so without this a token could enqueue data just before expiry
-    /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
-    /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
-    if (key.authentication_valid_until != 0)
-    {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        if (now > key.authentication_valid_until)
-            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
-    }
-
     bool internal = true;
     bool async_insert = true;
 
@@ -1347,19 +1336,44 @@ try
         insert_context.reset();
     });
 
-    /// Access rights must be checked for the user who executed the initial INSERT query.
-    if (key.user_id)
+    /// Rethrown first in the guarded block below, so a failed identity restore is logged and inserts nothing.
+    std::exception_ptr identity_exception;
+    try
     {
-        /// Replay the whole originating identity in one call: the external (pushed) roles, the
-        /// credential grant limit and its expiry are restored together with the user, so a limited
-        /// credential does not regain the full user's rights and a pushed-role session does not fail
-        /// role revalidation.
-        insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
-        /// `current_roles` are the session's *effective* current roles, which already include the
-        /// external roles restored above. Re-apply them without the grant check: external roles are not
-        /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
-        /// granted current roles are kept and the external ones come from `setUser`.
-        insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
+        /// Fail closed if the authentication method that queued this insert has expired between enqueue
+        /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
+        /// deferred flush has no session, so without this a token could enqueue data just before expiry
+        /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
+        /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
+        if (key.authentication_valid_until != 0)
+        {
+            const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            if (now > key.authentication_valid_until)
+                throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
+        }
+
+        /// Access rights must be checked for the user who executed the initial INSERT query.
+        if (key.user_id)
+        {
+            /// Replay the whole originating identity in one call: the external (pushed) roles, the
+            /// credential grant limit and its expiry are restored together with the user, so a limited
+            /// credential does not regain the full user's rights and a pushed-role session does not fail
+            /// role revalidation.
+            insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
+            FailPointInjection::pauseFailPoint(FailPoints::async_insert_flush_pause_after_set_user);
+            /// `current_roles` are the session's *effective* current roles, which already include the
+            /// external roles restored above. Re-apply them without the grant check: external roles are not
+            /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
+            /// granted current roles are kept and the external ones come from `setUser`.
+            insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
+        }
+    }
+    catch (...)
+    {
+        identity_exception = std::current_exception();
+        /// A partially restored identity must not be used to log the failure.
+        insert_context = Context::createCopy(global_context);
+        insert_context->makeQueryContext();
     }
 
     /// Context::setUser only restores the access-control identity, not the ClientInfo user
@@ -1524,6 +1538,9 @@ try
 
     try
     {
+        if (identity_exception)
+            std::rethrow_exception(identity_exception);
+
         interpreter = std::make_unique<InterpreterInsertQuery>(
             key.query,
             insert_context,
