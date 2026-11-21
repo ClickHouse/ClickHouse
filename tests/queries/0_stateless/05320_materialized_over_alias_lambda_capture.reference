@@ -1,0 +1,37 @@
+insert	[6]	[6]	[6]	[160]	[60]	[6]	[6]	[6]	[160]	[60]
+update arr	[6]	[6]	[6]	[260]	[60]	[6]	[6]	[6]	[260]	[60]
+update k	[8]	[8]	[8]	[280]	[80]	[8]	[8]	[8]	[280]	[80]
+on fly	[8]	[8]	[8]
+clear column	0	[1]	[1]	[1]
+merge ttl	0	[1]	[1]	[1]
+materialize ttl	0	[1]	[1]	[1]
+lightweight update	7	[8]	[8]	[8]
+patch applied	7	[8]	[8]	[8]
+field update z	1	[106]	[106]
+field update arr_t	[206]	[206]
+field update k	[208]	[208]
+dotted alias	[200]	[200]
+field merge ttl	0	[101]	[101]
+scalar update arr_t	[206]	[206]
+scalar update k	[208]	[208]
+no alias update z	1	[100]	[7]
+no alias update arrays	[200]	[8]	[200]	[8]
+alias field update z	1	[100]	[101]	[100]	[101]
+alias field update arr_t	[200]	[201]	[200]	[201]
+shadowed alias	1	4	[201]	[200]	[201]	[200]
+named tuple on fly	[(2,[3])]	[['x','d2']]	[(2,[3])]	[['x','d2']]
+alias names on fly	[['x','d']]	[['p','e']]	[['x','d']]	[['p','e']]
+local alias update w	Z-Z-U	Z-Z-U
+local alias update q	Z-Z-U	Z-Z-U
+local alias on fly	Z-Z-F	Z-Z-F
+local alias merge ttl		Z-Z-	Z-Z-
+local alias scopes	Z-Z-U	Z-YZ-U	Y-Y-U	Z-Z-U	Z-YZ-U	Y-Y-U
+local alias inner	Y-Qx-w	Y-Qx-w
+local alias names on fly	[['q','a','B']]	[['q','a','Y']]	[['q','a']]	[['q','a','B']]	[['q','a','Y']]	[['q','a']]
+local alias nested	Z-3-U	Z-3-U	Z-3-U	Z-3-U
+local alias definition	Z-Qxy-w	['A-Qxy']	Z-Qxy-w	['A-Qxy']
+local alias self	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']	Z-Qx-w	QxZ-QxZ-w	['QxA-QxA']
+field name update	['{"x.a":200}']	['{"x.a":200}']
+field name on fly	['{"x.a":300}']	['{"x.a":300}']
+field column	[2]-{"x.a":200}	[2]-{"x.a":200}
+fresh name	[212]	[212]

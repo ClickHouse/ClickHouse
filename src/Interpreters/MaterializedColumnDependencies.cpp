@@ -62,11 +62,11 @@ MaterializedColumnDependencies::findNode(const String & column_name) const
     /// it stands for, cast to its declared type — resolving the name alone would leave the recompute
     /// stage demanding a column no part holds, and skipping the cast would recompute a value that
     /// differs from the inserted one. Before the subcolumn rewrite, so an alias to one is normalized too.
-    replaceAliasColumnsInQuery(materialized.expression, columns, {}, context);
+    replaceAliasColumnsInQuery(materialized.expression, columns, {}, context, {}, /*rename_lambda_parameters=*/ true);
 
     /// Both the read set and the recompute stage are keyed on top-level columns, so a default over a
     /// subcolumn must be reported as depending on `t`, not on `t.a`.
-    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_);
+    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized.expression, source_columns_, /*name_lambda_parameter_fields=*/ true);
 
     /// `analyze` rewrites in place, so keep `materialized.expression` pristine for callers.
     auto query = materialized.expression->clone();
