@@ -8877,17 +8877,6 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, const Stora
         return std::nullopt;
     }
 
-    /// The live checks in `getColumnDefaultnessStatsUnavailableReason` are not enough: patch parts and on-the-fly
-    /// mutations captured by the snapshot are still applied to the reads of its parts after they are materialized
-    /// and removed from the table (e.g. `clearUnusedPatchParts` after `OPTIMIZE ... FINAL`), while the base parts
-    /// of the snapshot still have `num_defaults` of the data before the update.
-    const auto & snapshot_mutations = *snapshot_data.mutations_snapshot;
-    if (snapshot_mutations.hasPatchParts() || snapshot_mutations.hasDataMutations() || snapshot_mutations.hasAlterMutations())
-    {
-        LOG_DEBUG(log, "No defaultness stats for column {}: the storage snapshot has patch parts or mutations applied on the fly", column_name);
-        return std::nullopt;
-    }
-
     const auto & metadata_snapshot = storage_snapshot->metadata;
     auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column_name);
     if (!column_in_metadata)
@@ -8923,6 +8912,33 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, const Stora
     {
         if (part->isEmpty())
             continue;
+
+        /// The live checks in `getColumnDefaultnessStatsUnavailableReason` are not enough: patch parts and on-the-fly
+        /// mutations captured by the snapshot are still applied to the reads of its parts after they are materialized
+        /// and removed from the table (e.g. `clearUnusedPatchParts` after `OPTIMIZE ... FINAL`), while the base parts
+        /// of the snapshot still have `num_defaults` of the data before the update.
+        /// The check is per part: the snapshot also lists the mutations that are already applied to all of its parts
+        /// (finished mutations are kept in the history), and those do not change what is read.
+        if (!mutations_snapshot->getPatchesForPart(part).empty())
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: the storage snapshot has patch parts for part {}", column_name, part->name);
+            return std::nullopt;
+        }
+
+        if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations())
+        {
+            auto commands = mutations_snapshot->getOnFlyMutationCommandsForPart(part);
+            bool has_on_fly_mutations = std::ranges::any_of(commands, [](const auto & command)
+            {
+                return AlterConversions::isSupportedDataMutation(command.type) || AlterConversions::isSupportedAlterMutation(command.type);
+            });
+
+            if (has_on_fly_mutations)
+            {
+                LOG_DEBUG(log, "No defaultness stats for column {}: part {} has mutations applied on the fly", column_name, part->name);
+                return std::nullopt;
+            }
+        }
 
         if (mutations_snapshot->hasMetadataMutations())
         {
