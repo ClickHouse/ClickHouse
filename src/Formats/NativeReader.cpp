@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnLazy.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/range.h>
 #include <Common/typeid_cast.h>
@@ -41,11 +42,13 @@ NativeReader::NativeReader(
     ReadBuffer & istr_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    ISerialization::KindSet allowed_kinds_)
+    ISerialization::KindSet allowed_kinds_,
+    bool with_defaults_masks_)
     : istr(istr_)
     , server_revision(server_revision_)
     , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
     , allowed_kinds(allowed_kinds_)
+    , with_defaults_masks(with_defaults_masks_)
 {
 }
 
@@ -66,7 +69,8 @@ NativeReader::NativeReader(
     std::optional<FormatSettings> format_settings_,
     BlockMissingValues * block_missing_values_,
     NativeReaderTypeCache * type_cache_,
-    ISerialization::KindSet allowed_kinds_)
+    ISerialization::KindSet allowed_kinds_,
+    bool with_defaults_masks_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
@@ -74,6 +78,7 @@ NativeReader::NativeReader(
     , block_missing_values(block_missing_values_)
     , type_cache(type_cache_)
     , allowed_kinds(allowed_kinds_)
+    , with_defaults_masks(with_defaults_masks_)
 {
 }
 
@@ -147,6 +152,95 @@ void NativeReader::readData(
             "Cannot read all data in NativeReader. Rows read: {}. Rows expected: {}",
             column.size(),
             rows);
+}
+
+/// Reads the marker byte and, if it is 1, the defaults mask of a column.
+/// Returns the number of rows that take the default, and leaves the mask empty if there are none.
+static size_t readDefaultsMask(ReadBuffer & istr, const String & column_name, size_t rows, IColumn::Filter & defaults_mask)
+{
+    UInt8 has_defaults_mask = 0;
+    readBinary(has_defaults_mask, istr);
+    if (has_defaults_mask == 0)
+        return 0;
+
+    if (has_defaults_mask != 1)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unexpected defaults mask marker {} of column {}, expected 0 or 1",
+            static_cast<UInt32>(has_defaults_mask),
+            column_name);
+
+    /// `rows` comes from the block header, so the mask grows only as its bytes arrive.
+    while (defaults_mask.size() < rows)
+    {
+        const size_t offset = defaults_mask.size();
+        const size_t size = std::min<size_t>(rows - offset, DEFAULT_INSERT_BLOCK_SIZE);
+        defaults_mask.resize(offset + size);
+        istr.readStrict(reinterpret_cast<char *>(defaults_mask.data() + offset), size);
+    }
+
+    const size_t num_defaults = countBytesInFilter(defaults_mask);
+    if (num_defaults == 0)
+        defaults_mask.clear();
+    return num_defaults;
+}
+
+/// `column` has the rows where `defaults_mask` is zero, or all `rows` rows if the mask is empty.
+/// Removes the rows that are NULL from it and sets them in the mask instead.
+static void moveNullsToDefaultsMask(ColumnWithTypeAndName & column, size_t rows, IColumn::Filter & defaults_mask)
+{
+    const IColumn & values = *column.column;
+    IColumn::Filter not_null(values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+        not_null[i] = !values.isNullAt(i);
+
+    const size_t num_not_null = countBytesInFilter(not_null);
+    if (num_not_null == values.size())
+        return;
+
+    if (defaults_mask.empty())
+        defaults_mask.resize_fill(rows, 0);
+
+    size_t values_row = 0;
+    for (auto & is_default : defaults_mask)
+    {
+        if (is_default)
+            continue;
+        is_default = !not_null[values_row];
+        ++values_row;
+    }
+
+    column.column = values.filter(not_null, num_not_null);
+}
+
+/// `values` has the rows where `defaults_mask` is zero. Returns all rows, with the default of `type` where the mask is set.
+static ColumnPtr expandByDefaultsMask(const IColumn & values, const IDataType & type, const IColumn::Filter & defaults_mask)
+{
+    auto res = values.cloneEmpty();
+    res->reserve(defaults_mask.size());
+
+    size_t values_row = 0;
+    for (size_t row = 0; row < defaults_mask.size();)
+    {
+        const bool is_default = defaults_mask[row] != 0;
+        size_t end = row + 1;
+        while (end < defaults_mask.size() && (defaults_mask[end] != 0) == is_default)
+            ++end;
+
+        if (!is_default)
+        {
+            res->insertRangeFrom(values, values_row, end - row);
+            values_row += end - row;
+        }
+        else if (type.isDefaultInsertTrivial())
+            res->insertManyDefaults(end - row);
+        else
+            type.insertManyDefaultsInto(*res, end - row);
+
+        row = end;
+    }
+
+    return res;
 }
 
 
@@ -282,25 +376,45 @@ Block NativeReader::read()
             /// Note: we can't compare data types as strings, compatible data types may differ in parameters.
         }
 
+        /// Empty if no row of the column takes the default.
+        IColumn::Filter defaults_mask;
+        size_t rows_with_values = rows;
+        if (with_defaults_masks)
+            rows_with_values -= readDefaultsMask(istr, column.name, rows, defaults_mask);
+
         /// If no rows, nothing to read.
-        if (rows)
+        if (rows_with_values)
         {
             const auto * format = format_settings.get();
             NameAndTypePair name_and_type = {column.name, column.type};
-            readData(*serialization, *read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
+            readData(*serialization, *read_column, istr, format, rows_with_values, &name_and_type, &avg_value_size_hints);
         }
 
         column.column = std::move(read_column);
 
         bool use_in_result = true;
+        std::optional<size_t> header_position;
         if (!header.empty())
         {
             if (header.has(column.name))
             {
                 auto & header_column = header.getByName(column.name);
+                header_position = header.getPositionByName(column.name);
 
                 if (format_settings && format_settings->null_as_default)
-                    insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
+                {
+                    if (with_defaults_masks)
+                    {
+                        /// A NULL that the target column cannot hold takes the default like a row of the defaults mask:
+                        /// it is not converted, and gets the default of the target type. The rows of the mask are marked
+                        /// as missing after the expansion below.
+                        if (isNullableOrLowCardinalityNullable(column.type) && !isNullableOrLowCardinalityNullable(header_column.type))
+                            moveNullsToDefaultsMask(column, rows, defaults_mask);
+                        insertNullAsDefaultIfNeeded(column, header_column, *header_position, nullptr);
+                    }
+                    else
+                        insertNullAsDefaultIfNeeded(column, header_column, *header_position, block_missing_values);
+                }
 
                 if (!header_column.type->equals(*column.type))
                 {
@@ -354,6 +468,16 @@ Block NativeReader::read()
             }
         }
 
+        if (use_in_result && !defaults_mask.empty())
+        {
+            /// Expanded only after the conversion to the type of the header: the rows that take the default have no value
+            /// to convert, and must get the default of the target type rather than a converted default of the source type.
+            column.column = expandByDefaultsMask(*column.column, *column.type, defaults_mask);
+
+            if (block_missing_values && header_position)
+                block_missing_values->setBitsFromNullMap(*header_position, defaults_mask);
+        }
+
         if (use_in_result)
             res.insert(std::move(column));
 
@@ -371,7 +495,9 @@ Block NativeReader::read()
             index_column_it = index_block_it->columns.begin();
     }
 
-    if (rows && !header.empty())
+    /// A block without columns and rows marks the end of the data. Any other block gets the structure of the header,
+    /// also one without rows: it may lack some columns, have them in another order, or have only columns that were skipped.
+    if ((rows || columns) && !header.empty())
     {
         /// Allow to skip columns. We will fill them with default values later.
         Block tmp_res;

@@ -1,0 +1,12 @@
+HTTP
+1	10	s1	\N
+2	42	two	7
+3	30	s3	3
+client
+1	10	s1	\N
+2	42	two	7
+3	30	s3	3
+async insert
+1	10	s1	\N
+2	42	two	7
+3	30	s3	3

@@ -89,6 +89,7 @@ CLICKHOUSE_Format=(
     MySQLWire
     NDJSON
     Native
+    NativeWithDefaults
     Null
     ODBCDriver2
     ORC

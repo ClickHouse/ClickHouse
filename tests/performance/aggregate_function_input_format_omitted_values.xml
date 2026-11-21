@@ -1,0 +1,13 @@
+<test>
+    <!-- `aggregate_function_input_format` with the value omitted in every other row, for a `Variant` argument, which the
+         aggregate function converts on every call: the states of a block must still be built with a single call. -->
+    <settings>
+        <max_threads>1</max_threads>
+        <input_format_parallel_parsing>0</input_format_parallel_parsing>
+        <max_block_size>100000</max_block_size>
+        <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
+    </settings>
+
+    <query>SELECT sum(finalizeAggregation(x)) FROM format(JSONEachRow, 'x AggregateFunction(sum, Variant(UInt32, UInt64))', repeat('{}\n{"x":[7,8]}\n', 500000)) SETTINGS aggregate_function_input_format = 'array' FORMAT Null</query>
+    <query>SELECT sum(finalizeAggregation(x)) FROM format(JSONEachRow, 'x AggregateFunction(sum, Variant(UInt32, UInt64))', repeat('{}\n{"x":7}\n', 500000)) SETTINGS aggregate_function_input_format = 'value' FORMAT Null</query>
+</test>
