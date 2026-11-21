@@ -6,6 +6,7 @@
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/JoinUtils.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Prefetching.h>
@@ -222,9 +223,93 @@ struct JoinKeyRange
     UInt64 size = 0;
 };
 
-template <typename KeyGetter, bool is_asof_join>
-KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, JoinKeyRange key_range = {})
+/// The rows of the block that a key getter is asked about: the rows of the selector.
+inline ColumnsHashing::RowRange joinKeyRows(const ScatteredBlock::Selector::Range & range)
 {
+    return {.begin = range.first, .end = range.second};
+}
+
+inline ColumnsHashing::RowRange joinKeyRows(const ScatteredBlock::Selector & selector)
+{
+    if (selector.size() == 0)
+        return {.begin = 0, .end = 0};
+    return {.begin = selector[0], .end = selector[selector.size() - 1] + 1, .skips_rows = !selector.isContinuousRange()};
+}
+
+/// The rows of the selector that have no NULL key and pass the ON section.
+template <typename Selector>
+size_t countJoinedRows(ConstNullMapPtr null_map, const JoinCommon::JoinMask & join_mask, const Selector & selector)
+{
+    if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector::Range>)
+    {
+        if (join_mask.getKind() == JoinCommon::JoinMask::Kind::AllTrue)
+        {
+            const size_t null_rows = null_map ? countBytesInFilter(null_map->data(), selector.first, selector.second) : 0;
+            return selector.second - selector.first - null_rows;
+        }
+    }
+
+    size_t joined_rows = 0;
+    for (size_t i = 0; i < ScatteredBlock::Selector::size(selector); ++i)
+    {
+        const size_t row = selectorIndexAt(selector, i);
+        joined_rows += !(null_map && (*null_map)[row]) && !join_mask.isRowFiltered(row);
+    }
+    return joined_rows;
+}
+
+/// The rows of the selector, without those with a NULL key or filtered out by the ON section. A getter that packs its keys
+/// in chunks is also told whether few of them are asked about, unless a prefetch reads the key of every row of the selector.
+template <typename KeyGetter, typename Selector>
+ColumnsHashing::RowRange
+joinKeyRows(ConstNullMapPtr null_map, const JoinCommon::JoinMask & join_mask, const Selector & selector, bool prefetches)
+{
+    ColumnsHashing::RowRange rows = joinKeyRows(selector);
+    rows.skips_rows = rows.skips_rows || join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue;
+    if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector::Range>)
+    {
+        /// A probe resumed for the rest of its block, which it can be after every few rows, reads none of the rest here: a
+        /// nullable key counts as skipping rows, so a getter that packs in chunks and does not prefetch packs them one by one.
+        if (selector.first != 0)
+        {
+            rows.skips_rows = rows.skips_rows || null_map != nullptr;
+            if constexpr (requires { KeyGetter::packs_in_chunks; })
+                rows.asks_few_rows = KeyGetter::packs_in_chunks && rows.skips_rows && !prefetches;
+            return rows;
+        }
+    }
+    rows.skips_rows = rows.skips_rows || (null_map && !memoryIsZero(null_map->data(), rows.begin, rows.end));
+    if constexpr (requires { KeyGetter::packs_in_chunks; })
+    {
+        if constexpr (KeyGetter::packs_in_chunks)
+        {
+            if (rows.skips_rows && !prefetches)
+            {
+                size_t joined_rows = 0;
+                if constexpr (std::is_same_v<Selector, ScatteredBlock::Selector>)
+                    joined_rows = selector.isContinuousRange() ? countJoinedRows(null_map, join_mask, selector.getRange())
+                                                               : countJoinedRows(null_map, join_mask, selector.getIndexes());
+                else
+                    joined_rows = countJoinedRows(null_map, join_mask, selector);
+                rows.asks_few_rows = ColumnsHashing::asksAboutFewRows(joined_rows, rows.end - rows.begin);
+            }
+        }
+    }
+    return rows;
+}
+
+/// `rows` are the rows the getter is asked about, for a getter that takes them.
+template <typename KeyGetter, bool is_asof_join>
+KeyGetter createJoinKeyGetter(
+    const ColumnRawPtrs & key_columns, const Sizes & key_sizes, JoinKeyRange key_range = {}, ColumnsHashing::RowRange rows = {})
+{
+    auto make = [&](const ColumnRawPtrs & columns, const Sizes & sizes)
+    {
+        if constexpr (std::is_constructible_v<KeyGetter, const ColumnRawPtrs &, const Sizes &, std::nullptr_t, ColumnsHashing::RowRange>)
+            return KeyGetter(columns, sizes, nullptr, rows);
+        else
+            return KeyGetter(columns, sizes, nullptr);
+    };
     KeyGetter getter = [&]()
     {
         if constexpr (is_asof_join)
@@ -233,10 +318,10 @@ KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & k
             auto key_size_copy = key_sizes;
             key_column_copy.pop_back();
             key_size_copy.pop_back();
-            return KeyGetter(key_column_copy, key_size_copy, nullptr);
+            return make(key_column_copy, key_size_copy);
         }
         else
-            return KeyGetter(key_columns, key_sizes, nullptr);
+            return make(key_columns, key_sizes);
     }();
 
     if constexpr (ColumnsHashing::IsHashMethodInRange<KeyGetter>::value)
@@ -646,7 +731,17 @@ public:
 
         chassert(key_type == TYPE);
         const Map & map = typedMap<TYPE, Maps>(*this);
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(keys.key_columns, key_sizes, key_range);
+
+        /// Software prefetch during the probe phase.
+        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
+
+        bool use_prefetch = false;
+        if constexpr (can_prefetch)
+            use_prefetch = shouldUseJoinPrefetch(enable_prefetch, &map);
+
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(
+            keys.key_columns, key_sizes, key_range,
+            joinKeyRows<KeyGetter>(keys.null_map, keys.join_mask_column, selector, use_prefetch));
 
         size_t rows = ScatteredBlock::Selector::size(selector);
 
@@ -658,13 +753,6 @@ public:
             skip_data = keys.buildRowSkipData(skip_buffer, selector.first, rows);
 
         Arena pool;
-
-        /// Software prefetch during the probe phase.
-        constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
-
-        bool use_prefetch = false;
-        if constexpr (can_prefetch)
-            use_prefetch = shouldUseJoinPrefetch(enable_prefetch, &map);
 
         constexpr bool prepared = PreparedKeyGetter<KeyGetter>;
         /// Before the prefetcher is created, see `PreparedJoinKeys::prepareRows`.
@@ -738,7 +826,7 @@ public:
         chassert(std::ranges::all_of(tables, [](const auto & table) { return table->key_type == TYPE; }));
         std::vector<const Map *> mapv;
         std::vector<KeyGetter> key_getter_vector;
-        prepareProbeAll<TYPE, Maps>(tables, keys, mapv, key_getter_vector);
+        prepareProbeAll<TYPE, Maps>(tables, keys, selector, enable_prefetch, prefetch_later_maps, mapv, key_getter_vector);
         return detail::probeAllRows<KeyGetter, Map, fast_path, stops_at_first_match, prefetch_later_maps, RowState, lazy_row_filter>(
             std::move(key_getter_vector), mapv, keys, selector, enable_prefetch, max_offset, offset, std::move(on_match),
             std::move(on_row_end));
@@ -777,8 +865,6 @@ private:
     {
         using HashMap = JoinMapOf<TYPE, Maps>;
         using KeyGetter = typename KeyGetterForType<TYPE, HashMap>::Type;
-        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Maps::MappedType, RowRef>;
-        constexpr bool is_set = SetJoinMaps<Maps>;
         constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
 
         HashMap & map = typedMap<TYPE, Maps>(*this);
@@ -807,7 +893,37 @@ private:
                 prebuilt_keys.size(),
                 rows.key_columns.at(0)->size());
 
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(rows.key_columns, key_sizes);
+        /// Each slot insert of a parallel build reads about one row in `slots.size()` of the block, so it packs the keys one by one.
+        if constexpr (!std::is_same_v<ColumnsHashing::SparseState<KeyGetter>, KeyGetter>)
+        {
+            if (per_slot.size() > 1)
+            {
+                auto key_getter = createJoinKeyGetter<ColumnsHashing::SparseState<KeyGetter>, is_asof_join>(
+                    rows.key_columns, key_sizes, {}, {.skips_rows = true});
+                return insertSlots<Maps>(settings, rows, arena, add_bytes, map, per_slot, prebuilt_keys, key_getter);
+            }
+        }
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(
+            rows.key_columns, key_sizes, {},
+            joinKeyRows<KeyGetter>(rows.null_map, rows.join_mask, rows.selector, buildPrefetches<KeyGetter>(settings, map)));
+        return insertSlots<Maps>(settings, rows, arena, add_bytes, map, per_slot, prebuilt_keys, key_getter);
+    }
+
+    /// Inserts the rows of every slot that `per_slot` gives rows to.
+    template <typename Maps, typename HashMap, typename KeyGetter>
+    BuildResult insertSlots(
+        const InsertSettings & settings,
+        const InsertRows & rows,
+        Arena & arena,
+        absl::FunctionRef<void(size_t)> add_bytes,
+        HashMap & map,
+        std::span<const ScatteredBlock::Selector> per_slot,
+        const PaddedPODArray<UInt128> & prebuilt_keys,
+        KeyGetter & key_getter)
+    {
+        [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename Maps::MappedType, RowRef>;
+        constexpr bool is_set = SetJoinMaps<Maps>;
+        constexpr bool is_asof_join = std::is_same_v<Maps, HashJoin::MapsAsof>;
 
         /// The skip bytes of the block, for the inserts of all slots.
         const UInt8 * skip = nullptr;
@@ -870,6 +986,18 @@ private:
         return result;
     }
 
+    /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
+    /// their own slot locks.
+    template <typename KeyGetter, typename HashMap>
+    static bool buildPrefetches(const InsertSettings & settings, const HashMap & map)
+    {
+        if constexpr (join_prefetch_supported<KeyGetter, HashMap>)
+            return HashMap::NUM_BUCKETS > 1 ? settings.enable_software_prefetch
+                                            : shouldUseJoinPrefetch(settings.enable_software_prefetch, &map);
+        else
+            return false;
+    }
+
     /// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only.
     /// If set, `prebuilt_keys[row]` is the key of each row that the slot scatter routed, built with the key getter's
     /// `buildAllKeys`. `skip` is the skip bytes of the block for a prepared key getter.
@@ -917,13 +1045,7 @@ private:
 
         /// Software prefetch during the build phase.
         constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
-
-        /// A two-level map always prefetches here: summing its buckets would race with the resizes other threads do under
-        /// their own slot locks.
-        bool use_prefetch = false;
-        if constexpr (can_prefetch)
-            use_prefetch = HashMap::NUM_BUCKETS > 1 ? settings.enable_software_prefetch
-                                                    : shouldUseJoinPrefetch(settings.enable_software_prefetch, &map);
+        const bool use_prefetch = buildPrefetches<KeyGetter>(settings, map);
 
         if constexpr (prepared)
         {
@@ -1014,7 +1136,9 @@ private:
         const auto & key_columns = rows.key_columns;
         const auto & selector = rows.selector;
 
-        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
+        /// The scatter reads the key of every row of the selector, also of a row that the slot inserts skip.
+        KeyGetter key_getter = createJoinKeyGetter<KeyGetter, is_asof_join>(
+            key_columns, key_sizes, {}, joinKeyRows<KeyGetter>(nullptr, JoinCommon::JoinMask(true, selector.size()), selector, false));
 
         /// The rows are routed by these keys below, and the slot inserts read them too.
         if constexpr (PreparedKeyGetter<KeyGetter>)
@@ -1159,6 +1283,9 @@ private:
     static NO_INLINE void prepareProbeAll(
         std::span<const std::unique_ptr<HashJoinTable>> tables,
         std::span<const JoinOnKeyColumns> keys,
+        const ScatteredBlock::Selector::Range & selector,
+        bool enable_prefetch,
+        bool prefetch_later_maps,
         std::vector<const JoinMapOf<TYPE, Maps> *> & mapv,
         std::vector<typename KeyGetterForType<TYPE, const JoinMapOf<TYPE, Maps>>::Type> & key_getter_vector)
     {
@@ -1167,11 +1294,22 @@ private:
 
         mapv.resize(keys.size());
         for (size_t d = 0; d < keys.size(); ++d)
-        {
             mapv[d] = &typedMap<TYPE, Maps>(*tables[d]);
-            key_getter_vector.push_back(
-                createJoinKeyGetter<KeyGetter, is_asof_join>(keys[d].key_columns, tables[d]->key_sizes, tables[d]->key_range));
+        /// The maps that `probeAllRows` may prefetch: the first one, and the leading later ones that it counts.
+        size_t max_prefetched_maps = 0;
+        if constexpr (join_prefetch_supported<KeyGetter, const JoinMapOf<TYPE, Maps>>)
+        {
+            if (shouldUseJoinPrefetch(enable_prefetch, mapv[0]))
+                max_prefetched_maps = 1;
+            if constexpr (JoinMapOf<TYPE, Maps>::NUM_BUCKETS > 1)
+                while (prefetch_later_maps && max_prefetched_maps && max_prefetched_maps < mapv.size()
+                       && mapv[max_prefetched_maps]->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin())
+                    ++max_prefetched_maps;
         }
+        for (size_t d = 0; d < keys.size(); ++d)
+            key_getter_vector.push_back(createJoinKeyGetter<KeyGetter, is_asof_join>(
+                keys[d].key_columns, tables[d]->key_sizes, tables[d]->key_range,
+                joinKeyRows<KeyGetter>(keys[d].null_map, keys[d].join_mask_column, selector, d < max_prefetched_maps)));
     }
 
     template <bool is_signed, typename Key, typename Maps>

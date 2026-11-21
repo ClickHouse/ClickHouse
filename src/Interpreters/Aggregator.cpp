@@ -1335,20 +1335,43 @@ void NO_INLINE Aggregator::executeImpl(
         = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::StateNoCache>, typename Method::StateNoCache>;
 
     /// Const key columns hold one row, addressed as row 0 rather than through the block's range.
-    const ColumnsHashing::RowRange rows
-        = all_keys_are_const ? ColumnsHashing::RowRange{} : ColumnsHashing::RowRange{row_begin, row_end};
+    ColumnsHashing::RowRange rows = all_keys_are_const ? ColumnsHashing::RowRange{} : ColumnsHashing::RowRange{row_begin, row_end};
+    /// The top-K pruning skips the rows past the boundary of its heap.
+    if constexpr (!for_sub_range)
+        rows.skips_rows = params.top_k && !method.top_k_heap.frozen && method.top_k_heap.hasBoundary();
 
-    if (use_cache)
+    auto run = [&]<typename CacheState, typename NoCacheState>() ALWAYS_INLINE
     {
-        State state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
-        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
-    }
-    else
+        if (use_cache)
+        {
+            CacheState state(key_columns, key_sizes, aggregation_state_cache, rows);
+            executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+            consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
+        }
+        else
+        {
+            NoCacheState state(key_columns, key_sizes, aggregation_state_cache, rows);
+            executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        }
+    };
+
+    if constexpr (!for_sub_range && !std::is_same_v<ColumnsHashing::SparseState<State>, State>)
     {
-        StateNoCache state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        if (rows.skips_rows)
+        {
+            run.template operator()<ColumnsHashing::SparseState<State>, ColumnsHashing::SparseState<StateNoCache>>();
+            return;
+        }
     }
+    if constexpr (!for_sub_range && !std::is_same_v<ColumnsHashing::ChunkedState<State>, State>)
+    {
+        if (!all_keys_are_const && !rows.skips_rows && ColumnsHashing::keysOutgrowCache<State>(row_end - row_begin))
+        {
+            run.template operator()<ColumnsHashing::ChunkedState<State>, ColumnsHashing::ChunkedState<StateNoCache>>();
+            return;
+        }
+    }
+    run.template operator()<State, StateNoCache>();
 }
 
 template <typename Method, typename State>
@@ -1574,13 +1597,22 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         /// The hashing state is constructed once and shared by all slices: for the serialized
         /// and fixed-key methods its constructor does whole-block work (batch key serialization
         /// or packing), which must not be repeated per slice.
-        if (use_cache)
+        const auto run = [&]<typename CacheState, typename NoCacheState>() -> size_t
         {
-            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
-        }
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        return run_slices(state, [](size_t) {});
+            if (use_cache)
+            {
+                CacheState state(key_columns, key_sizes, aggregation_state_cache);
+                return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+            }
+            NoCacheState state(key_columns, key_sizes, aggregation_state_cache);
+            return run_slices(state, [](size_t) {});
+        };
+        using State = typename Method::State;
+        using StateNoCache = typename Method::StateNoCache;
+        if constexpr (!std::is_same_v<ColumnsHashing::ChunkedState<State>, State>)
+            if (ColumnsHashing::keysOutgrowCache<State>(row_end))
+                return run.template operator()<ColumnsHashing::ChunkedState<State>, ColumnsHashing::ChunkedState<StateNoCache>>();
+        return run.template operator()<State, StateNoCache>();
     };
 
     #define M(NAME) \

@@ -7,7 +7,9 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
 #include <Common/HashTable/Prefetching.h>
+#include <base/getL2CacheSize.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -72,6 +74,9 @@ struct RowRange
     size_t end = std::numeric_limits<size_t>::max();
     /// Some rows of the range are never asked about (e.g. the rows with a NULL key), so no state hashes rows ahead of the asked ones.
     bool skips_rows = false;
+    /// Fewer than one row in `max_rows_per_asked_row` of the range is asked about, so a state that packs its keys in chunks packs
+    /// the asked rows one by one.
+    bool asks_few_rows = false;
 };
 
 /// The state type to build over a sub-range of a block. It differs from `State` only where `State` does
@@ -89,6 +94,78 @@ using SubRangeState = typename SubRangeStateOf<State>::Type;
 /// at least this many rows. It packs the rows of a shorter one one by one: the array would cost more to allocate and
 /// fill than the rows it saves packing.
 constexpr size_t min_rows_to_batch_pack_sub_range = 256;
+
+/// The bytes of keys that a state packs or serializes ahead of its lookups at a time, so that they are still in the
+/// cache when they are read.
+inline size_t maxBytesInKeyChunk()
+{
+    return std::clamp<size_t>(getL2CacheSize() / 8, 64 * 1024, 1024 * 1024);
+}
+
+/// The state type for a caller that asks about few of the rows of its block.
+template <typename State>
+struct SparseStateOf
+{
+    using Type = State;
+};
+
+template <typename State>
+using SparseState = typename SparseStateOf<State>::Type;
+
+/// The state type that packs the keys of its block one cache-sized chunk at a time, for a state that packs the whole
+/// block at once. `key_bytes` is the size of a packed key.
+template <typename State>
+struct ChunkedStateOf
+{
+    using Type = State;
+    static constexpr size_t key_bytes = 0;
+};
+
+template <typename State>
+using ChunkedState = typename ChunkedStateOf<State>::Type;
+
+/// Whether the keys of `rows` rows that a `State` would pack at once take more than half the L2, so that its
+/// `ChunkedState` packs them.
+template <typename State>
+bool keysOutgrowCache(size_t rows)
+{
+    return rows * ChunkedStateOf<State>::key_bytes > getL2CacheSize() / 2;
+}
+
+/// A caller that asks about fewer than one row in this many of its block gets the asked rows packed one by one: a
+/// `SparseState`, or `RowRange::asks_few_rows`. Chosen from 2, 3, 4, 6 and 8 by the worst ratio of times to master
+/// over `IN` probes and set builds with 40% to 99% NULL keys (2: 1.07, 3: 1.09, 4: 1.03, 6: 1.00, 8: 1.02).
+constexpr size_t max_rows_per_asked_row = 6;
+
+inline bool asksAboutFewRows(size_t asked_rows, size_t rows)
+{
+    return asked_rows < rows / max_rows_per_asked_row;
+}
+
+/// Calls `run.template operator()<S>()` with the state type `S` for a caller that asks about the `rows` of its block,
+/// or, if it skips rows, about the `count_asked_rows()` of them: `SparseState<State>` when that is fewer than one row
+/// in `max_rows_per_asked_row`, `ChunkedState<State>` when it is not and the keys outgrow the cache, else `State`.
+template <typename State, typename CountAskedRows, typename Run>
+ALWAYS_INLINE void withStateForAskedRows(size_t rows, bool skips_rows, CountAskedRows && count_asked_rows, Run && run)
+{
+    if constexpr (!std::is_same_v<SparseState<State>, State>)
+    {
+        if (skips_rows && asksAboutFewRows(count_asked_rows(), rows))
+        {
+            run.template operator()<SparseState<State>>();
+            return;
+        }
+    }
+    if constexpr (!std::is_same_v<ChunkedState<State>, State>)
+    {
+        if (keysOutgrowCache<State>(rows) && !(skips_rows && asksAboutFewRows(count_asked_rows(), rows)))
+        {
+            run.template operator()<ChunkedState<State>>();
+            return;
+        }
+    }
+    run.template operator()<State>();
+}
 
 namespace columns_hashing_impl
 {

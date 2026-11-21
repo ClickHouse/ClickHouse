@@ -264,7 +264,7 @@ private:
         ConstNullMapPtr null_map,
         ColumnUInt8::Container * out_filter);
 
-    template <typename Method, bool has_null_map, bool build_filter>
+    template <typename Method, typename State, bool has_null_map, bool build_filter>
     void insertFromBlockImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
@@ -282,7 +282,7 @@ private:
         size_t rows,
         ConstNullMapPtr null_map) const;
 
-    template <typename Method, bool has_null_map>
+    template <typename Method, typename State, bool has_null_map>
     void executeImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,

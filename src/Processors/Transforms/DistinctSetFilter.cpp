@@ -221,7 +221,7 @@ namespace
 /// rows are inserted into the set). `mask[i] == 0` marks rows excluded from the deduplication - known
 /// duplicates by the `LowCardinality` dictionary index, or `NULL`-key rows in the `skip_null_keys` mode -
 /// which are never inserted; `mask` may be `nullptr`.
-template <typename Method>
+template <typename Method, typename State>
 void buildDistinctFilter(
     Method & method,
     const ColumnRawPtrs & key_columns,
@@ -231,7 +231,7 @@ void buildDistinctFilter(
     SetVariants & variants,
     const IColumn::Filter * mask)
 {
-    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
+    State state(key_columns, key_sizes, /*context=*/ nullptr, {.skips_rows = mask != nullptr});
 
     if (mask)
     {
@@ -577,7 +577,15 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
             processed_rows = buildDistinctFilterWithInsertionCheck(
                 method, column_ptrs, key_sizes, filter_values, num_rows, *data, *can_insert);
         else
-            buildDistinctFilter(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask);
+        {
+            using Method = std::decay_t<decltype(method)>;
+            ColumnsHashing::withStateForAskedRows<typename Method::State>(
+                num_rows,
+                mask != nullptr,
+                [&] { return countBytesInFilter(*mask); },
+                [&]<typename State>() ALWAYS_INLINE
+                { buildDistinctFilter<Method, State>(method, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); });
+        }
     });
 
     const auto new_set_size = data->getTotalRowCount();

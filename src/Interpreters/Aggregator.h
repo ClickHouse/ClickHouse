@@ -1145,11 +1145,12 @@ private:
         bool all_keys_are_const,
         MemoryTracker * local_memory_tracker) const;
 
-    template <typename LocalMethod, typename SharedMethod>
+    template <typename LocalMethod, typename SharedMethod, typename FindState>
     requires MapAggregationMethod<LocalMethod>
     void executeFrozenImpl(
         LocalMethod & local_method,
         std::type_identity<SharedMethod>,
+        std::type_identity<FindState>,
         Arena * aggregates_pool,
         const Columns & columns,
         size_t row_begin,
@@ -1162,11 +1163,12 @@ private:
 
     /// The set counterpart: with no aggregate functions there are no places to record and no states to
     /// advance, so a hit is just the probe and a miss stages the key alone.
-    template <typename LocalMethod, typename SharedMethod>
+    template <typename LocalMethod, typename SharedMethod, typename FindState>
     requires SetAggregationMethod<LocalMethod>
     void executeFrozenImpl(
         LocalMethod & local_method,
         std::type_identity<SharedMethod>,
+        std::type_identity<FindState>,
         Arena * aggregates_pool,
         const Columns & columns,
         size_t row_begin,
