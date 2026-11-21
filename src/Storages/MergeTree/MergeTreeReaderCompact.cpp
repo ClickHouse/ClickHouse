@@ -94,7 +94,8 @@ void MergeTreeReaderCompact::fillColumnPositions()
         auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
 
         /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-        if (position.has_value() && (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i)))
+        if (position.has_value()
+            && (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i) || isSubcolumnExtractedFromConvertedColumn(i)))
             position.reset();
 
         if (position.has_value() && column_to_read.isSubcolumn())
@@ -128,7 +129,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
 
         /// If array of Nested column is missing in part,
         /// we have to read its offsets if they exist.
-        if (!column_positions[i])
+        if (!column_positions[i] && !isSubcolumnExtractedFromConvertedColumn(i))
             findPositionForMissedNested(i);
 
         if (column_positions[i] && !column_cacheable[i])

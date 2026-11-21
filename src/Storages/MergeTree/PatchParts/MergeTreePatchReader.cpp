@@ -74,7 +74,11 @@ MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRanges(MarkRange
         column = removeSpecialRepresentations(column);
 
     if (patch_part.perform_alter_conversions)
-        range_reader.getReader()->performRequiredConversions(read_result.columns);
+    {
+        const auto * patch_reader = range_reader.getReader();
+        patch_reader->performRequiredConversions(read_result.columns);
+        patch_reader->extractSubcolumnsOfPatchedSources(read_result.columns, patch_reader->getSourcesOfSubcolumns());
+    }
 
     ProfileEvents::increment(ProfileEvents::ReadPatchesMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::PatchesReadRows, read_result.num_rows);

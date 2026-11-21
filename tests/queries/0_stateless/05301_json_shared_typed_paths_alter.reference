@@ -178,8 +178,8 @@ p_w added	20	190	380	c0	UInt64
 p_w two layouts	40	780	1560	c0
 p_w nested path added	40	40	{"r":"r3"}	{"r":"r23"}
 p_w merged	40	780	1560	40	1
--- the removed path is a dynamic path again; its typed subcolumn over the old Wide part reads as NULL, a pre-existing limitation of lazy type hints that the plain type shares (Compact parts give the values)
-p_w removed	40	780	c0	Dynamic	\N	1560
+-- the removed path is a dynamic path again; its typed subcolumn reads the values of the old parts
+p_w removed	40	780	c0	Dynamic	1560	1560
 p_w mutations	1
 p_w a to String	String	780	0
 p_w hints dropped	44	Dynamic	40	4
@@ -192,7 +192,7 @@ p_cn added	20	190	380	c0	UInt64
 p_cn two layouts	40	780	1560	c0
 p_cn nested path added	40	40	{"r":"r3"}	{"r":"r23"}
 p_cn merged	40	780	1560	40	1
--- the removed path is a dynamic path again; its typed subcolumn over the old Wide part reads as NULL, a pre-existing limitation of lazy type hints that the plain type shares (Compact parts give the values)
+-- the removed path is a dynamic path again; its typed subcolumn reads the values of the old parts
 p_cn removed	40	780	c0	Dynamic	1560	1560
 p_cn mutations	1
 p_cn a to String	String	780	0

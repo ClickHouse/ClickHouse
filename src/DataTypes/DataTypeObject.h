@@ -33,6 +33,12 @@ public:
     /// The key is back-quoted to handle special characters (dots, backticks, etc.).
     static String getCombinedSubcolumnName(const String & key);
 
+    /// The path of a prefixed subcolumn name "<prefix>`some`.path.path" (back-quoted first element, unlike a path "^path"), or nothing.
+    static std::optional<String> tryGetPrefixedSubcolumn(std::string_view subcolumn_name, char prefix);
+
+    /// Whether a typed path of this type represents structured data parsed from a JSON object (JSON, Map, Tuple), unlike a scalar.
+    static bool canParseObjectValue(const DataTypePtr & type);
+
     /// The typed paths by name; the hasher takes a string_view, so a prefix of a name is looked up without a copy.
     using TypedPathsMap = std::unordered_map<String, DataTypePtr, StringHashForHeterogeneousLookup, std::equal_to<>>;
 
