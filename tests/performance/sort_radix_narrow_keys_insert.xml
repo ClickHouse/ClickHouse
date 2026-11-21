@@ -1,0 +1,21 @@
+<test>
+    <settings>
+        <async_insert>0</async_insert>
+    </settings>
+
+    <create_query>CREATE TABLE sort_radix_narrow_insert_src (id UInt64, ts DateTime64(3)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE sort_radix_narrow_insert (id UInt64, ts DateTime64(3)) ENGINE = MergeTree ORDER BY ts</create_query>
+    <create_query>SYSTEM STOP MERGES sort_radix_narrow_insert_src</create_query>
+    <create_query>SYSTEM STOP MERGES sort_radix_narrow_insert</create_query>
+
+    <fill_query>
+        INSERT INTO sort_radix_narrow_insert_src
+        SELECT intHash64(number) % 2000, toDateTime64('2026-01-01 00:00:00', 3) + toIntervalMillisecond(intHash64(number + 1) % 600000)
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>INSERT INTO sort_radix_narrow_insert SELECT id, ts FROM sort_radix_narrow_insert_src</query>
+
+    <drop_query>DROP TABLE IF EXISTS sort_radix_narrow_insert_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sort_radix_narrow_insert</drop_query>
+</test>

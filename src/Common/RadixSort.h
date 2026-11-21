@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <type_traits>
 #include <memory>
+#include <utility>
 
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
@@ -252,6 +253,113 @@ private:
         }
     }
 
+    template <size_t PASS, bool SOFTWARE_PREFETCH>
+    static ALWAYS_INLINE void radixSortLSDPass(Element * reader, Element * writer, size_t size, CountType * histograms)
+    {
+        size_t unrolled_end = (size / UNROLL_DISTANCE * UNROLL_DISTANCE);
+
+        size_t i = 0;
+        /// Unrolling allows for vectorized code, but prefetching disables it
+        if constexpr (!SOFTWARE_PREFETCH && UNROLL_DISTANCE >= 2)
+        {
+            for (; i < unrolled_end; i += UNROLL_DISTANCE)
+            {
+                size_t positions[UNROLL_DISTANCE];
+
+                for (size_t p = 0; p < UNROLL_DISTANCE; p++)
+                    positions[p] = static_cast<size_t>(extractPart(PASS, reader[i + p]));
+
+                for (size_t p = 0; p < UNROLL_DISTANCE; p++)
+                {
+                    auto element = reader[i + p];
+
+                    /// Place the element on the next free position.
+                    auto & dest = writer[histograms[PASS * HISTOGRAM_SIZE + positions[p]]];
+                    ++histograms[PASS * HISTOGRAM_SIZE + positions[p]];
+                    dest = element;
+
+                    /// On the last pass, we do the reverse transformation.
+                    if (!Traits::Transform::transform_is_simple && PASS == NUM_PASSES - 1)
+                        Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
+                }
+            }
+        }
+
+        for (; i < size; i++)
+        {
+            auto element = reader[i];
+            auto pos = static_cast<size_t>(extractPart(PASS, element));
+
+            if constexpr (SOFTWARE_PREFETCH)
+            {
+                /// Note that for prefetch to be effective, the distance must be large enough so that the memory access is ready
+                /// when we actually need it. This depends on CPU and memory subsystem.
+                if (i + PREFETCH_DISTANCE < size) [[likely]]
+                {
+                    auto next_pos = static_cast<size_t>(extractPart(PASS, reader[i + PREFETCH_DISTANCE]));
+                    __builtin_prefetch(&writer[histograms[PASS * HISTOGRAM_SIZE + next_pos]], 1);
+                }
+            }
+
+            /// Place the element on the next free position.
+            auto & dest = writer[histograms[PASS * HISTOGRAM_SIZE + pos]];
+            ++histograms[PASS * HISTOGRAM_SIZE + pos];
+            dest = element;
+
+            /// On the last pass, we do the reverse transformation.
+            if (!Traits::Transform::transform_is_simple && PASS == NUM_PASSES - 1)
+                Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
+        }
+    }
+
+    template <size_t PASS, bool SOFTWARE_PREFETCH>
+    static ALWAYS_INLINE void radixSortLSDPassToDestination(Element * reader, Result * writer, size_t size, bool reverse, CountType * histograms)
+    {
+        if (reverse)
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto element = reader[i];
+                auto pos = static_cast<size_t>(extractPart(PASS, element));
+                if constexpr (SOFTWARE_PREFETCH)
+                {
+                    if (i + PREFETCH_DISTANCE < size) [[likely]]
+                    {
+                        auto next_pos = static_cast<size_t>(extractPart(PASS, reader[i + PREFETCH_DISTANCE]));
+                        __builtin_prefetch(&writer[size - 1 - histograms[PASS * HISTOGRAM_SIZE + next_pos]], 1);
+                    }
+                }
+                writer[size - 1 - (histograms[PASS * HISTOGRAM_SIZE + pos])] = Traits::extractResult(element);
+                ++histograms[PASS * HISTOGRAM_SIZE + pos];
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto element = reader[i];
+                auto pos = static_cast<size_t>(extractPart(PASS, element));
+                if constexpr (SOFTWARE_PREFETCH)
+                {
+                    if (i + PREFETCH_DISTANCE < size)
+                    {
+                        auto next_pos = static_cast<size_t>(extractPart(PASS, reader[i + PREFETCH_DISTANCE]));
+                        __builtin_prefetch(&writer[histograms[PASS * HISTOGRAM_SIZE + next_pos]], 1);
+                    }
+                }
+                writer[histograms[PASS * HISTOGRAM_SIZE + pos]] = Traits::extractResult(element);
+                ++histograms[PASS * HISTOGRAM_SIZE + pos];
+            }
+        }
+    }
+
+    /// Calls `func` with the pass number known only at runtime as a compile-time constant.
+    template <typename Func, size_t... PASSES>
+    static ALWAYS_INLINE void dispatchPass(size_t pass, Func && func, std::index_sequence<PASSES...>)
+    {
+        (void)((pass == PASSES && (func(std::integral_constant<size_t, PASSES>{}), true)) || ...);
+    }
+
     /// SOFTWARE_PREFETCH is used only on Intel CPUs, where software prefetching is beneficial
     /// On AMD x86 CPUs and on ARM, it does not help or even slows down
     /// See more measurements in https://github.com/ClickHouse/ClickHouse/pull/86378
@@ -281,6 +389,16 @@ private:
                 ++histograms[pass * HISTOGRAM_SIZE + static_cast<size_t>(extractPart(pass, arr[i]))];
         }
 
+        /// A pass that puts every element into one bucket moves nothing and is skipped, unless it transforms the keys back.
+        size_t passes[NUM_PASSES];
+        size_t num_passes = 0;
+        for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+        {
+            const bool single_bucket = size && histograms[pass * HISTOGRAM_SIZE + static_cast<size_t>(extractPart(pass, arr[0]))] == size;
+            if (!single_bucket || (!Traits::Transform::transform_is_simple && !DIRECT_WRITE_TO_DESTINATION && pass == NUM_PASSES - 1))
+                passes[num_passes++] = pass;
+        }
+
         {
             /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions.
             CountType sums[NUM_PASSES] = {0};
@@ -296,115 +414,41 @@ private:
             }
         }
 
-        /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
-        for (size_t pass = 0; pass < NUM_PASSES - DIRECT_WRITE_TO_DESTINATION; ++pass)
+        /// Move the elements in the order starting from the least bit piece, one pass per digit that is not constant.
+        const size_t num_moving_passes = DIRECT_WRITE_TO_DESTINATION && num_passes ? num_passes - 1 : num_passes;
+        for (size_t step = 0; step < num_moving_passes; ++step)
         {
-            Element * writer = pass % 2 ? arr : swap_buffer;
-            Element * reader = pass % 2 ? swap_buffer : arr;
+            Element * writer = step % 2 ? arr : swap_buffer;
+            Element * reader = step % 2 ? swap_buffer : arr;
 
-            size_t unrolled_end = (size / UNROLL_DISTANCE * UNROLL_DISTANCE);
-
-            size_t i = 0;
-            /// Unrolling allows for vectorized code, but prefetching disables it
-            if constexpr (!SOFTWARE_PREFETCH && UNROLL_DISTANCE >= 2)
+            dispatchPass(passes[step], [&](auto pass)
             {
-                for (; i < unrolled_end; i += UNROLL_DISTANCE)
-                {
-                    size_t positions[UNROLL_DISTANCE];
-
-                    for (size_t p = 0; p < UNROLL_DISTANCE; p++)
-                        positions[p] = static_cast<size_t>(extractPart(pass, reader[i + p]));
-
-                    for (size_t p = 0; p < UNROLL_DISTANCE; p++)
-                    {
-                        auto element = reader[i + p];
-
-                        /// Place the element on the next free position.
-                        auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + positions[p]]];
-                        ++histograms[pass * HISTOGRAM_SIZE + positions[p]];
-                        dest = element;
-
-                        /// On the last pass, we do the reverse transformation.
-                        if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                            Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
-                    }
-                }
-            }
-
-            for (; i < size; i++)
-            {
-                auto element = reader[i];
-                auto pos = static_cast<size_t>(extractPart(pass, element));
-
-                if constexpr (SOFTWARE_PREFETCH)
-                {
-                    /// Note that for prefetch to be effective, the distance must be large enough so that the memory access is ready
-                    /// when we actually need it. This depends on CPU and memory subsystem.
-                    if (i + PREFETCH_DISTANCE < size) [[likely]]
-                    {
-                        auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
-                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
-                    }
-                }
-
-                /// Place the element on the next free position.
-                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]];
-                ++histograms[pass * HISTOGRAM_SIZE + pos];
-                dest = element;
-
-                /// On the last pass, we do the reverse transformation.
-                if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
-            }
+                radixSortLSDPass<decltype(pass)::value, SOFTWARE_PREFETCH>(reader, writer, size, histograms.get());
+            }, std::make_index_sequence<NUM_PASSES>{});
         }
 
-        if (DIRECT_WRITE_TO_DESTINATION)
+        if constexpr (DIRECT_WRITE_TO_DESTINATION)
         {
-            constexpr size_t pass = NUM_PASSES - 1;
-            Result * writer = destination;
-            Element * reader = pass % 2 ? swap_buffer : arr;
+            Element * reader = num_moving_passes % 2 ? swap_buffer : arr;
 
-            if (reverse)
+            if (num_passes)
             {
-                for (size_t i = 0; i < size; ++i)
+                dispatchPass(passes[num_passes - 1], [&](auto pass)
                 {
-                    auto element = reader[i];
-                    auto pos = static_cast<size_t>(extractPart(pass, element));
-                    if constexpr (SOFTWARE_PREFETCH)
-                    {
-                        if (i + PREFETCH_DISTANCE < size) [[likely]]
-                        {
-                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
-                            __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
-                        }
-                    }
-                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(element);
-                    ++histograms[pass * HISTOGRAM_SIZE + pos];
-                }
+                    radixSortLSDPassToDestination<decltype(pass)::value, SOFTWARE_PREFETCH>(reader, destination, size, reverse, histograms.get());
+                }, std::make_index_sequence<NUM_PASSES>{});
             }
             else
             {
+                /// All keys are equal.
                 for (size_t i = 0; i < size; ++i)
-                {
-                    auto element = reader[i];
-                    auto pos = static_cast<size_t>(extractPart(pass, element));
-                    if constexpr (SOFTWARE_PREFETCH)
-                    {
-                        if (i + PREFETCH_DISTANCE < size)
-                        {
-                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
-                            __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
-                        }
-                    }
-                    writer[histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(element);
-                    ++histograms[pass * HISTOGRAM_SIZE + pos];
-                }
+                    destination[reverse ? size - 1 - i : i] = Traits::extractResult(reader[i]);
             }
         }
         else
         {
             /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
-            if (NUM_PASSES % 2)
+            if (num_passes % 2)
                 memcpy(arr, swap_buffer, size * sizeof(Element));
 
             /// TODO This is suboptimal, we can embed it to the last pass.
