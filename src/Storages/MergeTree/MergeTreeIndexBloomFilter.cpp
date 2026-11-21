@@ -810,6 +810,39 @@ void fillJSONPathBloomPredicate(
         BloomFilterHash::hashWithField(actual_type.get(), path_field)));
 }
 
+/// The predicate of `predicate = 1`, `predicate = true` or `predicate != 0`, which select the same rows as `predicate`.
+/// Only array membership functions: they return 0 or 1, and the traversal of their arguments cannot match other atoms.
+std::optional<RPNBuilderTreeNode> getPredicateComparedToTrue(const RPNBuilderFunctionTreeNode & function)
+{
+    const auto function_name = function.getFunctionName();
+    if ((function_name != "equals" && function_name != "notEquals") || function.getArgumentsSize() != 2)
+        return {};
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        Field value;
+        DataTypePtr type;
+        auto predicate = function.getArgumentAt(1 - i);
+        if (!predicate.isFunction() || !function.getArgumentAt(i).tryGetConstant(value, type))
+            continue;
+
+        const auto predicate_name = predicate.toFunctionNode().getFunctionName();
+        if (predicate_name != "has" && predicate_name != "hasAny" && predicate_name != "hasAll")
+            return {};
+
+        /// `accurateEquals` throws for an array or a tuple and parses a string.
+        const auto which = value.getType();
+        if (which != Field::Types::Bool && which != Field::Types::UInt64 && which != Field::Types::Int64)
+            return {};
+
+        if (accurateEquals(value, Field(function_name == "equals" ? 1 : 0)))
+            return predicate;
+        return {};
+    }
+
+    return {};
+}
+
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
@@ -829,6 +862,18 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
             auto argument = function.getArgumentAt(i);
             if (traverseFunction(argument, out, &node))
                 return true;
+        }
+
+        if (auto predicate = getPredicateComparedToTrue(function))
+        {
+            /// A separate element, as a failed attempt may leave a partial `predicate`, and `equals`
+            /// over an indexed expression such as `INDEX (x = 5)` is still handled below.
+            RPNElement predicate_out;
+            if (traverseFunction(*predicate, predicate_out, nullptr))
+            {
+                out = std::move(predicate_out);
+                return true;
+            }
         }
     }
 
