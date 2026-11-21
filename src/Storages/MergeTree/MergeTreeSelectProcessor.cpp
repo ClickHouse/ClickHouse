@@ -15,6 +15,7 @@
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Processors/QueryPlan/RuntimeFilterOrder.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -31,6 +32,9 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <boost/functional/hash.hpp>
+#include <fmt/ranges.h>
+#include <numeric>
+#include <ranges>
 
 namespace
 {
@@ -80,6 +84,7 @@ namespace ProfileEvents
 {
 extern const Event ParallelReplicasAnnouncementMicroseconds;
 extern const Event ParallelReplicasReadRequestMicroseconds;
+extern const Event RuntimeFilterPrewhereStepsReordered;
 }
 
 namespace DB
@@ -263,6 +268,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     for (const auto & step : prewhere_actions.steps)
         if (step->actions)
             set_spillables.add(step->actions->getActionsDAG());
+
+    if (reader_settings.join_runtime_filter_adaptive_prewhere_order && !reader_settings.collect_predicate_statistics)
+        reorderable_runtime_filter_steps = findReorderableRuntimeFilterSteps(prewhere_actions);
 
     /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
     /// condition cache. A deterministic PREWHERE condition is cached under its own hash. A condition
@@ -477,13 +485,67 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     return prewhere_actions;
 }
 
+PrewhereStepOrder MergeTreeSelectProcessor::chooseRuntimeFilterStepOrder(const MergeTreeReadTask & current_task) const
+{
+    const auto & info = current_task.getInfo();
+    if (reorderable_runtime_filter_steps.filter_ids_per_step.empty() || !partStoresReorderableStepColumns(info))
+        return {};
+
+    auto query_context = CurrentThread::tryGetQueryContext();
+    auto lookup = query_context ? query_context->getRuntimeFilterLookup() : nullptr;
+    if (!lookup)
+        return {};
+
+    const auto reorderable_step_order = orderRuntimeFilterStepsByMeasurement(*lookup, reorderable_runtime_filter_steps.filter_ids_per_step);
+    if (reorderable_step_order.empty())
+        return {};
+
+    const size_t first_step = reorderable_runtime_filter_steps.first_step;
+    PrewhereStepOrder prewhere_step_order(prewhere_actions.steps.size());
+    std::iota(prewhere_step_order.begin(), prewhere_step_order.end(), 0);
+    std::ranges::transform(
+        reorderable_step_order, prewhere_step_order.begin() + first_step, [&](size_t step) { return first_step + step; });
+
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterPrewhereStepsReordered);
+    auto step_filter_ids = [&](size_t step)
+    { return fmt::format("[{}]", fmt::join(reorderable_runtime_filter_steps.filter_ids_per_step[step], ", ")); };
+    LOG_TRACE(
+        log,
+        "Runtime filter PREWHERE steps of part {} run in the order {}",
+        info.data_part_info->getPartName(),
+        fmt::join(reorderable_step_order | std::views::transform(step_filter_ids), ", "));
+    return prewhere_step_order;
+}
+
+bool MergeTreeSelectProcessor::partStoresReorderableStepColumns(const MergeTreeReadTaskInfo & info) const
+{
+    /// A pending alter or patch converts or fills columns on read.
+    if (info.alter_conversions
+        && (!info.alter_conversions->getAllUpdatedColumns().empty() || !info.alter_conversions->getValueUpdatedColumns().empty()))
+        return false;
+    const auto & part_columns = info.data_part_info->getColumnsDescription();
+    const auto & key_columns_per_step = reorderable_runtime_filter_steps.key_columns_per_step;
+    for (size_t i = 0; i < key_columns_per_step.size(); ++i)
+    {
+        /// `pre_columns` follows the readers chain: the mutation steps, then the PREWHERE steps.
+        const auto & read = info.task_columns.pre_columns[info.mutation_steps.size() + reorderable_runtime_filter_steps.first_step + i];
+        const auto & key_columns = key_columns_per_step[i];
+        auto stored_key = [&](const NameAndTypePair & column)
+        { return key_columns.contains(column.name) && part_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name); };
+        if (read.size() != key_columns.size() || !std::ranges::all_of(read, stored_key))
+            return false;
+    }
+    return true;
+}
+
 ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
     if (!current_task.getReadersChain().isInitialized())
         current_task.initializeReadersChain(
             prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows,
-            read_steps_performance_counters, reader_settings.collect_predicate_statistics);
+            read_steps_performance_counters, reader_settings.collect_predicate_statistics,
+            chooseRuntimeFilterStepOrder(current_task));
 
     auto res = task_algorithm.readFromTask(current_task);
 

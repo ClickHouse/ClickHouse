@@ -137,6 +137,8 @@ struct MergeTreeReaderSettings
     /// maintain selectivity counters for system.predicate_statistics_log. When
     /// false (the default), the readers skip the per-granule counter work.
     bool collect_predicate_statistics = false;
+    /// Order the PREWHERE steps of join runtime filters per read task by the filters' measurements.
+    bool join_runtime_filter_adaptive_prewhere_order = false;
     /// Per-column filters extracted from substring search conditions in PREWHERE.
     /// String values that do not match are replaced with empty strings during deserialization.
     /// Set only for reading with PREWHERE that is guaranteed to filter the rows (see `StringValueFilter`).

@@ -409,19 +409,35 @@ TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)
     EXPECT_EQ(filter->getStats().rows_checked.load(), 3);
 }
 
+TEST(RuntimeFilterLookup, StatsCountLargeAndRejectedBlocks)
+{
+    RuntimeFilterEvaluationState state(RuntimeFilterConfig{});
+
+    /// A block counts as large from 16,384 rows; a block in which no row passed is rejected.
+    state.updateStats(/*rows_checked=*/16384, /*rows_passed=*/0, /*probe_nanoseconds=*/1000);
+    state.updateStats(/*rows_checked=*/16383, /*rows_passed=*/0, /*probe_nanoseconds=*/500);
+    state.updateStats(/*rows_checked=*/20000, /*rows_passed=*/1, /*probe_nanoseconds=*/2000);
+
+    const auto & stats = state.getStats();
+    EXPECT_EQ(stats.large_block_rows.load(), 16384 + 20000);
+    EXPECT_EQ(stats.large_block_probe_nanoseconds.load(), 1000 + 2000);
+    EXPECT_EQ(stats.rows_in_rejected_blocks.load(), 16384 + 16383);
+    EXPECT_EQ(stats.large_block_rows_in_rejected_blocks.load(), 16384);
+}
+
 TEST(RuntimeFilterLookup, SkipBudgetPreservesSerialExhaustionSemantics)
 {
     RuntimeFilterEvaluationState state(
         RuntimeFilterConfig{/*pass_ratio_threshold_for_disabling=*/0.5,
                             /*blocks_to_skip_before_reenabling=*/1});
 
-    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*probe_nanoseconds=*/0);
     EXPECT_TRUE(state.shouldSkip(60));
     EXPECT_FALSE(state.shouldSkip(60));
     EXPECT_EQ(state.getStats().blocks_skipped.load(), 1);
     EXPECT_EQ(state.getStats().rows_skipped.load(), 60);
 
-    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+    state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*probe_nanoseconds=*/0);
     EXPECT_FALSE(state.shouldSkip(100));
 }
 
@@ -449,7 +465,7 @@ TEST(RuntimeFilterLookup, SkipBudgetConsumptionIsLinearizable)
     size_t non_linearizable_iterations = 0;
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
-        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*probe_nanoseconds=*/0);
         sync.arrive_and_wait();
         sync.arrive_and_wait();
         if (should_skip[0] == should_skip[1])
@@ -485,7 +501,7 @@ TEST(RuntimeFilterLookup, SkipBudgetDoesNotLoseConcurrentReplenishment)
             for (size_t iteration = 0; iteration < iterations; ++iteration)
             {
                 sync.arrive_and_wait();
-                state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+                state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*probe_nanoseconds=*/0);
                 sync.arrive_and_wait();
             }
         });
@@ -493,7 +509,7 @@ TEST(RuntimeFilterLookup, SkipBudgetDoesNotLoseConcurrentReplenishment)
     size_t lost_replenishments = 0;
     for (size_t iteration = 0; iteration < iterations; ++iteration)
     {
-        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100);
+        state.updateStats(/*rows_checked=*/100, /*rows_passed=*/100, /*probe_nanoseconds=*/0);
         sync.arrive_and_wait();
         sync.arrive_and_wait();
         if (!state.shouldSkip(99))

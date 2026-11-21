@@ -113,6 +113,8 @@ void fillRequiredColumns(
         node_info.may_throw = true;
 }
 
+}
+
 /// Appends the conditions combined with AND into `atoms`, descending into nested AND nodes.
 /// The order of the original conditions is preserved: `and(A, and(B, C))` yields `A, B, C`.
 /// ActionsDAG::extractConjunctionAtoms is not reused here because it walks with a stack and thus
@@ -129,6 +131,9 @@ void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstP
 
     atoms.push_back(node);
 }
+
+namespace
+{
 
 struct ConditionGroup
 {

@@ -17,6 +17,8 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
+#include <numeric>
+
 namespace DB
 {
 
@@ -348,7 +350,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     const Readers & task_readers,
     const PrewhereExprInfo & prewhere_actions,
     const ReadStepsPerformanceCounters & read_steps_performance_counters,
-    bool collect_predicate_statistics)
+    bool collect_predicate_statistics,
+    const PrewhereStepOrder & chain_step_order)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
     {
@@ -357,6 +360,9 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             "PREWHERE steps count mismatch, actions: {}, readers: {}",
             prewhere_actions.steps.size(), task_readers.prewhere.size());
     }
+    chassert(
+        chain_step_order.empty() || chain_step_order.size() == prewhere_actions.steps.size(),
+        fmt::format("The chain order has {} steps, but the chain has {}", chain_step_order.size(), prewhere_actions.steps.size()));
 
     std::vector<MergeTreeRangeReader> range_readers;
 
@@ -395,10 +401,12 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     size_t counter_idx = 0;
     for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
     {
+        /// Readers and actions are indexed by step; both follow the permutation.
+        const size_t step = chain_step_order.empty() ? i : chain_step_order[i];
         range_readers.emplace_back(
-            task_readers.prewhere[i].get(),
+            task_readers.prewhere[step].get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
-            prewhere_actions.steps[i].get(),
+            prewhere_actions.steps[step].get(),
             step_counter(counter_idx++),
             /*main_reader_=*/ false,
             can_read_incomplete_granules);
@@ -423,7 +431,8 @@ void MergeTreeReadTask::initializeReadersChain(
     MergeTreeIndexBuildContextPtr index_build_context,
     LazyMaterializingRowsPtr lazy_materializing_rows,
     const ReadStepsPerformanceCounters & read_steps_performance_counters,
-    bool collect_predicate_statistics)
+    bool collect_predicate_statistics,
+    const PrewhereStepOrder & prewhere_step_order)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
@@ -439,9 +448,20 @@ void MergeTreeReadTask::initializeReadersChain(
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
+    /// The part's mutation steps (the lightweight-delete mask and on-fly mutations) run first, in place.
+    PrewhereStepOrder chain_step_order;
+    if (!prewhere_step_order.empty())
+    {
+        const size_t mutation_steps = info->mutation_steps.size();
+        chain_step_order.resize(mutation_steps);
+        std::iota(chain_step_order.begin(), chain_step_order.end(), 0);
+        for (size_t step : prewhere_step_order)
+            chain_step_order.push_back(mutation_steps + step);
+    }
+
     readers_chain = createReadersChain(
         readers, all_prewhere_actions, read_steps_performance_counters,
-        collect_predicate_statistics);
+        collect_predicate_statistics, chain_step_order);
 }
 
 void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/RuntimeFilterOrder.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
@@ -203,6 +204,12 @@ private:
 
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
+
+    ReorderableRuntimeFilterSteps reorderable_runtime_filter_steps;
+    /// The order of the task's PREWHERE steps, or empty to keep the planned one.
+    PrewhereStepOrder chooseRuntimeFilterStepOrder(const MergeTreeReadTask & current_task) const;
+    /// Whether each reorderable step reads exactly its key columns and the part stores them as is, so the steps can swap.
+    bool partStoresReorderableStepColumns(const MergeTreeReadTaskInfo & info) const;
 
     /// Whether the PREWHERE holds the top-K `__topKFilter` as a conjunct and its query condition cache entry is
     /// salted with the top-K plan, see `MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere`.

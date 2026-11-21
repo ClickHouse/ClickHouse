@@ -41,4 +41,7 @@ bool prewhereConditionCannotThrow(const ActionsDAG::Node * condition);
 /// to PREWHERE; only an entirely user-predicate step is.
 bool prewhereIsEntirelyQueryPredicate(const ActionsDAG & prewhere_actions, const String & filter_column_name);
 
+/// Appends the conditions combined with AND into `atoms` in their written order, descending into nested AND nodes.
+void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms);
+
 }

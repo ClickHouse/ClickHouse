@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsBool use_page_cache_lookahead_for_text_index;
+    extern const SettingsBool join_runtime_filter_adaptive_prewhere_order;
 }
 
 namespace MergeTreeSetting
@@ -164,6 +165,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     result.use_page_cache_lookahead_for_text_index = settings[Setting::use_page_cache_lookahead_for_text_index];
+    result.join_runtime_filter_adaptive_prewhere_order = settings[Setting::join_runtime_filter_adaptive_prewhere_order];
     return result;
 }
 
