@@ -231,6 +231,11 @@ private:
 
     void threadFunc(size_t idx);
 
+    void pollConsumerEvents(size_t idx);
+
+    BackgroundSchedulePoolTaskHolder drain_task;
+    void drainEventsTask();
+
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
