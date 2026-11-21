@@ -1,5 +1,9 @@
--- Tags: no-fasttest, long, no-msan
+-- Tags: no-fasttest, long, no-msan, no-parallel-replicas
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-parallel-replicas: the PromQL grouping functions `timeSeriesStoreTags` / `timeSeriesIdToGroup`
+-- communicate through a per-query, server-local tags collector that parallel replicas does not ship to
+-- the replica evaluating `timeSeriesIdToGroup`, so a set operator like `or` fails there with
+-- `BAD_ARGUMENTS: Unknown identifier`. See https://github.com/ClickHouse/ClickHouse/issues/133104.
 
 -- `timeSeriesSelector` (and every PromQL selector evaluated through it) filters the samples table with
 -- `id IN <tags subquery>`. With a two-component id layout `Tuple(hash(metric_name), hash(tags))`
