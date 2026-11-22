@@ -282,10 +282,18 @@ void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, ProjectionUnresol
 {
     if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
     {
-        ConvertToASTOptions ast_options;
-        ast_options.add_cast_for_constants = false;
-        ast_options.fully_qualified_identifiers = false;
-        result.emplace(node, node->toAST(ast_options)->getColumnName());
+        /// A subquery is named by the hash of its AST, which `toAST` does not reproduce.
+        if (node->hasOriginalAST())
+        {
+            result.emplace(node, node->getOriginalAST()->getColumnName());
+        }
+        else
+        {
+            ConvertToASTOptions ast_options;
+            ast_options.add_cast_for_constants = false;
+            ast_options.fully_qualified_identifiers = false;
+            result.emplace(node, node->toAST(ast_options)->getColumnName());
+        }
     }
 
     for (const auto & child : node->getChildren())
@@ -919,6 +927,8 @@ Block ProjectionDescription::calculateByQuery(
     /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// A projection column is the stored `IN` expression, not a join it may be rewritten to.
+    mut_context->setSetting("rewrite_in_to_join", false);
     /// The Analyzer does not resolve positional arguments in a `SECONDARY_QUERY` or in a context
     /// where the initiator has already resolved them, because it expects that to be done by the
     /// initiator. A projection query is never resolved by the initiator, and the data may come
@@ -1115,6 +1125,9 @@ Block ProjectionDescription::calculateByQuery(
                 name,
                 projection_block.dumpNames(),
                 sample_block.dumpNames());
+
+    for (auto & col : projection_block)
+        col.column = col.column->convertToFullColumnIfConst();
 
     return projection_block;
 }
