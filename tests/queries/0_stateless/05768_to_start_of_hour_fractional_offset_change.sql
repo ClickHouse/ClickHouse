@@ -82,6 +82,23 @@ FROM (SELECT toStartOfHour(t) AS s
       FROM (SELECT toTimeZone(toDateTime64(start, 0, 'UTC') + toIntervalMinute(number), 'Australia/Lord_Howe') AS t
             FROM numbers(3 * 1440)
             ARRAY JOIN ['2024-04-06 10:00:00', '2024-10-05 10:00:00', '2400-04-01 10:00:00', '2400-09-30 10:00:00'] AS start));
+
+SELECT 'an offset change by a fraction of an hour that skips the local midnight before 1900 (Australia/Adelaide, 1899-05-01)';
+WITH toDateTime64('1899-05-01 12:00:00', 0, 'Australia/Adelaide') AS t
+SELECT toStartOfHour(t), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 1 HOUR);
+WITH toDateTime64('1899-05-01 00:40:00', 0, 'Australia/Adelaide') AS t
+SELECT toStartOfHour(t), toStartOfHour(toStartOfHour(t));
+SELECT toStartOfHour(toDateTime64('1899-04-30 23:40:00', 0, 'Australia/Adelaide'));
+SELECT countIf(s > u OR u - s >= 3600)
+FROM (SELECT toUnixTimestamp64Second(t) AS u, toUnixTimestamp64Second(toStartOfHour(t)) AS s
+      FROM (SELECT toTimeZone(toDateTime64('1899-04-29 10:00:00', 0, 'UTC') + toIntervalMinute(number), 'Australia/Adelaide') AS t FROM numbers(3 * 1440)));
+SELECT countIf(s < p)
+FROM (SELECT s, lagInFrame(s, 1, s) OVER (ORDER BY t ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS p
+      FROM (SELECT t, toUnixTimestamp64Second(toStartOfHour(t)) AS s
+            FROM (SELECT toTimeZone(toDateTime64('1899-04-29 10:00:00', 0, 'UTC') + toIntervalMinute(number), 'Australia/Adelaide') AS t FROM numbers(3 * 1440))));
+SELECT countIf(toStartOfHour(s) != s OR NOT (toMinute(s) = 0 AND toSecond(s) = 0 OR timeZoneOffset(s) != timeZoneOffset(s - 1)))
+FROM (SELECT toStartOfHour(t) AS s
+      FROM (SELECT toTimeZone(toDateTime64('1899-04-29 10:00:00', 0, 'UTC') + toIntervalMinute(number), 'Australia/Adelaide') AS t FROM numbers(3 * 1440)));
 SET enable_extended_results_for_datetime_functions = 0;
 
 SELECT 'time windows are a fixed hour long, so each one contains its time';

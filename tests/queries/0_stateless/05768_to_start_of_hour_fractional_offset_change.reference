@@ -39,6 +39,13 @@ the hour starts at the offset change inside the repeated and skipped half hour a
 2400-04-01 14:00:00
 the start of the hour is a whole hour on the clock or the offset change itself, and rounding it again keeps it
 0
+an offset change by a fraction of an hour that skips the local midnight before 1900 (Australia/Adelaide, 1899-05-01)
+1899-05-01 12:00:00	1899-05-01 12:00:00	1899-05-01 12:00:00
+1899-05-01 00:30:00	1899-05-01 00:30:00
+1899-04-30 23:00:00
+0
+0
+0
 time windows are a fixed hour long, so each one contains its time
 0
 0

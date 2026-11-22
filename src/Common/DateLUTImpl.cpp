@@ -472,36 +472,35 @@ DateLUTImpl::Time DateLUTImpl::timezoneOffsetAtLocalTimeOutOfRange(Time t) const
 DateLUTImpl::Time DateLUTImpl::toStartOfHourOutOfRange(Time t) const
 {
     /// The same rounding as `roundDownToWallClockHour` does inside the lookup table, with the offset change
-    /// of the day taken from the time zone rules: the last whole hour on the clock after the change, but not
-    /// before the change itself. Days without an offset change by a fraction of an hour are rounded on the
-    /// grid counted from the local midnight, as `roundDown` does.
-    const Time date = outOfRangeValues(t).date;
-    Time time = t - date;
+    /// taken from the time zone rules: the last whole hour on the clock that `t` is read on, but not before
+    /// an offset change by a fraction of an hour. The clock itself is used instead of a grid counted from the
+    /// start of the day, because a day can start after such a change: on 1899-05-01 `Australia/Adelaide`
+    /// skipped the half hour after midnight, so that day starts at 00:30 on the clock.
+    t = std::clamp(t, min_representable_time, max_representable_time);
+    const Time offset = timezoneOffsetOutOfRange(t);
+    const Time clock = t + offset;
+    Time clock_hour = clock / 3600 * 3600;
+    if (clock_hour > clock)
+        clock_hour -= 3600;
+    const Time start = clock_hour - offset;
 
-    const Time offset_at_date = timezoneOffsetOutOfRange(date);
-    const Time amount = timezoneOffsetOutOfRange(t) - offset_at_date;
+    /// If the offset changed by a whole number of hours since `start`, it is a whole hour on both clocks.
+    const Time amount = offset - timezoneOffsetOutOfRange(start);
     if (amount % 3600 == 0)
-        return date + time / 3600 * 3600;
+        return start;
 
-    /// Find the instant of the offset change between `date` and `t`: the first second with the new offset.
-    Time before = date;
+    /// Find the instant of the offset change between `start` and `t`: the first second with the offset of `t`.
+    Time before = start;
     Time after = t;
     while (after - before > 1)
     {
         const Time middle = before + (after - before) / 2;
-        if (timezoneOffsetOutOfRange(middle) == offset_at_date)
-            before = middle;
-        else
+        if (timezoneOffsetOutOfRange(middle) == offset)
             after = middle;
+        else
+            before = middle;
     }
-    const Time time_at_offset_change = after - date;
-
-    const Time clock = time + amount;
-    Time clock_hour = clock / 3600 * 3600;
-    if (clock < 0 && clock % 3600 != 0)
-        clock_hour -= 3600;
-    time = std::max(clock_hour - amount, time_at_offset_change);
-    return date + time;
+    return after;
 }
 
 DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const
