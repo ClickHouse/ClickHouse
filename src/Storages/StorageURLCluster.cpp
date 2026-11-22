@@ -162,7 +162,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
         uri, urlWithGlobs(uri), context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
 
-    auto next_callback = [iter = std::move(iterator), context](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator), context](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto url = iter->next();
         if (url.empty())
