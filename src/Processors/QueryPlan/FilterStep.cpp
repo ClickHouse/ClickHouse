@@ -489,12 +489,12 @@ FilterStep::FilterStep(
     actions_dag.removeUnusedActions(false, false);
 }
 
-void FilterStep::setPrefilteredConditions(UInt64 token, std::unordered_set<UInt64> condition_hashes)
+void FilterStep::setPrefilteredConditions(UInt64 token, UnorderedSetWithMemoryTracking<UInt64> condition_hashes)
 {
     prefiltered_conditions = PrefilteredConditions{.token = token, .condition_hashes = std::move(condition_hashes)};
 }
 
-void FilterStep::addPrefilteredConditions(const std::unordered_set<UInt64> & condition_hashes)
+void FilterStep::addPrefilteredConditions(const UnorderedSetWithMemoryTracking<UInt64> & condition_hashes)
 {
     if (prefiltered_conditions)
         prefiltered_conditions->condition_hashes.insert(condition_hashes.begin(), condition_hashes.end());
@@ -557,7 +557,7 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
     const ActionsDAG & dag,
     const String & filter_column_name,
     bool remove_filter_column,
-    const std::unordered_set<UInt64> & condition_hashes,
+    const UnorderedSetWithMemoryTracking<UInt64> & condition_hashes,
     const Block & input_header)
 {
     const auto & outputs = dag.getOutputs();

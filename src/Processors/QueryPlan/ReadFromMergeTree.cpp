@@ -3195,7 +3195,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     }
 
     /// Selected marks of each part, to tell how many of the marks read without merging belong to whole parts.
-    std::unordered_map<const IMergeTreeDataPart *, size_t> selected_marks_by_part;
+    UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, size_t> selected_marks_by_part;
     for (const auto & part : parts_with_ranges)
         selected_marks_by_part[part.data_part.get()] += part.getMarksCount();
 
@@ -3440,7 +3440,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     }
 
     {
-        std::unordered_map<const IMergeTreeDataPart *, size_t> non_intersecting_marks_by_part;
+        UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, size_t> non_intersecting_marks_by_part;
         size_t non_intersecting_marks = 0;
         for (const auto & part : non_intersecting_parts_by_primary_key)
         {

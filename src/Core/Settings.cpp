@@ -1264,7 +1264,7 @@ Possible values:
 - 0 — Only the conditions on the sorting key are applied before `FINAL` on all ranges.
 - 1 — All deterministic conditions are applied before `FINAL` on the ranges that are read without merging.
 )", 0, \
-        {"26.11", false, true, "New setting to apply all deterministic conditions of `WHERE` as `PREWHERE` to the key ranges that `FINAL` reads without merging."}) \
+        {"26.12", false, true, "New setting to apply all deterministic conditions of `WHERE` as `PREWHERE` to the key ranges that `FINAL` reads without merging."}) \
     DECLARE(Bool, move_all_conditions_to_prewhere, true, R"(
 Move all viable conditions from WHERE to PREWHERE
 )", 0) \

@@ -269,9 +269,9 @@ static NameSet getPrewhereConditionNames(const PrewhereInfo * prewhere_info)
 }
 
 /// The hashes of the inputs of `dag` that are the columns of `condition_names`.
-static std::unordered_set<UInt64> getConditionInputHashes(const ActionsDAG & dag, const NameSet & condition_names)
+static UnorderedSetWithMemoryTracking<UInt64> getConditionInputHashes(const ActionsDAG & dag, const NameSet & condition_names)
 {
-    std::unordered_set<UInt64> hashes;
+    UnorderedSetWithMemoryTracking<UInt64> hashes;
     for (const auto * input : dag.getInputs())
         if (condition_names.contains(input->result_name))
             hashes.insert(input->getHash());
@@ -525,13 +525,13 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     /// built from the same or more conditions (see `optimize_prewhere_after_pushdown`).
     /// The read marks the chunks of the non-intersecting ranges with a token, and the filter above it skips
     /// the conditions they already passed for them.
-    std::optional<std::pair<UInt64, std::unordered_set<UInt64>>> prefiltered_conditions;
+    std::optional<std::pair<UInt64, UnorderedSetWithMemoryTracking<UInt64>>> prefiltered_conditions;
     if (!non_intersecting_final_conditions.empty())
     {
         if (auto filter = buildNonIntersectingFinalFilter(non_intersecting_final_conditions, optimize_result.prewhere_nodes))
         {
             const UInt64 token = thread_local_rng();
-            std::unordered_set<UInt64> condition_hashes;
+            UnorderedSetWithMemoryTracking<UInt64> condition_hashes;
             for (const auto * condition : non_intersecting_final_conditions)
                 if (!optimize_result.prewhere_nodes.contains(condition))
                     condition_hashes.insert(condition->getHash());
