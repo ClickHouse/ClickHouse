@@ -69,3 +69,28 @@ SETTINGS max_block_size = 1000, max_threads = 1, max_rows_to_group_by = 4, group
     max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, enable_adaptive_aggregator = 0;
 
 DROP VIEW tab_few;
+
+-- -Distinct over the ranges between NULLs: in rows 0-9999 one NULL per 20 rows (ranges of 19 rows), in rows 10000-19999
+-- one per 200 rows (ranges of 199 rows). The values repeat in the even blocks and are new in the odd blocks.
+-- Key 7 occurs from row 5000.
+DROP VIEW IF EXISTS tab_distinct;
+CREATE VIEW tab_distinct AS
+SELECT
+    if(number >= 5000 AND number % 7 = 0, 7, number % 7) AS k,
+    if(number % if(number < 10000, 20, 200) = 3, NULL, if(intDiv(number, 1000) % 2 = 0, number % 37, number)) AS v
+FROM numbers(20000);
+
+SELECT toUInt8(k) AS key, sumDistinct(v), avgDistinct(v), uniqExactDistinct(v), cityHash64(groupArrayDistinct(v)), maxDistinct(toString(v))
+FROM tab_distinct GROUP BY key ORDER BY key
+SETTINGS max_block_size = 1000, max_threads = 1;
+
+SELECT toString(k) AS key, sumDistinct(v), avgDistinct(v), uniqExactDistinct(v), cityHash64(groupArrayDistinct(v)), maxDistinct(toString(v))
+FROM tab_distinct GROUP BY key ORDER BY key
+SETTINGS max_block_size = 1000, max_threads = 1;
+
+SELECT toString(k) AS key, sumDistinct(v), cityHash64(groupArrayDistinct(v))
+FROM tab_distinct GROUP BY key ORDER BY key
+SETTINGS max_block_size = 1000, max_threads = 1, max_rows_to_group_by = 4, group_by_overflow_mode = 'any',
+    max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, enable_adaptive_aggregator = 0;
+
+DROP VIEW tab_distinct;

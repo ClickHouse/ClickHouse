@@ -4,8 +4,8 @@
         <compile_aggregate_expressions>0</compile_aggregate_expressions>
     </settings>
 
-    <create_query>CREATE TABLE nullable_arguments (k8 UInt8, k4 UInt32, k1000 UInt32, k_many UInt32, v Nullable(Decimal(15, 2)), v_rare_nulls Nullable(Decimal(15, 2)), v_half_nulls Nullable(Decimal(15, 2))) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO nullable_arguments SELECT number % 6, number % 4, number % 1000, number % 1000000, number % 1000, if(number % 20000 = 0, NULL, number % 1000), if(cityHash64(number) % 2 = 0, NULL, number % 1000) FROM numbers_mt(30000000)</fill_query>
+    <create_query>CREATE TABLE nullable_arguments (k8 UInt8, k4 UInt32, k1000 UInt32, k_many UInt32, v Nullable(Decimal(15, 2)), v_rare_nulls Nullable(Decimal(15, 2)), v_half_nulls Nullable(Decimal(15, 2)), v_sixteenth_nulls Nullable(Decimal(15, 2))) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO nullable_arguments SELECT number % 6, number % 4, number % 1000, number % 1000000, number % 1000, if(number % 20000 = 0, NULL, number % 1000), if(cityHash64(number) % 2 = 0, NULL, number % 1000), if(number % 16 = 0, NULL, number % 1000) FROM numbers_mt(30000000)</fill_query>
 
     <query>SELECT k8, sum(v), avg(v) FROM nullable_arguments GROUP BY k8 FORMAT Null</query>
     <query>SELECT k4, sum(v), avg(v) FROM nullable_arguments GROUP BY k4 FORMAT Null</query>
@@ -16,6 +16,7 @@
     <query>SELECT k1000, sum(v_rare_nulls), avg(v_rare_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
     <query>SELECT k8, sum(v_half_nulls), avg(v_half_nulls) FROM nullable_arguments GROUP BY k8 FORMAT Null</query>
     <query>SELECT k1000, sumDistinct(v_half_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
+    <query>SELECT k1000, sumDistinct(v_sixteenth_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS nullable_arguments</drop_query>
 </test>

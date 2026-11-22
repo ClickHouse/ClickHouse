@@ -233,14 +233,15 @@ private:
     /// Adds the rows in [row_begin, row_end) to the places returned by `get_place(row)` (nullptr to skip the row).
     /// The rows with the values seen for the first time in their place are collected and passed to the nested function together,
     /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
+    /// `places` with `place_offset`, if not nullptr, give the same places as `get_place`.
     template <typename GetPlace>
     void addBatchToNested(
-        size_t row_begin, size_t row_end, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos, GetPlace && get_place) const
+        size_t row_begin, size_t row_end, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos, GetPlace && get_place,
+        AggregateDataPtr * places = nullptr, size_t place_offset = 0) const
     {
         const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
-        auto new_rows = ColumnUInt64::create();
-        auto & new_rows_data = new_rows->getData();
-        PaddedPODArray<AggregateDataPtr> new_places;
+        PODArrayWithStackMemory<UInt64, 512> new_rows_data;
+        PODArrayWithStackMemory<AggregateDataPtr, 512> new_places;
         for (size_t row = row_begin; row < row_end; ++row)
         {
             if (flags && !flags[row])
@@ -260,13 +261,23 @@ private:
         if (new_rows_data.empty())
             return;
 
-        /// All rows are new and the places are indexed from zero, there is no need to copy the rows.
-        if (row_begin == 0 && new_rows_data.size() == row_end)
+        /// All rows are new, there is no need to copy them.
+        if (new_rows_data.size() == row_end - row_begin)
         {
-            nested_func->addBatchWithNonNullPlaces(0, row_end, new_places.data(), prefix_size, columns, arena);
-            return;
+            if (places)
+            {
+                nested_func->addBatchWithNonNullPlaces(row_begin, row_end, places, place_offset + prefix_size, columns, arena);
+                return;
+            }
+            if (row_begin == 0)
+            {
+                nested_func->addBatchWithNonNullPlaces(0, row_end, new_places.data(), prefix_size, columns, arena);
+                return;
+            }
         }
 
+        auto new_rows = ColumnUInt64::create();
+        new_rows->getData().assign(new_rows_data.begin(), new_rows_data.end());
         auto new_columns = indexColumns(columns, *new_rows);
         nested_func->addBatchWithNonNullPlaces(0, new_rows_data.size(), new_places.data(), prefix_size, new_columns.second.data(), arena);
     }
@@ -373,7 +384,7 @@ public:
         ssize_t if_argument_pos) const override
     {
         addBatchToNested(row_begin, row_end, columns, arena, if_argument_pos,
-            [&](size_t row) { return places[row] ? places[row] + place_offset : nullptr; });
+            [&](size_t row) { return places[row] ? places[row] + place_offset : nullptr; }, places, place_offset);
     }
 
     void addBatchWithNonNullPlaces(
@@ -383,7 +394,8 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        addBatchToNested(row_begin, row_end, columns, arena, if_argument_pos, [&](size_t row) { return places[row] + place_offset; });
+        addBatchToNested(
+            row_begin, row_end, columns, arena, if_argument_pos, [&](size_t row) { return places[row] + place_offset; }, places, place_offset);
     }
 
     void addBatchLookupTable8(
