@@ -213,10 +213,14 @@ for label, node in (("lambda", bytes([FUNCTION]) + LAMBDA + vu(0) + b"\x04" + sb
           FILL + bytes([2]) + dag_nodes(ALIAS_Z + [node + RETURNS + MANY]), [X8Z], VERSION, X8Z)
 forge("interpolate announces more sources than it requires",
       FILL + bytes([2]) + dag(ALIAS_Z, [1]) + MANY, [X8Z], VERSION, X8Z)
-# The expression requires `x` and `z`, and the plan gives two sources, but both of them under the key `x`.
+# The expression requires `x` and `z`, and the plan gives two sources, but both of them under the key `x`,
+# or both of them for the required column `x`: either way `z` has no source, which the expression would
+# find out only when it is executed.
 TWO_SOURCES = bytes([2]) + dag([(INPUT, "x", U8, ()), (INPUT, "z", U8, ())], [1], 2) + vu(2)
 forge("interpolate source is repeated",
       FILL + TWO_SOURCES + sb("x") + sb("x") + sb("x") + sb("z") + vu(0), [X8Z], VERSION, X8Z)
+forge("interpolate required column has two sources",
+      FILL + TWO_SOURCES + sb("x") + sb("x") + sb("z") + sb("x") + vu(0), [X8Z], VERSION, X8Z)
 forge("well-formed two sources",
       FILL + TWO_SOURCES + sb("x") + sb("x") + sb("z") + sb("z") + vu(0), [X8Z], VERSION, X8Z)
 with_lambda("well-formed lambda", lambda_node(("e", U8), ("e", U8), U8))

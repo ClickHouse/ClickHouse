@@ -23,6 +23,7 @@ lambda announces more arguments than its type has INCORRECT_DATA
 folded lambda announces more arguments than its type has INCORRECT_DATA
 interpolate announces more sources than it requires INCORRECT_DATA
 interpolate source is repeated INCORRECT_DATA
+interpolate required column has two sources INCORRECT_DATA
 well-formed two sources accepted
 well-formed lambda accepted
 well-formed lambda with a captured column accepted

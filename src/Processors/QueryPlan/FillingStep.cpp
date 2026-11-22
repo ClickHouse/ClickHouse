@@ -232,6 +232,7 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
         const auto dag_required_columns = actions.getRequiredColumns();
 
         UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
+        NameSet sourced_required_columns;
         size_t num_required_columns = 0;
         readVarUInt(num_required_columns, ctx.in);
 
@@ -270,11 +271,17 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
             /// The type comes from the DAG, never from the wire: it decides the column the transform
             /// stages the value in before executing the expression.
-            /// The keys are distinct: with the number of the pairs checked above, a repeated key would
-            /// leave a column required by the expression without a source.
+            /// The planner gives every column required by the expression exactly one source, under its own key.
+            /// The number of the pairs is checked above, so it is enough to refuse a repeated key and a repeated
+            /// required column: either of them would leave a required column without a source, which
+            /// the expression would find out only when `FillingTransform` executes it.
             if (!required_columns_map.emplace(key, *name_and_type).second)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE source column '{}' occurs more than once", key);
+
+            if (!sourced_required_columns.insert(name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: column '{}' required by the interpolate expression has more than one source", name);
         }
 
         /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
