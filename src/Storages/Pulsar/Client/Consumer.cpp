@@ -515,11 +515,6 @@ void ConsumerImpl::onMessage(Connection & connection, SubConsumer & sub, Frame &
     const bool is_chunk = !metadata.has_num_messages_in_batch() && metadata.num_chunks_from_msg() > 1;
     if (is_chunk)
     {
-        const bool is_last = metadata.chunk_id() == metadata.num_chunks_from_msg() - 1;
-        /// The permit of a chunk other than the last one is returned right away.
-        if (!is_last)
-            ++sub.pending_flow;
-
         ChunkAssembler::Result result;
         sub.chunks.add(metadata, id, entry.payload, connection.maxMessageSize(), client->limits, result);
         if (!result.ack.empty())
@@ -527,10 +522,10 @@ void ConsumerImpl::onMessage(Connection & connection, SubConsumer & sub, Frame &
         if (result.ack_corrupted)
             sendAck(sub, {*result.ack_corrupted}, PulsarProto::CommandAck::UncompressedSizeCorruption);
         sendRedeliver(sub, result.redeliver);
+        /// The permit of a chunk is returned right away, unless the chunk completes a message.
         if (!result.message)
         {
-            if (is_last)
-                ++sub.pending_flow;
+            ++sub.pending_flow;
             return;
         }
 

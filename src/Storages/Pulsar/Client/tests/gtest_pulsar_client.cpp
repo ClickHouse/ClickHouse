@@ -1144,6 +1144,54 @@ TEST(PulsarClient, CompressedChunkedMessage)
     EXPECT_FALSE(acks[0].command.ack().has_validation_error());
 }
 
+TEST(PulsarClient, ChunkCountChangedByTheLastChunk)
+{
+    FakeBroker broker;
+    Client client(broker.url(), configuration());
+    ConsumerConfiguration consumer_configuration;
+    consumer_configuration.receiver_queue_size = 2;
+    auto consumer = client.subscribe({"t"}, "s", consumer_configuration);
+    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+    ASSERT_TRUE(broker.waitForCount(Type::FLOW, 1));
+
+    /// The first chunk declares 2 chunks, the second one 3.
+    for (Int32 i = 0; i < 2; ++i)
+    {
+        auto metadata = metadataOf();
+        metadata.set_uuid("u");
+        metadata.set_chunk_id(i);
+        metadata.set_num_chunks_from_msg(i == 0 ? 2 : 3);
+        metadata.set_total_chunk_msg_size(4);
+        broker.sendMessage(connection, consumer_id, i + 1, metadata, i == 0 ? "ab" : "cd");
+    }
+    auto messages = receiveAtLeast(*consumer, 1);
+    ASSERT_EQ(messages.size(), 1);
+    EXPECT_EQ(messages[0].payload(), "abcd");
+
+    consumer->acknowledge(std::span(&messages[0].id(), 1));
+    ASSERT_TRUE(broker.waitForCount(Type::ACK, 1));
+    auto acks = broker.eventsOf(Type::ACK);
+    ASSERT_EQ(acks.size(), 1);
+    EXPECT_EQ(acks[0].command.ack().message_id_size(), 2);
+
+    auto permits_after_initial = [](const auto & events)
+    {
+        UInt64 res = 0;
+        bool initial = true;
+        for (const auto & event : events)
+        {
+            if (event.command.type() != Type::FLOW)
+                continue;
+            if (!initial)
+                res += event.command.flow().messagepermits();
+            initial = false;
+        }
+        return res;
+    };
+    /// One permit per entry. The FLOWs precede the ACK on the same connection, so all of them are recorded by now.
+    EXPECT_EQ(permits_after_initial(broker.allEvents()), 2);
+}
+
 TEST(PulsarClient, LateResponseIsIgnored)
 {
     FakeBroker broker;
