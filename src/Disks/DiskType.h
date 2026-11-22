@@ -61,4 +61,7 @@ struct DataSourceDescription
     String toString() const;
 };
 
+class IDisk;
+bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk);
+
 }
