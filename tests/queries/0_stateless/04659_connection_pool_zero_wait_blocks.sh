@@ -10,17 +10,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # With connection_pool_max_wait_ms = 0 the waiter must block on the pool instead of retrying with a
 # zero length wait, which is what the "Waiting 0 ms." line below would report.
 
-# The suffix and the per-call start time below keep one run's log rows out of another's. A test
-# database is not enough on its own: the stress threads pass a fixed --database, so rows from an
-# earlier run could satisfy the lower bound without this run ever waiting, and could also push the
-# upper bound over its limit.
+# The suffix keeps one run's query ids, pool user and log files apart from another's. A test database is not
+# enough on its own: the stress threads pass a fixed --database, so an earlier run's query_log rows would be
+# counted with this run's.
 QUERY_PREFIX="04659_${CLICKHOUSE_DATABASE}_$(random_str 8)"
 
 # The pool is keyed on host, port, user and pool size, so a user of its own keeps concurrent runs out
 # of each other's pool.
 POOL_USER="u_${QUERY_PREFIX}"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${POOL_USER} IDENTIFIED WITH no_password"
-trap '${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${POOL_USER}"' EXIT
+trap '${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${POOL_USER}"; rm -f "${CLICKHOUSE_TMP}/${QUERY_PREFIX}"_*_waiter.log' EXIT
 
 function running() {
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id IN (${1})"
@@ -49,7 +48,13 @@ function wait_holding() {
     return 1
 }
 
-# Runs one pair of queries at the given connection_pool_max_wait_ms and leaves the log rows the
+# Counts the pool wait lines of one shape in a waiter's own server logs. These come over its connection,
+# while system.text_log drops lines when the async logger's queue is full.
+function pool_wait_lines() {
+    grep -c -E "ConnectionPool .*: No free connections in pool\. Waiting $2( \(skipped [0-9]+ similar messages\))?\$" "${CLICKHOUSE_TMP}/${QUERY_PREFIX}_$1_waiter.log"
+}
+
+# Runs one pair of queries at the given connection_pool_max_wait_ms and leaves the waiter's log the
 # assertion below reads. The holder does not finish on its own: it is killed only once the arm's own
 # expected event has been observed, so the pool is full for the whole of the waiter's wait and no
 # attempt has to be repeated to land that overlap.
@@ -57,10 +62,6 @@ function contend() {
     local wait_ms=$1 label=$2
     local holder="${QUERY_PREFIX}_${label}_holder" waiter="${QUERY_PREFIX}_${label}_waiter"
     local holder_pid waiter_pid
-
-    # Read the clock from the server the log rows come from, so the predicate needs no clock
-    # alignment.
-    CONTEND_START=$(${CLICKHOUSE_CLIENT} --query "SELECT toString(now64(6))")
 
     # Sleeps far longer than the handshake below needs, so the connection stays held until the kill
     # frees it. The per block sleep cap is what bounds the row count.
@@ -74,7 +75,11 @@ function contend() {
     # Only the holder can free the connection, so the waiter starts once the holder owns it.
     wait_holding "${holder}" || echo "the holder never started, so the pool was never full"
 
-    timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --query "
+    # The client creates the file only once a line arrives, so a waiter that logged nothing still leaves one to count.
+    local waiter_log="${CLICKHOUSE_TMP}/${waiter}.log"
+    : > "${waiter_log}"
+
+    timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --send_logs_level=information --server_logs_file="${waiter_log}" --query "
         SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1), '${POOL_USER}', '') WHERE sleepEachRow(1)
         SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
                  connection_pool_max_wait_ms = ${wait_ms}, function_sleep_max_microseconds_per_block = 60000000
@@ -131,21 +136,14 @@ function contend() {
 
 contend 0 zero succeeds
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-
 # The waiter has to reach the pool once, and then stay there: a wait that returned immediately and
 # re-entered the loop would report the same line many times over (measured in the thousands when the
 # blocking wait is replaced by a short one), so the count is bounded on both sides rather than
 # reduced to whether it happened at all.
-${CLICKHOUSE_CLIENT} --query "
-    SELECT
-        countIf(message_format_string = 'No free connections in pool. Waiting indefinitely.') BETWEEN 1 AND 20 AS blocked_once,
-        countIf(message_format_string = 'No free connections in pool. Waiting {} ms.') AS spun
-    FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time_microseconds >= toDateTime64('${CONTEND_START}', 6)
-      AND query_id LIKE '${QUERY_PREFIX}_zero_%'
-      AND logger_name LIKE 'ConnectionPool%'
-"
+indefinitely=$(pool_wait_lines zero 'indefinitely\.')
+blocked_once=$(( indefinitely >= 1 && indefinitely <= 20 ))
+spun=$(pool_wait_lines zero '[0-9]+ ms\.')
+printf '%s\t%s\n' "${blocked_once}" "${spun}"
 
 # A positive timeout is a deadline, so the waiter gives up rather than queueing until the holder
 # releases: the `fails` argument above asserts that. The line is still logged once per wait, and only
@@ -158,17 +156,9 @@ ${CLICKHOUSE_CLIENT} --query "
 # than timed, so the value only has to be short against the holder's thirty second hold.
 contend 500 finite fails
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-
-${CLICKHOUSE_CLIENT} --query "
-    SELECT
-        countIf(message_format_string = 'No free connections in pool. Waiting {} ms.') <= 20 AS finite_wait_throttled,
-        countIf(message_format_string = 'No free connections in pool. Waiting indefinitely.') AS blocked_indefinitely
-    FROM system.text_log
-    WHERE event_date >= yesterday() AND event_time_microseconds >= toDateTime64('${CONTEND_START}', 6)
-      AND query_id LIKE '${QUERY_PREFIX}_finite_%'
-      AND logger_name LIKE 'ConnectionPool%'
-"
+finite_wait_throttled=$(( $(pool_wait_lines finite '[0-9]+ ms\.') <= 20 ))
+blocked_indefinitely=$(pool_wait_lines finite 'indefinitely\.')
+printf '%s\t%s\n' "${finite_wait_throttled}" "${blocked_indefinitely}"
 
 # The user-visible failure is not the raw pool error. Once an exhausted pool is a soft per-replica
 # failure (ConnectionEstablisher's allowlist), it is retried per replica and the query reports
