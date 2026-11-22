@@ -29,7 +29,17 @@ enum class StatisticsFileVersion : UInt16
             /// the version field; deserialization returns nullptr if the stored type differs from
             /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
             /// are never used.
+    V5 = 5, /// the min and max of `minmax` and `basic` statistics are written with the serialization of the
+            /// column type, like any other value of the column, instead of the self-describing `Field` encoding,
+            /// and `minmax` no longer repeats the column type name. See `StatisticsUtils::serializeBounds`.
+            /// It is written only with the MergeTree setting `serialize_statistics_bounds_with_column_type`,
+            /// so that the versions that cannot read it keep working during a rolling upgrade.
 };
+
+/// The latest version, which can be written when nothing else reads the file, e.g. in merge checkpoints.
+static constexpr StatisticsFileVersion LATEST_STATISTICS_FILE_VERSION = StatisticsFileVersion::V5;
+/// The version of the statistics files of data parts by default, readable by all supported versions.
+static constexpr StatisticsFileVersion COMPATIBLE_STATISTICS_FILE_VERSION = StatisticsFileVersion::V4;
 
 class Field;
 class Block;
@@ -66,6 +76,21 @@ struct StatisticsUtils
     /// accumulator, and anything replaces a `NaN` accumulator. A `NULL` `value` is ignored.
     static void updateMin(Field & accumulator, const Field & value);
     static void updateMax(Field & accumulator, const Field & value);
+
+    /// Write the `min` and `max` bounds of a column with the binary serialization of its type `data_type`,
+    /// as a byte telling which bounds are known (a bound is unknown, a `NULL` `Field`, until a non-`NULL`
+    /// value is seen) followed by the known ones. The statistics of a part are always read with the type of
+    /// the column in that part, which is the type they were built for: when `ALTER` changes the type, the
+    /// mutation or merge that rewrites the column rewrites its statistics too.
+    /// The type is one of `canStatisticsTrackMinMax`, without `Nullable` and `LowCardinality`.
+    static void serializeBounds(const Field & min, const Field & max, const IDataType & data_type, WriteBuffer & buf);
+    static void deserializeBounds(Field & min, Field & max, const IDataType & data_type, ReadBuffer & buf);
+    /// The number of bytes written by `serializeBounds`: the values of these types have a fixed size.
+    static UInt64 getSerializedBoundsSize(const Field & min, const Field & max, const IDataType & data_type);
+    /// Whether `bound` (`NULL` or not) can be written by `serializeBounds` with `data_type`: the type of the `Field`
+    /// is the one of the values of `data_type`. The bounds read from the `Field` encoding of `V2` - `V4` may have
+    /// another type: e.g. the `Float64` bounds of `V1`, which older versions rewrote unchanged in `V4`.
+    static bool isBoundOfType(const Field & bound, const IDataType & data_type);
 };
 
 class IStatistics;
@@ -84,11 +109,16 @@ public:
     virtual void build(const ColumnPtr & column) = 0;
     virtual void merge(const StatisticsPtr & other_stats) = 0;
 
-    virtual void serialize(WriteBuffer & buf) = 0;
+    /// `version` is the version of the statistics file, `V4` or later.
+    virtual void serialize(WriteBuffer & buf, StatisticsFileVersion version) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
-    /// Returns the exact number of bytes written by serialize(), if it can be computed
+    /// Returns the exact number of bytes written by `serialize`, if it can be computed
     /// without serializing into a temporary buffer.
-    [[nodiscard]] virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<UInt64> getSerializedSize(StatisticsFileVersion /*version*/) const { return std::nullopt; }
+
+    /// Whether the statistics read from a file cannot be used and have to be dropped (a merge builds them from the
+    /// rows again): e.g. bounds that are not exact, or that cannot be written with the serialization of the column type.
+    [[nodiscard]] virtual bool isUnusable() const { return false; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
@@ -157,7 +187,8 @@ public:
     using StatsMap = std::map<StatisticsType, StatisticsPtr>;
     explicit ColumnStatistics(const ColumnStatisticsDescription & stats_desc_);
 
-    void serialize(WriteBuffer & buf) const;
+    /// `version` is `V4` or later.
+    void serialize(WriteBuffer & buf, StatisticsFileVersion version) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
     /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read; nullopt for an unknown
     /// NULL count.
