@@ -1,7 +1,10 @@
 #include <Processors/Transforms/Window/Frame.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
+
 #include <Common/VectorWithMemoryTracking.h>
+
 #include <base/defines.h>
 
 #include <algorithm>
@@ -22,9 +25,23 @@ int64_t signedOffset(const Field & offset, bool preceding)
     return value;
 }
 
-int64_t peerGroupAt(const SlidingBlocks & blocks, RowNumber row)
+int64_t peerGroupAt(const WindowTransformParams & params, const SlidingBlocks & blocks, RowNumber row)
 {
+    chassert(params.needs_peer_group_indexes);
     return blocks.blockAt(row.block).index.peer_group_indexes[row.row];
+}
+
+bool keyMissingAt(const WindowTransformParams & params, const SlidingBlock & block, int64_t row)
+{
+    return params.needs_missing_keys && block.index.missing_keys[row];
+}
+
+bool keyBeforeRangeBoundAt(const WindowTransformParams & params, const SlidingBlock & block, const IColumn * key_column, int64_t row, const RowPoint & current, const IColumn * current_key_column, const Field & offset, bool offset_is_preceding, int direction, bool past)
+{
+    if (keyMissingAt(params, block, row))
+        return RowNumber{block.block_number, row} < current.location;
+
+    return params.range_offset_comparator(key_column, row, current_key_column, current.location.row, offset, offset_is_preceding) * direction < past;
 }
 
 bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
@@ -51,13 +68,13 @@ bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partitio
 }
 
 /// The first row of the peer group, found block by block in the stored peer group indexes; the partition end when the group is past the last one.
-bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & bound)
+bool advanceToPeerGroup(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & bound)
 {
     const RowNumber partition_end = partition.end;
     if (bound.location == partition_end)
         return partition.end_visible;
 
-    if (peerGroupAt(blocks, bound.location) >= group)
+    if (peerGroupAt(params, blocks, bound.location) >= group)
         return true;
 
     while (bound.location != partition_end)
@@ -84,18 +101,22 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & pa
 /// The first row whose ORDER BY key is at the offset from the current row's key, or past it when `past`.
 bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, const Field & offset, bool frame_preceding, bool past, RowPoint & bound)
 {
+    const SlidingBlock & current_block = blocks.blockAt(current.location.block);
+    if (keyMissingAt(params, current_block, current.location.row))
+        return advanceToPeerGroup(params, blocks, partition, peerGroupAt(params, blocks, current.location) + (past ? 1 : 0), bound);
+
     const int direction = params.window_description.order_by[0].direction;
     const bool offset_is_preceding = frame_preceding == (direction > 0);
     const size_t key_position = params.order_by_indices[0];
-    const IColumn * current_key_column = blocks.blockAt(current.location.block).materialized_columns[key_position].get();
+    const ColumnPtr current_key_column = removeNullable(current_block.materialized_columns[key_position]);
     const RowNumber partition_end = partition.end;
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
-        const IColumn * key_column = block.materialized_columns[key_position].get();
+        const ColumnPtr key_column = removeNullable(block.materialized_columns[key_position]);
         const int64_t rows_end = partition_end.block == bound.location.block ? partition_end.row : block.rows_count;
         int64_t row = bound.location.row;
-        while (row < rows_end && params.range_offset_comparator(key_column, row, current_key_column, current.location.row, offset, offset_is_preceding) * direction < past)
+        while (row < rows_end && keyBeforeRangeBoundAt(params, block, key_column.get(), row, current, current_key_column.get(), offset, offset_is_preceding, direction, past))
             ++row;
 
         bound.row_index_in_partition += row - bound.location.row;
@@ -125,7 +146,7 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
                     return true;
                 case WindowFrame::FrameType::RANGE:
                 case WindowFrame::FrameType::GROUPS:
-                    if (peerGroupAt(blocks, start.location) != peerGroupAt(blocks, current.location))
+                    if (peerGroupAt(params, blocks, start.location) != peerGroupAt(params, blocks, current.location))
                         start = current;
                     return true;
             }
@@ -137,7 +158,7 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
                 case WindowFrame::FrameType::RANGE:
                     return advanceToRangeBound(params, blocks, partition, current, frame.begin_offset, frame.begin_preceding, false, start);
                 case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + signedOffset(frame.begin_offset, frame.begin_preceding), start);
+                    return advanceToPeerGroup(params, blocks, partition, peerGroupAt(params, blocks, current.location) + signedOffset(frame.begin_offset, frame.begin_preceding), start);
             }
     }
     UNREACHABLE();
@@ -157,7 +178,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
                     return advanceToRow(blocks, partition, current.row_index_in_partition + 1, end);
                 case WindowFrame::FrameType::RANGE:
                 case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + 1, end);
+                    return advanceToPeerGroup(params, blocks, partition, peerGroupAt(params, blocks, current.location) + 1, end);
             }
         case WindowFrame::BoundaryType::Offset:
             switch (frame.type)
@@ -167,7 +188,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
                 case WindowFrame::FrameType::RANGE:
                     return advanceToRangeBound(params, blocks, partition, current, frame.end_offset, frame.end_preceding, true, end);
                 case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
+                    return advanceToPeerGroup(params, blocks, partition, peerGroupAt(params, blocks, current.location) + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
             }
     }
     UNREACHABLE();
