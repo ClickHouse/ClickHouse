@@ -40,9 +40,9 @@ struct StorageID;
 /// decompressing the granule, and with many threads the lookups contend on the cache.
 ///
 /// The column is identified by a hash of the table UUID, the part name, the column name and the
-/// identity of the schema it was read with, computed once per reader, so that a lookup neither
-/// copies strings nor hashes them. The table UUID keeps the entries across `RENAME TABLE` and
-/// does not mix tables.
+/// identity of the schema it was read with (for a MergeTree part, also the name of the column in
+/// the part), computed once per reader, so that a lookup neither copies strings nor hashes them.
+/// The table UUID keeps the entries across `RENAME TABLE` and does not mix tables.
 struct ColumnsCacheKey
 {
     UInt128 column_identity = 0;
@@ -70,7 +70,8 @@ struct ColumnsCacheKeyHash
 /// with the moment the new metadata is published: a reader can never hold the new schema together
 /// with the identity of the old one. It is stable across reads of an unchanged table, so repeated
 /// reads find their entries.
-UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
+UInt128 getColumnsCacheColumnIdentity(
+    const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity, const String & name_in_part = {});
 
 /// Whether the columns cache can hold the columns of a part: entries are keyed by the table's UUID, which only
 /// the tables of `Atomic` and `Replicated` databases have.
@@ -110,9 +111,9 @@ struct ColumnsCacheStripes
     /// The stripes of a part, from the average size of its granules.
     static ColumnsCacheStripes forPart(const MergeTreeIndexGranularity & index_granularity);
 
-    size_t stripeOf(size_t mark) const { return mark / stripe_marks; }
-    size_t firstMark(size_t stripe) const { return stripe * stripe_marks; }
-    size_t endMark(size_t stripe, size_t marks_in_part) const { return std::min((stripe + 1) * stripe_marks, marks_in_part); }
+    [[nodiscard]] size_t stripeOf(size_t mark) const { return mark / stripe_marks; }
+    [[nodiscard]] size_t firstMark(size_t stripe) const { return stripe * stripe_marks; }
+    [[nodiscard]] size_t endMark(size_t stripe, size_t marks_in_part) const { return std::min((stripe + 1) * stripe_marks, marks_in_part); }
 };
 
 /// Cached deserialized column data: a contiguous run of granules of one stripe.

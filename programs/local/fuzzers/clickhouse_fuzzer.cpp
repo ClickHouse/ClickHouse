@@ -88,7 +88,7 @@ static int clickhouseMain(int argc_, char ** argv_)
     updatePHDRCache();
 
 #if !defined(USE_MUSL)
-    checkHarmfulEnvironmentVariables(argv_);
+    checkHarmfulEnvironment(argv_);
 #endif
 
     /// This is used for testing. For example,
@@ -391,7 +391,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         /// this handler runs, so none of them can nest and clobber that state.
         sigemptyset(&usr1.sa_mask);
         sigaddset(&usr1.sa_mask, SIGUSR2);
-        sigaddset(&usr1.sa_mask, DB::STACK_TRACE_SERVICE_SIGNAL);
+        sigaddset(&usr1.sa_mask, STACK_TRACE_SERVICE_SIGNAL);
         sigaddset(&usr1.sa_mask, SIGTSTP);
         sigaction(SIGUSR1, &usr1, &original_sigusr1_action);
 #pragma clang diagnostic pop

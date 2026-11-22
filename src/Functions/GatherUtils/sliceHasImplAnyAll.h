@@ -142,9 +142,9 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
         auto chunk_contains = [&](size_t begin) ALWAYS_INLINE
         {
             bool found = false;
-            /// Sanitizer instrumentation of the loads prevents vectorization, and a requested but failed one is an error
-            /// (`-Wpass-failed`).
-#if !defined(SANITIZER)
+            /// Debug builds and sanitizer instrumentation of the loads prevent vectorization, and a requested but failed one is
+            /// an error (`-Wpass-failed`).
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 #pragma clang loop vectorize(enable) vectorize_width(16) interleave_count(2)
 #endif
             for (size_t i = begin; i < begin + chunk; ++i)

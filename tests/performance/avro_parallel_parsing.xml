@@ -1,0 +1,36 @@
+<!--
+    Avro parallel parsing: reading a single Avro object container file through the `file()` table
+    function now splits it into segments on block (sync) boundaries and decodes them on several
+    threads. Before this change the Avro reader had no `FileSegmentationEngine`, so
+    `input_format_parallel_parsing` was a no-op for it and a large file was decoded on one thread
+    regardless of `max_threads`.
+
+    The file is written with the default sync interval, so 20M rows produce many blocks to segment
+    on; the queries do only light aggregation, so the time is dominated by Avro decoding, which is
+    what parallelizes.
+
+    The first query turns parallel parsing on, the second is the control with it off. On this change
+    the first query parses on several threads and the second on one, so the first should be several
+    times faster; the gap guards that Avro reads keep parsing in parallel. The control also stays
+    stable against the reference (master) binary, where parallel parsing was a no-op for Avro, so a
+    cross-version comparison attributes the first query's speedup to parallelism rather than to some
+    unrelated change in the read path.
+
+    The read goes through `file()` rather than a `File` engine table on purpose: only the table
+    function path parses in parallel.
+-->
+<test>
+    <settings>
+        <max_threads>16</max_threads>
+    </settings>
+
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_avro_parallel_parsing.avro', Avro, 's String, n UInt64')
+        SELECT concat('row_', toString(number)), number
+        FROM numbers(20000000)
+        SETTINGS engine_file_truncate_on_insert = 1
+    ]]></fill_query>
+
+    <query>SELECT sum(length(s)), sum(n) FROM file('test_avro_parallel_parsing.avro', Avro, 's String, n UInt64') SETTINGS input_format_parallel_parsing = 1 FORMAT Null</query>
+    <query>SELECT sum(length(s)), sum(n) FROM file('test_avro_parallel_parsing.avro', Avro, 's String, n UInt64') SETTINGS input_format_parallel_parsing = 0 FORMAT Null</query>
+</test>

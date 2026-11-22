@@ -859,7 +859,7 @@ Veja também a [instrução `SET`](/pt-BR/reference/statements/use).
 currentDatabase()
 ```
 
-**Aliases**: `current_database`, `DATABASE`, `SCHEMA`
+**Aliases**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **Argumentos**
 
@@ -897,7 +897,7 @@ SELECT CURRENT_DATABASE
 
 ## currentHandler {#currentHandler}
 
-Introduzido em: v26.6.0
+Introduzido em: v26.8.0
 
 Retorna o nome do handler HTTP definido em SQL (criado com `CREATE HANDLER`) que invocou a consulta.
 Retorna uma string vazia se a consulta não tiver sido invocada por esse handler.
@@ -1008,7 +1008,7 @@ SELECT currentQueryID();
 
 ## currentRequestURL {#currentRequestURL}
 
-Introduzida na versão: v26.6.0
+Introduzido em: v26.8.0
 
 Retorna a URL da requisição HTTP (caminho e string de consulta) que invocou a consulta.
 Retorna uma string vazia se a consulta não tiver sido invocada por HTTP.
@@ -1179,6 +1179,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+Introduzido em: v26.8.0
+
+Função de compatibilidade com o PostgreSQL. Retorna o valor de um parâmetro de configuração de tempo de execução. Apenas um pequeno conjunto de parâmetros read-only usados para introspecção do cliente é emulado.
+
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
+**Sintaxe**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**Argumentos**
+
+* `name` — O nome do parâmetro de configuração. [`String`](/pt-BR/reference/data-types/string)
+* `missing_ok` — Retorna `NULL` em vez de lançar uma exceção quando o parâmetro é desconhecido. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+
+**Valor retornado**
+
+O valor do parâmetro de configuração ou `NULL` para um parâmetro desconhecido quando `missing_ok` é true. [`Nullable(String)`](/pt-BR/reference/data-types/nullable)
+
+**Exemplos**
+
+**Exemplo**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2348,6 +2385,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+Introduzido em: v26.8.0
+
+Função de compatibilidade com o PostgreSQL. Retorna o nome SQL de um tipo a partir do seu OID. Para `numeric`, o modificador de tipo é decodificado em precisão e escala (`numeric(p, s)`); para todos os outros tipos, o modificador é ignorado. Um modificador de tipo `NULL` indica que nenhum modificador é conhecido, assim como `-1`, e um OID de tipo `NULL` retorna `NULL`.
+
+**Sintaxe**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**Argumentos**
+
+* `type_oid` — O OID do tipo. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
+* `typemod` — O modificador de tipo ou `NULL`. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`NULL`](/pt-BR/reference/syntax#null)
+
+**Valor retornado**
+
+O nome SQL do tipo. [`String`](/pt-BR/reference/data-types/string)
+
+**Exemplos**
+
+**Exemplo**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -4172,8 +4242,8 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **Argumentos**
 
-* `baseline` — Conversão de base. [`Float*`](/pt-BR/reference/data-types/float)
-* `mde` — Efeito mínimo detectável (MDE), em pontos percentuais (por exemplo, para uma conversão de base de 0.25, um MDE de 0.03 significa uma mudança esperada para 0.25 ± 0.03). [`Float*`](/pt-BR/reference/data-types/float)
+* `baseline` — Conversão de referência. [`Float*`](/pt-BR/reference/data-types/float)
+* `mde` — Efeito mínimo detectável (MDE), em pontos percentuais (por exemplo, para uma conversão de referência de 0.25, um MDE de 0.03 significa uma mudança esperada para 0.25 ± 0.03). [`Float*`](/pt-BR/reference/data-types/float)
 * `power` — Poder estatístico exigido para um teste (1 - probabilidade de erro Tipo II). [`Float*`](/pt-BR/reference/data-types/float)
 * `alpha` — Nível de significância exigido para um teste (probabilidade de erro Tipo I). [`Float*`](/pt-BR/reference/data-types/float)
 
@@ -4190,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}
@@ -5001,7 +5071,8 @@ Introduzido em: v26.8.0
 
 Função de compatibilidade para o protocolo wire do PostgreSQL, equivalente a `pg_catalog.pg_table_is_visible`.
 Clientes PostgreSQL (por exemplo, o comando `\d` no `psql`) a usam para filtrar tabelas visíveis no caminho de busca.
-Como a view `pg_class` emulada pelo ClickHouse expõe apenas as tabelas do banco de dados atual, que são todas visíveis, a função sempre retorna `1`.
+Fora de uma sessão do protocolo wire do PostgreSQL, não há um catálogo emulado com base no qual resolver o oid, por isso a função retorna `1`.
+Dentro de uma sessão desse tipo, o handler do PostgreSQL reescreve a chamada como uma verificação do caminho de busca no catálogo emulado, já que este expõe cada banco de dados como um schema.
 
 **Sintaxe**
 
@@ -6092,6 +6163,10 @@ Retorna o snapshot mais recente (Commit Sequence Number) de uma [transação](/p
   Para mais informações, consulte a página [Suporte transacional (ACID)](/pt-BR/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
 </Note>
 
+<Note>
+  Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+</Note>
+
 **Sintaxe**
 
 ```sql
@@ -6142,6 +6217,10 @@ Retorna o snapshot mais antigo (Commit Sequence Number) visível para alguma [tr
   ```
 
   Para mais informações, consulte a página [suporte transacional (ACID)](/pt-BR/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+</Note>
+
+<Note>
+  Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
 </Note>
 
 **Sintaxe**
