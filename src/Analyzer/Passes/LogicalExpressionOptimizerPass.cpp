@@ -358,34 +358,50 @@ static void insertFunctionsAndSubqueries(
     }
 }
 
-/// Hashes what `compareGroupByKeys` compares, except types, column sources and subqueries.
-/// A constant is hashed by its text, which is the same for every NaN.
-static UInt64 getGroupByKeyHash(const IQueryTreeNode & node)
+/// Hashes what `compareGroupByKeys` compares, except types, column sources and subqueries, and stores the hash of every
+/// node below in `hashes`. A constant is hashed by its text, which is the same for every NaN.
+static UInt64 getGroupByKeyHash(const IQueryTreeNode & node, std::unordered_map<const IQueryTreeNode *, UInt64> & hashes)
 {
-    SipHash hash;
-    std::vector<const IQueryTreeNode *> nodes_to_process{&node};
+    std::vector<std::pair<const IQueryTreeNode *, bool>> nodes_to_process{{&node, false}};
     while (!nodes_to_process.empty())
     {
-        const auto * current = nodes_to_process.back();
-        nodes_to_process.pop_back();
+        const auto [current, children_hashed] = nodes_to_process.back();
+        if (hashes.contains(current))
+        {
+            nodes_to_process.pop_back();
+            continue;
+        }
 
         const auto node_type = current->getNodeType();
-        hash.update(static_cast<size_t>(node_type));
-        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        const bool is_subquery = node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+        if (!children_hashed && !is_subquery)
+        {
+            nodes_to_process.back().second = true;
+            for (const auto & child : current->getChildren())
+                if (child)
+                    nodes_to_process.emplace_back(child.get(), false);
             continue;
+        }
+        nodes_to_process.pop_back();
 
-        if (const auto * function_node = current->as<FunctionNode>())
-            hash.update(function_node->getFunctionName());
-        else if (const auto * column_node = current->as<ColumnNode>())
-            hash.update(column_node->getColumnName());
-        else if (const auto * constant_node = current->as<ConstantNode>())
-            hash.update(constant_node->getColumn()->getValueName(0, {}));
+        SipHash hash;
+        hash.update(static_cast<size_t>(node_type));
+        if (!is_subquery)
+        {
+            if (const auto * function_node = current->as<FunctionNode>())
+                hash.update(function_node->getFunctionName());
+            else if (const auto * column_node = current->as<ColumnNode>())
+                hash.update(column_node->getColumnName());
+            else if (const auto * constant_node = current->as<ConstantNode>())
+                hash.update(constant_node->getColumn()->getValueName(0, {}));
 
-        for (const auto & child : current->getChildren())
-            if (child)
-                nodes_to_process.push_back(child.get());
+            for (const auto & child : current->getChildren())
+                if (child)
+                    hash.update(hashes.at(child.get()));
+        }
+        hashes.emplace(current, hash.get64());
     }
-    return hash.get64();
+    return hashes.at(&node);
 }
 
 /// Whether the trees are equal, ignoring the result types of functions and columns.
@@ -504,6 +520,7 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
         return result;
 
     std::unordered_map<UInt64, QueryTreeNodes> candidates_by_hash;
+    std::unordered_map<const IQueryTreeNode *, UInt64> hashes;
     std::unordered_set<const IQueryTreeNode *> visited;
     std::vector<const IQueryTreeNode *> nodes_to_process{&query_node};
     while (!nodes_to_process.empty())
@@ -519,7 +536,7 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
 
             if (const auto * function_node = child->as<FunctionNode>();
                 function_node && key_function_names.contains(function_node->getFunctionName()))
-                candidates_by_hash[getGroupByKeyHash(*child)].push_back(child);
+                candidates_by_hash[getGroupByKeyHash(*child, hashes)].push_back(child);
 
             nodes_to_process.push_back(child.get());
         }
@@ -560,7 +577,7 @@ static std::unordered_set<QueryTreeNodePtr> collectGroupByKeyNodes(const QueryNo
         auto key = std::move(keys_to_process.back());
         keys_to_process.pop_back();
 
-        auto it = candidates_by_hash.find(getGroupByKeyHash(*key));
+        auto it = candidates_by_hash.find(getGroupByKeyHash(*key, hashes));
         if (it == candidates_by_hash.end())
             continue;
 
