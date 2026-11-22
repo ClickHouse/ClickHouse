@@ -193,6 +193,15 @@ UInt128 hashUuid(const String & uuid)
     return sipHash128(uuid.data(), uuid.size());
 }
 
+/// A uuid is written by the producer and can be as big as a frame.
+String uuidForLog(const String & uuid)
+{
+    constexpr size_t max_size = 64;
+    if (uuid.size() <= max_size)
+        return uuid;
+    return fmt::format("{}... ({} bytes)", std::string_view(uuid).substr(0, max_size), uuid.size());
+}
+
 }
 
 
@@ -468,7 +477,7 @@ std::optional<bool> ChunkAssembler::abandonedDisposition(UInt128 uuid_hash) cons
 
 void ChunkAssembler::discardMalformed(const String & uuid, ChunkId id, Result & result)
 {
-    LOG_ERROR(getLogger("PulsarClient"), "Discarding a malformed chunked message (uuid: {}, chunk at {}:{})", uuid, id.ledger_id, id.entry_id);
+    LOG_ERROR(getLogger("PulsarClient"), "Discarding a malformed chunked message (uuid: {}, chunk at {}:{})", uuidForLog(uuid), id.ledger_id, id.entry_id);
     if (Context * context = find(uuid))
     {
         for (const auto & chunk : context->chunks)
@@ -486,7 +495,7 @@ void ChunkAssembler::add(
     const String & uuid = metadata.uuid();
     const Int64 chunk_id = metadata.chunk_id();
     const UInt64 now = clock();
-    const bool publish_expired = now > metadata.publish_time() + EXPIRY_MS;
+    const bool publish_expired = now > metadata.publish_time() && now - metadata.publish_time() > EXPIRY_MS;
 
     if (!metadata.has_uuid())
     {
@@ -519,7 +528,7 @@ void ChunkAssembler::add(
         {
             Context & oldest = contexts.front();
             LOG_WARNING(getLogger("PulsarClient"), "Requesting redelivery of the incomplete chunked message {}, because {} chunked messages are pending",
-                oldest.uuid, contexts.size());
+                uuidForLog(oldest.uuid), contexts.size());
             result.redeliver.insert(result.redeliver.end(), oldest.chunks.begin(), oldest.chunks.end());
             const UInt128 evicted = hashUuid(oldest.uuid);
             contexts.pop_front();
@@ -547,7 +556,7 @@ void ChunkAssembler::add(
             redeliver = false;
         else if (auto disposition = abandonedDisposition(hashUuid(uuid)))
             redeliver = *disposition;
-        LOG_ERROR(getLogger("PulsarClient"), "Received an uncached chunk {} of {} at {}:{}", chunk_id, uuid, id.ledger_id, id.entry_id);
+        LOG_ERROR(getLogger("PulsarClient"), "Received an uncached chunk {} of {} at {}:{}", chunk_id, uuidForLog(uuid), id.ledger_id, id.entry_id);
         (redeliver ? result.redeliver : result.ack).push_back(id);
         return;
     }
@@ -563,7 +572,7 @@ void ChunkAssembler::add(
             return;
         }
 
-        LOG_WARNING(getLogger("PulsarClient"), "Received chunk {} of {} after chunk {}", chunk_id, uuid, last_chunk_id);
+        LOG_WARNING(getLogger("PulsarClient"), "Received chunk {} of {} after chunk {}", chunk_id, uuidForLog(uuid), last_chunk_id);
         result.redeliver.insert(result.redeliver.end(), context->chunks.begin(), context->chunks.end());
         remove(uuid);
         rememberAbandoned(hashUuid(uuid), true);
@@ -602,7 +611,7 @@ void ChunkAssembler::expire(Result & result)
         auto it = std::find_if(contexts.begin(), contexts.end(), [&](const Context & context) { return now > context.last_received_ms + EXPIRY_MS; });
         if (it == contexts.end())
             return;
-        LOG_INFO(getLogger("PulsarClient"), "Removing the expired incomplete chunked message {}", it->uuid);
+        LOG_INFO(getLogger("PulsarClient"), "Removing the expired incomplete chunked message {}", uuidForLog(it->uuid));
         result.ack.insert(result.ack.end(), it->chunks.begin(), it->chunks.end());
         const UInt128 uuid_hash = hashUuid(it->uuid);
         contexts.erase(it);

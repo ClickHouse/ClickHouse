@@ -113,8 +113,8 @@ public:
     void sendFrame(StringWithMemoryTracking bytes);
     bool hasPendingOutput() const { return !output.empty(); }
 
-    /// Makes as much progress as possible without blocking: completes the connection, sends the queued output,
-    /// reads the received frames and passes them to `handler` (apart from `CONNECTED`, `PING` and `PONG`).
+    /// Makes progress without blocking: completes the connection, sends the queued output, reads at most
+    /// 1 MiB and passes the received frames to `handler` (apart from `CONNECTED`, `PING` and `PONG`).
     /// Throws on a failure to connect and on a protocol violation. A lost connection becomes `Closed`.
     void process(FrameHandler & handler);
 

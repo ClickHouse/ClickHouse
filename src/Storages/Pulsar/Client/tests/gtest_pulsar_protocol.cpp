@@ -16,6 +16,8 @@
 #include <zlib.h>
 #include <zstd.h>
 
+#include <limits>
+
 using namespace DB;
 using namespace DB::Pulsar;
 
@@ -724,6 +726,18 @@ TEST(PulsarChunks, UncachedChunk)
     EXPECT_EQ(expired.ack, ids({3}));
     result = t.add(t.chunk("c", 1, 3, 6, t.now), 4, "cd");
     EXPECT_EQ(result.ack, ids({4}));
+    EXPECT_TRUE(result.redeliver.empty());
+}
+
+TEST(PulsarChunks, PublishTimeNearTheMaximum)
+{
+    ChunkTest t;
+    /// A publish time in the future is not expired.
+    auto result = t.add(t.chunk("u", 1, 3, 6, std::numeric_limits<UInt64>::max()), 1, "cd");
+    EXPECT_EQ(result.redeliver, ids({1}));
+    EXPECT_TRUE(result.ack.empty());
+    result = t.add(t.chunk("v", 1, 3, 6, 1), 2, "cd");
+    EXPECT_EQ(result.ack, ids({2}));
     EXPECT_TRUE(result.redeliver.empty());
 }
 

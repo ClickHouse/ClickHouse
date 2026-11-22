@@ -231,6 +231,11 @@ void ProducerImpl::advance()
     if (pending->ordering_key)
         metadata.set_ordering_key(String(*pending->ordering_key));
 
+    const size_t size = metadata.ByteSizeLong() + pending->payload.size();
+    if (size > connection->maxMessageSize())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The message of {} bytes with its metadata is bigger than the maximum message size {} of the Pulsar broker",
+            size, connection->maxMessageSize());
+
     connection->sendFrame(encodeSendFrame(command, metadata, pending->payload));
     pending->sent_on = connection_id;
 }

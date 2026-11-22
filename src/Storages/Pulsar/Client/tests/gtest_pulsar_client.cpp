@@ -36,6 +36,7 @@ using namespace std::chrono_literals;
 namespace DB::ErrorCodes
 {
     extern const int ABORTED;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONNECT_PULSAR;
     extern const int LIMIT_EXCEEDED;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
@@ -164,19 +165,21 @@ public:
         sendRaw(connection, frame);
     }
 
-    static StringWithMemoryTracking messageFrame(UInt64 consumer_id, UInt64 entry, const PulsarProto::MessageMetadata & metadata, std::string_view payload)
+    static StringWithMemoryTracking messageFrame(
+        UInt64 consumer_id, UInt64 entry, const PulsarProto::MessageMetadata & metadata, std::string_view payload, UInt64 ledger = 1)
     {
         PulsarProto::BaseCommand command;
         command.set_type(Type::MESSAGE);
         command.mutable_message()->set_consumer_id(consumer_id);
-        command.mutable_message()->mutable_message_id()->set_ledgerid(1);
+        command.mutable_message()->mutable_message_id()->set_ledgerid(ledger);
         command.mutable_message()->mutable_message_id()->set_entryid(entry);
         return encodeSendFrame(command, metadata, payload);
     }
 
-    void sendMessage(size_t connection, UInt64 consumer_id, UInt64 entry, const PulsarProto::MessageMetadata & metadata, std::string_view payload)
+    void sendMessage(
+        size_t connection, UInt64 consumer_id, UInt64 entry, const PulsarProto::MessageMetadata & metadata, std::string_view payload, UInt64 ledger = 1)
     {
-        sendRaw(connection, messageFrame(consumer_id, entry, metadata, payload));
+        sendRaw(connection, messageFrame(consumer_id, entry, metadata, payload, ledger));
     }
 
     void closeConnection(size_t connection)
@@ -966,6 +969,21 @@ TEST(PulsarClient, Producer)
     EXPECT_EQ(errorCode([&] { interrupted->send("seven"); }), ErrorCodes::ABORTED);
 }
 
+TEST(PulsarClient, ProducerMessageSizeIncludesMetadata)
+{
+    FakeBroker broker;
+    broker.setMaxMessageSize(1000);
+    Client client(broker.url(), configuration());
+
+    auto producer = client.createProducer("t", {});
+    EXPECT_EQ(errorCode([&] { producer->send(String(900, 'x'), String(200, 'k')); }), ErrorCodes::BAD_ARGUMENTS);
+    EXPECT_EQ(broker.count(Type::SEND), 0);
+
+    auto second = client.createProducer("t", {});
+    second->send(String(900, 'x'), "k");
+    EXPECT_EQ(broker.count(Type::SEND), 1);
+}
+
 TEST(PulsarClient, CloseFromAnotherThread)
 {
     FakeBroker broker;
@@ -1021,6 +1039,44 @@ TEST(PulsarClient, LargeAcknowledgementIsSplit)
     EXPECT_GE(acks.size(), 2);
     for (const auto & ack : acks)
         EXPECT_LE(ack.frame_size, 1000);
+}
+
+TEST(PulsarClient, LargeAcknowledgementWithLongIdsIsSplit)
+{
+    FakeBroker broker;
+    broker.setMaxMessageSize(20000);
+    Client client(broker.url(), configuration());
+    ConsumerConfiguration consumer_configuration;
+    consumer_configuration.receiver_queue_size = 2000;
+    auto consumer = client.subscribe({"t"}, "s", consumer_configuration);
+    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+
+    /// Ledger and entry ids of 10 bytes each, the longest encoding.
+    constexpr UInt64 big = 1ULL << 63;
+    for (UInt64 i = 0; i < 2000; ++i)
+        broker.sendMessage(connection, consumer_id, big + i, metadataOf(), "x", big);
+    auto messages = receiveAtLeast(*consumer, 2000);
+    ASSERT_EQ(messages.size(), 2000);
+    std::vector<MessageId> ids; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    for (const auto & message : messages)
+        ids.push_back(message.id());
+    consumer->acknowledge(ids);
+
+    auto acknowledged = [](const auto & events)
+    {
+        size_t res = 0;
+        for (const auto & event : events)
+            if (event.command.type() == Type::ACK)
+                res += event.command.ack().message_id_size();
+        return res;
+    };
+    ASSERT_TRUE(broker.waitFor([&](const auto & all) { return acknowledged(all) >= 2000; }));
+    auto acks = broker.eventsOf(Type::ACK);
+    EXPECT_EQ(acknowledged(acks), 2000);
+    EXPECT_GE(acks.size(), 3);
+    /// The broker's limit on a whole frame.
+    for (const auto & ack : acks)
+        EXPECT_LE(ack.frame_size + 4, 20000 + FRAME_PADDING);
 }
 
 TEST(PulsarClient, CompressedChunkedMessage)
@@ -1113,6 +1169,54 @@ TEST(PulsarClient, LateResponseIsIgnored)
     for (size_t i = 0; i < 100 && !code; ++i)
         code = errorCode([&] { consumer->batchReceive(1, 100ms); });
     EXPECT_EQ(code, ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+}
+
+TEST(PulsarClient, PingFlood)
+{
+    FakeBroker broker;
+    Client client(broker.url(), configuration());
+    auto consumer = client.subscribe({"t"}, "s", {});
+    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+
+    PulsarProto::BaseCommand ping;
+    ping.set_type(Type::PING);
+    ping.mutable_ping();
+    const auto one = encodeCommand(ping);
+    String batch;
+    for (size_t i = 0; i < 10000; ++i)
+        batch.append(one.data(), one.size());
+
+    std::atomic<bool> stop = false;
+    std::atomic<bool> finished = false;
+    std::atomic<size_t> pings = 0;
+    std::thread flood([&]
+    {
+        const auto flood_start = std::chrono::steady_clock::now();
+        while (!stop && std::chrono::steady_clock::now() - flood_start < 10s)
+        {
+            broker.sendRaw(connection, batch);
+            pings += 10000;
+        }
+        finished = true;
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(consumer->batchReceive(1, 200ms).empty());
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    stop = true;
+    /// Reads the rest, so that the writer is not blocked on a full socket.
+    while (!finished)
+        consumer->batchReceive(1, 100ms);
+    flood.join();
+    EXPECT_LT(elapsed, 5s);
+
+    broker.sendMessage(connection, consumer_id, 1, metadataOf(), "after");
+    auto messages = receiveAtLeast(*consumer, 1);
+    ASSERT_EQ(messages.size(), 1);
+    EXPECT_EQ(messages[0].payload(), "after");
+    EXPECT_TRUE(consumer->batchReceive(1, 500ms).empty());
+    /// Not one PONG per PING.
+    EXPECT_LT(broker.count(Type::PONG) * 100, pings.load());
 }
 
 #endif

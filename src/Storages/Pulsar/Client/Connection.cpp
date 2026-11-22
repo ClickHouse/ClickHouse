@@ -43,6 +43,8 @@ namespace
 /// The protocol version 20 adds `TOPIC_MIGRATED`; with 19 the broker closes the consumers and producers instead.
 constexpr Int32 PROTOCOL_VERSION = 19;
 constexpr size_t READ_CHUNK_SIZE = 64 * 1024;
+/// Bounds one call of `process`, so that the calls check their deadlines while data keeps arriving.
+constexpr size_t MAX_INPUT_PER_PROCESS = 16 * READ_CHUNK_SIZE;
 
 String stripBrackets(const String & host)
 {
@@ -359,6 +361,7 @@ void Connection::processInput(FrameHandler & handler)
 {
     if (read_buffer.empty())
         read_buffer.resize(READ_CHUNK_SIZE);
+    size_t received_total = 0;
     while (current_state != State::Closed)
     {
         /// The size of every frame is checked before the buffer grows beyond one chunk.
@@ -378,6 +381,8 @@ void Connection::processInput(FrameHandler & handler)
             input.erase(0, input_begin);
             input_begin = 0;
         }
+        if (received_total >= MAX_INPUT_PER_PROCESS)
+            return;
 
         int received = socket->receiveBytes(read_buffer.data(), static_cast<int>(read_buffer.size()));
         if (received == 0)
@@ -394,6 +399,7 @@ void Connection::processInput(FrameHandler & handler)
             return;
         }
         input.append(read_buffer.data(), received);
+        received_total += received;
         last_received = Clock::now();
         ping_sent.reset();
     }
@@ -428,10 +434,14 @@ void Connection::handleFrame(FrameHandler & handler, std::string_view body)
         }
         case Type::PING:
         {
-            PulsarProto::BaseCommand pong;
-            pong.set_type(Type::PONG);
-            pong.mutable_pong();
-            send(pong);
+            /// The broker takes any bytes as a response, so the queued output answers a PING too.
+            if (output.empty())
+            {
+                PulsarProto::BaseCommand pong;
+                pong.set_type(Type::PONG);
+                pong.mutable_pong();
+                send(pong);
+            }
             return;
         }
         case Type::PONG:
