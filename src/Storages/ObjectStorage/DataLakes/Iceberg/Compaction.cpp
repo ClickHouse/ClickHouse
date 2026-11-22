@@ -116,8 +116,7 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestFileLineage> manifest_file_lineage;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
-    /// Keyed by `storageIdentity` of the data file path.
-    std::unordered_map<String, std::shared_ptr<DataFilePlan>> path_to_data_file;
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
     Poco::JSON::Array::Ptr current_schema_fields;
@@ -291,7 +290,7 @@ static Plan getPlan(
                 /// file per manifest and the rest of the manifest's data silently disappeared
                 /// from the compacted table. The map still deduplicates the same data file
                 /// referenced from multiple snapshots' manifest lists.
-                const auto data_file_path = persistent_table_components.path_resolver.storageIdentity(data_file->parsed_entry->file_path_key);
+                const auto & data_file_path = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(data_file_path))
                 {

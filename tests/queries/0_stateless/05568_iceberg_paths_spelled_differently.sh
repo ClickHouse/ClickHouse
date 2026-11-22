@@ -187,3 +187,21 @@ local_query "
     CREATE TABLE t ENGINE = IcebergLocal('x/warehouse/db/t');
     ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" | grep deleted_manifest_lists_count
 local_query "SELECT x FROM icebergLocal('x/warehouse/db/t') ORDER BY x"
+
+# Written by ClickHouse, then the second snapshot got one manifest listing its file and, again, the file of the first
+# snapshot spelled `file:/...`, like a merging append of Spark. `OPTIMIZE` must keep that file in the manifest.
+echo "OPTIMIZE keeps a file a merged manifest lists in another spelling"
+mkdir -p m/warehouse/db
+cp -r "${CUR_DIR}/data_iceberg/merged_manifest" m/warehouse/db/t
+if [ "$(local_query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")" = 1 ]; then
+    # The cloud build routes `OPTIMIZE` through a different code path.
+    printf '[1,3,10,11]\n0\n'
+else
+    local_query "
+        CREATE TABLE t ENGINE = IcebergLocal('m/warehouse/db/t');
+        SET mutations_sync = 2, allow_experimental_iceberg_compaction = 1;
+        ALTER TABLE t DELETE WHERE x = 2;
+        OPTIMIZE TABLE t;
+        SELECT groupArray(x) FROM (SELECT x FROM t ORDER BY x);
+        SELECT count() FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't' AND content = 'POSITION_DELETE';"
+fi

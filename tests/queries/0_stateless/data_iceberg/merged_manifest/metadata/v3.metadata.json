@@ -1,0 +1,116 @@
+{
+    "current-schema-id" : 0,
+    "current-snapshot-id" : 1169143411486276748,
+    "default-sort-order-id" : 0,
+    "default-spec-id" : 0,
+    "format-version" : 2,
+    "last-column-id" : 1,
+    "last-partition-id" : 999,
+    "last-sequence-number" : 2,
+    "last-updated-ms" : 1795364526099,
+    "location" : "/m/warehouse/db/t/",
+    "metadata-log" : [
+        {
+            "metadata-file" : "/m/warehouse/db/t/metadata/v2.metadata.json",
+            "timestamp-ms" : 1795364526091
+        },
+        {
+            "metadata-file" : "/m/warehouse/db/t/metadata/v3.metadata.json",
+            "timestamp-ms" : 1795364526099
+        }
+    ],
+    "partition-specs" : [
+        {
+            "fields" : [
+
+            ],
+            "spec-id" : 0
+        }
+    ],
+    "refs" : {
+        "main" : {
+            "snapshot-id" : 1169143411486276748,
+            "type" : "branch"
+        }
+    },
+    "schemas" : [
+        {
+            "fields" : [
+                {
+                    "id" : 1,
+                    "name" : "x",
+                    "required" : true,
+                    "type" : "int"
+                }
+            ],
+            "schema-id" : 0,
+            "type" : "struct"
+        }
+    ],
+    "snapshot-log" : [
+        {
+            "snapshot-id" : 4366219548968703970,
+            "timestamp-ms" : 1795364526091
+        },
+        {
+            "snapshot-id" : 1169143411486276748,
+            "timestamp-ms" : 1795364526099
+        }
+    ],
+    "snapshots" : [
+        {
+            "manifest-list" : "/m/warehouse/db/t/metadata/snap-4366219548968703970-2-ff534d8b-6143-42e7-aa24-4ef49a0e28c5.avro",
+            "parent-snapshot-id" : -1,
+            "schema-id" : 0,
+            "sequence-number" : 1,
+            "snapshot-id" : 4366219548968703970,
+            "summary" : {
+                "added-data-files" : "1",
+                "added-files-size" : "485",
+                "added-records" : "3",
+                "changed-partition-count" : "1",
+                "operation" : "append",
+                "total-data-files" : "1",
+                "total-delete-files" : "0",
+                "total-equality-deletes" : "0",
+                "total-files-size" : "485",
+                "total-position-deletes" : "0",
+                "total-records" : "3"
+            },
+            "timestamp-ms" : 1795364526091
+        },
+        {
+            "manifest-list" : "/m/warehouse/db/t/metadata/snap-1169143411486276748-2-b519985e-d400-4370-952c-f845863b7e68.avro",
+            "parent-snapshot-id" : 4366219548968703970,
+            "schema-id" : 0,
+            "sequence-number" : 2,
+            "snapshot-id" : 1169143411486276748,
+            "summary" : {
+                "added-data-files" : "1",
+                "added-files-size" : "480",
+                "added-records" : "2",
+                "changed-partition-count" : "1",
+                "operation" : "append",
+                "total-data-files" : "2",
+                "total-delete-files" : "0",
+                "total-equality-deletes" : "0",
+                "total-files-size" : "965",
+                "total-position-deletes" : "0",
+                "total-records" : "5"
+            },
+            "timestamp-ms" : 1795364526099
+        }
+    ],
+    "sort-orders" : [
+        {
+            "fields" : [
+
+            ],
+            "order-id" : 0
+        }
+    ],
+    "statistics" : [
+
+    ],
+    "table-uuid" : "77d7bee6-2b12-4877-b497-fd31b3b5e3d6"
+}
