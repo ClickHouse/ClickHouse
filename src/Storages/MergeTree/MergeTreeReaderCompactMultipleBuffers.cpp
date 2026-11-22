@@ -135,8 +135,12 @@ void MergeTreeReaderCompactMultipleBuffers::prefetchBeginOfRange(Priority priori
         size_t from_mark = all_mark_ranges.front().begin;
         auto prefetch = [&](Stream & stream)
         {
+            /// The first position to read is unknown: a prefetch could read data that is not needed.
+            if (!stream.first_position)
+                return;
+
             stream.stream->adjustRightMark(last_mark_to_read);
-            stream.stream->seekToMarkAndColumn(from_mark, stream.first_position);
+            stream.stream->seekToMarkAndColumn(from_mark, *stream.first_position);
             stream.stream->getDataBuffer()->prefetch(priority);
         };
 
@@ -242,6 +246,44 @@ void MergeTreeReaderCompactMultipleBuffers::fillReadOrder()
     });
 }
 
+std::optional<size_t> MergeTreeReaderCompactMultipleBuffers::getFirstPositionToRead(size_t column_idx) const
+{
+    size_t column_position = *column_positions[column_idx];
+    if (!has_substream_marks)
+        return column_position;
+
+    /// A full column is read from its first substream. Without a subcolumn, there is nothing to narrow.
+    const auto & column = columns_to_read[column_idx];
+    if (!column.isSubcolumn() || columns_for_offsets[column_idx])
+        return columns_substreams.getFirstSubstreamPosition(column_position);
+
+    /// A subcolumn is read by seeking to the marks of its own substreams (see `readPrefix` and `readData`),
+    /// which can be far from the first substream of the column: e.g. `t.b` of `t Tuple(s String, b UInt64)`
+    /// does not read `t.s`. The substreams are enumerated without the deserialization state, so for the types
+    /// with a dynamic structure only the substreams of the prefix are known. They are read first and precede
+    /// the data, so the minimum is still the first position to read.
+    std::optional<size_t> first_position;
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
+    enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+    enumerate_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+    {
+        return columns_substreams.tryGetSubstreamPosition(column_position, column, substream_path, storage_settings).has_value();
+    };
+
+    serializations[column_idx]->enumerateStreams(enumerate_settings, [&](const ISerialization::SubstreamPath & substream_path)
+    {
+        if (needSkipStream(column_idx, substream_path))
+            return;
+
+        auto position = columns_substreams.tryGetSubstreamPosition(column_position, column, substream_path, storage_settings);
+        if (position && (!first_position || *position < *first_position))
+            first_position = position;
+    }, ISerialization::SubstreamData(serializations[column_idx]).withType(column.type));
+
+    return first_position;
+}
+
 void MergeTreeReaderCompactMultipleBuffers::updateAllMarkRanges(const MarkRanges & ranges)
 try
 {
@@ -295,19 +337,34 @@ try
 
     streams.assign(columns_to_read.size(), nullptr);
 
+    /// The substreams of a granule are written in the order of their positions, so the reading of a granule
+    /// never needs the data before the smallest of the first positions of the columns to read with a stream.
+    /// The prefetch starts there and does not read the leading columns and substreams that are not requested.
+    /// If the first position of some column is unknown, the stream is not prefetched.
+    auto update_first_position = [&](Stream & stream, bool is_first_column, size_t column_idx)
+    {
+        auto position = getFirstPositionToRead(column_idx);
+        if (is_first_column)
+            stream.first_position = position;
+        else if (!position || !stream.first_position)
+            stream.first_position.reset();
+        else
+            stream.first_position = std::min(*stream.first_position, *position);
+    };
+
     if (use_shared_stream)
     {
-        /// The columns of a granule are written in the order of their positions in the part, so the reading
-        /// of a granule never needs the data before the column with the smallest position among the columns to read.
-        /// The prefetch starts there and does not read the leading columns that are not requested.
-        size_t first_column_position = std::ranges::min(column_positions | std::views::filter([](const auto & position) { return position.has_value(); })
-            | std::views::transform([](const auto & position) { return *position; }));
-        size_t first_position = has_substream_marks ? columns_substreams.getFirstSubstreamPosition(first_column_position) : first_column_position;
-
-        shared_stream.emplace(Stream{.stream = create_stream.operator()<MergeTreeReaderStreamAllOfMultipleColumns>(), .first_position = first_position});
+        shared_stream.emplace(Stream{.stream = create_stream.operator()<MergeTreeReaderStreamAllOfMultipleColumns>(), .first_position = {}});
+        bool is_first_column = true;
         for (size_t i = 0; i < columns_to_read.size(); ++i)
-            if (column_positions[i])
-                streams[i] = shared_stream->stream.get();
+        {
+            if (!column_positions[i])
+                continue;
+
+            streams[i] = shared_stream->stream.get();
+            update_first_position(*shared_stream, is_first_column, i);
+            is_first_column = false;
+        }
     }
     else
     {
@@ -318,7 +375,8 @@ try
 
             size_t column_position = *column_positions[i];
             auto it = streams_by_position.find(column_position);
-            if (it == streams_by_position.end())
+            bool is_first_column = it == streams_by_position.end();
+            if (is_first_column)
             {
                 /// The right bound of the stream is computed from the marks of the last substream of the column,
                 /// so that the data of all substreams of the column is inside the bound.
@@ -327,10 +385,11 @@ try
 
                 it = streams_by_position.emplace(
                     column_position,
-                    Stream{.stream = create_stream.operator()<MergeTreeReaderStreamOneOfMultipleColumns>(first_position, last_position), .first_position = first_position}).first;
+                    Stream{.stream = create_stream.operator()<MergeTreeReaderStreamOneOfMultipleColumns>(first_position, last_position), .first_position = {}}).first;
             }
 
             streams[i] = it->second.stream.get();
+            update_first_position(it->second, is_first_column, i);
         }
     }
 

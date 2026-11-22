@@ -46,12 +46,17 @@ private:
     bool shouldUseSharedStream();
     void updateStreamsReadRequestMap();
     void fillReadOrder();
+    /// Position of the first substream of a granule that the reading of `columns_to_read[column_idx]` needs,
+    /// if it can be established. For a subcolumn it is the first of its own substreams, not of the whole column.
+    std::optional<size_t> getFirstPositionToRead(size_t column_idx) const;
 
     struct Stream
     {
         std::unique_ptr<MergeTreeReaderStream> stream;
-        /// Position of the first mark of the stream's column in a granule, where reading of a granule starts.
-        size_t first_position = 0;
+        /// Position of the first mark of a granule that the stream reads, where the prefetch starts.
+        /// It is the first required substream of the columns to read, which for subcolumns can be
+        /// after the first substream of the column. Empty if it cannot be established.
+        std::optional<size_t> first_position;
     };
 
     /// Indexes in `columns_to_read` in the order of the columns in the data file.
