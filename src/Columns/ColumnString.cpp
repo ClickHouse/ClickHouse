@@ -1065,7 +1065,7 @@ ColumnPtr ColumnString::createWithOffsets(
     }
     else
     {
-        /// Writes a run of default rows at once: the bytes of the default value repeated, then the offsets as an
+        /// Writes a run of default rows at once: the bytes of the default value repeated and the offsets as an
         /// arithmetic sequence. A 16-byte copy per row would overlap the previous one by up to 15 bytes for a short
         /// default, such as `'0'` of `toString` over a sparse number column, and such stores are slow on some CPUs.
         auto insert_defaults = [&](size_t end)
@@ -1074,15 +1074,24 @@ ColumnPtr ColumnString::createWithOffsets(
                 return;
 
             const size_t count = end - row;
-            const size_t run_bytes = default_size * count;
-            UInt8 * dst = res_chars + res_size;
+            const size_t base = res_size;
+            UInt8 * __restrict dst = res_chars + base;
+            Offset * __restrict run_offsets = res_offsets + row;
             if (default_size == 1)
             {
-                memset(dst, default_data[0], count);
+                /// A byte and an offset per row in one loop: a short run, the usual case, makes no call, and the
+                /// compiler vectorizes a long one.
+                const UInt8 byte = default_data[0];
+                for (size_t k = 0; k < count; ++k)
+                {
+                    dst[k] = byte;
+                    run_offsets[k] = base + k + 1;
+                }
             }
             else
             {
                 /// Each copy doubles the filled prefix.
+                const size_t run_bytes = default_size * count;
                 memcpy(dst, default_data, default_size);
                 for (size_t filled = default_size; filled < run_bytes;)
                 {
@@ -1090,13 +1099,11 @@ ColumnPtr ColumnString::createWithOffsets(
                     memcpy(dst + filled, dst, chunk);
                     filled += chunk;
                 }
+                for (size_t k = 0; k < count; ++k)
+                    run_offsets[k] = base + (k + 1) * default_size;
             }
 
-            Offset * run_offsets = res_offsets + row;
-            for (size_t k = 0; k < count; ++k)
-                run_offsets[k] = res_size + (k + 1) * default_size;
-
-            res_size += run_bytes;
+            res_size = base + default_size * count;
             row = end;
         };
 
