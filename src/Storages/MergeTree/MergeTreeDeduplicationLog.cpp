@@ -269,6 +269,56 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         }
     }
 
+    /// The ADD and DROP records of a dropped part cancel each other out above, so a table that keeps inserting and
+    /// dropping parts never fills the window and would keep every log. When the older logs hold much more than a window
+    /// of records, write the entries that are still in the window to the current log and delete all the older ones.
+    /// The current log is the one that was just rotated, so it has no records of its own yet.
+    size_t old_records = 0;
+    for (const auto & [number, description] : existing_logs)
+    {
+        if (number != current_log_number)
+            old_records += description.entries_count;
+    }
+
+    if (old_records <= 2 * rotate_interval || !current_writer)
+        return;
+
+    try
+    {
+        for (const auto & node : deduplication_map)
+        {
+            MergeTreeDeduplicationLogRecord record;
+            record.operation = MergeTreeDeduplicationOp::ADD;
+            record.part_name = node.value.getPartNameAndCheckFormat(format_version);
+            record.block_id = node.key;
+            writeRecord(record, *current_writer);
+            existing_logs[current_log_number].entries_count++;
+        }
+
+        /// The records that replace the older logs have to be on disk before those are deleted.
+        current_writer->next();
+        current_writer->sync();
+        if (auto guard = disk->getDirectorySyncGuard(logs_dir))
+            guard->sync();
+
+        for (auto itr = existing_logs.begin(); itr != existing_logs.end() && itr->first != current_log_number;)
+        {
+            LOG_DEBUG(
+                getLogger("MergeTreeDeduplicationLog"),
+                "Dropping deduplication log {}, its entries are in {}",
+                itr->second.path,
+                existing_logs[current_log_number].path);
+            disk->removeFileIfExists(itr->second.path);
+            itr = existing_logs.erase(itr);
+        }
+    }
+    catch (...)
+    {
+        /// The records that are already written are valid ADD records of entries in the window, and the older logs are still there.
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__,
+            "Error while checkpointing MergeTree deduplication log in " + logs_dir + ", will retry on the next rotation");
+    }
 }
 
 void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
