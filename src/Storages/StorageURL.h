@@ -434,7 +434,7 @@ public:
         bool inline_http_method = false;
         /// The method a storage gets. A named collection's method is for writes only, so its `POST`
         /// (the write default anyway) is dropped to keep reads on `GET`, as before.
-        String storageHTTPMethod() const;
+        [[nodiscard]] String storageHTTPMethod() const;
         HTTPHeaderEntries headers;
         std::string addresses_expr;
     };
