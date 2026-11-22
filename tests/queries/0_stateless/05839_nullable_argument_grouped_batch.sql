@@ -43,3 +43,29 @@ FROM tab GROUP BY key ORDER BY key
 SETTINGS max_block_size = 1000, max_threads = 1;
 
 DROP VIEW tab;
+
+-- Block 10 (rows 10000-10999) has 13 NULLs, few enough to be added range by range between them: at the first and
+-- the last row of the block, in a run of three and every 100 rows. Key 7 is NULL in every row, key 8 occurs only in block 10.
+DROP VIEW IF EXISTS tab_few;
+CREATE VIEW tab_few AS
+SELECT
+    multiIf(number BETWEEN 10000 AND 10999 AND number % 100 = 0, 7,
+            number BETWEEN 10000 AND 10999 AND number % 100 = 1, 8,
+            number % 7) AS k,
+    if(number BETWEEN 10000 AND 10999 AND (number % 100 = 0 OR number IN (10501, 10502, 10999)), NULL, number + 1) AS v
+FROM numbers(20000);
+
+SELECT toUInt8(k) AS key, sum(v), avg(v), min(v), uniqExact(v), sumOrNull(v), deltaSum(toUInt32(v)), max(v) - min(v)
+FROM tab_few GROUP BY key ORDER BY key
+SETTINGS max_block_size = 1000, max_threads = 1;
+
+SELECT toString(k) AS key, sum(v), avg(v), min(v), uniqExact(v), sumOrNull(v), deltaSum(toUInt32(v)), max(v) - min(v)
+FROM tab_few GROUP BY key ORDER BY key
+SETTINGS max_block_size = 1000, max_threads = 1;
+
+SELECT toString(k) AS key, sum(v), uniqExact(v)
+FROM tab_few GROUP BY key ORDER BY key
+SETTINGS max_block_size = 1000, max_threads = 1, max_rows_to_group_by = 4, group_by_overflow_mode = 'any',
+    max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, enable_adaptive_aggregator = 0;
+
+DROP VIEW tab_few;

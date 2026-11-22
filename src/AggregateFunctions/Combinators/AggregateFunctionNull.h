@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
+#include <base/find_symbols.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -628,10 +629,11 @@ public:
         Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        if (!memoryIsZero(column->getNullMapData().data(), row_begin, row_end))
+        const UInt8 * null_map = column->getNullMapData().data();
+        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
+        if (has_nulls && hasManyNulls(null_map, row_begin, row_end))
         {
-            IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchLookupTable8(
-                row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
+            addBatchLookupTable8RowByRow(row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
             return;
         }
 
@@ -645,7 +647,16 @@ public:
             places[i] = place;
         }
 
-        addBatchWithoutNulls<true>(row_begin, row_end, places.data(), place_offset, &column->getNestedColumn(), arena);
+        if (!has_nulls)
+        {
+            addBatchWithoutNulls<true>(row_begin, row_end, places.data(), place_offset, &column->getNestedColumn(), arena);
+            return;
+        }
+
+        forEachRangeWithoutNulls(null_map, row_begin, row_end, [&](size_t begin, size_t end)
+        {
+            addBatchWithoutNulls<true>(begin, end, places.data(), place_offset, &column->getNestedColumn(), arena);
+        });
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -697,18 +708,78 @@ private:
         ssize_t if_argument_pos) const
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        if (if_argument_pos >= 0 || !memoryIsZero(column->getNullMapData().data(), row_begin, row_end))
+        const UInt8 * null_map = column->getNullMapData().data();
+        const bool has_nulls = !memoryIsZero(null_map, row_begin, row_end);
+        if (if_argument_pos >= 0 || (has_nulls && hasManyNulls(null_map, row_begin, row_end)))
         {
-            if constexpr (places_are_non_null)
-                IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchWithNonNullPlaces(
-                    row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-            else
-                IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatch(
-                    row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            addBatchRowByRow<places_are_non_null>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
             return;
         }
 
-        addBatchWithoutNulls<places_are_non_null>(row_begin, row_end, places, place_offset, &column->getNestedColumn(), arena);
+        if (!has_nulls)
+        {
+            addBatchWithoutNulls<places_are_non_null>(row_begin, row_end, places, place_offset, &column->getNestedColumn(), arena);
+            return;
+        }
+
+        forEachRangeWithoutNulls(null_map, row_begin, row_end, [&](size_t begin, size_t end)
+        {
+            addBatchWithoutNulls<places_are_non_null>(begin, end, places, place_offset, &column->getNestedColumn(), arena);
+        });
+    }
+
+    /// With more NULLs the ranges between them are short, and the nested function may pay a setup cost per range.
+    static bool hasManyNulls(const UInt8 * null_map, size_t row_begin, size_t row_end)
+    {
+        static constexpr size_t min_rows_per_null = 16;
+        return countBytesInFilter(null_map, row_begin, row_end) * min_rows_per_null > row_end - row_begin;
+    }
+
+    /// Not inlined, so that the row loops are compiled as in IAggregateFunctionHelper.
+    template <bool places_are_non_null>
+    NO_INLINE void addBatchRowByRow(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const
+    {
+        if constexpr (places_are_non_null)
+            IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        else
+            IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatch(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    NO_INLINE void addBatchLookupTable8RowByRow(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const
+    {
+        IAggregateFunctionHelper<AggregateFunctionNullUnary>::addBatchLookupTable8(
+            row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
+    }
+
+    template <typename Func>
+    static void forEachRangeWithoutNulls(const UInt8 * null_map, size_t row_begin, size_t row_end, Func && func)
+    {
+        const char * map = reinterpret_cast<const char *>(null_map);
+        size_t begin = row_begin;
+        while (begin < row_end)
+        {
+            const size_t end = find_first_not_symbols<'\0'>(map + begin, map + row_end) - map;
+            if (begin < end)
+                func(begin, end);
+            begin = find_first_symbols<'\0'>(map + end, map + row_end) - map;
+        }
     }
 
     template <bool places_are_non_null>
