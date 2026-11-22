@@ -154,6 +154,7 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     do
     {
         /// Declared inside the loop: `readStringUntilAmpersand` appends to its argument, so a buffer
@@ -163,6 +164,8 @@ static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & i
         String decoded_value;
         auto name = readFieldName(in);
         readStringUntilAmpersand(value,in);
+        if (settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+            continue;
         decodeFormValue(value, decoded_value);
         DataTypePtr type = tryInferDataTypeByEscapingRule(decoded_value, settings, FormatSettings::EscapingRule::Raw);
         /// The value is read verbatim with `deserializeWholeText`, while the type inference follows a

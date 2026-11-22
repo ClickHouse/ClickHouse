@@ -278,11 +278,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     for (const auto & [name, type] : names_and_types)
     {
         if (names_to_types.contains(name))
-        {
-            if (format_settings.skip_duplicated_fields)
-                continue;
             throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
-        }
 
         auto hint_it = hints.find(name);
         if (hint_it != hints.end())
@@ -303,11 +299,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         for (auto & [name, new_type] : new_names_and_types)
         {
             if (names_set.contains(name))
-            {
-                if (format_settings.skip_duplicated_fields)
-                    continue;
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
-            }
             names_set.insert(name);
 
             auto it = names_to_types.find(name);
@@ -336,8 +328,13 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
     NamesAndTypesList result = getStaticNamesAndTypes();
+    const NameSet static_names = result.getNameSet();
     for (auto & name : names_order)
     {
+        /// The row reader fills a static column before the row's fields, so a field of the same name is a repeated one.
+        if (format_settings.skip_duplicated_fields && static_names.contains(name))
+            continue;
+
         auto & type = names_to_types[name];
         /// Don't check/change types from hints.
         if (!hints.contains(name))

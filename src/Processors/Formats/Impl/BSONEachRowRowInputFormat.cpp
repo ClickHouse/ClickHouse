@@ -1043,11 +1043,17 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
     BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, in);
     NamesAndTypesList names_and_types;
+    NameSet row_field_names;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
     {
         auto bson_type = getBSONType(readBSONType(in));
         String name;
         readNullTerminated(name, in);
+        if (depth == 1 && format_settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+        {
+            skipBSONField(in, bson_type);
+            continue;
+        }
         bool skip = false;
         auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip, depth);
         if (!skip)

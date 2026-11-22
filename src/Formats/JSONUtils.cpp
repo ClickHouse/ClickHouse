@@ -223,6 +223,7 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
+        NameSet row_field_names;
         const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != '}')
         {
@@ -232,8 +233,10 @@ namespace JSONUtils
                 first = false;
 
             auto name = readFieldName(in, settings.json);
-            auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
-            names_and_types.emplace_back(name, type);
+            if (settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+                skipJSONField(in, name, settings.json);
+            else
+                names_and_types.emplace_back(name, tryInferDataTypeForSingleJSONField(in, settings, inference_info));
             skipWhitespaceIfAny(in);
 
             if (settings.json.max_row_size_for_json_each_row
