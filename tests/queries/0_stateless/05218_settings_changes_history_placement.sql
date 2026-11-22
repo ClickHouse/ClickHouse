@@ -89,3 +89,9 @@ SET compatibility = '26.3';
 SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concurrent_download_timeout_milliseconds';
 SET compatibility = '26.2';
 SELECT value FROM system.settings WHERE name = 'filesystem_cache_wait_for_concurrent_download_timeout_milliseconds';
+
+SELECT 'iceberg_manifest_decode_concurrency backported to 26.8';
+SET compatibility = '26.8';
+SELECT value FROM system.settings WHERE name = 'iceberg_manifest_decode_concurrency';
+SET compatibility = '26.7';
+SELECT value FROM system.settings WHERE name = 'iceberg_manifest_decode_concurrency';
