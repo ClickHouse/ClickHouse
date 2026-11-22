@@ -52,10 +52,6 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_ARE_STALE;
 }
 
-namespace FailPoints
-{
-    extern const char use_delayed_remote_source[];
-}
 
 namespace ClusterProxy
 {
@@ -124,7 +120,7 @@ void SelectStreamFactory::createForShard(
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
-    auto emplace_remote_stream = [&](bool lazy = false)
+    auto emplace_remote_stream = [&]()
     {
         SharedHeader shard_header;
         PlannerContextPtr planner_context;
@@ -168,18 +164,11 @@ void SelectStreamFactory::createForShard(
             .main_table = main_table,
             .header = shard_header,
             .shard_info = shard_info,
-            .lazy = lazy,
             .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
 
     const auto & settings = context->getSettingsRef();
-
-    fiu_do_on(FailPoints::use_delayed_remote_source,
-    {
-        emplace_remote_stream(/*lazy=*/true);
-        return;
-    });
 
     // prefer_localhost_replica is not effective in case of parallel replicas
     // (1) prefer_localhost_replica is about choosing one replica on a shard
@@ -277,9 +266,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        /// Try our luck with remote replicas, but if they are stale too, then fallback to local replica.
-        /// Do it lazily to avoid connecting in the main thread.
-        emplace_remote_stream(true /* lazy */);
+        emplace_remote_stream();
     }
     else
         emplace_remote_stream();
