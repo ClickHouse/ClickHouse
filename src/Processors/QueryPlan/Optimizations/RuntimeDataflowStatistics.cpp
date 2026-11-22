@@ -24,7 +24,6 @@ namespace ProfileEvents
 {
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
-extern const Event RuntimeDataflowStatisticsInputNanoseconds;
 extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 }
 
@@ -362,18 +361,8 @@ RuntimeDataflowStatisticsCacheUpdater::RuntimeDataflowStatisticsCacheUpdater(
     std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
     : block(std::move(block_))
     , duplicated(duplicated_)
-    , counted_compressed_blocks(std::make_shared<CountedCompressedBlocks>())
+    , counted_compressed_blocks(std::make_shared<CountedCompressedBlocks>(block, duplicated))
 {
-}
-
-void RuntimeDataflowStatisticsCacheUpdater::recordInputBytesRead(std::optional<size_t> compressed_bytes_read)
-{
-    Stopwatch watch;
-    if (!compressed_bytes_read)
-        markUnsupportedCase();
-    else
-        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(*compressed_bytes_read, std::memory_order_relaxed);
-    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()

@@ -10,8 +10,16 @@
 #include <utility>
 #include <filesystem>
 #include <IO/ByteRangeSet.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event RuntimeDataflowStatisticsInputNanoseconds;
+}
 
 namespace DB
 {
@@ -331,6 +339,12 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
+CountedCompressedBlocks::CountedCompressedBlocks(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
+    : block(std::move(block_))
+    , duplicated(duplicated_)
+{
+}
+
 CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRanges(const String & path)
 {
     std::lock_guard lock(mutex);
@@ -379,6 +393,23 @@ size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & rang
     }
     ranges.clear();
     return bytes;
+}
+
+void CountedCompressedBlocks::count(CountedRanges & file_ranges, CompressedBlockRanges & ranges)
+{
+    if (ranges.empty())
+        return;
+
+    Stopwatch watch;
+    const size_t bytes = file_ranges.take(ranges);
+    (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
+}
+
+void CountedCompressedBlocks::markUnsupported()
+{
+    if (!duplicated)
+        block->unsupported_case.store(true, std::memory_order_relaxed);
 }
 
 void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)

@@ -48,7 +48,11 @@ public:
     [[nodiscard]] bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
 
     /// Only the columns `fallback_reader` reads: the posting lists are not counted.
-    std::optional<size_t> takeCompressedBytesRead() override { return fallback_reader ? fallback_reader->takeCompressedBytesRead() : 0; }
+    void flushCompressedBlocksRead() override
+    {
+        if (fallback_reader)
+            fallback_reader->flushCompressedBlocksRead();
+    }
     void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override
     {
         if (fallback_reader)

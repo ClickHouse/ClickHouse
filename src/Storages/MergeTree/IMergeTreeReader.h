@@ -105,11 +105,15 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
-    /// Returns the compressed size of the blocks loaded since the previous call (from the uncompressed cache too) that the
-    /// `CountedCompressedBlocks` of `countCompressedBytesRead` has not counted yet. `nullopt` if the reader cannot tell.
-    virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
+    /// Counts the compressed blocks loaded since the previous call (from the uncompressed cache too) by the
+    /// `CountedCompressedBlocks` of `countCompressedBytesRead`. A reader that cannot tell what it loaded drops the statistics.
+    virtual void flushCompressedBlocksRead()
+    {
+        if (counted_compressed_blocks)
+            counted_compressed_blocks->markUnsupported();
+    }
 
-    /// Enables `takeCompressedBytesRead`. The readers of a read share `counted`, so a block several of them load is counted
+    /// Enables `flushCompressedBlocksRead`. The readers of a read share `counted`, so a block several of them load is counted
     /// once. A reader is reused only for the tasks of its read, so `counted` doesn't change.
     /// A granule served from the columns cache loads nothing from the part and could not be measured, so the reader stops
     /// reading from the cache; it still writes to it.

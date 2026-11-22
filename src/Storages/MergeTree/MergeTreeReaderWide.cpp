@@ -1185,14 +1185,12 @@ void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr co
     streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
 }
 
-std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
+void MergeTreeReaderWide::flushCompressedBlocksRead()
 {
     if (!counted_compressed_blocks)
-        return std::nullopt;
+        return;
 
     std::lock_guard lock(ranges_read_mutex);
-
-    size_t bytes = 0;
     for (auto & [stream_name, stream_ranges] : ranges_read)
     {
         if (stream_ranges.ranges.empty())
@@ -1200,9 +1198,8 @@ std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
         if (!stream_ranges.counted)
             stream_ranges.counted = &counted_compressed_blocks->getCountedRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-        bytes += stream_ranges.counted->take(stream_ranges.ranges);
+        counted_compressed_blocks->count(*stream_ranges.counted, stream_ranges.ranges);
     }
-    return bytes;
 }
 
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const

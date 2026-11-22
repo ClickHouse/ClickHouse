@@ -20,20 +20,25 @@ using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 class UncompressedCache;
 class CachedCompressedReadBuffer;
 
-/// The parts of the files counted already, as merged ranges by file, for the readers of a read: a compressed block may hold
-/// the data of several columns, and may be loaded more than once, by one reader or by several, each reading other granules
-/// of it. It is counted once.
+struct RuntimeDataflowStatisticsBlock;
+
+/// Counts the compressed blocks the readers of a read load into the input bytes of its statistics. A compressed block may
+/// hold the data of several columns, and may be loaded more than once, by one reader or by several, each reading other
+/// granules of it: it is counted once.
 class CountedCompressedBlocks
 {
 public:
+    /// `duplicated` is that of the `RuntimeDataflowStatisticsCacheUpdater` of the read.
+    CountedCompressedBlocks(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_);
+
     /// The counted ranges of a file. The readers of several threads count the same file.
     class CountedRanges
     {
-    public:
+        friend class CountedCompressedBlocks;
+
         /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
         size_t take(CompressedBlockRanges & ranges);
 
-    private:
         std::mutex mutex;
         /// Merged, by their begin.
         MapWithMemoryTracking<size_t, size_t> counted TSA_GUARDED_BY(mutex);
@@ -42,7 +47,16 @@ public:
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
     CountedRanges & getCountedRanges(const String & path);
 
+    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
+    void count(CountedRanges & file_ranges, CompressedBlockRanges & ranges);
+
+    /// For a reader that cannot tell what it loaded. Drops the statistics, see `RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`.
+    void markUnsupported();
+
 private:
+    const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
+    const bool duplicated;
+
     std::mutex mutex;
     UnorderedMapWithMemoryTracking<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
 };

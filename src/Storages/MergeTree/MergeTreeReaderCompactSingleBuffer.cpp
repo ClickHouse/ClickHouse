@@ -44,15 +44,15 @@ catch (...)
     throw;
 }
 
-std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
+void MergeTreeReaderCompactSingleBuffer::flushCompressedBlocksRead()
 {
     if (!counted_compressed_blocks)
-        return std::nullopt;
+        return;
 
     if (!counted_ranges)
         counted_ranges = &counted_compressed_blocks->getCountedRanges(
             data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
-    return counted_ranges->take(ranges_read);
+    counted_compressed_blocks->count(*counted_ranges, ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(

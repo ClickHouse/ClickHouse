@@ -311,7 +311,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
     size_t max_block_size_rows)
 {
     if (max_rows == 0)
@@ -389,9 +388,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         prewhere_prev_surviving = std::move(surviving);
     };
 
-    /// Taken after every step, whether it returned rows or not: what a reader loaded is read all the same.
-    if (dataflow_cache_update_cb)
-        dataflow_cache_update_cb(first_reader.getReader()->takeCompressedBytesRead());
+    /// Flushed after every step, whether it returned rows or not: what a reader loaded is read all the same.
+    first_reader.getReader()->flushCompressedBlocksRead();
 
     if (read_result.num_rows != 0)
     {
@@ -416,8 +414,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
-        if (dataflow_cache_update_cb)
-            dataflow_cache_update_cb(range_readers[i].getReader()->takeCompressedBytesRead());
+        range_readers[i].getReader()->flushCompressedBlocksRead();
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
         /// It's also needed to properly advancing streams in later steps.

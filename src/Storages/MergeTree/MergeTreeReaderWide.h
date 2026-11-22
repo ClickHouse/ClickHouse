@@ -62,7 +62,7 @@ public:
     /// size hints of a stream reported several times are summed).
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
-    std::optional<size_t> takeCompressedBytesRead() override;
+    void flushCompressedBlocksRead() override;
     void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override;
 
 private:
@@ -135,12 +135,12 @@ private:
     /// Called on the reading thread only, see the body.
     double * avgValueSizeHintSlot(const ResolvedSubstream & resolved);
 
-    /// Read by stream since the last `takeCompressedBytesRead`, see `CompressedReadBufferBase::setBlocksReadSink`. The buffer
+    /// Read by stream since the last `flushCompressedBlocksRead`, see `CompressedReadBufferBase::setBlocksReadSink`. The buffer
     /// of each stream appends to the ranges of its own stream; the map is guarded.
     struct StreamRangesRead
     {
         CompressedBlockRanges ranges;
-        /// Of `counted_compressed_blocks`, looked up at the first take.
+        /// Of `counted_compressed_blocks`, looked up at the first flush.
         CountedCompressedBlocks::CountedRanges * counted = nullptr;
     };
     std::mutex ranges_read_mutex;

@@ -139,7 +139,7 @@ struct RuntimeDataflowStatisticsBlock
 
     std::atomic_bool unsupported_case{false};
 
-    /// The compressed bytes the readers loaded, see `RuntimeDataflowStatisticsCacheUpdater::recordInputBytesRead`.
+    /// The compressed bytes the readers loaded, see `CountedCompressedBlocks`.
     std::atomic_size_t input_bytes_read{0};
     std::atomic_size_t duplicated_bytes_read{0};
     std::array<Statistics, MaxOutputType> output_bytes_statistics;
@@ -192,11 +192,8 @@ public:
     /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
     void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
 
-    /// Records the compressed size of the blocks a reader loaded from a part, which is what a replica reading the same
-    /// granules loads. `nullopt` is for a reader that cannot tell, and drops the statistics.
-    void recordInputBytesRead(std::optional<size_t> compressed_bytes_read);
-
-    /// Shared by the readers of the updater's reads, see `IMergeTreeReader::countCompressedBytesRead`.
+    /// Counts the compressed blocks the readers of the updater's reads load, which is what a replica reading the same
+    /// granules loads, see `IMergeTreeReader::countCompressedBytesRead`.
     [[nodiscard]] const CountedCompressedBlocksPtr & getCountedCompressedBlocks() const { return counted_compressed_blocks; }
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be

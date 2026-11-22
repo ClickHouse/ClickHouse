@@ -277,8 +277,6 @@ public:
         bool collect_predicate_statistics);
 
 private:
-    using DataflowCacheUpdateCallback = std::function<void(std::optional<size_t> compressed_bytes_read)>;
-
     UInt64 estimateNumRows() const;
 
     /// Shared information required for reading.
@@ -307,7 +305,6 @@ private:
     MergeTreeBlockSizePredictorPtr size_predictor;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    DataflowCacheUpdateCallback dataflow_cache_update_cb;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
