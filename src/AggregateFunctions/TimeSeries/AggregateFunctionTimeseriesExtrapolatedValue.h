@@ -348,7 +348,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         /// The exact mode: no extrapolation to the boundaries of the window. The difference is measured from the last sample
         /// before the window if it is not older than `window` before the window's start, otherwise from the first sample in the window.
-        std::optional<ResultType> getExactResult(const Summary & combined, GridScaleTimestampType grid_timestamp) const
+        [[nodiscard]] std::optional<ResultType> getExactResult(const Summary & combined, GridScaleTimestampType grid_timestamp) const
         {
             if (combined.count == 0)
                 return std::nullopt;
@@ -462,13 +462,13 @@ public:
     }
 
     /// See `AggregateFunctionTimeseriesBase::getAggregatorWindow`.
-    typename Traits::GridScaleIntervalType getAggregatorWindow() const
+    [[nodiscard]] typename Traits::GridScaleIntervalType getAggregatorWindow() const
     {
         return aggregator_window;
     }
 
     /// All spellings of one mode (none, 0 or false; any non-zero value) have the same state, so they share one type.
-    DataTypePtr getNormalizedStateType() const override
+    [[nodiscard]] DataTypePtr getNormalizedStateType() const override
     {
         const Array & parameters = this->getParameters();
         Array normalized_parameters(parameters.begin(), parameters.begin() + std::min<size_t>(parameters.size(), 4));

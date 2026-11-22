@@ -564,7 +564,7 @@ protected:
 
     /// The window of the sliding aggregator, see `removeOutOfWindow`. A derived class whose buckets cover more than
     /// the aggregator's window shadows this.
-    GridScaleIntervalType getAggregatorWindow() const
+    [[nodiscard]] GridScaleIntervalType getAggregatorWindow() const
     {
         return window;
     }
