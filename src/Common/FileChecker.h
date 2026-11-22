@@ -51,6 +51,9 @@ public:
     /// Truncate files that have excessive size to the expected size.
     /// Throw exception if the file size is less than expected.
     /// The purpose of this function is to rollback a group of unfinished writes.
+    /// It can fail and leave the files larger than the stored sizes. So it has to succeed before
+    /// `updateAndSave` is called to start another group of writes: otherwise the leftovers of
+    /// the unfinished writes would be recorded as if they were committed.
     void repair();
 
     /// Returns stored file size.

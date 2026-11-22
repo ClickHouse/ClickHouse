@@ -34,6 +34,7 @@ namespace FailPoints
     extern const char file_checker_update_and_save_fail_reading_sizes[];
     extern const char file_checker_update_and_save_fail_persisting[];
     extern const char file_checker_repair_memory_limit_exceeded[];
+    extern const char file_checker_repair_fail_truncating[];
 }
 
 
@@ -151,14 +152,6 @@ std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & 
 
 void FileChecker::repair()
 {
-    /// Behaves like a memory-tracked allocation that hits the memory limit: it is suppressed
-    /// where the memory tracker would not throw either.
-    fiu_do_on(FailPoints::file_checker_repair_memory_limit_exceeded,
-    {
-        if (!LockMemoryExceptionInThread::isBlocked(VariableContext::Global, true) && !std::uncaught_exceptions())
-            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injecting memory limit exceeded while repairing the files");
-    });
-
     for (const auto & name_size : map)
     {
         const String & name = name_size.first;
@@ -174,6 +167,23 @@ void FileChecker::repair()
         if (real_size > expected_size)
         {
             LOG_WARNING(log, "Will truncate file {} that has size {} to size {}", path, real_size, expected_size);
+
+            /// Behaves like a memory-tracked allocation that hits the memory limit: it is suppressed
+            /// where the memory tracker would not throw either. It is only reached when there is
+            /// something to roll back: writers also call this function before they start.
+            fiu_do_on(FailPoints::file_checker_repair_memory_limit_exceeded,
+            {
+                if (!LockMemoryExceptionInThread::isBlocked(VariableContext::Global, true) && !std::uncaught_exceptions())
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injecting memory limit exceeded while repairing the files");
+            });
+
+            /// The truncation can fail: for example, an encrypted disk rewrites the retained prefix,
+            /// which needs free space for another copy of the file.
+            fiu_do_on(FailPoints::file_checker_repair_fail_truncating,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while truncating the file {}", path);
+            });
+
             disk->truncateFile(path, expected_size);
         }
     }

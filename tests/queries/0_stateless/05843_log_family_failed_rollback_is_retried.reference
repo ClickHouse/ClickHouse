@@ -1,0 +1,48 @@
+--- Log
+failed insert was rejected: 1
+after the failed rollback: 100	4950	0
+arrays readable: 10
+insert without a rollback was rejected: 1
+after the rejected insert: 100	4950	0
+arrays readable: 10
+after the reload: 100	4950	0
+arrays readable: 10
+insert after the reload was rejected: 1
+after the retry: 140	365730	0
+arrays readable: 10
+1
+1
+after the second reload: 140	365730	0
+arrays readable: 10
+--- TinyLog
+failed insert was rejected: 1
+after the failed rollback: 100	4950	0
+arrays readable: 10
+insert without a rollback was rejected: 1
+after the rejected insert: 100	4950	0
+arrays readable: 10
+after the reload: 100	4950	0
+arrays readable: 10
+insert after the reload was rejected: 1
+after the retry: 140	365730	0
+arrays readable: 10
+1
+1
+after the second reload: 140	365730	0
+arrays readable: 10
+--- StripeLog
+failed insert was rejected: 1
+after the failed rollback: 100	4950	0
+arrays readable: 10
+insert without a rollback was rejected: 1
+after the rejected insert: 100	4950	0
+arrays readable: 10
+after the reload: 100	4950	0
+arrays readable: 10
+insert after the reload was rejected: 1
+after the retry: 140	365730	0
+arrays readable: 10
+1
+1
+after the second reload: 140	365730	0
+arrays readable: 10

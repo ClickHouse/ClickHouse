@@ -17,6 +17,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <IO/LimitReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
@@ -210,13 +211,10 @@ public:
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
-        , data_out_compressed(storage.disk->writeFile(storage.data_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
+        , data_out_compressed(openDataFile(storage, lock))
         , data_out(std::make_unique<CompressedWriteBuffer>(
               *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size))
     {
-        if (!lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
         /// Ensure that indices are loaded because we're going to update them.
         storage.loadIndices(lock);
 
@@ -228,6 +226,20 @@ public:
     }
 
     String getName() const override { return "StripeLogSink"; }
+
+    static std::unique_ptr<WriteBuffer> openDataFile(StorageStripeLog & storage, const WriteLock & lock)
+    {
+        if (!lock)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+        /// The rollback of an earlier failed write could fail too, and it is not retried until now.
+        /// It has to succeed before the sizes of the files are saved: otherwise the leftovers
+        /// of that write would be recorded as committed, and its rows would appear in the table.
+        /// It is done before the file is opened, because the truncation can replace the file.
+        storage.file_checker.repair();
+
+        return storage.disk->writeFile(storage.data_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    }
 
     ~StripeLogSink() override
     {
@@ -533,7 +545,12 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
     {
         /// `allow_different_codecs = true`: the index file is append-only and may mix codecs across
         /// inserts (e.g. after a server upgrade that changes the default compression codec).
-        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)), /* allow_different_codecs = */ true);
+        ///
+        /// The file can be larger than its recorded size if the rollback of a failed write has failed.
+        /// The indices after the recorded size belong to that write: they are not committed.
+        auto index_file_in = disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096));
+        LimitReadBuffer committed_index_in(*index_file_in, {.read_no_more = file_checker.getFileSize(index_file_path)});
+        CompressedReadBuffer index_in(committed_index_in, /* allow_different_codecs = */ true);
         indices.read(index_in);
     }
 
@@ -718,6 +735,11 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    /// The rollback of an earlier failed write could fail too, and it is not retried until now.
+    /// It has to succeed before the sizes of the files are saved below: otherwise the leftovers
+    /// of that write would be recorded as committed, and its rows would appear in the table.
+    file_checker.repair();
 
     /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
     loadIndices(lock);

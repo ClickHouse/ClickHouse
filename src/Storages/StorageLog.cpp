@@ -442,6 +442,11 @@ public:
         if (!lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
+        /// The rollback of an earlier failed write could fail too, and it is not retried until now.
+        /// It has to succeed before the sizes of the files are saved below: otherwise the leftovers
+        /// of that write would be recorded as committed, and its rows would appear in the table.
+        storage.file_checker.repair();
+
         /// Ensure that marks are loaded because we're going to update them.
         storage.loadMarks(lock);
 
@@ -882,7 +887,9 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
     size_t num_marks = 0;
     if (disk->existsFile(marks_file_path))
     {
-        size_t file_size = disk->getFileSize(marks_file_path);
+        /// The file can be larger than its recorded size if the rollback of a failed write has failed.
+        /// The marks after the recorded size belong to that write: they are not committed.
+        size_t file_size = std::min(disk->getFileSize(marks_file_path), file_checker.getFileSize(marks_file_path));
         if (file_size % (num_data_files * sizeof(Mark)) != 0)
             throw Exception(ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT, "Size of marks file is inconsistent");
 
@@ -1360,6 +1367,11 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    /// The rollback of an earlier failed write could fail too, and it is not retried until now.
+    /// It has to succeed before the sizes of the files are saved below: otherwise the leftovers
+    /// of that write would be recorded as committed, and its rows would appear in the table.
+    file_checker.repair();
 
     /// Load the marks if not loaded yet. We have to do that now because we're going to update these marks.
     loadMarks(lock);
