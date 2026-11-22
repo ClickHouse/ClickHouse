@@ -59,7 +59,7 @@ struct DataSourceDescription
 
     /// Whether `IDisk::getPath` of the disk is a directory on the local filesystem: for `local` disks,
     /// for object storage disks with local metadata, and for local object storage with plain metadata.
-    bool isPathLocal() const;
+    [[nodiscard]] bool isPathLocal() const;
 
     /// Returns a string with the name and all the fields of the DataSourceDescription
     [[nodiscard]] String toString() const;
