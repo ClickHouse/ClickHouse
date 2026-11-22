@@ -32,8 +32,9 @@ public:
     using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
     using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
-    /// The per-chunk deduplication token: the `ETag` of the file (unquoted) and the offset of the
-    /// chunk in it. `ETag` is an optional response header and is not always a strong content
+    /// The per-chunk deduplication token: the path of the file, its `ETag` (unquoted) and the offset
+    /// of the chunk in it. The path is a part of it because an `ETag` identifies content, not an
+    /// object: two files with identical bytes may have the same tag. `ETag` is an optional response header and is not always a strong content
     /// identifier; without a strong one nothing left identifies a chunk exactly, and a surrogate
     /// built from the path, the size and the (second-precision) modification time would deduplicate
     /// away the rows of a file it cannot tell apart, so this throws instead.

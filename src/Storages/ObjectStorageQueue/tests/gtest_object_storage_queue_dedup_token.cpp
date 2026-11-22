@@ -33,22 +33,33 @@ std::string token(const std::string & etag, const std::string & path, size_t row
 
 /// The usual case: the endpoint reports a (quoted) `ETag`, so the token identifies the chunk by the
 /// file it came from and its offset in it.
-TEST(ObjectStorageQueueDeduplicationToken, ETagAndOffsetIdentifyTheChunk)
+TEST(ObjectStorageQueueDeduplicationToken, PathETagAndOffsetIdentifyTheChunk)
 {
-    EXPECT_EQ(token("\"abc\"", "data/one.csv", 0), "abc:0");
-    EXPECT_EQ(token("\"abc\"", "data/one.csv", 100), "abc:100");
+    EXPECT_EQ(token("\"abc\"", "data/one.csv", 0), "12:data/one.csv:abc:0");
+    EXPECT_EQ(token("\"abc\"", "data/one.csv", 100), "12:data/one.csv:abc:100");
 
     /// An unquoted tag is taken as it is.
-    EXPECT_EQ(token("abc", "data/one.csv", 0), "abc:0");
+    EXPECT_EQ(token("abc", "data/one.csv", 0), "12:data/one.csv:abc:0");
 
     /// Two different files never collide, at any offset.
     EXPECT_NE(token("\"abc\"", "data/one.csv", 100), token("\"def\"", "data/two.csv", 100));
+
+    /// An `ETag` identifies content, not an object: two files with identical bytes (for a single-part
+    /// S3 upload the tag is the MD5 of the bytes) have the same tag. They are still different files.
+    EXPECT_NE(token("\"abc\"", "data/one.csv", 0), token("\"abc\"", "data/two.csv", 0));
+    EXPECT_NE(token("\"abc\"", "data/one.csv", 100), token("\"abc\"", "data/two.csv", 100));
+
+    /// The parts cannot be confused with each other, whatever characters they hold.
+    EXPECT_NE(token("b:c", "a", 0), token("c", "a:b", 0));
+    EXPECT_NE(token("b:1", "a", 2), token("b", "a", 12));
+    EXPECT_NE(token("x", "1:a", 0), token("a:x", "1", 0));
 
     /// The very same file read twice keeps the very same token, which is what makes a retried
     /// chunk deduplicate. The size and the modification time play no part in it.
     EXPECT_EQ(
         ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 1024, 1700000000000000), "data/one.csv", 0),
         ObjectStorageQueueSource::makeDeduplicationToken(makeMetadata("\"abc\"", 2048, 1700000009000000), "data/one.csv", 0));
+    EXPECT_EQ(token("\"abc\"", "data/one.csv", 100), token("\"abc\"", "data/one.csv", 100));
 }
 
 /// `ETag` is an optional response header, and without it nothing identifies a chunk exactly. Every
@@ -91,7 +102,7 @@ TEST(ObjectStorageQueueDeduplicationToken, WeakGenerationSurrogateFailsClosed)
 
     /// The same tag, reported as strong, is accepted - it is the strength that decides.
     auto strong = makeMetadata("1700000000_1024", 1024, 1700000000000000);
-    EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(strong, "data/one.csv", 0), "1700000000_1024:0");
+    EXPECT_EQ(ObjectStorageQueueSource::makeDeduplicationToken(strong, "data/one.csv", 0), "12:data/one.csv:1700000000_1024:0");
 }
 
 /// `hasStrongETag` is the predicate the source asks before the first pull of a file: a file whose

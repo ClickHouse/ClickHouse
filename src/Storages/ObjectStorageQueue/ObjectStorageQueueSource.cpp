@@ -114,9 +114,13 @@ bool ObjectStorageQueueSource::hasStrongETag(const std::optional<ObjectMetadata>
 std::string ObjectStorageQueueSource::makeDeduplicationToken(
     const std::optional<ObjectMetadata> & object_metadata, const std::string & path, size_t row_offset)
 {
-    /// Create unique token per chunk: etag + row offset
+    /// A unique token per chunk: the path, the `ETag` and the row offset. The `ETag` identifies the
+    /// content of an object, not the object: for an ordinary single-part S3 upload it is the MD5 of
+    /// the bytes, so two files with identical bytes at different paths have the same tag, and without
+    /// the path the rows of the second file would be deduplicated away. The path is prefixed with its
+    /// length, and the offset is what follows the last `:`, so the three parts cannot be confused.
     if (hasStrongETag(object_metadata))
-        return fmt::format("{}:{}", unquoteETag(object_metadata->etag), row_offset);
+        return fmt::format("{}:{}:{}:{}", path.size(), path, unquoteETag(object_metadata->etag), row_offset);
 
     /// `ETag` is an optional response header, and not every tag that is reported is a strong
     /// content identifier (see `ObjectMetadata::etag_is_strong`). Without a strong one there is
