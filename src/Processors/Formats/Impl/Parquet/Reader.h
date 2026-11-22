@@ -33,7 +33,6 @@ namespace DB::Parquet
 //  * test on files from https://www.timestored.com/data/sample/parquet
 //  * check fields for false sharing, add cacheline padding as needed
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
-//  * make writer write DataPageV2
 //  * make writer write DELTA_LENGTH_BYTE_ARRAY
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
