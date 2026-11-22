@@ -121,6 +121,10 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
+    format_settings.puffin.output_blob_type = settings[Setting::output_format_puffin_blob_type];
+    format_settings.puffin.output_field_ids = settings[Setting::output_format_puffin_field_ids];
+    format_settings.puffin.output_snapshot_id = settings[Setting::output_format_puffin_snapshot_id];
+    format_settings.puffin.output_sequence_number = settings[Setting::output_format_puffin_sequence_number];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
     /// `doSettingsSanityCheckClamp` bounds these at apply time, but it does not run for
@@ -267,6 +271,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.write_checksums = settings[Setting::output_format_parquet_write_checksums];
     format_settings.parquet.use_alp_encoding = settings[Setting::output_format_parquet_use_alp_encoding];
+    format_settings.parquet.use_data_page_v2 = settings[Setting::output_format_parquet_use_data_page_v2];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -275,6 +280,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
     format_settings.parquet.data_page_size = settings[Setting::output_format_parquet_data_page_size];
+    format_settings.parquet.data_page_row_limit = settings[Setting::output_format_parquet_data_page_row_limit];
     format_settings.parquet.write_batch_size = settings[Setting::output_format_parquet_batch_size];
     format_settings.parquet.write_page_index = settings[Setting::output_format_parquet_write_page_index];
     format_settings.parquet.write_bloom_filter = settings[Setting::output_format_parquet_write_bloom_filter];
@@ -381,6 +387,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
+    format_settings.arrow.output_variant_as_json_string = settings[Setting::output_format_arrow_variant_as_json_string];
     format_settings.arrow.output_uuid_as_fixed_byte_array = settings[Setting::output_format_arrow_uuid_as_fixed_byte_array];
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
@@ -673,6 +680,9 @@ InputFormatPtr FormatFactory::getInputImpl(
             context->getApplicationType() == Context::ApplicationType::SERVER};
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
+        /// Forwarded to every per-segment parser.
+        if (format_filter_info && format_filter_info->column_mapper)
+            format->setColumnMapper(format_filter_info->column_mapper);
     }
     // 2. Prefer to use metadata-aware creator if we have object metadata
     else if (creators.random_access_input_creator_with_metadata
@@ -717,6 +727,7 @@ InputFormatPtr FormatFactory::getInputImpl(
         format = std::make_shared<AggregateFunctionStatesFromValuesInputFormat>(
             std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format);
 
+    format->setSupportsResetParser(creators.supports_reset_parser && !parallel_parsing);
     return format;
 }
 
@@ -958,13 +969,14 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     return external_schema_reader_creator(format_settings);
 }
 
-void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
+void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator, bool supports_reset_parser)
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.input_creator = std::move(input_creator);
+    creators.supports_reset_parser = supports_reset_parser;
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
@@ -990,13 +1002,14 @@ bool FormatFactory::checkIfFormatHasSplitter(const String & format) const
     return it != dict.end() && it->second.bucket_splitter_creator;
 }
 
-void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
+void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator, bool supports_reset_parser)
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
     if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.random_access_input_creator = std::move(input_creator);
+    creators.supports_reset_parser = supports_reset_parser;
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
