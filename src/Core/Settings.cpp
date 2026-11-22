@@ -11217,7 +11217,7 @@ Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used i
     DECLARE(Bool, allow_experimental_distributed_partition_moves, false, R"(
 Allow creating `Distributed` tables with the `partition_moves_zookeeper_path` setting. While a partition is moved between shards, such a table reads only one copy of it.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the experimental partition moves of `Distributed` tables."}) \
+        {"26.12", false, false, "New setting to enable the experimental partition moves of `Distributed` tables."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected
