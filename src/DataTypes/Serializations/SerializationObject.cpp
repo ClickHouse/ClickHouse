@@ -1,6 +1,4 @@
 #include <DataTypes/Serializations/SerializationObject.h>
-#include <DataTypes/Serializations/SerializationInfoObject.h>
-#include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
@@ -93,17 +91,6 @@ SerializationObject::SerializationObject(
     std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
-}
-
-MutableColumnPtr SerializationObject::createColumnForDeserialization(const IDataType & type) const
-{
-    const auto & object_type = assert_cast<const DataTypeObject &>(type);
-    auto column = object_type.createColumn();
-    auto & column_object = assert_cast<ColumnObject &>(*column);
-    for (auto & [path, path_column] : column_object.getTypedPaths())
-        path_column = typed_paths_serializations.at(path)->createColumnForDeserialization(*object_type.getTypedPaths().at(path));
-    column_object.rebuildSortedTypedPathColumns();
-    return column;
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const
@@ -233,7 +220,6 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
 
     const auto * column_object = data.column ? &assert_cast<const ColumnObject &>(*data.column) : nullptr;
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
-    const auto * info_object = data.serialization_info ? typeid_cast<const SerializationInfoObject *>(data.serialization_info.get()) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObject>(data.deserialize_state) : nullptr;
     const auto * structure_state = deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(deserialize_state->structure_state) : nullptr;
 
@@ -254,7 +240,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         auto path_data = SubstreamData(serialization)
                                 .withType(type_object ? type_object->getTypedPaths().at(path) : nullptr)
                                 .withColumn(column_object ? column_object->getTypedPaths().at(path) : nullptr)
-                                .withSerializationInfo(info_object ? info_object->getTypedPathInfo(path) : nullptr)
+                                .withSerializationInfo(data.serialization_info)
                                 .withDeserializeState(deserialize_state ? deserialize_state->typed_path_states.at(path) : nullptr);
         settings.path.back().data = path_data;
         serialization->enumerateStreams(settings, callback, path_data);
@@ -288,6 +274,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
             auto path_data = SubstreamData(dynamic_serialization)
                                  .withType(dynamic_type)
                                  .withColumn(dynamic_paths ? dynamic_paths->at(path) : nullptr)
+                                 .withSerializationInfo(data.serialization_info)
                                  .withDeserializeState(deserialize_state ? deserialize_state->dynamic_path_states.at(path) : nullptr);
             settings.path.back().data = path_data;
             dynamic_serialization->enumerateStreams(settings, callback, path_data);
@@ -320,6 +307,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         auto shared_data_substream_data = SubstreamData(shared_data_serialization)
                                               .withType(DataTypeObject::getTypeOfSharedData())
                                               .withColumn(column_object ? column_object->getSharedDataPtr() : nullptr)
+                                              .withSerializationInfo(data.serialization_info)
                                               .withDeserializeState(deserialize_state ? deserialize_state->shared_data_state : nullptr);
         shared_data_serialization->enumerateStreams(settings, callback, shared_data_substream_data);
         settings.path.pop_back();

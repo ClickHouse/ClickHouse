@@ -48,13 +48,15 @@ String getColumnsCachePartName(const String & part_name, const String & parent_p
     return parent_part_name + ":" + part_name;
 }
 
-UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity)
+UInt128 getColumnsCacheColumnIdentity(
+    const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity, const String & name_in_part)
 {
     SipHash hash;
     hash.update(table_uuid);
     hash.update(part_name);
     hash.update(column_name);
     hash.update(schema_identity);
+    hash.update(name_in_part);
     return hash.get128();
 }
 
