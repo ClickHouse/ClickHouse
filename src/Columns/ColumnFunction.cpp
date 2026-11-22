@@ -519,11 +519,11 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot capture column {} because it has incompatible type: "
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
+    /// A replicated capture stays as it is: `reduce` executes the function as the eager path does, through
+    /// the default implementation for replicated columns, which removes the values that no row uses before a
+    /// function that can throw. `allow_lazy_replicated_captures` decides only whether `replicate` wraps the
+    /// captures of a lambda.
     auto captured_column = column;
-    /// Keep replicated captures lazy if allowed: some functions inside the lambda handle
-    /// ColumnReplicated arguments themselves
-    if (!allow_lazy_replicated_captures)
-        captured_column.column = captured_column.column->convertToFullColumnIfReplicated();
     captured_column.column = captured_column.column->convertToFullColumnIfSparse();
     captured_columns.push_back(std::move(captured_column));
 }

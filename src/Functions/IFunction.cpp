@@ -695,7 +695,7 @@ ColumnPtr IExecutableFunction::execute(
         bool has_full_columns = false;
         for (const auto & argument : arguments)
         {
-            argument_types.push_back({argument.type, isColumnConst(*argument.column)});
+            argument_types.push_back({argument.type, isColumnConst(*argument.column), checkAndGetColumn<ColumnConst>(argument.column.get())});
             if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
             {
                 nested_columns.push_back(column_replicated->getNestedColumn());
@@ -721,9 +721,12 @@ ColumnPtr IExecutableFunction::execute(
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
         }
 
-        /// In case the function might throw an exception replicated columns must be compacted
-        // to avoid throwing on unused rows in the nested data.
-        if (canThrow(argument_types))
+        /// Replicated columns are compacted to the rows of the nested data that the indexes use when the
+        /// function might throw an exception, to avoid throwing on unused rows. They are also compacted when
+        /// the nested data has more than twice as many rows as the column, as after a selective filter: at
+        /// least half of its rows are then unused, so the compaction, one pass over the indexes and the
+        /// nested data, saves at least half of the function's work.
+        if (canThrow(argument_types) || nested_columns[0]->size() > 2 * input_rows_count)
         {
             ColumnIndex column_index(common_replicated_indexes);
             auto res = column_index.buildCompactIndexedColumns(nested_columns);

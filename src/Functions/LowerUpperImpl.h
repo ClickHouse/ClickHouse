@@ -1,6 +1,9 @@
 #pragma once
 #include <Columns/ColumnString.h>
 #include <Common/TargetSpecific.h>
+#include <DataTypes/IDataType.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -8,6 +11,9 @@ namespace DB
 template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImpl
 {
+    /// Changes the case of ASCII letters byte by byte, which every input allows.
+    static std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) { return false; }
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
