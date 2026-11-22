@@ -33,12 +33,18 @@ public:
     const IMergeSelector::RangeFilter range_filter = nullptr;
     const StorageID storage_id;
 
+    /// A cap on the number of parts in one regular merge, applied on top of the `max_parts_to_merge_at_once` setting;
+    /// 0 means no cap. The caller derives it from the resources of the server that will execute the merge,
+    /// see `CompactionStatistics::getMaxPartsToMergeAtOnceForMemory`. Not applied to merges with TTL.
+    const size_t max_parts_to_merge_at_once = 0;
+
     MergeSelectorApplier(
         std::vector<MergeConstraint> && merge_constraints_,
         bool merge_with_ttl_allowed_,
         bool aggressive_,
         IMergeSelector::RangeFilter range_filter_,
-        StorageID storage_id_);
+        StorageID storage_id_,
+        size_t max_parts_to_merge_at_once_ = 0);
 
     MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,

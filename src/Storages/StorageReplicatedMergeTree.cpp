@@ -4604,7 +4604,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
-                    /*storage_id_=*/getStorageID()
+                    /*storage_id_=*/getStorageID(),
+                    /*max_parts_to_merge_at_once_=*/CompactionStatistics::getMaxPartsToMergeAtOnceForMemory(*this)
                 ));
 
             if (partitions_to_merge_in.empty())
@@ -4624,7 +4625,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
-                    /*storage_id_=*/getStorageID()
+                    /*storage_id_=*/getStorageID(),
+                    /*max_parts_to_merge_at_once_=*/CompactionStatistics::getMaxPartsToMergeAtOnceForMemory(*this)
                 ),
                 partitions_to_merge_in);
 
@@ -6773,7 +6775,8 @@ bool StorageReplicatedMergeTree::optimize(
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
                             /*range_filter_=*/nullptr,
-                            /*storage_id_=*/getStorageID()
+                            /*storage_id_=*/getStorageID(),
+                            /*max_parts_to_merge_at_once_=*/CompactionStatistics::getMaxPartsToMergeAtOnceForMemory(*this)
                         ),
                         /*partitions_hint=*/std::nullopt);
                 }
