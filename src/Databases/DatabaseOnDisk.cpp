@@ -96,6 +96,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char database_remove_detached_permanently_flag_fail[];
+    extern const char database_attach_table_fail_after_removing_detached_permanently_flag[];
     extern const char database_rename_table_fail_before_create_in_destination[];
     extern const char database_rename_table_fail_before_removing_source_metadata[];
 }
@@ -295,7 +296,24 @@ void DatabaseOnDisk::createTable(
         /// Metadata already exists, table was detached
         chassert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
-        attachTable(local_context, table_name, table, getTableDataPath(create));
+        try
+        {
+            fiu_do_on(FailPoints::database_attach_table_fail_after_removing_detached_permanently_flag,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to attach the table after removing the permanent-detach flag");
+            });
+            attachTable(local_context, table_name, table, getTableDataPath(create));
+        }
+        catch (...)
+        {
+            /// The table is left detached, but its metadata is not marked as permanently detached any more,
+            /// so the next server start attaches it. A permanently detached table records no named collection
+            /// dependencies, and the ones registered by this query are removed when the query fails, so keep
+            /// them as the dependencies of a detached table: otherwise `DROP NAMED COLLECTION` succeeds and
+            /// the server cannot load the metadata at startup.
+            NamedCollectionFactory::instance().markDependenciesDetached(table->getStorageID());
+            throw;
+        }
         return;
     }
 
