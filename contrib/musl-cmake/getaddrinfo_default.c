@@ -7,7 +7,7 @@
 
 int __musl_getaddrinfo(const char *restrict host, const char *restrict serv, const struct addrinfo *restrict hint, struct addrinfo **restrict res);
 
-__attribute__((weak)) int getaddrinfo(const char *restrict host, const char *restrict serv, const struct addrinfo *restrict hint, struct addrinfo **restrict res)
+__attribute__((__weak__)) int getaddrinfo(const char *restrict host, const char *restrict serv, const struct addrinfo *restrict hint, struct addrinfo **restrict res)
 {
     return __musl_getaddrinfo(host, serv, hint, res);
 }
