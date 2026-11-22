@@ -348,12 +348,16 @@ CountedCompressedBlocks::CountedCompressedBlocks(std::shared_ptr<RuntimeDataflow
 
 CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRanges(const String & path)
 {
+    /// The node with the key and the mutex and the map, its bucket, and the heap buffer of the path.
+    const auto memory = static_cast<Int64>(sizeof(String) + sizeof(CountedRanges) + 3 * sizeof(void *) + path.size() + 1);
+    if (exceedsLimit(memory))
+        return not_counted;
+
     std::lock_guard lock(mutex);
     /// References to the elements of an unordered map stay valid when it grows.
     auto [it, inserted] = counted.try_emplace(path);
-    /// The node with the key and the mutex and the map, its bucket, and the heap buffer of the path.
     if (inserted)
-        addMemory(sizeof(String) + sizeof(CountedRanges) + 3 * sizeof(void *) + path.capacity());
+        addMemory(memory);
     return it->second;
 }
 
@@ -404,16 +408,21 @@ void CountedCompressedBlocks::count(Batch & batch, CountedRanges & file_ranges, 
     if (ranges.empty())
         return;
 
-    std::lock_guard lock(file_ranges.mutex);
-    if (block->counted_blocks_limit_exceeded.load(std::memory_order_relaxed))
+    /// A node of the map holds a range and three pointers and the color, aligned.
+    static constexpr Int64 memory_per_range = sizeof(std::pair<size_t, size_t>) + 4 * sizeof(void *);
+    /// Checked before the map grows, by what it can grow at most: every range in a node of its own.
+    if (exceedsLimit(batch.memory + static_cast<Int64>(ranges.size()) * memory_per_range))
     {
         ranges.clear();
-        file_ranges.counted.clear();
+        if (&file_ranges != &not_counted)
+        {
+            std::lock_guard lock(file_ranges.mutex);
+            file_ranges.counted.clear();
+        }
         return;
     }
 
-    /// A node of the map holds a range and three pointers and the color, aligned.
-    static constexpr Int64 memory_per_range = sizeof(std::pair<size_t, size_t>) + 4 * sizeof(void *);
+    std::lock_guard lock(file_ranges.mutex);
     const auto ranges_before = static_cast<Int64>(file_ranges.counted.size());
     batch.bytes += file_ranges.take(ranges);
     batch.memory += (static_cast<Int64>(file_ranges.counted.size()) - ranges_before) * memory_per_range;
@@ -428,16 +437,25 @@ void CountedCompressedBlocks::commit(const Batch & batch)
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, batch.watch.elapsedNanoseconds());
 }
 
-void CountedCompressedBlocks::addMemory(Int64 memory)
+bool CountedCompressedBlocks::exceedsLimit(Int64 additional_memory)
 {
-    if (!block->max_counted_blocks_memory)
-        return;
-    const Int64 total = block->counted_blocks_memory.fetch_add(memory, std::memory_order_relaxed) + memory;
-    if (total > static_cast<Int64>(block->max_counted_blocks_memory) && !block->counted_blocks_limit_exceeded.exchange(true))
+    if (block->counted_blocks_limit_exceeded.load(std::memory_order_relaxed))
+        return true;
+    if (!block->max_counted_blocks_memory
+        || block->counted_blocks_memory.load(std::memory_order_relaxed) + additional_memory <= static_cast<Int64>(block->max_counted_blocks_memory))
+        return false;
+    if (!block->counted_blocks_limit_exceeded.exchange(true))
         LOG_DEBUG(
             getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-            "The counted ranges of the compressed blocks read take more than {} bytes, the input is not measured",
+            "The counted ranges of the compressed blocks read would take more than {} bytes, the input is not measured",
             block->max_counted_blocks_memory);
+    return true;
+}
+
+void CountedCompressedBlocks::addMemory(Int64 memory)
+{
+    if (block->max_counted_blocks_memory)
+        block->counted_blocks_memory.fetch_add(memory, std::memory_order_relaxed);
 }
 
 void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)

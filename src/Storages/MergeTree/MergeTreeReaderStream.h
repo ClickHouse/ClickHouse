@@ -26,8 +26,9 @@ struct RuntimeDataflowStatisticsBlock;
 /// Counts the compressed blocks the readers of a read load into the input bytes of its statistics. A compressed block may
 /// hold the data of several columns, and may be loaded more than once, by one reader or by several, each reading other
 /// granules of it: it is counted once.
-/// The counted ranges of all the reads of a query take at most `automatic_parallel_replicas_max_memory_for_input_statistics`.
-/// Past it, the reads stop counting, free what they counted, and the statistics record that the input was not measured.
+/// The counted ranges of all the reads of a query take at most `automatic_parallel_replicas_max_memory_for_input_statistics`,
+/// checked before they grow. Past it, the reads stop counting, free what they counted, and the statistics record that the
+/// input was not measured.
 class CountedCompressedBlocks
 {
 public:
@@ -65,6 +66,8 @@ public:
     void commit(const Batch & batch);
 
 private:
+    /// Whether the counting stopped, or `additional_memory` more would take it past the limit, which stops it.
+    bool exceedsLimit(Int64 additional_memory);
     void addMemory(Int64 memory);
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
@@ -72,6 +75,8 @@ private:
 
     std::mutex mutex;
     UnorderedMapWithMemoryTracking<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
+    /// Given out for the files looked up once the counting stopped, which then take no memory.
+    CountedRanges not_counted;
 };
 
 using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;
