@@ -536,26 +536,33 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     /// If a user with this name already exists, only its storage may authenticate it. Otherwise an external directory
     /// (e.g. LDAP) could introduce a second user with the same name on login, in particular with `AlwaysAllowCredentials`,
     /// which LDAP accepts without contacting the LDAP server.
-    StoragePtr existing_user_storage;
+    ///
+    /// The same name with the same ID in several storages is one identity, not a collision: external directories
+    /// which derive both the name and the ID of a user from the verified identity (e.g. several token-based directories,
+    /// one per signing key or identity provider) each keep their own copy of the same user, and any of them may authenticate it.
+    std::vector<StoragePtr> existing_user_storages;
     if (storages->size() > 1 && credentials.isReady())
     {
+        std::optional<UUID> existing_user_id;
         for (const auto & storage : *storages)
         {
-            if (!storage->find(AccessEntityType::USER, credentials.getUserName()))
+            auto user_id = storage->find(AccessEntityType::USER, credentials.getUserName());
+            if (!user_id)
                 continue;
-            if (existing_user_storage)
-                throw_name_collision(credentials.getUserName(), existing_user_storage, storage);
-            existing_user_storage = storage;
+            if (existing_user_id && *existing_user_id != *user_id)
+                throw_name_collision(credentials.getUserName(), existing_user_storages.front(), storage);
+            existing_user_id = user_id;
+            existing_user_storages.push_back(storage);
         }
     }
 
-    for (size_t i = 0; i != storages->size(); ++i)
-    {
-        const auto & storage = (*storages)[i];
-        if (existing_user_storage && storage != existing_user_storage)
-            continue;
+    /// The storages which may authenticate these credentials.
+    std::vector<StoragePtr> candidate_storages = existing_user_storages.empty() ? *storages : existing_user_storages;
 
-        bool is_last_storage = (i == storages->size() - 1) || (storage == existing_user_storage);
+    for (size_t i = 0; i != candidate_storages.size(); ++i)
+    {
+        const auto & storage = candidate_storages[i];
+        bool is_last_storage = (i == candidate_storages.size() - 1);
         auto auth_result = storage->authenticate(credentials, address, external_authenticators, client_info,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
@@ -563,12 +570,12 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
         {
             /// Check again: a user with the same name could have appeared in another storage concurrently,
             /// or the storage could have just introduced the user.
-            for (size_t j = 0; j != storages->size(); ++j)
+            for (const auto & other_storage : *storages)
             {
-                if (j == i)
+                if (other_storage == storage)
                     continue;
-                const auto & other_storage = (*storages)[j];
-                if (other_storage->find(AccessEntityType::USER, auth_result->user_name))
+                auto other_user_id = other_storage->find(AccessEntityType::USER, auth_result->user_name);
+                if (other_user_id && *other_user_id != auth_result->user_id)
                     throw_name_collision(auth_result->user_name, storage, other_storage);
             }
 
@@ -576,9 +583,6 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
             ids_cache.set(auth_result->user_id, storage);
             return auth_result;
         }
-
-        if (storage == existing_user_storage)
-            break;
     }
 
     if (throw_if_user_not_exists)
