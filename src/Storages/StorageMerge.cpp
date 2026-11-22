@@ -1700,8 +1700,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             child.plan.addInterpreterContext(modified_context);
 
+            /// The nested reads are compared with the context the child plan is created with, not with the context of
+            /// this read: the former has the settings that are assigned for every child, such as
+            /// `enable_parallel_replicas = 0`, and they must not make a nested read look like one with other settings.
             if (child.plan.isInitialized())
-                shareAliasSetsWithNestedReads(child.plan.getRootNode(), alias_sets, context);
+                shareAliasSetsWithNestedReads(child.plan.getRootNode(), alias_sets, modified_context);
 
             /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
             if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)

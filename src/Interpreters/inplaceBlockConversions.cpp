@@ -337,7 +337,10 @@ private:
 
         bool operator==(const Identity & other) const
         {
-            return access == other.access && constraints == other.constraints && settings == other.settings;
+            /// The effective values are compared, not the lists of the changed settings: a `Merge` table assigns
+            /// some settings for its children explicitly, such as `enable_parallel_replicas = 0`, and it must not
+            /// make the child differ from a reader that has the same value by default.
+            return access == other.access && constraints == other.constraints && settings.hasSameValues(other.settings);
         }
     };
 

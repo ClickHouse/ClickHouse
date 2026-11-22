@@ -37,6 +37,7 @@
 #include <bit>
 #include <bitset>
 #include <cstring>
+#include <map>
 
 namespace
 {
@@ -12645,6 +12646,44 @@ Settings & Settings::operator=(const Settings & other)
 bool Settings::operator==(const Settings & other) const
 {
     return *impl == *other.impl;
+}
+
+bool Settings::hasSameValues(const Settings & other) const
+{
+    /// The built-in settings go in the same order in both.
+    auto lhs_range = impl->all(SettingsImpl::SKIP_CUSTOM);
+    auto rhs_range = other.impl->all(SettingsImpl::SKIP_CUSTOM);
+    auto lhs = lhs_range.begin();
+    auto rhs = rhs_range.begin();
+    const auto lhs_end = lhs_range.end();
+    const auto rhs_end = rhs_range.end();
+
+    for (; lhs != lhs_end && rhs != rhs_end; ++lhs, ++rhs)
+    {
+        const auto & lhs_setting = *lhs;
+        const auto & rhs_setting = *rhs;
+
+        /// Both have the default value.
+        if (!lhs_setting.isValueChanged() && !rhs_setting.isValueChanged())
+            continue;
+
+        if (lhs_setting.getValue() != rhs_setting.getValue())
+            return false;
+    }
+
+    if (lhs != lhs_end || rhs != rhs_end)
+        return false;
+
+    /// The custom settings are not ordered.
+    auto get_custom_settings = [](const SettingsImpl & settings)
+    {
+        std::map<String, Field> res;
+        for (const auto & setting : settings.all(SettingsImpl::SKIP_BUILTIN))
+            res.emplace(setting.getName(), setting.getValue());
+        return res;
+    };
+
+    return get_custom_settings(*impl) == get_custom_settings(*other.impl);
 }
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
