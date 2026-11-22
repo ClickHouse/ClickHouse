@@ -25,6 +25,64 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release a119d5bbd8146a32551c6ffaba96863cc51a4bca (a119d5bbd81) FIXME as compared to ab576135f1ff84df3d044770aefac3dc2b1078de (ab576135f1f)
+
+#### New Feature
+* Add the setting `s3_request_payer` and the `request_payer` key of an endpoint section of the `<s3>` configuration and of an S3 disk. Set it to `requester` to read and write requester-pays S3 buckets with the `s3` table function, the `S3` table engine, S3 disks and `BACKUP`/`RESTORE`, without passing the raw `x-amz-request-payer` header. [#131512](https://github.com/ClickHouse/ClickHouse/pull/131512) ([Groene AI](https://github.com/groeneai)).
+* Added setting `output_format_parquet_use_data_page_v2` to write Parquet data pages as `DataPageV2`, where repetition and definition levels are stored uncompressed and the page header has the numbers of rows and nulls. Disabled by default because some Parquet readers do not support `DataPageV2`. [#133223](https://github.com/ClickHouse/ClickHouse/pull/133223) ([Maksim Dergousov](https://github.com/m7kss1)).
+
+#### Experimental Feature
+* Iceberg tables written by ClickHouse now record per-column NDV statistics (theta sketches in Puffin files, as Spark's `compute_table_stats` writes them), so `use_iceberg_table_statistics_ndv` works for them. Enabled by the new experimental setting `iceberg_write_table_statistics_ndv` (off by default). [#131249](https://github.com/ClickHouse/ClickHouse/pull/131249) ([Murphy](https://github.com/murphy-4o)).
+
+#### Performance Improvement
+* Improve the performance of queries that are reading in the order of the primary key. [#100391](https://github.com/ClickHouse/ClickHouse/pull/100391) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Typed paths in `JSON` columns can now use sparse serialization in MergeTree parts when `serialization_info_version = 'with_subcolumns'`, reducing CPU and memory usage when scanning mostly absent paths. [#111429](https://github.com/ClickHouse/ClickHouse/pull/111429) ([Rory Shanks](https://github.com/rorylshanks)).
+* `GROUP BY ... LIMIT` queries over parallel replicas now prune the aggregation on every replica with the top-K heap (`enable_group_by_top_k_optimization`), with or without `ORDER BY` by the keys, and automatic parallel replicas decides after the plan is optimized, so it compares the plan that would actually run. [#125888](https://github.com/ClickHouse/ClickHouse/pull/125888) ([Nikita Taranov](https://github.com/nickitat)).
+* Automatic parallel replicas (`automatic_parallel_replicas_mode = 1`) no longer builds the plan with parallel replicas on every execution of a query whose last build ended without a decision: the execution after the first such build builds it again at once, and from then on one in every `automatic_parallel_replicas_undecided_retry_after_executions + 1` executions (default 10) does. [#130565](https://github.com/ClickHouse/ClickHouse/pull/130565) ([Nikita Taranov](https://github.com/nickitat)).
+* A read in order split into layers by a prefix of the sorting key (a single `uniqExact` with `optimize_aggregation_in_order`, or a merge join by ranges of the primary key) reads only the columns of that prefix instead of the whole sorting key. [#132720](https://github.com/ClickHouse/ClickHouse/pull/132720) ([Raúl Marín](https://github.com/Algunenano)).
+* Reading Parquet files whose `ZSTD` pages were written by parquet-java (Spark, Hive, Iceberg Java) or by ClickHouse 26.10 and older is faster: the native Parquet reader decompresses each `ZSTD` page in one call straight into the page buffer instead of streaming it through a separate window. `sum(cityHash64(*))` over ClickBench files written by Spark is 7% faster, and over files written by ClickHouse 26.10 5% faster. [#133229](https://github.com/ClickHouse/ClickHouse/pull/133229) ([Groene AI](https://github.com/groeneai)).
+
+#### Improvement
+* `KILL QUERY`, `max_execution_time`, an error in another part of the query and a satisfied `LIMIT` now end the wait of `cluster_function_wait_for_replica_ms` for a replica of a `*Cluster` table function or of parallel replicas over object storage. Before, the query and its cancellation waited for the whole interval. [#133412](https://github.com/ClickHouse/ClickHouse/pull/133412) ([Groene AI](https://github.com/groeneai)).
+* `hierarchicalKMeans` and `assignCentroid` now accept `Array(Int8)` and `Array(UInt8)` vectors (and `assignCentroid` also inline centroids with those element types), converting the values to `Float32` as is, so integer embeddings no longer need a `CAST` to `Array(Float32)`. [#133421](https://github.com/ClickHouse/ClickHouse/pull/133421) ([Groene AI](https://github.com/groeneai)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed an exception (or, in older versions, duplicate keys) in a distributed `GROUP BY` over a view over a `Distributed` table, when the remote server merged more than 100000 groups in several threads. [#131516](https://github.com/ClickHouse/ClickHouse/pull/131516) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fixed a table disappearing until server restart after `SYSTEM RESTART REPLICA` failed, for example because the table's constraint references a table that is missing or being restarted. [#131883](https://github.com/ClickHouse/ClickHouse/pull/131883) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* Fixed an incremental refresh of a materialized view and a `STREAM` query failing with `NOT_IMPLEMENTED` or `ILLEGAL_STREAM` when the source `MergeTree`-family table is in a database with `lazy_load_tables`, whether or not it has already been loaded. [#132444](https://github.com/ClickHouse/ClickHouse/pull/132444) ([Lazizbek Ergashev](https://github.com/lazerg)).
+* Fix `timeSeriesRateToGrid` and `timeSeriesIncreaseToGrid` (PromQL `rate` and `increase`) returning NaN or an imprecise value for windows not longer than the step after a window with infinite or very large samples. [#132947](https://github.com/ClickHouse/ClickHouse/pull/132947) ([Maksim Dergousov](https://github.com/m7kss1)).
+* Fixed `INSERT` into an Iceberg table with a sort order when the table has a column named like a sort key expression, for example `icebergTruncate(1, x)`: the computed key was written instead of the column, the `INSERT` failed with `AMBIGUOUS_COLUMN_NAME` when the types differed, or the data file was sorted by the column instead of the key. [#133247](https://github.com/ClickHouse/ClickHouse/pull/133247) ([Groene AI](https://github.com/groeneai)).
+* Fixed a `FLAT` dictionary returning `NULL` for a repeated key whose earlier source row is `NULL` and later row has a value. The last row of the key is now used, as for other repeated keys. [#133313](https://github.com/ClickHouse/ClickHouse/pull/133313) ([Groene AI](https://github.com/groeneai)).
+* Fixed `CREATE TABLE ... AS filesystem(...)` with an explicit column list not checking `READ ON FILE`, which let a user with `WRITE ON FILE` (or with no `FILE` grant at all, via `ON CLUSTER`) read any file under `user_files` through the new table. Such a table now needs `READ` and `WRITE` on `FILE`, the grants that imply `TABLE ENGINE ON File`. This also applies to `CREATE TABLE copy AS src`, short `ATTACH` and local `RESTORE` of such a table. [#133420](https://github.com/ClickHouse/ClickHouse/pull/133420) ([Groene AI](https://github.com/groeneai)).
+
+#### Build/Testing/Packaging Improvement
+* Builds without sanitizers now execute a trap instruction when a value-returning C++ function reaches its end without a `return` (`-fsanitize=return -fsanitize-trap=return`), instead of continuing with undefined behavior. [#128143](https://github.com/ClickHouse/ClickHouse/pull/128143) ([Groene AI](https://github.com/groeneai)).
+* ThinLTO links of builds with debug info, such as the official release builds, are about 5% faster: `lld` no longer verifies each module again every time it loads it or imports functions from it. The LTO pipeline still verifies every module. [#133298](https://github.com/ClickHouse/ClickHouse/pull/133298) ([Groene AI](https://github.com/groeneai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Support EC2 instance metadata credentials in Silk fibers. [#131305](https://github.com/ClickHouse/ClickHouse/pull/131305) ([Nikolai Ovchinnikov](https://github.com/kolsha)).
+* Do not split the aggregation for a read that plan-based parallel replicas would not distribute. [#131979](https://github.com/ClickHouse/ClickHouse/pull/131979) ([Igor Nikonov](https://github.com/devcrafter)).
+* Track the unsorted tail of `timeSeries*ToGrid` bucket samples. [#132094](https://github.com/ClickHouse/ClickHouse/pull/132094) ([Valery Petrov](https://github.com/valerypetrov)).
+* Fix ORC timestamp pruning for UTC aliases and Iceberg ORC timestamps. [#132657](https://github.com/ClickHouse/ClickHouse/pull/132657) ([Raúl Marín](https://github.com/Algunenano)).
+* <!-- CI automatic block start :ci_links: -->. [#132886](https://github.com/ClickHouse/ClickHouse/pull/132886) ([Alexei Fedotov](https://github.com/leshikus)).
+* Plan-based parallel replicas: a changed table structure is a regular error when a replica deserializes the plan. [#133028](https://github.com/ClickHouse/ClickHouse/pull/133028) ([Igor Nikonov](https://github.com/devcrafter)).
+* Retry the multiplatform manifest merge on Docker Hub errors and push both tags in one call. [#133155](https://github.com/ClickHouse/ClickHouse/pull/133155) ([Groene AI](https://github.com/groeneai)).
+* Pass the bugfix validation check when a bug fix adds no tests. [#133302](https://github.com/ClickHouse/ClickHouse/pull/133302) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fix flaky test `05045_query_plan_json_in_query_log`. [#133328](https://github.com/ClickHouse/ClickHouse/pull/133328) ([Groene AI](https://github.com/groeneai)).
+* Not required. [#133389](https://github.com/ClickHouse/ClickHouse/pull/133389) ([Groene AI](https://github.com/groeneai)).
+* Do not install the Rust documentation in the fasttest image. [#133396](https://github.com/ClickHouse/ClickHouse/pull/133396) ([Groene AI](https://github.com/groeneai)).
+* Do not re-install fasttest's LLVM in the binary-builder image. [#133416](https://github.com/ClickHouse/ClickHouse/pull/133416) ([Groene AI](https://github.com/groeneai)).
+* A debug-build server no longer aborts with `Memory tracker: allocations not allowed` while loading a table whose definition holds a wide nested literal. [#133437](https://github.com/ClickHouse/ClickHouse/pull/133437) ([Groene AI](https://github.com/groeneai)).
+* Not required. [#133440](https://github.com/ClickHouse/ClickHouse/pull/133440) ([Groene AI](https://github.com/groeneai)).
+* Run the JSON queries of prewhere_subcolumn_read_steps on a fixed part layout. [#133441](https://github.com/ClickHouse/ClickHouse/pull/133441) ([Groene AI](https://github.com/groeneai)).
+* Pin the part layout of the final_row_policy_query_constant perf test. [#133442](https://github.com/ClickHouse/ClickHouse/pull/133442) ([Groene AI](https://github.com/groeneai)).
+* Do not build the unused aarch64 unit tests in the ARM debug and sanitizer CI builds. [#133448](https://github.com/ClickHouse/ClickHouse/pull/133448) ([Groene AI](https://github.com/groeneai)).
+* Not required. [#133449](https://github.com/ClickHouse/ClickHouse/pull/133449) ([Groene AI](https://github.com/groeneai)).
+* The `aggregation_in_order` performance test runs its `GROUP BY CounterID` and `GROUP BY CounterID, EventDate` queries with `max_threads = 1` as new copies, so their timings no longer depend on the slowest of the streams the part is split into. [#133450](https://github.com/ClickHouse/ClickHouse/pull/133450) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2612"></a> ClickHouse release 26.12, FIXME (in progress)
 
 #### Backward Incompatible Change
