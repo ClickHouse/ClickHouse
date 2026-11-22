@@ -9,8 +9,6 @@ from ci.defs.defs import (
 )
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import (
-    PR_SINGLE_ARCH_SKIPPED_BUILDS,
-    PR_SINGLE_ARCH_SKIPPED_JOBS,
     configure_amd_release_thinlto,
     configure_performance_shards,
     configure_toolchain_builds,
@@ -344,30 +342,8 @@ workflow = Workflow.Config(
     ),
 )
 
-# `should_skip_job` skips these builds together with the stress tests that use them, so
-# no other job may require their binaries: it would find no artifact to download.
-_SINGLE_ARCH_SKIPPED_ARTIFACTS = {
-    artifact
-    for job in workflow.jobs
-    if job.name in PR_SINGLE_ARCH_SKIPPED_BUILDS
-    for artifact in job.provides
-}
 assert len(UNGATED_INTEGRATION_JOB_NAMES) == 1, (
     "the ASan targeted integration job is not found by its name"
-)
-assert len(_SINGLE_ARCH_SKIPPED_ARTIFACTS) == len(PR_SINGLE_ARCH_SKIPPED_BUILDS), (
-    "every build in PR_SINGLE_ARCH_SKIPPED_BUILDS must be in the PR workflow"
-)
-_SINGLE_ARCH_SKIPPED_ARTIFACT_USERS = [
-    job.name
-    for job in workflow.jobs
-    if job.name not in PR_SINGLE_ARCH_SKIPPED_JOBS
-    and _SINGLE_ARCH_SKIPPED_ARTIFACTS & set(job.requires or [])
-]
-assert not _SINGLE_ARCH_SKIPPED_ARTIFACT_USERS, (
-    f"jobs {_SINGLE_ARCH_SKIPPED_ARTIFACT_USERS} require binaries of "
-    f"{PR_SINGLE_ARCH_SKIPPED_BUILDS}, which pull requests skip: remove the build "
-    "from PR_SINGLE_ARCH_SKIPPED_BUILDS in ci/jobs/scripts/workflow_hooks/filter_job.py"
 )
 
 WORKFLOWS = [

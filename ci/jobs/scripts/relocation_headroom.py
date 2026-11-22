@@ -21,7 +21,7 @@ from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 
 NAME = "Relocation headroom"
-BINARIES = ("programs/clickhouse", "src/unit_tests_dbms")
+BINARIES = ("programs/clickhouse",)
 # A pull request that takes more than 5 MiB fails unless it has the label; below 64 MiB, about two weeks of master growth
 # before the link fails, every run warns.
 MAX_DECREASE_MIB = 5

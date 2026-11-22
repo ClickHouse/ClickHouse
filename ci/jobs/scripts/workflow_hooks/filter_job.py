@@ -512,23 +512,9 @@ PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS = (
     f"{JobNames.STRESS} (arm_msan)",
 )
 
-# The builds whose binaries only the skipped stress tests use, skipped with them.
-# `ci/workflows/pull_request.py` asserts that no other job of the PR workflow requires their
-# artifacts.
-PR_SINGLE_ARCH_SKIPPED_BUILDS = (
-    f"{JobNames.BUILD} (arm_debug)",
-    f"{JobNames.BUILD} (arm_tsan)",
-    f"{JobNames.BUILD} (arm_msan)",
-)
-
-PR_SINGLE_ARCH_SKIPPED_JOBS = PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS + PR_SINGLE_ARCH_SKIPPED_BUILDS
-
 assert set(PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS) <= {
     j.name for j in JobConfigs.stress_test_jobs
 }, "PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS names a job that does not exist"
-assert set(PR_SINGLE_ARCH_SKIPPED_BUILDS) <= {
-    j.name for j in JobConfigs.build_jobs
-}, "PR_SINGLE_ARCH_SKIPPED_BUILDS names a job that does not exist"
 
 # Changes that can behave differently per architecture, so a PR touching them runs the stress
 # tests on both, and is never treated as small: the build configuration (toolchains, CPU
@@ -972,7 +958,7 @@ def _small_pr_skip_decision(job_name, changed_files):
     # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
     # master once more. Bypass: the `ci-force-all` label. A PR that changes product
     # code keeps `SMALL_PR_PRODUCT_CODE_JOBS`.
-    # The builds that only the skipped stress tests use go with them, except with the
+    # `SMALL_PR_SKIPPED_BUILDS` (`Build (arm_fuzzers)`) go with them, except with the
     # `ci-build` label, which asks for the whole build matrix. A change under `cmake/` or
     # `base/glibc-compatibility/` is never small: like the uncounted build inputs, one line
     # there (a compiler or sanitizer flag) can change the whole binary.
@@ -980,7 +966,6 @@ def _small_pr_skip_decision(job_name, changed_files):
     if (
         (
             _is_stress_or_fuzzer_job(job_name)
-            or (job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS and not builds_requested)
             or (
                 job_name in SMALL_PR_SKIPPED_BUILDS
                 and not builds_requested
@@ -999,11 +984,10 @@ def _small_pr_skip_decision(job_name, changed_files):
             f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
         )
 
-    # One architecture per sanitizer for the stress tests, see `PR_SINGLE_ARCH_SKIPPED_JOBS`.
+    # One architecture per sanitizer for the stress tests, see `PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS`.
     # The same exemptions as for small PRs.
     if (
-        job_name in PR_SINGLE_ARCH_SKIPPED_JOBS
-        and not (job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS and builds_requested)
+        job_name in PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS
         and _info_cache.pr_number > 0
         and _info_cache.workflow_name == SMALL_PR_WORKFLOW
         and not _has_uncounted_build_changes(changed_files)
