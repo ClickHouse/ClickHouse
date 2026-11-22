@@ -1,0 +1,11 @@
+1.23	1.234	5.5	Decimal(18, 3)	Decimal(18, 1)
+1.234
+1.23
+1.234
+1.234	Decimal(9, 3)
+1.234	Decimal(38, 3)
+1.234	Decimal(76, 3)
+1.23	Decimal(18, 2)
+1.2	Decimal(18, 2)
+1.23	Decimal(9, 2)	1.23	Decimal(38, 2)	1.23	Decimal(76, 2)
+2024-01-01 00:00:00.123000	DateTime64(6, \'UTC\')
