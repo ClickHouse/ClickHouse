@@ -140,7 +140,72 @@ INSERT INTO tab_lower SELECT id, msg FROM tab;
 SELECT 'tokens', groupArray(id) FROM tab_lower WHERE position(msg, '.Lang.') OR position(msg, '.lang.') SETTINGS max_rows_to_read = 2;
 SELECT 'tokens, no index', groupArray(id) FROM tab_lower WHERE position(msg, '.Lang.') OR position(msg, '.lang.') SETTINGS use_skip_indexes = 0;
 
+SELECT '-- asciiCJK: a connector on the edge of the needle joins tokens depending on the character outside of it';
+DROP TABLE IF EXISTS tab_ascii_cjk;
+CREATE TABLE tab_ascii_cjk
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = asciiCJK) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO tab_ascii_cjk VALUES
+    (1, 'xx.lang.yy'), (2, 'a lang b'), (3, 'it\'s.lang:yy'), (4, '1.5.7'), (5, 'see -.lang.- here now'), (6, 'nothing'),
+    (7, concat(unhex('F0'), ' lang end now'));
+SELECT '.lang.', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '.lang.') > 0;
+SELECT '.lang., no index', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '.lang.') > 0 SETTINGS use_skip_indexes = 0;
+SELECT '.lang., bare', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '.lang.');
+SELECT '.lang., UTF8', groupArray(id) FROM tab_ascii_cjk WHERE positionUTF8(msg, '.lang.') > 0;
+SELECT '.lang., multiSearchAny', groupArray(id) FROM tab_ascii_cjk WHERE multiSearchAny(msg, ['.lang.']);
+SELECT '.lang:', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '.lang:') > 0;
+SELECT '.lang:, no index', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '.lang:') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 's.lang', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '\'s.lang') > 0;
+SELECT 's.lang, no index', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '\'s.lang') > 0 SETTINGS use_skip_indexes = 0;
+SELECT '.5.', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '.5.') > 0;
+SELECT '.5., no index', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, '.5.') > 0 SETTINGS use_skip_indexes = 0;
+SELECT '-- the connector is inside the needle: the token is still used';
+SELECT '-.lang.-', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, 'see -.lang.- here ') > 0 SETTINGS max_rows_to_read = 1;
+SELECT '-.lang.-, no index', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, 'see -.lang.- here ') > 0 SETTINGS use_skip_indexes = 0;
+SELECT '-- a malformed leading byte before the needle';
+SELECT 'malformed', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, ' lang end ') > 0;
+SELECT 'malformed, no index', groupArray(id) FROM tab_ascii_cjk WHERE position(msg, ' lang end ') > 0 SETTINGS use_skip_indexes = 0;
+
+SELECT '-- values that are not valid UTF-8: a leading byte before the needle swallows its first bytes';
+DROP TABLE IF EXISTS tab_malformed;
+CREATE TABLE tab_malformed
+(
+    id UInt32,
+    msg String,
+    msg_sparse String DEFAULT msg,
+    INDEX idx_ngrams(msg) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
+    INDEX idx_sparse_grams(msg_sparse) TYPE text(tokenizer = sparseGrams(3)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+INSERT INTO tab_malformed (id, msg) VALUES
+    (1, concat(unhex('C2'), 'needle')), (2, concat(unhex('E0'), 'needle')), (3, concat(unhex('F0'), 'needle')),
+    (4, concat('a needle', unhex('F0'))), (5, concat(unhex('F0'), 'привет, needle')), (6, concat(unhex('F0'), 'nee')),
+    (7, 'unrelated'), (8, 'another one');
+SELECT 'ngrams', groupArray(id) FROM tab_malformed WHERE position(msg, 'needle') > 0 SETTINGS max_rows_to_read = 6;
+SELECT 'sparseGrams', groupArray(id) FROM tab_malformed WHERE position(msg_sparse, 'needle') > 0;
+SELECT 'no index', groupArray(id) FROM tab_malformed WHERE position(msg, 'needle') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'ngrams, bare', groupArray(id) FROM tab_malformed WHERE position(msg, 'needle');
+SELECT 'sparseGrams, bare', groupArray(id) FROM tab_malformed WHERE position(msg_sparse, 'needle');
+SELECT 'ngrams, UTF8', groupArray(id) FROM tab_malformed WHERE positionUTF8(msg, 'needle') > 0;
+SELECT 'sparseGrams, UTF8', groupArray(id) FROM tab_malformed WHERE positionUTF8(msg_sparse, 'needle') > 0;
+SELECT 'ngrams, non-ASCII', groupArray(id) FROM tab_malformed WHERE position(msg, 'привет, needle') > 0 SETTINGS max_rows_to_read = 1;
+SELECT 'sparseGrams, non-ASCII', groupArray(id) FROM tab_malformed WHERE position(msg_sparse, 'привет, needle') > 0;
+SELECT 'non-ASCII, no index', groupArray(id) FROM tab_malformed WHERE position(msg, 'привет, needle') > 0 SETTINGS use_skip_indexes = 0;
+SELECT '-- a needle of which nothing is left to search for';
+SELECT 'ngrams, short', groupArray(id) FROM tab_malformed WHERE position(msg, 'nee') > 0;
+SELECT 'short, no index', groupArray(id) FROM tab_malformed WHERE position(msg, 'nee') > 0 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE tab;
 DROP TABLE tab_null;
 DROP TABLE tab_preprocessor;
 DROP TABLE tab_lower;
+DROP TABLE tab_ascii_cjk;
+DROP TABLE tab_malformed;

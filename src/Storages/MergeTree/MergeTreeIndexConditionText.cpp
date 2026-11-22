@@ -2006,7 +2006,28 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (has_preprocessor && !preprocessor->isASCIILowerOrUpper())
             return false;
 
-        auto tokens = substringToTokens(value_field, false, false);
+        /// `position` searches bytes, and neither the column nor the index validates the value as UTF-8. Every tokenizer
+        /// here except `splitByNonAlpha`, which splits by ASCII bytes, advances by the length that the first byte of
+        /// a code point declares. So a malformed leading byte right before the occurrence of the needle swallows up to
+        /// three bytes of it, e.g. `\xC2needle` is indexed with the 3-grams `\xC2nee`, `eed`, `edl`, `dle`, without `nee`.
+        /// A continuation byte is a code point of its own, and the needle is valid UTF-8, so tokenization is back in
+        /// step with the needle from its first code point that starts at the fourth byte or later. Only the tokens of
+        /// that part of the needle are required.
+        Field searched_needle = value_field;
+        if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
+        {
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle.data()), needle.size()))
+                return false;
+
+            static constexpr size_t max_swallowed_bytes = 3;
+            size_t offset = std::min(max_swallowed_bytes, needle.size());
+            while (offset < needle.size() && UTF8::isContinuationOctet(static_cast<UInt8>(needle[offset])))
+                ++offset;
+
+            searched_needle = needle.substr(offset);
+        }
+
+        auto tokens = substringToTokens(searched_needle, false, false);
         if (tokens.empty())
             return false;
 

@@ -200,7 +200,7 @@ namespace
 {
 
 /// Shared implementation of `substringToBloomFilter` for word-boundary tokenizers
-/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`).
+/// (`SplitByNonAlphaTokenizer`).
 ///
 /// In order to avoid filter updates with incomplete tokens, the first token is
 /// ignored unless the substring is a prefix, and the last token is ignored unless
@@ -1080,16 +1080,56 @@ bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_
     return false;
 }
 
+namespace
+{
+
+/// A colon, a dot or a single quote joins the characters around it into one token of `AsciiCJKTokenizer`,
+/// depending on both of them.
+bool isAsciiCJKConnector(char c)
+{
+    return c == ':' || c == '.' || c == '\'';
+}
+
+/// Same as the word-boundary filtering above: a token of a substring is a token of a value containing the substring
+/// only if both of its boundaries are inside the substring. Additionally, a connector on the edge of the substring
+/// is a boundary only depending on the character outside of it: `.lang.` gives the token `lang`, while the value
+/// `xx.lang.yy` is the single token `xx.lang.yy`. So the token next to such a connector is skipped as well.
+template <typename Callback>
+void asciiCJKSubstringToTokens(
+    const AsciiCJKTokenizer & tokenizer, const char * data, size_t length, bool is_prefix, bool is_suffix, Callback && callback)
+{
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+
+    while (cur < length && tokenizer.nextInString(data, length, cur, token_start, token_len))
+    {
+        const size_t token_end = token_start + token_len;
+
+        if (!is_prefix && (token_start == 0 || (token_start == 1 && isAsciiCJKConnector(data[0]))))
+            continue;
+
+        if (!is_suffix && (token_end == length || (token_end + 1 == length && isAsciiCJKConnector(data[token_end]))))
+            continue;
+
+        callback(data + token_start, token_len);
+    }
+}
+
+}
+
 void AsciiCJKTokenizer::substringToBloomFilter(
     const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
-    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+    asciiCJKSubstringToTokens(*this, data, length, is_prefix, is_suffix,
+        [&](const char * token, size_t token_length) { bloom_filter.add(token, token_length); });
 }
 
 void AsciiCJKTokenizer::substringToTokens(
     const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
 {
-    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
+    asciiCJKSubstringToTokens(*this, data, length, is_prefix, is_suffix,
+        [&](const char * token, size_t token_length) { tokens.emplace_back(token, token_length); });
 }
 
 #if USE_JIEBA

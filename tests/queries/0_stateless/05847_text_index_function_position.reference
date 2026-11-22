@@ -65,3 +65,35 @@ positionCaseInsensitive	1
 -- a case-changing preprocessor
 tokens	[1,2]
 tokens, no index	[1,2]
+-- asciiCJK: a connector on the edge of the needle joins tokens depending on the character outside of it
+.lang.	[1,5]
+.lang., no index	[1,5]
+.lang., bare	[1,5]
+.lang., UTF8	[1,5]
+.lang., multiSearchAny	[1,5]
+.lang:	[3]
+.lang:, no index	[3]
+s.lang	[3]
+s.lang, no index	[3]
+.5.	[4]
+.5., no index	[4]
+-- the connector is inside the needle: the token is still used
+-.lang.-	[5]
+-.lang.-, no index	[5]
+-- a malformed leading byte before the needle
+malformed	[7]
+malformed, no index	[7]
+-- values that are not valid UTF-8: a leading byte before the needle swallows its first bytes
+ngrams	[1,2,3,4,5]
+sparseGrams	[1,2,3,4,5]
+no index	[1,2,3,4,5]
+ngrams, bare	[1,2,3,4,5]
+sparseGrams, bare	[1,2,3,4,5]
+ngrams, UTF8	[1,2,3,4,5]
+sparseGrams, UTF8	[1,2,3,4,5]
+ngrams, non-ASCII	[5]
+sparseGrams, non-ASCII	[5]
+non-ASCII, no index	[5]
+-- a needle of which nothing is left to search for
+ngrams, short	[1,2,3,4,5,6]
+short, no index	[1,2,3,4,5,6]
