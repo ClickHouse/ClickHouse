@@ -17,6 +17,26 @@ named unions
 groups in a nested struct and in a list
 303132335758595A343536376162636438392D2D65666768	(1,(7))	[((6,'a')),((20971526,'b'))]
 0600400100000000	(2,(20971526))	[]
+null-first named unions after other fields
+42	a	7	b
+43	c	\N	\N
+44	d	20971526	\N
+45	e	\N	f
+the same data read as plain fields
+42	a	1	7	1	b
+43	c	0	0	0	
+44	d	1	20971526	0	
+45	e	0	0	1	f
+a tuple under a flattened name in a group
+(6,7)	1
+(20971526,117440518)	2
+6	7	1
+20971526	117440518	2
+a tuple under a flattened name in a struct
+(6,7)	1
+(20971526,117440518)	2
+6	7	1
+20971526	117440518	2
 schema inference
 g	Tuple(\n    x UInt64)					
 m1	UInt64					
