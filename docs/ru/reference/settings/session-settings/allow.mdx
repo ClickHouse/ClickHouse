@@ -191,7 +191,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает независимую обработку `DISTINCT` в каждой партиции в отдельных потоках, когда выражение партиционирования является детерминированной функцией от столбцов `DISTINCT`, без слияния между потоками. Это полезно, когда число партиций близко к числу ядер, а размеры партиций примерно одинаковы; в противном случае эвристика стоимости не применяет эту оптимизацию. См. [max&#95;number&#95;of&#95;partitions&#95;for&#95;independent&#95;distinct](/ru/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) и [force&#95;distinct&#95;partitions&#95;independently](/ru/reference/settings/session-settings/force#force_distinct_partitions_independently). Не применяется с `FINAL` или параллельными репликами.
 
-Не применяется, если задано [max&#95;rows&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-rows#max_rows_in_distinct) или [max&#95;bytes&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_distinct): эти ограничения применяются единственным преобразованием `DISTINCT`, которое обрабатывает весь объединённый результат, поэтому слияние между потоками сохраняется, чтобы обеспечить их глобальное действие.
+Ограничения [max&#95;rows&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-rows#max_rows_in_distinct) и [max&#95;bytes&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) применяются к комбинированному размеру всех множеств партиций, пока потоки остаются раздельными.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -448,6 +448,20 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 ClickHouse использует значение этой настройки, загруженное при запуске сервера.
 Изменения, внесённые с помощью `SET` или `SETTINGS` на уровне запроса, не меняют поведение извлечённых подстолбцов.
 Чтобы изменить поведение извлечённых подстолбцов, обновите `allow_nullable_tuple_in_extracted_subcolumns` в конфигурации профиля запуска (например, в users.xml) и перезапустите сервер.
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Новая настройка для параллельного вычисления финального `DISTINCT` с использованием хеш-партиционирования."}]}]} />
+
+Вычисляет финальный `DISTINCT` в нескольких потоках, распределяя входные потоки по партициям на основе хеша столбцов `DISTINCT`. Одинаковые ключи попадают в один и тот же поток, поэтому дедупликацию каждой партиции можно выполнять независимо.
+
+В отличие от [allow&#95;distinct&#95;partitions&#95;independently](/ru/reference/settings/session-settings/allow#allow_distinct_partitions_independently), эта настройка не требует связи между ключом партиционирования таблицы и столбцами `DISTINCT`. Количество входных потоков и хеш-партиций ограничивается независимо от `max_threads`, чтобы сдерживать затраты на разделение блоков и соединение потоков.
+
+Хеш-партиционирование не применяется к глобально отсортированным входным данным, поскольку `DISTINCT` сохраняет их порядок. Ограничения [max&#95;rows&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-rows#max_rows_in_distinct) и [max&#95;bytes&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) применяются к суммарному размеру всех хеш-партиций.
+
+Без `ORDER BY` порядок строк в результате `DISTINCT` не определён, поэтому при этой оптимизации те же уникальные значения могут возвращаться в другом порядке. Как следствие, `LIMIT`, `OFFSET` или `LIMIT BY`, применённые к неупорядоченному результату `DISTINCT`, могут выбрать другое подмножество строк.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 

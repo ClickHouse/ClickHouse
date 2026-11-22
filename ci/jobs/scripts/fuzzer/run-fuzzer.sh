@@ -111,7 +111,7 @@ function configure
 EOL
 
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config)
 }
 
 function collect_jemalloc_profiles
@@ -248,8 +248,9 @@ function fuzz
         # and clickhouse-server can do fork-exec, for example, to run some bridge.
         # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
         # explicitly ignore non-fatal signals that are used by server.
-        # Number of SIGRTMIN can be determined only in runtime.
-        RTMIN=$(kill -l SIGRTMIN)
+        # The server uses SIGRTMIN for system.stack_trace. Its number is a property of the libc
+        # the server is linked with, not of this shell: 34 with glibc, 35 with musl (which
+        # reserves 34 for itself), so handle both.
         echo "
     set follow-fork-mode parent
     handle SIGHUP nostop noprint pass
@@ -259,7 +260,8 @@ function fuzz
     handle SIGTERM nostop noprint pass
     handle SIGUSR1 nostop noprint pass
     handle SIGUSR2 nostop noprint pass
-    handle SIG$RTMIN nostop noprint pass
+    handle SIG34 nostop noprint pass
+    handle SIG35 nostop noprint pass
     info signals
     continue
     backtrace full
@@ -365,11 +367,17 @@ function fuzz
         echo "Fuzzer pid is $fuzzer_pid"
 
         # We need to give timeout some time to execute the underlying command with that many arguments
+        # The fuzzer_pid belongs to the timeout process.
+        actual_fuzzer_pid=''
         elapsed=0
         maximum=50
         while [[ $elapsed -lt $maximum ]]; do
-            if ps -o pid= --ppid "$fuzzer_pid"; then
-                echo "Found underlying PID!"
+            if actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid"); then
+                echo "Found underlying PID $actual_fuzzer_pid"
+                break;
+            # bash reaps an exited timeout at once (keeping its status for wait), so kill -0 fails.
+            elif ! kill -0 "$fuzzer_pid" 2>/dev/null; then
+                echo "The timeout process has exited, not waiting for the fuzzer PID"
                 break;
             else
                 echo "Not found. Trying again..."
@@ -378,12 +386,12 @@ function fuzz
             elapsed=$((elapsed+1))
         done
 
-        # The fuzzer_pid belongs to the timeout process.
-        actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
-
         if [[ "$IS_ASAN" = "1" ]];
         then
             echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
+        elif [[ -z "$actual_fuzzer_pid" ]];
+        then
+            echo "The fuzzer exited before its PID was found, not attaching gdb"
         else
             echo "Attaching gdb to the fuzzer itself"
             gdb -batch -command script.gdb -p $actual_fuzzer_pid &

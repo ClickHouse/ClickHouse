@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 가이드에서는 Postgres 네이티브 논리적 복제를 사용하여 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres로 이전하는 방법을 단계별로 안내합니다.
 
@@ -51,7 +50,15 @@ dig +short <your-managed-postgres-hostname>
 
 원본 데이터베이스가 다음과 같이 설정되어 있는지 확인하십시오:
 
-<Image img="/images/managed-postgres/logical_replication/source-setup.webp" alt="소스 PostgreSQL 복제 설정" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![소스 PostgreSQL 복제 설정](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-schema-dump">
   ## 원본 데이터베이스의 스키마만 덤프하기
@@ -76,7 +83,15 @@ pg_dump \
 
 이 경우 테이블은 `events`와 `users` 두 개입니다. `events`에는 100만 개의 행이 있고, `users`에는 1천 개의 행이 있습니다.
 
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="소스 PostgreSQL 테이블 설정" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![소스 PostgreSQL 테이블 설정](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-pgdump-pg-restore-create-pg">
   ### ClickHouse Managed Postgres 인스턴스 생성
@@ -84,7 +99,15 @@ pg_dump \
 
 먼저 ClickHouse Managed Postgres 인스턴스를 설정해 두었는지 확인하십시오. 가능하면 소스와 동일한 리전에 설정하는 것이 좋습니다. [여기](/ko/products/managed-postgres/quickstart#create-postgres-database)의 빠른 시작 가이드를 따라 진행할 수 있습니다. 이 가이드에서는 다음과 같은 구성을 생성합니다.
 
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="ClickHouse Managed Postgres 인스턴스 생성" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Managed Postgres 인스턴스 생성](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-restore-schema">
   ## ClickHouse Managed Postgres에 스키마 복원하기
@@ -107,7 +130,15 @@ pg_restore \
 
 이 예시에서는 이 명령을 실행한 후 두 개의 테이블이 생성되었으며, 모두 비어 있습니다:
 
-<Image img="/images/managed-postgres/logical_replication/target-initial-setup.webp" alt="대상 ClickHouse Managed Postgres 초기 설정" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![대상 ClickHouse Managed Postgres 초기 설정](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</Frame>
+
+</div>
 
 <div id="migration-logical-replication-setup-replication">
   ## 논리적 복제 설정
@@ -145,7 +176,15 @@ PUBLICATION <pub_name_you_entered_above>;
 
 이 예시에서는 subscription을 설정한 후 데이터가 유입되었습니다:
 
-<Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="논리적 복제 후 마이그레이션 결과" size="xl" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![논리적 복제 후 마이그레이션 결과](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</Frame>
+
+</div>
 
 이제 원본 데이터베이스에 새로 삽입되는 행은 거의 실시간으로 대상 ClickHouse Managed Postgres 데이터베이스에 복제됩니다.
 
