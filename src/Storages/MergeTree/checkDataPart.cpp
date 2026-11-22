@@ -277,7 +277,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (isIOErrorException(std::current_exception()))
+            if (isIOErrorException(std::current_exception()) || isRetryableException(std::current_exception()))
                 throw;
 
             throw Exception(
