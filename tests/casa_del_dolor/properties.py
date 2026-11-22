@@ -1216,13 +1216,24 @@ def normalize_cache_properties(
     if get_cache_setting(cache_element, "cache_policy", "SLRU") in ("SLRU", "SLRU_OVERCOMMIT"):
         # The same rounding as `std::lround` and `std::clamp` in `FileCacheSettings::validate`.
         get_ratio = lambda total, ratio: int(total * min(max(ratio, 0.0), 1.0) + 0.5)
-        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
         ratio = float(get_cache_setting(cache_element, "slru_size_ratio", "0.6"))
-        parts = [max_size]
-        if get_cache_setting(cache_element, "use_split_cache", "0") == "1":
-            system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
-            parts = [get_ratio(max_size, 1 - system_ratio), get_ratio(max_size, system_ratio)]
-        smallest_queue_size = min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+        use_split_cache = get_cache_setting(cache_element, "use_split_cache", "0") == "1"
+        system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
+
+        def get_smallest_queue(total: int) -> int:
+            parts = [total]
+            if use_split_cache:
+                parts = [get_ratio(total, 1 - system_ratio), get_ratio(total, system_ratio)]
+            return min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+
+        # `SLRUFileCachePriority` also rejects a queue without elements.
+        max_elements = int(get_cache_setting(cache_element, "max_elements", "0"))
+        while get_smallest_queue(max_elements) == 0 and max_elements < MAX_CACHE_ELEMENTS:
+            max_elements += 1
+        set_cache_setting(cache_element, "max_elements", str(max_elements))
+
+        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
+        smallest_queue_size = get_smallest_queue(max_size)
 
         max_file_segment_size = parse_cache_size(
             get_cache_setting(cache_element, "max_file_segment_size", str(32 << 20))
