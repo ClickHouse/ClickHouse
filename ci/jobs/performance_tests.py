@@ -3395,13 +3395,13 @@ def main():
             Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
-        # PR builds of `amd_release`/`arm_release` that no performance comparison needs are
-        # built without ThinLTO (`record_thinlto_choice`), and a re-run of failed jobs of a
-        # run can download such a build when a later run on the same commit overwrote the
-        # artifacts. Comparing it with the ThinLTO reference would report bogus changes, so
-        # refuse it: re-run the whole workflow instead. A local run (`praktika run ... --pr N
-        # --sha SHA`) downloads the same artifacts, so it is checked too, unless it compares
-        # with its own `--reference-path` binary or opts out explicitly.
+        # A PR run builds a release build without ThinLTO, PGO and BOLT when none of its
+        # performance comparisons needs it (`BUILDS_WITHOUT_THINLTO_KV` in `filter_job.py`).
+        # CI does not run this job on such a build, but a local run (`praktika run ... --pr N
+        # --sha SHA`) downloads the variant that the run at that commit built. Comparing a
+        # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
+        # refuse it, unless the run compares with its own `--reference-path` binary or opts
+        # out explicitly.
         if res and not args.reference_path and not args.allow_non_thinlto:
             link_flags = Shell.get_output_or_raise(
                 f"{local_command(f'{ch_path}/clickhouse')} --query \"SELECT value FROM system.build_options WHERE name = 'LINK_FLAGS'\""

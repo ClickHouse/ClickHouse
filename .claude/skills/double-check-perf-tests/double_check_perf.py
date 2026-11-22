@@ -1167,56 +1167,6 @@ def fetch_reference_sha(
 # ---------------------------------------------------------------------------
 
 
-def is_thinlto_build(binary: Path) -> bool:
-    """Whether `binary` was linked with ThinLTO, from its `LINK_FLAGS`.
-
-    `--tmp` keeps `clickhouse local` off the persistent default directory in
-    the home; an old reference build without the option rejects it, but it
-    uses a unique temporary directory anyway (like `local_command` in
-    ci/jobs/performance_tests.py)."""
-    local_help = subprocess.run(
-        [str(binary), "local", "--help"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-    )
-    tmp_option = (["--tmp"] if re.search(r"^\s*--tmp\s", local_help.stdout, re.MULTILINE)
-                  else [])
-    proc = subprocess.run(
-        [str(binary), "local", *tmp_option, "--query",
-         "SELECT value FROM system.build_options WHERE name = 'LINK_FLAGS'"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        die(f"cannot read LINK_FLAGS of {binary}: {proc.stderr.strip()}")
-    return "-flto=thin" in proc.stdout
-
-
-def check_optimization_modes(left_bin: Path, right_bin: Path) -> None:
-    """Refuse a pair of binaries built with different optimization modes.
-
-    PR builds of `amd_release`/`arm_release` that no performance comparison
-    needs are built without ThinLTO, PGO and BOLT (`record_thinlto_choice` in
-    ci/jobs/scripts/workflow_hooks/filter_job.py), and such a build of the same
-    commit overwrites the ThinLTO artifacts that the report measured. Comparing
-    it with the ThinLTO reference measures the optimization mode, not the change.
-    """
-    left_thinlto = is_thinlto_build(left_bin)
-    right_thinlto = is_thinlto_build(right_bin)
-    if left_thinlto != right_thinlto:
-        describe = {True: "ThinLTO", False: "non-ThinLTO"}
-        die(
-            f"the patched binary is a {describe[right_thinlto]} build, but the "
-            f"reference is a {describe[left_thinlto]} build: the artifacts were "
-            "probably overwritten by a later run on the same commit without a "
-            "performance comparison. Re-run the PR workflow with the "
-            "performance comparison, or pass --allow-optimization-mismatch to "
-            "compare them anyway"
-        )
-
-
 def download_binaries(
     repo_root: Path,
     work_dir: Path,
@@ -2496,13 +2446,6 @@ def main() -> int:
         "what is measured.",
     )
     parser.add_argument(
-        "--allow-optimization-mismatch",
-        action="store_true",
-        help="compare the binaries even if only one of them is a ThinLTO "
-        "build (by default this is refused, because the difference would "
-        "measure the optimization mode rather than the change)",
-    )
-    parser.add_argument(
         "--skip-wait-for-merges",
         action="store_true",
         help="don't wait for background merges to quiesce before running "
@@ -2894,8 +2837,6 @@ def main() -> int:
     )
     log(f"left  binary: {left_bin}")
     log(f"right binary: {right_bin}")
-    if not args.allow_optimization_mismatch:
-        check_optimization_modes(left_bin, right_bin)
 
     # Prepare top-level domains
     tld_src = perf_root / "tests/config/top_level_domains"

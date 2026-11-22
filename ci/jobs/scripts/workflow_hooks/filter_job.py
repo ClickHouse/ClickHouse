@@ -800,52 +800,19 @@ def _amd_performance_skipped(info):
     return not full_suite_reason(info, "arm_release")
 
 
-# The kv data entry: the list of build types that this run builds without ThinLTO, PGO
-# and BOLT (see `ci/jobs/build_clickhouse.py`). Set by `record_thinlto_choice`.
+# The kv data entry with the build types that this run builds without ThinLTO, PGO and BOLT
+# (see `ci/jobs/build_clickhouse.py`). A pre-hook of a pull request workflow sets it: here
+# `configure_amd_release_thinlto`, and the private repository has its own hook for its own
+# PR workflow. Such a hook also salts the digest of every build job whose variant is not
+# the one that its workflow builds by default (`Cache.DIGEST_SALTS_KV_KEY`), so that the
+# two variants of a build are cached separately and keep their artifacts in separate
+# directories (`Cache.artifact_dir`).
 BUILDS_WITHOUT_THINLTO_KV = "builds_without_thinlto"
 AMD_RELEASE_BUILD_JOB = f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE})"
 
 assert AMD_RELEASE_BUILD_JOB in {
     j.name for j in JobConfigs.release_build_jobs
 }, "AMD_RELEASE_BUILD_JOB names a job that does not exist"
-
-
-def record_thinlto_choice(info, without_thinlto, with_thinlto):
-    """Record, in a pre-hook of a PR run, which builds of the run drop ThinLTO.
-
-    Both arguments map build types to their job names: `without_thinlto` are built
-    without ThinLTO, PGO and BOLT, `with_thinlto` are built as usual but could be built
-    without it in another run with the same digest (it depends on labels).
-
-    The digests of both kinds are salted, so that a cached build of one kind never
-    stands for the other. A non-LTO build gets a fixed salt and is reused as usual. A
-    ThinLTO build gets a salt unique to the run attempt, so it is not reused from the
-    cache at all, and neither are the jobs that require it: a cache record points to the
-    artifacts of its run by PR number and commit SHA only (as do the private `pr-<N>`
-    docker image tags), and a later non-LTO run on the same commit overwrites them. So a
-    run that needs the ThinLTO binary, e.g. for a performance comparison after adding
-    the `pr-performance` label, always rebuilds it, and the only overwrite left within
-    such a run is of a non-LTO build by a ThinLTO one, which its consumers accept.
-
-    The artifacts keep their usual location, which tools outside CI rely on. The one
-    case left is a re-run of failed jobs of a run after a later non-LTO run on the same
-    commit: it downloads the non-LTO binary. The performance comparison refuses that
-    binary (`performance_tests.py` checks the `LINK_FLAGS` build option), so the
-    re-run fails instead of reporting wrong results."""
-    from ci.praktika.cache import Cache
-
-    assert info.pr_number > 0, "only PR builds may skip ThinLTO"
-    assert not set(without_thinlto) & set(with_thinlto)
-    if without_thinlto:
-        print(f"NOTE: build {sorted(without_thinlto)} without ThinLTO, PGO and BOLT")
-    info.store_kv_data(BUILDS_WITHOUT_THINLTO_KV, sorted(without_thinlto))
-    salts = info.get_kv_data(Cache.DIGEST_SALTS_KV_KEY) or {}
-    for job_name in without_thinlto.values():
-        salts[job_name] = "without_thinlto"
-    for job_name in with_thinlto.values():
-        # `run_id` stays the same when all jobs of a run are re-run, `run_attempt` changes.
-        salts[job_name] = f"with_thinlto_run_{info.run_id}_{info.run_attempt}"
-    info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
 
 
 def configure_amd_release_thinlto():
@@ -864,24 +831,31 @@ def configure_amd_release_thinlto():
 
     A pre-hook, not a filter hook: `ci-force-all` bypasses the filter hooks and then runs
     every performance job, so that case must keep ThinLTO, and the decision must be recorded
-    before the cache lookup (see `record_thinlto_choice` for the caching).
-
-    Only the public `PR` workflow runs this hook. The private repository has its own PR
-    workflow and decides there with `record_thinlto_choice` too.
+    before the cache lookup. The build is cached under a salted digest, so that a later run
+    with the same digest that does run the AMD comparison (e.g. after adding `pr-performance`)
+    does not reuse the non-LTO binary.
     """
+    from ci.praktika.cache import Cache
+
     info = Info()
-    if info.pr_number <= 0 or info.workflow_name != SMALL_PR_WORKFLOW:
-        return
     force_all = (
         Labels.CI_FORCE_ALL in info.pr_labels
         or info.get_kv_data("unresolved_review_threads_force_all") is True
     )
-    amd_release = {BuildTypes.AMD_RELEASE: AMD_RELEASE_BUILD_JOB}
-    if not force_all and _amd_performance_skipped(info):
-        print("NOTE: no AMD performance comparison in this PR")
-        record_thinlto_choice(info, without_thinlto=amd_release, with_thinlto={})
-    else:
-        record_thinlto_choice(info, without_thinlto={}, with_thinlto=amd_release)
+    if (
+        info.pr_number <= 0
+        or info.workflow_name != SMALL_PR_WORKFLOW
+        # The private repository has its own PR workflow, with its own pre-hook for this.
+        or info.repo_name != "ClickHouse/ClickHouse"
+        or force_all
+        or not _amd_performance_skipped(info)
+    ):
+        return
+    print(f"NOTE: no AMD performance comparison - [{AMD_RELEASE_BUILD_JOB}] builds without ThinLTO")
+    info.store_kv_data(BUILDS_WITHOUT_THINLTO_KV, [BuildTypes.AMD_RELEASE])
+    salts = info.get_kv_data(Cache.DIGEST_SALTS_KV_KEY) or {}
+    salts[AMD_RELEASE_BUILD_JOB] = "without_thinlto"
+    info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
 
 
 def configure_toolchain_builds():

@@ -322,9 +322,9 @@ def main():
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
     # A PR build may skip ThinLTO, PGO and BOLT when it is not used for a performance
-    # comparison, see `record_thinlto_choice`. The compile commands of a release build are
-    # then those of the `*_binary` build, so the compiler cache that master fills for that
-    # build serves it.
+    # comparison, see `BUILDS_WITHOUT_THINLTO_KV`. The compile commands of a release build
+    # are then those of the `*_binary` build, so the compiler cache that master fills for
+    # that build serves it.
     from ci.jobs.scripts.workflow_hooks.filter_job import BUILDS_WITHOUT_THINLTO_KV
 
     without_thinlto = build_type in (info.get_kv_data(BUILDS_WITHOUT_THINLTO_KV) or [])
