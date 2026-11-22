@@ -1,0 +1,17 @@
+warm	12497500	18890
+hot	12497500	18890
+where	1000	4499500
+where uncached	1000	4499500
+virtual	5000	5000	12497500
+other column	24995000
+prewhere	1000	4499500
+row number	12497500
+deletes	2500	6250000
+05857_hot	1	5
+05857_where	1	1
+05857_virtual	1	5
+05857_warm	1
+05857_other_column	1
+05857_prewhere	1
+05857_row_number	1
+05857_deletes	1

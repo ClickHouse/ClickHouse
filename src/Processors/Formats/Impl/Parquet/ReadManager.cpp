@@ -1658,13 +1658,7 @@ ReadManager::ReadResult ReadManager::read()
     RowGroup & row_group = reader.row_groups.at(task.row_group_idx);
     RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
     chassert(row_subgroup.stage == ReadStage::Deliver);
-    Columns output_columns(reader.sample_block->columns());
-    for (size_t i = 0; i < output_columns.size(); ++i)
-    {
-        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_group, row_subgroup, i));
-        output_columns[i] = output_columns[i]->convertToFullColumnIfReplicated();
-    }
-    Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
+    Chunk chunk = reader.formChunk(row_group, row_subgroup);
     if (reader.top_k_best_value_column_pos)
         reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);
     BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
@@ -1702,14 +1696,7 @@ ReadManager::ReadResult ReadManager::read()
     ///       ISource::progress()/addTotalRowsApprox instead.
     ///       For (4) and (5), either add things to struct Progress or make progress bar use
     ///       ProfileEvents instead of Progress.
-    /// Sum compressed sizes of the column chunks that the query reads. Using
-    /// `row_group.meta->total_compressed_size` here would inflate `read_bytes` by
-    /// `total_columns / selected_columns`.
-    size_t selected_columns_compressed_bytes = 0;
-    for (const auto & primitive_column : reader.primitive_columns)
-        selected_columns_compressed_bytes += size_t(
-            reader.getColumnChunk(row_group.row_group_idx, primitive_column.column_idx).meta_data.total_compressed_size);
-    size_t virtual_bytes_read = selected_columns_compressed_bytes * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
+    size_t virtual_bytes_read = reader.approxBytesRead(row_group, row_subgroup.filter.rows_total);
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);

@@ -86,6 +86,11 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 
+#include "config.h"
+#if USE_PARQUET
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
+
 
 namespace ProfileEvents
 {
@@ -286,6 +291,8 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_columns_cache;
+    extern const SettingsBool enable_reads_from_columns_cache;
+    extern const SettingsBool log_queries;
     extern const SettingsBool s3_validate_etag_on_read;
     extern const SettingsBool azure_validate_etag_on_read;
 }
@@ -1069,12 +1076,12 @@ Chunk StorageObjectStorageSource::generate()
         if (isCancelled() || !reader)
         {
             if (reader)
-                reader->cancel();
+                reader.cancel();
             break;
         }
 
         Chunk chunk;
-        if (reader->pull(chunk))
+        if (reader.pull(chunk))
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
@@ -1751,31 +1758,49 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
 
         CompressionMethod compression_method = {};
-        if (input_format_does_not_read_file)
+        auto open_object = [&]
         {
-            /// `One` produces a single row per object without consuming the underlying `ReadBuffer`.
-            read_buf = std::make_unique<EmptyReadBuffer>();
-            compression_method = CompressionMethod::None;
-        }
-        else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
-        {
-            ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
-            read_buf = object_info_in_archive->readFile();
-        }
-        else
-        {
-            ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-            ReadSettings read_settings = context_->getReadSettings();
-            /// A from-start read-ahead is wasted on a reader that seeks straight to a footer at the
-            /// tail, but it is exactly what a reader that cannot seek consumes.
-            read_settings.remote_fs_settings.random_access
-                = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
-            read_buf = createReadBuffer(
-                object_info->relative_path_with_metadata, object_storage, context_, log,
-                read_settings, !headers_requested);
-        }
+            if (input_format_does_not_read_file)
+            {
+                /// `One` produces a single row per object without consuming the underlying `ReadBuffer`.
+                read_buf = std::make_unique<EmptyReadBuffer>();
+                compression_method = CompressionMethod::None;
+            }
+            else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
+            {
+                ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
+                compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+                read_buf = object_info_in_archive->readFile();
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
+                compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+                ReadSettings read_settings = context_->getReadSettings();
+                /// A from-start read-ahead is wasted on a reader that seeks straight to a footer at the
+                /// tail, but it is exactly what a reader that cannot seek consumes.
+                read_settings.remote_fs_settings.random_access
+                    = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
+                read_buf = createReadBuffer(
+                    object_info->relative_path_with_metadata, object_storage, context_, log,
+                    read_settings, !headers_requested);
+            }
+        };
+
+        /// A file that may be read from the caches only is opened after it turns out that it can not.
+        const auto & settings = context_->getSettingsRef();
+        const auto & object_metadata = object_info->relative_path_with_metadata.metadata;
+        const bool may_read_from_caches_only = Poco::toLower(format_name) == "parquet" && !object_info->isArchive()
+            && chooseCompressionMethod(object_info->getFileName(), configuration->compression_method) == CompressionMethod::None
+            && settings[Setting::use_parquet_metadata_cache] && settings[Setting::use_columns_cache]
+            && settings[Setting::enable_reads_from_columns_cache] && object_metadata && object_metadata->getContentCacheToken()
+            && !need_only_count && !headers_requested && !initial_schema && !hasAttachedDeletes(*object_info)
+            && row_lineage_columns.empty() && !object_info->rows_to_read
+            && !(format_filter_info
+                 && (format_filter_info->prewhere_info || format_filter_info->row_level_filter || format_filter_info->top_k_filter
+                     || format_filter_info->need_row_numbers));
+        if (!may_read_from_caches_only)
+            open_object();
 
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
@@ -2064,13 +2089,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 #endif
         const auto & object_format_settings = ordered_format_settings ? ordered_format_settings : format_settings;
 
-        InputFormatPtr input_format;
         /// The metadata of the object identifies its version for the Parquet metadata cache and
         /// for the columns cache.
-        if ((context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
-            && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->getContentCacheToken().has_value())
+        auto make_object_with_metadata = [&]() -> std::optional<RelativePathWithMetadata>
         {
+            if (!((context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
+                && (Poco::toLower(format_name) == "parquet")
+                && object_info->getObjectMetadata()->getContentCacheToken().has_value()))
+                return std::nullopt;
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = getArchiveEntryKey(object_info->getPath(), object_info->archive_entry_index);
@@ -2082,6 +2108,41 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 object_with_metadata->storage_type_for_content_cache = configuration->getType();
                 object_with_metadata->table_uuid_for_content_cache = *table_uuid;
             }
+            return object_with_metadata;
+        };
+
+#if USE_PARQUET
+        if (may_read_from_caches_only && filter_info == format_filter_info && !(filter_info && filter_info->need_row_numbers)
+            && !schema_changed && !(object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
+            && !configuration->getSchemaTransformer(context_, object_info) && identity_partition_columns.empty()
+            && !read_from_format_info.columns_description.hasDefaults())
+        {
+            if (auto input_format_from_caches = ParquetFullyCachedInputFormat::tryCreate(
+                    std::make_shared<const Block>(initial_header),
+                    object_format_settings ? *object_format_settings : getFormatSettings(context_),
+                    filter_info,
+                    make_object_with_metadata(),
+                    object_info->file_bucket_info,
+                    read_from_format_info.map_columns_read_by_keys,
+                    read_from_format_info.map_columns_read_by_values,
+                    context_))
+            {
+                if (context_->hasQueryContext() && settings[Setting::log_queries])
+                    context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, format_name);
+                ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
+                ReaderHolder result(object_info, std::move(input_format_from_caches), read_from_format_info.requested_columns);
+                result.use_top_k_query_condition_cache_key = use_top_k_query_condition_cache_key;
+                result.skipped_row_groups_by_top_k_entry = skipped_row_groups_by_top_k_entry;
+                return result;
+            }
+        }
+#endif
+        if (may_read_from_caches_only)
+            open_object();
+
+        InputFormatPtr input_format;
+        if (auto object_with_metadata = make_object_with_metadata())
+        {
             input_format = FormatFactory::instance().getInputWithMetadata(
                 format_name,
                 *read_buf,
@@ -2969,6 +3030,14 @@ StorageObjectStorageSource::ReaderHolder::ReaderHolder(
 {
 }
 
+StorageObjectStorageSource::ReaderHolder::ReaderHolder(
+    ObjectInfoPtr object_info_, InputFormatPtr input_format_, NamesAndTypesList columns_to_extract_)
+    : object_info(std::move(object_info_))
+    , source(std::move(input_format_))
+    , columns_to_extract(std::move(columns_to_extract_))
+{
+}
+
 StorageObjectStorageSource::ReaderHolder &
 StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexcept
 {
@@ -2979,9 +3048,28 @@ StorageObjectStorageSource::ReaderHolder::operator=(ReaderHolder && other) noexc
     source = std::move(other.source);
     read_buf = std::move(other.read_buf);
     object_info = std::move(other.object_info);
+    columns_to_extract = std::move(other.columns_to_extract);
     use_top_k_query_condition_cache_key = other.use_top_k_query_condition_cache_key;
     skipped_row_groups_by_top_k_entry = other.skipped_row_groups_by_top_k_entry;
     return *this;
+}
+
+bool StorageObjectStorageSource::ReaderHolder::pull(Chunk & chunk)
+{
+    if (reader)
+        return reader->pull(chunk);
+    auto & input_format = static_cast<IInputFormat &>(*source);
+    chunk = input_format.read();
+    if (!chunk)
+        return false;
+    ExtractColumnsTransform::transformChunk(input_format.getPort().getHeader(), columns_to_extract, chunk);
+    return true;
+}
+
+void StorageObjectStorageSource::ReaderHolder::cancel()
+{
+    if (reader)
+        reader->cancel();
 }
 
 StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(

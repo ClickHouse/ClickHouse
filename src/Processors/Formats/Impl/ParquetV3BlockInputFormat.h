@@ -194,6 +194,39 @@ private:
     DataTypes key_types;
 };
 
+/// Reads a file from the caches only, without a read buffer: its footer from the metadata cache and its columns from the columns cache.
+class ParquetFullyCachedInputFormat final : public IInputFormat
+{
+public:
+    explicit ParquetFullyCachedInputFormat(SharedHeader header_);
+
+    /// nullptr unless the caches hold the footer and every column of `header` in every row group the footer statistics select.
+    static std::shared_ptr<ParquetFullyCachedInputFormat> tryCreate(
+        SharedHeader header,
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr format_filter_info,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
+        const FileBucketInfoPtr & buckets_to_read,
+        const NameSet & map_columns_read_by_keys,
+        const NameSet & map_columns_read_by_values,
+        const ContextPtr & context);
+
+    String getName() const override { return "ParquetFullyCachedInputFormat"; }
+
+    size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
+
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override;
+    [[nodiscard]] bool isJoinRuntimeFilterApplied() const override { return reader.row_groups_pruned_by_join_runtime_filter > 0; }
+
+private:
+    Chunk read() override;
+
+    Parquet::Reader reader;
+    size_t next_row_group = 0;
+    size_t next_row_subgroup = 0;
+    size_t approx_bytes_read_for_chunk = 0;
+};
+
 class NativeParquetSchemaReader final : public ISchemaReader
 {
 public:

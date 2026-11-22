@@ -1061,7 +1061,7 @@ static size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
-void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
+void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection, bool only_by_statistics)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -1625,7 +1625,8 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     }
 
     key_condition_column_ranges_complete = record_key_condition_ranges;
-    ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedRowGroups, row_groups_pruned_by_join_runtime_filter);
+    if (!only_by_statistics)
+        ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedRowGroups, row_groups_pruned_by_join_runtime_filter);
 
     /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
     /// threshold, so that it tightens early. Any order is correct when the output order is free.
@@ -1707,6 +1708,9 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
     if (row_groups.empty())
         return; // all row groups were skipped
+
+    if (only_by_statistics)
+        return;
 
     /// prepareBloomFilterCondition computes the query-constant hashes used by both the bloom filter
     /// and the dictionary filter, so run it if either is enabled.
@@ -5059,6 +5063,27 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
     return state.column;
 }
 
+Chunk Reader::formChunk(const RowGroup & row_group, RowSubgroup & row_subgroup)
+{
+    Columns output(sample_block->columns());
+    for (size_t i = 0; i < output.size(); ++i)
+    {
+        output[i] = std::move(getOrFormOutputColumn(row_group, row_subgroup, i));
+        output[i] = output[i]->convertToFullColumnIfReplicated();
+    }
+    return Chunk(std::move(output), row_subgroup.filter.rows_pass);
+}
+
+size_t Reader::approxBytesRead(const RowGroup & row_group, size_t num_rows) const
+{
+    /// Not `row_group.meta->total_compressed_size`, which would inflate `read_bytes` by `total_columns / selected_columns`.
+    size_t selected_columns_compressed_bytes = 0;
+    for (const auto & primitive_column : primitive_columns)
+        selected_columns_compressed_bytes += size_t(
+            getColumnChunk(row_group.row_group_idx, primitive_column.column_idx).meta_data.total_compressed_size);
+    return selected_columns_compressed_bytes * num_rows / std::max(size_t(1), size_t(row_group.meta->num_rows));
+}
+
 /// Shrinking reallocates a column, so it is skipped when only a little memory would be freed.
 static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
 
@@ -5164,12 +5189,41 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
     }
 }
 
-void Reader::initColumnsCache()
+/// The chunks of the column of the row group in the cache, empty unless all of them are there.
+static VectorWithMemoryTracking<ColumnPtr> getCachedColumnChunks(ColumnsCache & cache, const UInt128 & identity, const Reader::RowGroup & row_group)
 {
-    if (!options.columns_cache)
-        return;
+    const size_t num_rows = size_t(row_group.meta->num_rows);
+    const size_t num_chunks = (num_rows + Reader::COLUMNS_CACHE_CHUNK_ROWS - 1) / Reader::COLUMNS_CACHE_CHUNK_ROWS;
+    const size_t first_stripe = row_group.row_group_idx * Reader::COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP;
+    auto entries = num_chunks <= Reader::COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP
+        ? cache.getMany(identity, first_stripe, first_stripe + num_chunks)
+        : std::vector<ColumnsCache::MappedPtr>{}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `ColumnsCache::getMany` returns std::vector
+    bool all_chunks = !entries.empty();
+    for (size_t chunk = 0; chunk < entries.size() && all_chunks; ++chunk)
+        all_chunks = entries[chunk] && entries[chunk]->rows == std::min(Reader::COLUMNS_CACHE_CHUNK_ROWS, num_rows - chunk * Reader::COLUMNS_CACHE_CHUNK_ROWS);
+
+    VectorWithMemoryTracking<ColumnPtr> chunks;
+    if (!all_chunks)
+        return chunks;
+    chunks.reserve(entries.size());
+    for (const auto & entry : entries)
+        chunks.push_back(entry->column);
+    return chunks;
+}
+
+void Reader::serveFromColumnsCache(RowGroup & row_group, size_t idx_in_output_block, VectorWithMemoryTracking<ColumnPtr> chunks)
+{
+    if (row_group.cached_columns.empty())
+        row_group.cached_columns.resize(extended_sample_block.columns());
+    row_group.cached_columns[idx_in_output_block] = std::move(chunks);
+    const OutputColumnInfo & info = output_columns.at(*sample_block_to_output_columns_idx.at(idx_in_output_block));
+    for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+        row_group.columns[i].served_from_cache = true;
+}
+
+bool Reader::initColumnsCacheIdentities()
+{
     const ColumnsCacheOptions & cache_options = *options.columns_cache;
-    ColumnsCache & cache = *cache_options.cache;
 
     /// The identity of an output column in the cache is made of what determines its values: the
     /// file, its version and the format settings (all in `file_identity`), the columns of the file it
@@ -5223,10 +5277,19 @@ void Reader::initColumnsCache()
     }
 
     if (!any_column)
-    {
         columns_cache_identities.clear();
+    return any_column;
+}
+
+void Reader::initColumnsCache()
+{
+    if (!options.columns_cache)
         return;
-    }
+    const ColumnsCacheOptions & cache_options = *options.columns_cache;
+    ColumnsCache & cache = *cache_options.cache;
+
+    if (!initColumnsCacheIdentities())
+        return;
 
     columns_cache_writes_possible = cache_options.enable_writes && canWriteToColumnsCache();
     if (columns_cache_writes_possible)
@@ -5252,25 +5315,9 @@ void Reader::initColumnsCache()
             /// from the file anyway.
             if (cache_options.enable_reads)
             {
-                const size_t num_rows = size_t(row_group.meta->num_rows);
-                const size_t num_chunks = (num_rows + COLUMNS_CACHE_CHUNK_ROWS - 1) / COLUMNS_CACHE_CHUNK_ROWS;
-                const size_t first_stripe = row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP;
-                auto entries = num_chunks <= COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP
-                    ? cache.getMany(identity, first_stripe, first_stripe + num_chunks)
-                    : std::vector<ColumnsCache::MappedPtr>{}; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `ColumnsCache::getMany` returns std::vector
-                bool all_chunks = !entries.empty();
-                for (size_t chunk = 0; chunk < entries.size() && all_chunks; ++chunk)
-                    all_chunks = entries[chunk] && entries[chunk]->rows == std::min(COLUMNS_CACHE_CHUNK_ROWS, num_rows - chunk * COLUMNS_CACHE_CHUNK_ROWS);
-                if (all_chunks)
+                if (auto chunks = getCachedColumnChunks(cache, identity, row_group); !chunks.empty())
                 {
-                    if (row_group.cached_columns.empty())
-                        row_group.cached_columns.resize(extended_sample_block.columns());
-                    auto & chunks = row_group.cached_columns[idx];
-                    chunks.reserve(entries.size());
-                    for (const auto & entry : entries)
-                        chunks.push_back(entry->column);
-                    for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
-                        row_group.columns[i].served_from_cache = true;
+                    serveFromColumnsCache(row_group, idx, std::move(chunks));
                     ++hits;
                     continue;
                 }
@@ -5315,6 +5362,40 @@ void Reader::initColumnsCache()
         for (RowGroup & row_group : row_groups)
             row_group.columns_cache_writes.clear();
     }
+}
+
+bool Reader::serveFromColumnsCacheOnly()
+{
+    if (!options.columns_cache || !options.columns_cache->enable_reads)
+        return false;
+    ColumnsCache & cache = *options.columns_cache->cache;
+    initColumnsCacheIdentities();
+
+    size_t hits = 0;
+    for (size_t idx = 0; idx < sample_block->columns(); ++idx)
+    {
+        const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
+        if (!output_idx.has_value())
+            return false;
+        const OutputColumnInfo & info = output_columns.at(*output_idx);
+        if (info.primitive_start == info.primitive_end)
+            continue;
+        const UInt128 identity = idx < columns_cache_identities.size() ? columns_cache_identities[idx] : UInt128(0);
+        if (identity == 0)
+            return false;
+        for (RowGroup & row_group : row_groups)
+        {
+            if (!row_group.need_to_process)
+                continue;
+            auto chunks = getCachedColumnChunks(cache, identity, row_group);
+            if (chunks.empty())
+                return false;
+            serveFromColumnsCache(row_group, idx, std::move(chunks));
+            ++hits;
+        }
+    }
+    ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, hits);
+    return true;
 }
 
 bool Reader::canWriteToColumnsCache() const

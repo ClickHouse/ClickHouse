@@ -33,6 +33,8 @@ namespace ProfileEvents
     extern const Event ParquetFilesSkippedByCachedStatistics;
     extern const Event ParquetMetadataCacheHits;
     extern const Event ParquetPrunedRowGroups;
+    extern const Event ParquetReadRowGroups;
+    extern const Event ParquetRuntimeFilterPrunedRowGroups;
 }
 
 namespace DB
@@ -507,14 +509,10 @@ Chunk ParquetV3BlockInputFormat::read()
     return std::move(res.chunk);
 }
 
-std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
+static std::pair<VectorWithMemoryTracking<size_t>, size_t> getMatchedRowGroups(const Parquet::Reader & reader, bool top_k_statistics_only)
 {
-    if (!reader || min_max_from_statistics)
-        return std::nullopt;
-    /// A row group skipped by a statistics-only threshold was never checked against the filter, so it may match.
-    const bool top_k_statistics_only = format_filter_info->top_k_filter && !format_filter_info->top_k_filter->filter_rows;
     VectorWithMemoryTracking<size_t> matched;
-    for (const auto & row_group : reader->reader.row_groups)
+    for (const auto & row_group : reader.row_groups)
     {
         if (!row_group.need_to_process)
             continue;
@@ -539,7 +537,16 @@ std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3Bloc
         if (produced_rows || (top_k_statistics_only && row_group.skipped_by_top_k.load()))
             matched.push_back(row_group.row_group_idx);
     }
-    return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
+    return std::make_pair(std::move(matched), reader.file_metadata().row_groups.size());
+}
+
+std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
+{
+    if (!reader || min_max_from_statistics)
+        return std::nullopt;
+    /// A row group skipped by a statistics-only threshold was never checked against the filter, so it may match.
+    const bool top_k_statistics_only = format_filter_info->top_k_filter && !format_filter_info->top_k_filter->filter_rows;
+    return getMatchedRowGroups(reader->reader, top_k_statistics_only);
 }
 
 VectorWithMemoryTracking<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
@@ -566,7 +573,7 @@ bool ParquetV3BlockInputFormat::isJoinRuntimeFilterApplied() const
         && (reader->reader.row_groups_pruned_by_join_runtime_filter > 0 || reader->reader.pages_pruned_by_join_runtime_filter > 0);
 }
 
-Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
+static Parquet::RowGroupSelection rowGroupSelectionOf(const ParquetFileBucketInfo * buckets_to_read)
 {
     if (!buckets_to_read)
         return std::monostate{};
@@ -577,6 +584,11 @@ Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
         return Parquet::RowGroupByteRange{buckets_to_read->byte_range->first, buckets_to_read->byte_range->second};
     }
     return UnorderedSetWithMemoryTracking<UInt64>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
+}
+
+Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
+{
+    return rowGroupSelectionOf(buckets_to_read.get());
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
@@ -628,6 +640,97 @@ void ParquetV3BlockInputFormat::resetParser()
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
+}
+
+ParquetFullyCachedInputFormat::ParquetFullyCachedInputFormat(SharedHeader header_)
+    : IInputFormat(std::move(header_), nullptr)
+{
+}
+
+std::shared_ptr<ParquetFullyCachedInputFormat> ParquetFullyCachedInputFormat::tryCreate(
+    SharedHeader header,
+    const FormatSettings & format_settings,
+    FormatFilterInfoPtr format_filter_info,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata,
+    const FileBucketInfoPtr & buckets_to_read,
+    const NameSet & map_columns_read_by_keys,
+    const NameSet & map_columns_read_by_values,
+    const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::use_parquet_metadata_cache] || !object_with_metadata)
+        return nullptr;
+    auto metadata_cache = context->tryGetParquetMetadataCache();
+    if (!metadata_cache)
+        return nullptr;
+    if (AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(*header, format_settings.aggregate_function_input_format))
+        return nullptr;
+
+    if (!format_filter_info)
+        format_filter_info = std::make_shared<FormatFilterInfo>();
+    const auto * parquet_buckets = static_cast<const ParquetFileBucketInfo *>(buckets_to_read.get());
+    if (format_filter_info->need_row_numbers || format_filter_info->rows_to_read || format_filter_info->min_max_from_statistics
+        || (parquet_buckets && parquet_buckets->is_split_for_parallel_reading))
+        return nullptr;
+
+    const auto cache_key = makeMetadataCacheKey(*object_with_metadata);
+    if (!cache_key)
+        return nullptr;
+    auto cell = metadata_cache->get(*cache_key);
+    if (!cell)
+        return nullptr;
+    const auto columns_cache_options = getColumnsCacheOptions(context, format_settings, object_with_metadata);
+    if (!columns_cache_options || !columns_cache_options->enable_reads)
+        return nullptr;
+
+    Parquet::ReadOptions read_options = convertReadOptions(format_settings);
+    read_options.map_columns_read_by_keys = map_columns_read_by_keys;
+    read_options.map_columns_read_by_values = map_columns_read_by_values;
+    auto reads_only = std::make_shared<Parquet::ColumnsCacheOptions>(*columns_cache_options);
+    reads_only->enable_writes = false;
+    read_options.columns_cache = std::move(reads_only);
+
+    auto format = std::make_shared<ParquetFullyCachedInputFormat>(std::move(header));
+    const Block & sample = format->getPort().getHeader();
+    format_filter_info->initKeyConditionOnce(sample);
+    Parquet::Reader & reader = format->reader;
+    reader.setFileFooter(cell->footer, cell->column_chunks);
+    reader.init(read_options, sample, format_filter_info);
+    reader.prefilterAndInitRowGroups(rowGroupSelectionOf(parquet_buckets), /*only_by_statistics=*/ true);
+    if (!reader.serveFromColumnsCacheOnly())
+        return nullptr;
+
+    metadata_cache->addColumnChunks(*cache_key, cell, reader.getColumnChunks());
+    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+    ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata().row_groups.size() - reader.row_groups.size());
+    ProfileEvents::increment(ProfileEvents::ParquetRuntimeFilterPrunedRowGroups, reader.row_groups_pruned_by_join_runtime_filter);
+    return format;
+}
+
+Chunk ParquetFullyCachedInputFormat::read()
+{
+    for (; next_row_group < reader.row_groups.size(); ++next_row_group, next_row_subgroup = 0)
+    {
+        auto & row_group = reader.row_groups[next_row_group];
+        if (next_row_subgroup == 0)
+            reader.intersectColumnIndexResultsAndInitSubgroups(row_group);
+        while (next_row_subgroup < row_group.subgroups.size())
+        {
+            auto & row_subgroup = row_group.subgroups[next_row_subgroup++];
+            if (row_subgroup.filter.rows_pass == 0)
+                continue;
+            approx_bytes_read_for_chunk = reader.approxBytesRead(row_group, row_subgroup.filter.rows_total);
+            return reader.formChunk(row_group, row_subgroup);
+        }
+        /// The subgroups stay for `getMatchedBuckets`.
+        row_group.cached_columns.clear();
+    }
+    return {};
+}
+
+std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetFullyCachedInputFormat::getMatchedBuckets() const
+{
+    return getMatchedRowGroups(reader, /*top_k_statistics_only=*/ false);
 }
 
 NativeParquetSchemaReader::NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

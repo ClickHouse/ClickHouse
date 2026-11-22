@@ -216,14 +216,16 @@ protected:
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
             std::unique_ptr<PullingPipelineExecutor> reader_);
+        /// Reads `input_format` directly, without a pipeline.
+        ReaderHolder(ObjectInfoPtr object_info_, InputFormatPtr input_format_, NamesAndTypesList columns_to_extract_);
 
         ReaderHolder() = default;
         ReaderHolder(ReaderHolder && other) noexcept { *this = std::move(other); }
         ReaderHolder & operator=(ReaderHolder && other) noexcept;
 
-        explicit operator bool() const { return reader != nullptr; }
-        PullingPipelineExecutor * operator->() { return reader.get(); }
-        const PullingPipelineExecutor * operator->() const { return reader.get(); }
+        explicit operator bool() const { return reader != nullptr || source != nullptr; }
+        bool pull(Chunk & chunk);
+        void cancel();
 
         [[nodiscard]] ObjectInfoPtr getObjectInfo() const { return object_info; }
 
@@ -242,6 +244,7 @@ protected:
         std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+        NamesAndTypesList columns_to_extract;
     };
 
     ReaderHolder reader;
