@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
@@ -79,6 +80,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_tags_fetch[];
     extern const char object_storage_queue_pause_after_blocked_files_replay_cap[];
     extern const char object_storage_queue_fail_bucket_acquisition[];
+    extern const char object_storage_queue_fail_ordering_barrier_hand_off[];
 }
 
 namespace ErrorCodes
@@ -1061,19 +1063,29 @@ void ObjectStorageQueueSource::FileIterator::recheckForeignProcessingLater(
         return;
     }
 
-    /// The set-processing attempt is resolved: wake up the later files of the
-    /// ordering domain waiting for its outcome.
-    resolveSetProcessingUnlocked(object_info->getPath());
-
+    /// The set-processing attempt is resolved. The unresolved barrier of the file is removed
+    /// (waking up the later files of the ordering domain waiting for its outcome) only after
+    /// the outcome is recorded, under the same lock: if recording it throws, the barrier is
+    /// still there, and `abandonOrderingBarrierHandOff` blocks the rest of the pass before
+    /// removing it, so no later file of the domain can pass the gate in between.
     if (!foreign_processing)
     {
         /// The failed attempt discovered a terminal state instead of a foreign
         /// `processing` node: the file no longer blocks its ordering domain.
         resolveForeignHeldFile(object_info->getPath());
+        resolveSetProcessingUnlocked(object_info->getPath());
         return;
     }
 
+    fiu_do_on(FailPoints::object_storage_queue_fail_ordering_barrier_hand_off,
+    {
+        throw Exception(
+            ErrorCodes::FAULT_INJECTED,
+            "Failpoint-triggered failure to record the ordering barrier of file {}", object_info->getPath());
+    });
+
     recordForeignHeldFile(object_info->getPath());
+    resolveSetProcessingUnlocked(object_info->getPath());
 
     /// Only a fresh observation defers the recheck. An already-expired one (e.g. the TTL
     /// is zero) means keeper is checked on every pass: queueing the file would make it
@@ -1124,10 +1136,17 @@ bool ObjectStorageQueueSource::FileIterator::reserveOrderingBarrier()
         "the rest of this listing pass is blocked until the next listing pass lists it again",
         max_ordering_barriers);
 
+    blockRestOfPass();
+    return false;
+}
+
+void ObjectStorageQueueSource::FileIterator::blockRestOfPass() noexcept
+{
     /// Everything is blocked from now on (`isBlockedByForeignHeldFile`), so the retained
     /// barriers, blocked files and pending rechecks are not needed any more. The replays which are
     /// in flight and the handed-out files with an unresolved set-processing outcome are kept:
     /// they are tracked until they leave the iterator.
+    /// Nothing here allocates: it is also the cleanup of a failed hand-off of an ordering barrier.
     ordering_barriers_overflowed = true;
     foreign_held_files_per_domain.clear();
     foreign_held_files_count = 0;
@@ -1137,7 +1156,44 @@ bool ObjectStorageQueueSource::FileIterator::reserveOrderingBarrier()
     foreign_processing_files_to_recheck.clear();
     inherited_foreign_processing_rechecks.clear();
     clearPendingReplays();
-    return false;
+}
+
+void ObjectStorageQueueSource::FileIterator::abandonOrderingBarrierHandOff(const ObjectInfoPtr & object) noexcept
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    /// The hand-off usually fails on a memory limit: the cleanup must not fail on it again.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    std::lock_guard lock(next_mutex);
+
+    /// First block the rest of the pass, and only then remove the unresolved barrier: the files
+    /// waiting for it at the hand-out gate are then dropped instead of being processed, and the
+    /// replacement of this iterator inherits nothing and lists everything again in order.
+    blockRestOfPass();
+
+    try
+    {
+        /// The ordering domain is not recomputed (it parses the path and allocates): the barrier
+        /// is looked up in every domain instead, which is fine for a path taken on exceptions only.
+        const auto path = object->getPath();
+        for (auto it = unresolved_set_processing_per_domain.begin(); it != unresolved_set_processing_per_domain.end();)
+        {
+            it->second.erase(path);
+            if (it->second.empty())
+                it = unresolved_set_processing_per_domain.erase(it);
+            else
+                ++it;
+        }
+    }
+    catch (...)
+    {
+        /// Not even the path could be obtained. An orphaned barrier would make `isFinished` wait
+        /// forever, and the pass is blocked as a whole anyway.
+        unresolved_set_processing_per_domain.clear();
+    }
+
+    set_processing_resolved_cv.notify_all();
 }
 
 void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::string & path)
@@ -1383,6 +1439,27 @@ bool ObjectStorageQueueSource::FileIterator::isBehindInFlightReplay(const std::s
     return it != in_flight_replays_per_domain.end() && *it->second.begin() < path;
 }
 
+void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessingOrInvalidate(const ObjectInfoPtr & object)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    try
+    {
+        registerUnresolvedSetProcessing(object->getPath());
+    }
+    catch (...)
+    {
+        /// The file is already taken from the listing or from a queue, and it is neither handed
+        /// out nor registered as a barrier: the later files of its domain could be committed
+        /// past it. Stop this iterator, as on a failure in `filterProcessableFiles`: its
+        /// replacement inherits nothing and lists the file again in order.
+        iterator_invalidated = true;
+        abandonOrderingBarrierHandOff(object);
+        throw;
+    }
+}
+
 void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessing(const std::string & path)
 {
     if (mode != ObjectStorageQueueMode::ORDERED)
@@ -1393,7 +1470,7 @@ void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessing(con
     unresolved_set_processing_per_domain[getOrderingDomain(path)].insert(path);
 }
 
-void ObjectStorageQueueSource::FileIterator::onSetProcessingException(ObjectInfoPtr object)
+void ObjectStorageQueueSource::FileIterator::onSetProcessingException(const ObjectInfoPtr & object)
 {
     if (mode != ObjectStorageQueueMode::ORDERED)
         return;
@@ -1403,8 +1480,18 @@ void ObjectStorageQueueSource::FileIterator::onSetProcessingException(ObjectInfo
     /// is not among the processed files of the source yet, so nothing else would retry it. Keep it
     /// as an ordering barrier and retry it: the iterator outlives the failed source, and committing
     /// a later file of the domain would advance the `processed` pointer past this one.
-    std::lock_guard lock(next_mutex);
-    retryUnresolvedSetProcessingLater(std::move(object));
+    /// This is called while the exception of the claim is being handled, which is the one to
+    /// report: a failure to queue the retry is only logged, after the barrier is cleaned up.
+    try
+    {
+        std::lock_guard lock(next_mutex);
+        retryUnresolvedSetProcessingLater(object);
+    }
+    catch (...)
+    {
+        abandonOrderingBarrierHandOff(object);
+        tryLogCurrentException(log, "Failed to queue a retry of a file after a failed set-processing attempt");
+    }
 }
 
 void ObjectStorageQueueSource::FileIterator::resolveSetProcessing(const std::string & path)
@@ -1442,7 +1529,7 @@ bool ObjectStorageQueueSource::FileIterator::hasSmallerUnresolvedSetProcessing(c
 }
 
 ObjectStorageQueueSource::FileIterator::OrderingDomainGate
-ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(ObjectInfoPtr & object_info)
+ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(const ObjectInfoPtr & object_info)
 {
     const auto path = object_info->getPath();
     std::unique_lock lock(next_mutex);
@@ -1452,10 +1539,12 @@ ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(ObjectInfoPtr & o
         /// The deferred file is queued before its unresolved barrier is removed, under the same
         /// lock: otherwise its blocker could resolve in between and let a later file of the domain
         /// pass the gate, and nothing would replay this file before the later one is committed.
+        /// If queueing it throws, the barrier is still registered and the caller cleans it up
+        /// with `abandonOrderingBarrierHandOff`.
         if (isBlockedByForeignHeldFile(path))
         {
             LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", path);
-            rememberBlockedFile(std::move(object_info));
+            rememberBlockedFile(object_info);
             resolveSetProcessingUnlocked(path);
             return OrderingDomainGate::Blocked;
         }
@@ -1464,7 +1553,7 @@ ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(ObjectInfoPtr & o
         if (isBehindPendingReplay(path) || isBehindInFlightReplay(path))
         {
             LOG_TEST(log, "Deferring file {}: a smaller file of its ordering domain is pending a replay", path);
-            deferBehindReplay(std::move(object_info));
+            deferBehindReplay(object_info);
             resolveSetProcessingUnlocked(path);
             return OrderingDomainGate::BehindReplay;
         }
@@ -1541,7 +1630,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             /// While `mutex` is held: later files of the domain must see this file
             /// as unresolved before they can be handed out.
             if (object_info && !file_metadata)
-                registerUnresolvedSetProcessing(object_info->getPath());
+                registerUnresolvedSetProcessingOrInvalidate(object_info);
         }
         else
         {
@@ -1567,7 +1656,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             /// While `mutex` is held: later files of the domain must see this file
             /// as unresolved before they can be handed out.
             if (object_info && !file_metadata)
-                registerUnresolvedSetProcessing(object_info->getPath());
+                registerUnresolvedSetProcessingOrInvalidate(object_info);
         }
 
         if (!object_info)
@@ -1597,7 +1686,16 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             /// `BehindReplay`: a smaller file of the same ordering domain is pending a replay and
             /// is not handed out yet: the gate queues this file to be replayed together with it,
             /// in path order.
-            const auto gate = waitOrderingDomainGate(object_info);
+            OrderingDomainGate gate;
+            try
+            {
+                gate = waitOrderingDomainGate(object_info);
+            }
+            catch (...)
+            {
+                abandonOrderingBarrierHandOff(object_info);
+                throw;
+            }
             if (gate == OrderingDomainGate::Shutdown)
                 return {};
             if (gate == OrderingDomainGate::Blocked || gate == OrderingDomainGate::BehindReplay)
@@ -1630,12 +1728,12 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 DimensionalMetrics::add(
                     DimensionalMetrics::ObjectStorageQueueFailures,
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(e.code))});
-                onSetProcessingException(std::move(object_info));
+                onSetProcessingException(object_info);
                 throw;
             }
             catch (...)
             {
-                onSetProcessingException(std::move(object_info));
+                onSetProcessingException(object_info);
                 throw;
             }
             if (!set_processing)
@@ -1644,15 +1742,34 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 /// the cached observation of its `processing` node expires.
                 /// In Ordered mode a foreign `processing` node also blocks the later
                 /// files of the ordering domain until the file is resolved.
-                recheckForeignProcessingLater(object_info, file_metadata);
+                /// The file is not among the processed files of the source, so if the hand-off
+                /// of its ordering barrier throws, nothing would return it: the rest of the
+                /// pass is blocked instead, and the next listing pass lists it again.
+                try
+                {
+                    recheckForeignProcessingLater(object_info, file_metadata);
+                }
+                catch (...)
+                {
+                    abandonOrderingBarrierHandOff(object_info);
+                    throw;
+                }
                 continue;
             }
             if (mode == ObjectStorageQueueMode::ORDERED)
             {
                 /// This server now owns the file: it no longer blocks its ordering domain.
-                std::lock_guard lock(next_mutex);
-                resolveForeignHeldFile(object_info->getPath());
-                resolveSetProcessingUnlocked(object_info->getPath());
+                try
+                {
+                    std::lock_guard lock(next_mutex);
+                    resolveForeignHeldFile(object_info->getPath());
+                    resolveSetProcessingUnlocked(object_info->getPath());
+                }
+                catch (...)
+                {
+                    abandonOrderingBarrierHandOff(object_info);
+                    throw;
+                }
             }
         }
 

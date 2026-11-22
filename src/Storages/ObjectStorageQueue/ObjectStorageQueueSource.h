@@ -259,6 +259,16 @@ public:
         /// Whether one more ordering barrier fits into `max_ordering_barriers`. If not, blocks
         /// the rest of the listing pass, see `ordering_barriers_overflowed`.
         bool reserveOrderingBarrier() TSA_REQUIRES(next_mutex);
+        /// Blocks every file of the rest of the listing pass (`ordering_barriers_overflowed`)
+        /// and forgets what is retained for the pass. Does not allocate.
+        void blockRestOfPass() noexcept TSA_REQUIRES(next_mutex);
+        /// Ordered mode only. Handing off the ordering barrier of a handed-out file threw (e.g.
+        /// `MEMORY_LIMIT_EXCEEDED` while recording it as foreign-held, blocked or to be replayed),
+        /// so the file is tracked nowhere. Blocks the rest of the pass and only then removes the
+        /// unresolved set-processing barrier of the file: merely removing it would let the later
+        /// files of the domain be committed past the file, and keeping it would make the files
+        /// waiting for it and `isFinished` wait forever.
+        void abandonOrderingBarrierHandOff(const ObjectInfoPtr & object) noexcept;
         void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
         /// Drops a file of a blocked or deferred range beyond the replay cap, keeping its domain
@@ -277,7 +287,7 @@ public:
         /// later, keeping it as an ordering barrier of its domain meanwhile.
         void retryUnresolvedSetProcessingLater(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
         /// The set-processing attempt of a handed-out file threw.
-        void onSetProcessingException(ObjectInfoPtr object);
+        void onSetProcessingException(const ObjectInfoPtr & object);
         void forgetPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
         bool isBehindPendingReplay(const std::string & path) TSA_REQUIRES(next_mutex);
         void forgetInFlightReplay(const std::string & path) TSA_REQUIRES(next_mutex);
@@ -285,16 +295,20 @@ public:
 
         /// Called when the file is handed out to a processing thread: it also stops being an in-flight replay.
         void registerUnresolvedSetProcessing(const std::string & path);
+        /// The same for a file just taken to be handed out, under `mutex`: if the registration
+        /// throws, the iterator is invalidated, because the taken file would be lost otherwise.
+        void registerUnresolvedSetProcessingOrInvalidate(const ObjectInfoPtr & object);
         void resolveSetProcessing(const std::string & path);
         void resolveSetProcessingUnlocked(const std::string & path) TSA_REQUIRES(next_mutex);
         bool hasSmallerUnresolvedSetProcessing(const std::string & path) TSA_REQUIRES(next_mutex);
         /// Waits until the file is allowed to start a set-processing attempt. A file which may not
-        /// proceed (`Blocked`, `BehindReplay`) is moved into its deferred queue under the same lock
+        /// proceed (`Blocked`, `BehindReplay`) is put into its deferred queue under the same lock
         /// which removes its unresolved set-processing barrier, so that no later file of the domain
-        /// can pass the gate in between; `object_info` is empty afterwards.
+        /// can pass the gate in between. If it throws, the barrier of the file can still be registered:
+        /// the caller cleans it up with `abandonOrderingBarrierHandOff`.
         /// TSA does not understand the `std::unique_lock` needed by the condition variable.
         enum class OrderingDomainGate { Proceed, Blocked, BehindReplay, Shutdown };
-        OrderingDomainGate waitOrderingDomainGate(ObjectInfoPtr & object_info) TSA_NO_THREAD_SAFETY_ANALYSIS;
+        OrderingDomainGate waitOrderingDomainGate(const ObjectInfoPtr & object_info) TSA_NO_THREAD_SAFETY_ANALYSIS;
         /// Ordered mode only. Waits until the set-processing outcomes of all handed-out files are known.
         void waitAllSetProcessingResolved() TSA_NO_THREAD_SAFETY_ANALYSIS;
 

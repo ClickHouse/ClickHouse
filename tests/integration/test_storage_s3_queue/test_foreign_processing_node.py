@@ -1446,3 +1446,84 @@ def test_files_are_not_lost_after_bucket_acquisition_failure_in_ordered_mode(sta
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+ORDERING_BARRIER_HAND_OFF_FAILPOINT = "object_storage_queue_fail_ordering_barrier_hand_off"
+
+
+def test_files_are_not_lost_after_ordering_barrier_hand_off_failure(started_cluster):
+    """A failure to record a foreign-held file as an ordering barrier must not lose the file.
+
+    The claim of `test_2.csv` discovers the `processing` node of a foreign processor, and
+    recording the file as a blocker of its ordering domain throws (as on a memory limit).
+    The file is then tracked nowhere, so the rest of the listing pass has to stay blocked:
+    committing `test_3.csv` or `test_4.csv` would advance the `processed` pointer past the
+    held file, and it would never be ingested after the foreign processor releases it
+    without a commit.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ordering_barrier_hand_off_failure_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    files_to_generate = 5
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_2.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {ORDERING_BARRIER_HAND_OFF_FAILPOINT}")
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        run_with_retry(
+            lambda x: x,
+            lambda: node.contains_in_log(
+                f"Failpoint-triggered failure to record the ordering barrier of file {conflict_file}"
+            ),
+        )
+
+        # The next listing pass observes the foreign hold again, this time successfully.
+        run_with_retry(
+            lambda x: x == "Processing",
+            lambda: node.query(
+                f"SELECT status FROM system.s3queue_metadata_cache WHERE file_path LIKE '%{conflict_file}'"
+            ).strip(),
+        )
+        run_with_retry(lambda x: x == 2, get_count)
+        assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_2.csv' OR _path LIKE '%test_3.csv' OR _path LIKE '%test_4.csv'").strip() == "0"
+
+        # The foreign processor released the file without committing it.
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {ORDERING_BARRIER_HAND_OFF_FAILPOINT}")
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
