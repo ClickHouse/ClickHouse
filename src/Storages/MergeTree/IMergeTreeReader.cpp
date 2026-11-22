@@ -489,6 +489,17 @@ const IMergeTreeReader::DefaultExpressionsGraph & IMergeTreeReader::getDefaultEx
     return *default_expressions_graph;
 }
 
+Names IMergeTreeReader::getColumnsReadByMissingDefaults() const
+{
+    const auto & graph = getDefaultExpressionsGraph();
+
+    Names result;
+    result.reserve(graph.missing_readers.size());
+    for (const auto & [name, _] : graph.missing_readers)
+        result.push_back(name);
+    return result;
+}
+
 bool IMergeTreeReader::isSortingKeyColumn(const String & name) const
 {
     const auto & graph = getDefaultExpressionsGraph();

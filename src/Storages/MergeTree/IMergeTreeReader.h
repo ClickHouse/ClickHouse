@@ -101,6 +101,11 @@ public:
     /// `DEFAULT` gave, and ordered reads and merges rely on that order, so it keeps that value.
     NameSet getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const;
 
+    /// Returns the columns read by the `DEFAULT` expressions of the columns the part does not store, by their names
+    /// both as written and in storage. Unless a patch part may overwrite one of them, `getDefaultsDependingOn`
+    /// returns nothing for this part, whatever is patched. The expressions of the sort-key columns do not count.
+    Names getColumnsReadByMissingDefaults() const;
+
     /// Whether `name`, or the column `name` is a subcolumn of, is read by the sorting key. Such a column keeps
     /// the value its `DEFAULT` gave, see `getDefaultsDependingOn`.
     bool isSortingKeyColumn(const String & name) const;
