@@ -1,12 +1,7 @@
 <clickhouse>
     <profiles>
         <row_mask_expanded_ast_limited>
-            <max_expanded_ast_elements>1000</max_expanded_ast_elements>
-            <max_bytes_in_set>49152</max_bytes_in_set>
-            <max_temporary_columns>20</max_temporary_columns>
-            <set_overflow_mode>throw</set_overflow_mode>
-            <compile_expressions>0</compile_expressions>
-            <short_circuit_function_evaluation>disable</short_circuit_function_evaluation>
+            <max_expanded_ast_elements>100</max_expanded_ast_elements>
         </row_mask_expanded_ast_limited>
     </profiles>
 </clickhouse>

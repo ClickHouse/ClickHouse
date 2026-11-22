@@ -21,6 +21,11 @@ expanded_ast_node = cluster.add_instance(
     main_configs=["configs/expanded_ast_profile.xml"],
     user_configs=["configs/expanded_ast_users.xml"],
 )
+finite_background_limits_node = cluster.add_instance(
+    "finite_background_limits_node",
+    main_configs=["configs/expanded_ast_profile.xml"],
+    user_configs=["configs/finite_background_limits_users.xml"],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -697,7 +702,7 @@ def test_ready_subquery_union_respects_background_set_limit():
 
 def test_ready_subquery_union_respects_background_byte_limit():
     # 1200 `UInt64` keys use 32 KiB per Set; their union crosses the 48 KiB background cap.
-    for instance, expected_batches in ((expanded_ast_node, 0), (replicated_node, 1)):
+    for instance, expected_batches in ((finite_background_limits_node, 0), (replicated_node, 1)):
         table = f"ready_union_byte_limit_{instance.name}"
         try:
             instance.query(
@@ -742,7 +747,7 @@ def test_ready_subquery_union_respects_background_temporary_column_limits():
     # Four groups make the replacement wider than each original action. The first
     # group repeats one key, so the row-limited profile still admits its union.
     for instance, expected_batches in (
-        (expanded_ast_node, 0), (node, 0), (replicated_node, 1)
+        (finite_background_limits_node, 0), (node, 0), (replicated_node, 1)
     ):
         table = f"ready_union_temporary_limit_{instance.name}"
         try:
@@ -801,7 +806,7 @@ def test_temporary_column_exception_with_ready_subquery_predicates():
     for enabled in (0, 1):
         table = f"ready_union_original_column_limit_{enabled}"
         try:
-            expanded_ast_node.query(
+            finite_background_limits_node.query(
                 f"CREATE TABLE {table} "
                 f"(n UInt64, payload AggregateFunction(sum, UInt64), {extra_columns}) "
                 "ENGINE = AggregatingMergeTree ORDER BY n "
@@ -812,19 +817,19 @@ def test_temporary_column_exception_with_ready_subquery_predicates():
                 "enable_row_mask_update_coalescing = 0, enable_row_mask_action_batching = 0, "
                 f"enable_row_mask_typed_set_union = {enabled}"
             )
-            expanded_ast_node.query(
+            finite_background_limits_node.query(
                 f"INSERT INTO {table} SELECT toUInt64(number + 1), "
                 f"initializeAggregation('sumState', toUInt64(number + 1)), {extra_values} "
                 "FROM numbers(3)"
             )
-            expanded_ast_node.query(
+            finite_background_limits_node.query(
                 f"ALTER TABLE {table} "
                 f"UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(arrayJoin([1]))) AND {wide_predicate}, "
                 f"UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(arrayJoin([2]))) AND {wide_predicate} "
                 "SETTINGS mutations_sync = 0"
             )
             assert_eq_with_retry(
-                expanded_ast_node,
+                finite_background_limits_node,
                 "SELECT count(), countIf(position(latest_fail_reason, "
                 "'Too many temporary columns') > 0) >= 1 FROM system.mutations "
                 f"WHERE database = currentDatabase() AND table = '{table}' "
@@ -833,16 +838,16 @@ def test_temporary_column_exception_with_ready_subquery_predicates():
                 retry_count=20,
                 timeout=3,
             )
-            assert expanded_ast_node.query(
+            assert finite_background_limits_node.query(
                 f"SELECT n, _row_exists FROM {table} ORDER BY n "
                 "SETTINGS apply_deleted_mask = 0, apply_mutations_on_fly = 0"
             ) == "1\t1\n2\t1\n3\t1\n"
         finally:
-            expanded_ast_node.query(
+            finite_background_limits_node.query(
                 f"KILL MUTATION WHERE database = currentDatabase() AND table = '{table}' "
                 "SETTINGS kill_throw_if_noop = 0"
             )
-            expanded_ast_node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            finite_background_limits_node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
 @pytest.mark.parametrize("rhs_change", ("insert", "empty"))
