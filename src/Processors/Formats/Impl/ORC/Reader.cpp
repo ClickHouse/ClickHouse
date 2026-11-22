@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ORC/Reader.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
@@ -100,10 +101,26 @@ void Reader::readTail()
 
     schema = Type::fromProto(footer.types);
 
+    /// Validate the stripes once, so that the sums of their offsets and lengths cannot overflow later.
+    if (footer.stripes.size() > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many stripes {} in ORC file {}", footer.stripes.size(), stream->getName());
+    for (size_t i = 0; i < footer.stripes.size(); ++i)
+    {
+        const auto & stripe = footer.stripes[i];
+        UInt64 stripe_end = 0;
+        if (common::addOverflow(stripe.offset, stripe.index_length, stripe_end)
+            || common::addOverflow(stripe_end, stripe.data_length, stripe_end)
+            || common::addOverflow(stripe_end, stripe.footer_length, stripe_end)
+            || stripe_end > file_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Malformed stripe information at stripe index {} in ORC file {}: offset={}, indexLength={}, dataLength={}, footerLength={}, fileLength={}",
+                i, stream->getName(), stripe.offset, stripe.index_length, stripe.data_length, stripe.footer_length, file_size);
+    }
+
     std::string_view metadata_data = std::string_view(tail).substr(
         tail_size - 1 - postscript_length - postscript.footer_length - postscript.metadata_length, postscript.metadata_length);
     if (!metadata_data.empty())
-        metadata.emplace().parse(decompress(metadata_data, "metadata"));
+        metadata.emplace().parse(decompress(metadata_data, "metadata"), footer.stripes.size(), footer.types.size());
     else
         metadata.emplace();
 }
@@ -137,7 +154,7 @@ Proto::StripeFooter Reader::readStripeFooter(size_t stripe_index)
 
     auto slices = readRanges({{offset, stripe.footer_length}});
     Proto::StripeFooter result;
-    result.parse(decompress(slices[0].data, "stripe footer"));
+    result.parse(decompress(slices[0].data, "stripe footer"), footer.types.size());
     if (result.encryption_variants)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Encrypted ORC files are not supported");
     return result;
@@ -152,14 +169,14 @@ std::vector<std::pair<UInt64, UInt64>> Reader::getStripeRanges(
     const UInt64 data_end = stripe.offset + stripe.index_length + stripe.data_length;
     for (const auto & s : stripe_footer.streams)
     {
+        /// Every stream is checked: the offsets of the following streams depend on its length.
+        UInt64 stream_end = 0;
+        if (common::addOverflow(offset, s.length, stream_end) || stream_end > data_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Malformed stream at offset {} of length {} in stripe {} of ORC file {}", offset, s.length, stripe_index, stream->getName());
         if (s.kind && s.column < selected.size() && selected[s.column] && s.length)
-        {
-            if (offset + s.length > data_end || offset + s.length < offset)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Malformed stream at offset {} of length {} in stripe {} of ORC file {}", offset, s.length, stripe_index, stream->getName());
             ranges.emplace_back(offset, s.length);
-        }
-        offset += s.length;
+        offset = stream_end;
     }
     return ranges;
 }
@@ -331,12 +348,14 @@ public:
 
         for (const auto & s : footer.streams)
         {
+            /// Every stream is checked: the offsets of the following streams depend on its length.
+            UInt64 stream_end = 0;
+            if (common::addOverflow(offset, s.length, stream_end) || stream_end > data_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Malformed stream meta in stripe {} of ORC file: streamOffset={}, streamLength={}, stripeOffset={}, stripeIndexLength={}, stripeDataLength={}",
+                    stripe_index, offset, s.length, stripe.offset, stripe.index_length, stripe.data_length);
             if (s.kind && s.column < selected_columns.size() && selected_columns[s.column])
             {
-                if (offset + s.length > data_end || offset + s.length < offset)
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Malformed stream meta in stripe {} of ORC file: streamOffset={}, streamLength={}, stripeOffset={}, stripeIndexLength={}, stripeDataLength={}",
-                        stripe_index, offset, s.length, stripe.offset, stripe.index_length, stripe.data_length);
                 /// Use the first stream if there are several of the same kind, as the reference implementation.
                 stream_ranges.try_emplace({static_cast<UInt64>(s.column), *s.kind}, offset, s.length);
             }
@@ -344,7 +363,7 @@ public:
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Malformed stream meta in stripe {} of ORC file: column {} is out of range, the file has {} columns",
                     stripe_index, s.column, selected_columns.size());
-            offset += s.length;
+            offset = stream_end;
         }
     }
 
@@ -515,10 +534,18 @@ bool RowReader::evaluateStatistics(const std::vector<Proto::ColumnStatistics> & 
     return isNeeded(options.search_argument->evaluate(values));
 }
 
+UInt64 RowReader::numberOfRowGroups() const
+{
+    const UInt64 stride = reader.getFooter().row_index_stride;
+    return rows_in_current_stripe / stride + (rows_in_current_stripe % stride != 0);
+}
+
 void RowReader::loadStripeIndex()
 {
     row_indexes.clear();
     bloom_filters.clear();
+    /// One extra entry is accepted from lenient writers.
+    const UInt64 max_entries = std::min<UInt64>(numberOfRowGroups(), std::numeric_limits<UInt64>::max() - 1) + 1;
     const bool use_bloom_filters = !reader.hasBadBloomFilters();
     const auto & stripe_footer = stripe_streams->getFooter();
     for (const auto & s : stripe_footer.streams)
@@ -531,7 +558,7 @@ void RowReader::loadStripeIndex()
             if (row_indexes.contains(s.column))
                 continue;
             auto data = stripe_streams->getStreamData(s.column, kind);
-            row_indexes[s.column].parse(reader.decompress(data.value_or(std::string_view{}), "row index"));
+            row_indexes[s.column].parse(reader.decompress(data.value_or(std::string_view{}), "row index"), max_entries);
         }
         else if (kind == Proto::StreamKind::BLOOM_FILTER_UTF8 && use_bloom_filters)
         {
@@ -540,7 +567,7 @@ void RowReader::loadStripeIndex()
             const auto & encoding = stripe_streams->getEncoding(s.column);
             Proto::BloomFilterIndex index;
             auto data = stripe_streams->getStreamData(s.column, kind);
-            index.parse(reader.decompress(data.value_or(std::string_view{}), "bloom filter"));
+            index.parse(reader.decompress(data.value_or(std::string_view{}), "bloom filter"), max_entries);
             auto & filters = bloom_filters[s.column];
             for (const auto & bf : index.bloom_filter)
             {
@@ -557,9 +584,25 @@ void RowReader::loadStripeIndex()
 void RowReader::pickRowGroups()
 {
     const UInt64 stride = reader.getFooter().row_index_stride;
-    const UInt64 groups = (rows_in_current_stripe + stride - 1) / stride;
+    const UInt64 groups = numberOfRowGroups();
+    const auto & leaves = options.search_argument->getLeaves();
 
-    if (row_indexes.empty())
+    /// The number of the row groups comes from the file. Check it against the row indexes, which are already
+    /// read, before allocating memory for it.
+    bool has_leaf_index = false;
+    for (const auto & leaf : leaves)
+    {
+        auto it = row_indexes.find(leaf.getColumnId());
+        if (it == row_indexes.end())
+            continue;
+        has_leaf_index = true;
+        if (it->second.entry.size() < groups)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The row index of ORC column {} has {} entries, less than the {} row groups of stripe {}",
+                it->first, it->second.entry.size(), groups, current_stripe);
+    }
+
+    if (!has_leaf_index)
     {
         /// Without the row indexes all row groups are read.
         next_skipped_rows.clear();
@@ -567,7 +610,6 @@ void RowReader::pickRowGroups()
     }
 
     next_skipped_rows.assign(groups, 0);
-    const auto & leaves = options.search_argument->getLeaves();
     std::vector<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
     const UInt32 writer_version = reader.getPostScript().writer_version;
     const Proto::ColumnStatistics empty_statistics;

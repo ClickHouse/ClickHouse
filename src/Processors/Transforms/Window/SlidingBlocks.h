@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Common/DequeWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
@@ -56,7 +55,7 @@ public:
     RowNumber move(RowNumber row, int64_t offset) const;
 
 private:
-    DequeWithMemoryTracking<SlidingBlock> blocks;
+    std::deque<SlidingBlock> blocks;
     int64_t first_block_number = 0;
     int64_t next_block_number = 0;
 };

@@ -1438,10 +1438,6 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 
-    /// Only after the credentials providers have taken their copies of the configuration: their
-    /// requests are helper traffic and must not be reported as the connection of a logged request.
-    client_configuration.publish_connection_info = true;
-
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)
     {
@@ -1617,6 +1613,8 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
     const auto & retry_strategy = client_configuration.retryStrategy;
     for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
     {
+        /// `PocoHTTPClient` picks the adaptive timeouts from the attempt number, as `AWSClient` sets it. Not part of the signature.
+        http_request->SetHeaderValue(Aws::Http::SDK_REQUEST_HEADER, fmt::format("attempt={}", retries + 1));
         auto response = GetHttpClient()->MakeRequest(http_request);
         Aws::Client::AWSError<Aws::Client::CoreErrors> error;
         if (!response)

@@ -3,7 +3,6 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -258,8 +257,6 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (prefetch_future.valid())
     {
         {
-            /// Park the CPU lease while waiting for the prefetch
-            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
@@ -285,8 +282,6 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
             memory.resize(buffer_size);
 
         {
-            /// Park the CPU lease during the remote read
-            CPULeaseParkGuard cpu_park;
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
             result = readSync(memory.data(), buffer_size);
         }
@@ -452,9 +447,7 @@ AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
     }
     catch (...)
     {
-        /// A killed query's prefetch fails with the query's own cancellation, which the query reports itself.
-        const bool query_killed = CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled();
-        tryLogCurrentException(log, "", query_killed ? LogsLevel::debug : LogsLevel::error);
+        tryLogCurrentException(log);
     }
 }
 

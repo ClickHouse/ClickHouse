@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
@@ -23,6 +22,7 @@ namespace ErrorCodes
 class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+struct ColumnSize;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -133,11 +133,11 @@ public:
     ///
     /// `executeOnColumns` consumes `columns` (chunk data, in `header` order) and returns the result
     /// columns in `getSampleBlock()` order. It assumes `allow_duplicates_in_input == false`.
-    VectorWithMemoryTracking<ssize_t> getInputPositions(const Block & header) const;
+    std::vector<ssize_t> getInputPositions(const Block & header) const;
     Columns executeOnColumns(
         Columns columns,
         const Block & header,
-        const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
+        const std::vector<ssize_t> & input_positions_for_header,
         size_t & num_rows,
         bool dry_run = false,
         const std::atomic<bool> * is_cancelled = nullptr) const;
@@ -159,6 +159,11 @@ public:
     /// are skipped — correct for storage column lists but not for subquery
     /// projections where all entries are valid query-level outputs.
     static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
+
+    /// The column cheapest to read to count rows: the smallest <compressed size, size of value in memory,
+    /// uncompressed size> among the columns in `column_sizes`, otherwise `getSmallestColumn`.
+    static NameAndTypePair getCheapestColumnToRead(
+        const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns = true);
 
     ExpressionActionsPtr clone() const;
 

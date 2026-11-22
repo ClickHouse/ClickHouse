@@ -78,8 +78,6 @@ struct SecretArgumentsResult
     /// after `format`), which a single contiguous span cannot represent without hiding the
     /// non-secret arguments in between.
     std::map<size_t, bool> masked_arguments;
-    /// Whether every value of the parameter list `f(...)(...)` is hidden.
-    bool hide_parameters = false;
 
     bool hasSecrets() const
     {

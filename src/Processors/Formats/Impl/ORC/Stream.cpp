@@ -89,9 +89,11 @@ bool InputByteStream::nextChunk()
         }
         else
         {
-            if (decompressed.size() < block_size)
-                decompressed.resize(block_size);
-            size_t size = decompressChunk(compression, chunk, chunk_length, decompressed.data(), block_size);
+            /// The chunk length is at most 8 MiB, so the bound does not overflow.
+            size_t capacity = std::min(block_size, maxDecompressedSize(compression, chunk, chunk_length));
+            if (decompressed.size() < capacity)
+                decompressed.resize(capacity);
+            size_t size = decompressChunk(compression, chunk, chunk_length, decompressed.data(), capacity);
             pos = decompressed.data();
             end = decompressed.data() + size;
         }

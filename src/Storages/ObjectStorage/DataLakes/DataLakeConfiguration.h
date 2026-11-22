@@ -36,7 +36,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
@@ -107,42 +106,7 @@ public:
 #endif
     }
 
-    DataLakeStorageSettingsPtr getDataLakeSettings() const override
-    {
-        std::lock_guard lock(settings_mutex);
-        return settings;
-    }
-
-    void setDataLakeSettings(ContextPtr local_context, DataLakeStorageSettingsPtr new_settings) override
-    {
-        DataLakeStorageSettingsPtr previous_settings;
-        {
-            std::lock_guard lock(settings_mutex);
-            previous_settings = std::exchange(settings, std::move(new_settings));
-        }
-
-        auto metadata = tryGetMetadata();
-        if (!metadata)
-            return;
-
-        std::shared_ptr<IDataLakeMetadata> fresh;
-        try
-        {
-            fresh = metadata->cloneWithNewSettings(this->shared_from_this(), local_context);
-        }
-        catch (...)
-        {
-            std::lock_guard lock(settings_mutex);
-            settings = std::move(previous_settings);
-            throw;
-        }
-
-        std::shared_ptr<IDataLakeMetadata> displaced;
-        {
-            std::lock_guard lock(metadata_mutex);
-            displaced = std::exchange(current_metadata, std::move(fresh));
-        }
-    }
+    const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     void setExplicitMetadataFilePath(const String & path) override
     {
@@ -283,9 +247,7 @@ public:
 
     void check(ContextPtr context) override
     {
-        if (ready_object_storage
-            && (ready_object_storage->getType() == ObjectStorageType::S3
-                || ready_object_storage->getType() == ObjectStorageType::Azure))
+        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
             this->checkFormat();
         else
             BaseStorageConfiguration::check(context);
@@ -306,9 +268,9 @@ public:
         return DataLakeMetadata::supportsTotalRows(context, storage_type);
     }
 
-    std::optional<size_t> totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) override
+    std::optional<size_t> totalRows(ContextPtr local_context) override
     {
-        return getMetadata()->totalRows(local_context, state);
+        return getMetadata()->totalRows(local_context);
     }
 
     bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
@@ -411,10 +373,6 @@ public:
     {
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
-    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
-    {
-        return getMetadata()->getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
-    }
 
     void drop(ContextPtr local_context) override
     {
@@ -449,10 +407,9 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET
-        const auto current_settings = getDataLakeSettings();
-        if ((*current_settings)[DataLakeStorageSetting::storage_catalog_type].changed
-            || (*current_settings)[DataLakeStorageSetting::storage_catalog_url].changed
-            || (*current_settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
+            || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
+            || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
         auto datalake_database = tryGetDataLakeDatabase(table_id, context);
@@ -524,12 +481,6 @@ public:
         return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
     }
 
-    std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const override
-    {
-        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, column_names, context);
-    }
-
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new
     /// files. This makes the lazy-materialization reread race-free regardless of the backend.
     bool dataFilesAreImmutable() const override
@@ -538,8 +489,7 @@ public:
     }
 
 private:
-    mutable std::mutex settings_mutex;
-    DataLakeStorageSettingsPtr settings TSA_GUARDED_BY(settings_mutex);
+    const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
     mutable std::mutex metadata_mutex;
     /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent
@@ -564,11 +514,7 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            /// A relative path is resolved the same way the local object storage resolves the keys of data files:
-            /// relative to `user_files_path` in the server and to the current directory in `clickhouse-local`.
-            String table_path = this->getPathForRead().path;
-            if (std::filesystem::path(table_path).is_relative())
-                table_path = resolvePathRelativelyToBase(table_path, object_storage->getCommonKeyPrefix());
+            const auto & table_path = this->getPathForRead().path;
             if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);

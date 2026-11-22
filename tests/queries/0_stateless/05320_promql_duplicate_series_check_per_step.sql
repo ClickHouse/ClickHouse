@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-msan
+-- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 -- Series which get the same tags (after dropping the metric name, `label_replace` or matching by `on`/`ignoring`) are duplicates

@@ -562,7 +562,7 @@ bool WorkloadEntityStorageBase::removeEntity(
     {
         std::unique_lock lock(mutex);
         auto it = entities.find(entity_name);
-        if (it == entities.end())
+        if (it == entities.end() || getEntityType(it->second) != entity_type)
         {
             if (throw_if_not_exists)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);

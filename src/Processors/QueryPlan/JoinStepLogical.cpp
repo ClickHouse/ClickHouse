@@ -760,9 +760,14 @@ void JoinStepLogical::updateOutputHeader()
     output_header = std::make_shared<const Block>(std::move(header));
 }
 
+bool JoinStepLogical::isDummyResultColumn(const ActionsDAG::Node & node)
+{
+    return node.result_name == join_dummy_result_name;
+}
+
 bool JoinStepLogical::isDummyColumnOfThisStep(const ActionsDAG::Node * node) const
 {
-    return node->result_name == join_dummy_result_name && JoinActionRef(node, expression_actions).fromNone();
+    return isDummyResultColumn(*node) && JoinActionRef(node, expression_actions).fromNone();
 }
 
 JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_)
@@ -1031,7 +1036,7 @@ static void preferNullableRightKey(
 }
 
 /// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
-/// of the nested type. NULL matches NULL through the `isNull` key, and the value key is not nullable, so the join skips
+/// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
 /// no row for it, and a fixed-width key stays fixed-width instead of being serialized in a tuple.
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
@@ -1152,11 +1157,10 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         {
             auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
             auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
-            /// The value key goes first: merge joins skip runs of rows only by the first key, and `isNull` is constant on non-NULL rows.
-            table_join_clause.addKey(lhs_value.getColumnName(), rhs_value.getColumnName(), /*null_safe_comparison=*/ false);
-            used_expressions.insert(used_expressions.end(), {lhs_value, rhs_value});
-            lhs = std::move(lhs_null);
-            rhs = std::move(rhs_null);
+            table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
+            used_expressions.insert(used_expressions.end(), {lhs_null, rhs_null});
+            lhs = std::move(lhs_value);
+            rhs = std::move(rhs_value);
             null_safe_comparison = false;
         }
         else if (null_safe_nullable)
@@ -1832,6 +1836,7 @@ static void constructPhysicalStep(
         join_settings.min_joined_block_size_bytes,
         optimization_settings.max_threads,
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
+        false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
     join_step->setLogicalJoinInfo(std::move(logical_join_info));
     join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
@@ -2054,8 +2059,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
-            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
-            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+            const QueryPlanOptimizations::RelationStatsOptions stats_options{
+                .find_single_node_read = &optimization_settings.find_single_node_read};
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0], stats_options).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1], stats_options).column_stats;
         }
     }
 

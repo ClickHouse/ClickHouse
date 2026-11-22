@@ -251,7 +251,6 @@ struct JoinAlgorithmParams
     UInt64 max_entries_for_hash_table_stats;
 
     UInt64 parallel_hash_join_threshold;
-    HashJoinLayout hash_join_layout;
 
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
@@ -303,7 +302,5 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     const JoinNode & join_node);
 
 QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
-
-void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join);
 
 }

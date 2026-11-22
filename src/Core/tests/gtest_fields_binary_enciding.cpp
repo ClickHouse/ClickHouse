@@ -1,14 +1,16 @@
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 #include <Common/FieldBinaryEncoding.h>
-#include <Common/FieldVisitorWriteBinary.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 using namespace DB;
 
 namespace DB::ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -21,15 +23,6 @@ static void check(const Field & field)
     Field decoded_field = decodeField(istr);
     ASSERT_TRUE(istr.eof());
     ASSERT_EQ(field, decoded_field);
-}
-
-static void checkWriteBinarySize(const Field & field)
-{
-    String serialized;
-    WriteBufferFromString out(serialized);
-    writeFieldBinary(field, out);
-    out.finalize();
-    ASSERT_EQ(getFieldBinarySize(field), serialized.size());
 }
 
 GTEST_TEST(FieldBinaryEncoding, EncodeAndDecode)
@@ -73,33 +66,28 @@ GTEST_TEST(FieldBinaryEncoding, EncodeAndDecode)
     }));
 }
 
-GTEST_TEST(FieldBinaryEncoding, WriteBinarySize)
+
+
+/// A binary-encoded `Decimal` whose scale exceeds the type's maximum precision must be rejected by
+/// `decodeField`, not run on to the decimal text writer with an oversized scale. The scale is
+/// attacker-controlled wire data (an `AggregateFunction` type parameter or a `Dynamic` value carries
+/// its own binary-encoded `Field`). The bytes are hand-built because the encoder cannot produce an
+/// out-of-range scale.
+GTEST_TEST(FieldBinaryEncoding, DecodeDecimalOutOfRangeScaleThrows)
 {
-    checkWriteBinarySize(Null());
-    checkWriteBinarySize(true);
-    checkWriteBinarySize(UInt64(42));
-    checkWriteBinarySize(Int64(-42));
-    checkWriteBinarySize(UInt128(42));
-    checkWriteBinarySize(Int128(-42));
-    checkWriteBinarySize(UInt256(42));
-    checkWriteBinarySize(Int256(-42));
-    checkWriteBinarySize(UUID(42));
-    checkWriteBinarySize(IPv4(42));
-    checkWriteBinarySize(IPv6(42));
-    checkWriteBinarySize(Float64(42.42));
-    checkWriteBinarySize(String("Hello, World!"));
-    checkWriteBinarySize(NumberLiteral("123456789012345678901234567890"));
-    checkWriteBinarySize(Array({Field(UInt64(42)), Field(UInt64(43))}));
-    checkWriteBinarySize(Tuple({Field(UInt64(42)), Field(Null()), Field(UUID(42)), Field(String("Hello, World!"))}));
-    checkWriteBinarySize(Map({Tuple{Field(UInt64(42)), Field(String("str_42"))}, Tuple{Field(UInt64(43)), Field(String("str_43"))}}));
-    checkWriteBinarySize(Object({{String("key_1"), Field(UInt64(42))}, {String("key_2"), Field(UInt64(43))}}));
-    checkWriteBinarySize(DecimalField<Decimal32>(4242, 3));
-    checkWriteBinarySize(DecimalField<Decimal64>(4242, 3));
-    checkWriteBinarySize(DecimalField<Decimal128>(Int128(4242), 3));
-    checkWriteBinarySize(DecimalField<Decimal256>(Int256(4242), 3));
-    checkWriteBinarySize(AggregateFunctionStateData{.name="some_name", .data="some_data"});
-    checkWriteBinarySize(Array({
-        Tuple({Field(UInt64(42)), Map({Tuple{Field(UInt64(42)), Field(String("str_42"))}, Tuple{Field(UInt64(43)), Field(String("str_43"))}}), Field(UUID(42)), Field(String("Hello, World!"))}),
-        Tuple({Field(UInt64(43)), Map({Tuple{Field(UInt64(43)), Field(String("str_43"))}, Tuple{Field(UInt64(44)), Field(String("str_44"))}}), Field(UUID(43)), Field(String("Hello, World 2!"))})
-    }));
+    WriteBufferFromOwnString ostr;
+    writeBinary(UInt8(0x09), ostr);   /// FieldBinaryTypeIndex::Decimal64
+    writeVarUInt(UInt32(1000), ostr); /// scale far above max_precision<Decimal64> = 18
+    writeBinaryLittleEndian(Int64(4242), ostr);
+
+    ReadBufferFromString istr(ostr.str());
+    try
+    {
+        decodeField(istr);
+        FAIL() << "expected ARGUMENT_OUT_OF_BOUND";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 }

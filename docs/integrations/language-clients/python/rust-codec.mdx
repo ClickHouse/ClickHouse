@@ -21,7 +21,7 @@ pip install "clickhouse-connect[rust,numpy]"   # NumPy results
 pip install "clickhouse-connect[rust,pandas]"  # Pandas results and inserts
 ```
 
-Core wheels are published for CPython 3.10 through 3.15 and free-threaded CPython 3.14t and 3.15t on Linux, macOS, and Windows. On free-threaded Python, importing the core extension doesn't re-enable the GIL.
+Core wheels are published for CPython 3.10 through 3.14 and free-threaded CPython 3.14t on Linux, macOS, and Windows. On free-threaded Python, importing the core extension doesn't re-enable the GIL.
 
 Ordinary Rust NumPy and Pandas output doesn't require PyArrow or any other Arrow package. This includes `query_np`, `query_df`, their streaming variants, and `query(..., use_numpy=True)`. NumPy queries don't require Pandas. Add the `async` extra for the async client.
 
@@ -87,8 +87,6 @@ Fallback decisions are made before any bytes are read or sent, so there is never
 
 When `naive_datetime_insert="server"` is active, `rust` routes an insert containing any `DateTime` or `DateTime64` column to the Python codec so the declared column timezone or server timezone is applied. `rust_strict` rejects that combination. The default `naive_datetime_insert="local"` mode continues to use the Rust encoder.
 
-Python row and column queries (`query`, `query_row_block_stream`, `query_column_block_stream`, and `query_rows_stream`) whose timezone-less `DateTime` or `DateTime64` columns render in a non-UTC ambient timezone, the server timezone or the local timezone, use the Rust codec when the installed core supports it. The values match the Python codec. The local timezone qualifies only when it resolves to an IANA name, meaning `TZ` is set or `tzlocal` is installed. Otherwise it is a fixed offset without an IANA name and routes to the Python codec. NumPy and Pandas queries (`query_np`, `query_df`, and their streaming variants) with a non-UTC ambient timezone, as well as queries that set `query_tz`, `column_tzs`, a non-default `tz_mode`, or receive a server timezone header, still route to the Python codec. `rust_strict` rejects those cases.
-
 Driver-internal metadata queries, including SQLAlchemy dialect reflection statements, always use the Python codec, silently, in every mode.
 
 Malformed Native payloads detected by the Rust codec raise `DataError`.
@@ -103,8 +101,6 @@ pip install --upgrade clickhouse-connect-core
 
 Fixes and performance improvements in the compiled codec ship as `clickhouse-connect-core` releases and can be picked up with a compatible core wheel upgrade. Changes to the driver's Rust integration require a `clickhouse-connect` upgrade.
 
-Rust support for Python row and column queries in non-UTC ambient timezones requires `clickhouse-connect>=1.11.0` and `clickhouse-connect-core>=0.2.3`. Upgrade both packages to enable it. Older compatible cores retain the existing Python fallback in `rust` mode and rejection in `rust_strict` mode.
-
 ## Known behavior differences {#known-behavior-differences}
 
 The Rust codec targets cell for cell parity with the Python codec. The following differences are known.
@@ -113,6 +109,7 @@ The Rust codec targets cell for cell parity with the Python codec. The following
 - `Dynamic` values that contain `Time64` materialize as `datetime.timedelta` in Rust `query_np` and `query_df` results. At scales 0, 3, 6, and 9 the values equal the Python codec's `numpy.timedelta64` cells, but the cell types differ. At other scales the Rust codec returns `datetime.timedelta` while the Python codec raises `ProgrammingError` because NumPy has no matching unit. Dynamic member metadata is not exposed to the driver after Rust decoding, so use `native_codec="python"` when NumPy cell types or unsupported-scale validation are required.
 - For `query_df`, the Python codec may stringify compound values stored in JSON shared data. The Rust codec returns decoded objects, matching both codecs' `query_np` results.
 - A `LowCardinality` alternative inside a container that materializes per cell, such as `Array(Variant(...))`, produces value-equal cells that do not share the per-dictionary-slot object identity the Python codec exhibits.
+- `Nullable(Tuple(...))` columns with one or more elements decode correctly on the Rust codec. The Python codec misreads this layout and the Rust result is the reference behavior. Both codecs support `Nullable(Tuple())`.
 - `rust_strict` rejects query options the Rust path does not implement, such as custom per-query `query_formats`, rather than silently changing behavior.
 - Rust insert conversion and validation errors can raise `DataError` where the Python codec raises `ValueError`, and the message text can differ. Examples include invalid `Time` and `Time64` values, IPv6 addresses, QBit dimensions, `FixedString` lengths, `Float64` strings, and attempts to insert elements into a `Tuple()` column.
 - The Rust encoder rejects `b""` for `FixedString(N)` and numeric strings such as `"2"` for integer columns. The Python codec zero-fills an empty `FixedString` value and coerces numeric strings.

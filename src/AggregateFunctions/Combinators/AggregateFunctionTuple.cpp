@@ -425,34 +425,6 @@ bool AggregateFunctionTuple::isAbleToParallelizeMerge() const
     return false;
 }
 
-size_t AggregateFunctionTuple::getEstimatedMergeWork(ConstAggregateDataPtr place) const
-{
-    size_t work = 0;
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-        work += nested_functions[i]->getEstimatedMergeWork(place + state_offsets[i]);
-    return work;
-}
-
-size_t AggregateFunctionTuple::getStateBytesPerDistinctInput() const
-{
-    /// Every nested function receives each row once, and distinct tuples bound the distinct inputs
-    /// of each element from above, so the sum is a conservative estimate.
-    size_t bytes = 0;
-    for (const auto & func : nested_functions)
-        bytes += func->getStateBytesPerDistinctInput();
-    return bytes;
-}
-
-bool AggregateFunctionTuple::isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
-{
-    /// The whole tuple state is deferred as one unit (the deferred pointers are later passed to
-    /// `parallelizeMergeMulti` of this function), so it is large as soon as one nested pair is.
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-        if (nested_functions[i]->isLargeMergePair(place + state_offsets[i], rhs + state_offsets[i]))
-            return true;
-    return false;
-}
-
 bool AggregateFunctionTuple::canOptimizeEqualKeysRanges() const
 {
     for (const auto & func : nested_functions)
@@ -543,9 +515,20 @@ void AggregateFunctionTuple::mergeAndDestroyBatch(
     std::atomic<bool> & is_cancelled,
     Arena * arena) const
 {
-    for (size_t i = 0; i < nested_functions.size(); ++i)
-        nested_functions[i]->mergeAndDestroyBatch(
-            dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    size_t i = 0;
+    try
+    {
+        for (; i < nested_functions.size(); ++i)
+            nested_functions[i]->mergeAndDestroyBatch(
+                dst_places, rhs_places, size, offset + state_offsets[i], thread_pool, is_cancelled, arena);
+    }
+    catch (...)
+    {
+        /// The function that threw has destroyed its own states of the batch, the following ones are untouched.
+        for (size_t k = i + 1; k < nested_functions.size(); ++k)
+            nested_functions[k]->destroyBatch(0, size, rhs_places, offset + state_offsets[k]);
+        throw;
+    }
 }
 
 void AggregateFunctionTuple::serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const

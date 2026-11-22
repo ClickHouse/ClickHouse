@@ -41,6 +41,9 @@ struct PaimonPersistentComponents
     /// or live on different storage backends never collide in cache.
     const String table_cache_key_prefix;
 
+    /// Optional: partition default value from table options
+    const String partition_default_name;
+
     /// Whether incremental read is enabled
     const bool incremental_read_enabled;
 
@@ -52,9 +55,6 @@ struct PaimonPersistentComponents
     /// schema-0 will have a different timeMillis.
     const Int64 schema0_time_millis;
 
-    /// Controlled by paimon_incremental_read_append_overwrite setting
-    const bool incremental_read_append_overwrite;
-
     PaimonPersistentComponents(
         PaimonSchemaProcessorPtr schema_processor_,
         PaimonMetadataFilesCachePtr metadata_cache_,  /// Can be nullptr if cache is disabled
@@ -62,20 +62,20 @@ struct PaimonPersistentComponents
         String table_location_,
         String table_path_,
         String table_cache_key_prefix_,
+        String partition_default_name_ = "__DEFAULT_PARTITION__",
         bool incremental_read_enabled_ = false,
         Int64 metadata_refresh_interval_sec_ = 0,
-        Int64 schema0_time_millis_ = 0,
-        bool incremental_read_append_overwrite_ = false)
+        Int64 schema0_time_millis_ = 0)
         : schema_processor(std::move(schema_processor_))
         , metadata_cache(std::move(metadata_cache_))
         , stream_state(std::move(stream_state_))
         , table_location(std::move(table_location_))
         , table_path(std::move(table_path_))
         , table_cache_key_prefix(std::move(table_cache_key_prefix_))
+        , partition_default_name(std::move(partition_default_name_))
         , incremental_read_enabled(incremental_read_enabled_)
         , metadata_refresh_interval_sec(metadata_refresh_interval_sec_)
         , schema0_time_millis(schema0_time_millis_)
-        , incremental_read_append_overwrite(incremental_read_append_overwrite_)
     {
     }
 

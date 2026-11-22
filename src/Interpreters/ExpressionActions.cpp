@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -22,6 +21,7 @@
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Storages/ColumnSize.h>
 
 
 #if defined(MEMORY_SANITIZER)
@@ -809,7 +809,7 @@ namespace
     {
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
-        VectorWithMemoryTracking<ssize_t> inputs_pos = {};
+        std::vector<ssize_t> inputs_pos = {};
         size_t num_rows = 0;
     };
 }
@@ -1093,9 +1093,9 @@ void ExpressionActions::execute(
     num_rows = execution_context.num_rows;
 }
 
-VectorWithMemoryTracking<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
+std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
 {
-    VectorWithMemoryTracking<ssize_t> inputs_pos(required_columns.size(), -1);
+    std::vector<ssize_t> inputs_pos(required_columns.size(), -1);
 
     for (size_t pos = 0; pos < header.columns(); ++pos)
     {
@@ -1119,7 +1119,7 @@ VectorWithMemoryTracking<ssize_t> ExpressionActions::getInputPositions(const Blo
 Columns ExpressionActions::executeOnColumns(
     Columns columns,
     const Block & header,
-    const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
+    const std::vector<ssize_t> & input_positions_for_header,
     size_t & num_rows,
     bool dry_run,
     const std::atomic<bool> * is_cancelled) const
@@ -1252,6 +1252,34 @@ NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & c
 
     if (!min_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No available columns");
+
+    return result;
+}
+
+NameAndTypePair ExpressionActions::getCheapestColumnToRead(
+    const NamesAndTypesList & columns, const std::unordered_map<std::string, ColumnSize> & column_sizes, bool skip_subcolumns)
+{
+    std::optional<std::tuple<size_t, size_t, size_t>> min_cost;
+    NameAndTypePair result;
+
+    for (const auto & column : columns)
+    {
+        auto it = column_sizes.find(column.name);
+        if (it == column_sizes.end())
+            continue;
+
+        size_t type_size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
+        std::tuple<size_t, size_t, size_t> cost{it->second.data_compressed, type_size, it->second.data_uncompressed};
+
+        if (!min_cost || cost < *min_cost)
+        {
+            min_cost = cost;
+            result = column;
+        }
+    }
+
+    if (!min_cost)
+        return getSmallestColumn(columns, skip_subcolumns);
 
     return result;
 }
