@@ -3533,7 +3533,8 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
             remaining_rows = max_rows;
             for (size_t i = 0; i < group_plans.size(); ++i)
             {
-                auto united = Set::tryUniteReadyFixedWidthSets(source_sets[i], group_plans[i].header, remaining_rows);
+                auto united = Set::tryUniteReadyFixedWidthSets(
+                    source_sets[i], group_plans[i].header, remaining_rows, max_set_rows, max_set_bytes);
                 if (!united)
                     return {};
                 if ((max_set_rows && united->getTotalRowCount() > max_set_rows)
@@ -3699,7 +3700,7 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
                 remaining_bytes -= rows * key_bytes;
                 sets.push_back(std::move(set));
             }
-            auto union_set = Set::tryUniteReadyFixedWidthSets(sets, header, max_rows);
+            auto union_set = Set::tryUniteReadyFixedWidthSets(sets, header, max_rows, max_set_rows, max_set_bytes);
             if (!union_set)
                 return {};
             if ((max_set_rows && union_set->getTotalRowCount() > max_set_rows)

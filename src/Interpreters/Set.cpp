@@ -419,7 +419,9 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
     std::span<const std::shared_ptr<Set>> sets,
     const ColumnsWithTypeAndName & header,
-    size_t max_rows)
+    size_t max_rows,
+    size_t max_result_rows,
+    size_t max_result_bytes)
 {
     if (sets.empty() || !sets.front() || !max_rows || header.empty())
         return {};
@@ -507,10 +509,24 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
         input_rows += rows;
     }
 
+    /// Assume all source keys are distinct. Overlapping sources may be rejected conservatively.
+    if (max_result_rows && input_rows > max_result_rows)
+        return {};
+
     auto united = std::make_shared<Set>(SizeLimits(max_rows, 0, OverflowMode::THROW), 0, first.transform_null_in);
     united->setHeader(tuple_header.empty() ? header : tuple_header);
     if (united->data->type != expected_type || united->key_sizes != expected_key_sizes)
         return {};
+
+    if (max_result_bytes)
+    {
+        /// The fixed-width methods store keys in the hash-table buffer. The growth estimate
+        /// includes the old and new buffers simultaneously during a rehash.
+        const size_t initial_bytes = united->data->getTotalByteCount();
+        if (initial_bytes > max_result_bytes
+            || united->data->estimateGrowthMemory({}, 0, input_rows) > max_result_bytes - initial_bytes)
+            return {};
+    }
 
     const auto copy_keys = [&](auto member)
     {

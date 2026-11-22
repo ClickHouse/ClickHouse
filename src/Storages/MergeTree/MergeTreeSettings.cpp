@@ -716,8 +716,9 @@ identical physical, expression and `Set` types. Other predicates retain their
 original execution. Finite background limits are respected.
 Literal `Set`s are not united with finite background `Set` or temporary-column
 limits. Ready subquery `Set`s may be united after their original build steps
-finish if the resulting `Set` fits the finite row and byte limits and both
-the original and replacement expressions fit the temporary-column limits.
+finish if a conservative source-row and hash-table growth check fits the
+finite row and byte limits and both the original and replacement expressions
+fit the temporary-column limits.
 The affected-row precheck admits literal `Set`s. The part rewrite also admits
 compatible in-memory subquery `Set`s after their original build steps finish.
 The precheck also requires complete explicit Set elements within any finite

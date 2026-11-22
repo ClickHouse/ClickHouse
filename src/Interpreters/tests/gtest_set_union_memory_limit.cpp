@@ -107,12 +107,19 @@ TEST(SetMemoryLimit, ReadyUnionReleasesMemoryAfterLimitException)
     int exception_code = 0;
     try
     {
-        (void)Set::tryUniteReadyFixedWidthSets(sources, header, 2 * rows_per_source);
+        (void)Set::tryUniteReadyFixedWidthSets(sources, header, 2 * rows_per_source, 0, 0);
     }
     catch (const Exception & exception)
     {
         exception_code = exception.code();
     }
+
+    /// Each source fits these limits, but copying their disjoint union would exceed them.
+    /// The same tight memory cap must not turn either bounded rejection into an exception.
+    EXPECT_EQ(Set::tryUniteReadyFixedWidthSets(
+        sources, header, 2 * rows_per_source, rows_per_source, 0), nullptr);
+    EXPECT_EQ(Set::tryUniteReadyFixedWidthSets(
+        sources, header, 2 * rows_per_source, 0, sources[0]->getTotalByteCount()), nullptr);
 
     tracker.setHardLimit(saved_hard_limit);
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_alloc_to_throw);
@@ -128,7 +135,7 @@ TEST(SetMemoryLimit, ReadyUnionReleasesMemoryAfterLimitException)
     expectMembership(*sources[0], type, {1, 1, 0, 0, 0});
     expectMembership(*sources[1], type, {0, 0, 1, 1, 0});
 
-    auto united = Set::tryUniteReadyFixedWidthSets(sources, header, 2 * rows_per_source);
+    auto united = Set::tryUniteReadyFixedWidthSets(sources, header, 2 * rows_per_source, 0, 0);
     ASSERT_NE(united, nullptr);
     EXPECT_EQ(united->getTotalRowCount(), 2 * rows_per_source);
     expectMembership(*united, type, {1, 1, 1, 1, 0});
@@ -162,10 +169,10 @@ TEST(SetMemoryLimit, ReadyUnionCopiesSpillCapableSetUntilItSpills)
     ASSERT_GE(source->getTotalByteCount(), spill_threshold);
 
     const std::array sources{source};
-    auto united = Set::tryUniteReadyFixedWidthSets(sources, header, rows_per_source);
+    auto united = Set::tryUniteReadyFixedWidthSets(sources, header, rows_per_source, 0, 0);
     ASSERT_NE(united, nullptr);
     expectMembership(*united, type, {1, 1, 0, 0, 0});
 
     EXPECT_GT(source->spill(1), 0);
-    EXPECT_EQ(Set::tryUniteReadyFixedWidthSets(sources, header, rows_per_source), nullptr);
+    EXPECT_EQ(Set::tryUniteReadyFixedWidthSets(sources, header, rows_per_source, 0, 0), nullptr);
 }
