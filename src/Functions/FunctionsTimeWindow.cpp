@@ -147,9 +147,9 @@ public:
 
     /// The bounds of a hopping window are non-decreasing in the time: the end is the start of the hop interval plus the hop,
     /// and the start is the end minus the window. The `hop` tuple is then non-decreasing in lexicographic order.
-    bool hasInformationAboutMonotonicity() const override { return type == HOP || type == HOP_START || type == HOP_END; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return type == HOP || type == HOP_START || type == HOP_END; }
 
-    Monotonicity getMonotonicityForRange(const IDataType & argument_type, const Field &, const Field &) const override
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType & argument_type, const Field &, const Field &) const override
     {
         /// `hopStart(window)` and `hopEnd(window)` only extract an element of a window tuple.
         if (isTuple(argument_type))
