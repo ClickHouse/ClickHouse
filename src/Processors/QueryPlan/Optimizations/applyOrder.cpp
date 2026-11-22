@@ -50,22 +50,31 @@ struct SortingProperty
     EquivalenceClasses<String> equivalences = {};
 };
 
-/// Maps the equivalences through `dag`. A sort column that `dag` does not pass on unchanged is replaced first by an
-/// equal column that it does, so the order survives `applyActionsToSortDescription`, which follows the sort column.
-static void applyActionsToEquivalences(SortingProperty & property, const ActionsDAG & dag, const ActionsDAG::Node * output_to_skip)
+/// Maps the property through `dag`. Where the sort description is cut at a column that `dag` does not carry, the
+/// columns from there on are replaced by equal columns that `dag` passes on unchanged, if that keeps more of it.
+static void applyActionsToProperty(SortingProperty & property, const ActionsDAG & dag, const ActionsDAG::Node * output_to_skip)
 {
+    auto substituted = property.sort_description;
+    applyActionsToSortDescription(property.sort_description, dag, output_to_skip);
     if (property.equivalences.getMemberToClassMap().empty())
         return;
 
     auto identity_outputs = identityOutputNames(dag, output_to_skip);
-    for (auto & column : property.sort_description)
+    if (property.sort_description.size() < substituted.size())
     {
-        if (identity_outputs.contains(column.column_name))
-            continue;
-        if (auto equal = property.equivalences.getClass(column.column_name))
-            if (auto it = std::ranges::find_if(*equal, [&](const String & member) { return identity_outputs.contains(member); });
-                it != equal->end())
-                column.column_name = *it;
+        for (size_t i = property.sort_description.size(); i < substituted.size(); ++i)
+        {
+            auto & column = substituted[i];
+            if (identity_outputs.contains(column.column_name))
+                continue;
+            if (auto equal = property.equivalences.getClass(column.column_name))
+                if (auto it = std::ranges::find_if(*equal, [&](const String & member) { return identity_outputs.contains(member); });
+                    it != equal->end())
+                    column.column_name = *it;
+        }
+        applyActionsToSortDescription(substituted, dag, output_to_skip);
+        if (substituted.size() > property.sort_description.size())
+            property.sort_description = std::move(substituted);
     }
     property.equivalences = remapEquivalences(property.equivalences, identity_outputs);
 }
@@ -367,8 +376,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
     if (auto * expression_step = typeid_cast<ExpressionStep *>(parent->step.get()))
     {
-        applyActionsToEquivalences(*properties, expression_step->getExpression(), nullptr);
-        applyActionsToSortDescription(properties->sort_description, expression_step->getExpression());
+        applyActionsToProperty(*properties, expression_step->getExpression(), nullptr);
         return std::move(*properties);
     }
 
@@ -386,8 +394,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
                     expr.dumpDAG());
         }
 
-        applyActionsToEquivalences(*properties, expr, out_to_skip);
-        applyActionsToSortDescription(properties->sort_description, expr, out_to_skip);
+        applyActionsToProperty(*properties, expr, out_to_skip);
         return std::move(*properties);
     }
 

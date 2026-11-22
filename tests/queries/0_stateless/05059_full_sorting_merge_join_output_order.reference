@@ -60,6 +60,8 @@ inner subquery function of key plan	0	4
 left subquery other side plan	1	5
 inner both keys order by plan	0	3
 inner both keys order by result	1400	1
+inner monotonic function of key order by plan	0	3
+inner monotonic function of key order by result	1400	1
 inner chain both keys	1804	1299992	696896	445864	696896
 inner chain both keys	1804	1299992	696896	445864	696896
 inner chain both keys	1804	1299992	696896	445864	696896

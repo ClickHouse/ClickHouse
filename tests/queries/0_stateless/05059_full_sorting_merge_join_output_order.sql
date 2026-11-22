@@ -300,6 +300,15 @@ FROM (EXPLAIN PLAN sorting = 1
 WITH (SELECT groupArray((id, aid, v)) FROM (SELECT b.id AS id, a.id AS aid, a.v AS v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY b.id, a.v)) AS rows
 SELECT 'inner both keys order by result', length(rows), rows = arraySort(rows);
 
+-- A column that an expression keeps only through a monotonic function stays sorted that way, also when an equal
+-- column passes through unchanged.
+SELECT 'inner monotonic function of key order by plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT b.id FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY intDiv(a.id, 10));
+
+WITH (SELECT groupArray(intDiv(id, 10)) FROM (SELECT b.id AS id FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY intDiv(a.id, 10))) AS rows
+SELECT 'inner monotonic function of key order by result', length(rows), rows = arraySort(rows);
+
 SELECT 'inner chain both keys', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
 FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
 INNER JOIN fsmj_order_b AS d ON a.id = d.id
