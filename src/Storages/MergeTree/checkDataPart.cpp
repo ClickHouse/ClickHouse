@@ -383,8 +383,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         /// An existing but empty `checksums.txt` (left by an interrupted repair) lists nothing, the same
         /// as an absent one, unless the caller requires the checksums. `IMergeTreeDataPart::loadChecksums`
         /// relies on it to recalculate the checksums of such a part without removing the file first:
-        /// a node that may not write to shared storage (see `MergeTreeData::mayMutateSharedStorage`)
-        /// has to leave the file in place.
+        /// under `leader_election` a part that is being loaded leaves the file in place.
         if (require_checksums || !buf->eof())
         {
             checksums_txt.read(*buf);

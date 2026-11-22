@@ -918,12 +918,14 @@ public:
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
     /// Whether this node may currently write to the (possibly shared) storage that backs the
-    /// parts — repairing `checksums.txt`/`columns.txt`, removing duplicate parts, detaching
-    /// broken parts, and persisting removal TIDs during loading and refresh. A standalone table
+    /// parts — removing duplicate parts, detaching broken parts, and persisting removal TIDs
+    /// during loading and refresh. A standalone table
     /// owns its data outright and always may. `StorageMergeTree` with `leader_election` overrides
     /// this to allow such writes only while the lease is held, so that a follower (or a node that
     /// has not yet acquired the lease) loads and refreshes its part view strictly read-only and
     /// never mutates shared object-storage metadata owned by the current leader.
+    /// A part does not repair its own `checksums.txt` / `columns.txt` while it is loaded under
+    /// `leader_election` at all, whoever holds the lease: see `IMergeTreeDataPart::loadChecksums`.
     virtual bool mayMutateSharedStorage() const { return true; }
 
     /// Re-check, immediately before an irreversible rename that publishes a part under its

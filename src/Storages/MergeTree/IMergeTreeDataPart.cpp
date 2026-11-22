@@ -2758,11 +2758,15 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         /// Drop an empty checksums.txt before it is rewritten below. Any leftover .tmp from an
         /// interrupted rewrite is skipped by checkDataPart.
-        /// Under `leader_election`, a follower (or a node that has not acquired the lease yet) must
-        /// not remove the file from shared object storage owned by the current leader, the same as
-        /// it must not write it below. `checkDataPart` ignores an empty checksums.txt when the
-        /// checksums are not required, so the file can stay in place; the leader repairs it.
-        if (buf && !getDataPartStorage().isReadonly() && storage.mayMutateSharedStorage())
+        /// Under `leader_election` a part does not repair its files while it is loaded, on the leader either.
+        /// The removal and the write below open the directory by its name, and the part may no longer be the
+        /// one that has this name: the load keeps running across the changes of the leadership, so by the
+        /// time this node holds the lease, another leader may have removed the directory and reused its name
+        /// for other data. A check of the lease does not tell that, and the file would end up in the
+        /// directory of another part. `checkDataPart` ignores an empty checksums.txt when the checksums are
+        /// not required, so the file can stay in place, and `checksums.txt` is optional for a part.
+        const bool may_repair_files = !storage.hasLeaderElection();
+        if (buf && !getDataPartStorage().isReadonly() && may_repair_files)
         {
             buf.reset();
             getDataPartStorage().removeFileIfExists("checksums.txt");
@@ -2776,10 +2780,9 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
-        /// Under `leader_election`, a follower must not repair `checksums.txt` on shared object
-        /// storage owned by the current leader. The recomputed `checksums` is still used
-        /// in-memory below; only its persistence is deferred to the leader.
-        if (storage.mayMutateSharedStorage())
+        /// The recomputed `checksums` is used in memory below. Under `leader_election` it is not
+        /// persisted, see above.
+        if (may_repair_files)
             writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
@@ -3163,9 +3166,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
                 "Cannot rebuild columns.txt of part {}: it stores columns [{}], the list rebuilt from the table metadata is [{}]",
                 name, fmt::join(recorded_columns, ", "), fmt::join(loaded_columns.getNames(), ", "));
 
-        /// Same as for `checksums.txt`: a `leader_election` follower must not write `columns.txt`
-        /// to shared object storage owned by the current leader (`mayMutateSharedStorage`).
-        if (!is_readonly_storage && storage.mayMutateSharedStorage())
+        /// Same as for `checksums.txt` in `loadChecksums`: under `leader_election` a part does not repair
+        /// its files while it is loaded, and the rebuilt list is used in memory only.
+        if (!is_readonly_storage && !storage.hasLeaderElection())
             writeColumns(loaded_columns, {});
     }
 

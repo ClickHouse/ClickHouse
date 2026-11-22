@@ -92,11 +92,11 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
         std::lock_guard lock_persisted_metadata{persisted_info_mutex};
         loading_info = readMetadataUnlocked();
         has_tmp_metadata_file = data_part_storage.existsFile(TMP_TXN_VERSION_METADATA_FILE_NAME);
-        /// Under `leader_election`, a follower (or a node that has not acquired the lease yet)
-        /// loads parts read-only: deleting a leftover `txn_version.txt.tmp` would mutate shared
-        /// object storage owned by the current leader. The in-memory rollback handling below is
-        /// unaffected; the on-disk cleanup is left to the lease-holding leader.
-        if (has_tmp_metadata_file && merge_tree_data_part->storage.mayMutateSharedStorage())
+        /// Under `leader_election` a part does not change its files while it is loaded, on the leader
+        /// either (see `IMergeTreeDataPart::loadChecksums`): the removal goes by the name of the directory,
+        /// which another leader may have reused for other data. The in-memory rollback handling below is
+        /// unaffected, and a leftover `txn_version.txt.tmp` stays in place.
+        if (has_tmp_metadata_file && !merge_tree_data_part->storage.hasLeaderElection())
             removeTmpMetadataFile();
     }
 
