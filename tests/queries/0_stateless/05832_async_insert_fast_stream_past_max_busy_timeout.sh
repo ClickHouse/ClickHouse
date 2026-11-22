@@ -28,14 +28,16 @@ for i in {0..29}; do
     sleep 0.15
 done
 
-# Under a slow build, an insert can come more than the maximum after the previous one, and then is flushed at once as the
-# first one after a pause. Only inserts that came soon after the previous one are checked.
+# Every insert after the first two is flushed without batching, or waits for its busy timeout of at least the minimum
+# (after 16 inserts flushed at once), or comes more than the maximum after the previous one under a slow build and then is
+# flushed at once as the first one after a pause. An insert flushed at once by the inserting thread soon after the
+# previous one shows that the stream made the queue shard look idle.
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
-    SELECT countIf(ProfileEvents['AsyncInsertFlushedWithoutBatching'] = 0 AND gap_ms < 1000), count()
+    SELECT countIf(ProfileEvents['AsyncInsertFlushedWithoutBatching'] = 0 AND query_duration_ms < 100 AND gap_ms < 1000), count()
     FROM
     (
-        SELECT query_id, ProfileEvents,
+        SELECT query_id, ProfileEvents, query_duration_ms,
             (toUnixTimestamp64Micro(query_start_time_microseconds) - lagInFrame(toUnixTimestamp64Micro(query_start_time_microseconds))
                 OVER (ORDER BY query_start_time_microseconds ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) / 1000 AS gap_ms
         FROM system.query_log
