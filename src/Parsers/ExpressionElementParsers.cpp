@@ -1528,9 +1528,10 @@ static bool parseNumber(char * buffer, size_t size, bool negative, int base, Fie
     return false;
 }
 
-bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+/// Reads a number literal (with an optional sign, or `inf` / `nan`) at `pos` into `res` and moves `pos` past it.
+/// On failure `pos` can be left past the sign, so the caller restores it.
+static bool readNumberLiteral(IParser::Pos & pos, Field & res, Expected & expected)
 {
-    Pos literal_begin = pos;
     bool negative = false;
 
     if (pos->type == TokenType::Minus)
@@ -1540,8 +1541,6 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (pos->type == TokenType::Plus)  /// Leading plus is simply ignored.
         ++pos;
-
-    Field res;
 
     if (!pos.isValid())
         return false;
@@ -1572,10 +1571,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             res = float_value;
 
-            auto literal = make_intrusive<ASTLiteral>(res);
             ++pos;
-            recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-            node = literal;
 
             return true;
         }
@@ -1634,10 +1630,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             --size;
             if (parseNumber(start_pos, size, negative, 2, res))
             {
-                auto literal = make_intrusive<ASTLiteral>(res);
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-                node = literal;
 
                 return true;
             }
@@ -1651,10 +1644,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             --size;
             if (parseNumber(start_pos, size, negative, 16, res))
             {
-                auto literal = make_intrusive<ASTLiteral>(res);
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-                node = literal;
 
                 return true;
             }
@@ -1669,10 +1659,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             if (parseNumber(start_pos, size, negative, 10, res))
             {
-                auto literal = make_intrusive<ASTLiteral>(res);
                 ++pos;
-                recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-                node = literal;
 
                 return true;
             }
@@ -1680,15 +1667,25 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (parseNumber(start_pos, size, negative, 10, res))
     {
-        auto literal = make_intrusive<ASTLiteral>(res);
         ++pos;
-        recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-        node = literal;
 
         return true;
     }
 
     return try_read_float(buf, buf + buf_size);
+}
+
+bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    Pos literal_begin = pos;
+    Field res;
+    if (!readNumberLiteral(pos, res, expected))
+        return false;
+
+    auto literal = make_intrusive<ASTLiteral>(std::move(res));
+    recordLiteralTokens(literal.get(), literal_begin, pos, expected);
+    node = literal;
+    return true;
 }
 
 
@@ -1716,22 +1713,12 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
-inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str, Expected & expected)
-{
-    auto literal_begin = pos;
-    auto literal = make_intrusive<ASTLiteral>(str);
-    ++pos;
-    recordLiteralTokens(literal.get(), literal_begin, pos, expected);
-    node = literal;
-    return true;
-}
-
-inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, bool hex, size_t word_size, Expected & expected)
+static String decodeHexOrBinStringLiteral(IParser::Pos & pos, bool hex, size_t word_size)
 {
     const char * str_begin = pos->begin + 2;
     const char * str_end = pos->end - 1;
     if (str_begin == str_end)
-        return makeStringLiteral(pos, node, "", expected);
+        return {};
 
     PODArray<UInt8> res;
     res.resize((str_end - str_begin + word_size - 1) / word_size);
@@ -1749,15 +1736,14 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
 
     /// The buffer is sized for the worst case; a binary literal whose length is not a multiple of
     /// eight can write fewer bytes than that, and the unwritten tail is uninitialized memory.
-    return makeStringLiteral(pos, node, String(res_begin, res_pos - res_begin), expected);
+    return String(res_begin, res_pos - res_begin);
 }
 
-bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+/// Reads a string literal at `pos` into `res` and moves `pos` past it. `pos` is left as is on failure.
+static bool readStringLiteral(IParser::Pos & pos, String & res, Expected & expected)
 {
     if (pos->type != TokenType::StringLiteral && pos->type != TokenType::HereDoc)
         return false;
-
-    String s;
 
     if (pos->type == TokenType::StringLiteral)
     {
@@ -1766,24 +1752,30 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         if (first_char == 'x' || first_char == 'X')
         {
             constexpr size_t word_size = 2;
-            return makeHexOrBinStringLiteral(pos, node, true, word_size, expected);
+            res = decodeHexOrBinStringLiteral(pos, true, word_size);
+            ++pos;
+            return true;
         }
 
         if (first_char == 'b' || first_char == 'B')
         {
             constexpr size_t word_size = 8;
-            return makeHexOrBinStringLiteral(pos, node, false, word_size, expected);
+            res = decodeHexOrBinStringLiteral(pos, false, word_size);
+            ++pos;
+            return true;
         }
 
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
         if (first_char == '\xE2' && pos->size() >= 6)
         {
-            return makeStringLiteral(pos, node, String(pos->begin + 3, pos->end - 3), expected);
+            res = String(pos->begin + 3, pos->end - 3);
+            ++pos;
+            return true;
         }
 
         ReadBufferFromMemory in(pos->begin, pos->size());
 
-        if (!tryReadQuotedStringWithSQLStyle(s, in))
+        if (!tryReadQuotedStringWithSQLStyle(res, in))
         {
             expected.add(pos, "string literal");
             return false;
@@ -1800,10 +1792,24 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         std::string_view here_doc(pos->begin, pos->size());
         size_t heredoc_size = here_doc.find('$', 1) + 1;
         chassert(heredoc_size != std::string_view::npos);
-        s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
+        res = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
-    return makeStringLiteral(pos, node, s, expected);
+    ++pos;
+    return true;
+}
+
+bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto literal_begin = pos;
+    String s;
+    if (!readStringLiteral(pos, s, expected))
+        return false;
+
+    auto literal = make_intrusive<ASTLiteral>(std::move(s));
+    recordLiteralTokens(literal.get(), literal_begin, pos, expected);
+    node = literal;
+    return true;
 }
 
 template <typename Collection>
@@ -1831,6 +1837,30 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     ParserLiteral literal_p;
     ParserNumber number_p;
     ParserStringLiteral string_p;
+
+    /// Reads a number or a string straight into the collection, without making a literal for it. Otherwise does what
+    /// `parser.parse` would do: notes the expected token, counts the depth and highlights the value.
+    auto read_value_in_place = [&](const IParser & parser, auto && read)
+    {
+        expected.add(pos, parser.getName());
+        Pos value_begin = pos;
+        pos.increaseDepth();
+        Field value;
+        if (!read(value))
+        {
+            pos = value_begin;
+            return false;
+        }
+        pos.decreaseDepth();
+        if (expected.enable_highlighting)
+        {
+            Pos last_token = pos;
+            --last_token;
+            expected.highlight({value_begin->begin, last_token->end, parser.highlight()});
+        }
+        layers.back().arr.push_back(std::move(value));
+        return true;
+    };
 
     while (pos.isValid())
     {
@@ -1879,16 +1909,26 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         }
 
         /// `ParserLiteral` tries the `NULL` and boolean keywords before these, which need a bare word.
-        ASTPtr literal_node;
         bool parsed = false;
         if (isOneOf<TokenType::Number, TokenType::Minus, TokenType::Plus>(pos->type))
-            parsed = number_p.parse(pos, literal_node, expected);
+            parsed = read_value_in_place(number_p, [&](Field & value) { return readNumberLiteral(pos, value, expected); });
         else if (pos->type == TokenType::StringLiteral)
-            parsed = string_p.parse(pos, literal_node, expected);
+            parsed = read_value_in_place(string_p, [&](Field & value)
+            {
+                String str;
+                if (!readStringLiteral(pos, str, expected))
+                    return false;
+                value = std::move(str);
+                return true;
+            });
 
-        if (parsed || literal_p.parse(pos, literal_node, expected))
+        if (parsed)
+            continue;
+
+        ASTPtr literal_node;
+        if (literal_p.parse(pos, literal_node, expected))
         {
-            layers.back().arr.push_back(literal_node->as<ASTLiteral &>().value);
+            layers.back().arr.push_back(std::move(literal_node->as<ASTLiteral &>().value));
         }
         else if (pos->type == opening_bracket)
         {
