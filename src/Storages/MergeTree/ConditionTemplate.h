@@ -16,7 +16,6 @@ namespace DB
 
 class IMergeTreeDataPart;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-class IMergeTreeDataPartInfoForReader;
 
 /// Class that represents Key or Index condition template.
 template <class Cond>
@@ -29,8 +28,6 @@ class ConditionTemplate
 
     const Cond * lookupSubstituted(const std::string & cache_key) const;
     const Cond & setSubstituted(const std::string & cache_key, Cond && cond) const;
-
-    const Cond & generateForPartition(const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const;
 
 public:
     using Factory = std::function<Cond(const ActionsDAG *, const ActionsDAG::Node *)>;
@@ -48,9 +45,11 @@ public:
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
 
+    /// The filter DAG this template was built from, i.e. the predicates that participated in index analysis.
+    const ActionsDAGWithInversionPushDown * getFilterDAG() const { return dag.get(); }
+
     /// Substitutes partition level constants into dag.
     const Cond & generateForPart(const MergeTreeDataPartPtr & part) const;
-    const Cond & generateForPart(const IMergeTreeDataPartInfoForReader & part_info) const;
 
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);

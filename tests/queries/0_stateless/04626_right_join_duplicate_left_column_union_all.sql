@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 -- These settings force the left-column removal path (canRemoveColumnsFromLeftBlock): a nonzero
 -- external-join threshold treats the join as a possible grace-hash and disables removal, and disabling
