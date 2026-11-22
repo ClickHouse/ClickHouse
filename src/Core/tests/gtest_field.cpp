@@ -1,17 +1,17 @@
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
-#include <limits>
-
 namespace DB::ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_DEEP_RECURSION;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 using namespace DB;
@@ -125,286 +125,6 @@ GTEST_TEST(Field, DeeplyNestedCopyAndDestroyDoesNotOverflowStack)
 }
 
 
-/// Every ordering relation over a nested container agrees with the others and with `operator==`,
-/// including the shorter-prefix and the differing-element-type cases. `operator<=` is covered here
-/// rather than through SQL because no query reaches a `Field`-to-`Field` `<=` today.
-GTEST_TEST(Field, NestedContainerOrdering)
-{
-    /// A comparison that probes both directions per level costs 2^levels, so this stays small: a
-    /// regression must make the arms below fail rather than hang.
-    static constexpr size_t depth = 12;
-
-    auto make_deep = [](UInt64 leaf)
-    {
-        Array a;
-        a.push_back(Field{leaf});
-        for (size_t i = 0; i < depth; ++i)
-        {
-            Array next;
-            next.push_back(Field{std::move(a)});
-            a = std::move(next);
-        }
-        return Field{std::move(a)};
-    };
-
-    const Field one = make_deep(1);
-    const Field one_again = make_deep(1);
-    const Field two = make_deep(2);
-
-    ASSERT_FALSE(one < one_again);
-    ASSERT_TRUE(one <= one_again);
-    ASSERT_FALSE(one > one_again);
-    ASSERT_TRUE(one >= one_again);
-    ASSERT_TRUE(one == one_again);
-
-    ASSERT_TRUE(one < two);
-    ASSERT_TRUE(one <= two);
-    ASSERT_FALSE(two <= one);
-    ASSERT_TRUE(two > one);
-
-    /// A shorter value sorts before a longer one that shares its prefix, and an element of a
-    /// different type is ordered by type tag rather than by value.
-    const Field prefix{Array{one_again}};
-    const Field prefix_plus{Array{one_again, Field{UInt64{0}}}};
-    ASSERT_TRUE(prefix < prefix_plus);
-    ASSERT_FALSE(prefix_plus < prefix);
-    ASSERT_TRUE(Field(Array{Field{Int64{999}}}) < Field(Array{Field{String{"a"}}}));
-
-    /// `Tuple`, `Map` and the `std::map`-backed `Object` share the same element-wise ordering.
-    ASSERT_FALSE(Field(Tuple{one_again}) < Field(Tuple{one}));
-    ASSERT_TRUE(Field(Tuple{one_again}) <= Field(Tuple{one}));
-    ASSERT_FALSE(Field(Map{one_again}) < Field(Map{one}));
-
-    Object lhs;
-    Object rhs;
-    lhs.emplace("k", one_again);
-    rhs.emplace("k", one);
-    ASSERT_FALSE(Field(lhs) < Field(rhs));
-    ASSERT_TRUE(Field(lhs) <= Field(rhs));
-    rhs.emplace("l", Field{UInt64{0}});
-    ASSERT_TRUE(Field(lhs) < Field(rhs));
-    ASSERT_FALSE(Field(rhs) < Field(lhs));
-}
-
-
-namespace
-{
-
-/// A leaf whose ordering is observable, so how many times a comparison visits it can be asserted
-/// directly instead of inferred from how long the comparison takes. `Types::CustomType` is not a
-/// container, so a comparison reaches this impl exactly where it reaches a scalar element.
-struct ProbeCountingLeaf : public CustomType::CustomTypeImpl
-{
-    /// The counter lives outside the impl because a `CustomType` holds it through a
-    /// `shared_ptr<const CustomTypeImpl>`, so the comparison operators are `const`.
-    size_t * probes;
-
-    explicit ProbeCountingLeaf(size_t * probes_) : probes(probes_) { }
-
-    [[nodiscard]] const char * getTypeName() const override { return "ProbeCountingLeaf"; }
-    [[nodiscard]] String toString(bool) const override { return "ProbeCountingLeaf"; }
-    [[nodiscard]] bool isSecret() const override { return false; }
-
-    bool operator < (const CustomTypeImpl &) const override { ++*probes; return false; }
-    bool operator <= (const CustomTypeImpl &) const override { ++*probes; return true; }
-    bool operator > (const CustomTypeImpl &) const override { ++*probes; return false; }
-    bool operator >= (const CustomTypeImpl &) const override { ++*probes; return true; }
-    bool operator == (const CustomTypeImpl &) const override { return true; }
-};
-
-template <typename Compare>
-void expectOrderingThrows(Compare && compare)
-{
-    try
-    {
-        [[maybe_unused]] const bool ignored = compare();
-        ADD_FAILURE() << "ordering a container of aggregate states must throw";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-}
-
-}
-
-
-/// Counting the probes a comparison makes on one leaf pins the linear-visit contract exactly, and
-/// separately per container arm: a one-pass comparison asks the leaf for its order once per
-/// direction at any depth, so nothing here depends on how long a comparison takes.
-GTEST_TEST(Field, DeeplyNestedComparisonProbesEachLeafOnce)
-{
-    /// Small for the same reason as in `NestedContainerOrdering`; the `Map` chain adds a `Map` and a
-    /// `Tuple` level per step, so a doubling comparison costs 2^(2*depth) on that arm.
-    static constexpr size_t depth = 12;
-
-    size_t probes = 0;
-    /// Two impls sharing one counter, so nothing upstream can halve the count by recognising that
-    /// both sides hold the same leaf.
-    const Field leaf_lhs{CustomType{std::make_shared<const ProbeCountingLeaf>(&probes)}};
-    const Field leaf_rhs{CustomType{std::make_shared<const ProbeCountingLeaf>(&probes)}};
-
-    auto check = [&](const char * arm, auto && wrap_once)
-    {
-        Field lhs = leaf_lhs;
-        Field rhs = leaf_rhs;
-        for (size_t i = 0; i < depth; ++i)
-        {
-            lhs = wrap_once(lhs);
-            rhs = wrap_once(rhs);
-        }
-
-        probes = 0;
-        ASSERT_FALSE(lhs < rhs) << arm;
-        ASSERT_EQ(probes, 2u) << arm;
-
-        probes = 0;
-        ASSERT_TRUE(lhs <= rhs) << arm;
-        ASSERT_EQ(probes, 2u) << arm;
-    };
-
-    check("Array", [](const Field & f) { return Field{Array{f}}; });
-    check("Tuple", [](const Field & f) { return Field{Tuple{f}}; });
-    /// A `Map` element is a (key, value) pair, so this chain alternates `Map` and `Tuple` levels.
-    check("Map", [](const Field & f) { return Field{Map{Field{Tuple{Field{UInt64{0}}, f}}}}; });
-    check("Object", [](const Field & f) { Object o; o.emplace("k", f); return Field{o}; });
-}
-
-
-/// Equality and ordering of a container are separate relations: an aggregate-function state
-/// implements equality while its ordering operators throw, so answering one by asking the other
-/// would either break a working query or make a deliberately unordered value orderable.
-GTEST_TEST(Field, ContainerOfAggregateStateComparesForEqualityButNotForOrder)
-{
-    /// Both sides carry the same `name`, because comparing states of two different aggregate
-    /// functions for equality throws for an unrelated reason.
-    auto state = [] { return Field{AggregateFunctionStateData{.name = "sum(UInt64)", .data = "some_state"}}; };
-
-    const Field flat_lhs{Array{state()}};
-    const Field flat_rhs{Array{state()}};
-    const Field nested_lhs{Array{Field{Array{state()}}}};
-    const Field nested_rhs{Array{Field{Array{state()}}}};
-
-    ASSERT_TRUE(flat_lhs == flat_rhs);
-    ASSERT_TRUE(nested_lhs == nested_rhs);
-
-    expectOrderingThrows([&] { return flat_lhs < flat_rhs; });
-    expectOrderingThrows([&] { return flat_lhs <= flat_rhs; });
-    expectOrderingThrows([&] { return nested_lhs < nested_rhs; });
-    expectOrderingThrows([&] { return nested_lhs <= nested_rhs; });
-}
-
-
-GTEST_TEST(Field, CompareFloat64)
-{
-    const Field one{Float64(1.0)};
-    const Field two{Float64(2.0)};
-    const Field one_again{Float64(1.0)};
-
-    ASSERT_TRUE(one < two);
-    ASSERT_FALSE(two < one);
-    ASSERT_FALSE(one < one_again);
-
-    ASSERT_TRUE(one <= two);
-    ASSERT_FALSE(two <= one);
-    ASSERT_TRUE(one <= one_again);
-
-    ASSERT_TRUE(two > one);
-    ASSERT_FALSE(one > two);
-    ASSERT_FALSE(one > one_again);
-
-    ASSERT_TRUE(two >= one);
-    ASSERT_FALSE(one >= two);
-    ASSERT_TRUE(one >= one_again);
-
-    ASSERT_TRUE(one == one_again);
-    ASSERT_FALSE(one == two);
-    ASSERT_TRUE(one != two);
-
-    /// The same for integers, to make sure the Float64 branch is not the odd one out.
-    ASSERT_FALSE(Field(Int64(2)) <= Field(Int64(1)));
-    ASSERT_FALSE(Field(Int64(1)) >= Field(Int64(2)));
-}
-
-
-GTEST_TEST(Field, CompareFloat64NaN)
-{
-    /// NaN is ordered after every number (nan_direction_hint == 1) and is equal to itself.
-    const Field nan{std::numeric_limits<Float64>::quiet_NaN()};
-    const Field nan_again{std::numeric_limits<Float64>::quiet_NaN()};
-    const Field inf{std::numeric_limits<Float64>::infinity()};
-    const Field one{Float64(1.0)};
-
-    ASSERT_TRUE(one < nan);
-    ASSERT_TRUE(inf < nan);
-    ASSERT_FALSE(nan < one);
-    ASSERT_FALSE(nan < nan_again);
-
-    ASSERT_TRUE(one <= nan);
-    ASSERT_FALSE(nan <= one);
-    ASSERT_TRUE(nan <= nan_again);
-
-    ASSERT_TRUE(nan > one);
-    ASSERT_FALSE(one > nan);
-    ASSERT_FALSE(nan > nan_again);
-
-    ASSERT_TRUE(nan >= one);
-    ASSERT_FALSE(one >= nan);
-    ASSERT_TRUE(nan >= nan_again);
-
-    ASSERT_TRUE(nan == nan_again);
-    ASSERT_FALSE(nan == one);
-}
-
-
-GTEST_TEST(Field, CompareDifferentTypes)
-{
-    /// Fields of different types are ordered by Types::Which before any value comparison,
-    /// so values don't matter across types; operator== / != short-circuit on differing Which.
-    const Field i{Int64(999)};   /// Which::Int64 == 2
-    const Field s{String("a")};  /// Which::String == 16
-
-    ASSERT_TRUE(i < s);
-    ASSERT_FALSE(s < i);
-
-    ASSERT_TRUE(i <= s);
-    ASSERT_FALSE(s <= i);
-
-    ASSERT_TRUE(s > i);
-    ASSERT_TRUE(s >= i);
-    ASSERT_FALSE(i >= s);
-
-    ASSERT_FALSE(i == s);
-    ASSERT_TRUE(i != s);
-    ASSERT_FALSE(Field(Int64(1)) == Field(UInt64(1)));  /// same value, different Which
-    ASSERT_TRUE(Field(Int64(1)) != Field(UInt64(1)));
-}
-
-
-GTEST_TEST(Field, CompareUUID)
-{
-    /// UUID is a StrongTypedef<UInt128> with operator< but no operator<=, so the <= / >=
-    /// branches compare toUnderType(); pin that the two forms stay consistent.
-    const Field one{UUID(UInt128(1))};
-    const Field two{UUID(UInt128(2))};
-    const Field one_again{UUID(UInt128(1))};
-
-    ASSERT_TRUE(one < two);
-    ASSERT_FALSE(two < one);
-
-    ASSERT_TRUE(one <= two);
-    ASSERT_FALSE(two <= one);
-    ASSERT_TRUE(one <= one_again);
-
-    ASSERT_TRUE(two >= one);
-    ASSERT_FALSE(one >= two);
-    ASSERT_TRUE(one >= one_again);
-
-    ASSERT_TRUE(one == one_again);
-    ASSERT_FALSE(one == two);
-}
-
-
 /// A malformed binary Field that declares an arbitrarily deep nesting must be rejected with
 /// TOO_DEEP_RECURSION, not run the reader past the stack guard page. The bytes are hand-built
 /// because the write side also bounds depth, so a legitimately serialized value cannot be this deep.
@@ -472,8 +192,9 @@ GTEST_TEST(Field, ReadBinaryDecimalOutOfRangeScaleThrows)
 }
 
 
-/// The text `Field` dump reader `restoreFromDump` shares the out-of-range-scale problem with the
-/// binary reader. The exponent form `Decimal64_'1e-1000'` builds a `DecimalField` with scale 1000 (the
+/// The text `Field` dump reader `restoreFromDump` shares the out-of-range-scale hazard with the
+/// binary reader: it is reachable from the pre-auth native settings path for a `CUSTOM`-flagged
+/// setting. The exponent form `Decimal64_'1e-1000'` builds a `DecimalField` with scale 1000 (the
 /// `e`/`E` branch of `readDigits` bypasses the closing-quote check the plain-fraction form hits),
 /// which an unfixed reader would hand to the decimal text writer. The scale must be rejected.
 GTEST_TEST(Field, RestoreFromDumpDecimalOutOfRangeScaleThrows)
@@ -491,4 +212,77 @@ GTEST_TEST(Field, RestoreFromDumpDecimalOutOfRangeScaleThrows)
     /// An in-range exponent-form scale still round-trips.
     Field restored = Field::restoreFromDump("Decimal64_'1e-5'");
     ASSERT_EQ(restored.safeGet<DecimalField<Decimal64>>().getScale(), 5u);
+}
+
+static void expectRestoreFromDumpError(const std::string & dump, int code)
+{
+    try
+    {
+        Field::restoreFromDump(dump);
+        FAIL() << "expected error " << code << " for " << dump;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), code) << dump;
+    }
+}
+
+GTEST_TEST(Field, RestoreFromDumpDecimalExtremeExponent)
+{
+    /// Negating `INT32_MIN` must not be reached.
+    expectRestoreFromDumpError("Decimal64_'1e-2147483648'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    /// The exponent sum overflows `int32_t` (only digits after the point decrease it).
+    expectRestoreFromDumpError("Decimal64_'0.1e-2147483648'", ErrorCodes::CANNOT_PARSE_NUMBER);
+    /// `scaleMultiplier` saturates beyond the precision, so `1 * max` must not be accepted as the value.
+    expectRestoreFromDumpError("Decimal64_'1e100'", ErrorCodes::DECIMAL_OVERFLOW);
+    expectRestoreFromDumpError("Decimal32_'1e2147483647'", ErrorCodes::DECIMAL_OVERFLOW);
+    expectRestoreFromDumpError("Decimal256_'1e100'", ErrorCodes::DECIMAL_OVERFLOW);
+    /// No digits at all.
+    expectRestoreFromDumpError("Decimal64_'.'", ErrorCodes::CANNOT_PARSE_NUMBER);
+    expectRestoreFromDumpError("Decimal64_'-'", ErrorCodes::CANNOT_PARSE_NUMBER);
+    expectRestoreFromDumpError("Decimal64_''", ErrorCodes::CANNOT_PARSE_NUMBER);
+
+    /// The largest exponents that fit still work, and zero takes any positive exponent.
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'1e18'").safeGet<DecimalField<Decimal64>>().getValue(), Decimal64(1000000000000000000LL));
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'1e-18'").safeGet<DecimalField<Decimal64>>().getScale(), 18u);
+    ASSERT_EQ(Field::restoreFromDump("Decimal64_'0e2147483647'").safeGet<DecimalField<Decimal64>>().getValue(), Decimal64(0));
+}
+
+GTEST_TEST(Field, RestoreFromDumpDecimalMantissaOverflow)
+{
+    /// A mantissa that does not fit the native integer must not wrap (here to zero, skipping the exponent check).
+    expectRestoreFromDumpError("Decimal32_'4294967296e2147483647'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expectRestoreFromDumpError("Decimal64_'18446744073709551616e2147483647'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expectRestoreFromDumpError("Decimal32_'2147483648'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expectRestoreFromDumpError("Decimal128_'170141183460469231731687303715884105728'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    expectRestoreFromDumpError("Decimal256_'-57896044618658097711785492504343953926634992332820282019728792003956564819969'", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    /// The exponent must not wrap the wide types either.
+    expectRestoreFromDumpError("Decimal128_'2e38'", ErrorCodes::DECIMAL_OVERFLOW);
+    expectRestoreFromDumpError("Decimal128_'-18e37'", ErrorCodes::DECIMAL_OVERFLOW);
+    expectRestoreFromDumpError("Decimal256_'6e76'", ErrorCodes::DECIMAL_OVERFLOW);
+    expectRestoreFromDumpError("Decimal256_'-58e75'", ErrorCodes::DECIMAL_OVERFLOW);
+    ASSERT_EQ(Field::restoreFromDump("Decimal128_'17e37'").safeGet<DecimalField<Decimal128>>().getValue(), Decimal128(Int128(17) * DecimalUtils::scaleMultiplier<Int128>(37)));
+    ASSERT_EQ(Field::restoreFromDump("Decimal256_'-57e75'").safeGet<DecimalField<Decimal256>>().getValue().value, Int256(-57) * DecimalUtils::scaleMultiplier<Int256>(75));
+
+    /// The full native range and the scale (trailing zeroes) round-trip through a dump.
+    auto round_trip = []<typename T>(const DecimalField<T> & decimal)
+    {
+        const String dump = Field(decimal).dump();
+        const auto restored = Field::restoreFromDump(dump).safeGet<DecimalField<T>>();
+        EXPECT_EQ(restored.getValue(), decimal.getValue()) << dump;
+        EXPECT_EQ(restored.getScale(), decimal.getScale()) << dump;
+    };
+    round_trip(DecimalField<Decimal32>(std::numeric_limits<Int32>::max(), 0));
+    round_trip(DecimalField<Decimal32>(std::numeric_limits<Int32>::min(), 3));
+    round_trip(DecimalField<Decimal64>(std::numeric_limits<Int64>::max(), 18));
+    round_trip(DecimalField<Decimal64>(std::numeric_limits<Int64>::min(), 0));
+    round_trip(DecimalField<Decimal128>(std::numeric_limits<Int128>::max(), 38));
+    round_trip(DecimalField<Decimal128>(std::numeric_limits<Int128>::min(), 1));
+    round_trip(DecimalField<Decimal256>(std::numeric_limits<Int256>::max(), 0));
+    round_trip(DecimalField<Decimal256>(std::numeric_limits<Int256>::min(), 76));
+    round_trip(DecimalField<Decimal64>(100, 2));
+    round_trip(DecimalField<Decimal64>(100, 1));
+    round_trip(DecimalField<Decimal64>(0, 3));
+    round_trip(DecimalField<Decimal64>(-1000, 18));
 }

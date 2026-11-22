@@ -29,7 +29,7 @@ bool ParserTimeInterval::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parseIntervalKind(pos, expected, kind))
             return false;
 
-        UInt64 val = 0;
+        UInt64 val;
         if (!value->as<ASTLiteral &>().value.tryGet(val))
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Time interval must be an integer");
         intervals.emplace_back(kind, val);

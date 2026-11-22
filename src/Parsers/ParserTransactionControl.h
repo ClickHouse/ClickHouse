@@ -7,9 +7,8 @@ namespace DB
 class ParserTransactionControl : public IParserBase
 {
 public:
-    [[nodiscard]] const char * getName() const override { return "TCL query"; }
+    const char * getName() const override { return "TCL query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    std::map<String, Documentation> getDocumentation() const override;
 };
 
 }

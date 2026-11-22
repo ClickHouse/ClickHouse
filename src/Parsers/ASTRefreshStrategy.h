@@ -4,8 +4,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTimeInterval.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -14,13 +12,6 @@ enum class RefreshScheduleKind : UInt8
     UNKNOWN = 0,
     AFTER,
     EVERY
-};
-
-enum class RefreshMode : UInt8
-{
-    Replace,            /// no APPEND — recompute the whole query and replace the target.
-    AppendFull,         /// APPEND — append the full query result each refresh.
-    AppendIncremental,  /// APPEND INCREMENTAL — append only rows committed to the source since the last refresh.
 };
 
 /// Strategy for MATERIALIZED VIEW ... REFRESH ..
@@ -33,16 +24,11 @@ public:
     ASTTimeInterval * offset = nullptr;
     ASTTimeInterval * spread = nullptr;
     RefreshScheduleKind schedule_kind{RefreshScheduleKind::UNKNOWN};
-    RefreshMode mode = RefreshMode::Replace;
-
-    bool isAppend() const { return mode != RefreshMode::Replace; }
-    bool isIncremental() const { return mode == RefreshMode::AppendIncremental; }
+    bool append = false;
 
     String getID(char) const override { return "Refresh strategy definition"; }
 
     ASTPtr clone() const override;
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;

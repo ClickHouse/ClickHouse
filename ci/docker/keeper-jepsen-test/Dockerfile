@@ -20,12 +20,12 @@ ENV TIME_LIMIT="30"
 ENV NODES_FILE_PATH="/nodes.txt"
 ENV TEST_OUTPUT="/test_output"
 
-RUN mkdir -p "/root/.ssh"
+RUN mkdir "/root/.ssh"
 RUN touch "/root/.ssh/known_hosts"
 
 # install java
 RUN apt-get update && \
-    apt-get install openjdk-21-jdk-headless libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends \
+    apt-get install default-jre default-jdk libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

@@ -11,9 +11,9 @@ struct FieldFromASTImpl : public CustomType::CustomTypeImpl
 
     explicit FieldFromASTImpl(ASTPtr ast_) : ast(ast_) {}
 
-    [[nodiscard]] const char * getTypeName() const override { return name; }
-    [[nodiscard]] String toString(bool show_secrets) const override;
-    [[nodiscard]] bool isSecret() const override;
+    const char * getTypeName() const override { return name; }
+    String toString(bool show_secrets) const override;
+    bool isSecret() const override;
 
     [[noreturn]] void throwNotImplemented(std::string_view method) const;
 
@@ -21,7 +21,7 @@ struct FieldFromASTImpl : public CustomType::CustomTypeImpl
     bool operator <= (const CustomTypeImpl &) const override { throwNotImplemented("<="); }
     bool operator > (const CustomTypeImpl &) const override { throwNotImplemented(">"); }
     bool operator >= (const CustomTypeImpl &) const override { throwNotImplemented(">="); }
-    bool operator == (const CustomTypeImpl & rhs) const override;
+    bool operator == (const CustomTypeImpl &) const override { throwNotImplemented("=="); }
 
     ASTPtr ast;
 };

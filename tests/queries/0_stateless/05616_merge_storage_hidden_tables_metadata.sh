@@ -12,6 +12,7 @@ trivial="apply_patch_parts = 0, apply_mutations_on_fly = 0, optimize_trivial_cou
 ${CLICKHOUSE_CLIENT} --multiline -q "
 DROP USER IF EXISTS ${user};
 DROP USER IF EXISTS ${user2};
+SET allow_experimental_alias_table_engine = 1;
 CREATE TABLE t_visible (id UInt32, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 CREATE TABLE t_hidden (id UInt32, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 CREATE TABLE t_show (id UInt32, s String) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
@@ -59,7 +60,7 @@ SELECT 'a_m', count() FROM a_m SETTINGS ${trivial};
 SELECT 'mm', count() FROM mm SETTINGS ${trivial};
 "
 
-for table in m m_func a_m mm
+for table in m a_m mm
 do
     ${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}" --multiline -q "
     SELECT '${table}', total_rows, total_bytes = (SELECT total_bytes FROM system.tables WHERE database = currentDatabase() AND name = 't_visible')

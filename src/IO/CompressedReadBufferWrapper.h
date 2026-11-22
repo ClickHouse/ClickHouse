@@ -17,17 +17,10 @@ public:
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
     , in(std::move(in_)) {}
 
-    [[nodiscard]] const ReadBuffer & getWrappedReadBuffer() const override { return *in; }
+    const ReadBuffer & getWrappedReadBuffer() const override { return *in; }
     ReadBuffer & getWrappedReadBuffer() { return *in; }
 
     void prefetch(Priority priority) override { in->prefetch(priority); }
-
-    bool poll(size_t timeout_microseconds) override
-    {
-        if (hasPendingData())
-            return true;
-        return in->poll(timeout_microseconds);
-    }
 
 protected:
     std::unique_ptr<ReadBuffer> in;

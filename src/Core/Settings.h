@@ -5,12 +5,9 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
+#include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
-#include <Common/FlatStringMap.h>
 #include <Common/SettingsChanges.h>
-#include <Common/VectorWithMemoryTracking.h>
-
-#include <map>
 
 #include <optional>
 #include <string_view>
@@ -49,11 +46,9 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
-    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
-    M(CLASS_NAME, BoolForce) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
@@ -67,16 +62,12 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
-    M(CLASS_NAME, DoubleAuto) \
     M(CLASS_NAME, EscapingRule) \
-    M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, FloatAuto) \
-    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
-    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
@@ -110,13 +101,9 @@ class WriteBuffer;
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
-    M(CLASS_NAME, SnappyMode) \
-    M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, TextIndexPostingListApplyMode) \
-    M(CLASS_NAME, TextIndexPostingsIntersectionAlgorithm) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \
@@ -128,17 +115,11 @@ class WriteBuffer;
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
-    M(CLASS_NAME, JoinOrderConflictDetector) \
-    M(CLASS_NAME, HashJoinLayout) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
-    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
-    M(CLASS_NAME, UniqueKeyProbeImplementation) \
-    M(CLASS_NAME, SkipUnavailableShardsMode)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
-
 struct Settings
 {
     Settings();
@@ -152,63 +133,33 @@ struct Settings
     COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     /// General API as needed
-    [[nodiscard]] bool has(std::string_view name) const;
-    [[nodiscard]] bool isChanged(std::string_view name) const;
-    [[nodiscard]] SettingsTierType getTier(std::string_view name) const;
-    [[nodiscard]] std::string_view getDescription(std::string_view name) const;
-    [[nodiscard]] std::string_view getTypeName(std::string_view name) const;
-    [[nodiscard]] String getDefaultValueString(std::string_view name) const;
+    bool has(std::string_view name) const;
+    bool isChanged(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
-    [[nodiscard]] Field get(std::string_view name) const;
+    Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
-    /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
-    /// built-in setting. Used to transport query parameters (whose names may match a setting name).
-    void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
-    /// Whether any setting currently holds a value that was set by the `compatibility` setting.
-    [[nodiscard]] bool hasSettingsChangedByCompatibility() const;
+    std::vector<String> getHints(const String & name) const;
+    String toString(bool show_secrets) const;
 
-    /// Reset settings whose value was set only by the `compatibility` setting back to their defaults (and forget
-    /// they were compatibility-derived). Used before transmitting settings so the receiver re-derives them from
-    /// `compatibility` itself instead of being forced to the sender's derived values.
-    void resetSettingsChangedByCompatibility();
-
-    /// Reset to its default every setting whose value was set only by the `compatibility` setting when
-    /// `is_allowed` refuses that value, so that `compatibility` leaves such a setting as it is.
-    void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
-
-    /// Keep the values that the `compatibility` setting derived but clear their `changed` flags (and forget
-    /// they were compatibility-derived). The resulting object still selects e.g. the client-side network codec
-    /// from the derived values, while serialization to a server skips them — the server re-derives them from
-    /// `compatibility` itself and honors its own constraints (e.g. a profile pinning a setting read-only).
-    void markSettingsChangedByCompatibilityAsUnchanged();
-
-    [[nodiscard]] VectorWithMemoryTracking<String> getHints(const String & name) const;
-    [[nodiscard]] String toString(bool show_secrets) const;
-
-    [[nodiscard]] SettingsChanges changes() const;
+    SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
-
-    /// Reject `SET name` with no value unless `name` is a Bool setting - `SET name` stands for
-    /// `SET name = true`. `applyChanges` does this itself; `Context` needs it separately because it
-    /// applies changes through `Context::setSetting`, which only sees a name and a value.
-    void checkShorthandChange(const SettingChange & change) const;
-    void checkShorthandChanges(const SettingsChanges & changes) const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
+    std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
+    std::vector<std::string_view> getChangedAndObsoleteNames() const;
+    std::vector<std::string_view> getUnchangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
     void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
-    [[nodiscard]] FlatStringMap changedToFlatMap(bool show_secrets) const;
+    NameToNameMap toNameToNameMap() const;
 
-    void write(WriteBuffer & out) const;
-    void read(ReadBuffer & in, bool skip_invalid_values = false);
-    /// Equivalent to Settings().write(out) but faster.
+    void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
+    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT, bool skip_invalid_values = false);
+    /// Equivalent to Settings().write(out, <any format>) but faster.
     static void writeEmpty(WriteBuffer & out);
 
     void addToProgramOptions(boost::program_options::options_description & options);
@@ -228,11 +179,4 @@ struct Settings
 private:
     std::unique_ptr<SettingsImpl> impl;
 };
-
-/// Query parameters are transported as raw (name, value) string pairs using the Custom-setting
-/// wire encoding (strings with flags), but bypassing Settings::set/read and
-/// the builtin-setting accessor entirely, so a parameter name colliding with a builtin setting or
-/// alias can never be value-normalized, alias-resolved, or misquoted (issue #85768).
-void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out);
-NameToNameMap readQueryParameters(ReadBuffer & in);
 }

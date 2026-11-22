@@ -1,8 +1,0 @@
-roaring=0 parquet_v3=0:
-7	73	[1,5,7,11,13,17,19]
-roaring=0 parquet_v3=1:
-7	73	[1,5,7,11,13,17,19]
-roaring=1 parquet_v3=0:
-7	73	[1,5,7,11,13,17,19]
-roaring=1 parquet_v3=1:
-7	73	[1,5,7,11,13,17,19]
