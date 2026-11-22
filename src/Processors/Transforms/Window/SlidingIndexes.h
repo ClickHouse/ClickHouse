@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Columns/IColumn_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
+
+#include <Columns/IColumn_fwd.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstdint>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ struct SlidingIndex
 {
     VectorWithMemoryTracking<bool> partition_starts;
     VectorWithMemoryTracking<int64_t> peer_group_indexes;
+    VectorWithMemoryTracking<bool> missing_keys;
 };
 
 class SlidingIndexes
