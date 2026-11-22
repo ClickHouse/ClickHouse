@@ -217,6 +217,9 @@ public:
     /// Different INSERT queries may write in parallel regardless of this value.
     virtual bool supportsParallelInsert() const { return false; }
 
+    /// Whether splitting a single input stream among parallel sinks can change the result.
+    virtual bool isInsertOrderSensitive() const { return false; }
+
     /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
