@@ -35,7 +35,7 @@ ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log, text_log;
     SELECT countIf(gap_ms + query_duration_ms < 1900 AND query_id IN (
             SELECT query_id FROM system.text_log
-            WHERE event_date >= yesterday() AND query_id LIKE '${CLICKHOUSE_DATABASE}\\_%'
+            WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id LIKE '${CLICKHOUSE_DATABASE}\\_%'
                 AND message LIKE 'Scheduling async insert processing job because maximum busy wait timeout exceeded%')),
         count()
     FROM
