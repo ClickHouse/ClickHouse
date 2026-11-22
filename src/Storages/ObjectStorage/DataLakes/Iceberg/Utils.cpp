@@ -1822,6 +1822,20 @@ String getTableDirectoryKey(const IObjectStorage & object_storage, const String 
     return getObjectStorageHash(object_storage) + '\0' + directory + '\0';
 }
 
+/// The part of the latest metadata cache key that says how the lookup chooses the file.
+static String
+getLatestMetadataSelection(bool follows_version_hint, bool by_last_updated_ms, bool v_prefixed_names_only, bool version_hint_scheme)
+{
+    String selection = follows_version_hint ? "version-hint" : "listing";
+    if (by_last_updated_ms)
+        selection += ":last-updated-ms";
+    if (v_prefixed_names_only)
+        selection += ":v-prefixed";
+    if (version_hint_scheme)
+        selection += ":version-hint-scheme";
+    return selection;
+}
+
 template <typename LoadFunc>
 static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
@@ -1869,20 +1883,25 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     bool force_fetch_latest_metadata,
     bool ignore_metadata_pointer_overrides)
 {
+    MostRecentMetadataFileSelectionWay selection_way
+        = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+        ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
+        : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
+    bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+        || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
+
+    const bool list_v_prefixed_names_only = local_context->getSettingsRef()[Setting::iceberg_list_only_v_prefixed_metadata_files]
+        && !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
+        && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+        && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
+
+    const bool reads_version_hint_scheme = !(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        && data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+        && (ignore_metadata_pointer_overrides || !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed);
+
     auto load_fn = [&]()
     {
         auto log = getLogger("IcebergMetadataFileResolver");
-        MostRecentMetadataFileSelectionWay selection_way
-            = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
-            ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
-            : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
-        bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-            || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-
-        const bool list_v_prefixed_names_only = local_context->getSettingsRef()[Setting::iceberg_list_only_v_prefixed_metadata_files]
-            && !ignore_metadata_pointer_overrides && !need_all_metadata_files_parsing
-            && !data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
-            && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
 
         std::vector<String> metadata_files;
         String listed_prefix;
@@ -1936,9 +1955,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             /// explicit path, so only the hint spells it here; a reader obeys the explicit path.
             String pointer_content;
             bool pointer_is_version_hint = false;
-            if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
-                && (ignore_metadata_pointer_overrides
-                    || !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed))
+            if (reads_version_hint_scheme)
             {
                 /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
                 /// widen what a destructive caller may delete, so the read is allowed to throw.
@@ -2187,6 +2204,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const auto cache_key = IcebergMetadataFilesCache::getLatestMetadataVersionKey(
         getTableDirectoryKey(*object_storage, table_path),
         table_path,
+        getLatestMetadataSelection(
+            /* follows_version_hint = */ false,
+            selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD,
+            list_v_prefixed_names_only,
+            reads_version_hint_scheme),
         use_table_uuid_for_metadata_file_selection ? table_uuid : std::nullopt);
     return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
 }
@@ -2279,8 +2301,14 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                 /* force_fetch_latest_metadata */ true,
                 ignore_metadata_pointer_overrides);
         };
-        const auto cache_key
-            = IcebergMetadataFilesCache::getLatestMetadataVersionKey(getTableDirectoryKey(*object_storage, table_path), table_path);
+        const auto cache_key = IcebergMetadataFilesCache::getLatestMetadataVersionKey(
+            getTableDirectoryKey(*object_storage, table_path),
+            table_path,
+            getLatestMetadataSelection(
+                /* follows_version_hint = */ true,
+                data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value,
+                /* v_prefixed_names_only = */ false,
+                /* version_hint_scheme = */ false));
         return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
     }
 

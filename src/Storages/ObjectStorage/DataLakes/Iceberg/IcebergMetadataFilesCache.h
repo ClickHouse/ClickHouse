@@ -156,10 +156,14 @@ public:
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
     /// `table_directory_key` is `Iceberg::getTableDirectoryKey` of the table. Not keyed by `table-uuid` alone: copies of a table share it.
+    /// `selection` is how the lookup chooses among the metadata files: lookups choosing differently get other files.
     static String getLatestMetadataVersionKey(
-        const String & table_directory_key, const String & table_path, const std::optional<String> & selection_table_uuid = {})
+        const String & table_directory_key,
+        const String & table_path,
+        const String & selection,
+        const std::optional<String> & selection_table_uuid = {})
     {
-        String key = table_directory_key + table_path;
+        String key = table_directory_key + table_path + '\0' + selection;
         if (selection_table_uuid)
         {
             key += '\0';
