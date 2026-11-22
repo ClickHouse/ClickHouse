@@ -708,6 +708,19 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey::updateHash(Si
     hash.update(std::string_view(role_arn));
     hash.update(std::string_view(token_file));
     hash.update(std::string_view(session_name));
+    hash.update(std::string_view(region));
+}
+
+Aws::String AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::resolveStsRegion(std::string_view configured_region, std::string_view client_region)
+{
+    if (!configured_region.empty())
+        return Aws::String(configured_region);
+    /// No AWS_DEFAULT_REGION / profile region: call STS in the region of the S3 client instead of requiring AWS_DEFAULT_REGION exist
+    // for cross-cloud writers from Azure and/or GCP.
+    /// `aws-global` (an S3 endpoint without a region) is not an STS region.
+    if (!client_region.empty() && client_region != Aws::Region::AWS_GLOBAL)
+        return Aws::String(client_region);
+    return Aws::Region::US_EAST_1;
 }
 
 bool AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(std::string_view role_arn_)
@@ -747,14 +760,9 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
     LOG_DEBUG(logger, "Resolved role_arn from profile_config or environment variable to be {}", role_arn);
 
 
-    if (tmp_region.empty())
-    {
-        tmp_region = Aws::Region::US_EAST_1;
-    }
-    else
-    {
-        LOG_DEBUG(logger, "Resolved region from profile_config or environment variable to be {}", tmp_region);
-    }
+    /// The caller's region is in `force_region`: `createClientConfiguration` leaves `region` at the AWS SDK default.
+    tmp_region = resolveStsRegion(tmp_region, aws_client_configuration.force_region);
+    LOG_DEBUG(logger, "Resolved STS region to be {}", tmp_region);
 
     bool cache_on_session_name = true;
     if (session_name.empty())
@@ -768,7 +776,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
     }
 
     return CredentialsProviderCache::instance().getOrSet(
-        AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey{role_arn, token_file, cache_on_session_name ? session_name : ""},
+        AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey{
+            role_arn, token_file, cache_on_session_name ? session_name : "", tmp_region},
         [&]
         {
             return Aws::MakeShared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>("S3Credentials",

@@ -1485,6 +1485,73 @@ TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
         "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
 }
 
+TEST(IOTestAwsS3Client, WebIdentityStsRegionFallsBackToClientRegion)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// AWS_DEFAULT_REGION / profile region wins when set.
+    EXPECT_EQ(Provider::resolveStsRegion("us-east-2", "eu-central-1"), "us-east-2");
+    /// Otherwise STS follows the S3 client's region (bucket URL / endpoint).
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-central-1"), "eu-central-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "ap-southeast-1"), "ap-southeast-1");
+    /// No region anywhere keeps the historical default.
+    EXPECT_EQ(Provider::resolveStsRegion("", ""), "us-east-1");
+    /// So does an S3 endpoint without a region: there is no `aws-global` STS endpoint.
+    EXPECT_EQ(Provider::resolveStsRegion("", "aws-global"), "us-east-1");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsClientUsesClientRegion)
+{
+    /// The provider is cached per process, so use a new role each time to make the constructor run.
+    static int run = 0;
+    /// The token file is only read on the first request, which this test does not make.
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_region");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+
+    DB::RemoteHostFilter remote_host_filter;
+    /// Built for `eu-west-1`, the way `S3CredentialsProviderChain` builds it for the region of the S3 client.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+
+    auto provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
+        client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {});
+    ASSERT_TRUE(provider);
+
+    /// The provider writes the resolved region into the configuration its STS client is built from.
+    EXPECT_EQ(std::string_view(client_configuration.region), "eu-west-1");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionFollowsS3RegionThroughCredentialsChain)
+{
+    ScopedEnvVarForAwsS3ClientTests role_env("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_region_chain");
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_region_chain");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    /// Keep the EC2 metadata provider out of the chain.
+    ScopedEnvVarForAwsS3ClientTests imds_env("AWS_EC2_METADATA_DISABLED", "true");
+
+    DB::RemoteHostFilter remote_host_filter;
+    const auto web_identity_provider_for = [&](const std::string & s3_region)
+    {
+        auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+        /// What `updateSchemeAndRegion` leaves in the configuration of an S3 client.
+        client_configuration.region = s3_region;
+
+        DB::S3::S3CredentialsProviderChain chain(
+            client_configuration,
+            Aws::Auth::AWSCredentials(),
+            DB::S3::CredentialsConfiguration{.use_environment_credentials = true, .forbid_implicit_credentials = false});
+        return chain.GetProviders().at(0);
+    };
+
+    /// Providers are cached by STS region, so S3 clients share one only when they resolve to the same STS region.
+    const auto eu_west = web_identity_provider_for("eu-west-1");
+    EXPECT_EQ(eu_west, web_identity_provider_for("eu-west-1"));
+    EXPECT_NE(eu_west, web_identity_provider_for("eu-central-1"));
+    /// An S3 endpoint without a region keeps the default STS region.
+    EXPECT_EQ(web_identity_provider_for("aws-global"), web_identity_provider_for("us-east-1"));
+}
+
 TEST(IOTestAwsS3Client, HttpResponseCodeToString)
 {
     EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::OK), "200");

@@ -152,6 +152,9 @@ public:
     /// Used to decide whether to add web identity to the credentials chain so partial misconfiguration still surfaces `create` warnings.
     static bool isWebIdentityConfigured(std::string_view role_arn_ = {});
 
+    /// STS region: AWS_DEFAULT_REGION / profile region if set, else the S3 client's region, else us-east-1.
+    static Aws::String resolveStsRegion(std::string_view configured_region, std::string_view client_region);
+
     explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
         DB::S3::PocoHTTPClientConfiguration & aws_client_configuration,
         uint64_t expiration_window_seconds_,
@@ -168,6 +171,7 @@ public:
         Aws::String role_arn;
         Aws::String token_file;
         Aws::String session_name;
+        Aws::String region;
 
         bool operator==(const CacheKey & rhs) const = default;
 
