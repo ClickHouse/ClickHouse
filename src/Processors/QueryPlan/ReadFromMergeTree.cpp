@@ -7153,6 +7153,12 @@ ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPr
             if (!isCompactPart(part))
                 result.rows += part->rows_count;
         }
+
+        /// A column that no part stores (e.g. the virtual column of a text index) gets a zero size, which counts as unknown,
+        /// so that the sizes are empty only when there are no parts, as those the storage caches.
+        if (!std::empty(data_parts))
+            for (const auto & column_name : columns)
+                result.sizes.try_emplace(column_name);
         return result;
     };
 
