@@ -39,6 +39,7 @@ public:
 
     bool memoryBoundMergingWillBeUsed() const;
 
+    [[nodiscard]] bool isFinal() const { return final; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
 

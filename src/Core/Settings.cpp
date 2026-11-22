@@ -7060,7 +7060,7 @@ Higher values raise peak memory when the Iceberg metadata files cache is disable
 
 Must be greater than zero; `1` decodes the manifests one at a time.
 )", 0, iceberg_delete_manifest_decode_concurrency, \
-        {"26.9", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}, \
+        {"26.9", 4, 4, "The change was backported to 26.8 and is recorded there."}, \
         {"26.8", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}) \
     DECLARE(NonZeroUInt64, iceberg_file_entries_queue_size, 100, R"(
 Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
@@ -9699,9 +9699,19 @@ Lets automatic parallel replicas remember, per query plan, where the replicas' s
 repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
 replicas.
 
-Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+Disables remembered boundaries. To benchmark the cost of building the plan with parallel replicas, also set
+`automatic_parallel_replicas_undecided_retry_after_executions = 0`: the plans whose last build ended without a
+decision are skipped independently of this setting.
 )", 0, \
         {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
+    DECLARE(UInt64, automatic_parallel_replicas_undecided_retry_after_executions, 10, R"(
+How many executions of a query plan skip building the plan with parallel replicas after its last build ended without a decision in automatic parallel replicas: the two plans could not be compared, the planner used no parallel replicas
+in the plan built with them, a step of the plan cannot collect the statistics, or the collection measured nothing. Concurrent executions take turns: one in every `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan again.
+After the first such outcome for a query plan, the next execution builds the plan again at once just in case the first execution populated other statistics caches and the planning decisions will change.
+
+0 disables deferral after undecided outcomes. It is independent of `automatic_parallel_replicas_remember_boundary`, which spares the build for plans decided from statistics.
+)", 0, \
+        {"26.10", 0, 10, "New setting. Automatic parallel replicas now skips building the plan with parallel replicas for a number of executions of a query plan whose last build ended without a decision; previously every execution built it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
@@ -9766,6 +9776,10 @@ This is internal setting that should not be used directly and represents an impl
     DECLARE(UInt64, parallel_replica_offset, 0, R"(
 This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
 )", BETA) \
+    DECLARE(UInt64, distributed_group_by_top_k, 0, R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. The initiator sends it as `n` with a `GROUP BY ... LIMIT n` query without `ORDER BY` when it keeps the smallest `n` merged groups by all grouping keys. Then each replica keeps only its smallest `n` groups in its partial aggregation (see `enable_group_by_top_k_optimization`). It is not forwarded further.
+)", BETA, \
+        {"26.10", 0, 0, "New internal setting: the initiator of a query with parallel replicas lets the replicas apply the `GROUP BY` top-K heap to `GROUP BY ... LIMIT` without `ORDER BY`."}) \
     DECLARE(String, parallel_replicas_custom_key, "", R"(
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
