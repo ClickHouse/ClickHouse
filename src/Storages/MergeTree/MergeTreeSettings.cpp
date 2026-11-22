@@ -948,15 +948,16 @@ The sleep time for merge selecting task is multiplied by this factor when
 there's nothing to merge and divided when a merge was assigned
 )", 0) \
     DECLARE(UInt64, delay_merges_after_startup_seconds, 60, R"(
-The delay in seconds after the server starts up before a table it loaded at
-startup starts background merges, so that the first queries after a restart
-do not compete with them. A replica of a `ReplicatedMergeTree` table postpones
-the merges of its replication queue, also those it would fetch as a merged
-part, so `OPTIMIZE` and `SYSTEM SYNC REPLICA` on it can wait until the delay
-ends. Mutations, `OPTIMIZE` of a `MergeTree` table and tables created by
-`CREATE TABLE` or attached by `ATTACH TABLE` are not delayed. Merges are not
-delayed while a partition has at least `parts_to_delay_insert` active parts.
-0 disables the delay.
+Background merges of a table that the server loads at startup or restores by
+`UNDROP TABLE` do not start until this many seconds after the table starts
+up, so that the first queries after a restart do not compete with them. A
+replica of a `ReplicatedMergeTree` table postpones the merges of its
+replication queue, also those it would fetch as a merged part, so `OPTIMIZE`,
+`SYSTEM SYNC REPLICA` and mutations of the parts these merges cover can wait
+on it until the delay ends. Mutations and `OPTIMIZE` of a `MergeTree` table
+are not delayed, nor are tables created by `CREATE TABLE` or attached by
+`ATTACH TABLE`. Merges are not delayed while a partition has at least
+`parts_to_delay_insert` active parts. 0 disables the delay.
 )", 0, \
         {"26.12", 0, 60, "New setting to delay background merges after the server startup"}) \
     DECLARE(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, R"(
