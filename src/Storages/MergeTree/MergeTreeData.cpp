@@ -3496,12 +3496,29 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return true;
     };
 
+    /// The identity of the directory is taken before anything is read from it, so that it is never newer than the
+    /// data: the builder below already looks at the files of the directory to tell the format of the part, and reads
+    /// the index of the archive of a `Packed` part. The part is bound to this identity as soon as it is built, and
+    /// the check that follows proves that the builder read the same directory, because an identity never comes back
+    /// to a name. Taking the identity after the builder could bind the part to a directory that replaced the one
+    /// the builder read, and then every later check would compare the replacement with itself.
+    const bool record_shared_storage_incarnation = (*getSettings())[MergeTreeSetting::leader_election];
+    std::optional<String> shared_storage_incarnation;
+    if (record_shared_storage_incarnation)
+        shared_storage_incarnation = getPartDirectorySharedStorageIncarnation(part_disk_ptr->getName(), part_path);
+
     try
     {
         res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartInfo(part_info)
             .withPartFormatFromDisk()
             .build();
+
+        if (record_shared_storage_incarnation)
+        {
+            res.part->setSharedStorageIncarnation(shared_storage_incarnation);
+            res.part->getDataPartStorage().assertSharedStorageIdentityUnchanged();
+        }
     }
     catch (...)
     {
@@ -3520,10 +3537,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         mark_broken();
         return res;
     }
-
-    /// Recorded before the metadata is read, so that the identity is never newer than the data.
-    if ((*getSettings())[MergeTreeSetting::leader_election])
-        res.part->setSharedStorageIncarnation(getPartSharedStorageIncarnation(*res.part));
 
     /// The request described another directory with the same name, which was replaced since then (the block
     /// numbers are reused after the table becomes empty and restarts). The replacement is not this request's to
