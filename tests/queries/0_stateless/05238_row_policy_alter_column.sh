@@ -48,7 +48,7 @@ CREATE TABLE allowed (tenant UInt32) ENGINE = MergeTree ORDER BY tenant;
 INSERT INTO allowed VALUES (1);
 CREATE TABLE t2 (id UInt32, tenant UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t2 VALUES (1, 1), (2, 2);
-CREATE ROW POLICY psub ON $DB.t2 FOR SELECT USING id IN (SELECT tenant FROM allowed) TO CURRENT_USER;
+CREATE ROW POLICY psub ON $DB.t2 FOR SELECT USING id IN (SELECT tenant FROM $DB.allowed) TO CURRENT_USER;
 ALTER TABLE t2 RENAME COLUMN tenant TO tenant_id;
 SELECT 'subquery policy after rename', arraySort(groupArray(id)) FROM t2;
 "
