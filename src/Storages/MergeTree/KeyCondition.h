@@ -858,7 +858,7 @@ private:
 
     /// The same as `collectKeyWrappingDags`, but over the given key expression (the original
     /// or the alternative one).
-    std::vector<DeterministicKeyDag> collectKeyWrappingDagsFromKeyExpr(
+    [[nodiscard]] std::vector<DeterministicKeyDag> collectKeyWrappingDagsFromKeyExpr(
         const ExpressionActions & key_expr,
         bool is_alternative_key_expr,
         const String & expr_name,
@@ -1047,11 +1047,11 @@ private:
 
     /// The name a name found in `key_columns` has in the original key expression's sample block:
     /// an alternative name maps to the original key column name, any other name is returned unchanged.
-    const String & originalKeyColumnName(const String & name) const;
+    [[nodiscard]] const String & originalKeyColumnName(const String & name) const;
 
     /// The position of the key column the node of the given key expression (the original one or the
     /// alternative one) computes, or nullptr if the node does not compute a key column.
-    const size_t * findKeyColumnComputedByNode(
+    [[nodiscard]] const size_t * findKeyColumnComputedByNode(
         const ExpressionActions & key_expr, bool is_alternative_key_expr, const ActionsDAG::Node & node) const;
 
     /// Space-filling curves in the key
