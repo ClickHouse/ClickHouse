@@ -210,7 +210,7 @@ protected:
     /// changes atomically and never returns to a directory it has left (every directory has a unique key prefix),
     /// so a name that still refers to the bound directory after the resolution referred to it during the resolution
     /// too. A check before the resolution proves nothing about the mapping the resolution will see.
-    std::optional<SharedStorageIdentityCheck> getSharedStorageIdentityCheck() const;
+    [[nodiscard]] std::optional<SharedStorageIdentityCheck> getSharedStorageIdentityCheck() const;
 
     /// Binds a storage created for a projection of this part to the directory of that projection, if this storage
     /// is bound itself.

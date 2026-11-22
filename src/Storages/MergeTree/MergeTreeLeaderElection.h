@@ -148,7 +148,7 @@ public:
 
     /// The number of the latest write of the lease that this instance has started. Outdated parts are stamped
     /// with it (while the lock of the parts is held), see `ReadersSnapshot::allowsRemoval`.
-    UInt64 currentLeaseSequence() const { return lease_write_sequence.load(std::memory_order_acquire); }
+    [[nodiscard]] UInt64 currentLeaseSequence() const { return lease_write_sequence.load(std::memory_order_acquire); }
 
     /// The state of the reader files, as needed by the leader to decide which outdated parts it may remove.
     class ReadersSnapshot
@@ -156,9 +156,7 @@ public:
     public:
         /// Whether no reader can still use the part. `removal_sequence` is the value of `currentLeaseSequence`
         /// sampled when the part was already outdated, before the reader files were listed for this snapshot.
-        bool allowsRemoval(const String & part_name, UInt64 removal_sequence) const;
-
-        size_t numReaders() const { return readers.size(); }
+        [[nodiscard]] bool allowsRemoval(const String & part_name, UInt64 removal_sequence) const;
 
         struct Reader
         {
@@ -322,7 +320,7 @@ private:
     /// Writes the reader file with the current view. Throws on failure.
     void writeReaderFile();
     /// Removes the reader file of this node, logging a failure.
-    void removeReaderFileNoThrow();
+    void removeReaderFileNoThrow() const;
     String buildReaderFileContent();
 
     struct ObservedLeaseWrite
@@ -358,7 +356,7 @@ private:
     };
 
     /// Parses a reader file. A file that cannot be understood yields a reader that keeps everything.
-    ObservedReaderFile parseReaderFile(const String & reader_key, const String & content) const;
+    [[nodiscard]] ObservedReaderFile parseReaderFile(const String & reader_key, const String & content) const;
 
     std::mutex readers_scan_mutex;
     /// By the key of the reader file.

@@ -811,7 +811,7 @@ void MergeTreeLeaderElection::registerReader()
     writeReaderFile();
 }
 
-void MergeTreeLeaderElection::removeReaderFileNoThrow()
+void MergeTreeLeaderElection::removeReaderFileNoThrow() const
 {
     try
     {
@@ -850,8 +850,8 @@ MergeTreeLeaderElection::ObservedReaderFile MergeTreeLeaderElection::parseReader
         observed.reader.lease_sequence = json["lease_sequence"].getUInt();
 
         const JSON pinned_parts = json["pinned_parts"];
-        for (auto it = pinned_parts.begin(); it != pinned_parts.end(); ++it)
-            observed.reader.pinned_parts.insert((*it).getString());
+        for (auto && pinned_part : pinned_parts)
+            observed.reader.pinned_parts.insert(pinned_part.getString());
     }
     catch (...)
     {
