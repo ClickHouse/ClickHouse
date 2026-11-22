@@ -35,9 +35,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    /// The shipped plan fragment, shown as a subtree of this step in EXPLAIN.
-    QueryPlanRawPtrs getChildPlans(bool for_explain) override;
-
+    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
     void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
     [[nodiscard]] ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }

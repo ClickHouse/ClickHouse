@@ -34,8 +34,7 @@ SET query_plan_optimize_join_order_limit = 10;
 -- The disjunction is expected three times: the `OR` left on the join, plus the partial predicate pushed
 -- to each of the two reads - as a `Filter` or in `PREWHERE`, not as both. Before the fix the plan-based
 -- build pushed the partial predicates a second time and left a redundant `Filter` above each read whose
--- `PREWHERE` already applied it, which shows up here as five. The plan-based EXPLAIN shows the join twice,
--- in the local plan and in the shipped fragment, so there it is six, and ten before the fix.
+-- `PREWHERE` already applied it, which shows up here as five.
 -- The second column names the parallel-replicas read each mode is expected to build, so a query that
 -- silently fell back to a local plan fails here instead of comparing two plans that prove nothing.
 SELECT

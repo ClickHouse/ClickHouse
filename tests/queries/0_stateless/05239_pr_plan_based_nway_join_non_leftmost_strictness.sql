@@ -44,36 +44,36 @@ SET join_algorithm = 'hash', join_use_nulls = 0;
 -- slot (`should_disable_parallel_replicas` in `PlannerJoinTree`), so these `RIGHT` joins stay local.
 SELECT 'array join then any/right: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL;
 
 SELECT 'array join then semi/right: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a SEMI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a SEMI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a SEMI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL;
 
 SELECT 'array join then anti/right: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANTI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANTI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 SELECT t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANTI RIGHT JOIN t2 ON t1.c = t2.c ORDER BY ALL;
 
 -- A replica-safe shape, distributed by both implementations.
 SELECT 'array join then all/inner: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a INNER JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a INNER JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a INNER JOIN t2 ON t1.c = t2.c ORDER BY ALL;
 
 -- A shape neither implementation distributes: the join is on a constant, so there is nothing to
 -- coordinate by.
 SELECT 'array join then inner/any: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a ANY INNER JOIN t3 ON 1 ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a ANY INNER JOIN t3 ON 1 ORDER BY ALL);
 SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a ANY INNER JOIN t3 ON 1 ORDER BY ALL;
 
 -- `RightAny`, which `any_join_distinct_right_table_keys = 1` makes of `ANY RIGHT`: it stays local for the same reason.
 SELECT 'array join then right-any (legacy any): reads from replicas, join not shipped';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%'), countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c
+    EXPLAIN distributed = 1 SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c
         ORDER BY ALL SETTINGS any_join_distinct_right_table_keys = 1);
 SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = t2.c
     ORDER BY ALL SETTINGS any_join_distinct_right_table_keys = 1;
@@ -83,13 +83,13 @@ SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1, 2] AS a ANY RIGHT JOIN t2 ON t1.c = 
 -- runner randomizes, so only their presence is asserted.
 SELECT 'left/any non-leftmost: reads from replicas, join shipped';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%'), countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
-    EXPLAIN SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c ANY LEFT JOIN t3 ON 1 ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c ANY LEFT JOIN t3 ON 1 ORDER BY ALL);
 -- Which `t3` row the ANY join keeps for the constant key is not part of the contract.
 SELECT t1.c, t2.c FROM t1 INNER JOIN t2 ON t1.c = t2.c ANY LEFT JOIN t3 ON 1 ORDER BY ALL;
 
 SELECT 'left/semi non-leftmost: reads from replicas, join shipped';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%'), countIf(explain ILIKE '%JoinLogical%') > 0 FROM (
-    EXPLAIN SELECT t1.c FROM t1 INNER JOIN t2 ON t1.c = t2.c SEMI LEFT JOIN t3 ON 1 ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c FROM t1 INNER JOIN t2 ON t1.c = t2.c SEMI LEFT JOIN t3 ON 1 ORDER BY ALL);
 SELECT t1.c FROM t1 INNER JOIN t2 ON t1.c = t2.c SEMI LEFT JOIN t3 ON 1 ORDER BY ALL;
 
 -- Shapes that are not distributive over a partition of the left side: applied on each replica and
@@ -97,26 +97,26 @@ SELECT t1.c FROM t1 INNER JOIN t2 ON t1.c = t2.c SEMI LEFT JOIN t3 ON 1 ORDER BY
 
 SELECT 'inner/any non-leftmost: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c ANY INNER JOIN t3 ON 1 ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c ANY INNER JOIN t3 ON 1 ORDER BY ALL);
 SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c ANY INNER JOIN t3 ON 1 ORDER BY ALL;
 
 -- Only the row count is asserted: with more than one left row and a constant join key, which left row
 -- the ANY join keeps is not part of the contract.
 SELECT 'inner/any non-leftmost under a left leftmost join: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON t1.c = t2.c ANY INNER JOIN t3 ON 1);
+    EXPLAIN distributed = 1 SELECT * FROM t1 LEFT JOIN t2 ON t1.c = t2.c ANY INNER JOIN t3 ON 1);
 SELECT count() FROM (SELECT * FROM t1 LEFT JOIN t2 ON t1.c = t2.c ANY INNER JOIN t3 ON 1);
 
 -- `t2.c = 3` has no match in `t1`, so the FULL join must emit it exactly once.
 SELECT 'array join then full: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL;
 
 -- `t2` leaves `t1.c = 2` as the only left row, and its ASOF match is the later of the two `t4` candidates.
 SELECT 'asof/inner non-leftmost: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, t4.d FROM t1 INNER JOIN t2 ON t1.c = t2.c
+    EXPLAIN distributed = 1 SELECT t1.c, t4.d FROM t1 INNER JOIN t2 ON t1.c = t2.c
         ASOF INNER JOIN t4 ON t1.c = t4.c AND t1.d > t4.d ORDER BY ALL);
 SELECT t1.c, t4.d FROM t1 INNER JOIN t2 ON t1.c = t2.c
     ASOF INNER JOIN t4 ON t1.c = t4.c AND t1.d > t4.d ORDER BY ALL;
@@ -125,7 +125,7 @@ SELECT t1.c, t4.d FROM t1 INNER JOIN t2 ON t1.c = t2.c
 -- rows are paired depends on the read order.
 SELECT 'paste non-leftmost: reads from replicas';
 SELECT countIf(explain ILIKE '%ReadFromParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c PASTE JOIN t3 ORDER BY ALL);
+    EXPLAIN distributed = 1 SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c PASTE JOIN t3 ORDER BY ALL);
 
 DROP TABLE t1 SYNC;
 DROP TABLE t2 SYNC;

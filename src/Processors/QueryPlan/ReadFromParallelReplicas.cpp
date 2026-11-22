@@ -278,12 +278,9 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
         parallel_marshalling_threads);
 }
 
-QueryPlanRawPtrs ReadFromParallelReplicasStep::getChildPlans(bool for_explain)
+void ReadFromParallelReplicasStep::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
-    /// The fragment is not part of the local plan, so only EXPLAIN (which only reads it) sees it.
-    if (!for_explain)
-        return {};
-    return {const_cast<QueryPlan *>(query_plan.get())};
+    query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
 }
 
 void ReadFromParallelReplicasStep::describeDistributedPipeline(FormatSettings &, bool)
