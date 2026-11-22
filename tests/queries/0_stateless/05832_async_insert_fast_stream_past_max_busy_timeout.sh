@@ -28,16 +28,19 @@ for i in {0..29}; do
     sleep 0.15
 done
 
-# Every insert after the first two is flushed without batching, or waits for its busy timeout of at least the minimum
-# (after 16 inserts flushed at once), or comes more than the maximum after the previous one under a slow build and then is
-# flushed at once as the first one after a pause. An insert flushed at once by the inserting thread soon after the
-# previous one shows that the stream made the queue shard look idle.
+# With the bug, an insert is scheduled by the inserting thread because the maximum busy timeout looks exceeded. That is
+# right only when no insert came to the queue shard for the maximum: an insert reaches the queue no later than it ends,
+# so when it started less than the maximum after the previous one, minus its own duration, the shard was not idle.
 ${CLICKHOUSE_CLIENT} --query "
-    SYSTEM FLUSH LOGS query_log;
-    SELECT countIf(ProfileEvents['AsyncInsertFlushedWithoutBatching'] = 0 AND query_duration_ms < 100 AND gap_ms < 1000), count()
+    SYSTEM FLUSH LOGS query_log, text_log;
+    SELECT countIf(gap_ms + query_duration_ms < 1900 AND query_id IN (
+            SELECT query_id FROM system.text_log
+            WHERE event_date >= yesterday() AND query_id LIKE '${CLICKHOUSE_DATABASE}\\_%'
+                AND message LIKE 'Scheduling async insert processing job because maximum busy wait timeout exceeded%')),
+        count()
     FROM
     (
-        SELECT query_id, ProfileEvents, query_duration_ms,
+        SELECT query_id, query_duration_ms,
             (toUnixTimestamp64Micro(query_start_time_microseconds) - lagInFrame(toUnixTimestamp64Micro(query_start_time_microseconds))
                 OVER (ORDER BY query_start_time_microseconds ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) / 1000 AS gap_ms
         FROM system.query_log
