@@ -6,8 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A corrupted footer may store any integer in the `type` of a schema element. With more than 1024 schema elements,
 # the generated Thrift reader moves the elements that are already read while it reads the rest, before the reader of
-# ClickHouse can check them: the enums of the generated code have a fixed underlying type, so this is well-defined,
-# and the invalid type is reported afterwards. Only the footer is read, so the files have no data pages.
+# ClickHouse can check them: the enums of the generated code have a fixed underlying type, so this is well-defined.
+# The `Parquet` reader then rejects the invalid type, while `ParquetMetadata` shows the schema as it is, like the
+# parquet-cpp based implementation did (see `05839_parquet_metadata_invalid_schema_enums`). Only the footer is read,
+# so the files have no data pages.
 
 # Writes a Parquet file without row groups, with the given number of INT32 columns, the first of which has the given type.
 write_file()
