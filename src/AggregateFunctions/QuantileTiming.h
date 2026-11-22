@@ -327,7 +327,8 @@ namespace detail
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
         }
 
-        /// A count that grows by one cannot reach the maximum of `UInt64`.
+        /// For a state that is filled only by this function, such as the one just created from a smaller kind: a count
+        /// that grows by one from zero cannot reach the maximum of `UInt64`.
         void insert(UInt64 x) noexcept
         {
             ++count;
@@ -336,6 +337,24 @@ namespace detail
                 ++count_small[x];
             else if (x < BIG_THRESHOLD)
                 ++count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
+        }
+
+        /// For a state that may hold the sums of weights of another state or a deserialized one, whose counters may
+        /// already be the maximum of `UInt64`: a count that does not fit is rejected as in `insertWeighted`.
+        void insertChecked(UInt64 x)
+        {
+            UInt64 * bin = nullptr;
+            if (x < SMALL_THRESHOLD)
+                bin = &count_small[x];
+            else if (x < BIG_THRESHOLD)
+                bin = &count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
+
+            if (count == std::numeric_limits<UInt64>::max() || (bin && *bin == std::numeric_limits<UInt64>::max())) [[unlikely]]
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The sum of weights in `quantileTimingWeighted` does not fit UInt64");
+
+            ++count;
+            if (bin)
+                ++*bin;
         }
 
         void insertWeighted(UInt64 x, size_t weight)
@@ -624,13 +643,13 @@ public:
                 if (unlikely(mediumIsWorthToConvertToLarge()))
                 {
                     mediumToLarge();
-                    large->insert(x);
+                    large->insertChecked(x);
                 }
                 else
                     medium.insert(x);
             }
             else
-                large->insert(x);
+                large->insertChecked(x);
         }
     }
 
@@ -707,12 +726,12 @@ public:
         else if (kind == Kind::Large && rhs_kind == Kind::Tiny)
         {
             for (size_t i = 0; i < rhs.tiny.count; ++i)
-                large->insert(rhs.tiny.elems[i]);
+                large->insertChecked(rhs.tiny.elems[i]);
         }
         else if (kind == Kind::Large && rhs_kind == Kind::Medium)
         {
             for (const auto & elem : rhs.medium.elems)
-                large->insert(elem);
+                large->insertChecked(elem);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
