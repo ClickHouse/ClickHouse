@@ -27,7 +27,8 @@ function local_query()
     ${CLICKHOUSE_LOCAL} "${@:2}" -q "$1" -- --user_files_path="${WORK_DIR}"
 }
 
-ENTRIES="SELECT column, sum(rows) FROM system.columns_cache GROUP BY column ORDER BY column"
+# The entries of the files read by table functions belong to no table, so their database is empty.
+ENTRIES="SELECT column, sum(rows) FROM system.columns_cache WHERE database = '' GROUP BY column ORDER BY column"
 # The blocks that the settings ask for are much smaller than a chunk, and a whole chunk does not fit the memory limit.
 BLOCKS="max_threads = 1, input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_max_block_size = 1000,
     input_format_parquet_prefer_block_bytes = 0, input_format_parquet_memory_low_watermark = 0,
@@ -43,7 +44,7 @@ function run_query()
     local_query "
         $1 SETTINGS ${BLOCKS}, max_memory_usage = '$2', use_columns_cache = 0;
         $1 SETTINGS ${BLOCKS}, max_memory_usage = '$2', use_columns_cache = 1;
-        SELECT 'cached', count() FROM system.columns_cache;
+        SELECT 'cached', count() FROM system.columns_cache WHERE database = '';
         $1 SETTINGS ${CHUNKS}, use_columns_cache = 1;
         ${ENTRIES};
         $1 SETTINGS ${BLOCKS}, max_memory_usage = '$2', use_columns_cache = 1"
