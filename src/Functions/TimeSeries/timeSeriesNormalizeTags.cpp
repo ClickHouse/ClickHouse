@@ -100,7 +100,7 @@ SELECT timeSeriesNormalizeTags([('region', 'eu'), ('env', 'dev')], '__name__', '
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
