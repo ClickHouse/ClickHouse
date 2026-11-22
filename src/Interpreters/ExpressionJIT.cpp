@@ -1,5 +1,4 @@
 #include "config.h"
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #if USE_EMBEDDED_COMPILER
 
@@ -91,13 +90,13 @@ public:
     {
     }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (!canBeNativeType(*result_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "LLVMExecutableFunction unexpected result type in: {}", result_type->getName());
@@ -357,7 +356,7 @@ static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * 
     return node_no_alias;
 }
 
-static bool isCompilableFunction(const ActionsDAG::Node & node, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
@@ -406,10 +405,10 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const UnorderedS
     return function.isCompilable();
 }
 
-CompileDAG getCompilableDAG(
+static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// Extract CompileDAG from root actions dag node.
 
@@ -557,10 +556,7 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getCompiledConjuncts(const Node & node)
     return conjuncts;
 }
 
-void ActionsDAG::compileFunctions(
-    size_t min_count_to_compile_expression,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes,
-    std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag)
+void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     struct Data
     {
@@ -587,7 +583,7 @@ void ActionsDAG::compileFunctions(
     };
 
     std::stack<Frame> stack;
-    UnorderedSetWithMemoryTracking<const Node *> visited_nodes;
+    std::unordered_set<const Node *> visited_nodes;
 
     /** Algorithm is to iterate over each node in ActionsDAG, and update node compilable_children_size.
       * After this procedure data for each node is initialized.
@@ -704,15 +700,9 @@ void ActionsDAG::compileFunctions(
             for (const auto * child : new_children)
                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
-            auto executable_function = fn->prepare(arguments);
-
-            /// Taken before the first replacement, so it holds the DAG as built.
-            if (uncompiled_actions_dag && !*uncompiled_actions_dag)
-                *uncompiled_actions_dag = std::make_shared<ActionsDAG>(clone());
-
             node->type = ActionsDAG::ActionType::FUNCTION;
             node->function_base = fn;
-            node->function = std::move(executable_function);
+            node->function = fn->prepare(arguments);
             node->children.swap(new_children);
             node->is_function_compiled = true;
             node->column = nullptr;

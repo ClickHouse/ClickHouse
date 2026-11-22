@@ -270,8 +270,10 @@ def test_rabbitmq(user):
     )
     create_definer_view(user, "rabbitmq")
 
-    # `CREATE TABLE` declares the exchange and the queue before it returns, so the messages
-    # published below are not dropped.
+    # The exchange and the queue are declared by the table in the background; messages
+    # published before that are dropped by RabbitMQ.
+    node1.wait_for_log_line(f"StorageRabbitMQ .{db}.rabbitmq.: RabbitMQ setup completed")
+    node1.wait_for_log_line(f"StorageRabbitMQ .{db}.rabbitmq.: Queue .* is declared")
 
     try:
         finished_before = shard_finished_inserts(user)

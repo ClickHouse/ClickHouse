@@ -4,9 +4,9 @@
 namespace DB
 {
 
-UInt64 getCacheTokenHash(const String & token)
+UInt64 getETagHash(const String & etag)
 {
-    return token.empty() ? 0 : sipHash64(token);
+    return etag.empty() ? 0 : sipHash64(etag);
 }
 
 size_t getTotalSize(const StoredObjects & objects)

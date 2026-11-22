@@ -1,6 +1,4 @@
 #include <Planner/PlannerCorrelatedSubqueries.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -17,7 +15,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -202,9 +199,6 @@ struct DecorrelationContext
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
-    /// Whether the correlated columns of the decorrelated plan may come from the distinct outer values, where `NULL`
-    /// is a value. Otherwise they are equal inner columns, which the retained `equals` filter never lets be `NULL`.
-    bool uses_correlated_domain = false;
 };
 
 /// How to convert an equivalent column to exactly the correlated column type.
@@ -245,8 +239,7 @@ std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataT
     /// assume; the cross-base cast is unfaithful too (`accurateCastOrNull` into `Bool` maps every
     /// non-zero value to `true`). The custom name is load-bearing: reconstruction into `Bool`
     /// requires a `Bool` member.
-    if ((isBool(correlated_base) || isSimpleAggregateFunctionOfBool(*correlated_base))
-        && member_base->getName() != correlated_base->getName())
+    if (isBool(correlated_base) && !isBool(member_base))
         return std::nullopt;
 
     /// `IDataType::equals` compares the storage type and ignores semantically significant
@@ -422,7 +415,6 @@ bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
 QueryPlan buildCorrelatedDomainPlan(DecorrelationContext & context)
 {
     context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
-    context.uses_correlated_domain = true;
     context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
     auto buffer_header = std::make_shared<Block>();
@@ -530,10 +522,10 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
         lhs_plan_header->getColumnsWithTypeAndName(),
         rhs_plan_header->getColumnsWithTypeAndName());
 
-    VectorWithMemoryTracking<JoinActionRef> predicates;
+    std::vector<JoinActionRef> predicates;
     for (const auto & column_name : correlated_columns)
     {
-        VectorWithMemoryTracking<JoinActionRef> eq_arguments;
+        std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
         /// The keys identify a correlated domain tuple, where `NULL` is a value like any other (`DISTINCT` and
@@ -553,7 +545,7 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
         JoinOperator(join_kind, JoinStrictness::All, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
+        std::unordered_map<String, const ActionsDAG::Node *>{},
         /*use_nulls_=*/false,
         JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
@@ -561,7 +553,7 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
     makeInternalDecorrelationJoinUnbounded(*domain_join);
 
     QueryPlan result_plan;
-    QueryPlanPtrs plans;
+    std::vector<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
     result_plan.unitePlans(std::move(domain_join), {std::move(plans)});
@@ -787,7 +779,7 @@ QueryPlan decorrelateQueryPlan(
             JoinOperator(JoinKind::Cross),
             std::move(join_expression_actions),
             output_columns,
-            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
+            std::unordered_map<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
             JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));
@@ -797,7 +789,7 @@ QueryPlan decorrelateQueryPlan(
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
 
-        QueryPlanPtrs plans;
+        std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
@@ -1007,7 +999,7 @@ QueryPlan decorrelateQueryPlan(
 
         /// A UnionStep can have any number of inputs; every arm must be decorrelated.
         SharedHeaders query_plans_headers;
-        QueryPlanPtrs child_plans;
+        std::vector<QueryPlanPtr> child_plans;
         query_plans_headers.reserve(node->children.size());
         child_plans.reserve(node->children.size());
         for (auto * child : node->children)
@@ -1534,10 +1526,10 @@ QueryPlan buildLogicalJoinForLateral(
         lhs_plan_header->getColumnsWithTypeAndName(),
         rhs_plan_header->getColumnsWithTypeAndName());
 
-    VectorWithMemoryTracking<JoinActionRef> predicates;
+    std::vector<JoinActionRef> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
-        VectorWithMemoryTracking<JoinActionRef> eq_arguments;
+        std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
         /// The keys match an outer row to its correlated domain tuple, not the user's `=` predicate: an outer row
@@ -1564,7 +1556,7 @@ QueryPlan buildLogicalJoinForLateral(
         JoinOperator(join_kind_to_use, JoinStrictness::All, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
+        std::unordered_map<String, const ActionsDAG::Node *>{},
         use_nulls,
         JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
@@ -1587,16 +1579,16 @@ QueryPlan buildLogicalJoinForLateral(
         /// Remove algorithms that are not compatible with in-memory buffering
         /// of correlated subquery input: the input stream must be fully evaluated
         /// before the lateral subquery side is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH; });
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
         if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH};
+            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
 
     QueryPlan result_plan;
 
-    QueryPlanPtrs plans;
+    std::vector<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
@@ -1609,8 +1601,7 @@ QueryPlan buildLogicalJoin(
     QueryPlan input_stream_plan,
     QueryPlan decorrelated_plan,
     const CorrelatedSubquery & correlated_subquery,
-    bool uses_in_memory_buffer,
-    bool uses_correlated_domain
+    bool uses_in_memory_buffer
 )
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
@@ -1667,17 +1658,13 @@ QueryPlan buildLogicalJoin(
         lhs_plan_header->getColumnsWithTypeAndName(),
         rhs_plan_header->getColumnsWithTypeAndName());
 
-    VectorWithMemoryTracking<JoinActionRef> predicates;
+    std::vector<JoinActionRef> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
-        VectorWithMemoryTracking<JoinActionRef> eq_arguments;
+        std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
-        /// A `NULL` domain value has its own evaluation of the subquery, which must match the outer rows with `NULL`.
-        auto key_operator = uses_correlated_domain && isNullableOrLowCardinalityNullable(eq_arguments.front().getType())
-            ? JoinConditionOperator::NullSafeEquals
-            : JoinConditionOperator::Equals;
-        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(key_operator));
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
         predicates.push_back(std::move(eq_node));
     }
 
@@ -1690,7 +1677,7 @@ QueryPlan buildLogicalJoin(
         JoinOperator(join_kind_to_use, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
+        std::unordered_map<String, const ActionsDAG::Node *>{},
         /*join_use_nulls=*/false,
         JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
@@ -1705,12 +1692,12 @@ QueryPlan buildLogicalJoin(
         /// of correlated subquery input.
         /// We must be sure that the input stream is fully evaluated
         /// before the correlated subquery is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH; });
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
         /// This JOIN is an internal decorrelation detail, so the user-facing `join_algorithm` list must not
         /// decide whether it can run at all: with `auto` or a merge-only list nothing would survive the filter
         /// and `chooseJoinAlgorithm` would throw `NOT_IMPLEMENTED`. Force the compatible algorithms instead.
         if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH};
+            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
@@ -1723,12 +1710,12 @@ QueryPlan buildLogicalJoin(
         /// that can execute the join the decorrelation just built.
         auto & join_settings = result_join->getJoinSettings();
         if (!JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_kind_to_use, JoinStrictness::Any))
-            join_settings.join_algorithms = {JoinAlgorithm::HASH};
+            join_settings.join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
     }
 
     QueryPlan result_plan;
 
-    QueryPlanPtrs plans;
+    std::vector<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
@@ -1869,8 +1856,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.uses_in_memory_buffer,
-                context.uses_correlated_domain);
+                context.uses_in_memory_buffer);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -1883,7 +1869,7 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It may also result in non-correlated subquery plan
             /// Example:
             /// SELECT * FROM numbers(1) WHERE EXISTS (SELECT a = number FROM table)
-            if (optimizePlanForExists(correlated_query_plan, /*is_correlated=*/true))
+            if (optimizePlanForExists(correlated_query_plan))
             {
                 /// Subquery always produces at least 1 row.
                 buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);
@@ -1920,8 +1906,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.uses_in_memory_buffer,
-                context.uses_correlated_domain);
+                context.uses_in_memory_buffer);
             break;
         }
         case CorrelatedSubqueryKind::LATERAL_JOIN:

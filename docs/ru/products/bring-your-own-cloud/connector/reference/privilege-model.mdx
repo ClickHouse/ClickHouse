@@ -7,6 +7,7 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ru/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -14,15 +15,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 ## Identities {#identities}
 
-<div className="ch-image-lg">
-
-<Frame>
-
-![Модель идентичностей коннектора ClickHouse](/images/cloud/reference/byoc-connector-identity-model.svg)
-
-</Frame>
-
-</div>
+<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="Модель идентичностей коннектора ClickHouse" />
 
 * **Клиентский сертификат mTLS коннектора**, в котором в качестве common name указан ваш Organization ID, аутентифицирует каждый демон на вашей конечной точке коннектора. Команда `clicklink clctl instances create` использует тот же сертификат и HMAC key при обращении к конечной точке.
 * **`pcm_scraper` и `pcm_troubleshooter`** — это ClickHouse users только для чтения, под которыми подключаются scraper и средство диагностики. У исполнителя нет ClickHouse user.

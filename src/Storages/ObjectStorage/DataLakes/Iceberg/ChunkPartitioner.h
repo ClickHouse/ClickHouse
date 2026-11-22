@@ -35,9 +35,9 @@ public:
 
     std::vector<std::pair<PartitionKey, Chunk>> partitionChunk(const Chunk & chunk);
 
-    [[nodiscard]] const std::vector<String> & getColumns() const { return columns_to_apply; }
+    const std::vector<String> & getColumns() const { return columns_to_apply; }
 
-    [[nodiscard]] const DataTypes & getResultTypes() const { return result_data_types; }
+    const DataTypes & getResultTypes() const { return result_data_types; }
 
 private:
     SharedHeader sample_block;

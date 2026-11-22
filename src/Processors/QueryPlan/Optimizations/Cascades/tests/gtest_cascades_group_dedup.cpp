@@ -65,13 +65,11 @@ TEST(CascadesGroupDedup, AddPhysicalExpressionKeepsDistinctAlternatives)
 {
     Group group(0);
 
-    auto first = exprWithSorting("k", 1);
-    EXPECT_EQ(group.addPhysicalExpression(first), first);
-    EXPECT_EQ(group.addPhysicalExpression(exprWithSorting("k", 1)), first); /// exact duplicate: the group keeps the first
+    EXPECT_TRUE(group.addPhysicalExpression(exprWithSorting("k", 1)));
+    EXPECT_FALSE(group.addPhysicalExpression(exprWithSorting("k", 1))); /// exact duplicate
     EXPECT_EQ(group.physical_expressions.size(), 1u);
 
-    auto opposite = exprWithSorting("k", -1);
-    EXPECT_EQ(group.addPhysicalExpression(opposite), opposite); /// distinct: opposite direction
+    EXPECT_TRUE(group.addPhysicalExpression(exprWithSorting("k", -1))); /// distinct: opposite direction
     EXPECT_EQ(group.physical_expressions.size(), 2u);
 }
 

@@ -20,9 +20,6 @@ INSERT INTO t_autopr_skip_in_keys SELECT number FROM numbers(0, 5000, 3);
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SELECT sum(cityHash64(payload, d)) FROM t_autopr_skip_in WHERE org IN (SELECT id FROM t_autopr_skip_in_keys);
 
--- Plan-based parallel replicas collects no statistics for these queries, so they never switch to parallel replicas:
--- https://github.com/ClickHouse/ClickHouse/issues/131450
-SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel_replicas_local_plan = 1,
     parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

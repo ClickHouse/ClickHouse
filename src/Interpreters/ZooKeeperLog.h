@@ -83,7 +83,7 @@ public:
     static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
 
     void setDurationMicrosecondsThreshold(size_t duration_microseconds_threshold_) { duration_microseconds_threshold = duration_microseconds_threshold_; }
-    [[nodiscard]] size_t getDurationMicrosecondsThreshold() const { return duration_microseconds_threshold; }
+    size_t getDurationMicrosecondsThreshold() const { return duration_microseconds_threshold; }
 };
 
 DataTypePtr getCoordinationErrorCodesEnumType();

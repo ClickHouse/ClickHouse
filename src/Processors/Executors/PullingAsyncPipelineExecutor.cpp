@@ -113,11 +113,6 @@ void PullingAsyncPipelineExecutor::setCancelCallback(std::function<bool()> callb
     interactive_timeout_ms = interactive_timeout_ms_;
 }
 
-void PullingAsyncPipelineExecutor::setExceptionCallback(std::function<void()> callback)
-{
-    exception_callback = std::move(callback);
-}
-
 bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 {
     if (!data)
@@ -126,7 +121,6 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         data->executor = createExecutor(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         data->executor->setStepProfiler(pipeline.getStepProfiler());
-        data->executor->setExceptionCallback(exception_callback);
         data->lazy_format = lazy_format.get();
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()

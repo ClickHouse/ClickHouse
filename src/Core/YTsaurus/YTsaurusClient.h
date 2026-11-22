@@ -10,7 +10,6 @@
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/Logger.h>
-#include <Common/SecretString.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/URI.h>
@@ -52,7 +51,7 @@ public:
     struct ConnectionInfo
     {
         VectorWithMemoryTracking<String> http_proxy_urls;
-        SecretString oauth_token;
+        String oauth_token;
         String api_version = "v3";
         bool encode_utf8 = false;
         bool enable_heavy_proxy_redirection = true;
@@ -61,7 +60,7 @@ public:
     explicit YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_);
 
     /// Validates the OAuth token sent in the `Authorization` header with `HTTPHeaderFilter`.
-    static void checkHeaders(const ContextPtr & context, std::string_view oauth_token);
+    static void checkHeaders(const ContextPtr & context, const String & oauth_token);
 
     YTsaurusClient(const YTsaurusClient & other);
 
@@ -131,7 +130,7 @@ class YTsaurusTableLock
 {
 public:
     YTsaurusTableLock(YTsaurusClientPtr client_, const String& cypress_path_, size_t transaction_timeout_ms);
-    [[nodiscard]] String getNodePath() const
+    String getNodePath() const
     {
         return node_cypress_path;
     }

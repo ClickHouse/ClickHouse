@@ -28,38 +28,3 @@ SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker
 SELECT countIf(explain ILIKE '%concatAssumeInjective%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nothing_key GROUP BY concatAssumeInjective(fs, 'x'));
 SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker, countIf(explain ILIKE '%SORT id%') AS sort_nodes FROM (EXPLAIN QUERY TREE SELECT fs FROM t_nothing_key GROUP BY fs ORDER BY concatAssumeInjective(fs, 'x'), fs DESC);
 DROP TABLE t_nothing_key;
--- A typed NULL constant or a `Nullable` column keeps the result type, but every row where that
--- argument is NULL still maps onto one NULL key, so the key must not be unwrapped either.
-DROP TABLE IF EXISTS t_nullable_arg_key;
-CREATE TABLE t_nullable_arg_key (a UInt8, n Nullable(UInt8)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_nullable_arg_key VALUES (1, NULL), (1, NULL), (2, NULL), (3, NULL), (3, 7);
-SELECT concatAssumeInjective(a, NULL::Nullable(String)) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
-SELECT count() FROM (SELECT concatAssumeInjective(a, NULL::Nullable(String)) AS k FROM t_nullable_arg_key LIMIT 1 BY k);
-SELECT a FROM t_nullable_arg_key GROUP BY a ORDER BY concatAssumeInjective(a, NULL::Nullable(String)), a DESC;
-SELECT concatAssumeInjective(a, n) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
-SELECT concatAssumeInjective(a, toLowCardinality(n)) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
-SELECT count() FROM (SELECT concatAssumeInjective(a, n) AS k FROM t_nullable_arg_key LIMIT 1 BY k);
-SELECT partitionId(a, n) AS k, count() FROM t_nullable_arg_key GROUP BY k ORDER BY ALL;
--- A non-NULL `Nullable` constant or a lone `Nullable` argument cannot merge rows, so these keys are still unwrapped.
-SELECT countIf(explain ILIKE '%concatAssumeInjective%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nullable_arg_key GROUP BY concatAssumeInjective(a, 'x'::Nullable(String)));
-SELECT countIf(explain ILIKE '%function_name: toString%') AS unwrapped_fn_nodes, countIf(explain ILIKE '%GROUP BY%') AS group_by_sections FROM (EXPLAIN QUERY TREE SELECT count() FROM t_nullable_arg_key GROUP BY toString(n));
-DROP TABLE t_nullable_arg_key;
--- Array cannot be Nullable, so a NULL argument is evaluated as `f(default)`: NULL and 0 share the key `[]`, so the key must not be unwrapped into `n`.
-DROP TABLE IF EXISTS t_injective_array_null;
-CREATE TABLE t_injective_array_null (n Nullable(UInt8), m UInt8) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_injective_array_null VALUES (NULL, 0), (0, 0), (0, 0), (1, 1);
-SELECT bitmaskToArray(n) AS k, count() FROM t_injective_array_null GROUP BY k ORDER BY ALL;
-SELECT bitmaskToArray(n) AS k, count() FROM t_injective_array_null GROUP BY k ORDER BY ALL SETTINGS optimize_injective_functions_in_group_by = 0;
-SELECT bitPositionsToArray(n) AS k, count() FROM t_injective_array_null GROUP BY k ORDER BY ALL;
-SELECT bitmaskToArray(toLowCardinality(n)) AS k, count() FROM t_injective_array_null GROUP BY k ORDER BY ALL SETTINGS allow_suspicious_low_cardinality_types = 1;
--- LIMIT BY must keep NULL and 0 apart.
-SELECT count() FROM (SELECT n FROM t_injective_array_null LIMIT 1 BY bitmaskToArray(n));
-SELECT count() FROM (SELECT n FROM t_injective_array_null LIMIT 1 BY bitmaskToArray(n)) SETTINGS optimize_injective_functions_in_limit_by = 0;
--- ORDER BY must keep the n DESC tiebreaker.
-SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker, countIf(explain ILIKE '%SORT id%') AS sort_nodes FROM (EXPLAIN QUERY TREE SELECT n FROM t_injective_array_null GROUP BY n ORDER BY bitmaskToArray(n), n DESC);
-SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker, countIf(explain ILIKE '%SORT id%') AS sort_nodes FROM (EXPLAIN QUERY TREE SELECT n FROM t_injective_array_null GROUP BY n ORDER BY bitmaskToArray(n), n DESC SETTINGS optimize_truncate_order_by_after_group_by_keys = 0);
-SELECT n FROM t_injective_array_null GROUP BY n ORDER BY bitmaskToArray(n), n DESC;
--- Without a Nullable argument the claim still holds, so the key is still unwrapped and the tiebreaker truncated.
-SELECT countIf(explain ILIKE '%bitmaskToArray%') AS unwrapped_fn_nodes FROM (EXPLAIN QUERY TREE SELECT count() FROM t_injective_array_null GROUP BY bitmaskToArray(m));
-SELECT countIf(explain ILIKE '%sort_direction: DESCENDING%') AS keeps_tiebreaker, countIf(explain ILIKE '%SORT id%') AS sort_nodes FROM (EXPLAIN QUERY TREE SELECT m FROM t_injective_array_null GROUP BY m ORDER BY bitmaskToArray(m), m DESC);
-DROP TABLE t_injective_array_null;

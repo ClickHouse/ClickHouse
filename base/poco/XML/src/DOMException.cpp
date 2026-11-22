@@ -20,7 +20,7 @@ namespace Poco {
 namespace XML {
 
 
-[[clang::no_destroy]] const std::string DOMException::MESSAGES[_NUMBER_OF_MESSAGES] =
+const std::string DOMException::MESSAGES[_NUMBER_OF_MESSAGES] =
 {
 	"Invalid DOM exception code",
 	"Index or size is negative or greater than allowed value",
