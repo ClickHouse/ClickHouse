@@ -597,7 +597,6 @@ test_storage_delta_disks/test.py	81540
 test_distributed_format/test.py	81251
 test_replicated_database_interserver_host/test.py	81152
 test_clickhouse_server_wait_server_pool/test.py	81150
-test_store_cleanup/test.py	80556
 test_rmv_access_denied_on_rename_race/test.py	80434
 test_database_catalog_shutdown_system_logs/test.py	80414
 test_storage_iceberg_with_spark/test_schema_inference.py	80033
