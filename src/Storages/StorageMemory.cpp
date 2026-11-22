@@ -395,7 +395,7 @@ protected:
             return {};
         }
 
-        wakeup->reset();
+        (*wakeup).reset();
         const auto snapshot = storage->data.get();
 
         if (snapshot->generation != generation)
