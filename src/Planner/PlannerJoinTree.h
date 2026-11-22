@@ -32,6 +32,11 @@ struct JoinTreeQueryPlan
     std::unordered_map<String, String> shard_collapse_duplicate_keys{};
 };
 
+/// Whether an aggregate over every row of `table_expression`, read without WHERE and PREWHERE, can be computed from
+/// the table's metadata, as for trivial count. `needs_stored_values` also requires the stored values of every row.
+bool canAnswerWholeTableAggregateFromMetadata(
+    const QueryTreeNodePtr & table_expression, const ContextPtr & context, bool needs_stored_values);
+
 /// Throw if a subquery of `node` with parallel replicas enabled uses a different implementation
 /// (query-based or plan-based) than the query (`query_context`).
 void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const ContextPtr & query_context);
