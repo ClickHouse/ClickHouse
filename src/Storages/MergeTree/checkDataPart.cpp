@@ -330,6 +330,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else if (part_type == MergeTreeDataPartType::Wide)
     {
+        /// Column files are never in `skp_idx.packed`, but the part storage reads its index through the page cache
+        /// to look up a column named `skp_idx_*`. So with `O_DIRECT` the streams are looked up in the directory listing.
+        const bool lookup_in_listing = read_settings.local_fs_settings.direct_io_threshold != 0;
+        IMergeTreeDataPart::Checksums files_in_listing;
+        if (lookup_in_listing)
+            for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
+                files_in_listing.files[it->name()];
+
         const auto & cols_substreams = data_part->getColumnsSubstreams();
         if (!cols_substreams.empty())
         {
@@ -342,7 +350,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                 for (const auto & substream : substreams)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
+                    auto stream_name = lookup_in_listing
+                        ? IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", files_in_listing)
+                        : IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
                     if (!stream_name)
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
                             "There is no file for column '{}' (substream {}) in data part '{}'",
@@ -373,7 +383,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                         return;
 
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
+                    auto stream_name = lookup_in_listing
+                        ? IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", files_in_listing, data_part->storage.getSettings())
+                        : IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
                     if (!stream_name)
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,

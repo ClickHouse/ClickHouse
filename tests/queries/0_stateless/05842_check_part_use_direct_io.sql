@@ -19,18 +19,19 @@ INSERT INTO t_rmt SELECT number, toString(number) FROM numbers(1000);
 CHECK TABLE t_mt SETTINGS check_query_single_value_result = 1, log_comment = 'mt_on';
 CHECK TABLE t_rmt SETTINGS check_query_single_value_result = 1, log_comment = 'rmt_on';
 
--- Skip indices both in skp_idx.packed and in a standalone file. A fetched part is loaded without the consistency check,
--- so the index of skp_idx.packed is not read yet (a prewarmed mark cache, or a numeric column in debug builds, reads it).
-CREATE TABLE t_idx_r1 (s String, s2 String, INDEX i_minmax s TYPE minmax, INDEX i_bf s2 TYPE bloom_filter)
+-- Skip indices both in skp_idx.packed and in a standalone file, and a column named like a skip index file. A fetched part
+-- is loaded without the consistency check, so the index of skp_idx.packed is not read yet (a prewarmed mark cache, or a
+-- numeric column in debug builds, reads it).
+CREATE TABLE t_idx_r1 (s String, s2 String, skp_idx_value String, INDEX i_minmax s TYPE minmax, INDEX i_bf s2 TYPE bloom_filter)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_idx', 'r1') ORDER BY s
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 1024,
     index_granularity = 8192, index_granularity_bytes = 10485760, replace_long_file_name_to_hash = 0;
-CREATE TABLE t_idx_r2 (s String, s2 String, INDEX i_minmax s TYPE minmax, INDEX i_bf s2 TYPE bloom_filter)
+CREATE TABLE t_idx_r2 (s String, s2 String, skp_idx_value String, INDEX i_minmax s TYPE minmax, INDEX i_bf s2 TYPE bloom_filter)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_idx', 'r2') ORDER BY s
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, packed_skip_index_max_bytes = 1024,
     index_granularity = 8192, index_granularity_bytes = 10485760, replace_long_file_name_to_hash = 0,
     always_fetch_merged_part = 1, prewarm_mark_cache = 0;
-INSERT INTO t_idx_r1 SELECT toString(number), toString(number) FROM numbers(100000);
+INSERT INTO t_idx_r1 SELECT toString(number), toString(number), toString(number) FROM numbers(100000);
 SYSTEM SYNC REPLICA t_idx_r2;
 CHECK TABLE t_idx_r2 SETTINGS check_query_single_value_result = 1, log_comment = 'idx_on';
 
