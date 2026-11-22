@@ -344,10 +344,13 @@ This makes settings like `string_serialization_version` effective.
 - `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
 listing omitted columns and the type whose default represents their values.
 Required to enable `skip_empty_columns_on_insert`.
+- `with_subcolumns` - Everything `with_missing_columns` records (so `skip_empty_columns_on_insert`
+keeps working), plus serialization information for the declared paths of `JSON` columns,
+so that each declared path can use sparse serialization independently.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
+switch to `with_types`, `with_missing_columns`, or `with_subcolumns` to enable the corresponding features.
 )", 0, \
         {"25.11", "basic", "with_types", "Change to the newer format allowing custom string serialization"}, \
         {"25.10", "basic", "basic", "New setting"}) \
@@ -827,6 +830,13 @@ OPTIMIZE FINAL query.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
         {"26.1", true, true, "New setting"}) \
+    DECLARE(Bool, serialize_statistics_bounds_with_column_type, false, R"(
+When enabled, the minimum and maximum of `minmax` and `basic` statistics are written with the serialization
+of the column type, in statistics file format `V5`, instead of the generic `Field` encoding of `V4`.
+Older versions cannot read the statistics files of `V5`, so do not enable it before all replicas are upgraded:
+the statistics of the parts written with it have to be rematerialized after a downgrade.
+)", 0, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)

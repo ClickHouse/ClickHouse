@@ -1938,6 +1938,7 @@ class SettingsRandomizer:
         )[0],
         "output_format_parquet_write_checksums": lambda: random.random() > 0.2,
         "output_format_parquet_use_alp_encoding": lambda: random.random() < 0.2,
+        "output_format_parquet_use_data_page_v2": lambda: random.random() < 0.5,
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
