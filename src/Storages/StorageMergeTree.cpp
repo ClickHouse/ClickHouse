@@ -5068,7 +5068,48 @@ void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, Conte
         String part_dir = part->getDataPartStorage().getPartDirectory();
         LOG_INFO(log, "Detaching {}", part_dir);
         auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
-        part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+
+        if (!leader_election_ptr)
+        {
+            part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+            continue;
+        }
+
+        /// Under `leader_election` the copy becomes a detached part in two steps.
+        ///
+        /// The files of the part are copied one after another, by the name of its directory. If this node stalls
+        /// in the middle for longer than its lease, another leader may remove the part and reuse its name for
+        /// other data, and the rest of the files would be taken from the other part: the copy would be a mix that
+        /// `ATTACH` accepts, because loading a part compares the sizes of the files, not their contents. So the
+        /// copy is first written under a name that `ATTACH PARTITION` does not take (`clone_...`). Then the source
+        /// is checked: its storage is bound to its directory (see `IDataPartStorage::pinSharedStorageIdentity`),
+        /// an identity never comes back to a name, so if the name still refers to that directory after everything
+        /// is copied, every file was taken from it. Only then, and only if this node still leads in the epoch of
+        /// the command, the copy is renamed to the name of a detached part.
+        ///
+        /// If a check fails, the copy stays under the `clone_` name. It is not removed: this node may no longer
+        /// be the leader, and it must not remove anything by name then.
+        const auto clone_path = part->getRelativePathForDetachedPart("clone", /* broken= */ false);
+        chassert(clone_path);
+        auto clone_holder = getTemporaryPartDirectoryHolder(*clone_path);
+        part->makeCloneAt(*clone_path, /*disk_transaction*/ {});
+
+        try
+        {
+            part->getDataPartStorage().assertSharedStorageIdentityUnchanged();
+            assertWritableLeaderAtEpoch(admission_epoch);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("The parts are already removed from the table; the copy of part {} was left in `{}`, which is not a detached part, "
+                "and the parts after it were not copied to `detached/`", part->name, *clone_path);
+            throw;
+        }
+
+        const auto detached_path = part->getRelativePathForDetachedPart("", /* broken= */ false);
+        chassert(detached_path);
+        auto disk = getStoragePolicy()->getDiskByName(part->getDataPartStorage().getDiskName());
+        disk->moveDirectory(fs::path(relative_data_path) / *clone_path, fs::path(relative_data_path) / *detached_path);
     }
 }
 
