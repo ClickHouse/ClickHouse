@@ -3411,10 +3411,12 @@ def main():
     # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
     # refuse it, unless the run compares with its own `--reference-path` binary or opts
     # out explicitly. This is not a part of the install stage: a run resumed at a later
-    # stage (`--param restart`) measures the binary that was downloaded for it as well.
+    # stage (`--param restart`) measures the binary that was downloaded for it as well,
+    # and so does one resumed at the `report` stage, which runs the changed queries again
+    # to confirm them (`confirm_changes` in `compare.sh`).
     if (
         res
-        and JobStages.TEST in stages
+        and JobStages.REPORT in stages
         and not args.reference_path
         and not args.allow_non_thinlto
     ):
