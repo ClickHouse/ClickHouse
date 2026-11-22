@@ -148,6 +148,13 @@ SocketAddress::SocketAddress(const SocketAddress& socketAddress)
 }
 
 
+SocketAddress::SocketAddress(SocketAddress&& socketAddress) noexcept
+{
+	// AutoPtr has no move operations: assigning it duplicates the refcount, swapping transfers it.
+	_pImpl.swap(socketAddress._pImpl);
+}
+
+
 SocketAddress::SocketAddress(const struct sockaddr* sockAddr, poco_socklen_t length)
 {
 	if (length == sizeof(struct sockaddr_in) && sockAddr->sa_family == AF_INET)
@@ -196,6 +203,17 @@ SocketAddress& SocketAddress::operator = (const SocketAddress& socketAddress)
 		else if (socketAddress.family() == UNIX_LOCAL)
 			newLocal(reinterpret_cast<const sockaddr_un*>(socketAddress.addr()));
 #endif
+	}
+	return *this;
+}
+
+
+SocketAddress& SocketAddress::operator = (SocketAddress&& socketAddress) noexcept
+{
+	if (&socketAddress != this)
+	{
+		_pImpl.swap(socketAddress._pImpl);
+		socketAddress._pImpl.reset();
 	}
 	return *this;
 }

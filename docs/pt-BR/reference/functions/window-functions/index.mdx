@@ -1,6 +1,6 @@
 ---
 description: 'Página de visão geral sobre funções de janela'
-sidebarTitle: 'Funções de janela'
+sidebarTitle: 'Visão geral'
 slug: /sql-reference/window-functions/
 title: 'Funções de janela'
 doc_type: 'reference'
@@ -24,7 +24,7 @@ A tabela abaixo mostra quais recursos têm suporte no momento:
 | frame `ROWS`                                                                          | ✅          |                                                                                                                                                                                                                                                                                                                                                                                                           |
 | frame `RANGE`                                                                         | ✅          | Usado por padrão quando um frame não é especificado explicitamente (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                                 |
 | Sintaxe `INTERVAL` para o frame `DateTime` `RANGE OFFSET`                             | ❌          | Em vez disso, especifique o número de segundos (`RANGE` funciona com qualquer tipo numérico).                                                                                                                                                                                                                                                                                                             |
-| frame `GROUPS`                                                                        | ❌          |                                                                                                                                                                                                                                                                                                                                                                                                           |
+| frame `GROUPS`                                                                        | ✅          | Os limites do frame contam grupos de pares inteiros (linhas iguais na chave `ORDER BY`); `N PRECEDING` e `N FOLLOWING` contam `N` grupos de pares antes e depois do grupo de pares da linha atual.                                                                                                                                                                                                        |
 | Cálculo de funções de agregação sobre um frame (`sum(value) OVER (ORDER BY time)`)    | ✅          | Todas as funções de agregação são compatíveis.                                                                                                                                                                                                                                                                                                                                                            |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                                | ✅          |                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `percent_rank()`/`percentRank()`                                                      | ✅          | Calcula com eficiência a posição relativa de um valor dentro de uma partição. Substitui o cálculo manual em SQL, mais verboso e computacionalmente mais custoso, expresso como `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                                |
@@ -39,18 +39,18 @@ A tabela abaixo mostra quais recursos têm suporte no momento:
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - define como dividir um conjunto de resultados em grupos.
 * `ORDER BY` - define como ordenar as linhas dentro do grupo durante o cálculo de aggregate&#95;function.
-* `ROWS or RANGE` - define os limites de um frame; aggregate&#95;function é calculada dentro desse frame.
+* `ROWS`, `RANGE` ou `GROUPS` - define os limites de um frame; aggregate&#95;function é calculada dentro desse frame. `ROWS` conta linhas físicas, `RANGE` conta valores de `ORDER BY` e `GROUPS` conta grupos de pares (linhas iguais na chave `ORDER BY`).
 * `WINDOW` - permite que várias expressões usem a mesma definição de janela.
 
 ```text
@@ -526,6 +526,44 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
+
+<div id="groups-frame">
+  ### Frame GROUPS
+</div>
+
+Um frame `GROUPS` conta *grupos de pares* completos — conjuntos de linhas iguais na chave `ORDER BY` — em vez de linhas físicas (`ROWS`) ou valores de `ORDER BY` (`RANGE`). `N PRECEDING` e `N FOLLOWING` contam `N` grupos de pares antes e depois do grupo de pares da linha atual, e cada grupo de pares incluído sempre contribui com todas as suas linhas.
+
+A consulta abaixo aplica os mesmos limites de `1 PRECEDING AND 1 FOLLOWING` a frames `ROWS`, `RANGE` e `GROUPS`. A coluna `order` contém valores duplicados e não consecutivos; portanto, os três modos abrangem linhas diferentes:
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+Cada modo interpreta os limites de maneira diferente:
+
+* `ROWS` conta linhas físicas, portanto o frame contém no máximo três linhas adjacentes: a linha atual e uma de cada lado.
+* `RANGE` conta valores de `order`, portanto `1 PRECEDING` e `1 FOLLOWING` abrangem linhas cujo `order` está a uma distância de até 1 do valor da linha atual. Com lacunas de 10, nenhuma linha vizinha se qualifica, então o frame contém apenas as linhas que têm o mesmo `order` da linha atual.
+* `GROUPS` conta grupos de pares, portanto `1 PRECEDING` e `1 FOLLOWING` sempre incluem integralmente os grupos adjacentes, independentemente das lacunas entre os valores de `order`.
 
 <div id="real-world-examples">
   ## Exemplos práticos

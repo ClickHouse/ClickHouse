@@ -701,6 +701,7 @@ set(CRYPTO_SRC
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_pool.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/rand_uniform.c
     ${OPENSSL_SOURCE_DIR}/crypto/rand/randfile.c
+    ${OPENSSL_SOURCE_DIR}/crypto/rbtree/rbtree.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_cbc.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_ecb.c
     ${OPENSSL_SOURCE_DIR}/crypto/rc2/rc2_skey.c
@@ -1262,8 +1263,10 @@ elseif(ARCH_PPC64LE)
         ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
         ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
-        ${OPENSSL_SOURCE_DIR}/engines/e_afalg.c
     )
+    if (OS_LINUX)
+        set(CRYPTO_SRC ${CRYPTO_SRC} ${OPENSSL_SOURCE_DIR}/engines/e_afalg.c)
+    endif()
 elseif(ARCH_S390X)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         asm/crypto/aes/aes-s390x.S
@@ -1358,7 +1361,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_record_util.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_rstream.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_rx_depack.c
-    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_sf_list.c
+    ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_strm_reas.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_srt_gen.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_srtm.c
     ${OPENSSL_SOURCE_DIR}/ssl/quic/quic_sstream.c
@@ -1469,6 +1472,17 @@ target_include_directories(ssl
     PRIVATE ${OPENSSL_SOURCE_DIR})
 
 target_link_libraries(ssl crypto)
+
+# OpenSSL calls many functions through pointers whose types differ only in pointer types, e.g. `d2i_X509` through
+# `d2i_of_void` or `RSA_free` through `void (*)(void *)`, which strict CFI (`cfi-icall`) rejects. Upstream is fixing
+# them (stacks, sparse arrays and `decode_der2key` free callbacks in 4.0, the first two backported here), but not all
+# yet. Until then, OpenSSL's indirect calls are checked with all pointer types treated alike: return type, arity and
+# non-pointer arguments are still checked. TODO: backport or fix the rest and drop this.
+if (ENABLE_CFI)
+    foreach (target crypto ssl)
+        target_compile_options (${target} PRIVATE $<$<COMPILE_LANGUAGE:C>:-fsanitize-cfi-icall-generalize-pointers>)
+    endforeach ()
+endif ()
 
 add_library(OpenSSL::Crypto ALIAS crypto)
 add_library(OpenSSL::SSL ALIAS ssl)

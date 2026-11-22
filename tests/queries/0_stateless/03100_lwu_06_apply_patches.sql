@@ -32,14 +32,14 @@ SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 1;
 SELECT '*** without patches ***';
 SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 0;
 
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 1;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 OPTIMIZE TABLE t_shared PARTITION ID 'all' FINAL;
 
 SELECT * FROM t_shared ORDER BY id SETTINGS apply_patch_parts = 1;
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_shared' AND active ORDER BY name;
 
 DROP TABLE t_shared SYNC;

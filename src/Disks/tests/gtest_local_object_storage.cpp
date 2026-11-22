@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 #include <unistd.h> /// for ::getpid
 
@@ -463,7 +464,7 @@ TEST(LocalObjectStorage, TryGetObjectMetadataToleratesNonDirectoryPathComponent)
         ASSERT_FALSE(ec) << "Failed to chmod 000 the subdirectory: " << ec.message();
 
         EXPECT_THROW(
-            storage->tryGetObjectMetadata((no_access / "hidden.txt").string(), /*with_tags=*/ false),
+            (void)storage->tryGetObjectMetadata((no_access / "hidden.txt").string(), /*with_tags=*/ false),
             fs::filesystem_error);
 
         fs::permissions(no_access, fs::perms::owner_all, fs::perm_options::replace, ec);

@@ -32,7 +32,6 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
     std::atomic<UInt64> processing_threads_num;
-    std::atomic<bool> parallel_inserts;
     std::atomic<UInt64> tracked_files_limit;
     std::atomic<UInt64> tracked_files_ttl_sec;
     std::atomic<UInt64> buckets;
@@ -56,7 +55,6 @@ struct ObjectStorageQueueTableMetadata
         , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
-        , parallel_inserts(other.parallel_inserts.load())
         , tracked_files_limit(other.tracked_files_limit.load())
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
         , buckets(other.buckets.load())
@@ -89,7 +87,6 @@ struct ObjectStorageQueueTableMetadata
 
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 
-    /// Whether a queue setting contributes to metadata stored in Keeper.
     static bool isStoredInKeeper(const std::string & name)
     {
         static const std::unordered_set<std::string_view> settings_names
@@ -103,11 +100,9 @@ struct ObjectStorageQueueTableMetadata
             "partitioning_mode",
             "partition_regex",
             "partition_component",
-            "use_hive_partitioning",
             "after_processing",
             "loading_retries",
             "processing_threads_num",
-            "parallel_inserts",
             "tracked_files_limit",
             "tracked_file_ttl_sec",
             "tracked_files_ttl_sec",

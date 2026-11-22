@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 
 #include <Common/assert_cast.h>
@@ -35,6 +36,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <Storages/StorageSet.h>
+#include <Storages/StorageProxy.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedSetJoin.h>
 #endif
@@ -60,21 +62,23 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/misc.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Columns/ColumnString.h>
 
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -132,9 +136,9 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
-            auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-            element_columns.emplace_back(column->convertToFullColumnIfConst());
-            element_types.emplace_back(std::move(type));
+            const auto value = evaluateConstantExpressionAsColumn(arg, context);
+            element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
+            element_types.emplace_back(value.getType());
         }
 
         auto tuple_column = ColumnTuple::create(std::move(element_columns));
@@ -151,9 +155,9 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
         for (const auto & arg : args)
         {
-            auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-            element_columns.emplace_back(column->convertToFullColumnIfConst());
-            element_types.emplace_back(std::move(type));
+            const auto value = evaluateConstantExpressionAsColumn(arg, context);
+            element_columns.emplace_back(value.getColumn()->convertToFullColumnIfConst());
+            element_types.emplace_back(value.getType());
         }
 
         DataTypePtr nested_type;
@@ -179,7 +183,8 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 
     /// For non tuple/array functions, we fall back to the generic path
     ASTPtr func_ast = func;
-    return evaluateConstantExpressionAsColumn(func_ast, context);
+    const auto value = evaluateConstantExpressionAsColumn(func_ast, context);
+    return {value.getColumn(), value.getType()};
 }
 
 
@@ -195,7 +200,9 @@ ColumnsWithTypeAndName createBlockForSet(
     const ASTPtr & right_arg,
     ContextPtr context)
 {
-    auto [right_arg_column, right_arg_type] = evaluateConstantExpressionAsColumn(right_arg, context);
+    const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
+    const auto & right_arg_column = right_value.getColumn();
+    const auto & right_arg_type = right_value.getType();
 
     GetSetElementParams params{
         .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
@@ -273,19 +280,17 @@ bool isTupleFunction(const ASTPtr & ast)
     return function && function->name == "tuple";
 }
 
-size_t getTupleElementCount(const DataTypePtr & type, const ASTPtr & ast)
+/// The number of key columns that `IN` compares separately for the left operand, see `getInKeyColumnTypes`.
+/// Without a resolved type, a `tuple(...)` call has one key column per argument.
+size_t getInKeyColumnCount(const DataTypePtr & type, const ASTPtr & ast)
 {
     if (type)
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-        if (tuple_type)
-            return tuple_type->getElements().size();
-    }
+        return getInKeyColumnTypes(type).size();
 
     if (const auto * function = ast->as<ASTFunction>(); function && function->name == "tuple")
         return function->arguments->children.size();
 
-    return 0;
+    return 1;
 }
 
 ASTPtr makeTupleHasNoNullElementsPredicate(const ASTPtr & tuple_value, size_t tuple_size)
@@ -403,7 +408,7 @@ ASTPtr makeNonConstantInReplacement(
     bool include_right_operand_tuple_value,
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple,
-    size_t left_operand_tuple_size,
+    size_t left_operand_key_column_count,
     bool left_operand_is_always_null,
     const DataTypePtr & cast_elements_to)
 {
@@ -485,13 +490,14 @@ ASTPtr makeNonConstantInReplacement(
         left_operand->clone());
 
     ASTPtr result = has_function;
-    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
-    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
-    /// elements to preserve `IN` semantics in the row-wise rewrite.
-    if (!inFunctionComparesNulls(node.name) && left_operand_tuple_size != 0)
+    /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
+    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match.
+    /// Guard the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are
+    /// values.
+    if (!inFunctionComparesNulls(node.name) && left_operand_key_column_count > 1)
         result = makeASTFunction(
             "and",
-            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_tuple_size),
+            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_key_column_count),
             std::move(result));
 
     if (!inFunctionComparesNulls(node.name))
@@ -579,7 +585,7 @@ public:
         index.push_back(node);
     }
 
-    const ActionsDAG::Node * tryGetNode(const std::string & name) const
+    [[nodiscard]] const ActionsDAG::Node * tryGetNode(const std::string & name) const
     {
         auto it = map.find(name);
         if (it == map.end())
@@ -588,7 +594,7 @@ public:
         return it->second;
     }
 
-    const ActionsDAG::Node & getNode(const std::string & name) const
+    [[nodiscard]] const ActionsDAG::Node & getNode(const std::string & name) const
     {
         const auto * node = tryGetNode(name);
         if (!node)
@@ -597,9 +603,9 @@ public:
         return *node;
     }
 
-    bool contains(const std::string & name) const { return map.contains(name); }
+    [[nodiscard]] bool contains(const std::string & name) const { return map.contains(name); }
 
-    std::vector<std::string_view> getAllNames() const
+    [[nodiscard]] std::vector<std::string_view> getAllNames() const
     {
         std::vector<std::string_view> result;
         result.reserve(map.size());
@@ -766,6 +772,14 @@ void ScopeStack::addFunction(
 
     const auto & node = stack[level].actions_dag.addFunction(function, std::move(children), std::move(result_name));
     stack[level].index->addNode(&node);
+
+    {
+        auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
+        bool node_has_secret = findSecretArguments(node).hasSecrets();
+        bool child_has_secret = std::any_of(
+            node.children.begin(), node.children.end(), [](const ActionsDAG::Node * child) { return child->is_masked_secret; });
+        mutable_node.is_masked_secret = node_has_secret || (node.column && child_has_secret);
+    }
 
     for (size_t j = level + 1; j < stack.size(); ++j)
     {
@@ -1124,6 +1138,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                                 break;
                             }
 
+                            /// A tuple already in the index is a no-op to visit, so its children may still be unnamed.
+                            visit(child, data);
+
                             auto name_and_type = getNameAndTypeFromAST(child, data);
                             if (name_and_type && isTupleType(name_and_type->type))
                             {
@@ -1142,12 +1159,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         if (nullable_left_tuple_type && rhs_tuple_all_null)
                         {
                             right_argument_tuple_function_is_set = true;
-                            /// Match the constant `Set` path: an explicit all-`NULL` tuple contributes
-                            /// top-level `NULL` set elements and, when representable, the tuple value too.
-                            include_right_argument_tuple_value = inFunctionComparesNulls(node.name)
-                                && right_argument_function->arguments->children.size() == nullable_left_tuple_type->getElements().size()
-                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
-                                    [](const auto & type) { return type->isNullable(); });
+                            /// An explicit all-`NULL` RHS tuple, such as `(NULL, NULL)`, is read as in the
+                            /// constant `Set` path: as top-level `NULL` set elements and, when the key can
+                            /// hold it, as the tuple value too (see `nullableTupleKeyCanHoldAllNullTuple`).
+                            include_right_argument_tuple_value = nullableTupleKeyCanHoldAllNullTuple(
+                                *nullable_left_tuple_type, right_argument_function->arguments->children.size());
                         }
                     }
                 }
@@ -1276,7 +1292,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         include_right_argument_tuple_value,
                         right_argument_type,
                         left_argument_is_tuple,
-                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
+                        getInKeyColumnCount(left_argument_type, node.arguments->children.at(0)),
                         left_argument_type && left_argument_type->onlyNull(),
                         cast_elements_to);
                 }
@@ -1308,10 +1324,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
                 /// Do not evaluate subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
+                /// Pass the left operand alone: the `IgnoreSet` variants never read the set, and the
+                /// real `in` always gets its set as a constant column, so a constant is what the
+                /// `LowCardinality` bookkeeping in `IFunctionOverloadResolver::getReturnType` expects
+                /// to see there. Passing the left operand twice instead would count two full
+                /// `LowCardinality` columns and type the expression as plain `UInt8` while execution
+                /// yields `LowCardinality(UInt8)`, so a query reading such a column across a subquery
+                /// boundary would fail the type check in `ActionsDAG::updateHeader`. A stand-in
+                /// constant column is not an option either: it would become part of the captured
+                /// arguments of an enclosing lambda and be looked up in later analysis passes that
+                /// never created it.
                 auto argument_name = node.arguments->children.at(0)->getColumnName();
                 data.addFunction(
                     FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
-                    {argument_name, argument_name},
+                    {argument_name},
                     column_name);
             }
             return;
@@ -1450,6 +1476,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(node.name);
         if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
         {
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
         }
@@ -1776,7 +1803,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer] && !identifier)
+        if (!identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.
@@ -1814,13 +1841,18 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
-#if CLICKHOUSE_CLOUD
-                if (StorageSharedSet * storage_shared_set = dynamic_cast<StorageSharedSet *>(table.get()))
-                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
-#endif
 
-                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
+                if (auto * storage_set = castStorage<StorageSet>(table, DeferredTable::Load).get())
+                {
+                    storage_set->checkNoRowPolicy(data.getContext());
+#if CLICKHOUSE_CLOUD
+                    /// NOLINT(storage-cast): `storage_set` is resolved above.
+                    if (auto * storage_shared_set = dynamic_cast<StorageSharedSet *>(storage_set))
+                        return data.prepared_sets->addFromStorage(
+                            set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+#endif
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
+                }
             }
 
             if (!data.getContext()->isGlobalContext())
@@ -1845,8 +1877,11 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
         {
-            auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            interpreter->buildQueryPlan(*source);
+            /// The analyzer, not the interpreter that preceded it: the subquery reads real tables, and a
+            /// storage that resolves its read through a query tree - `Distributed` and `Merge` - has no
+            /// other way to be read.
+            auto interpreter = interpretSubqueryWithAnalyzer(right_in_operand, data.getContext(), data.subquery_depth, {});
+            *source = std::move(*interpreter).extractQueryPlan();
         }
 
         return data.prepared_sets->addFromSubquery(

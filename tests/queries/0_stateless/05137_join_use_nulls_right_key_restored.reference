@@ -1,0 +1,224 @@
+-- right side of the plan carries only the Nullable key
+Header: __table2.k Nullable(String)
+Header: __table2.k Nullable(String)
+__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
+Expression (Right Pre Join Actions)
+Header: toNullable(__table2.k) Nullable(String)
+Header: __table2.k String
+-- LEFT
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+Nullable(String)	6
+-- LEFT, key only
+a
+c
+c
+c
+c
+\N
+-- LEFT ANY
+a	a
+b	\N
+c	c
+c	c
+-- LEFT SEMI
+a	a
+c	c
+c	c
+-- LEFT ANTI
+b	\N
+-- FULL
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+-- LEFT with residual ON condition
+a	\N	\N
+b	\N	\N
+c	c	31
+c	c	31
+-- LEFT with a residual ON condition on the right key itself
+a	\N	\N
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+-- LEFT with WHERE on the right key
+b	\N
+c	c
+c	c
+c	c
+c	c
+-- null-safe key
+a	a
+b	\N
+c	c
+c	c
+c	c
+c	c
+-- parallel_hash
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+-- grace_hash
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+-- spilling wrapper
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+-- partial_merge
+Header: __table2.k Nullable(String)
+Header: __table2.k Nullable(String)
+__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
+Expression (Right Pre Join Actions)
+Header: toNullable(__table2.k) Nullable(String)
+Header: __table2.k String
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+a	a
+b	\N
+c	c
+c	c
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+a	a
+b	\N
+c	c
+c	c
+c	c
+c	c
+LowCardinality(Nullable(String))
+-- auto, switched to partial_merge
+Header: __table2.k Nullable(String)
+Header: __table2.k Nullable(String)
+__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
+Expression (Right Pre Join Actions)
+Header: toNullable(__table2.k) Nullable(String)
+Header: __table2.k String
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+\N	d	40
+a	a
+b	\N
+c	c
+c	c
+c	c
+c	c
+-- full_sorting_merge
+Header: __table2.k Nullable(String)
+Header: __table2.k Nullable(String)
+__table2.k Nullable(String)
+toNullable(__table2.k) Nullable(String)
+Header: toNullable(__table2.k) Nullable(String)
+Expression (Right Pre Join Actions)
+Header: toNullable(__table2.k) Nullable(String)
+Header: __table2.k String
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31
+-- LowCardinality key
+a	a
+b	\N
+c	c
+c	c
+c	c
+c	c
+LowCardinality(Nullable(String))
+-- key with a type conversion
+1	10
+2	\N
+3	30
+4	40
+1	10
+2	\N
+3	30
+4	40
+-- derived right key
+a	a
+b	\N
+c	c
+c	c
+c	c
+c	c
+-- WITH TOTALS
+a	1
+c	14
+\N	2
+
+\N	17
+a	1	10
+b	2	\N
+c	7	61
+d	\N	40
+
+\N	10	111
+a	a
+b	\N
+c	c
+
+	
+-- swapped
+a	a	10
+b	\N	\N
+c	c	30
+c	c	30
+c	c	31
+c	c	31

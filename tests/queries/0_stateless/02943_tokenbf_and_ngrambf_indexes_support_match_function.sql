@@ -2,7 +2,6 @@ SET explain_query_plan_default = 'legacy';
 SET optimize_rewrite_regexp_functions = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS tokenbf_tab;
 DROP TABLE IF EXISTS ngrambf_tab;
@@ -38,49 +37,25 @@ SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY 
 -- Alternatives: 'Hello ClickHouse', 'Hello World'
 -- Surrounded by spaces for tokenbf
 
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes=1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes=1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id
+    SELECT * FROM tokenbf_tab WHERE match(str, ' Hello (ClickHouse|World) ') ORDER BY id SETTINGS enable_parallel_replicas = 0
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
+
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes=1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
+    SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id SETTINGS enable_parallel_replicas = 0
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
-
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes=1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 
 SELECT '---';
@@ -93,49 +68,25 @@ SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id;
 -- Alternatives: 'ClickHouse', 'World'
 -- Surrounded by spaces for tokenbf
 
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id
+    SELECT * FROM tokenbf_tab WHERE match(str, '.* (ClickHouse|World) ') ORDER BY id SETTINGS enable_parallel_replicas = 0
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
+
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
+    SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id SETTINGS enable_parallel_replicas = 0
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
-
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 SELECT '---';
 
@@ -151,44 +102,20 @@ SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
+    SELECT * FROM tokenbf_tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id SETTINGS enable_parallel_replicas = 0
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM tokenbf_tab WHERE match(str, ' OLAP (.*?)*') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
+
 
 SELECT *
 FROM
 (
     EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
+    SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id SETTINGS enable_parallel_replicas = 0
 )
 WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 0;
-
-SELECT *
-FROM
-(
-    EXPLAIN PLAN indexes = 1
-    SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
-)
-WHERE
-    explain LIKE '%Granules: %'
-SETTINGS
-  enable_analyzer = 1;
+    explain LIKE '%Granules: %';
 
 DROP TABLE tokenbf_tab;
 DROP TABLE ngrambf_tab;

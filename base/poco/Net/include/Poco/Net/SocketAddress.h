@@ -140,6 +140,11 @@ namespace Net
         SocketAddress(const SocketAddress & addr);
         /// Creates a SocketAddress by copying another one.
 
+        SocketAddress(SocketAddress && addr) noexcept;
+        /// Creates a SocketAddress by moving another one.
+        /// The moved-from address holds no implementation, so its
+        /// accessors throw Poco::NullPointerException.
+
         SocketAddress(const struct sockaddr * addr, poco_socklen_t length);
         /// Creates a SocketAddress from a native socket address.
 
@@ -148,6 +153,11 @@ namespace Net
 
         SocketAddress & operator=(const SocketAddress & socketAddress);
         /// Assigns another SocketAddress.
+
+        SocketAddress & operator=(SocketAddress && socketAddress) noexcept;
+        /// Moves another SocketAddress.
+        /// The moved-from address holds no implementation, so its
+        /// accessors throw Poco::NullPointerException.
 
         IPAddress host() const;
         /// Returns the host IP address.

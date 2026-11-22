@@ -6,8 +6,6 @@ keywords: ['разреженный первичный индекс', 'перви
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <Tip>
   **Ищете подробную информацию о расширенных возможностях индексирования?**
 
@@ -32,7 +30,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Как [мы уже отмечали](/ru/concepts/core-concepts/parts), в нашей ① примерной таблице с первичным ключом (town, street) ② вставленные данные ③ сохраняются на диске, сортируются по значениям столбцов первичного ключа и сжимаются в отдельные файлы для каждого столбца:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -42,7 +48,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Именно такая структура гранул делает первичный индекс **разреженным**: вместо индексации каждой строки ClickHouse сохраняет ⑤ значения первичного ключа только из одной строки на гранулу — а именно из первой. В результате получается одна запись индекса на гранулу:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -56,19 +70,37 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Ниже схематично показано, как разреженный первичный индекс используется для ускорения запросов:
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 <br />
 
-① Пример запроса содержит предикат по обоим столбцам первичного ключа: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+<Steps>
+  <Step title="Разберите предикат запроса">
+    Пример запроса содержит предикат по обоим столбцам первичного ключа: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+  </Step>
 
-② Чтобы ускорить запрос, ClickHouse загружает первичный индекс таблицы в память.
+  <Step title="Загрузите первичный индекс">
+    Чтобы ускорить запрос, ClickHouse загружает первичный индекс таблицы в память.
+  </Step>
 
-③ Затем он просматривает записи индекса, чтобы определить, какие гранулы могут содержать строки, соответствующие предикату, — иными словами, какие гранулы нельзя пропустить.
+  <Step title="Определите соответствующие гранулы">
+    Затем он просматривает записи индекса, чтобы определить, какие гранулы могут содержать строки, соответствующие предикату, — иными словами, какие гранулы нельзя пропустить.
+  </Step>
 
-④ Затем эти потенциально релевантные гранулы загружаются и [обрабатываются](/ru/concepts/core-concepts/query-parallelism) в памяти вместе с соответствующими гранулами из всех остальных столбцов, необходимых для выполнения запроса.
+  <Step title="Загрузите и обработайте гранулы">
+    Затем эти потенциально релевантные гранулы загружаются и [обрабатываются](/ru/concepts/core-concepts/query-parallelism) в памяти вместе с соответствующими гранулами из всех остальных столбцов, необходимых для выполнения запроса.
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
   ## Мониторинг первичных индексов

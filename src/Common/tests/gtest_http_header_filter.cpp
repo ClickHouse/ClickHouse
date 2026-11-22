@@ -29,7 +29,22 @@ bool isForbidden(const HTTPHeaderFilter & filter, const std::string & name)
     HTTPHeaderEntries entries{{name, "value"}};
     try
     {
-        filter.checkAndNormalizeHeaders(entries);
+        filter.checkHeaders(entries);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+    return false;
+}
+
+/// The same question asked the way an S3 caller asks it: the name reaches the filter lower-cased.
+bool isForbiddenForS3(const HTTPHeaderFilter & filter, const std::string & name)
+{
+    NormalizedHTTPHeaderEntries entries(HTTPHeaderEntries{{name, "value"}});
+    try
+    {
+        filter.checkHeaders(entries);
     }
     catch (const Exception &)
     {
@@ -40,7 +55,7 @@ bool isForbidden(const HTTPHeaderFilter & filter, const std::string & name)
 
 }
 
-/// HTTP header names are case-insensitive (RFC 7230 section 3.2). A forbidden
+/// HTTP header names are case-insensitive (RFC 9110 section 5.1). A forbidden
 /// exact header configured as "Authorization" must block every case variant,
 /// otherwise the http_forbid_headers blocklist is trivially bypassed.
 TEST(HTTPHeaderFilter, ExactMatchIsCaseInsensitive)
@@ -133,11 +148,45 @@ TEST(HTTPHeaderFilter, RegexpInlineCaseSensitiveScopeStillBlocksOriginalCase)
     /// And the (?-i) scope keeps its case-sensitive semantics for other cases.
     EXPECT_FALSE(isForbidden(filter, "authorization"));
     EXPECT_FALSE(isForbidden(filter, "AUTHORIZATION"));
+    /// A rule like this cannot reach an S3 header at all, because the name arrives lower-cased
+    /// whatever the caller wrote. That is a gap, not a design: a `header_regexp` opting out of
+    /// case-insensitivity forbids nothing there. Catching it needs the parsed pattern --
+    /// `re2::Regexp::Parse` and the FoldCase flag of each literal node -- not a substring check,
+    /// so it is left to the follow-up that takes on `<http_forbid_headers>` properly.
+    EXPECT_FALSE(isForbiddenForS3(filter, "Authorization"));
 }
 
-/// Case normalization must compose with whitespace/control-character stripping:
-/// a name padded with whitespace and in a different case is still forbidden.
-TEST(HTTPHeaderFilter, CaseInsensitiveComposesWithWhitespaceStripping)
+/// The filter also guards a collection that already holds lower-cased names. The verdict must be
+/// the same there, and the collection must still hold lower-cased names afterwards.
+TEST(HTTPHeaderFilter, ChecksNormalizedEntries)
+{
+    HTTPHeaderFilter filter;
+    configure(filter, R"(
+        <clickhouse>
+            <http_forbid_headers>
+                <header>Authorization</header>
+            </http_forbid_headers>
+        </clickhouse>
+    )");
+
+    NormalizedHTTPHeaderEntries forbidden(HTTPHeaderEntries{{"Authorization", "Bearer token"}});
+    EXPECT_THROW(filter.checkHeaders(forbidden), Exception);
+
+    /// A control character in the name is not a valid token and is rejected.
+    NormalizedHTTPHeaderEntries invalid(HTTPHeaderEntries{{"X-Amz-Meta\tOwner", "analytics"}});
+    EXPECT_THROW(filter.checkHeaders(invalid), Exception);
+
+    /// A valid name passes and is kept lower-cased by the container.
+    NormalizedHTTPHeaderEntries allowed(HTTPHeaderEntries{{"X-Amz-Meta-Owner", "analytics"}});
+    EXPECT_NO_THROW(filter.checkHeaders(allowed));
+
+    ASSERT_EQ(allowed.size(), 1u);
+    EXPECT_EQ(allowed.begin()->name, "x-amz-meta-owner");
+}
+
+/// A header name with whitespace or control characters is not a valid RFC 9110 token and is
+/// rejected, in any case and whether or not it is on the blocklist.
+TEST(HTTPHeaderFilter, WhitespaceOrControlInNameRejected)
 {
     HTTPHeaderFilter filter;
     configure(filter, R"(
@@ -150,6 +199,28 @@ TEST(HTTPHeaderFilter, CaseInsensitiveComposesWithWhitespaceStripping)
 
     EXPECT_TRUE(isForbidden(filter, "  aUtHoRiZaTiOn  "));
     EXPECT_TRUE(isForbidden(filter, "Auth\torization"));
+    EXPECT_TRUE(isForbidden(filter, "X-Valid Name"));
+}
+
+/// A header name must be an RFC 9110 token: an empty name, ':' (which ends the field name), and
+/// other non-tchar characters such as '/' are rejected, while ':' stays legal in a value.
+TEST(HTTPHeaderFilter, NameMustBeToken)
+{
+    HTTPHeaderFilter filter;
+
+    auto rejects = [&](const std::string & name, const std::string & value)
+    {
+        HTTPHeaderEntries entries{{name, value}};
+        try { filter.checkHeaders(entries); }
+        catch (const Exception &) { return true; }
+        return false;
+    };
+
+    EXPECT_TRUE(rejects("Cookie:x", "y"));
+    EXPECT_TRUE(rejects("X/Foo", "1"));
+    EXPECT_TRUE(rejects("", "1"));
+    EXPECT_FALSE(rejects("Host", "example.com:8080"));
+    EXPECT_FALSE(rejects("X-Custom-Header", "1"));
 }
 
 /// Headers not on the blocklist must still be allowed, in any case.
@@ -194,4 +265,27 @@ TEST(HTTPHeaderFilter, EmptyConfigForbidsNothing)
 {
     HTTPHeaderFilter filter;
     EXPECT_FALSE(isForbidden(filter, "Authorization"));
+}
+
+/// A bare CR or LF in a header name or value terminates the header line, so it could smuggle an
+/// extra header into the request. Both must be rejected (not only LF), for names and values,
+/// independently of the http_forbid_headers blocklist.
+TEST(HTTPHeaderFilter, RejectsCarriageReturnAndNewline)
+{
+    HTTPHeaderFilter filter;
+
+    auto rejects = [&](const std::string & name, const std::string & value)
+    {
+        HTTPHeaderEntries entries{{name, value}};
+        try { filter.checkHeaders(entries); }
+        catch (const Exception &) { return true; }
+        return false;
+    };
+
+    EXPECT_TRUE(rejects("Authorization", "Bearer token\rX-Injected: evil"));
+    EXPECT_TRUE(rejects("Authorization", "Bearer token\nX-Injected: evil"));
+    EXPECT_TRUE(rejects("Authorization", "Bearer token\r\nX-Injected: evil"));
+    EXPECT_TRUE(rejects("Bad\rName", "value"));
+    EXPECT_TRUE(rejects("Bad\nName", "value"));
+    EXPECT_FALSE(rejects("Authorization", "Bearer good-token"));
 }

@@ -105,6 +105,7 @@ public:
     void setName(const String & name);
 
     void setType(ASTPtr && node) { setChild(TYPE, std::move(node)); }
+    void resetType() { resetChild(TYPE); }
     void setDefaultExpression(ASTPtr && node) { setChild(DEFAULT_EXPR, std::move(node)); }
     void resetDefaultExpression() { resetChild(DEFAULT_EXPR); }
     void setComment(ASTPtr && node) { setChild(COMMENT, std::move(node)); }
@@ -117,6 +118,7 @@ public:
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + getName()); }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 

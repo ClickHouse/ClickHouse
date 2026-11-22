@@ -34,6 +34,9 @@ struct StoredObject
     /// catching an in-place overwrite mid-read. Empty means no validation.
     String etag;
 
+    /// `getETagHash` of the ETag, 0 if not computed. Used only where a read asks for it.
+    UInt64 etag_hash = 0;
+
     explicit StoredObject(
         const String & remote_path_ = "",
         const String & local_path_ = "",
@@ -54,6 +57,8 @@ using StoredObjectsSpan = std::span<const StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
 Strings collectRemotePaths(const StoredObjects & objects);
+
+UInt64 getETagHash(const String & etag);
 
 }
 

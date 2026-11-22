@@ -1,12 +1,15 @@
 #pragma once
 
+#include "config.h"
 #include <chrono>
 #include <optional>
+#include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/UUID.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueBatchSizeOverride.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -41,6 +44,11 @@ public:
 
     String getName() const override { return engine_name; }
 
+#if CLICKHOUSE_CLOUD
+    ObjectStoragePtr getObjectStorage() const { return object_storage; }
+    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const { return configuration; }
+#endif
+
     ObjectStorageType getType() { return type; }
 
     void read(
@@ -58,7 +66,8 @@ public:
     void alter(
         const AlterCommands & commands,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder) override;
+        AlterLockHolder & table_lock_holder,
+        DDLGuardPtr & ddl_guard) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -104,11 +113,8 @@ public:
     /// operation, so this avoids the `DETACH ... SYNC` that would otherwise block on the live table.
     void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
-    /// Whether a setting can be changed via `ALTER TABLE ... MODIFY SETTING`.
+    /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
-
-    /// Whether a setting can be changed without special migration settings or detached dependencies.
-    static bool isSettingChangeableInPlace(const std::string & name, ObjectStorageQueueMode mode);
 
     /// Generate id for the S3(Azure/etc)Queue commit.
     /// Used for system.s3(azure/etc)_queue_log.
@@ -120,11 +126,13 @@ public:
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
         UUID database_uuid = UUIDHelpers::Nil,
-        String * result_zookeeper_name = nullptr);
+        String * result_zookeeper_name = nullptr,
+        Macros::MacroExpansionInfo * result_macro_info = nullptr);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
 private:
     friend class ReadFromObjectStorageQueue;
@@ -142,6 +150,7 @@ private:
     std::string zookeeper_name;
     fs::path zk_path;
     const bool enable_logging_to_queue_log;
+    const bool parallel_inserts;
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
@@ -160,13 +169,12 @@ private:
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
-    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
+    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata TSA_GUARDED_BY(mutex);
     StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
     const std::optional<FormatSettings> format_settings;
 
-    UInt64 reschedule_processing_interval_ms TSA_GUARDED_BY(mutex);
 
     std::atomic<bool> startup_finished = false;
     std::atomic<bool> table_is_being_dropped = false;
@@ -177,7 +185,11 @@ private:
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
     std::vector<UInt64> streaming_task_refresh_epochs;
-    std::atomic<size_t> max_files_override{0};
+    /// The polling backoff of each streaming task, accessed only by that task (it never runs concurrently with itself).
+    /// It is per task, because with `parallel_inserts` the idle cycles of many tasks would otherwise
+    /// add up to one shared backoff, and a reset by the task which found files would not wake the others.
+    std::vector<UInt64> streaming_task_reschedule_intervals_ms;
+    ObjectStorageQueueBatchSizeOverride max_files_override;
 
     LoggerPtr log;
 
@@ -189,7 +201,10 @@ private:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const;
+    /// Returns the metadata handle, or nullptr when the table has not started up or has
+    /// already been shut down. The returned handle must stay in scope for as long as anything
+    /// borrowed from it (e.g. its table metadata) is used.
+    std::shared_ptr<ObjectStorageQueueMetadata> tryGetFilesMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
@@ -198,6 +213,7 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
+        std::shared_ptr<ObjectStorageQueueMetadata> metadata,
         size_t max_block_size,
         ContextPtr local_context,
         bool commit_once_processed,
@@ -213,17 +229,24 @@ private:
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
-    void postProcess(const StoredObjects & successful_objects) const;
+    void postProcess(
+        const StoredObjects & successful_objects,
+        UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
+        const ObjectStorageQueueMetadata & metadata) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        ObjectStorageQueueMetadata & metadata,
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
 
     const bool can_be_moved_between_databases;
+    /// Set when `zk_path` was expanded from a `{database}` macro, to the database name it was expanded
+    /// with. Empty when the path does not depend on the database name.
+    std::optional<String> keeper_path_database_name;
     const bool keep_data_in_keeper;
 
     const bool use_hive_partitioning;

@@ -3,38 +3,67 @@ slug: /cloud/managed-postgres/read-replicas
 sidebarTitle: 'Répliques de lecture'
 title: 'Répliques de lecture'
 description: 'Mettez à l’échelle les charges de travail à forte lecture avec des répliques de lecture dans ClickHouse Managed Postgres'
-keywords: ['répliques de lecture', 'évolutivité', 'montée en charge en lecture', 'répliques Postgres', 'mise à l’échelle horizontale']
+keywords: ['répliques de lecture', 'évolutivité', 'read scaling', 'répliques Postgres', 'mise à l’échelle horizontale']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-Les répliques de lecture vous permettent de créer une ou plusieurs copies de votre base de données Managed Postgres primaire. Ces répliques suivent en continu votre base de données primaire grâce à la réplication native de PostgreSQL, afin de rester synchronisées avec les changements.
+Les répliques de lecture vous permettent de créer une ou plusieurs copies de votre base de données ClickHouse Managed Postgres primaire. Ces répliques suivent en continu votre base de données primaire grâce à la réplication native de PostgreSQL, afin de rester synchronisées avec les changements.
 
 Pour gérer les répliques de lecture, cliquez sur l’icône de modification de votre warehouse :
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="Vue du warehouse avec l’icône de modification" size="md" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Vue du warehouse avec l’icône de modification](/images/managed-postgres/warehouse-view.webp)
+
+</Frame>
+
+</div>
 
 La boîte de dialogue du warehouse s’ouvre alors, où vous pouvez voir les services existants et créer de nouvelles répliques de lecture :
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Boîte de dialogue de gestion des répliques de lecture" size="md" border />
+<div className="ch-image-md">
 
-<div id="managing-read-replicas">
-  ## Gérer les répliques de lecture
+<Frame>
+
+![Boîte de dialogue de gestion des répliques de lecture](/images/managed-postgres/read-replica-dialog.webp)
+
+</Frame>
+
 </div>
+
+## Gérer les répliques de lecture {#managing-read-replicas}
 
 La page **Répliques de lecture** propose deux vues, accessibles via les contrôles **Flux** et **Tableau** en haut à droite.
 
 La vue **Flux** affiche la topologie de réplication : votre instance primaire en haut, avec des flèches pointant vers chaque réplique attachée, ce qui permet de voir d’un coup d’œil le niveau de service, la région et le statut :
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques](/images/managed-postgres/read-replicas-flow.webp)
+
+</Frame>
+
+</div>
 
 La vue **Tableau** répertorie chaque réplique avec son nom de service, son fournisseur cloud et sa région, le statut du service, l’heure de création, ainsi qu’une action **Détacher le service** :
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Vue Tableau des répliques de lecture" size="lg" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Vue Tableau des répliques de lecture](/images/managed-postgres/read-replicas-table.webp)
+
+</Frame>
+
+</div>
 
 Pour créer une nouvelle réplique, cliquez sur **Créer une réplique de lecture** en haut à droite, dans l’une ou l’autre vue.
 
@@ -60,19 +89,17 @@ En dirigeant les requêtes analytiques et de business intelligence vers des rép
 
 Les répliques de lecture peuvent jouer un rôle crucial dans la reprise après sinistre. Si votre base de données primaire tombe en panne, une réplique de lecture peut être promue en primaire, ce qui limite au maximum l’indisponibilité et la perte de données. Cela apporte un niveau de résilience supplémentaire, au-delà de vos instances de secours haute disponibilité.
 
-<div id="how-read-replicas-work">
-  ## Fonctionnement des répliques de lecture
-</div>
+## Fonctionnement des répliques de lecture {#how-read-replicas-work}
 
-Dans Managed Postgres, les répliques de lecture reposent sur une architecture de WAL shipping plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l&#39;impact sur votre base de données principale.
+Dans ClickHouse Managed Postgres, les répliques de lecture reposent sur une architecture de WAL shipping plutôt que sur la réplication en continu. Ce choix de conception vise à minimiser l’impact sur votre base de données principale.
 
 <div id="wal-shipping-from-object-storage">
   ### WAL shipping depuis le stockage d’objets
 </div>
 
-Lorsque votre base de données principale traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets (S3). Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base principale.
+Lorsque votre base de données primaire traite des transactions, elle génère des enregistrements Write-Ahead Log (WAL). Ces segments WAL sont archivés en continu dans le stockage d’objets. Les répliques de lecture récupèrent ensuite ces segments WAL depuis le stockage d’objets et les rejouent afin de rester synchronisées avec la base primaire.
 
-Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base principale.
+Cette architecture diffère des [instances de secours haute disponibilité](/fr/products/managed-postgres/high-availability), qui utilisent la réplication en continu avec une connexion directe à la base primaire.
 
 <div id="why-we-chose-this-approach">
   ### Pourquoi nous avons choisi cette approche

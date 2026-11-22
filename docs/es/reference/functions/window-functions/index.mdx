@@ -1,6 +1,6 @@
 ---
 description: 'Página de resumen de las funciones de ventana'
-sidebarTitle: 'Funciones de ventana'
+sidebarTitle: 'Resumen'
 slug: /sql-reference/window-functions/
 title: 'Funciones de ventana'
 doc_type: 'reference'
@@ -24,7 +24,7 @@ La tabla siguiente muestra qué funcionalidades se admiten actualmente:
 | Marco `ROWS`                                                                            | ✅            |                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Marco `RANGE`                                                                           | ✅            | Se usa de forma predeterminada cuando no se especifica explícitamente un marco (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                           |
 | Sintaxis `INTERVAL` para el marco `DateTime` `RANGE OFFSET`                             | ❌            | En su lugar, especifique el número de segundos (`RANGE` funciona con cualquier tipo numérico).                                                                                                                                                                                                                                                                                                                  |
-| Marco `GROUPS`                                                                          | ❌            |                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Marco `GROUPS`                                                                          | ✅            | Los límites del marco cuentan grupos completos de pares (filas iguales según la clave `ORDER BY`); `N PRECEDING` y `N FOLLOWING` cuentan `N` grupos de pares antes y después del grupo de pares de la fila actual.                                                                                                                                                                                              |
 | Cálculo de funciones de agregación sobre un marco (`sum(value) OVER (ORDER BY time)`)   | ✅            | Se admiten todas las funciones de agregación.                                                                                                                                                                                                                                                                                                                                                                   |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                                  | ✅            |                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `percent_rank()`/`percentRank()`                                                        | ✅            | Calcula de forma eficiente la posición relativa de un valor dentro de una partición. Sustituye el cálculo manual en SQL, más detallado y computacionalmente más costoso, expresado como `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                             |
@@ -39,18 +39,18 @@ La tabla siguiente muestra qué funcionalidades se admiten actualmente:
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - define cómo dividir un conjunto de resultados en grupos.
 * `ORDER BY` - define cómo ordenar las filas dentro del grupo durante el cálculo de aggregate&#95;function.
-* `ROWS or RANGE` - define los límites del marco; aggregate&#95;function se calcula dentro de ese marco.
+* `ROWS`, `RANGE` o `GROUPS` - define los límites del marco; aggregate&#95;function se calcula dentro de ese marco. `ROWS` cuenta filas físicas, `RANGE` cuenta valores de `ORDER BY` y `GROUPS` cuenta grupos de pares (filas iguales en la clave `ORDER BY`).
 * `WINDOW` - permite que varias expresiones usen la misma definición de ventana.
 
 ```text
@@ -526,6 +526,44 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
+
+<div id="groups-frame">
+  ### Marco GROUPS
+</div>
+
+Un marco `GROUPS` cuenta *grupos de pares* completos —conjuntos de filas iguales según la clave `ORDER BY`—, en lugar de filas físicas (`ROWS`) o valores de `ORDER BY` (`RANGE`). `N PRECEDING` y `N FOLLOWING` cuentan `N` grupos de pares antes y después del grupo de pares de la fila actual, y cada grupo de pares incluido siempre aporta todas sus filas.
+
+La siguiente consulta aplica los mismos límites `1 PRECEDING AND 1 FOLLOWING` a marcos `ROWS`, `RANGE` y `GROUPS`. La columna `order` contiene valores duplicados y no consecutivos, por lo que los tres modos abarcan filas distintas:
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+Cada modo interpreta los límites de forma diferente:
+
+* `ROWS` cuenta filas físicas, por lo que el marco incluye como máximo tres filas adyacentes: la fila actual y una a cada lado.
+* `RANGE` cuenta valores de `order`, por lo que `1 PRECEDING` y `1 FOLLOWING` abarcan las filas cuyo `order` difiere en como máximo 1 del de la fila actual. Con huecos de 10, ninguna fila vecina cumple esta condición, por lo que el marco contiene solo las filas que comparten el `order` actual.
+* `GROUPS` cuenta grupos de pares, por lo que `1 PRECEDING` y `1 FOLLOWING` siempre incluyen por completo los grupos adyacentes, independientemente de los huecos entre los valores de `order`.
 
 <div id="real-world-examples">
   ## Ejemplos reales

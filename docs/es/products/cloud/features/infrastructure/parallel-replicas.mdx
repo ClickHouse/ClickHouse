@@ -6,8 +6,6 @@ description: 'En esta guía, primero veremos cómo ClickHouse distribuye una con
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="introduction">
   ## Introducción
 </div>
@@ -19,9 +17,7 @@ entre varios servidores?
 > varios segmentos mediante tablas distribuidas, y luego cómo una consulta puede aprovechar
 > varias réplicas durante su ejecución.
 
-<div id="sharded-architecture">
-  ## Arquitectura segmentada
-</div>
+## Arquitectura segmentada {#sharded-architecture}
 
 En una arquitectura shared-nothing, los clústeres suelen dividirse en
 múltiples segmentos, y cada segmento contiene un subconjunto del total de datos. Una
@@ -33,7 +29,15 @@ en el segmento especificado, o bien puede enviarse a la tabla distribuida, y en 
 caso, cada segmento ejecutará las consultas indicadas. El servidor en el que se consultó la tabla distribuida
 agregará los datos y responderá al Client:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="arquitectura segmentada" />
+<div className="ch-image-md">
+
+<Frame>
+
+![arquitectura segmentada](/images/deployment-guides/parallel-replicas-1.webp)
+
+</Frame>
+
+</div>
 
 La figura anterior muestra lo que sucede cuando un Client consulta una tabla distribuida:
 
@@ -65,9 +69,7 @@ Cuando añadimos réplicas a la ecuación, el proceso es bastante similar, con l
 diferencia de que solo una réplica de cada segmento ejecutará la consulta.
 Esto significa que luego pueden procesarse más consultas en paralelo.
 
-<div id="non-sharded-architecture">
-  ## Arquitectura sin segmentos
-</div>
+## Arquitectura sin segmentos {#non-sharded-architecture}
 
 ClickHouse Cloud tiene una arquitectura muy distinta de la presentada anteriormente.
 (Consulta [&quot;Arquitectura de ClickHouse Cloud&quot;](/es/products/cloud/reference/architecture)
@@ -76,7 +78,15 @@ de almacenamiento prácticamente infinita, la necesidad de usar segmentos pasa a
 
 La siguiente figura muestra la arquitectura de ClickHouse Cloud:
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="arquitectura sin segmentos" />
+<div className="ch-image-md">
+
+<Frame>
+
+![arquitectura sin segmentos](/images/deployment-guides/parallel-replicas-2.webp)
+
+</Frame>
+
+</div>
 
 Esta arquitectura nos permite añadir y eliminar réplicas casi
 instantáneamente, lo que garantiza una escalabilidad muy alta del clúster. El clúster de ClickHouse
@@ -89,9 +99,7 @@ Pero ¿cómo podemos distribuir ahora la ejecución de consultas entre varios se
 arquitectura con segmentos, era bastante obvio, ya que cada segmento podía
 ejecutar una consulta sobre un subconjunto de los datos. ¿Cómo funciona cuando no hay segmentación?
 
-<div id="introducing-parallel-replicas">
-  ## Introducción a las réplicas paralelas
-</div>
+## Introducción a las réplicas paralelas {#introducing-parallel-replicas}
 
 Para paralelizar la ejecución de consultas a través de varios servidores, primero necesitamos
 poder asignar uno de nuestros servidores como coordinador. El coordinador es quien
@@ -105,7 +113,15 @@ como unidad de trabajo.
 
 Ahora, veamos cómo funciona en la práctica con ayuda de la siguiente figura:
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Réplicas paralelas" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Réplicas paralelas](/images/deployment-guides/parallel-replicas-3.webp)
+
+</Frame>
+
+</div>
 
 Con réplicas paralelas:
 
@@ -163,14 +179,20 @@ funcione a la perfección:
 
 En las siguientes secciones veremos cómo se superan estos factores.
 
-<div id="announcements">
-  ### Anuncios
-</div>
+### Anuncios {#announcements}
 
 Para abordar (1) y (2) de la lista anterior, introdujimos el concepto de
 anuncio. Veamos cómo funciona en la siguiente figura:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Anuncios" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Anuncios](/images/deployment-guides/parallel-replicas-4.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -201,9 +223,7 @@ anuncio. Veamos cómo funciona en la siguiente figura:
   </li>
 </ol>
 
-<div id="dynamic-coordination">
-  ### Coordinación dinámica
-</div>
+### Coordinación dinámica {#dynamic-coordination}
 
 Para abordar el problema de la latencia de cola, añadimos coordinación dinámica. Esto significa
 que no todos los gránulos se envían a una réplica en una sola solicitud, sino que cada réplica
@@ -216,7 +236,15 @@ un anuncio con todas las partes.
 
 La figura siguiente muestra cómo funciona la coordinación dinámica:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordinación dinámica - parte 1" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordinación dinámica - parte 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -229,7 +257,15 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordinación dinámica - parte 2" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordinación dinámica - parte 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -242,7 +278,15 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordinación dinámica - parte 3" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Coordinación dinámica - parte 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</Frame>
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -322,9 +366,7 @@ si una réplica procesa tareas más lentamente que las demás, otras réplicas i
 &#39;robar&#39; tareas que, en principio, pertenecen a esa réplica según el hash para reducir la
 latencia de cola.
 
-<div id="limitations">
-  ### Limitaciones
-</div>
+### Limitaciones
 
 Esta funcionalidad tiene limitaciones conocidas, y en esta sección se documentan
 las principales.
@@ -335,14 +377,14 @@ las principales.
   la etiqueta `comp-parallel-replicas`.
 </Note>
 
-| Limitación                                                   | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Consultas complejas                                          | Actualmente, las réplicas paralelas funcionan bastante bien con consultas simples. Capas de complejidad como CTE, subconsultas, JOIN, consultas no planas, etc. pueden tener un impacto negativo en el rendimiento de la consulta.                                                                                                                                                                                                                                             |
-| Consultas pequeñas                                           | Si está ejecutando una consulta que no procesa muchas filas, ejecutarla en varias réplicas puede no mejorar el tiempo de respuesta, ya que el tiempo de red necesario para la coordinación entre réplicas puede añadir ciclos adicionales a la ejecución de la consulta. Puede mitigar estos problemas usando la configuración [`parallel_replicas_min_number_of_rows_per_replica`](/es/reference/settings/session-settings#parallel_replicas_min_number_of_rows_per_replica). |
-| Las réplicas paralelas están deshabilitadas con FINAL        |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Las proyecciones no se usan junto con las réplicas paralelas |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Datos de alta cardinalidad y agregación compleja             | La agregación de alta cardinalidad que requiere enviar muchos datos puede ralentizar significativamente sus consultas.                                                                                                                                                                                                                                                                                                                                                         |
-| Compatibilidad con el analizador                             | El analizador puede ralentizar o acelerar significativamente la ejecución de consultas en determinados escenarios.                                                                                                                                                                                                                                                                                                                                                             |
+| Limitación                                                   | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Consultas complejas                                          | Actualmente, las réplicas paralelas funcionan bastante bien con consultas simples. Capas de complejidad como CTE, subconsultas, JOIN, consultas no planas, etc. pueden tener un impacto negativo en el rendimiento de la consulta.                                                                                                                                                                                                                                                            |
+| Consultas pequeñas                                           | Si está ejecutando una consulta que no procesa muchas filas, ejecutarla en varias réplicas puede no mejorar el tiempo de respuesta, ya que el tiempo de red necesario para la coordinación entre réplicas puede añadir ciclos adicionales a la ejecución de la consulta. Puede mitigar estos problemas usando la configuración [`parallel_replicas_min_number_of_rows_per_replica`](/es/reference/settings/session-settings/parallel-replicas#parallel_replicas_min_number_of_rows_per_replica). |
+| Las réplicas paralelas están deshabilitadas con FINAL        |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Las proyecciones no se usan junto con las réplicas paralelas |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Datos de alta cardinalidad y agregación compleja             | La agregación de alta cardinalidad que requiere enviar muchos datos puede ralentizar significativamente sus consultas.                                                                                                                                                                                                                                                                                                                                                                        |
+| Compatibilidad con el analizador                             | El analizador puede ralentizar o acelerar significativamente la ejecución de consultas en determinados escenarios.                                                                                                                                                                                                                                                                                                                                                                            |
 
 <div id="settings-related-to-parallel-replicas">
   ## Configuración relacionada con las réplicas paralelas
@@ -354,11 +396,8 @@ las principales.
 | `cluster_for_parallel_replicas`                    | El nombre del clúster que se usará para las réplicas paralelas; si usas ClickHouse Cloud, utiliza `default`.                                                                                                                                                                             |
 | `max_parallel_replicas`                            | Número máximo de réplicas que se usarán para ejecutar la consulta en múltiples réplicas; si se especifica un número inferior al de réplicas del clúster, los nodos se seleccionarán aleatoriamente. Este valor también puede sobreasignarse para tener en cuenta el escalado horizontal. |
 | `parallel_replicas_min_number_of_rows_per_replica` | Ayuda a limitar el número de réplicas utilizadas en función del número de filas que deben procesarse; el número de réplicas utilizadas se define mediante: <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                           |
-| `enable_analyzer`                                  | La ejecución de consultas con réplicas paralelas solo es compatible cuando el analizador está habilitado                                                                                                                                                                                   |
 
-<div id="investigating-issues-with-parallel-replicas">
-  ## Investigar problemas con las réplicas paralelas
-</div>
+## Investigar problemas con las réplicas paralelas
 
 Puedes comprobar qué configuraciones se están usando para cada consulta en la
 tabla [`system.query_log`](/es/reference/system-tables/query_log). También puedes
@@ -521,7 +560,15 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sin parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN sin parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</Frame>
+
+</div>
 
 Y ahora, con réplica paralela:
 
@@ -536,4 +583,12 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN con parallel_replica" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![EXPLAIN con parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</Frame>
+
+</div>

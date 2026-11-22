@@ -6,7 +6,7 @@ tags: ['Seguridad y autenticación', 'Errores y excepciones']
 keywords: ['Error', 'Certificado SSL', '210']
 ---
 
-<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+<div id="resolving-ssl-certificate-verify-error-in-clickhouse">
   ## Resolución del error 210 de verificación del certificado SSL en ClickHouse
 </div>
 
@@ -46,8 +46,39 @@ A continuación se muestra una configuración de ejemplo:
 </openSSL>
 ```
 
+<div id="python-clients-on-macos">
+  ## Clientes de Python en macOS
+</div>
+
+Los clientes de Python muestran este error de forma diferente, normalmente así:
+
+`ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
+
+En macOS, la versión de Python de python.org verifica los certificados mediante las rutas predeterminadas de OpenSSL en lugar del llavero del sistema. En una instalación limpia, esas rutas no apuntan a ningún paquete de certificados raíz: el instalador incluye [certifi](https://pypi.org/project/certifi/), pero no lo enlaza con la ubicación predeterminada de OpenSSL hasta que ejecutas el script incluido `Install Certificates.command`. Hasta entonces, el Client no puede validar el certificado del servidor de ClickHouse Cloud, aunque ese certificado sea válido. Esto afecta en general a las versiones de macOS de python.org (Python 3.6 y posteriores), no solo a Python 3.11.
+
+Ejecuta `Install Certificates.command` para enlazar certifi con la ruta predeterminada de certificados de OpenSSL. Ajusta la versión en la ruta para que coincida con tu instalación:
+
+```bash
+open "/Applications/Python 3.11/Install Certificates.command"
+```
+
+Como alternativa, apunte su Client directamente al paquete de certifi. [ClickHouse Connect](/es/integrations/language-clients/python/index) no usa certifi automáticamente como alternativa, así que pase el paquete mediante el parámetro `ca_cert`:
+
+```python
+import certifi
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host='HOSTNAME.clickhouse.cloud',
+    port=8443,
+    username='default',
+    password='YOUR_SECRET_PASSWORD',
+    ca_cert=certifi.where(),
+)
+```
+
 <div id="additional-resources">
   ## Recursos adicionales
 </div>
 
-Consulta [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/es/concepts/features/interfaces/cli#custom-config-files)
+Consulta la [documentación sobre la configuración de `clickhouse-client`](/es/concepts/features/interfaces/client#configuration_files).

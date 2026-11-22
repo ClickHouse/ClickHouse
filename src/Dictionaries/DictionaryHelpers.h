@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/unaligned.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
+#include <IO/ReadBufferFromString.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -30,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
 }
 
 class Arena;
@@ -48,9 +51,9 @@ public:
     {
     }
 
-    bool isConstant() const { return default_values_column == nullptr; }
+    [[nodiscard]] bool isConstant() const { return default_values_column == nullptr; }
 
-    Field getDefaultValue(size_t row) const
+    [[nodiscard]] Field getDefaultValue(size_t row) const
     {
         if (default_values_column)
             return (*default_values_column)[row];
@@ -67,8 +70,8 @@ private:
 
     The main idea is that during fetch we create all columns, but fill only columns that client requested.
 
-    We need to create other columns during fetch, because in case of serialized storage we can skip
-    unnecessary columns serialized in cache with skipSerializedInArena method.
+    We need to create other columns during fetch, because in case of serialized storage the serialized
+    values of unnecessary columns are skipped using the header of serialized sizes that prefixes them.
 
     When result is fetched from the storage client of storage can filterOnlyNecessaryColumns
     and get only columns that match attributes_names_to_fetch.
@@ -136,35 +139,35 @@ public:
     DictionaryStorageFetchRequest() = default;
 
     /// Check requested attributes size
-    ALWAYS_INLINE size_t attributesSize() const
+    [[nodiscard]] ALWAYS_INLINE size_t attributesSize() const
     {
         return dictionary_attributes_names_and_types.size();
     }
 
     /// Check if attribute with attribute_name was requested to fetch
-    ALWAYS_INLINE bool containsAttribute(const String & attribute_name) const
+    [[nodiscard]] ALWAYS_INLINE bool containsAttribute(const String & attribute_name) const
     {
         return attributes_to_fetch_name_to_index.contains(attribute_name);
     }
 
     /// Check if attribute with attribute_index should be filled during fetch
-    ALWAYS_INLINE bool shouldFillResultColumnWithIndex(size_t attribute_index) const
+    [[nodiscard]] ALWAYS_INLINE bool shouldFillResultColumnWithIndex(size_t attribute_index) const
     {
         return attributes_to_fetch_filter[attribute_index];
     }
 
-    const DataTypePtr & dataTypeAtIndex(size_t attribute_index) const
+    [[nodiscard]] const DataTypePtr & dataTypeAtIndex(size_t attribute_index) const
     {
         return dictionary_attributes_names_and_types[attribute_index].type;
     }
 
-    const DefaultValueProvider & defaultValueProviderAtIndex(size_t attribute_index) const
+    [[nodiscard]] const DefaultValueProvider & defaultValueProviderAtIndex(size_t attribute_index) const
     {
         return attributes_default_value_providers[attribute_index];
     }
 
     /// Create columns for each of dictionary attributes
-    MutableColumns makeAttributesResultColumns() const
+    [[nodiscard]] MutableColumns makeAttributesResultColumns() const
     {
         MutableColumns result;
         result.reserve(dictionary_attributes_names_and_types.size());
@@ -175,7 +178,7 @@ public:
         return result;
     }
 
-    Columns makeAttributesResultColumnsNonMutable() const
+    [[nodiscard]] Columns makeAttributesResultColumnsNonMutable() const
     {
         Columns result;
         result.reserve(dictionary_attributes_names_and_types.size());
@@ -228,14 +231,26 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
     }
 }
 
-/// Deserialize column value and insert it in columns.
-/// Skip unnecessary columns that were not requested from deserialization.
+/// Deserialize column values and insert them into columns.
+/// The values are prefixed with a header of their serialized sizes,
+/// which is used to skip over columns that were not requested.
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
-    ReadBuffer & in)
+    ReadBufferFromString & in)
 {
     size_t columns_size = columns.size();
+
+    /// The buffer is contiguous and never refills, so the header is read in
+    /// place and stays addressable while the values are deserialized.
+    /// The data may be read from a file (`ssd_cache` dictionaries), so check that it has the header.
+    size_t sizes_header_size = columns_size * sizeof(UInt32);
+    if (in.available() < sizes_header_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Cache data corrupted. A record of {} bytes is shorter than the sizes of its {} columns ({} bytes)",
+            in.available(), columns_size, sizes_header_size);
+    const char * sizes_header = in.position();
+    in.ignore(sizes_header_size);
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
@@ -244,7 +259,7 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
             column->deserializeAndInsertFromArena(in, nullptr);
         else
-            column->skipSerializedInArena(in);
+            in.ignore(unalignedLoad<UInt32>(sizes_header + column_index * sizeof(UInt32)));
     }
 }
 
@@ -486,12 +501,12 @@ public:
         keys_size = key_columns.front()->size();
     }
 
-    size_t getKeysSize() const
+    [[nodiscard]] size_t getKeysSize() const
     {
         return keys_size;
     }
 
-    size_t getCurrentKeyIndex() const
+    [[nodiscard]] size_t getCurrentKeyIndex() const
     {
         return current_key_index;
     }
@@ -530,6 +545,32 @@ public:
     {
         if constexpr (key_type == DictionaryKeyType::Complex)
             complex_key_arena->rollback(current_complex_key.size());
+    }
+
+    /// Calls `callback(key_index, key)` for every key, in order, and leaves the extractor past the last key.
+    /// Hot loops use it instead of `extractCurrentKey` per key: a simple key is then read through one
+    /// hoisted data pointer, where `extractCurrentKey` goes through `key_columns[0]`, the column and its
+    /// data pointer every time, and the store of `current_key_index` keeps clang-23 with libc++ 23 (whose
+    /// `std::vector` keeps a `size_t` size) from hoisting those loads and their bounds checks out of the loop.
+    template <typename Callback>
+    void forEachKey(Callback && callback)
+    {
+        if constexpr (key_type == DictionaryKeyType::Simple)
+        {
+            const UInt64 * __restrict keys = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]).getData().data();
+            for (size_t key_index = current_key_index; key_index < keys_size; ++key_index)
+                callback(key_index, keys[key_index]);
+            current_key_index = keys_size;
+        }
+        else
+        {
+            while (current_key_index < keys_size)
+            {
+                size_t key_index = current_key_index;
+                callback(key_index, extractCurrentKey());
+                rollbackCurrentKey();
+            }
+        }
     }
 
     PaddedPODArray<KeyType> extractAllKeys()
@@ -696,7 +737,8 @@ Block mergeBlockWithPipe(
 /**
  * Returns ColumnVector data as PaddedPodArray.
 
- * If column is constant parameter backup_storage is used to store values.
+ * If the column has to be converted to a full one, parameter backup_storage is used to store values,
+ * because the converted column may not be owned by anything that outlives this call.
  */
 /// TODO: Remove
 template <typename T>
@@ -705,7 +747,6 @@ static const PaddedPODArray<T> & getColumnVectorData(
     const ColumnPtr column,
     PaddedPODArray<T> & backup_storage)
 {
-    bool is_const_column = isColumnConst(*column);
     auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
@@ -717,12 +758,13 @@ static const PaddedPODArray<T> & getColumnVectorData(
             TypeName<T>);
     }
 
-    if (is_const_column)
+    /// A different pointer means a conversion happened (Const, Sparse or ColumnReplicated; a Tuple
+    /// never reaches here because the check above requires a ColumnVector), so the data may live
+    /// only in a column owned by `full_column` and die at return: copy it. An unconverted column is
+    /// kept alive by `column` itself.
+    if (full_column.get() != column.get())
     {
-        // With type conversion and const columns we need to use backup storage here
-        auto & data = vector_col->getData();
-        backup_storage.assign(data);
-
+        backup_storage.assign(vector_col->getData());
         return backup_storage;
     }
 

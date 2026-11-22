@@ -42,16 +42,21 @@ struct SerializationInfoSettings
     /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.
     void tryDowngradeToBasic();
 
-    bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
+    [[nodiscard]] bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
 
-    bool canUseSparseSerialization(const IDataType & type) const;
+    [[nodiscard]] bool canUseSparseSerialization(const IDataType & type) const;
+
+    /// Whether serialization info is needed either for the column itself or for one of its subcolumns.
+    [[nodiscard]] bool shouldCollectSerializationInfo(const IDataType & type) const;
 
     void updateHash(SipHash & hash) const;
 
     /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
     /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.
     /// Additional serialization versions can be added here in the future.
-    static SerializationInfoSettings enableAllSupportedSerializations();
+    /// `with_string_size_stream` also enables the size-stream String layout (including nested Strings); it is
+    /// not self-describing on the wire, so enable it only when the peer protocol revision supports it.
+    static SerializationInfoSettings enableAllSupportedSerializations(bool with_string_size_stream = false);
 };
 
 }

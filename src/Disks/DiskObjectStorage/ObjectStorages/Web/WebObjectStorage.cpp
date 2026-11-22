@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -49,12 +50,7 @@ namespace
 
     bool pathPartEndsWithSlash(const std::string & path)
     {
-        const auto path_end = path.find_first_of("?#");
-        if (path_end == std::string::npos)
-            return path.ends_with('/');
-        if (path_end == 0)
-            return false;
-        return path[path_end - 1] == '/';
+        return stripQueryAndFragment(path).ends_with('/');
     }
 }
 
@@ -266,7 +262,9 @@ void WebObjectStorage::removeObjectIfExists(const StoredObject &)
     throwNotAllowed();
 }
 
-void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
+void WebObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects &,
+    StoredObjects *)
 {
     throwNotAllowed();
 }
@@ -287,6 +285,11 @@ void WebObjectStorage::startup()
 ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeyGenerator is not supported for {}", getName());
+}
+
+ObjectStoragePtr WebObjectStorage::cloneImpl() const
+{
+    return std::make_shared<WebObjectStorage>(url_shards, getContext(), headers, max_directories_to_read);
 }
 
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
@@ -320,13 +323,10 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         settings,
         request_context->getServerSettings());
 
-    auto get_metadata_from_uri = [&](const Poco::URI & uri) -> std::optional<ObjectMetadata>
+    auto get_metadata_from_uri = [&](const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) -> std::optional<ObjectMetadata>
     {
         /// Carry the same HTTP request semantics as direct `url()` reads: credentials from the URL
         /// userinfo, `max_http_get_redirects`, and `enable_url_encoding`.
-        Poco::Net::HTTPBasicCredentials credentials;
-        setCredentialsFromURL(credentials, uri);
-
         auto create_probe_buffer = [&](const String & method)
         {
             auto read_settings = request_context->getReadSettings();
@@ -426,9 +426,12 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
     for (const auto & url : urls)
     {
+        const Poco::URI uri(url, enable_url_encoding);
+        Poco::Net::HTTPBasicCredentials credentials;
+        setCredentialsFromURL(credentials, uri, request_context->getHTTPHeaderFilter());
         try
         {
-            auto metadata = get_metadata_from_uri(Poco::URI(url, enable_url_encoding));
+            auto metadata = get_metadata_from_uri(uri, credentials);
             if (metadata)
                 return metadata;
             has_not_found = true;
