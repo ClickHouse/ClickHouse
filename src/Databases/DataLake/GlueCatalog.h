@@ -82,6 +82,8 @@ public:
 
     [[nodiscard]] bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
+    [[nodiscard]] bool canPublishRewrittenMetadata() const override { return true; }
+
     [[nodiscard]] bool updateSchema(
         const String & namespace_name,
         const String & table_name,

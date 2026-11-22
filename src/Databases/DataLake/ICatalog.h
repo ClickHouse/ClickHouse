@@ -334,6 +334,24 @@ public:
         const std::vector<Int64> & snapshot_ids,
         const std::vector<String> & ref_names) const;
 
+    /// Commit `set-snapshot-ref` on a transactional catalog. `type` is `branch` or `tag`.
+    /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry.
+    [[nodiscard]] virtual Poco::JSON::Object::Ptr setSnapshotRef(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const String & ref_name,
+        const String & type,
+        Int64 snapshot_id) const;
+
+    /// Commit `remove-snapshot-ref` on a transactional catalog.
+    /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry.
+    [[nodiscard]] virtual Poco::JSON::Object::Ptr removeSnapshotRef(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const String & ref_name) const;
+
     /// Drop table from catalog.
     virtual void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const;
 
@@ -342,6 +360,11 @@ public:
     /// So the REST catalog is transactional.
     /// The Glue catalog does not support such operation.
     [[nodiscard]] virtual bool isTransactional() const { return false; }
+
+    /// True when a non-transactional catalog can publish a metadata file the client has already written.
+    /// Glue stores a pointer to that file via `updateMetadata`. Catalogs that leave `updateMetadata`
+    /// unimplemented must be rejected before the file is written.
+    [[nodiscard]] virtual bool canPublishRewrittenMetadata() const { return false; }
 
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)
