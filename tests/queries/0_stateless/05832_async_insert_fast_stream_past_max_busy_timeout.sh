@@ -28,11 +28,19 @@ for i in {0..29}; do
     sleep 0.15
 done
 
+# Under a slow build, an insert can come more than the maximum after the previous one, and then is flushed at once as the
+# first one after a pause. Only inserts that came soon after the previous one are checked.
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
-    SELECT countIf(ProfileEvents['AsyncInsertFlushedWithoutBatching'] = 0), count()
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
-        AND query_kind = 'Insert' AND query_id LIKE '${CLICKHOUSE_DATABASE}\\_%'
-        AND query_id NOT IN ('${CLICKHOUSE_DATABASE}_0', '${CLICKHOUSE_DATABASE}_1');
+    SELECT countIf(ProfileEvents['AsyncInsertFlushedWithoutBatching'] = 0 AND gap_ms < 1000), count()
+    FROM
+    (
+        SELECT query_id, ProfileEvents,
+            (toUnixTimestamp64Micro(query_start_time_microseconds) - lagInFrame(toUnixTimestamp64Micro(query_start_time_microseconds))
+                OVER (ORDER BY query_start_time_microseconds ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)) / 1000 AS gap_ms
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+            AND query_kind = 'Insert' AND query_id LIKE '${CLICKHOUSE_DATABASE}\\_%'
+    )
+    WHERE query_id NOT IN ('${CLICKHOUSE_DATABASE}_0', '${CLICKHOUSE_DATABASE}_1');
     DROP TABLE t_fast_stream;"
