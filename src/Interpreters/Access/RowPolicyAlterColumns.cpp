@@ -125,6 +125,8 @@ bool checkFilterAfterAlter(
     try
     {
         auto query_context = Context::createCopy(context);
+        /// the optimization replaces a scalar subquery by `__getScalar`, which `readsScalarSubquery` does not see
+        query_context->setSetting("enable_scalar_subquery_optimization", false);
         auto expression = buildQueryTree(parseFilter(filter), query_context);
         auto storage = std::make_shared<StorageDummy>(table_id, storage_snapshot->metadata->getColumns(), storage_snapshot);
         auto table_node = std::make_shared<TableNode>(storage, query_context);
