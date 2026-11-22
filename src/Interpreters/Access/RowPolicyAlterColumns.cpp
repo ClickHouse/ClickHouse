@@ -2,6 +2,10 @@
 
 #include <Access/AccessControl.h>
 #include <Access/RowPolicy.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <Interpreters/Context.h>
@@ -10,16 +14,17 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Planner/Utils.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/expressionSourceColumns.h>
 
 #include <algorithm>
-#include <string_view>
 #include <unordered_set>
 
 namespace DB
@@ -61,6 +66,12 @@ bool usesColumn(const Names & used_columns, const ColumnsDescription & columns, 
 
 using TableNames = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
+ASTPtr parseFilter(const String & filter)
+{
+    ParserExpression parser;
+    return wrapStandaloneSubqueryFilter(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+}
+
 /// a subquery over any of the tables reads the same columns
 Names columnsReadByFilter(
     const String & filter,
@@ -69,20 +80,72 @@ Names columnsReadByFilter(
     const StorageID & table_id,
     const TableNames & tables,
     const ContextPtr & context,
-    std::string_view stage,
-    Names * subquery_reads = nullptr)
+    Names * subquery_reads)
 {
     try
     {
-        ParserExpression parser;
-        auto ast = wrapStandaloneSubqueryFilter(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         return expressionSourceColumns(
-            ast, storage_snapshot->metadata->getColumns(), context, /*keep_alias_columns=*/ true, storage_snapshot, table_id,
+            parseFilter(filter), storage_snapshot->metadata->getColumns(), context, /*keep_alias_columns=*/ true, storage_snapshot, table_id,
             [&](const StorageID & id) { return tables.contains(id); }, subquery_reads);
     }
     catch (Exception & e)
     {
-        e.addMessage("while checking row policy {} {} ALTER TABLE", policy_name, stage);
+        e.addMessage("while checking row policy {} before ALTER TABLE", policy_name);
+        throw;
+    }
+}
+
+/// analysis gives a scalar subquery the default value of its type, which a function can refuse, e.g. `intDiv(n, (SELECT k FROM l))`;
+/// a subquery of IN is not read
+bool readsScalarSubquery(const QueryTreeNodePtr & node)
+{
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return false;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+    {
+        auto source_type = constant->getSourceExpression()->getNodeType();
+        return source_type == QueryTreeNodeType::QUERY || source_type == QueryTreeNodeType::UNION
+            || readsScalarSubquery(constant->getSourceExpression());
+    }
+
+    return std::ranges::any_of(node->getChildren(), [](const auto & child) { return child && readsScalarSubquery(child); });
+}
+
+/// a read also evaluates the filter actions on the empty header of the table, which fails for some types that analysis accepts,
+/// e.g. `n = 1` for a String n, or a String filter; a filter that reads a scalar subquery is only analyzed
+void checkFilterAfterAlter(
+    const String & filter,
+    const String & policy_name,
+    const StorageSnapshotPtr & storage_snapshot,
+    const StorageID & table_id,
+    const ContextPtr & context)
+{
+    try
+    {
+        auto query_context = Context::createCopy(context);
+        auto expression = buildQueryTree(parseFilter(filter), query_context);
+        auto storage = std::make_shared<StorageDummy>(table_id, storage_snapshot->metadata->getColumns(), storage_snapshot);
+        auto table_node = std::make_shared<TableNode>(storage, query_context);
+        QueryAnalyzer(/*only_analyze=*/ true).resolve(expression, table_node, query_context);
+        if (readsScalarSubquery(expression))
+            return;
+
+        auto planner_context = std::make_shared<PlannerContext>(
+            query_context, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}), SelectQueryOptions{});
+        /// the filter can read the table only in a subquery
+        planner_context->getOrCreateTableExpressionData(table_node);
+        auto filter_info = buildFilterInfo(expression, table_node, planner_context);
+
+        Block header;
+        for (const auto * input : filter_info.actions.getInputs())
+            header.insert({input->result_type->createColumn(), input->result_type, input->result_name});
+        FilterTransform::transformHeader(header, &filter_info.actions, filter_info.column_name, filter_info.do_remove_column);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while checking row policy {} against the columns after ALTER TABLE", policy_name);
         throw;
     }
 }
@@ -169,7 +232,7 @@ void checkRowPoliciesBeforeAlter(
 
                 Names subquery_reads;
                 const auto used_columns = columnsReadByFilter(
-                    filter, policy_name, storage_snapshot, table_id, tables, analysis_context, "before", &subquery_reads);
+                    filter, policy_name, storage_snapshot, table_id, tables, analysis_context, &subquery_reads);
                 for (const auto & command : commands)
                 {
                     if (removesColumn(command) && usesColumn(used_columns, old_columns, command.column_name))
@@ -214,7 +277,7 @@ void checkRowPoliciesBeforeAlter(
                             "Change or drop the policy first",
                             backQuote(old_column->getNameInStorage()), policy_name, backQuote(used));
                 }
-                columnsReadByFilter(filter, policy_name, new_storage_snapshot, table_id, tables, analysis_context, "against the columns after");
+                checkFilterAfterAlter(filter, policy_name, new_storage_snapshot, table_id, analysis_context);
             }
         }
     }
