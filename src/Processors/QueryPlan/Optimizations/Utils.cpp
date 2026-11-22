@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
@@ -8,16 +10,24 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Storages/StorageMerge.h>
 
 #include <algorithm>
 #include <optional>
-#include <unordered_set>
 #include <utility>
-#include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -79,6 +89,40 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
+bool canProduceTotals(QueryPlan::Node & root)
+{
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        auto * step = node->step.get();
+
+        /// `ReadFromMerge` builds its nested plans when asked, so it is not asked and is assumed to produce totals.
+        if (typeid_cast<const TotalsHavingStep *>(step) || typeid_cast<const ReadFromMerge *>(step))
+            return true;
+        if (const auto * remote = typeid_cast<const ReadFromRemote *>(step); remote && remote->hasTotals())
+            return true;
+        if (const auto * cache = typeid_cast<const ReadFromQueryResultCacheStep *>(step); cache && cache->hasTotals())
+            return true;
+
+        /// An aggregation drops the totals of its input.
+        if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
+            continue;
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        /// `LazyReadReplacingFinalStep` builds its nested plan when asked; it reads one source without totals.
+        if (typeid_cast<const LazyReadReplacingFinalStep *>(step))
+            continue;
+        for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
+            if (child_plan)
+                stack.push_back(child_plan->getRootNode());
+    }
+    return false;
+}
+
 static bool isNotReadySetColumn(const ActionsDAG::Node & node)
 {
     if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
@@ -136,6 +180,62 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     return false;
 }
 
+namespace
+{
+
+/// True when the function does not read the value stored under a null map.
+bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
+{
+    /// `allNodeFunctions` carries a predicate to a lambda's wrapper but not into its body.
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return !dagReadsUnspecifiedValueUnderNull(expression->getAcionsDAG());
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return !dagReadsUnspecifiedValueUnderNull(capture->getAcionsDAG());
+#if USE_EMBEDDED_COMPILER
+    /// A JIT-compiled expression is named after its dump, not after the functions compiled into it.
+    if (const auto * compiled = ActionsDAG::getCompiledFunctions(function))
+        return std::ranges::all_of(*compiled, [](const FunctionBasePtr & nested) { return valueUnderNullMapIsNotRead(*nested); });
+#endif
+
+    if (function.getName() != "assumeNotNull")
+        return true;
+
+    /// `LowCardinality(Nullable(T))` keeps every NULL at the dictionary entry holding the type default,
+    /// so there the value is the same one a constant fold produces; only plain `Nullable(T)` can differ.
+    const auto & argument_types = function.getArgumentTypes();
+    return argument_types.empty() || !argument_types.front()->isNullable();
+}
+
+}
+
+bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
+{
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (!allNodeFunctions(*node, valueUnderNullMapIsNotRead))
+            return true;
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
+}
+
+bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag)
+{
+    /// `assumeNotNull` returns the value stored under the null map, and for a NULL that value is
+    /// unspecified: a constant fold leaves the nested type default there, while a per-row evaluation
+    /// leaves whatever the computation produced.
+    for (const auto & node : dag.getNodes())
+        if (!allNodeFunctions(node, valueUnderNullMapIsNotRead))
+            return true;
+    return false;
+}
+
 bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
 {
     auto is_insensitive = [](const IFunctionBase & function)
@@ -162,8 +262,8 @@ namespace
 template <typename IsMarkedInput>
 NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
 {
-    std::unordered_map<const ActionsDAG::Node *, bool> marked;
-    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> marked;
+    VectorWithMemoryTracking<std::pair<const ActionsDAG::Node *, bool>> stack;
     for (const auto * output : dag.getOutputs())
         stack.emplace_back(output, false);
 
@@ -212,8 +312,8 @@ ConstantColumns collectConstantColumns(const QueryPlan::Node & root)
         return it == result.end() ? no_columns : it->second;
     };
 
-    std::unordered_set<const QueryPlan::Node *> visited;
-    std::vector<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> visited;
+    VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
     while (!stack.empty())
     {
         auto [node, expanded] = stack.back();
@@ -409,6 +509,14 @@ FilterResult filterResultForNotMatchedRows(
     if (conjunction_atoms.size() > 1)
         targets.insert(targets.end(), conjunction_atoms.begin(), conjunction_atoms.end());
 
+    /// The dry run below models this side's inputs as constants, so a subexpression that is per-row at
+    /// runtime becomes constant and takes `IFunction`'s constant-NULL short circuit, which never computes
+    /// the value under the null map that `assumeNotNull` goes on to return.
+    std::erase_if(targets, nodeReadsUnspecifiedValueUnderNull);
+    if (targets.empty())
+        return FilterResult::UNKNOWN;
+    const bool whole_filter_evaluated = targets.front() == filter_node;
+
     ColumnsWithTypeAndName filter_output;
     try
     {
@@ -425,14 +533,17 @@ FilterResult filterResultForNotMatchedRows(
         return FilterResult::UNKNOWN;
     }
 
-    if (auto result = getFilterResult(filter_output[0]); result != FilterResult::UNKNOWN)
-        return result;
+    if (whole_filter_evaluated)
+    {
+        if (auto result = getFilterResult(filter_output[0]); result != FilterResult::UNKNOWN)
+            return result;
+    }
 
     /// In filter context NULL is equivalent to false, but `and` with a constant NULL argument
     /// does not fold to a constant: the result is 0 or NULL depending on the other arguments
     /// (e.g. `NULL = 42 AND <unknown>`).
     /// Both are falsy, so if any conjunction atom is a falsy constant, the filter cannot pass.
-    for (size_t i = 1; i < filter_output.size(); ++i)
+    for (size_t i = whole_filter_evaluated ? 1 : 0; i < filter_output.size(); ++i)
     {
         if (getFilterResult(filter_output[i]) == FilterResult::FALSE)
             return FilterResult::FALSE;

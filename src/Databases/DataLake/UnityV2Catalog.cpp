@@ -41,11 +41,6 @@ namespace DB::DatabaseDataLakeSetting
 namespace
 {
 
-bool hasValueAndItsNotNone(const std::string & value, const Poco::JSON::Object::Ptr & object)
-{
-    return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
-}
-
 /// `ALTER DATABASE ... MODIFY SETTING` on a Unity catalog may only switch the implementation.
 [[maybe_unused]] const bool unity_settings_alter_validator_registered = []
 {
@@ -79,24 +74,17 @@ static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials"
 
 /// Formats handled by the Delta reader. UniForm (`DELTA_UNIFORM_ICEBERG`) can be read as either
 /// Delta or Iceberg, and we choose to read it as Delta because the Delta log is the source of truth.
-static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
 /// Formats handled by the Iceberg reader (via the Iceberg REST catalog endpoint).
-static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
 
 /// Other table types (views, materialized views, streaming tables, foreign tables, shallow clones)
 /// do not support direct reads of their storage.
-static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
-
-/// An absent `table_type` does not reject the table; the format checks handle that case.
-static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
-{
-    return !hasValueAndItsNotNone("table_type", table_json)
-        || READABLE_TABLE_TYPES.contains(table_json->get("table_type").extract<String>());
-}
+[[clang::no_destroy]] static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
 
 /// Databricks reports managed Iceberg tables with `data_source_format` == `DELTA`,
 /// so only `securable_kind` tells them apart from plain Delta tables.
-static const std::unordered_set<std::string> ICEBERG_SECURABLE_KINDS = {
+[[clang::no_destroy]] static const std::unordered_set<std::string> ICEBERG_SECURABLE_KINDS = {
     "TABLE_DELTA_ICEBERG_MANAGED",
     "TABLE_DELTA_ICEBERG_EXTERNAL",
 };
@@ -107,14 +95,24 @@ static bool hasIcebergSecurableKind(const Poco::JSON::Object::Ptr & table_json)
         && ICEBERG_SECURABLE_KINDS.contains(table_json->get("securable_kind").extract<String>());
 }
 
-/// Backwards compatibility with the pre-unified Unity catalog, which accepted a table by
+/// Backwards compatibility with the Delta-only Unity catalog, which accepted a table by
 /// `securable_kind` alone. Delta tables are documented to always carry `data_source_format`,
 /// so this likely never fires, but it keeps the shipped acceptance rule for records without the format.
 static bool hasCompatDeltaSecurableKind(const Poco::JSON::Object::Ptr & table_json)
 {
-    static const std::unordered_set<std::string> compat_delta_kinds = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
     return hasValueAndItsNotNone("securable_kind", table_json)
-        && compat_delta_kinds.contains(table_json->get("securable_kind").extract<String>());
+        && UNITY_DELTA_SECURABLE_KINDS.contains(table_json->get("securable_kind").extract<String>());
+}
+
+/// An absent `table_type` does not reject the table; the format checks handle that case.
+static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
+{
+    if (!hasValueAndItsNotNone("table_type", table_json)
+        || READABLE_TABLE_TYPES.contains(table_json->get("table_type").extract<String>()))
+        return true;
+
+    /// Backwards compatibility with the Delta-only Unity catalog, which reads a Delta table with any `table_type`.
+    return isUnityDeltaTable(table_json);
 }
 
 struct UnityV2CatalogFullSchemaName
@@ -134,11 +132,12 @@ static UnityV2CatalogFullSchemaName parseFullSchemaName(const std::string & full
 UnityV2Catalog::UnityV2Catalog(
     const std::string & catalog_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     const std::string & auth_scope_,
-    const std::string & auth_header_,
+    std::string_view auth_header_,
     const std::string & oauth_server_uri_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
     , base_url_str(base_url_)
@@ -146,6 +145,7 @@ UnityV2Catalog::UnityV2Catalog(
     , log(getLogger("UnityV2Catalog(" + catalog_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
     maybeSetAuthHeader(catalog_credential_, auth_header_);
     if (auth_header)
@@ -161,13 +161,13 @@ UnityV2Catalog::UnityV2Catalog(
     else
     {
         use_oauth = false;
-        access_token = AccessToken{.token = catalog_credential_, .expires_at = std::nullopt};
+        access_token = AccessToken{.token = DB::SecretString(catalog_credential_), .expires_at = std::nullopt};
     }
 }
 
 UnityV2Catalog::~UnityV2Catalog() = default;
 
-void UnityV2Catalog::maybeSetAuthHeader(const std::string & catalog_credential_, const std::string & auth_header_)
+void UnityV2Catalog::maybeSetAuthHeader(std::string_view catalog_credential_, std::string_view auth_header_)
 {
     if (!catalog_credential_.empty() || auth_header_.empty())
         return;
@@ -225,7 +225,7 @@ void UnityV2Catalog::ensureBearerToken(bool force_refresh) const
     access_token = retrieveAccessToken();
 }
 
-std::string UnityV2Catalog::getBearerToken(bool force_refresh) const
+DB::SecretString UnityV2Catalog::getBearerToken(bool force_refresh) const
 {
     std::lock_guard lock(token_mutex);
     ensureBearerToken(force_refresh);
@@ -242,7 +242,7 @@ DB::HTTPHeaderEntries UnityV2Catalog::getAuthHeaders(bool force_refresh) const
     if (token.empty())
         return {};
 
-    DB::HTTPHeaderEntries headers{{"Authorization", "Bearer " + token}};
+    DB::HTTPHeaderEntries headers{{"Authorization", fmt::format("Bearer {}", token)}};
     getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
     return headers;
 }
@@ -469,6 +469,14 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
     /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
     /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
     const auto table_type = getTableType(full_table_name);
+
+    /// The data fate on drop is known only for these types.
+    if (!READABLE_TABLE_TYPES.contains(table_type))
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot drop table {}.{} because it has table_type {} in Unity catalog. Droppable table types are: [{}]",
+            namespace_name, table_name, table_type, fmt::join(READABLE_TABLE_TYPES, ", "));
+
     const bool data_will_be_deleted = table_type == "MANAGED";
     if (data_will_be_deleted != delete_data)
         throw DB::Exception(
@@ -506,12 +514,14 @@ bool UnityV2Catalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr new_snapshot) const
+    const String & base_catalog_metadata_location,
+    Poco::JSON::Object::Ptr new_snapshot,
+    Poco::JSON::Object::Ptr new_metadata) const
 {
     /// `false` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot);
+        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_snapshot, new_metadata);
     });
 }
 
@@ -519,12 +529,13 @@ bool UnityV2Catalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
+    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {
     return requestWithRetry([&](bool force_refresh)
     {
-        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, base_catalog_metadata_location, new_schema, previous_schema_id);
     });
 }
 
@@ -799,7 +810,8 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
     /// Iceberg credentials are vended by the Iceberg REST catalog.
     if (table_metadata.getTableFormat() == DataLakeTableFormat::ICEBERG)
     {
-        return [this, table_id, table_metadata]() -> std::shared_ptr<IStorageCredentials>
+        /// `self` keeps catalog alive while S3 client holds this callback.
+        return [this, self = shared_from_this(), table_id, table_metadata]() -> std::shared_ptr<IStorageCredentials>
         {
             /// Resolved per call, because refreshing the token replaces `iceberg_rest_catalog`.
             return requestWithRetry([&](bool force_refresh) -> std::shared_ptr<IStorageCredentials>
@@ -836,7 +848,8 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigur
 
 ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation)
 {
-    return [this, unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
+    /// `self` keeps catalog alive while S3 client holds this callback.
+    return [this, self = shared_from_this(), unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 
@@ -846,7 +859,7 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback
 
 std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_refresh) const
 {
-    std::string token;
+    DB::SecretString token;
     std::string rest_auth_header;
     {
         std::lock_guard lock(token_mutex);
@@ -854,7 +867,7 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
             return iceberg_rest_catalog;
 
         if (auth_header)
-            rest_auth_header = auth_header->name + ":" + auth_header->value;
+            rest_auth_header = fmt::format("{}:{}", auth_header->name, auth_header->value);
         else
         {
             /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
@@ -862,7 +875,7 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
             token = access_token->token;
             /// Empty token: keep the embedded catalog anonymous too.
             if (!token.empty())
-                rest_auth_header = "Authorization: Bearer " + token;
+                rest_auth_header = fmt::format("Authorization: Bearer {}", token);
         }
     }
 
@@ -883,7 +896,8 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         /* oauth_server_use_request_body= */ false,
         /// Unity namespaces are single-level schemas. Only matters for namespace listing, which this catalog never does.
         /* flat_namespaces= */ true,
-        getContext());
+        getContext(),
+        snapshot_loading_mode);
 
     std::lock_guard lock(token_mutex);
     /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.
