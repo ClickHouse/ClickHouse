@@ -546,14 +546,14 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
 
                 using HashSet = std::decay_t<decltype(destination)>;
                 typename HashSet::LookupResult lookup;
-                bool inserted;
+                bool inserted = false;
                 destination.emplace(cell.getValue(), lookup, inserted);
             }
         }
         return true;
     };
 
-    bool copied;
+    bool copied = false;
     switch (expected_type)
     {
         case Type::key8: copied = copy_keys(&SetVariants::key8); break;

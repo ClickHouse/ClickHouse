@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-fasttest
 # Two explicit `ReplicatedAggregatingMergeTree` replicas use one Keeper path.
 # The replicated-database and shared-merge-tree test modes rewrite this topology.
 
