@@ -508,7 +508,16 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
 
 
     if (start == finish)
+    {
+        /// `CHECK a < b` holds for `a = (0, NULL)` and `b = (1, 0)`, but `a = a` is NULL. An equality of two terms holds only without such elements.
+        if constexpr (!with_ast)
+        {
+            const auto type = removeLowCardinalityAndNullable(left->getResultType());
+            if (graph.vertices[start].nodes.size() == 1 && isTuple(type) && (hasTypeThatCanContainNulls(type) || hasTypeThatCanContainFloat(type)))
+                return ComparisonGraphCompareResult::UNKNOWN;
+        }
         return ComparisonGraphCompareResult::EQUAL;
+    }
 
     if (auto path = findPath(start, finish))
         return pathToCompareResult(*path, /*inverse=*/ false);
