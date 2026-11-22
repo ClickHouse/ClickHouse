@@ -7169,7 +7169,7 @@ ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPr
     /// Measure all active parts in that case, taken in one snapshot.
     const bool nothing_measured = std::ranges::all_of(result.sizes, [](const auto & entry) { return entry.second.data_compressed == 0; });
     if (!parts.empty() && nothing_measured)
-        return measure(data.getDataPartsVectorForInternalUsage(), [](const MergeTreeDataPartPtr & part) -> const MergeTreeDataPartPtr & { return part; });
+        return measure(data.getDataPartsVectorForInternalUsage(), [](const MergeTreeDataPartPtr & part) { return part; });
 
     return result;
 }
