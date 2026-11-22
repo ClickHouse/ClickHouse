@@ -2143,6 +2143,36 @@ void RestCatalog::createTableAtDefaultLocation(const String & namespace_name, co
 }
 
 
+bool RestCatalog::isSnapshotCommitted(const CatalogState & catalog_state, const String & endpoint, const Poco::JSON::Object::Ptr & snapshot) const
+{
+    try
+    {
+        /// Load all snapshots directly from the catalog: another writer may already have advanced `main`.
+        const auto response = sendRequest(
+            catalog_state, endpoint, nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ false, /* allow_retries */ true);
+        Poco::JSON::Parser parser;
+        const auto object = parser.parse(response).extract<Poco::JSON::Object::Ptr>();
+        const auto metadata = object ? object->getObject("metadata") : nullptr;
+        const auto snapshots = metadata ? metadata->getArray("snapshots") : nullptr;
+        if (!snapshots)
+            return false;
+
+        for (size_t i = 0; i < snapshots->size(); ++i)
+        {
+            const auto committed = snapshots->getObject(static_cast<UInt32>(i));
+            if (committed && committed->getValue<Int64>("snapshot-id") == snapshot->getValue<Int64>("snapshot-id")
+                && committed->getValue<String>("manifest-list") == snapshot->getValue<String>("manifest-list"))
+                return true;
+        }
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log, "Cannot establish whether the Iceberg snapshot was committed");
+    }
+    /// Absence or a failed read cannot prove that the commit did not land.
+    return false;
+}
+
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     const auto state_snapshot = state.get();
@@ -2230,6 +2260,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
                 table_name,
                 ex.displayText());
         }
+        if (DB::isRetriableHTTPError(status) && isSnapshotCommitted(*state_snapshot, endpoint, new_snapshot))
+            return true;
         throw DB::Exception(
             DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
             "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",
@@ -2239,7 +2271,9 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (...)
     {
-        // non-HTTP exceptions, such as a connection reset or timeout
+        /// Non-HTTP exceptions, such as a connection reset or timeout, may follow an applied commit.
+        if (isSnapshotCommitted(*state_snapshot, endpoint, new_snapshot))
+            return true;
         throw DB::Exception(
             DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
             "Iceberg catalog commit outcome is unknown for table {}.{}, the data may have been committed: {}",

@@ -15,6 +15,8 @@ class Proxy(ThreadingHTTPServer):
         self.target = None
         self.snapshot = None
         self.response_mode = None
+        self.readback_mode = None
+        self.commit_path = None
         self.intercepted = threading.Event()
         self.committed = threading.Event()
         self.release = threading.Event()
@@ -47,6 +49,8 @@ class Handler(BaseHTTPRequestHandler):
             command = json.loads(self.read_body())
             self.server.target = command["identifier"]
             self.server.response_mode = command["response_mode"]
+            self.server.readback_mode = command.get("readback_mode", "normal")
+            self.server.commit_path = None
             self.server.snapshot = None
             self.server.intercepted.clear()
             self.server.committed.clear()
@@ -54,6 +58,9 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, b"{}")
         elif self.path == "/control/release":
             self.server.release.set()
+            self.reply(200, b"{}")
+        elif self.path == "/control/reset":
+            self.server.commit_path = None
             self.reply(200, b"{}")
         else:
             self.forward()
@@ -63,6 +70,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def forward(self):
         body = self.read_body() if self.command == "POST" else None
+        readback = (
+            self.command == "GET"
+            and self.path == self.server.commit_path
+            and self.server.release.is_set()
+        )
+        if readback and self.server.readback_mode == "read_error":
+            self.reply(
+                403,
+                b'{"error":{"message":"Injected read-back failure","type":"ForbiddenException","code":403}}',
+            )
+            return
         snapshot = None
         if body and self.server.target is not None:
             request = json.loads(body)
@@ -110,6 +128,7 @@ class Handler(BaseHTTPRequestHandler):
         if snapshot is not None and 200 <= status < 300:
             self.server.target = None
             self.server.snapshot = snapshot
+            self.server.commit_path = self.path
             self.server.intercepted.set()
             self.server.committed.set()
             # Keep the successful response pending until the test has read the snapshot.
@@ -124,6 +143,20 @@ class Handler(BaseHTTPRequestHandler):
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()
             return
+
+        if readback and 200 <= status < 300 and self.server.readback_mode in {"missing", "mismatch"}:
+            table = json.loads(result)
+            snapshots = table["metadata"]["snapshots"]
+            snapshot_id = self.server.snapshot["snapshot-id"]
+            if self.server.readback_mode == "missing":
+                table["metadata"]["snapshots"] = [
+                    snapshot for snapshot in snapshots if snapshot["snapshot-id"] != snapshot_id
+                ]
+            else:
+                for snapshot in snapshots:
+                    if snapshot["snapshot-id"] == snapshot_id:
+                        snapshot["manifest-list"] += ".other"
+            result = json.dumps(table).encode()
 
         self.reply(status, result, content_type)
 

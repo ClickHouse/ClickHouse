@@ -609,9 +609,19 @@ def commit_response_proxy(started_cluster):
             )
 
 
-@pytest.mark.parametrize("response_mode", ["drop", "server_error"])
+@pytest.mark.parametrize(
+    "response_mode,readback_mode",
+    [
+        ("drop", "normal"),
+        ("server_error", "normal"),
+        ("drop", "superseded"),
+        ("drop", "read_error"),
+        ("drop", "missing"),
+        ("drop", "mismatch"),
+    ],
+)
 def test_insert_preserves_files_after_lost_commit_response(
-    started_cluster, commit_response_proxy, response_mode
+    started_cluster, commit_response_proxy, response_mode, readback_mode
 ):
     node = started_cluster.instances["node1"]
     catalog = load_catalog_impl(started_cluster)
@@ -647,6 +657,7 @@ def test_insert_preserves_files_after_lost_commit_response(
             json={
                 "identifier": {"namespace": [namespace], "name": "events"},
                 "response_mode": response_mode,
+                "readback_mode": readback_mode,
             },
             timeout=5,
         ).raise_for_status()
@@ -678,12 +689,25 @@ def test_insert_preserves_files_after_lost_commit_response(
         assert not missing_files(), "Committed files must exist before dropping the response"
         assert sorted(committed_table.scan().to_arrow().column("id").to_pylist()) == [1, 2]
 
+        expected_ids = [1, 2]
+        expected_snapshot_id = snapshot_id
+        if readback_mode == "superseded":
+            node.query(f"INSERT INTO {table_name} VALUES (3)", settings=settings)
+            expected_ids.append(3)
+            expected_snapshot_id = catalog.load_table(identifier).metadata.current_snapshot_id
+            assert expected_snapshot_id != snapshot_id
+
         # Proxy CLOSE the connection wihtout sending the successfull commit response (e.g. Network issue)
         requests.post(f"{control_url}/release", timeout=5).raise_for_status()
         _, insert_error = insert.get_answer_and_error()
         insert = None
+        if readback_mode in {"read_error", "missing", "mismatch"}:
+            assert "ICEBERG_COMMIT_STATE_UNKNOWN" in insert_error, insert_error
+        else:
+            assert not insert_error, insert_error
+        requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
         current = catalog.load_table(identifier)
-        assert current.metadata.current_snapshot_id == snapshot_id
+        assert current.metadata.current_snapshot_id == expected_snapshot_id
         missing = missing_files()
         read_result, read_error = node.get_query_request(
             f"SELECT id FROM {table_name} ORDER BY id", timeout=60
@@ -694,12 +718,13 @@ def test_insert_preserves_files_after_lost_commit_response(
             f"Insert error: {insert_error}\nRead error: {read_error}"
         )
         assert not read_error, f"Reading committed snapshot {snapshot_id} failed: {read_error}"
-        assert read_result == "1\n2\n"
-        assert sorted(current.scan().to_arrow().column("id").to_pylist()) == [1, 2]
+        assert read_result == "".join(f"{value}\n" for value in expected_ids)
+        assert sorted(current.scan().to_arrow().column("id").to_pylist()) == expected_ids
     finally:
         requests.post(f"{control_url}/release", timeout=5).raise_for_status()
         if insert is not None:
             insert.get_answer_and_error()
+        requests.post(f"{control_url}/reset", timeout=5).raise_for_status()
         node.query(f"DROP DATABASE {database}")
 
 

@@ -272,6 +272,8 @@ protected:
         std::unique_ptr<AccessToken> & new_access_token);
 
 private:
+    [[nodiscard]] bool isSnapshotCommitted(const CatalogState & catalog_state, const String & endpoint, const Poco::JSON::Object::Ptr & snapshot) const;
+
     /// Builds the body of the `POST /tables` request. If there is no `location`, the catalog uses its default location.
     Poco::JSON::Object::Ptr buildCreateTableRequestBody(
         const String & table_name, const std::optional<String> & location, Poco::JSON::Object::Ptr metadata_content) const;
