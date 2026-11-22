@@ -79,22 +79,14 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Check that the filter was applied, and that the estimate is close to what was really read.
-SELECT log_comment, ProfileEvents['StringValueFilterValuesReplaced'] > 0
+SELECT
+    log_comment,
+    ProfileEvents['StringValueFilterValuesReplaced'] > 0,
+    greatest(ProfileEvents['ReadCompressedBytes'], ProfileEvents['RuntimeDataflowStatisticsInputBytes'])
+        <= least(ProfileEvents['ReadCompressedBytes'], ProfileEvents['RuntimeDataflowStatisticsInputBytes']) * 1.3
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
 ORDER BY event_time_microseconds;
-
-SELECT format('{} {} {}', log_comment, compressed_bytes, statistics_input_bytes)
-FROM (
-    SELECT
-        log_comment,
-        ProfileEvents['ReadCompressedBytes'] compressed_bytes,
-        ProfileEvents['RuntimeDataflowStatisticsInputBytes'] statistics_input_bytes
-    FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
-    ORDER BY event_time_microseconds
-)
-WHERE greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) > 1.3;
 
 SELECT
     sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cache_2') = 0,

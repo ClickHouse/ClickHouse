@@ -23,10 +23,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, string_seriali
 
 -- With `compress_per_column_in_compact_parts`, each column of each granule is a compressed block of its own: the granules
 -- have to be as large as in `t_wide` to compare with its sizes.
-CREATE TABLE t_compact (key UInt64, s String) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, string_serialization_version = 'with_size_stream',
-    serialization_info_version = 'with_types', ratio_of_defaults_for_sparse_serialization = 1,
-    index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE t_compact AS t_wide SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1;
 
 -- Renamed while the mutation that renames the files in the part is held back: the part still names the column `s`.
 CREATE TABLE t_renamed AS t_wide;
@@ -36,8 +33,7 @@ CREATE TABLE t_nested (key UInt64, n Nested(a String, b UInt64)) ENGINE = MergeT
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, share_nested_offsets = 1, ratio_of_defaults_for_sparse_serialization = 1;
 
 -- A compact part reads the offsets as `n.a.size0`, not as the shared `n.size0`.
-CREATE TABLE t_nested_compact (key UInt64, n Nested(a String, b UInt64)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, share_nested_offsets = 1, ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE t_nested_compact AS t_nested SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1;
 
 
 INSERT INTO t_wide SELECT intDiv(number, 20000), repeat('x', cityHash64(number) % 50) FROM numbers(2e5);
@@ -65,7 +61,6 @@ SELECT key, avg(length(s)) FROM t_wide_single_stream WHERE s <> '' GROUP BY key 
 SELECT key, max(s), max(s.size) FROM t_wide_single_stream GROUP BY key FORMAT Null SETTINGS log_comment = '05452_wide_single_stream_full_and_size';
 SELECT key, avg(length(s)) FROM t_compact WHERE s <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_compact';
 SELECT key, avg(length(renamed)) FROM t_renamed WHERE renamed <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_renamed';
-SELECT key, avg(length(n.a)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested';
 -- Both read the one stream `n.size0`.
 SELECT key, avg(length(n.a)), avg(length(n.b)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_shared_stream';
 -- `n.b` read whole shares `n.size0` with `n.a.size0`, although the part counts it in the size of `n.a` only.
@@ -98,7 +93,7 @@ SELECT log_comment, input_bytes_match_disk FROM
 (
 SELECT
     log_comment,
-    if(log_comment IN ('05452_nested', '05452_nested_shared_stream', '05452_wide_single_stream_full_and_size'), 1.25, 2) AS tolerance,
+    if(log_comment IN ('05452_nested_shared_stream', '05452_wide_single_stream_full_and_size'), 1.25, 2) AS tolerance,
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] BETWEEN on_disk.bytes / tolerance AND on_disk.bytes * tolerance AS input_bytes_match_disk
 FROM system.query_log
 JOIN on_disk ON on_disk.table = multiIf(
@@ -106,7 +101,7 @@ JOIN on_disk ON on_disk.table = multiIf(
     startsWith(log_comment, '05452_nested'), 't_nested',
     't_wide')
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-    AND log_comment IN ('05452_wide', '05452_wide_single_stream', '05452_compact', '05452_renamed', '05452_nested',
+    AND log_comment IN ('05452_wide', '05452_wide_single_stream', '05452_compact', '05452_renamed',
         '05452_nested_shared_stream', '05452_wide_single_stream_full_and_size')
     AND type = 'QueryFinish'
 )
@@ -131,7 +126,7 @@ WITH
         AND log_comment = '05452_nested_offsets_and_full' AND type = 'QueryFinish') AS offsets_and_full,
     (SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] FROM system.query_log
      WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-        AND log_comment = '05452_nested' AND type = 'QueryFinish') AS offsets,
+        AND log_comment = '05452_nested_shared_stream' AND type = 'QueryFinish') AS offsets,
     (SELECT sum(column_data_compressed_bytes) FROM system.parts_columns
      WHERE database = currentDatabase() AND table = 't_nested' AND active AND column = 'n.b') AS n_b_bytes
 SELECT offsets > 0 AND offsets_and_full BETWEEN offsets AND (offsets + n_b_bytes) * 1.25 AS offsets_charged_with_full_column;
