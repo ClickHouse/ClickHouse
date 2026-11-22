@@ -22,6 +22,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/quoteString.h>
 #include <Databases/IDatabase.h>
 
@@ -32,6 +33,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+}
+
+namespace FailPoints
+{
+    extern const char storage_alias_alter_pause_before_target_lock[];
 }
 
 namespace ErrorCodes
@@ -435,6 +441,7 @@ void StorageAlias::alter(
     /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
     /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
     ddl_guard.reset();
+    FailPointInjection::pauseFailPoint(FailPoints::storage_alias_alter_pause_before_target_lock);
     auto target_ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
         target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 

@@ -457,6 +457,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
+    PAUSEABLE_ONCE(storage_alias_alter_pause_before_target_lock) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \
     PAUSEABLE(atomic_populate_pause_after_view_publication) \
