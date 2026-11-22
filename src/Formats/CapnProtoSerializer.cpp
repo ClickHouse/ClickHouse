@@ -1296,6 +1296,7 @@ namespace
                     data_type->getName(),
                     getCapnProtoFullTypeName(capnp_type));
 
+            is_tuple = true;
             const auto * tuple_data_type = assert_cast<const DataTypeTuple *>(data_type.get());
             auto nested_types = tuple_data_type->getElements();
             Names nested_names;
@@ -1398,9 +1399,9 @@ namespace
                 field_builder = initStructBuilder(parent_builder, offset_or_index, struct_size, fields_count, struct_schema);
 
             auto & struct_builder = assert_cast<StructBuilder &>(*field_builder);
-            if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
+            if (is_tuple)
             {
-                const auto & columns = tuple_column->getColumns();
+                const auto & columns = assert_cast<const ColumnTuple &>(*column).getColumns();
                 for (size_t i = 0; i != columns.size(); ++i)
                     fields_serializers[i]->writeRow(columns[i], struct_builder.field_builders[fields_indexes[i]], struct_builder.impl, fields_offsets[i], row_num);
             }
@@ -1412,8 +1413,9 @@ namespace
 
         void readRowImpl(IColumn & column, const capnp::DynamicStruct::Reader & struct_reader)
         {
-            if (auto * tuple_column = typeid_cast<ColumnTuple *>(&column))
+            if (is_tuple)
             {
+                auto * tuple_column = assert_cast<ColumnTuple *>(&column);
                 auto read_tuple = [&]()
                 {
                     for (size_t i = 0; i != tuple_column->tupleSize(); ++i)
@@ -1429,6 +1431,10 @@ namespace
         capnp::StructSchema struct_schema;
         capnp::_::StructSize struct_size{};
         size_t fields_count{};
+        /// True if the struct is mapped to a `Tuple` column, one field per tuple element.
+        /// Otherwise the serializer is the root one or an adapter for a flattened column name (`a.b`)
+        /// with a single field, which gets the whole column, even if the column itself is a `Tuple`.
+        bool is_tuple = false;
         std::vector<std::unique_ptr<ICapnProtoSerializer>> fields_serializers;
         std::vector<UInt32> fields_offsets;
         std::vector<size_t> fields_indexes;
