@@ -256,7 +256,8 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         configuration->update(object_storage, local_context);
 
     return StorageObjectStorage::createSink(
-        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 bool StorageObjectStorageCluster::supportsParallelInsert() const
@@ -603,17 +604,18 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         iterator,
         std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes],
-        /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()));
+        /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()),
+        local_context->getProcessListElementSafe());
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context](size_t number_of_current_replica, const std::atomic_bool & stop_waiting) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
                 sleepForSeconds(10);
             });
 
-            auto task = task_distributor->getNextTask(number_of_current_replica);
+            auto task = task_distributor->getNextTask(number_of_current_replica, &stop_waiting);
             if (task)
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
             return std::make_shared<ClusterFunctionReadTaskResponse>();
