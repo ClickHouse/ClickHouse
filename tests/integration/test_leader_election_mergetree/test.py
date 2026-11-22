@@ -5557,7 +5557,7 @@ def test_lease_expiry_respects_writer_session_timeout(started_cluster):
             pass
 
 
-SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS = "12345678-abcd-abcd-abcd-12345678ab64"
+SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS = "12345678-abcd-abcd-abcd-12345678ab67"
 SHARED_UUID_REUSED_PART_NAME = "12345678-abcd-abcd-abcd-12345678ab65"
 SHARED_UUID_REUSED_PART_NAME_WITHOUT_CHECKSUMS = "12345678-abcd-abcd-abcd-12345678ab66"
 
