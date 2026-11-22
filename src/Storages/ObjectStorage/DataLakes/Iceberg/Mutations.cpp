@@ -1049,9 +1049,8 @@ void mutate(
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
 }
 
-/// As `TableMetadata.Builder.build` of the Iceberg reference implementation: each source column of the default partition
-/// spec and of the default sort order must be in `schema`. A `void` partition field, which format version 1 keeps for a
-/// removed field, needs none.
+/// Iceberg (`TableMetadata.Builder.build`) requires each source column of the default partition spec and of the default
+/// sort order to be in `schema`; a `void` partition field, which format version 1 keeps for a removed field, needs none.
 static std::optional<String> findFieldWithoutSourceColumn(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
 {
     const auto columns = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
