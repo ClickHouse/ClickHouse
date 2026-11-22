@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
-
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -13,7 +11,7 @@ namespace DB
 {
 
 class WriteBuffer;
-struct ExplainFormatSettings;
+class Block;
 
 namespace JSONBuilder { class JSONMap; }
 
@@ -26,23 +24,12 @@ struct AggregateDescription
 
     void explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const; /// Get description for EXPLAIN query.
     void explain(JSONBuilder::JSONMap & map) const;
-
-    void explainPretty(ExplainFormatSettings & settings) const;
 };
 
 using AggregateDescriptions = std::vector<AggregateDescription>;
 
-void serializeAggregateDescriptions(
-    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key = false, const Block * input_header = nullptr);
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
-
-/// Variant for aggregates whose argument names the planner removed (the `Rollup` and `Cube` steps:
-/// their transforms only merge states, so the argument columns do not exist in their input). The
-/// writer takes the argument types from the resolved function; the reader resolves the same
-/// function from them and leaves the argument names empty, mirroring the writer's state.
-void serializeAggregateDescriptionsWithoutArguments(
-    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key = false, const Block * input_header = nullptr);
-void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
+void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out);
+void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in);
 
 /// The aggregate functions of a deserialized query plan are resolved from the types written in the plan,
 /// but they are executed on the columns of the step's input. The plan may come from an untrusted client,
@@ -63,13 +50,5 @@ void checkDeserializedMergedAggregatesLayout(
 
 /// The names of the keys and the aggregates (the columns of the output) must be distinct.
 void checkDeserializedAggregateOutputNames(const Names & keys, const AggregateDescriptions & aggregates);
-
-/// The input of the merge-only `Aggregating` step: exactly the keys and then the states, finalized to the types of the plan
-/// (`AggregatingInOrderTransform` and the finalization of a single chunk keep the functions of the input).
-void checkDeserializedMergeOnlyInput(const Names & keys, const AggregateDescriptions & aggregates, const Block & header);
-
-/// The input of `Rollup` and `Cube`: `final`, exactly the keys and then the states, finalized to the types of the plan.
-void checkDeserializedGroupByModifierInput(
-    const Names & keys, const AggregateDescriptions & aggregates, bool final, const Block & header);
 
 }

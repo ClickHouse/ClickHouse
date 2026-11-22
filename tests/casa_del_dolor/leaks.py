@@ -11,8 +11,9 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from tests.integration.helpers.client import Client, CommandRequest
-from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from typing import Optional
+from integration.helpers.client import Client, CommandRequest
+from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 
 @dataclass
@@ -42,11 +43,13 @@ class ElOracloDeLeaks:
             client = Client(
                 host=next_node.ip_address, port=9000, command=cluster.client_bin_path
             )
-            metrics_str = client.query("""
+            metrics_str = client.query(
+                """
                 SELECT metric, value
                 FROM system.asynchronous_metrics
                 WHERE metric = 'MemoryResident';
-                """)
+                """
+            )
             if not isinstance(metrics_str, str) or metrics_str == "":
                 self.logger.warning(
                     f"No tables found to fetch on node {next_node.name}"
@@ -73,7 +76,7 @@ class ElOracloDeLeaks:
         self.snapshots.clear()
         baseline = self._get_memory_snapshot("baseline", cluster)
         if baseline is None:
-            self.logger.error("Could not get baseline capture")
+            self.logger.error(f"Could not get baseline capture")
             return
         self.snapshots.append(baseline)
         self._print_snapshot(baseline)
@@ -114,7 +117,7 @@ class ElOracloDeLeaks:
         """
         # Check baseline
         if len(self.snapshots) == 0:
-            self.logger.error("No previous captures exist")
+            self.logger.error(f"No previous captures exist")
             return
         leak_detected = False
         try:
@@ -167,10 +170,10 @@ class ElOracloDeLeaks:
                     f"RESTORE ALL FROM File('/var/lib/clickhouse/user_files/leaks{backupn}');"
                 )
             else:
-                start_time = time.monotonic()
+                start_time = time.time()
                 while (
                     active_merges != 0 or active_mutations != 0
-                ) and time.monotonic() - start_time < timeout:
+                ) and time.time() - start_time < timeout:
                     # Check for active merges and mutations
                     result1 = client.query("SELECT count() FROM system.merges;")
                     result2 = client.query(
@@ -183,7 +186,7 @@ class ElOracloDeLeaks:
                         or result2 == ""
                     ):
                         self.logger.warning(
-                            "Could not fetch number of merges or mutations"
+                            f"Could not fetch number of merges or mutations"
                         )
                         return False
 
@@ -200,7 +203,7 @@ class ElOracloDeLeaks:
                     "SELECT name FROM system.databases WHERE name NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA');"
                 )
                 if not isinstance(dbs_str, str) or dbs_str == "":
-                    self.logger.warning("Could not fetch databases")
+                    self.logger.warning(f"Could not fetch databases")
                     return False
                 fetched_dbs: list[str] = [line for line in dbs_str.split("\n") if line]
                 for db_name in fetched_dbs:
