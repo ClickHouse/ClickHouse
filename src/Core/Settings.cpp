@@ -3334,7 +3334,7 @@ Not applied to `FINAL`, `ASOF`, joins with several disjuncts in `ON`, or when re
 Execute a subtree of `full_sorting_merge` inner joins whose keys are equal to each other as one merge join of all its inputs instead of a tree of two-input joins. Every input is read once in the order of the key and every column is copied to the result once.
 
 Applies to `INNER` joins with `ALL` strictness and one condition. With `query_plan_join_shard_by_pk_ranges` the join is split by primary key ranges of all its tables.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.12", false, false, "New setting"}) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
