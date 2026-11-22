@@ -1,5 +1,6 @@
 import gzip
 import io
+import json
 import logging
 import os
 import random
@@ -20,10 +21,11 @@ from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
-from helpers.test_tools import exec_query_with_retry
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers.s3_queue_common import generate_random_string
 
 from minio.commonconfig import Tags
+from minio.versioningconfig import ENABLED, VersioningConfig
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -91,10 +93,12 @@ def started_cluster():
         cluster.add_instance(
             "dummy_without_named_collections",
             with_minio=True,
+            stay_alive=True,
             main_configs=[
                 "configs/defaultS3.xml",
                 "configs/named_collections.xml",
                 "configs/schema_cache.xml",
+                "configs/requester_pays.xml",
             ],
             user_configs=[
                 "configs/access.xml",
@@ -115,6 +119,7 @@ def started_cluster():
         cluster.add_instance(
             "s3_non_default",
             with_minio=True,
+            main_configs=["configs/forbid_request_payer.xml"],
             user_configs=["configs/allow_server_credentials.xml"],
         )
         cluster.add_instance(
@@ -1001,6 +1006,7 @@ def run_s3_mocks(started_cluster):
             ("echo.py", "resolver", "8082"),
             ("no_list_objects.py", "resolver", "8083"),
             ("gcs_transcode_mock.py", "resolver", "8084"),
+            ("requester_pays.py", "resolver", "8085"),
         ],
     )
 
@@ -1075,6 +1081,214 @@ def test_custom_auth_headers_exclusion(started_cluster):
 
     assert ei.value.returncode == 243
     assert "HTTP response code: 403" in ei.value.stderr
+
+
+def test_request_payer(started_cluster):
+    # The mock on port 8085 refuses every request without a signed `x-amz-request-payer: requester`.
+    node = started_cluster.instances["dummy_without_named_collections"]
+    base = f"http://resolver:8085/{started_cluster.minio_bucket}"
+    keys = f"'minio', '{minio_secret_key}'"
+    payer = {"s3_request_payer": "requester"}
+
+    def denied(error):
+        # The mock's 403, with its `Access Denied` body or without a body (HEAD).
+        return "Access Denied" in error or "HTTP response code: 403" in error
+
+    def check(query, events, settings={}):
+        query_id = uuid.uuid4().hex
+        result = node.query(query, settings={**settings, **payer}, query_id=query_id)
+        assert denied(node.query_and_get_error(query, settings=settings)), query
+        node.query("SYSTEM FLUSH LOGS query_log")
+        sent = node.query(
+            "SELECT "
+            + ", ".join(f"ProfileEvents['{e}'] > 0" for e in events)
+            + f" FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        assert sent.split() == ["1"] * len(events), (query, sent)
+        return result
+
+    write = f"INSERT INTO FUNCTION s3('{base}/request_payer/a.csv', {keys}, 'CSV', 'x UInt64') SELECT number FROM numbers(1000)"
+    multipart = ["S3CreateMultipartUpload", "S3UploadPart", "S3CompleteMultipartUpload"]
+    check(
+        write,
+        multipart,
+        {"s3_max_single_part_upload_size": 0, "s3_truncate_on_insert": 1},
+    )
+    read = f"SELECT count() FROM s3('{base}/request_payer/a.csv', {keys}, 'CSV', 'x UInt64')"
+    assert check(read, ["S3HeadObject"]) == "1000\n"
+    glob = f"SELECT count() FROM s3('{base}/request_payer/*.csv', {keys}, 'CSV', 'x UInt64')"
+    assert check(glob, ["S3ListObjects"]) == "1000\n"
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        read, settings={"s3_request_payer": "owner"}
+    )
+    assert denied(node.query_and_get_error(read, settings={"s3_request_payer": "none"}))
+
+    # The `request_payer` key of an endpoint section (without keys in the query and under the default restriction)
+    # and of a disk. Both take precedence over the setting, so `none` must not reach them.
+    no_payer = {"s3_request_payer": "none"}
+    endpoint = f"{base}/requester_pays_endpoint/b.csv"
+    disk = f"disk(type = s3, endpoint = '{base}/request_payer_disk/', access_key_id = 'minio', secret_access_key = '{minio_secret_key}'"
+    create = "CREATE TABLE t_request_payer_disk (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = "
+    assert denied(node.query_and_get_error(f"{create}{disk})"))
+    try:
+        node.query(
+            f"INSERT INTO FUNCTION s3('{endpoint}', 'CSV', 'x UInt64') SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert = 1",
+            settings=no_payer,
+        )
+        node.query(
+            f"CREATE TABLE t_request_payer ENGINE = S3('{endpoint}', 'CSV')",
+            settings=no_payer,
+        )
+        assert (
+            node.query("SELECT count() FROM t_request_payer", settings=no_payer)
+            == "10\n"
+        )
+        node.query(f"{create}{disk}, request_payer = 'requester')", settings=no_payer)
+        node.query(
+            "INSERT INTO t_request_payer_disk SELECT number FROM numbers(100)",
+            settings=no_payer,
+        )
+        assert (
+            node.query("SELECT count() FROM t_request_payer_disk", settings=no_payer)
+            == "100\n"
+        )
+
+        # Both tables keep the header when they are loaded from their metadata at startup.
+        node.restart_clickhouse()
+        assert node.query("SELECT count() FROM t_request_payer") == "10\n"
+        assert node.query("SELECT count() FROM t_request_payer_disk") == "100\n"
+    finally:
+        node.query("DROP TABLE IF EXISTS t_request_payer")
+        node.query("DROP TABLE IF EXISTS t_request_payer_disk SYNC")
+
+    node.query(
+        "CREATE TABLE t_request_payer_src (x UInt64) ENGINE = MergeTree ORDER BY x AS SELECT number FROM numbers(100)"
+    )
+    backup = lambda: f"S3('{base}/request_payer_backup/{uuid.uuid4().hex}', {keys})"
+    assert denied(
+        node.query_and_get_error(f"BACKUP TABLE t_request_payer_src TO {backup()}")
+    )
+    destination = backup()
+    node.query(f"BACKUP TABLE t_request_payer_src TO {destination}", settings=payer)
+    node.query(
+        f"RESTORE TABLE t_request_payer_src AS t_request_payer_restored FROM {destination}",
+        settings=payer,
+    )
+    assert node.query("SELECT count() FROM t_request_payer_restored") == "100\n"
+    node.query("DROP TABLE t_request_payer_src SYNC")
+    node.query("DROP TABLE t_request_payer_restored SYNC")
+
+    # A restore into a disk with `request_payer` from a backup on the same endpoint that is not requester-pays:
+    # the native copy is refused, so the disk's client uploads the object and checks it after the upload.
+    payer_disk = f"{disk}, request_payer = 'requester')"
+    owner_backup = f"S3('{base}/owner_pays/{uuid.uuid4().hex}', {keys})"
+    node.query(
+        f"CREATE TABLE t_request_payer_src (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = {payer_disk} AS SELECT number FROM numbers(100)"
+    )
+    node.query(f"BACKUP TABLE t_request_payer_src TO {owner_backup}")
+    query_id = uuid.uuid4().hex
+    node.query(
+        f"RESTORE TABLE t_request_payer_src AS t_request_payer_restored FROM {owner_backup}",
+        settings={"s3_check_objects_after_upload": 1},
+        query_id=query_id,
+    )
+    assert node.query("SELECT count() FROM t_request_payer_restored") == "100\n"
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        node.query(
+            f"SELECT ProfileEvents['S3CopyObject'] > 0 FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        == "1\n"
+    )
+    node.query("DROP TABLE t_request_payer_src SYNC")
+    node.query("DROP TABLE t_request_payer_restored SYNC")
+
+    # `<http_forbid_headers>` refuses the header before any request is sent.
+    other = started_cluster.instances["s3_non_default"]
+    other.query(
+        "CREATE TABLE IF NOT EXISTS t_request_payer_src (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    for query in [read, f"BACKUP TABLE t_request_payer_src TO {backup()}"]:
+        error = other.query_and_get_error(query, settings=payer)
+        assert 'HTTP header "x-amz-request-payer" is forbidden' in error, error
+    other.query("DROP TABLE t_request_payer_src SYNC")
+
+
+def test_request_payer_does_not_send_endpoint_headers(started_cluster):
+    # Both endpoint sections of `requester_pays.xml` also have `Authorization: Bearer endpoint-header-token`. Under the
+    # default `s3_allow_server_credentials_in_user_queries = 0` it must reach no request next to `request_payer`,
+    # including the redirected requests and those of `S3` tables loaded at startup.
+    node = started_cluster.instances["dummy_without_named_collections"]
+    resolver = started_cluster.get_container_id("resolver")
+    base = f"http://resolver:8085/{started_cluster.minio_bucket}"
+    keyed = f"{base}/requester_pays_endpoint/headers.csv"
+    keyless = f"{base}/requester_pays_keyless/headers.csv"
+
+    def sent(redirected, query, error=False):
+        # `redirected`: whether the mock accepted the request (signed with the payer header) and redirected it.
+        started_cluster.exec_in_container(
+            resolver, ["curl", "-s", "-X", "POST", "http://localhost:8085/__reset"]
+        )
+        result = node.query_and_get_error(query) if error else node.query(query)
+        requests = json.loads(
+            started_cluster.exec_in_container(
+                resolver, ["curl", "-s", "http://localhost:8085/__requests"]
+            )
+        )
+        assert requests, query
+        assert redirected == any(
+            r["path"].startswith("/__redirected/") for r in requests
+        ), (query, requests)
+        assert not any(
+            "endpoint-header-token" in value
+            for r in requests
+            for _, value in r["headers"]
+        ), (query, requests)
+        return result
+
+    def denied(error):
+        return "Access Denied" in error or "HTTP response code: 403" in error
+
+    tables = ["t_rp_headers", "t_rp_headers_keyless", "t_rp_headers_src"]
+    try:
+        sent(
+            True,
+            f"INSERT INTO FUNCTION s3('{keyed}', 'CSV', 'x UInt64') SELECT number FROM numbers(10) SETTINGS s3_truncate_on_insert = 1",
+        )
+        assert (
+            sent(True, f"SELECT count() FROM s3('{keyed}', 'CSV', 'x UInt64')")
+            == "10\n"
+        )
+        assert denied(
+            sent(
+                False,
+                f"SELECT count() FROM s3('{keyless}', 'CSV', 'x UInt64')",
+                error=True,
+            )
+        )
+        node.query(
+            f"CREATE TABLE t_rp_headers (x UInt64) ENGINE = S3('{keyed}', 'CSV')"
+        )
+        node.query(
+            f"CREATE TABLE t_rp_headers_keyless (x UInt64) ENGINE = S3('{keyless}', 'CSV')"
+        )
+        node.query(
+            "CREATE TABLE t_rp_headers_src (x UInt64) ENGINE = MergeTree ORDER BY x AS SELECT 1"
+        )
+        sent(
+            True,
+            f"BACKUP TABLE t_rp_headers_src TO S3('{base}/requester_pays_endpoint/backup_{uuid.uuid4().hex}')",
+        )
+        for restart in [False, True]:
+            if restart:
+                node.restart_clickhouse()
+            assert sent(True, "SELECT count() FROM t_rp_headers") == "10\n"
+            assert denied(
+                sent(False, "SELECT count() FROM t_rp_headers_keyless", error=True)
+            )
+    finally:
+        for table in tables:
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
 def test_infinite_redirect(started_cluster):
@@ -1668,6 +1882,29 @@ def test_create_new_files_on_insert(started_cluster):
     result = instance.query("select count() from test_multiple_inserts")
     assert int(result) == 60
     instance.query("drop table test_multiple_inserts")
+
+
+def test_create_new_files_on_insert_multipart_gcs(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    # The S3 client deduces the GCS provider from the endpoint, so reach MinIO under the GCS host name.
+    instance.exec_in_container(
+        ["bash", "-c", f"echo '{started_cluster.minio_ip} storage.googleapis.com' >> /etc/hosts"],
+        privileged=True,
+        user="root",
+    )
+    bucket = started_cluster.minio_bucket
+    name = f"gcs_new_file_{generate_random_string()}"
+    url = f"http://storage.googleapis.com:{started_cluster.minio_port}/{bucket}/{name}"
+    settings = {"s3_max_single_part_upload_size": 1048576}
+    for path, partition_by in [(f"{url}.csv", ""), (f"{url}_{{_partition_id}}.csv", "PARTITION BY 'p'")]:
+        insert = f"INSERT INTO FUNCTION s3('{path}', 'minio', '{minio_secret_key}', 'CSV', 's String') {partition_by} SELECT repeat('a', 1000) FROM numbers(2000)"
+        instance.query(insert, settings=settings)
+        instance.query(insert, settings={**settings, "s3_create_new_file_on_insert": 1})
+
+    result = instance.query(
+        f"SELECT _file, count() FROM s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{name}*.csv', 'minio', '{minio_secret_key}', 'CSV', 's String') GROUP BY _file ORDER BY _file"
+    )
+    assert result == f"{name}.1.csv\t2000\n{name}.csv\t2000\n{name}_p.1.csv\t2000\n{name}_p.csv\t2000\n"
 
 
 def test_format_detection(started_cluster):
@@ -2374,14 +2611,10 @@ def test_s3_server_credentials_anonymous_on_reload(started_cluster):
     with pytest.raises(helpers.client.QueryRuntimeException):
         instance.query("SELECT count() FROM t_server_credentials_reload")
 
-    # An opted-in read rebuilds the client from the stored definition (the bare URL resolves the server's
-    # environment credentials), which is the operator escape hatch, so it reads the data back.
-    assert (
-        instance.query(
-            "SELECT count() FROM t_server_credentials_reload", settings=allow
-        ).strip()
-        == "100"
-    )
+    # An opted-in read does not upgrade the client either: it is shared with restricted sessions, which may
+    # be reading through it at the same time.
+    with pytest.raises(helpers.client.QueryRuntimeException):
+        instance.query("SELECT count() FROM t_server_credentials_reload", settings=allow)
 
     instance.query("DROP TABLE IF EXISTS t_server_credentials_reload")
 
@@ -3668,6 +3901,47 @@ def test_schema_inference_cache_multi_path(started_cluster):
     assert "1\ta\n2\tb\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )
+
+
+def test_schema_cache_key_includes_object_version(started_cluster):
+    # The schema and row-count caches must not answer a read of one version of an object with an entry of another.
+    instance = started_cluster.instances["dummy"]
+    minio_client = started_cluster.minio_client
+    bucket = "versioned"
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+    minio_client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    prefix = f"test_schema_cache_key_includes_object_version-{uuid.uuid4()}"
+    host = f"{started_cluster.minio_host}:{started_cluster.minio_port}"
+    auth = f"'minio', '{minio_secret_key}'"
+
+    def s3(key, format, structure=None, version_id=None):
+        url = f"http://{host}/{bucket}/{prefix}-{key}"
+        if version_id is not None:
+            url += f"?versionId={version_id}"
+        structure = f", '{structure}'" if structure else ""
+        return f"s3('{url}', {auth}, '{format}'{structure})"
+
+    def put_version(key, format, structure, query):
+        instance.query(f"INSERT INTO FUNCTION {s3(key, format, structure)} {query} SETTINGS s3_truncate_on_insert = 1")
+        return minio_client.stat_object(bucket, f"{prefix}-{key}")
+
+    # Versions of equal size, so that only the caches can tell them apart.
+    old_count = put_version("count.csv", "CSV", "x UInt64", "SELECT 1 FROM numbers(200)")
+    new_count = put_version("count.csv", "CSV", "x UInt64", "SELECT 100 FROM numbers(100)")
+    old_schema = put_version("schema.csv", "CSVWithNames", "a UInt64", "SELECT number FROM numbers(1, 2)")
+    new_schema = put_version("schema.csv", "CSVWithNames", "b UInt64", "SELECT number FROM numbers(3, 2)")
+    assert old_count.size == new_count.size and old_schema.size == new_schema.size
+    # An entry registered in the second the object was last modified is not used, which would hide a wrong hit.
+    assert_eq_with_retry(instance, f"SELECT now() > toDateTime({int(new_schema.last_modified.timestamp())})", "1")
+
+    for version_id, expected in [(old_count.version_id, "200\n"), (None, "100\n")]:
+        assert expected == instance.query(f"SELECT count() FROM {s3('count.csv', 'CSV', 'x UInt64', version_id)}")
+
+    for version_id, expected in [(None, "b\n3\n4\n"), (old_schema.version_id, "a\n1\n2\n")]:
+        assert expected == instance.query(
+            f"SELECT * FROM {s3('schema.csv', 'CSVWithNames', version_id=version_id)} FORMAT TSVWithNames"
+        )
 
 
 def test_gcs_decompressive_transcoding(started_cluster):

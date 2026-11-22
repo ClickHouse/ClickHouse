@@ -20,10 +20,10 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 对于支持此类估算的存储 (例如 EmbeddedRocksDB) ，在简单 count 优化中使用近似值。
 
-可能的值：
+可选值：
 
 * 0 — 禁用优化。
-  * 1 — 启用优化。
+* 1 — 启用优化。
 
 ## optimize_trivial_count_query {#optimize_trivial_count_query}
 
@@ -31,10 +31,10 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 启用或禁用对简单查询 `SELECT count() FROM table` 的优化，该优化会使用 MergeTree 的元数据。如果需要使用行级安全，请禁用此设置。
 
-可能的值：
+可选值：
 
 * 0 — 禁用优化。
-  * 1 — 启用优化。
+* 1 — 启用优化。
 
 另请参阅：
 
@@ -49,8 +49,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "升级为 Beta 并默认启用：当 `<pred>` 将行划分为默认值和非默认值时，使用持久化存储的每列 `num_defaults` \/ `num_rows` 计数器直接返回 `SELECT count() FROM t WHERE <pred>` 的结果。需要 MergeTree 设置 `compute_exact_num_defaults_for_sparse_columns`（现也默认启用）。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "新增（实验性）设置：当 `<pred>` 可将行精确划分为 `col` 的默认值与非默认值时，可利用记录在 `serialization.json` 中的每列 `num_defaults` \/ `num_rows` 为 `SELECT count() FROM t WHERE <pred>` 直接返回结果。"}]}]} />
 
 将 [optimize&#95;trivial&#95;count&#95;query](/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) 优化扩展到
-形如 `SELECT count() FROM t WHERE col <op> const` 的
-查询，其中 `<op> const`
+形如 `SELECT count() FROM t WHERE col <op> const` 的查询，其中 `<op> const`
 必须能够将行精确划分为 `col` 的默认值和非默认值。这样，计数结果即可
 直接根据 MergeTree 已记录在 `serialization.json` 中的每列 `num_defaults` / `num_rows`
 计数器返回，无需扫描数据。
@@ -65,7 +64,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 * 无符号整数列上的 `col > 0`、`col >= 1`、`col < 1`、`col <= 0`。
 * `Int*`、`UInt*`、`Bool` 列上直接使用 `col` / `NOT col` (真值判断)。
 
-相等模式不适用于 `Float*`、`Enum*`、`Nullable`、`LowCardinality`，
+相等模式不适用于 `Float*`、`Enum*`、`Date32`、`Nullable`、`LowCardinality`，
 或复合类型 (`Tuple`、`Array`、`Map`、...) —— 对于这些类型，计数仍会走
 常规扫描路径。
 
@@ -84,9 +83,9 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 可选值：
 
 * 0 — 优化已禁用。
-  * 1 — 优化已启用。
+* 1 — 优化已启用。
 
-另请参见：
+另请参阅：
 
 * [optimize&#95;trivial&#95;count&#95;query](/zh/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)
 
