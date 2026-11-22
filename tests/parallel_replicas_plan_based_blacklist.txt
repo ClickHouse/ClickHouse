@@ -8,6 +8,7 @@
 04174_unique_key_insert_dedup
 04196_unique_key_read_skips_an_uncommitted_part
 04198_unique_key_read_sees_a_lost_reply_commit
+05449_auto_low_cardinality_serialization_unique_key
 
     A `GLOBAL IN` set built from `input()` has no plan to ship, so plan-based keeps the read local
 05237_parallel_replicas_input_table_function
