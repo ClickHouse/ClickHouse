@@ -45,7 +45,7 @@ Ranges PlainRanges::makePlainFromUnordered(Ranges ranges_)
     return makePlainFromOrdered(ranges_);
 }
 
-PlainRanges PlainRanges::unionWith(const PlainRanges & other)
+PlainRanges PlainRanges::unionWith(const PlainRanges & other) const
 {
     auto left_itr = ranges.begin();
     auto right_itr = other.ranges.begin();
@@ -91,7 +91,7 @@ PlainRanges PlainRanges::unionWith(const PlainRanges & other)
     return PlainRanges(makePlainFromOrdered(new_range));
 }
 
-PlainRanges PlainRanges::intersectWith(const PlainRanges & other)
+PlainRanges PlainRanges::intersectWith(const PlainRanges & other) const
 {
     auto left_itr = ranges.begin();
     auto right_itr = other.ranges.begin();

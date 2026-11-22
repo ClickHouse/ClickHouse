@@ -26,8 +26,8 @@ struct PlainRanges
 
     explicit PlainRanges(const Ranges & ranges_, bool may_have_intersection = false, bool ordered = true);
 
-    PlainRanges unionWith(const PlainRanges & other);
-    PlainRanges intersectWith(const PlainRanges & other);
+    PlainRanges unionWith(const PlainRanges & other) const;
+    PlainRanges intersectWith(const PlainRanges & other) const;
 
     /// Union ranges and return a new plain(ordered and no intersection) ranges.
     /// Example:

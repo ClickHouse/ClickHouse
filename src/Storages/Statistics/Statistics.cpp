@@ -496,6 +496,22 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     return std::nullopt;
 }
 
+std::optional<Float64> ColumnStatistics::estimateEqualForAll(const IColumn & values) const
+{
+    /// `estimateEqual` depends on the value only for NaN, in `Basic` and in these statistics.
+    if (values.empty() || stats.contains(StatisticsType::TDigest) || stats.contains(StatisticsType::CountMinSketch))
+        return std::nullopt;
+
+    const auto basic = stats.find(StatisticsType::Basic);
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        const Field value = values[i];
+        if (value.isNaN() || (basic != stats.end() && basic->second->estimateEqual(value)))
+            return std::nullopt;
+    }
+    return estimateEqual(values[0]);
+}
+
 std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) const
 {
     if (range.empty())

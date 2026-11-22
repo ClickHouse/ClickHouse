@@ -43,6 +43,15 @@ namespace Setting
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
 }
 
+const PlainRanges & ConditionSelectivityEstimator::RPNElement::RangesOrSet::get() const
+{
+    if (ranges)
+        return *ranges;
+    const auto set_ranges = set->getPlainRanges();
+    chassert(set_ranges);
+    return *set_ranges;
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
@@ -332,11 +341,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     Field const_value;
     DataTypePtr const_type;
     String column_name;
-    /// Set when the right-hand side of IN / NOT IN is a prepared set whose ranges we can share.
-    /// The ranges themselves are pulled only at the point of use: the checks below can still reject
-    /// the atom (e.g. the left side is an expression rather than a column), and deriving them for an
-    /// atom we then discard is exactly the work this reuse is meant to avoid.
+    /// Set when the right-hand side of IN / NOT IN is a prepared set, which the atom keeps instead of its ranges.
     SetPtr set_for_ranges;
+    bool set_for_ranges_is_mutable = false;
     DataTypePtr column_type;
 
     /// A constant conjunct, e.g. `x IS NOT NULL` folded to `1` for a non-`Nullable` column, passes every row or none.
@@ -476,10 +483,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     return false;
                 }
 
-                /// Take the set's shared range view instead of copying every element into a `Tuple`
-                /// only to turn it back into ranges below: for a large set that dominates planning,
-                /// and each consumer of the same set derives an identical result.
+                /// Keep the set instead of copying every element into a `Tuple` only to turn it back into ranges below.
                 set_for_ranges = prepared_set;
+                set_for_ranges_is_mutable = future_set->isMutableDuringQuery();
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
@@ -652,16 +658,18 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             /// Every check that could reject this atom has passed, so the ranges will actually be used.
             if (set_for_ranges)
             {
-                auto set_ranges = set_for_ranges->getPlainRanges();
-                if (!set_ranges)
-                    return false;
-
                 chassert(is_in_operator);
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                if (func_name == "in")
-                    out.column_ranges.emplace(column_name, *set_ranges);
+                auto & target_ranges = func_name == "in" ? out.column_ranges : out.column_not_ranges;
+                /// A set that can change during the query is copied now; any other is kept, and its ranges are built only if needed.
+                if (set_for_ranges_is_mutable)
+                {
+                    const auto set_ranges = set_for_ranges->getPlainRanges();
+                    chassert(set_ranges);
+                    target_ranges.emplace(column_name, *set_ranges);
+                }
                 else
-                    out.column_not_ranges.emplace(column_name, *set_ranges);
+                    target_ranges.emplace(column_name, set_for_ranges);
                 return true;
             }
 
@@ -780,8 +788,37 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
         else
             result += static_cast<Float64>(stats->getNonNullRowCount()) * default_cond_range_factor;
     }
+    return selectivityOfRows(result);
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const RPNElement::RangesOrSet & ranges) const
+{
+    if (stats->getNumRows() == 0)
+        return {0, 0};
+    if (ranges.set)
+    {
+        /// Distinct values of these types are distinct points: each element of the set is one of its ranges.
+        const WhichDataType which(ranges.set->getElementsTypes().front());
+        if (which.isNativeInteger() || which.isString() || which.isUUID())
+        {
+            const ColumnPtr elements = ranges.set->getSetElements().front();
+            if (const auto estimate = stats->estimateEqualForAll(*elements))
+            {
+                /// Added one by one like the estimates of the ranges, so that the sum is the same.
+                Float64 rows = 0;
+                for (size_t i = 0; i < elements->size(); ++i)
+                    rows += *estimate;
+                return selectivityOfRows(rows);
+            }
+        }
+    }
+    return estimateRanges(ranges.get());
+}
+
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::ColumnEstimator::selectivityOfRows(Float64 rows_estimate) const
+{
     Float64 rows = static_cast<Float64>(stats->getNumRows());
-    Float64 selectivity = result / rows;
+    Float64 selectivity = rows_estimate / rows;
     /// Range predicates evaluate to NULL on NULL rows, so `true_sel` cannot exceed the
     /// non-NULL share of the column. Without this bound, summing estimates across many
     /// disjoint ranges (e.g. IN with many values) on a column with a large NULL share can
@@ -983,9 +1020,9 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
             {
                 /// not a or not b means not (a and b), so we should use intersect here.
                 if ((function == FUNCTION_AND && !is_not) || (function == FUNCTION_OR && is_not))
-                    result_ranges.emplace(column_name, ranges.intersectWith(rit->second));
+                    result_ranges.emplace(column_name, ranges.get().intersectWith(rit->second.get()));
                 else
-                    result_ranges.emplace(column_name, ranges.unionWith(rit->second));
+                    result_ranges.emplace(column_name, ranges.get().unionWith(rit->second.get()));
             }
             else
                 result_ranges.emplace(column_name, ranges);
@@ -1096,7 +1133,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         if (const auto * est = get_estimator(column_name))
             estimate_results.emplace(column_name, est->estimateRanges(ranges));
         else
-            estimate_results.emplace(column_name, estimate_unknown_ranges(column_name, ranges));
+            estimate_results.emplace(column_name, estimate_unknown_ranges(column_name, ranges.get()));
     }
 
     for (const auto & [column_name, ranges] : column_not_ranges)
@@ -1105,7 +1142,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         if (const auto * est = get_estimator(column_name))
             not_ranges_selectivity = est->estimateRanges(ranges).applyNot();
         else
-            not_ranges_selectivity = estimate_unknown_ranges(column_name, ranges).applyNot();
+            not_ranges_selectivity = estimate_unknown_ranges(column_name, ranges.get()).applyNot();
 
         auto it = estimate_results.find(column_name);
         if (it == estimate_results.end())

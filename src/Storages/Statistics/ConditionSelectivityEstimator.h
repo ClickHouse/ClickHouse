@@ -11,6 +11,7 @@ namespace DB
 {
 
 class RPNBuilderTreeNode;
+class Set;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
@@ -70,7 +71,20 @@ public:
         };
 
         Function function = FUNCTION_UNKNOWN;
-        using ColumnRanges = std::unordered_map<String, PlainRanges>;
+
+        /// The ranges of a column, or the `IN` set they are built from (`Set::getPlainRanges`) when needed.
+        struct RangesOrSet
+        {
+            explicit RangesOrSet(const Range & range) : ranges(std::in_place, range) {}
+            explicit RangesOrSet(PlainRanges ranges_) : ranges(std::move(ranges_)) {}
+            explicit RangesOrSet(std::shared_ptr<const Set> set_) : set(std::move(set_)) {}
+
+            const PlainRanges & get() const;
+
+            std::shared_ptr<const Set> set;
+            std::optional<PlainRanges> ranges;
+        };
+        using ColumnRanges = std::unordered_map<String, RangesOrSet>;
         /// column in range (a, b) ...
         ColumnRanges column_ranges;
         /// column not in range (a, b) ...
@@ -127,7 +141,11 @@ private:
         ColumnStatisticsPtr stats;
 
         [[nodiscard]] Selectivity estimateRanges(const PlainRanges & ranges) const;
+        [[nodiscard]] Selectivity estimateRanges(const RPNElement::RangesOrSet & ranges) const;
         [[nodiscard]] UInt64 estimateCardinality() const;
+
+    private:
+        [[nodiscard]] Selectivity selectivityOfRows(Float64 rows_estimate) const;
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
