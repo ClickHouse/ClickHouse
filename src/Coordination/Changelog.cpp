@@ -227,6 +227,9 @@ ChangelogFileDescriptionPtr makeLeftoverSourceCopy(const ChangelogFileDescriptio
     copy->is_compressed = description.is_compressed;
     copy->disk = std::move(disk);
     copy->path = std::move(path);
+    /// The move unlinks the source before it synchronizes the parent directory, so a failure of the
+    /// synchronization leaves no file to remove.
+    copy->may_be_absent = true;
     return copy;
 }
 
@@ -4314,16 +4317,77 @@ void Changelog::finalizeChangelogsAfterRead(
     if (remove_logs_before_index)
         removeAllLogFilesBefore(remove_logs_before_index);
 
+    const auto disk = getDisk();
+    const auto latest_log_disk = getLatestLogDisk();
+
+    /// Changelogs whose startup move left an unpublished copy on `disk` that could not be removed.
+    /// The failure is kept on the changelog, so the move is not retried during this startup.
+    std::mutex unresolved_moves_mutex;
+    std::unordered_set<const ChangelogFileDescription *> unresolved_moves;
+
+    /// Move a changelog to `disk` at startup. A failed move is logged, and the changelog stays where it is.
+    /// Returns a recovery copy for the source when the move published the changelog on `disk` but could
+    /// not remove the source. The caller must register it in `retained_duplicate_changelogs`, so that
+    /// `writeAt` retires it with its range: otherwise a rewrite that supersedes the range would remove
+    /// only the registered changelog, and restart would replay the obsolete entries of the surviving
+    /// source.
+    const auto move_to_disk_at_startup = [&](const ChangelogFileDescriptionPtr & description) -> ChangelogFileDescriptionPtr
+    {
+        const auto source_disk = description->disk;
+        const auto source_path = description->path;
+        const auto move_result = moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
+        if (move_result)
+            return nullptr;
+
+        if (move_result.error() == KeeperMoveError::DestinationPublishedSourceRemovalFailed)
+        {
+            LOG_WARNING(
+                log,
+                "Changelog {} was moved to disk {} at startup, but its source remained on disk {}; retiring it as a "
+                "recovery copy",
+                source_path,
+                disk->getName(),
+                source_disk->getName());
+            return makeLeftoverSourceCopy(*description, source_disk, source_path);
+        }
+
+        /// As in the background moves, the unpublished destination must not survive: it may
+        /// be complete and match its move marker, so it would resurrect the range on restart
+        /// after `writeAt` rewrites or supersedes it. If it cannot be removed, the failure is
+        /// kept on the changelog, and `writeAt` rejects a rewrite that would touch the range.
+        if (description->withReadLock([&] { return description->disk != disk; }))
+        {
+            try
+            {
+                LOG_WARNING(
+                    log,
+                    "Removing unpublished copy {} of changelog {} from disk {} after a failed move at startup",
+                    source_path,
+                    description->getPathSafe(),
+                    disk->getName());
+                /// A leftover move marker without its destination is an orphan that startup removes.
+                removeKeeperFileIfExists(disk, source_path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to remove unpublished copy {} of changelog", source_path));
+                description->setMoveError(std::current_exception());
+                std::lock_guard lock(unresolved_moves_mutex);
+                unresolved_moves.insert(description.get());
+            }
+        }
+        return nullptr;
+    };
+
     const auto move_from_latest_logs_disks = [&](uint64_t start_index, auto & description)
     {
         /// check if we need to move completed log to another disk
-        auto latest_log_disk = getLatestLogDisk();
-        auto disk = getDisk();
-
-        /// A failed move is logged, and the changelog stays on the latest log disk.
         if (latest_log_disk != disk && latest_log_disk == description->disk
             && !isOccupiedByRetainedCopy(start_index, disk, description->path))
-            std::ignore = moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
+        {
+            if (auto leftover_source = move_to_disk_at_startup(description))
+                retained_duplicate_changelogs[start_index].push_back(std::move(leftover_source));
+        }
     };
 
     /// we can have empty log (with zero entries) and last_log_read_outcome will be initialized
@@ -4414,8 +4478,6 @@ void Changelog::finalizeChangelogsAfterRead(
 
     /// Move files to correct disks
     auto latest_start_index = current_writer->getStartIndex();
-    auto latest_log_disk = getLatestLogDisk();
-    auto disk = getDisk();
     std::vector<ChangelogFileDescriptionPtr> placement_moves;
     for (const auto & [start_index, description] : existing_changelogs)
     {
@@ -4427,15 +4489,14 @@ void Changelog::finalizeChangelogsAfterRead(
             continue;
         }
 
-        if (description->disk != disk && !isOccupiedByRetainedCopy(start_index, disk, description->path))
+        if (description->disk != disk && !unresolved_moves.contains(description.get())
+            && !isOccupiedByRetainedCopy(start_index, disk, description->path))
             placement_moves.push_back(description);
     }
     if (!placement_moves.empty())
     {
         /// Sources that a move published to `disk` but could not remove. They are registered as recovery
-        /// copies after the pool finishes, so that `writeAt` retires them with their range: otherwise a
-        /// rewrite that supersedes the range would remove only the registered changelog, and restart
-        /// would replay the obsolete entries of the surviving source.
+        /// copies after the pool finishes.
         std::mutex leftover_sources_mutex;
         std::vector<ChangelogFileDescriptionPtr> leftover_sources;
         ThreadPool pool(
@@ -4450,46 +4511,10 @@ void Changelog::finalizeChangelogsAfterRead(
             pool.scheduleOrThrowOnError(
                 [&, description]
                 {
-                    const auto source_disk = description->disk;
-                    const auto source_path = description->path;
-                    /// A failed move is logged, and the changelog stays where it is.
-                    const auto move_result = moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
-                    if (!move_result && move_result.error() == KeeperMoveError::DestinationPublishedSourceRemovalFailed)
+                    if (auto copy = move_to_disk_at_startup(description))
                     {
-                        LOG_WARNING(
-                            log,
-                            "Changelog {} was moved to disk {} at startup, but its source remained on disk {}; retiring it as a "
-                            "recovery copy",
-                            source_path,
-                            disk->getName(),
-                            source_disk->getName());
-                        auto copy = makeLeftoverSourceCopy(*description, source_disk, source_path);
                         std::lock_guard lock(leftover_sources_mutex);
                         leftover_sources.push_back(std::move(copy));
-                        return;
-                    }
-                    /// As in the background moves, the unpublished destination must not survive: it may
-                    /// be complete and match its move marker, so it would resurrect the range on restart
-                    /// after `writeAt` rewrites or supersedes it. If it cannot be removed, the failure is
-                    /// kept on the changelog, and `writeAt` rejects a rewrite that would touch the range.
-                    if (!move_result && description->withReadLock([&] { return description->disk != disk; }))
-                    {
-                        try
-                        {
-                            LOG_WARNING(
-                                log,
-                                "Removing unpublished copy {} of changelog {} from disk {} after a failed move at startup",
-                                source_path,
-                                description->getPathSafe(),
-                                disk->getName());
-                            /// A leftover move marker without its destination is an orphan that startup removes.
-                            removeKeeperFileIfExists(disk, source_path);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(log, fmt::format("Failed to remove unpublished copy {} of changelog", source_path));
-                            description->setMoveError(std::current_exception());
-                        }
                     }
                 });
         }
@@ -5370,6 +5395,16 @@ void Changelog::backgroundChangelogOperationsThread()
                             LOG_INFO(
                                 log,
                                 "Removed recovery copy {} on disk {} overwritten by a move of the registered changelog, if it remained",
+                                changelog.path,
+                                changelog.disk->getName());
+                        }
+                        else if (changelog.may_be_absent)
+                        {
+                            /// The parent directory is synchronized below in either case.
+                            changelog.disk->removeFileIfExists(changelog.path);
+                            LOG_INFO(
+                                log,
+                                "Removed source {} on disk {} left by a move of the registered changelog, if it remained",
                                 changelog.path,
                                 changelog.disk->getName());
                         }

@@ -108,6 +108,11 @@ struct ChangelogFileDescription
     /// copy at one of them was overwritten by this file, so it may have been removed with it.
     std::vector<std::pair<DiskPtr, std::string>> move_destinations;
 
+    /// True for a recovery copy made for the source of a move that published its destination but
+    /// failed to remove the source. The failure may have happened after the file was unlinked, while
+    /// synchronizing its parent directory, so the removal of this copy must tolerate a missing file.
+    bool may_be_absent = false;
+
     bool broken_at_end = false;
 
     /// Guards disk/path/removed_from_disk. Readers take the shared lock and run concurrently;

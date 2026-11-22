@@ -211,6 +211,9 @@ public:
         {
             --remaining_failures;
             ++failed_removals;
+            /// As when the file is unlinked, but the synchronization of its parent directory fails.
+            if (fail_after_removal)
+                DB::DiskLocal::removeFileIfExists(path);
             throw std::runtime_error("injected changelog source removal failure");
         }
         DB::DiskLocal::removeFileIfExists(path);
@@ -218,6 +221,7 @@ public:
 
     std::atomic<size_t> remaining_failures{0};
     std::atomic<size_t> failed_removals{0};
+    std::atomic<bool> fail_after_removal{false};
 };
 
 /// The marker is written and finalized, but its synchronization fails, so the move reports that the
@@ -6265,6 +6269,101 @@ TYPED_TEST(CoordinationChangelogTest, StartupPlacementMoveSourceThatFailedToBeRe
     EXPECT_EQ(restarted.entryAt(2)->get_term(), 1);
     EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
     EXPECT_EQ(restarted.entryAt(5)->get_term(), 2);
+}
+
+namespace
+{
+
+/// Startup moves the changelog 6-10 from the latest disk to the regular disk and publishes it there, but
+/// the removal of its source fails, either before the file is unlinked or after that (as when the
+/// synchronization of the parent directory fails). A rewrite in the changelog 1-5 supersedes the range
+/// and must retire the source, whether it survived or not: restart must not replay its obsolete entries.
+/// With `entries` = 12, the range is moved by the placement pool, and with `entries` = 10, it is the
+/// complete final changelog, which is moved before the pool runs.
+template <typename Test>
+void checkStartupMoveSourceRemovalFailure(Test & test, uint64_t entries, uint64_t startup_read_max_streams, bool fail_after_removal)
+{
+    SCOPED_TRACE(fmt::format(
+        "entries {}, startup_read_max_streams {}, fail_after_removal {}", entries, startup_read_max_streams, fail_after_removal));
+
+    ChangelogDirTest regular("./logs_startup_move_source_removal_regular");
+    ChangelogDirTest latest("./logs_startup_move_source_removal_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    auto latest_disk = std::make_shared<SourceRemovalFailingDisk>("latest", latest.path);
+    const DB::LogFileSettings log_file_settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 5,
+        .startup_read_max_streams = startup_read_max_streams,
+    };
+    constexpr std::string_view first_path = "changelog_1_5.bin";
+    constexpr std::string_view superseded_path = "changelog_6_10.bin";
+
+    auto coordination_settings = std::make_shared<DB::CoordinationSettings>();
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*coordination_settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 0;
+    test.keeper_context = std::make_shared<DB::KeeperContext>(true, coordination_settings);
+    test.keeper_context->setLocalLogsPreprocessed();
+
+    /// All changelogs are written on the latest disk, then the first one is placed on the regular disk.
+    test.keeper_context->setLogDisk(latest_disk);
+    test.keeper_context->setLatestLogDisk(latest_disk);
+    {
+        DB::Changelog changelog(test.log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, test.keeper_context);
+        changelog.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= entries; ++index)
+            changelog.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        changelog.flush();
+    }
+    fs::rename(fs::path(latest.path) / first_path, fs::path(regular.path) / first_path);
+
+    test.keeper_context->setLogDisk(regular_disk);
+    test.keeper_context->setLatestLogDisk(latest_disk);
+    {
+        latest_disk->fail_after_removal = fail_after_removal;
+        latest_disk->remaining_failures = 1;
+        DB::Changelog changelog(test.log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, test.keeper_context);
+        ASSERT_NO_THROW(changelog.readChangelogAndInitWriter(0, 0));
+        ASSERT_EQ(latest_disk->failed_removals.load(), 1);
+        ASSERT_TRUE(regular_disk->existsFile(String(superseded_path)));
+        ASSERT_EQ(latest_disk->existsFile(String(superseded_path)), !fail_after_removal);
+
+        changelog.writeAt(3, getLogEntry("rewritten_3", 2));
+        changelog.appendEntry(4, getLogEntry("rewritten_4", 2));
+        changelog.appendEntry(5, getLogEntry("rewritten_5", 2));
+        changelog.flush();
+    }
+    EXPECT_FALSE(regular_disk->existsFile(String(superseded_path)));
+    EXPECT_FALSE(latest_disk->existsFile(String(superseded_path)));
+
+    DB::Changelog restarted(test.log, log_file_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, test.keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 6);
+    EXPECT_EQ(restarted.entryAt(2)->get_term(), 1);
+    EXPECT_EQ(restarted.entryAt(3)->get_term(), 2);
+    EXPECT_EQ(restarted.entryAt(5)->get_term(), 2);
+}
+
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupMoveOfCompleteFinalChangelogSourceThatFailedToBeRemovedIsRetiredBySupersedingRewrite)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    /// Both replay modes: serial and parallel.
+    for (const uint64_t startup_read_max_streams : {1, 4})
+        for (const bool fail_after_removal : {false, true})
+            checkStartupMoveSourceRemovalFailure(*this, /*entries=*/10, startup_read_max_streams, fail_after_removal);
+}
+
+TYPED_TEST(CoordinationChangelogTest, StartupPlacementMoveSourceUnlinkedBeforeFailureIsRetiredBySupersedingRewrite)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the move failure behavior is independent of compression";
+
+    for (const uint64_t startup_read_max_streams : {1, 4})
+        checkStartupMoveSourceRemovalFailure(*this, /*entries=*/12, startup_read_max_streams, /*fail_after_removal=*/true);
 }
 
 TYPED_TEST(CoordinationChangelogTest, FailedCleanupOfStartupPlacementMoveFailsRewrite)
