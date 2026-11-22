@@ -48,6 +48,10 @@ public:
     bool hasDynamicStructure() const override { return nested_data_type->hasDynamicStructure(); }
     std::unique_ptr<SubcolumnInfo>
     getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override
+    {
+        nested_data_type->forEachKnownDynamicSubcolumnName(callback, array_level);
+    }
     bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }
     bool canBeInsideSparseColumns() const override { return nested_data_type->canBeInsideSparseColumns(); }
 
@@ -71,6 +75,8 @@ private:
 DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
+/// Same as above, but does not copy the shared pointer.
+const IDataType & removeNullable(const IDataType & type [[clang::lifetimebound]]);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
 /// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T

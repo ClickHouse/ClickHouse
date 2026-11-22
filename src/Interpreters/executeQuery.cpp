@@ -27,6 +27,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/MemoryReadWriteBuffer.h>
 #include <IO/copyData.h>
 
 #include <Processors/ProcessorsProfileLogInfo.h>
@@ -37,7 +38,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -45,6 +45,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
@@ -84,6 +85,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryExecutionCounters.h>
+#include <Processors/QueryPlan/Profiling/Capture/QueryPlanLogCapture.h>
+#include <Processors/QueryPlan/Profiling/Render/FlatJSONPlanRenderer.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
@@ -164,6 +167,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event ASTFuzzerSkippedCollaborativeWorker;
+    extern const Event ASTFuzzerSkippedSecondaryQuery;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -178,9 +182,9 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
-    extern const SettingsBool allow_experimental_kusto_dialect;
-    extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
+    extern const SettingsBool enable_kusto_dialect;
+    extern const SettingsBool enable_prql_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -204,6 +208,7 @@ namespace Setting
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 log_query_plans_max_size;
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
@@ -309,6 +314,8 @@ namespace FailPoints
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char trigger_sanitizer_error[];
+    extern const char segfault_read_access[];
+    extern const char segfault_write_access[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -446,6 +453,16 @@ addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr c
     }
 }
 
+/// The time-based event of the kind of the query, which is incremented along with `QueryTimeMicroseconds`.
+static ProfileEvents::Event queryKindTimeEvent(const ASTPtr & query_ast)
+{
+    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
+        return ProfileEvents::SelectQueryTimeMicroseconds;
+    if (query_ast->as<ASTInsertQuery>())
+        return ProfileEvents::InsertQueryTimeMicroseconds;
+    return ProfileEvents::OtherQueryTimeMicroseconds;
+}
+
 static void
 addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr, std::chrono::system_clock::time_point time)
 {
@@ -455,18 +472,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_duration_ms = elapsed_microseconds / 1000;
 
     ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, elapsed_microseconds);
-    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-    {
-        ProfileEvents::increment(ProfileEvents::SelectQueryTimeMicroseconds, elapsed_microseconds);
-    }
-    else if (query_ast->as<ASTInsertQuery>())
-    {
-        ProfileEvents::increment(ProfileEvents::InsertQueryTimeMicroseconds, elapsed_microseconds);
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::OtherQueryTimeMicroseconds, elapsed_microseconds);
-    }
+    ProfileEvents::increment(queryKindTimeEvent(query_ast), elapsed_microseconds);
 
     element.read_rows = info.read_rows;
     element.read_bytes = info.read_bytes;
@@ -491,6 +497,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
         element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+        element.used_data_skipping_indices.insert(access_info.data_skipping_indices.begin(), access_info.data_skipping_indices.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
         element.used_row_policies.insert(access_info.row_policies.begin(), access_info.row_policies.end());
     }
@@ -555,7 +562,7 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
 static String httpRequestURLForLogging(const ContextPtr & context)
 {
     const String & url = context->getHTTPRequestURL();
-    return url.substr(0, url.find_first_of("?#"));
+    return String(stripQueryAndFragment(url));
 }
 
 String formatQueryForLogging(const String & query, const Settings & settings)
@@ -638,6 +645,7 @@ QueryLogElement logQueryStart(
             elem.query_columns = info.columns;
             elem.query_partitions = info.partitions;
             elem.query_projections = info.projections;
+            elem.used_data_skipping_indices = info.data_skipping_indices;
             elem.query_views = info.views;
             elem.used_row_policies = info.row_policies;
         }
@@ -753,7 +761,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline, const ContextPtr & context)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -778,6 +786,9 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
 
+    if (auto plan_log_capture = context->getPlanLogCapture())
+        plan_log_capture->captureStatistics(query_pipeline);
+
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
 
@@ -788,6 +799,239 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         .result_progress = std::move(result_progress),
         .processors_profile_infos = std::move(processors_profile_infos),
         .pipeline_dump = std::move(pipeline_dump)};
+}
+
+static bool isAsyncInsertFlush(const ASTPtr & query_ast)
+{
+    return query_ast && query_ast->getQueryKind() == IAST::QueryKind::AsyncInsertFlush;
+}
+
+/// Accounts the profile events accumulated by a finished (or failed) query against the quotas
+/// defining limits over profile events. Called once per query at its end, after the performance
+/// counters of its threads have been finalized and, for a failed query, after the `FailedQuery`
+/// family of events has been incremented, so that the snapshot contains everything the query
+/// produced. When no governing quota defines such limits, the cost is one atomic load: no
+/// snapshot of the counters is taken.
+///
+/// A query cancelled without an exception does not go through `addStatusInfoToQueryLogElement`, so the
+/// time-based events (`QueryTimeMicroseconds` and friends) have not been incremented for it. For such a
+/// query, `cancelled_query_ast` is set, and they are added to what it is charged with here.
+static void usedQuotaProfileEvents(
+    const std::shared_ptr<const EnabledQuota> & quota,
+    const QueryStatusPtr & process_list_elem,
+    UInt64 normalized_query_hash,
+    std::optional<ASTPtr> cancelled_query_ast = {})
+{
+    if (!quota || !quota->hasProfileEventLimits() || !process_list_elem)
+        return;
+
+    auto info = process_list_elem->getInfo(false, /* get_profile_events= */ true);
+    auto counters = info.profile_counters;
+    auto excluded = process_list_elem->getExcludedProfileEvents();
+    if (counters && (excluded || cancelled_query_ast))
+    {
+        ProfileEvents::Counters own_counters(VariableContext::Process, /* parent = */ nullptr);
+        for (auto event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+        {
+            /// What the nested queries charged on their own added to the local counters (see `excludeFromOuterQueryQuota`).
+            ProfileEvents::Count excluded_count = excluded ? (*excluded)[event] : 0;
+            if ((*counters)[event] > excluded_count)
+                own_counters.incrementNoTrace(event, (*counters)[event] - excluded_count);
+        }
+        if (cancelled_query_ast)
+        {
+            own_counters.incrementNoTrace(ProfileEvents::QueryTimeMicroseconds, info.elapsed_microseconds);
+            own_counters.incrementNoTrace(queryKindTimeEvent(*cancelled_query_ast), info.elapsed_microseconds);
+        }
+        counters = std::make_shared<ProfileEvents::Counters::Snapshot>(own_counters.getPartiallyAtomicSnapshot());
+    }
+    /// What the remote servers did for a distributed query, as they reported it (see `RemoteQueryExecutor`).
+    auto remote_counters = process_list_elem->getRemoteProfileEvents();
+
+    /// Both are charged in one call, so they land in the same quota interval.
+    /// `check_exceeded == false`: the query has already done its work, so it is allowed to
+    /// finish; the quota, now exhausted, rejects the following queries.
+    quota->usedProfileEvents(
+        normalized_query_hash,
+        {counters.get(), remote_counters ? &*remote_counters : nullptr},
+        /* check_exceeded = */ false);
+}
+
+/// Whether a query exempt from quotas (see `IInterpreter::ignoreQuota`) is charged against the quotas over profile events all the
+/// same, because a scalar subquery not exempt from quotas has been executed while it was analyzed, in its thread group (see
+/// `QueryStatus::executed_non_exempt_scalar_subquery`). The predefined counters of such a subquery are charged by its own pipeline.
+static bool chargesExemptQueryProfileEvents(const QueryStatusPtr & process_list_elem)
+{
+    return process_list_elem && process_list_elem->hasExecutedNonExemptScalarSubquery();
+}
+
+/// Whether the query is charged against the quotas over profile events. Like the predefined `errors`
+/// counter, only the outer query of an internal one is, with one exception: the deferred flush of
+/// asynchronous inserts, which is internal but runs on behalf of the user who submitted the inserts
+/// and under their quota (it charges the predefined `written_bytes` as well).
+static bool chargesQuotaProfileEvents(const ASTPtr & query_ast, bool internal)
+{
+    return !internal || isAsyncInsertFlush(query_ast);
+}
+
+/// The normalized query hash the quotas of a query are charged by. For the deferred flush of asynchronous inserts,
+/// it is the hash of the submitted inserts the quotas keyed by `normalized_query_hash` were checked against, which
+/// `AsynchronousInsertQueue` sets in the context, rather than the hash of the flush's own statement.
+static UInt64 quotaNormalizedQueryHash(const ASTPtr & query_ast, const ContextPtr & context, UInt64 normalized_query_hash)
+{
+    return isAsyncInsertFlush(query_ast) ? context->getNormalizedQueryHash() : normalized_query_hash;
+}
+
+/// A flush of asynchronous inserts run by a query (`SYSTEM FLUSH ASYNC INSERT QUEUE t`) has its thread group nested in
+/// the group of that query, so its counters add up to the counters of the query as well. Having been charged to the
+/// user who submitted the inserts, they are excluded from what the outer query is charged with. Returns the outer
+/// query to exclude them from.
+static QueryStatusPtr getOuterQueryToExcludeFrom(const ASTPtr & query_ast)
+{
+    if (!isAsyncInsertFlush(query_ast))
+        return nullptr;
+    auto group = CurrentThread::getGroup();
+    auto outer_group = group ? group->getParent() : nullptr;
+    if (!outer_group)
+        return nullptr;
+    auto outer_context = outer_group->query_context.lock();
+    if (!outer_context)
+        return nullptr;
+    /// Recorded even if the quota of the outer query has no limits over profile events at the moment: one can be added
+    /// by `ALTER QUOTA` before the outer query finishes, and the end-of-query accounting decides what is charged.
+    return outer_context->getProcessListElementSafe();
+}
+
+static void excludeFromOuterQueryQuota(const ASTPtr & query_ast, const QueryStatusPtr & process_list_elem)
+{
+    if (!process_list_elem)
+        return;
+    if (auto outer_query = getOuterQueryToExcludeFrom(query_ast))
+    {
+        auto counters = process_list_elem->getInfo(false, /* get_profile_events= */ true).profile_counters;
+        if (counters)
+            outer_query->addExcludedProfileEvents(*counters);
+    }
+}
+
+
+/// The document is written into a buffer that grows from here up to the limit, rather than
+/// starting at `DBMS_DEFAULT_BUFFER_SIZE`, which every plan would then allocate in full.
+static constexpr size_t PLAN_RENDER_INITIAL_CHUNK_SIZE = 4096;
+
+/// A row whose plan could not be written says why, in place of the plan.
+static void writeQueryPlanError(String & query_plan, const String & reason)
+{
+    query_plan.clear();
+    try
+    {
+        WriteBufferFromString out(query_plan);
+        FlatJSONPlanRenderer::renderError(reason, out);
+        out.finalize();
+    }
+    catch (...)
+    {
+        /// Ok to swallow: writing the error itself failed. An empty column takes its default of an
+        /// empty JSON object; a half-written document would not be valid JSON.
+        query_plan.clear();
+    }
+}
+
+static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
+{
+    auto plan_log_capture = context->getPlanLogCapture();
+    if (!plan_log_capture)
+        return;
+
+    const auto & captured = plan_log_capture->getCapturedPlan();
+    if (!captured)
+        return;
+
+    /// Runs on the logging path of a query that has already returned its result, so failing to
+    /// write the plan must not fail the query. Producing the document is also the one part of
+    /// profiling that allocates in proportion to the plan, hence the blocker.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    const size_t max_size = context->getSettingsRef()[Setting::log_query_plans_max_size];
+
+    try
+    {
+        /// A query decides how much text its own plan contains, so the document is written into a
+        /// buffer that cannot grow past the limit rather than measured once it already has.
+        /// `MemoryWriteBuffer` throws rather than allocate the chunk that would cross it.
+        MemoryWriteBuffer plan_buffer(max_size, PLAN_RENDER_INITIAL_CHUNK_SIZE);
+        FlatJSONPlanRenderer renderer;
+        renderer.render(*captured, plan_buffer);
+        plan_buffer.finalize();
+
+        WriteBufferFromString out(elem.query_plan);
+        copyData(*plan_buffer.tryGetReadBuffer(), out);
+        out.finalize();
+    }
+    catch (const WriteBuffer::CurrentBufferExhausted &)
+    {
+        /// Not logged: a plan over the limit is a query's own doing, not a fault of the server,
+        /// and the row carries the reason. The exception says only that a buffer ran out, naming
+        /// neither the plan nor the setting, so the message is written here instead.
+        writeQueryPlanError(
+            elem.query_plan,
+            fmt::format("The query plan does not fit in {} bytes, the limit set by log_query_plans_max_size", max_size));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        writeQueryPlanError(elem.query_plan, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+    }
+}
+
+/// Writes the bodies registered by `Context::addSQLSecurityOverriddenBody` as child rows of `elem`, without metrics.
+static void logSQLSecurityOverriddenBodies(
+    QueryLog & query_log, const QueryLogElement & elem, Context::QueryAccessInfo & access_info, UInt64 max_query_length)
+{
+    std::vector<std::shared_ptr<const Context::SQLSecurityOverriddenBody>> bodies;
+    {
+        std::lock_guard lock(access_info.mutex);
+        bodies.swap(access_info.sql_security_overridden_bodies);
+    }
+
+    for (const auto & body : bodies)
+    {
+        QueryLogElement row;
+        row.type = elem.type;
+        row.event_time = elem.event_time;
+        row.event_time_microseconds = elem.event_time_microseconds;
+        row.query_start_time = elem.query_start_time;
+        row.query_start_time_microseconds = elem.query_start_time_microseconds;
+        row.log_comment = elem.log_comment;
+        row.is_internal = elem.is_internal;
+        row.exception_code = elem.exception_code;
+        row.exception = elem.exception;
+
+        row.current_database = body->current_database;
+        row.query = body->query->formatForLogging(max_query_length);
+        row.normalized_query_hash = normalizedQueryHash(row.query, false);
+        row.query_kind = body->query->getQueryKind();
+
+        row.client_info = elem.client_info;
+        row.client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        row.client_info.current_query_id = toString(UUIDHelpers::generateV4());
+        row.client_info.current_user = body->user;
+
+        {
+            const auto & body_access_info = *body->access_info;
+            std::lock_guard lock(body_access_info.mutex);
+            row.query_databases = body_access_info.databases;
+            row.query_tables = body_access_info.tables;
+            row.query_columns = body_access_info.columns;
+            row.query_partitions = body_access_info.partitions;
+            row.query_projections = body_access_info.projections;
+            row.query_views = body_access_info.views;
+            row.used_row_policies = body_access_info.row_policies;
+        }
+
+        query_log.add([&](QueryLogElement & e) { e = row; });
+        logSQLSecurityOverriddenBodies(query_log, elem, *body->access_info, max_query_length);
+    }
 }
 
 static void logQueryFinishImpl(
@@ -871,7 +1115,11 @@ static void logQueryFinishImpl(
                 elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (auto query_log = context->getQueryLog())
+            {
+                attachQueryPlan(context, elem);
                 query_log->add([&](QueryLogElement & e) { e = elem; });
+                logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
+            }
         }
 
         /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
@@ -925,35 +1173,53 @@ void logQueryFinish(
     bool log_as_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
+
+    /// The queries finished here (the deferred flush of asynchronous inserts, the tasks of a distributed
+    /// plan, refreshes of materialized views) are not run by `executeQuery`, whose finish callback charges
+    /// the quotas over profile events for the other queries, so they are charged here, by the same rule
+    /// as on the exception path (`logQueryException`); the counters have been finalized above.
+    if (chargesQuotaProfileEvents(query_ast, internal))
+        usedQuotaProfileEvents(context->getQuota(), context->getProcessListElementSafe(), quotaNormalizedQueryHash(query_ast, context, elem.normalized_query_hash));
+    excludeFromOuterQueryQuota(query_ast, context->getProcessListElementSafe());
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
 /// Shared between `logQueryException` (failures during execution) and `logExceptionBeforeStart`
 /// (failures before execution starts) so the two paths never drift.
-static void incrementFailedQueryProfileEvents(const ASTPtr & ast, const ClientInfo & client_info, bool internal)
+/// If `mirror` is given, the same events are incremented in it as well: a query that failed before
+/// it was registered in the process list has no thread group to take its counters from, and the
+/// mirror is then what the quotas over profile events are charged with.
+static void incrementFailedQueryProfileEvents(const ASTPtr & ast, const ClientInfo & client_info, bool internal, ProfileEvents::Counters * mirror = nullptr)
 {
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
+    auto increment = [&](ProfileEvents::Event event)
+    {
+        ProfileEvents::increment(event);
+        if (mirror)
+            mirror->increment(event);
+    };
+
+    increment(ProfileEvents::FailedQuery);
     if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+        increment(ProfileEvents::FailedSelectQuery);
     else if (ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+        increment(ProfileEvents::FailedInsertQuery);
 
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
+        increment(ProfileEvents::FailedInitialQuery);
         if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
+            increment(ProfileEvents::FailedInitialSelectQuery);
     }
 
     if (internal)
     {
-        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        increment(ProfileEvents::FailedInternalQuery);
         if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+            increment(ProfileEvents::FailedInternalSelectQuery);
         else if (ast->as<ASTInsertQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+            increment(ProfileEvents::FailedInternalInsertQuery);
     }
 }
 
@@ -965,7 +1231,8 @@ void logQueryException(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
     bool log_as_internal,
-    bool log_error)
+    bool log_error,
+    bool charge_quota_profile_events)
 {
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries];
@@ -997,6 +1264,16 @@ void logQueryException(
     {
         elem.query_duration_ms = start_watch.elapsedMilliseconds();
     }
+
+    /// The resources the failed query consumed, including the failure itself (`FailedQuery` and
+    /// friends), count against the quotas over profile events. Like the predefined `errors`
+    /// counter, only the outer query of an internal one is charged (see `chargesQuotaProfileEvents`).
+    /// A query exempt from quotas (see `IInterpreter::ignoreQuota`) is not charged. This goes after
+    /// `addStatusInfoToQueryLogElement`, which increments the time-based events (`QueryTimeMicroseconds`
+    /// and friends), so that they are charged as on the success path.
+    if (charge_quota_profile_events && chargesQuotaProfileEvents(query_ast, internal))
+        usedQuotaProfileEvents(context->getQuota(), process_list_elem, quotaNormalizedQueryHash(query_ast, context, elem.normalized_query_hash));
+    excludeFromOuterQueryQuota(query_ast, process_list_elem);
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
     elem.query_result_cache_usage = QueryResultCacheUsage::None;
@@ -1020,7 +1297,9 @@ void logQueryException(
         if (settings[Setting::log_query_settings] && !elem.query_settings)
             elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
+        attachQueryPlan(context, elem);
         query_log->add([&](QueryLogElement & e) { e = elem; });
+        logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
     }
 
     if (query_span)
@@ -1041,13 +1320,17 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal,
-    bool log_as_internal)
+    bool log_as_internal,
+    bool charge_quota)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
     /// Exception before the query execution.
-    if (auto quota = context->getQuota())
-        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+    /// A query exempt from quotas (see `IInterpreter::ignoreQuota`) is not charged.
+    auto quota = context->getQuota();
+    const UInt64 quota_normalized_query_hash = quotaNormalizedQueryHash(ast, context, normalized_query_hash);
+    if (quota && charge_quota)
+        quota->usedForQuery(quota_normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1119,14 +1402,59 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal);
+    /// A query that failed before it was registered in the process list (e.g. a syntax error) has no
+    /// process list entry to take its counters from. If the handler has already created the thread group
+    /// of the query (`QueryScope`), the group has accumulated what the query has produced so far (e.g.
+    /// `QueryParseMicroseconds` of a failed parsing), and the quotas over profile events are charged with
+    /// its counters together with the failure itself. Otherwise, the failure itself is all the query is
+    /// known to have produced, and they are charged with it directly.
+    ProfileEvents::Counters failed_query_counters(VariableContext::Process, /* parent = */ nullptr);
+    incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal, &failed_query_counters);
+
+    QueryStatusPtr process_list_elem = context->getProcessListElementSafe();
+
+    auto get_counters_before_registration = [&]
+    {
+        /// Only the group created for this very query: a group shared with something else would charge its counters too.
+        auto group = CurrentThread::getGroup();
+        if (!group || group->query_context.lock() != context)
+            return failed_query_counters.getPartiallyAtomicSnapshot();
+
+        /// The failure events are not necessarily propagated to the group (the counters of the thread have been
+        /// finalized above), so they are taken from the mirror unless the group already has them.
+        auto group_snapshot = group->performance_counters.getPartiallyAtomicSnapshot();
+        ProfileEvents::Counters combined(VariableContext::Process, /* parent = */ nullptr);
+        for (auto event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+        {
+            auto value = std::max(group_snapshot[event], failed_query_counters[event]);
+            if (value)
+                combined.incrementNoTrace(event, value);
+        }
+        return combined.getPartiallyAtomicSnapshot();
+    };
 
     QueryStatusInfoPtr info;
-    if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
+    if (process_list_elem)
     {
         info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
         addStatusInfoToQueryLogElement(elem, *info, ast, context, query_end_time);
     }
+
+    /// After `addStatusInfoToQueryLogElement`, so that the time-based events it increments are charged too.
+    if ((charge_quota || chargesExemptQueryProfileEvents(process_list_elem)) && chargesQuotaProfileEvents(ast, internal))
+    {
+        if (process_list_elem)
+            usedQuotaProfileEvents(quota, process_list_elem, quota_normalized_query_hash);
+        else if (quota && quota->hasProfileEventLimits())
+        {
+            auto failed_query_snapshot = get_counters_before_registration();
+            quota->usedProfileEvents(quota_normalized_query_hash, {&failed_query_snapshot}, /* check_exceeded = */ false);
+        }
+    }
+    if (process_list_elem)
+        excludeFromOuterQueryQuota(ast, process_list_elem);
+    else if (auto outer_query = getOuterQueryToExcludeFrom(ast))
+        outer_query->addExcludedProfileEvents(get_counters_before_registration());
     logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
     if (query_log)
@@ -1139,7 +1467,9 @@ void logExceptionBeforeStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
+            attachQueryPlan(context, elem);
             query_log->add([&](QueryLogElement & e) { e = elem; });
+            logSQLSecurityOverriddenBodies(*query_log, elem, *context->getQueryAccessInfoPtr(), settings[Setting::log_queries_cut_to_length]);
         }
         else if (!settings[Setting::log_queries])
         {
@@ -1276,7 +1606,7 @@ public:
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
-    bool transactionRunning() const { return transaction_running; }
+    [[nodiscard]] bool transactionRunning() const { return transaction_running; }
 
 private:
     bool transaction_running{false};
@@ -1514,7 +1844,7 @@ struct ConstructionSettings
     Float64 offset = 0;
     bool present = false;
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return select_expr.empty() && filter_expr.empty() && order_expr.empty() && limit == 0 && offset == 0;
     }
@@ -1760,6 +2090,11 @@ void wrapNestedConstructionSettings(
         return;
     }
 
+    /// `EXECUTE AS` runs the text of its statement through `executeQuery`, which applies the statement's
+    /// construction settings itself.
+    if (ast->as<ASTExecuteAsQuery>())
+        return;
+
     /// Bottom-up: handle inner-most subqueries before their parents.
     for (auto & child : ast->children)
         wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
@@ -1784,7 +2119,10 @@ void wrapNestedConstructionSettings(
 /// `(SELECT … SETTINGS limit = 1) UNION ALL (SELECT … SETTINGS filter = 'x')`. When that is the case,
 /// every arm that carries one is wrapped as a derived table with its own
 /// `SELECT` / `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET`, so each arm is shaped independently instead
-/// of the caps collapsing into a single one on the whole union. This runs before the query's own
+/// of the caps collapsing into a single one on the whole union. A parenthesized arm with a `SETTINGS`
+/// clause stays wrapped into its own `ASTSelectWithUnionQuery` (see `ParserUnionQueryElement`), so its
+/// settings are already arm-local and handled as nested ones; this pass sees the arms written without
+/// parentheses, e.g. `SELECT … SETTINGS limit = 1 UNION ALL SELECT …`. This runs before the query's own
 /// `SETTINGS` clause is applied to the context, so the per-arm values are removed from the AST and
 /// never leak into the context as (spurious) query-level settings.
 ///
@@ -1883,8 +2221,8 @@ static void wrapPerArmConstructionSettingsImpl(
         return;
 
     /// Once per-arm mode is on, the LAST arm's own `SETTINGS` is ambiguous: for an unparenthesized union
-    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, which is indistinguishable
-    /// in the AST from a parenthesized arm-local `SETTINGS`. Treating it as arm-local would silently
+    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, while the `SETTINGS` of
+    /// the non-last arms written the same way are arm-local. Treating it as arm-local would silently
     /// re-scope a whole-union cap — e.g. `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = 3` would cap
     /// each arm (1 + 3) instead of the whole union (3). Reject the mixed form rather than guess. Per-arm
     /// settings on a union whose last arm has no settings, or nesting each arm's settings in a subquery
@@ -2419,7 +2757,7 @@ static BlockIO executeQueryImpl(
         else if (settings[Setting::dialect] == Dialect::kusto && use_request_dialect)
         {
             const char * kql_pos = begin;
-            if (!settings[Setting::allow_experimental_kusto_dialect])
+            if (!settings[Setting::enable_kusto_dialect])
             {
                 /// A plain `SET` passes even when the gate is off, so a session that is
                 /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
@@ -2427,7 +2765,7 @@ static BlockIO executeQueryImpl(
                 out_ast = tryParseKQLSetStatement(
                     kql_pos, end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                 if (!out_ast)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'enable_kusto_dialect')");
             }
             else
                 out_ast = parseKQLQuery(
@@ -2435,8 +2773,8 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::prql && use_request_dialect)
         {
-            if (!settings[Setting::allow_experimental_prql_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
+            if (!settings[Setting::enable_prql_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'enable_prql_dialect')");
             ParserPRQLQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
@@ -2459,7 +2797,7 @@ static BlockIO executeQueryImpl(
                 max_parser_backtracks_for_query_text,
                 settings[Setting::polyglot_dialect],
                 end,
-                settings[Setting::allow_experimental_polyglot_dialect]);
+                settings[Setting::enable_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
         else if (settings[Setting::dialect] == Dialect::trino && use_request_dialect)
@@ -2771,6 +3109,16 @@ static BlockIO executeQueryImpl(
     BlockIO res;
     String query_database;
     String query_table;
+    bool background_query_dispatched = false;
+
+    /// Whether the interpreter has exempted the query from quotas (see `IInterpreter::ignoreQuota`).
+    /// Such a query is not charged against the quotas over profile events on failure either.
+    bool quota_ignored = false;
+
+    /// A result read from the query result cache is not charged against the predefined quota counters, but
+    /// it is against the quotas over profile events: they are checked before the query and charged with
+    /// what reading the result has produced (network traffic, for example) at its end.
+    std::shared_ptr<const EnabledQuota> query_result_cache_hit_quota;
 
     try
     {
@@ -2895,7 +3243,9 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
-                executeQueryInBackground(std::string_view(begin, end), out_ast, context);
+                auto background_query_execution_started = executeQueryInBackground(std::string_view(begin, end), context);
+                background_query_dispatched = true;
+                background_query_execution_started.get();
                 BlockIO io;
                 io.dispatched = true;
                 return io;
@@ -2996,6 +3346,9 @@ static BlockIO executeQueryImpl(
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
+            /// Before the workload classifier is acquired in insert: metadata queries are exempt from workload scheduling.
+            if (out_ast && isMetadataQuery(*out_ast))
+                context->setMetadataQuery();
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
@@ -3062,9 +3415,10 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
-        else
+        else if (!insert_query || !insert_query->returning)
         {
-            /// reset Input callbacks if query is not INSERT SELECT
+            /// reset Input callbacks if query is not INSERT SELECT,
+            /// and not INSERT ... RETURNING, which reads the data sent by the client with these callbacks.
             context->resetInputCallbacks();
         }
 
@@ -3082,6 +3436,8 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
+            else if (insert_query->returning)
+                reason = "the query has RETURNING";
             /// `INSERT ... SELECT` (including `FROM input()`) is routed through
             /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
             else if (!insert_query->select && insert_query->hasInlinedData())
@@ -3110,6 +3466,7 @@ static BlockIO executeQueryImpl(
                 quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
                 quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
                 quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                quota->checkExceededProfileEvents(normalized_query_hash);
 
                 /// Track per-normalized-query-hash quota limits (works for all key types).
                 quota->usedPerNormalizedHash(normalized_query_hash);
@@ -3209,6 +3566,8 @@ static BlockIO executeQueryImpl(
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
             /// then set a pipeline with a source populated by the query result cache.
+            bool query_result_cache_miss_pending = false;
+            bool query_result_cache_miss_probed_on_disk = false;
             auto get_result_from_query_result_cache = [&]()
             {
                 if (out_ast && can_use_query_result_cache)
@@ -3220,39 +3579,74 @@ static BlockIO executeQueryImpl(
 
                     QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
 
+                    /// The probes do not record the cache profile events yet (`hasCacheEntryForKey(false)`): a query rejected by an
+                    /// exhausted quota over profile events must not consume another `QueryCacheHits` / `QueryCacheMisses` /
+                    /// `QueryCacheOnDisk*`. A hit is recorded below after the quota check, a miss after the quota check of the
+                    /// query that is executed instead (see `query_result_cache_miss_pending`).
                     std::optional<QueryResultCacheReader> reader;
+                    bool probed_on_disk = false;
                     if (read_from_memory_cache)
                     {
                         reader.emplace(query_result_cache->createReader(key));
-                        if (!reader->hasCacheEntryForKey())
+                        if (!reader->hasCacheEntryForKey(/* update_profile_events = */ false))
                             reader.reset();
                     }
                     /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is consulted
                     /// only on a miss in memory.
                     if (!reader && read_from_on_disk_cache)
                     {
+                        probed_on_disk = true;
                         reader.emplace(query_result_cache_on_disk->createReader(key));
-                        if (!reader->hasCacheEntryForKey())
+                        if (!reader->hasCacheEntryForKey(/* update_profile_events = */ false))
                             reader.reset();
                     }
 
-                    QueryResultCacheReader::recordProbeResult(reader.has_value());
-
-                    if (reader)
+                    if (!reader)
                     {
+                        query_result_cache_miss_pending = true;
+                        query_result_cache_miss_probed_on_disk = probed_on_disk;
+                    }
+                    else
+                    {
+                        /// A query exempt from quotas stays exempt when it is served from the cache (see
+                        /// `QueryResultCache::Key::ignore_quota`).
+                        quota_ignored = reader->entryIgnoresQuota();
+                        if (!quota_ignored)
+                            query_result_cache_hit_quota = context->getQuota();
+                        if (query_result_cache_hit_quota)
+                            query_result_cache_hit_quota->checkExceededProfileEvents(normalized_query_hash);
+
+                        /// Records `QueryCacheOnDiskHits` (for a hit on disk), `QueryCacheAgeSeconds`, and what reading the entry amounts
+                        /// to (`QueryCacheReadRows`, `QueryCacheReadBytes`, `QueryCacheOnDiskReadBytes`).
+                        (void)reader->hasCacheEntryForKey();
+                        QueryResultCacheReader::recordProbeResult(true);
+
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
+                        /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
+                        /// subqueries against the current data. Read them before `getSource` moves the source out of the reader.
+                        if (flags.collect_result_column_origins)
+                            result_details.result_column_origins = reader->entryResultColumnOrigins();
 
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
+                        /// A cache hit builds no plan and runs no pipeline, so there is nothing to
+                        /// capture.
+                        QueryPlanLogCapture::declineCapture(
+                            context, "the result came from the query result cache, so no plan was executed");
+
                         return true;
                     }
                 }
                 return false;
             };
+
+            /// Where the result columns come from. Collected for `QueryFlags::collect_result_column_origins` and to be stored with
+            /// the result in the query result cache.
+            ResultColumnOrigins result_column_origins;
 
             if (!get_result_from_query_result_cache())
             {
@@ -3279,8 +3673,23 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
+                if (QueryPlanLogCapture::canCapturePlan(context, out_ast, internal))
+                    context->enablePlanLogCapture();
+
                 if (out_ast)
-                    interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
+                    interpreter = InterpreterFactory::instance().get(
+                        out_ast,
+                        context,
+                        SelectQueryOptions(stage)
+                            .setInternal(internal)
+                            .positionalArgumentsAlreadyResolved(!internal && is_secondary_query)
+                            .secondaryQueryRoot(!internal && is_secondary_query));
+
+                /// This assignment is done here instead of using the `context` that is available inside the Interpreters
+                /// to avoid situations where Interpreters are created inside the other interpreter and end up overwriting
+                /// the captured plan. For example: recursive CTEs
+                if (interpreter)
+                    interpreter->setPlanLogCapture(context->getPlanLogCapture());
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -3295,9 +3704,18 @@ static BlockIO executeQueryImpl(
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                 // We need to force to build it here to check if we need to ignore quota.
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                {
                     interpreter_with_analyzer->getQueryPlan();
 
-                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
+                    result_column_origins = interpreter_with_analyzer->getResultColumnOrigins();
+                    if (flags.collect_result_column_origins)
+                        result_details.result_column_origins = result_column_origins;
+                }
+
+                if (interpreter && interpreter->ignoreQuota())
+                    quota_ignored = true;
+
+                if (!quota_ignored && !quota_checked)
                 {
                     quota = context->getQuota();
                     if (quota)
@@ -3324,11 +3742,17 @@ static BlockIO executeQueryImpl(
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
                         quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
                         quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                        quota->checkExceededProfileEvents(normalized_query_hash);
 
                         /// Track per-normalized-query-hash quota limits (works for all key types).
                         quota->usedPerNormalizedHash(normalized_query_hash);
                     }
                 }
+
+                /// The miss of the query result cache is recorded only now, after the quota checks: a query rejected by an
+                /// exhausted quota over profile events does not consume another `QueryCacheMisses` / `QueryCacheOnDiskMisses`.
+                if (query_result_cache_miss_pending)
+                    QueryResultCacheReader::recordMiss(query_result_cache_miss_probed_on_disk);
 
                 /// Invoke HTTP 100-Continue callback after quota checks are completed
                 if (http_continue_callback && !internal)
@@ -3372,6 +3796,10 @@ static BlockIO executeQueryImpl(
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
+                            /// A hit is charged like the query itself, including the scalar subqueries it executed on its own.
+                            key.ignore_quota = quota_ignored && !chargesExemptQueryProfileEvents(context->getProcessListElement());
+                            if (result_column_origins.size() == key.header->columns())
+                                key.result_column_origins = result_column_origins;
 
                             const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
                             QueryResultCacheOnDiskPtr write_to_on_disk_cache
@@ -3495,14 +3923,22 @@ static BlockIO executeQueryImpl(
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
-                                     query_result_cache_usage,
-                                     // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+                query_result_cache_usage,
+                context,
+                // Need to be cached, since will be changed after complete()
+                pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context);
             };
 
             /// The finish callback logs the query result
+            /// The quotas over profile events are charged once per query, on whichever of its terminal paths
+            /// (finish, exception, cancellation) it reaches first.
+            auto quota_profile_events_charged = std::make_shared<std::atomic_bool>(false);
+            auto profile_events_quota = quota ? quota : query_result_cache_hit_quota;
+            if (!profile_events_quota && quota_ignored && chargesExemptQueryProfileEvents(context->getProcessListElement()))
+                profile_events_quota = context->getQuota();
+
             auto finish_callback = [elem,
                                     context,
                                     out_ast,
@@ -3510,6 +3946,9 @@ static BlockIO executeQueryImpl(
                                     internal,
                                     log_as_internal,
                                     implicit_tcl_executor,
+                                    profile_events_quota,
+                                    quota_profile_events_charged,
+                                    normalized_query_hash,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
@@ -3520,10 +3959,17 @@ static BlockIO executeQueryImpl(
                 {
                     implicit_tcl_executor->commit(context);
                 }
+
+                /// The performance counters have been finalized by `finalizeQueryPipelineBeforeLogging`.
+                /// This is the last step of the callback: if anything above throws, the query is
+                /// accounted by the exception path (`logQueryException`) instead, so it is never
+                /// counted twice.
+                if (!internal && !quota_profile_events_charged->exchange(true))
+                    usedQuotaProfileEvents(profile_events_quota, context->getProcessListElement(), normalized_query_hash);
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error, const QueryPipeline & query_pipeline) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), quota_ignored, quota_profile_events_charged, normalized_query_hash, implicit_tcl_executor, query_span](bool log_error, const QueryPipeline & query_pipeline) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3541,7 +3987,10 @@ static BlockIO executeQueryImpl(
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
-                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
+                /// Also charges the quotas over profile events with what the failed query consumed.
+                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error,
+                    /* charge_quota_profile_events = */ (!quota_ignored || chargesExemptQueryProfileEvents(context->getProcessListElementSafe()))
+                        && !quota_profile_events_charged->exchange(true));
 
                 if (query_pipeline.initialized())
                 {
@@ -3554,6 +4003,16 @@ static BlockIO executeQueryImpl(
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
             res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
+
+            /// A query cancelled by its client without an exception (e.g. a cancelled Arrow Flight poll) reaches
+            /// neither of the callbacks above, but what it has done until then is charged all the same.
+            res.cancel_callbacks.push_back(
+                [context, out_ast, internal, profile_events_quota, quota_profile_events_charged, normalized_query_hash]
+                {
+                    if (!internal && !quota_profile_events_charged->exchange(true))
+                        usedQuotaProfileEvents(profile_events_quota, context->getProcessListElementSafe(), normalized_query_hash,
+                            /* cancelled_query_ast = */ out_ast);
+                });
         }
     }
     catch (...)
@@ -3567,7 +4026,8 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        if (!background_query_dispatched)
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, /* charge_quota = */ !quota_ignored);
 
         throw;
     }
@@ -3648,6 +4108,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         return;
     }
 
+    /// Any other secondary query's context still holds the callbacks its initiator installed (e.g. the read-task
+    /// callback of a cluster function), which a fuzzed copy must not call. The initiator fuzzes its own query.
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedSecondaryQuery);
+        return;
+    }
+
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -3670,6 +4138,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     /// the deadline/KILL check via checkTimeLimitSoft is unavailable; the shutdown metric still
     /// stops the loop in that case.
     QueryStatusPtr process_list_element = context->getProcessListElement();
+    /// Fuzzed queries run without the client's progress callback, which is where HTTP checks for a disconnected client.
+    auto client_connected = context->getClientConnectedCallback();
 
     ASTPtr base_ast = ast;
 
@@ -3685,6 +4155,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         if (process_list_element && !process_list_element->checkTimeLimitSoft())
         {
             LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed or timed out");
+            break;
+        }
+
+        if (client_connected && !client_connected())
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: the client has disconnected");
             break;
         }
 
@@ -3793,6 +4269,17 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
+            /// The copy inherits the client's progress callbacks; fuzzed queries must not report into the seed's response.
+            /// The oracle's queries run on copies of this context, so they get the client check from here.
+            ProgressCallback stop_on_client_disconnect;
+            if (client_connected)
+                stop_on_client_disconnect = [client_connected](const Progress &)
+                {
+                    if (!client_connected())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "The client has disconnected");
+                };
+            fuzz_context->setProgressCallback(std::move(stop_on_client_disconnect));
+            fuzz_context->setFileProgressCallback({});
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
@@ -3832,8 +4319,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// Run the fuzzed query on its own thread group, so that code reading the query context
             /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
             /// sees the fuzz context and the limits pinned above instead of the outer query's.
-            /// The oracle's nested queries run on `fuzz_context` too, so keep the switcher alive
-            /// across them as well.
             ThreadGroupSwitcher thread_group_switcher(
                 ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
@@ -3870,11 +4355,13 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                         /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
                         Stopwatch fuzzed_query_watch;
                         executor.setCancelCallback(
-                            [&fuzzed_query_watch, &process_list_element]()
+                            [&fuzzed_query_watch, &process_list_element, &client_connected]()
                             {
                                 if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
                                     return true;
                                 if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                    return true;
+                                if (client_connected && !client_connected())
                                     return true;
                                 return fuzzed_query_watch.elapsedMilliseconds() > 30000;
                             },
@@ -3937,12 +4424,52 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     }
 }
 
+/// Returns the AST fuzzer run for a query, or nothing when the fuzzer is off for it.
+static std::function<void()> makeASTFuzzerRunner(const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (flags.internal || context->getClientInfo().is_shared_catalog_internal || !ast)
+        return {};
+
+    Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
+    if (!(ast_fuzzer_runs_value > 0))
+        return {};
+
+    bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
+    return [ast, context, ast_fuzzer_runs_value, any_query]()
+    {
+        try
+        {
+            executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw; /// Oracle mismatch — propagate so CI sees it
+            tryLogCurrentException("ASTFuzzer");
+        }
+        catch (...)
+        {
+            tryLogCurrentException("ASTFuzzer");
+        }
+    };
+}
+
+/// Runs the AST fuzzer from `BlockIO::onFinish`, after the query's own finish callbacks, so its `query_log` entry
+/// does not include the fuzzing.
+static void addASTFuzzerFinishCallback(BlockIO & io, const ASTPtr & ast, const ContextMutablePtr & context, QueryFlags flags)
+{
+    if (auto run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags))
+        io.finish_callbacks.emplace_back(
+            [run = std::move(run_ast_fuzzer)](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point) { run(); });
+}
+
 
 std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    QueryResultDetails * result_details)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -3956,8 +4483,10 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
-    QueryResultDetails result_details;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
+    QueryResultDetails local_result_details;
+    if (!result_details)
+        result_details = &local_result_details;
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, *result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = resolveOutputFormatName(context, ast_query_with_output);
@@ -4004,31 +4533,19 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         {
             triggerSanitizerError();
         });
+
+        fiu_do_on(FailPoints::segfault_read_access,
+        {
+            [[maybe_unused]] int value = *reinterpret_cast<volatile int *>(16);
+        });
+
+        fiu_do_on(FailPoints::segfault_write_access,
+        {
+            *reinterpret_cast<volatile int *>(16) = 1;
+        });
     }
 
-    const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-    if (!flags.internal && !is_shared_catalog_internal && ast)
-    {
-        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-        if (ast_fuzzer_runs_value > 0)
-        {
-            bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-            res.finish_callbacks.emplace_back(
-                [ast, context, ast_fuzzer_runs_value, any_query](const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)
-                {
-                    try
-                    {
-                        executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                            throw; /// Oracle mismatch — propagate to abort the server
-                        tryLogCurrentException("ASTFuzzer");
-                    }
-                });
-        }
-    }
+    addASTFuzzerFinishCallback(res, ast, context, flags);
 
     return std::make_pair(std::move(ast), std::move(res));
 }
@@ -4213,32 +4730,8 @@ void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & contex
 
 }
 
-void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context)
+std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context)
 {
-    /// Best-effort check that INSERT/OPTIMIZE query's target table exists.
-    /// (For other queries, it's not trivial to check this).
-    {
-        std::optional<StorageID> target_table_id;
-
-        if (const auto * insert_query = ast->as<ASTInsertQuery>();
-            insert_query && !insert_query->table_function)
-        {
-            if (insert_query->table_id)
-                target_table_id = insert_query->table_id;
-            else if (auto table = insert_query->getTable(); !table.empty())
-                target_table_id = StorageID{insert_query->getDatabase(), table};
-        }
-        else if (const auto * optimize_query = ast->as<ASTOptimizeQuery>();
-            optimize_query && optimize_query->cluster.empty())
-        {
-            if (auto table = optimize_query->getTable(); !table.empty())
-                target_table_id = StorageID{optimize_query->getDatabase(), table};
-        }
-
-        if (target_table_id)
-            DatabaseCatalog::instance().getTable(context->resolveStorageID(*target_table_id), context);
-    }
-
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries with 'implicit_transaction' are not supported");
@@ -4250,7 +4743,34 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
     auto background_context = Context::createCopy(context);
     background_context->makeQueryContext();
 
-    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context]
+    struct ExecutionStart
+    {
+        std::promise<void> promise;
+        std::atomic<bool> fulfilled{false};
+
+        ~ExecutionStart()
+        {
+            if (!fulfilled.exchange(true))
+                promise.set_exception(std::make_exception_ptr(Exception(ErrorCodes::ABORTED, "Server is shutting down")));
+        }
+
+        void setStarted()
+        {
+            if (!fulfilled.exchange(true))
+                promise.set_value();
+        }
+
+        void setException(std::exception_ptr exception)
+        {
+            if (!fulfilled.exchange(true))
+                promise.set_exception(exception);
+        }
+    };
+
+    auto background_query_execution_started = std::make_shared<ExecutionStart>();
+    background_context->setQueryExecutionStartedCallback([background_query_execution_started] { background_query_execution_started->setStarted(); });
+
+    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context, background_query_execution_started]
     {
         try
         {
@@ -4259,6 +4779,7 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
             SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
 
             auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true }).second;
+            background_context->onQueryExecutionStarted();
             try
             {
                 if (io.pipeline.initialized())
@@ -4292,8 +4813,11 @@ void executeQueryInBackground(std::string_view query, const ASTPtr & ast, Contex
         catch (...)
         {
             tryLogCurrentException("executeQueryInBackground");
+            background_query_execution_started->setException(std::current_exception());
         }
     });
+
+    return background_query_execution_started->promise.get_future();
 }
 
 void executeQuery(
@@ -4521,6 +5045,8 @@ void executeQuery(
         throw;
     }
 
+    context->onQueryExecutionStarted();
+
     /// The timezone was already set before query was processed,
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.
     result_details.timezone = DateLUT::instance().getTimeZone();
@@ -4621,6 +5147,9 @@ void executeQuery(
         result_details.framed = true;
         return true;
     };
+
+    /// Run after `query_finish_callback`, which sends the HTTP response and releases the session, on both paths below.
+    std::function<void()> run_ast_fuzzer;
 
     try
     {
@@ -4739,30 +5268,7 @@ void executeQuery(
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
-        const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;
-        if (!flags.internal && !is_shared_catalog_internal && ast)
-        {
-            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
-            if (ast_fuzzer_runs_value > 0)
-            {
-                bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
-                try
-                {
-                    executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-                        throw; /// Oracle mismatch — propagate so CI sees it
-                    tryLogCurrentException("ASTFuzzer");
-                }
-                catch (...)
-                {
-                    tryLogCurrentException("ASTFuzzer");
-                }
-            }
-        }
-
+        run_ast_fuzzer = makeASTFuzzerRunner(ast, context, flags);
     }
     catch (...)
     {
@@ -4905,6 +5411,9 @@ void executeQuery(
 
         finishExecutedQuery(streams, finish_callback);
     }
+
+    if (run_ast_fuzzer)
+        run_ast_fuzzer();
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)
