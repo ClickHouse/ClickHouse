@@ -850,7 +850,7 @@ private:
 
     /// Rejects the malformed requests that Prometheus also rejects on the endpoints with an empty result.
     /// Returns false for a query_exemplars expression without a selector, which has no result at all.
-    bool validateEmptyResultRequest(std::string_view uri_path) const
+    [[nodiscard]] bool validateEmptyResultRequest(std::string_view uri_path) const
     {
         if (uri_path.ends_with("/query_exemplars"))
         {
