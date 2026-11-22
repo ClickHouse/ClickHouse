@@ -91,7 +91,6 @@ namespace RabbitMQSetting
 }
 
 static const uint32_t QUEUE_SIZE = 100000;
-static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 static const auto PUBLISHER_CLEANUP_INTERVAL_MS = 5000;
@@ -1363,9 +1362,10 @@ void StorageRabbitMQ::threadFunc()
 
                     /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
                     /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
-                    /// iteration is an ordinary cycle (the loop below breaks while blocked) and keeps the
-                    /// fast empty return, letting the looping task deliver.
+                    /// iteration is an ordinary cycle (the loop below breaks while blocked).
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
+                    /// A cycle ran, so the next round starts soon; the backoff grows only while nothing can be read.
+                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                     bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
                     if (!continue_reading)
                         break;
@@ -1380,8 +1380,6 @@ void StorageRabbitMQ::threadFunc()
                         LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
                         break;
                     }
-
-                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                 }
             }
             else if (num_views == 0)
@@ -1497,7 +1495,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
     std::atomic_size_t rows = 0;
     block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-    /// Pump deliveries via the background looping task. On the self-driving path the source also
+    /// Pump deliveries via the background looping task. While waiting for a first message the source also
     /// drives the loop itself as a fallback for when a message-broker worker is starved; startup_mutex
     /// serializes the two, so uv_run is never driven concurrently and the loop always makes progress.
     if (!connection->getHandler().loopRunning())
@@ -1610,10 +1608,10 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
         return false;
     }
 
-    if ((queue_empty == num_created_consumers) && (++read_attempts == MAX_FAILED_READ_ATTEMPTS))
+    /// The source already waited up to the poll timeout for a message, so end the round, as Kafka does.
+    if (rows == 0 && queue_empty == num_created_consumers)
     {
         connection->heartbeat();
-        read_attempts = 0;
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
         return false;
     }

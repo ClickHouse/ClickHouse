@@ -94,12 +94,12 @@ private:
 
     Chunk generateImpl();
 
-    /// Absolute budget bounding the whole self-driving REFRESH cycle: the flush interval when set, else
-    /// a finite default (the flush interval may be 0, i.e. no per-cycle time budget).
+    /// Budget of driveLoopUntilMessage: for a REFRESH cycle the flush interval when set, else a finite
+    /// default (the flush interval may be 0); for streaming the poll timeout, capped by the flush interval.
     uint64_t driveBudgetMs() const;
 
     /// Drive the AMQP loop on this worker until a message is pending (bounded, cancel-aware).
-    /// Returns true if a message is now pending, false if it timed out / was cancelled / stopped.
+    /// Returns true if a message is now pending, false if it timed out / was cancelled / stopped / paused.
     bool driveLoopUntilMessage();
 };
 

@@ -167,7 +167,8 @@ bool RabbitMQSource::driveLoopUntilMessage()
     Stopwatch idle_stopwatch{CLOCK_MONOTONIC_COARSE};
     while (!consumer->hasPendingMessages())
     {
-        if (consumer->isConsumerStopped() || is_cancelled())
+        /// SYSTEM PAUSE blocks only future cycles; an ordinary cycle must not keep consuming after it.
+        if (consumer->isConsumerStopped() || is_cancelled() || (!drive_loop_on_worker && storage.isConsumeBlocked()))
             return false;
         const uint64_t elapsed_ms = max_execution_time_ms
             ? (drive_loop_on_worker ? *drive_stopwatch : total_stopwatch).elapsedMilliseconds()

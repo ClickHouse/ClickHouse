@@ -55,6 +55,7 @@ public:
     /// Called by the engine's source to observe the cancel epoch.
     UInt64 currentCancelEpoch() const { return stream_control.currentCancelEpoch(); }
     bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
+    bool isConsumeBlocked() const { return stream_control.isBlocked(); }
 
 protected:
     StreamingBackgroundControl stream_control;
