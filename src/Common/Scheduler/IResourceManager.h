@@ -49,7 +49,7 @@ public:
     /// Returned link is valid until classifier destruction.
     virtual ResourceLink get(const String & resource_name) = 0;
     /// Returns settings that should be used to limit workload on given resource.
-    virtual WorkloadSettings getWorkloadSettings(const String & resource_name) const = 0;
+    [[nodiscard]] virtual WorkloadSettings getWorkloadSettings(const String & resource_name) const = 0;
 };
 
 using ClassifierPtr = std::shared_ptr<IClassifier>;
@@ -65,7 +65,7 @@ public:
     virtual ~IResourceManager() = default;
 
     /// Returns true iff given resource is controlled through this manager.
-    virtual bool hasResource(const String & resource_name) const = 0;
+    [[nodiscard]] virtual bool hasResource(const String & resource_name) const = 0;
 
     /// Obtain a classifier instance required to get access to resources.
     /// Note that it holds resource configuration, so should be destructed when query is done.
