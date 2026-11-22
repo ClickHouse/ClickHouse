@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <algorithm>
 #include <atomic>
 #include <deque>
 #include <tuple>
@@ -41,6 +42,7 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -768,8 +770,8 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
     auto collection = NamedCollectionFactory::instance().get(collection_name);
 
     cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
-    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
-    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
+    cluster_auth_info.cluster_password = collection->getOrDefault<SecretString>("cluster_password");
+    cluster_auth_info.cluster_secret = collection->getOrDefault<SecretString>("cluster_secret");
     cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 }
 
@@ -1608,6 +1610,24 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
         }
     }
 
+    if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        for (const auto & elem : rename->getElements())
+        {
+            String from_database = elem.from.database ? elem.from.getDatabase() : query_context->getCurrentDatabase();
+            String to_database = elem.to.database ? elem.to.getDatabase() : query_context->getCurrentDatabase();
+            if (from_database != getDatabaseName())
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
+            if (to_database != getDatabaseName())
+            {
+                DatabaseCatalog::instance().assertDatabaseExists(to_database);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
+            }
+        }
+
+        rename->resetDatabases();
+    }
+
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->children)
@@ -2000,6 +2020,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
+
+    /// The tables are created with the UUIDs stored in ZooKeeper, so a table can get the data path and part names
+    /// of a dropped table with the same UUID, and the caches keyed by them must not serve the dropped table's data.
+    if (std::ranges::any_of(table_name_to_metadata, [&](const auto & table) { return !isTableExist(table.first, getContext()); }))
+        getContext()->clearCaches();
 
     /// Create all needed tables in a proper order
     TablesDependencyGraph tables_dependencies("DatabaseReplicated (" + getDatabaseName() + ")");
@@ -2858,12 +2883,10 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 
 void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                       ContextPtr query_context)
+                       const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
     chassert(txn || !isDDLWorkerCurrentlyActive());
-
-    String statement = getObjectDefinitionFromCreateQuery(query.clone());
 
     /// For CREATE OR REPLACE, the metadata node for the temporary table is intentionally omitted
     /// from the transaction because renameTable will create it under the final name atomically.
@@ -2886,7 +2909,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
-    DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
+    DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
 
     /// commitCreateTable() commits the txn, so no need to try to attach it to txn

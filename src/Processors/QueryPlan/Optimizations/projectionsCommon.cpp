@@ -1,4 +1,7 @@
 #include <DataTypes/IDataType.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
@@ -14,7 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -26,13 +29,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsBool force_index_by_date;
     extern const SettingsBool force_primary_key;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
     extern const SettingsUInt64 min_table_rows_to_use_projection_index;
@@ -72,9 +75,6 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
 
-    if (reading->hasLazilyReadColumns())
-        return std::unexpected("some columns of the read are read lazily by their part offsets");
-
     if (reading->isQueryWithSampling())
         return std::unexpected("the query uses SAMPLE");
 
@@ -85,7 +85,8 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
+        /// The replicas leave what a projection answers without reading to the initiator's local plan.
+        bool support_projection = ClusterProxy::canUseLocalPlanForParallelReplicas(reading->getContext())
             && query_settings[Setting::parallel_replicas_support_projection];
 
         if (!support_projection)
@@ -103,13 +104,17 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return std::unexpected("the table has unmaterialized mutations or patch parts");
 
+    /// A projection part rebuilt by a lightweight delete does not store the deleted rows.
+    if (!query_settings[Setting::apply_deleted_mask] && mutations_snapshot->hasLightweightDeletedMask())
+        return std::unexpected("setting apply_deleted_mask is disabled and the table has lightweight-deleted rows");
+
     return {};
 }
 
 void rejectProjections(
-    std::unordered_map<String, String> & reject_reasons,
-    const std::vector<const ProjectionDescription *> & projections,
-    const std::vector<const ProjectionDescription *> & kept,
+    UnorderedMapWithMemoryTracking<String, String> & reject_reasons,
+    const VectorWithMemoryTracking<const ProjectionDescription *> & projections,
+    const VectorWithMemoryTracking<const ProjectionDescription *> & kept,
     const String & reason)
 {
     for (const auto * projection : projections)
@@ -117,7 +122,7 @@ void rejectProjections(
             reject_reasons.try_emplace(projection->name, reason);
 }
 
-void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name)
+void filterProjectionCandidates(VectorWithMemoryTracking<const ProjectionDescription *> & projections, const String & preferred_name)
 {
     auto is_preferred = [&](const auto * projection) { return projection->name == preferred_name; };
     if (std::ranges::none_of(projections, is_preferred))
@@ -298,7 +303,7 @@ bool QueryDAG::build(QueryPlan::Node & node)
 }
 
 size_t filterPartsByProjection(
-    ReadFromMergeTree::AnalysisResult & reading_select_result, const std::unordered_set<const IMergeTreeDataPart *> & valid_parts)
+    ReadFromMergeTree::AnalysisResult & reading_select_result, const UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> & valid_parts)
 {
     size_t filtered_parts = 0;
     auto & parts_with_ranges = reading_select_result.parts_with_ranges;
@@ -444,8 +449,14 @@ bool analyzeProjectionCandidate(
     bool allow_query_condition_cache,
     bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context,
-    const HypotheticalProjection * hypothetical_projection)
+    const HypotheticalProjection * hypothetical_projection,
+    const Names & lazily_read_column_names)
 {
+    /// The columns a projection part has to have to serve its part: the ones of the read, and the ones a lazy read reads
+    /// from it. A part can lack a column its projection has now, e.g. after an `ALIAS` the projection selects changed.
+    Names part_column_names = required_column_names;
+    part_column_names.insert(part_column_names.end(), lazily_read_column_names.begin(), lazily_read_column_names.end());
+
     RangesInDataParts projection_parts;
     size_t parent_parts_sum_marks = 0;
     for (const auto & part_with_ranges : parent_reading_select_result.parts_with_ranges)
@@ -459,9 +470,9 @@ bool analyzeProjectionCandidate(
         if (projection_part
             && !(parent_reading_select_result.exact_ranges_excluded && !part_with_ranges.exact_ranges.empty())
             && projectionPartHasRequiredColumns(
-                *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
+                *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, part_column_names)
             && !partHasPendingMetadataMutationsOnColumns(
-                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, required_column_names))
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, part_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
                 projection_part,
@@ -499,7 +510,7 @@ bool analyzeProjectionCandidate(
     if (!projection_result_ptr->isUsable())
         return false;
 
-    std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)
         valid_parts.emplace(part.data_part->getParentPart());
 
@@ -554,7 +565,7 @@ void filterPartsAndCollectProjectionCandidates(
     const ContextPtr & context)
 {
     RangesInDataParts projection_parts;
-    std::unordered_set<const IMergeTreeDataPart *> valid_parts;
+    UnorderedSetWithMemoryTracking<const IMergeTreeDataPart *> valid_parts;
 
     /// Route a drifted projection part (see projectionPartHasRequiredColumns) to a parent read rather
     /// than evaluating the filter over it, which would prune the wrong parent rows. Only the filter
@@ -610,6 +621,17 @@ void filterPartsAndCollectProjectionCandidates(
 
     auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
 
+    size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
+    size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
+
+    /// Otherwise the analysis below only decides which parent parts have no matching rows.
+    const bool may_use_projection_index = projection.sample_block.has("_parent_part_offset")
+        && max_projection_rows_to_use_projection_index > 0
+        && std::any_of(
+            projection_parts.begin(),
+            projection_parts.end(),
+            [&](const auto & part) { return part.parent_ranges.total_rows >= min_table_rows_to_use_projection_index; });
+
     /// Always request `_parent_part_offset` for projection analysis, even if the column does not exist. This does not
     /// affect the analysis itself. Later code will not use it as an index if the column is missing.
     static Names required_column_names = {"_parent_part_offset"};
@@ -625,7 +647,8 @@ void filterPartsAndCollectProjectionCandidates(
         /*max_block_numbers_to_read=*/nullptr,
         /// The result filters the parts of the actual read, so keep the read's own cache gate.
         reading.isQueryConditionCacheAllowed(),
-        reading.isTopKPrewhereQueryConditionCacheAllowed());
+        reading.isTopKPrewhereQueryConditionCacheAllowed(),
+        /*stop_at_first_match=*/ !may_use_projection_index);
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
@@ -638,8 +661,6 @@ void filterPartsAndCollectProjectionCandidates(
     bool projection_index_allowed
         = !context->getSettingsRef()[Setting::force_primary_key] || projection_result_ptr->pk_condition_useful;
 
-    size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
-    size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
     auto & desc = reading.getProjectionIndexReadDescription();
     bool in_use = false;
     for (auto & part : projection_result_ptr->parts_with_ranges)

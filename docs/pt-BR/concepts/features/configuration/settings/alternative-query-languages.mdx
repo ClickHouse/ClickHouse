@@ -7,6 +7,7 @@ keywords: ['linguagens de consulta alternativas', 'dialects de consulta', 'diale
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 Além do SQL padrão, o ClickHouse suporta várias linguagens de consulta alternativas para consultar dados.
@@ -54,12 +55,12 @@ Nos bastidores, o ClickHouse usa a transpilação de PRQL para SQL para executar
 
 ## Linguagem de Consulta Kusto (KQL) {#kusto-query-language-kql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 Para ativar o KQL:
 
 ```sql
-SET allow_experimental_kusto_dialect = 1; -- este SET statement é necessário apenas para versões do ClickHouse >= 25.1
+SET allow_experimental_kusto_dialect = 1; -- this SET statement is required only for ClickHouse versions >= 25.1
 SET dialect = 'kusto'
 ```
 
@@ -109,9 +110,9 @@ Consulte o [guia do dialect LogsQL](/pt-BR/guides/clickhouse/logsql) para conhec
 
 ## Trino SQL {#trino-sql}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-Para habilitar o dialeto Trino:
+Para habilitar o dialect Trino:
 
 ```sql
 SET enable_trino_dialect = 1;

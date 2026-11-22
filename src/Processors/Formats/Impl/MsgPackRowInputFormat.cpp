@@ -319,7 +319,10 @@ static void insertNull(IColumn & column, DataTypePtr type, UInt8 * read, bool nu
         if (!null_as_default)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
-        column.insertDefault();
+        if (type->isDefaultInsertTrivial())
+            column.insertDefault();
+        else
+            type->insertDefaultInto(column);
         /// In case of default on null column can have defined DEFAULT expression that should be used.
         if (read)
             *read = false;
@@ -467,9 +470,12 @@ bool MsgPackVisitor::start_map(uint32_t size) // NOLINT
 
 bool MsgPackVisitor::start_map_key() // NOLINT
 {
-    auto key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[0];
+    /// Use `getColumn(0)` to obtain a direct `IColumn &` rather than `getColumns()[0]`,
+    /// which returns a `ColumnPtr` by value and bumps `use_count` to 2; the subsequent
+    /// `WrappedPtr::operator*` would then trip `assumeMutableRef`'s `use_count() == 1` check.
+    IColumn & key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(0);
     auto key_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getKeyType();
-    info_stack.push(Info{*key_column, key_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{key_column, key_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -481,9 +487,10 @@ bool MsgPackVisitor::end_map_key() // NOLINT
 
 bool MsgPackVisitor::start_map_value() // NOLINT
 {
-    auto value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[1];
+    /// Same `getColumn` vs `getColumns()[i]` distinction as in `start_map_key`.
+    IColumn & value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumn(1);
     auto value_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getValueType();
-    info_stack.push(Info{*value_column, value_type, false, std::nullopt, nullptr});
+    info_stack.push(Info{value_column, value_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -805,7 +812,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const FormatSettings & settings)
     {
         return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
-    });
+    }, /*supports_reset_parser=*/ true);
     factory.registerFileExtension("messagepack", "MsgPack");
 
     factory.setDocumentation("MsgPack", Documentation{
