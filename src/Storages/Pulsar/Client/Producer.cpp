@@ -139,7 +139,7 @@ void ProducerImpl::create()
     if (metadata->error)
         throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot create the Pulsar producer: {}", *metadata->error);
 
-    /// Like the default routing of the C++ client for the messages without a key.
+    /// All messages go to one random partition, like `UseSinglePartition` of the C++ client, whose default is round robin.
     topic = metadata->partitions ? partitionTopicName(base_topic, thread_local_rng() % metadata->partitions) : base_topic;
     wait_until([&] { return state == State::Ready; });
 }

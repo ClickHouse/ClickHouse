@@ -541,6 +541,21 @@ TEST(PulsarProtocol, SendFrameRoundTrip)
     EXPECT_EQ(fields.event_time, 42);
     EXPECT_FALSE(fields.partition_key);
     EXPECT_EQ(fields.batch_index, -1);
+
+    /// A partition key of a non-batched message.
+    metadata.clear_ordering_key();
+    metadata.set_partition_key("pk");
+    frame_bytes = encodeSendFrame(command, metadata, "hi");
+    decodeFrame(std::string_view(frame_bytes).substr(4), limits, frame);
+    decodeEntry(frame.tail, entry);
+    auto keyed_owner = std::make_shared<StringWithMemoryTracking>(entry.payload);
+    auto keyed = decodePayload(entry.metadata, *keyed_owner, keyed_owner, limits.max_message_size, true, limits);
+    ASSERT_FALSE(keyed.error);
+    BatchCursor keyed_cursor(keyed.batch, entry.metadata);
+    const auto & keyed_fields = keyed_cursor.next();
+    EXPECT_EQ(keyed_fields.payload, "hi");
+    EXPECT_EQ(keyed_fields.partition_key, "pk");
+    EXPECT_FALSE(keyed_fields.ordering_key);
 }
 
 TEST(PulsarProtocol, Names)

@@ -984,6 +984,26 @@ TEST(PulsarClient, ProducerMessageSizeIncludesMetadata)
     EXPECT_EQ(broker.count(Type::SEND), 1);
 }
 
+TEST(PulsarClient, ProducerOfAPartitionedTopic)
+{
+    FakeBroker broker;
+    broker.setPartitions(topicName("p"), 3);
+    Client client(broker.url(), configuration());
+    auto producer = client.createProducer("p", {});
+    producer->send("one");
+    producer->send("two", "key");
+
+    /// All messages, with or without a key, go to the one partition chosen when the producer is created.
+    auto producers = broker.eventsOf(Type::PRODUCER);
+    ASSERT_EQ(producers.size(), 1);
+    const String topic = producers[0].command.producer().topic();
+    bool is_partition = false;
+    for (size_t i = 0; i < 3; ++i)
+        is_partition |= topic == partitionTopicName(topicName("p"), i);
+    EXPECT_TRUE(is_partition) << topic;
+    EXPECT_EQ(broker.count(Type::SEND), 2);
+}
+
 TEST(PulsarClient, CloseFromAnotherThread)
 {
     FakeBroker broker;

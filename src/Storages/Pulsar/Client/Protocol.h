@@ -137,8 +137,8 @@ private:
     size_t index = 0;
     size_t offset = 0;
     /// For a non-batched message.
-    std::optional<String> partition_key;
-    std::optional<String> ordering_key;
+    std::optional<StringWithMemoryTracking> partition_key;
+    std::optional<StringWithMemoryTracking> ordering_key;
     std::optional<UInt64> event_time;
     PulsarProto::SingleMessageMetadataView entry_metadata;
     MessageFields fields;

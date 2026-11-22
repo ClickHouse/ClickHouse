@@ -397,9 +397,9 @@ BatchCursor::BatchCursor(Batch batch_, const PulsarProto::MessageMetadataView & 
     }
     count = 1;
     if (metadata.has_partition_key())
-        partition_key = metadata.partition_key();
+        partition_key.emplace(metadata.partition_key().data(), metadata.partition_key().size());
     if (metadata.has_ordering_key())
-        ordering_key = metadata.ordering_key();
+        ordering_key.emplace(metadata.ordering_key().data(), metadata.ordering_key().size());
     if (metadata.has_event_time())
         event_time = metadata.event_time();
 }
@@ -412,9 +412,9 @@ const MessageFields & BatchCursor::next()
     {
         fields.payload = batch.data;
         if (partition_key)
-            fields.partition_key = *partition_key;
+            fields.partition_key = std::string_view(*partition_key);
         if (ordering_key)
-            fields.ordering_key = *ordering_key;
+            fields.ordering_key = std::string_view(*ordering_key);
         fields.event_time = event_time;
         ++index;
         return fields;
