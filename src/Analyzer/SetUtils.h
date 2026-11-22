@@ -47,11 +47,8 @@ bool nullableTupleKeyCanHoldAllNullTuple(const DataTypeTuple & key_tuple_type, s
 /// Array or Tuple). Values are read column-natively - no `Field` is materialized.
 ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params);
 
-/** The set elements of `x IN (v1, v2, ...)` for a scalar key, read straight from a tuple of plain values (UInt64,
-  * Int64 or String `Field`s, as a `ConstantNode` with a deferred column keeps them), without building one size-1
-  * column per value. Gives the same set as `getSetElementsForConstantValue`. Returns nullopt for any other key or
-  * value types; the caller then uses `getSetElementsForConstantValue`.
-  */
+/// The set elements of `x IN (v1, v2, ...)` for a scalar key from a tuple of `UInt64`, `Int64` or `String` `Field`s,
+/// equal to those of `getSetElementsForConstantValue`. Returns nullopt for any other key or value types.
 std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
     const DataTypePtr & expression_type, const Tuple & rhs_elements, GetSetElementParams params);
 

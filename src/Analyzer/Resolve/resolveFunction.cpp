@@ -3095,8 +3095,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            /// The right side of `IN` becomes a set (see below), so a long literal list does not need its column here,
-            /// unless the left side is constant too and the call is folded with it.
+            /// A deferred right side of `IN` needs no column: it becomes a set, unless the call is folded with a constant left side.
             if (!(is_special_function_in && function_argument_index == 1 && !all_arguments_constants
                   && constant_node->tryGetDeferredField()))
                 argument_column.column = constant_node->getColumn();

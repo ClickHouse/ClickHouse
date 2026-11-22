@@ -41,7 +41,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// A literal tuple with at least this many elements keeps its `Field` until its column is needed.
 constexpr size_t min_deferred_tuple_size = 32;
 
 template <typename T>
@@ -54,9 +53,8 @@ bool holdsInteger(const Field & value)
             && value.safeGet<Int64>() <= std::numeric_limits<T>::max();
 }
 
-/// Whether the size-1 column of `type` built from `value` holds exactly `value`: a `UInt64`/`Int64` `Field` and a
-/// native integer type of the same signedness that holds it (without a custom name, so not `Bool`), or a `String`.
-/// These are the types `FieldToDataType` gives such values; `convertFieldToType` leaves them unchanged.
+/// Whether the size-1 column of `type` built from `value` holds exactly `value`, i.e. `convertFieldToType` leaves it
+/// unchanged: an integer of the same signedness that fits (not `Bool`), or a `String`.
 bool isPlainElement(const Field & value, const IDataType & type)
 {
     if (type.hasCustomName())
@@ -77,8 +75,6 @@ bool isPlainElement(const Field & value, const IDataType & type)
     }
 }
 
-/// A long tuple of plain elements, such as the right side of `x IN (1, 2, ...)`, does not need its column (one
-/// size-1 column per element) for building the set, naming, hashing or converting it to AST.
 bool canDeferColumn(const Field & value, const IDataType & type)
 {
     if (value.getType() != Field::Types::Tuple)
@@ -375,8 +371,7 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
         HashState column_hash_state = hash_state;
         type->createColumnConst(1, *deferred_field)->updateHashFast(column_hash_state);
 #endif
-        /// The same bytes as `updateHashFast` of the column would give: the `ColumnTuple` of a `ColumnConst` hashes
-        /// its size-1 element columns in order.
+        /// `updateHashFast` of a `ColumnConst(ColumnTuple)` hashes its size-1 element columns in order.
         const auto & elements = deferred_field->safeGet<Tuple>();
         const auto & element_types = assert_cast<const DataTypeTuple &>(*type).getElements();
         for (size_t i = 0; i < elements.size(); ++i)

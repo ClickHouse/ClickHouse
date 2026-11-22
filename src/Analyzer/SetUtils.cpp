@@ -851,8 +851,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
     const DataTypePtr & lhs_expression_type, const Tuple & rhs_elements, GetSetElementParams params)
 {
-    /// A scalar key reads a right-hand tuple as a set of members (`build_from_tuple`), converted to the key type
-    /// without `LowCardinality`.
+    /// A scalar key reads the tuple as a set of members (`build_from_tuple`), converted to the key type without `LowCardinality`.
     DataTypePtr lhs_type = lhs_expression_type;
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(lhs_type.get()))
         lhs_type = low_cardinality_type->getDictionaryType();
@@ -886,9 +885,8 @@ std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
         return ColumnsWithTypeAndName{{std::move(column), lhs_type, ""}};
     }
 
-    /// Integer members of any literal width hold the same values as `UInt64` (or as `Int64` if one is stored as `Int64`
-    /// and all fit), so one accurate cast of all of them keeps exactly the members that the per-member conversion keeps,
-    /// as in `tryConvertNativeNumberMembersBatch`.
+    /// Integer members hold the same values as `UInt64` (or `Int64` if one is an `Int64` and all fit), so one accurate
+    /// cast keeps exactly the members the per-member conversion keeps, as `tryConvertNativeNumberMembersBatch` does.
     bool has_int64 = false;
     for (const auto & element : rhs_elements)
     {

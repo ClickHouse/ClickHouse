@@ -104,7 +104,6 @@ public:
                 .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
             };
 
-            /// A long literal list keeps its values as a `Field`: read them without building its column if possible.
             std::optional<ColumnsWithTypeAndName> set_from_values;
             if (const auto deferred_field = constant_node->tryGetDeferredField())
                 set_from_values = tryGetSetElementsForTupleOfPlainValues(

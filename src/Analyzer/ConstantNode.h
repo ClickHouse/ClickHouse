@@ -64,10 +64,8 @@ public:
         return getConstantValue().getField();
     }
 
-    /** A long tuple of plain literals, such as the right side of `x IN (1, 2, ...)`, keeps its `Field` until a consumer
-      * needs its column (one size-1 column per element). Returns that `Field` until then, else nullptr; the result keeps
-      * it alive.
-      */
+    /// A long tuple of plain literals, such as the right side of `x IN (1, 2, ...)`, keeps its `Field` until its column
+    /// is needed. Returns that `Field` (kept alive by the result) until then, else nullptr.
     std::shared_ptr<const Field> tryGetDeferredField() const;
 
     /// Typed value accessors - read the constant without materializing a `Field` (delegate to ConstantValue).
