@@ -6,9 +6,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <base/scope_guard.h>
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -34,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace
@@ -90,6 +93,33 @@ RuntimeFilterGeometry makeGeometry(
         .blocks_to_skip_before_reenabling = 30,
         .max_ratio_of_set_bits_in_bloom_filter = max_ratio_of_set_bits_in_bloom_filter,
     };
+}
+
+/// Runs `action` with the memory limit of the current thread just above its usage, as when a query reaches its limit,
+/// and returns whether it threw MEMORY_LIMIT_EXCEEDED. Allocations below `max_untracked_memory` (4 MiB) are not checked.
+template <typename Action>
+bool throwsAtMemoryLimit(Action && action)
+{
+    MainThreadStatus::getInstance();
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    const Int64 previous_hard_limit = thread_tracker.getHardLimit();
+    CurrentThread::flushUntrackedMemory();
+    thread_tracker.setHardLimit(thread_tracker.get() + 64 * 1024);
+    SCOPE_EXIT({
+        thread_tracker.setHardLimit(previous_hard_limit);
+        CurrentThread::flushUntrackedMemory();
+    });
+    try
+    {
+        action();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            throw;
+        return true;
+    }
+    return false;
 }
 
 }
@@ -264,6 +294,60 @@ TEST(RuntimeFilterLookup, DenseBitsetFindsExactlyTheKeys)
     checkDenseBitsetFindsExactlyTheKeys<Int8>();
     checkDenseBitsetFindsExactlyTheKeys<UInt16>();
     checkDenseBitsetFindsExactlyTheKeys<Int16>();
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItThrew)
+{
+    /// The full exact set switches to an 8 MiB Bloom filter, which the memory limit refuses. The set keeps its keys, and
+    /// the next block retries the switch, as after `ISimpleTransform` passed the exception downstream.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({0, 5}));
+
+    ColumnPtr block = makeUInt64Column({7});
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.insert(block); }));
+
+    filter.insert(makeUInt64Column({6}));
+    filter.finishInsert();
+    /// No key is lost, and the probe is checked rather than skipped as for a dropped key set. Other values may pass
+    /// the Bloom filter.
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6, 7}, type)), {1, 1, 1, 1});
+    EXPECT_EQ(filter.getStats().rows_checked.load(), 4);
+    EXPECT_EQ(filter.getStats().rows_skipped.load(), 0);
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterKeepsItsExactSetWhenMergingABloomFilterThrows)
+{
+    /// Merging a Bloom filter into the exact set allocates an 8 MiB Bloom filter, which the memory limit refuses. The
+    /// destination keeps its keys and still takes the partials of the other build streams.
+    const auto type = makeUInt64Type();
+    const auto make_filter = [&](size_t filters_to_merge)
+    {
+        return std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, /*exact_values_limit=*/2, 3, 1.0), std::nullopt, false));
+    };
+    auto destination = make_filter(1);
+    destination->insert(makeUInt64Column({0, 5}));
+    auto approximate_source = make_filter(0);
+    approximate_source->insert(makeUInt64Column({1, 2, 3}));
+    approximate_source->finishInsert();
+
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { destination->merge(*approximate_source); }));
+
+    auto exact_source = make_filter(0);
+    exact_source->insert(makeUInt64Column({6}));
+    exact_source->finishInsert();
+    destination->merge(*exact_source);
+    destination->finishInsert();
+    ASSERT_TRUE(destination->isReady());
+    expectMask(destination->find(makeUInt64ColumnWithType({0, 5, 6}, type)), {1, 1, 1});
+    EXPECT_EQ(destination->getStats().rows_checked.load(), 3);
+    EXPECT_EQ(destination->getStats().rows_skipped.load(), 0);
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)

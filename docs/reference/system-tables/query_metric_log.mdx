@@ -147,6 +147,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.
 - `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has been found in the cache.
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
+- `ProfileEvent_ParquetMetadataCacheOffsetIndexHits` ([UInt64](/reference/data-types/int-uint)) — Number of Parquet column chunks whose offset index was taken from the parquet metadata cache instead of being read from the file.
 - `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the parquet metadata cache.
 - `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
 - `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).
