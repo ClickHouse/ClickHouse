@@ -12,6 +12,7 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/hasNullable.h>
 
@@ -286,9 +287,15 @@ ComparisonGraphCompareResult mostStrict(const ComparisonGraphCompareResult left,
     return UNKNOWN;
 }
 
-bool comparesEnumWithString(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+/// `key` can replace `replaced` in a comparison with `constant` only if the comparison stays the same: one type
+/// (the name has the time zone, which converts a `Date` or a string), or native numbers, which compare exactly.
+bool keyComparesAsReplaced(const QueryTreeNodePtr & key, const QueryTreeNodePtr & replaced, const QueryTreeNodePtr & constant)
 {
-    return mixesEnumAndString(left->getResultType(), right->getResultType());
+    const auto key_type = removeLowCardinalityAndNullable(key->getResultType());
+    const auto replaced_type = removeLowCardinalityAndNullable(replaced->getResultType());
+    if (key_type->getName() == replaced_type->getName())
+        return true;
+    return isNativeNumber(key_type) && isNativeNumber(replaced_type) && isNativeNumber(removeLowCardinalityAndNullable(constant->getResultType()));
 }
 
 /// Create OR-group for 'indexHint'.
@@ -318,10 +325,6 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
         if (arguments.size() != 2)
             continue;
 
-        /// `CHECK n >= e` must not turn `e >= '9'` into `n >= '9'`: '9' is a name for `e`, a number for `n`.
-        if (comparesEnumWithString(arguments[0], arguments[1]))
-            return {};
-
         auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult expected_result)
         {
             if (!onlyConstants(arguments[1 - index]))
@@ -335,22 +338,15 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                 else
                     actual_result = graph.compare(arguments[index], primary_key_node);
 
+                /// `CHECK n >= e` must not turn `e >= '9'` into `n >= '9'`, `CHECK n = dt` must not turn `dt < toDate(...)` into `n < toDate(...)`.
+                if (!keyComparesAsReplaced(primary_key_node, arguments[index], arguments[1 - index]))
+                    continue;
+
                 if (canBeSequence(expected_result, actual_result))
                 {
                     auto helper_node = function_node->clone();
                     auto & helper_function_node = helper_node->as<FunctionNode &>();
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
-
-                    /// `CHECK e <= n` must not turn `n <= '9'` into `e <= '9'`: '9' is a number for `n`, a name for `e`.
-                    const auto & helper_arguments = helper_function_node.getArguments().getNodes();
-                    if (comparesEnumWithString(helper_arguments[0], helper_arguments[1]))
-                        continue;
-
-                    /// `CHECK dt >= 1600000000` must not turn `dt < '2021-01-01 00:00:00'` into `1600000000 < '2021-01-01 00:00:00'`.
-                    if (comparesStringConstantWithOtherType(helper_arguments[0], helper_arguments[1])
-                        && !primary_key_node->getResultType()->equals(*arguments[index]->getResultType()))
-                        continue;
-
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
                     result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});
