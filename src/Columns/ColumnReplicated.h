@@ -137,6 +137,12 @@ public:
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
     bool hasEqualValues() const override;
 
+    /// Compares each value of the nested column with the row of `rhs` once and gives every row the result of
+    /// its value, as `ColumnSparse::compareColumn` does. With fewer rows to compare than values, compares the
+    /// rows one by one.
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num, PaddedPODArray<UInt64> * row_indexes,
+                       PaddedPODArray<Int8> & compare_results, int direction, int nan_direction_hint) const override;
+
 
     struct ComparatorBase;
 
@@ -225,6 +231,29 @@ public:
     ColumnPtr getUsedValues(size_t offset, size_t limit) const;
 
 private:
+    /// Returns the rank of every row in a `ColumnUInt32`: equal values get equal ranks, and the ranks grow in
+    /// the order of `direction`, so that sorting the rows by rank in ascending order sorts them by value. The
+    /// values that the rows use are sorted once, as `ColumnLowCardinality` sorts its dictionary. With
+    /// `limit`, only the values that can reach the first `limit` rows of the order get exact ranks: the first
+    /// `limit` values and every value equal to the last of them, because each value has at least one row. The
+    /// other rows share one rank after all of them, so `limit` is valid for a sort of the whole column only.
+    ColumnPtr buildRowRanks(PermutationSortDirection direction, size_t limit, int nan_direction_hint, const Collator * collator) const;
+
+    /// The `limit` of `buildRowRanks` for `updatePermutation`. One range of all rows, as the first column of
+    /// a sort by several columns gets, needs exact ranks only for the values that can reach the first `limit`
+    /// rows, as in `getPermutation`. Other ranges hold a part of the rows, whose values need not be among the
+    /// first `limit` values of the column, so every value gets an exact rank (0).
+    size_t rankingLimit(const EqualRanges & equal_ranges, size_t limit) const;
+
+    /// Whether `updatePermutation` compares fewer values by ranking the rows than by sorting each of
+    /// `equal_ranges` that precedes `limit` with comparisons. Sorting `n` items takes about `n log n`
+    /// comparisons, and ordering only the first `k` of them about `n + k log k`: a selection, then a sort of
+    /// the `k`. Ranking sorts the values that the rows use up to `rankingLimit`, and the range that holds
+    /// `limit` is ordered up to it.
+    /// Example: one range of 65,536 rows that use 30,000 values, with `limit` 300, takes about
+    /// 65,536 + 2,469 comparisons by ranges and 30,000 + 2,469 by ranking.
+    bool updatePermutationByRanksIsCheaper(const EqualRanges & equal_ranges, size_t limit) const;
+
     struct InsertionCache;
 
     InsertionCache & getInsertionCache();

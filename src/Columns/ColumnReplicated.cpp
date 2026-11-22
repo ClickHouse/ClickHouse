@@ -2,6 +2,8 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnsCommon.h>
+#include <cmath>
 #include <Common/HashTable/HashMap.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -597,6 +599,184 @@ bool ColumnReplicated::hasEqualValues() const
     return indexes.getIndexes()->hasEqualValues();
 }
 
+void ColumnReplicated::compareColumn(const IColumn & rhs, size_t rhs_row_num, PaddedPODArray<UInt64> * row_indexes,
+                                     PaddedPODArray<Int8> & compare_results, int direction, int nan_direction_hint) const
+{
+    const size_t rows = size();
+    if (compare_results.empty())
+        compare_results.resize(rows);
+    else if (compare_results.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}", compare_results.size(), rows);
+
+    /// The value to compare with.
+    const IColumn * rhs_values = &rhs;
+    size_t rhs_value_row = rhs_row_num;
+    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&rhs))
+    {
+        rhs_values = rhs_replicated->getNestedColumn().get();
+        rhs_value_row = rhs_replicated->getIndexes().getIndexAt(rhs_row_num);
+    }
+
+    const size_t rows_to_compare = row_indexes ? row_indexes->size() : rows;
+    PaddedPODArray<Int8> nested_results;
+    const bool by_values = rows_to_compare >= nested_column->size();
+    if (by_values)
+        nested_column->compareColumn(*rhs_values, rhs_value_row, nullptr, nested_results, direction, nan_direction_hint);
+
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        auto result_of = [&](size_t row) -> Int8
+        {
+            if (by_values)
+                return nested_results[data[row]];
+            return static_cast<Int8>(direction * nested_column->compareAt(data[row], rhs_value_row, *rhs_values, nan_direction_hint));
+        };
+
+        if (!row_indexes)
+        {
+            for (size_t row = 0; row < rows; ++row)
+                compare_results[row] = result_of(row);
+            return;
+        }
+
+        /// Keep in `row_indexes` the rows equal to the value, which the next column compares.
+        UInt64 * next_index = row_indexes->data();
+        for (UInt64 row : *row_indexes)
+        {
+            compare_results[row] = result_of(row);
+            if (compare_results[row] == 0)
+                *next_index++ = row;
+        }
+        row_indexes->resize(next_index - row_indexes->data());
+    });
+}
+
+ColumnPtr ColumnReplicated::buildRowRanks(PermutationSortDirection direction, size_t limit, int nan_direction_hint, const Collator * collator) const
+{
+    const size_t rows = size();
+    const size_t nested_size = nested_column->size();
+
+    /// The values of the nested column that the rows use. Each of them has at least one row.
+    IColumn::Filter used(nested_size, 0);
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (auto position : data)
+            used[position] = 1;
+    });
+    const size_t used_count = countBytesInFilter(used);
+    const size_t unused_count = nested_size - used_count;
+
+    /// The values are sorted where they are when the rows use most of them, as a block that starts or ends inside
+    /// a granule uses a part of its dictionary: the unused values take no rank, and a limit grows by their number,
+    /// so that the first `limit` used values are among the sorted ones. When the rows use fewer than half of the
+    /// values, as after a selective filter, the used ones are copied out first, so that the sort skips the others.
+    const bool copy_used = unused_count > used_count;
+    ColumnPtr values = nested_column;
+    if (copy_used)
+        values = nested_column->filter(used, used_count);
+    const size_t values_size = values->size();
+    const size_t sorted_limit = copy_used ? limit : limit + unused_count;
+    const size_t values_limit = limit && sorted_limit < values_size ? sorted_limit : 0;
+
+    IColumn::Permutation order;
+    if (collator)
+        values->getPermutationWithCollation(*collator, direction, PermutationSortStability::Unstable, values_limit, nan_direction_hint, order);
+    else
+        values->getPermutation(direction, PermutationSortStability::Unstable, values_limit, nan_direction_hint, order);
+
+    auto equal = [&](size_t lhs, size_t rhs)
+    {
+        return collator ? values->compareAtWithCollation(lhs, rhs, *values, nan_direction_hint, *collator) == 0
+                        : values->compareAt(lhs, rhs, *values, nan_direction_hint) == 0;
+    };
+    auto is_used = [&](size_t value) { return copy_used || used[value]; };
+
+    /// The rank of each value of `values`. Equal values come from the dictionaries of different granules.
+    PaddedPODArray<UInt32> value_ranks(values_size);
+    const size_t ranked = values_limit ? values_limit : values_size;
+    UInt32 rank = 0;
+    std::optional<size_t> last_ranked;
+    for (size_t i = 0; i < ranked; ++i)
+    {
+        const size_t value = order[i];
+        if (!is_used(value))
+            continue;
+        if (last_ranked && !equal(*last_ranked, value))
+            ++rank;
+        value_ranks[value] = rank;
+        last_ranked = value;
+    }
+    chassert(ranked == values_size || last_ranked);
+    for (size_t i = ranked; i < values_size; ++i)
+    {
+        const size_t value = order[i];
+        if (is_used(value))
+            value_ranks[value] = equal(value, *last_ranked) ? rank : rank + 1;
+    }
+
+    /// The rank of each position of the nested column, then of each row.
+    PaddedPODArray<UInt32> position_ranks;
+    const UInt32 * ranks_by_position = value_ranks.data();
+    if (copy_used)
+    {
+        position_ranks.resize(nested_size);
+        for (size_t position = 0, value = 0; position < nested_size; ++position)
+            if (used[position])
+                position_ranks[position] = value_ranks[value++];
+        ranks_by_position = position_ranks.data();
+    }
+
+    auto res = ColumnUInt32::create(rows);
+    auto & row_ranks = res->getData();
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (size_t row = 0; row < rows; ++row)
+            row_ranks[row] = ranks_by_position[data[row]];
+    });
+    return res;
+}
+
+namespace
+{
+
+/// The comparisons that order the first `limit` of `count` items, or all of them when `limit` is 0: a
+/// selection and a sort of the first `limit` (`::partial_sort`), or a full sort.
+double sortComparisons(size_t count, size_t limit)
+{
+    if (count <= 1)
+        return 0;
+
+    if (limit != 0 && limit < count)
+    {
+        const double sorted = static_cast<double>(std::max<size_t>(limit, 2));
+        return static_cast<double>(count) + sorted * std::log2(sorted);
+    }
+
+    return static_cast<double>(count) * std::log2(static_cast<double>(count));
+}
+
+}
+
+size_t ColumnReplicated::rankingLimit(const EqualRanges & equal_ranges, size_t limit) const
+{
+    const bool all_rows = equal_ranges.size() == 1 && equal_ranges.front().from == 0 && equal_ranges.front().to == size();
+    return all_rows ? limit : 0;
+}
+
+bool ColumnReplicated::updatePermutationByRanksIsCheaper(const EqualRanges & equal_ranges, size_t limit) const
+{
+    double range_comparisons = 0;
+    for (const auto & range : equal_ranges)
+    {
+        if (limit && range.from >= limit)
+            break;
+        range_comparisons += sortComparisons(range.size(), limit && limit < range.to ? limit - range.from : 0);
+    }
+
+    const size_t values = std::min(nested_column->size(), size());
+    return sortComparisons(values, rankingLimit(equal_ranges, limit)) < range_comparisons;
+}
+
 struct ColumnReplicated::ComparatorBase
 {
     const ColumnReplicated & parent;
@@ -637,19 +817,20 @@ struct ColumnReplicated::ComparatorCollationBase
 void ColumnReplicated::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                                 size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    buildRowRanks(direction, limit, nan_direction_hint, nullptr)
+        ->getPermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res);
 }
 
 void ColumnReplicated::updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                                 size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
+    if (updatePermutationByRanksIsCheaper(equal_ranges, limit))
+    {
+        buildRowRanks(direction, rankingLimit(equal_ranges, limit), nan_direction_hint, nullptr)
+            ->updatePermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res, equal_ranges);
+        return;
+    }
+
     auto comparator_equal = ComparatorEqual(*this, nan_direction_hint);
 
     if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
@@ -665,19 +846,20 @@ void ColumnReplicated::updatePermutation(PermutationSortDirection direction, Per
 void ColumnReplicated::getPermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                             size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorCollationAscendingUnstable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorCollationAscendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorCollationDescendingUnstable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorCollationDescendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
+    buildRowRanks(direction, limit, nan_direction_hint, &collator)
+        ->getPermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res);
 }
 
 void ColumnReplicated::updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                             size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
+    if (updatePermutationByRanksIsCheaper(equal_ranges, limit))
+    {
+        buildRowRanks(direction, rankingLimit(equal_ranges, limit), nan_direction_hint, &collator)
+            ->updatePermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res, equal_ranges);
+        return;
+    }
+
     auto comparator_equal = ComparatorCollationEqual(*this, nan_direction_hint, &collator);
 
     if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
