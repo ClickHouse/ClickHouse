@@ -8,7 +8,7 @@
     -->
     <settings>
         <join_algorithm>hash</join_algorithm>
-        <parallel_hash_join_threshold>18446744073709551615</parallel_hash_join_threshold>
+        <hash_join_layout>serial</hash_join_layout>
         <query_plan_join_swap_table>0</query_plan_join_swap_table>
         <query_plan_optimize_join_order_limit>0</query_plan_optimize_join_order_limit>
         <enable_join_runtime_filters>0</enable_join_runtime_filters>
@@ -24,11 +24,13 @@
     <fill_query>INSERT INTO lazy_join_other SELECT number, repeat(randomPrintableASCII(50), 4) FROM numbers_mt(50000)</fill_query>
     <fill_query>OPTIMIZE TABLE lazy_join_facts FINAL</fill_query>
 
-    <!-- ORDER BY ... LIMIT over a join: the payload of both sides is read for the rows of the LIMIT only. With a much
+    <!-- ORDER BY ... LIMIT over a join, with LIMIT 10, 100 and 1000 (below the default query_plan_max_limit_for_lazy_materialization,
+         10000): the payload of both sides is read for the rows of the LIMIT only. With a much
          larger LIMIT the rows of the LIMIT, spread at random by `ts`, touch most granules, so the lazy read reads the
          payload a second time, as for a single table. -->
     <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 10 FORMAT Null</query>
     <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 100 FORMAT Null</query>
+    <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 1000 FORMAT Null</query>
 
     <!-- A LIMIT without ORDER BY, with a filter on the dimension that keeps one key in every 100000 rows, as many rows
          as the LIMIT, so that the joins go through the whole fact table: the payload of those rows is not read. -->
@@ -52,11 +54,11 @@
          `parallel_hash` and `hash` because older versions pick the layout by the threshold only when both are listed.
          `query_plan_optimize_join_order_limit = 0` leaves both joins without a row estimate, so both hash tables are
          built in parallel. -->
-    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS join_algorithm = 'parallel_hash,hash', parallel_hash_join_threshold = 100000 FORMAT Null</query>
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS join_algorithm = 'parallel_hash,hash', hash_join_layout = 'auto', parallel_hash_join_threshold = 100000 FORMAT Null</query>
 
     <!-- The same with `hash` alone. Older versions always build `hash` serially, so they run this query faster, by the
          cost of a parallel build of these small tables. -->
-    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS parallel_hash_join_threshold = 100000 FORMAT Null</query>
+    <query>SELECT f.k, f.payload, d.descr, o.info FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key JOIN lazy_join_other o ON f.other_key = o.other_key ORDER BY f.ts LIMIT 100 SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 100000 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS lazy_join_facts</drop_query>
     <drop_query>DROP TABLE IF EXISTS lazy_join_dim</drop_query>
