@@ -1,3 +1,7 @@
+-- Tags: no-replicated-database
+-- The barrier case uses `UPDATE`, `DROP COLUMN`, `UPDATE` in one `ALTER`,
+-- which a `Replicated` database rejects before dispatching the mutation.
+
 DROP TABLE IF EXISTS test_05814_off;
 DROP TABLE IF EXISTS test_05814_on;
 DROP TABLE IF EXISTS test_05814_fallback;

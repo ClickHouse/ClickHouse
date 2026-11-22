@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# The barrier case uses `UPDATE`, `DROP COLUMN`, `UPDATE` in one `ALTER`;
+# a `Replicated` database rejects the mixed commands before mutation dispatch.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
