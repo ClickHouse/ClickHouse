@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ORC/ColumnReader.h>
+#include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
@@ -74,7 +75,7 @@ public:
         rle.next(reinterpret_cast<char *>(data.data()), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle.seek(positions.at(column_id));
@@ -114,7 +115,7 @@ public:
         rle->next(data.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -168,7 +169,7 @@ public:
             out[i] = not_null[i] ? out[--next_value] : 0;
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         stream->seek(positions.at(column_id));
@@ -285,7 +286,7 @@ public:
         readIndex(dynamic_cast<EncodedStringVectorBatch &>(batch), num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -345,7 +346,7 @@ public:
         string_batch.column = readStrings(*length_rle, *blob_stream, num_values, batch.hasNulls ? batch.notNull.data() : nullptr, column_id);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -365,7 +366,10 @@ public:
         : ColumnReader(type, stripe)
         , writer_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getWriterTimezone())
         , reader_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getReaderTimezone())
-        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone())
+        , writer_offset_of(writer_timezone)
+        , reader_offset_of(reader_timezone)
+        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone()
+              || (writer_offset_of.fixedOffset() && writer_offset_of.fixedOffset() == reader_offset_of.fixedOffset()))
     {
         /// The base of the seconds is 2015-01-01 00:00:00 in the time zone of the writer.
         static constexpr Int64 UTC_2015_01_01 = 1420070400;
@@ -421,15 +425,15 @@ public:
             if (!same_timezone)
             {
                 /// Keep the same wall clock time when the writer and the reader time zones differ.
-                Int64 writer_offset = writer_timezone.timezoneOffset(writer_time);
-                Int64 reader_offset = reader_timezone.timezoneOffset(writer_time);
+                Int64 writer_offset = writer_offset_of(writer_time);
+                Int64 reader_offset = reader_offset_of(writer_time);
                 if (writer_offset != reader_offset)
                 {
                     /// If the adjustment crosses a DST boundary, the offset has to be reevaluated.
                     Int64 adjusted_time = 0;
                     if (common::addOverflow(writer_time, writer_offset - reader_offset, adjusted_time))
                         throwInvalidTimestamp(seconds[i], encoded_nanos);
-                    Int64 adjusted_reader_offset = reader_timezone.timezoneOffset(adjusted_time);
+                    Int64 adjusted_reader_offset = reader_offset_of(adjusted_time);
                     if (common::addOverflow(writer_time, writer_offset - adjusted_reader_offset, writer_time))
                         throwInvalidTimestamp(seconds[i], encoded_nanos);
                 }
@@ -438,7 +442,7 @@ public:
         }
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -456,6 +460,8 @@ private:
 
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
+    const TimezoneOffset writer_offset_of;
+    const TimezoneOffset reader_offset_of;
     const bool same_timezone;
     Int64 epoch_offset = 0;
     std::unique_ptr<IntRleDecoder> seconds_rle;
@@ -516,7 +522,7 @@ public:
         return num_values;
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         auto & provider = positions.at(column_id);
@@ -544,7 +550,7 @@ protected:
 
     /// The scale of each value is read from the file. The valid scales are from 0 to 38, the bound
     /// also keeps the differences of the scales and the rescaling work small.
-    Int32 getValueScale(Int64 value_scale) const
+    [[nodiscard]] Int32 getValueScale(Int64 value_scale) const
     {
         if (value_scale < -Int64(MAX_PRECISION_128) || value_scale > Int64(MAX_PRECISION_128))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Decimal scale {} is out of range in ORC column {}", value_scale, column_id);
@@ -675,7 +681,7 @@ public:
         value_decoder->next(decimal_batch.values.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         value_decoder->seek(positions.at(column_id));
@@ -779,7 +785,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         for (auto & child : children)
@@ -802,7 +808,7 @@ private:
         }
     }
 
-    std::vector<std::unique_ptr<ColumnReader>> children;
+    VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
 };
 
 /// Reads the lengths of the lists or maps as the end offsets, returns the total number of the children.
@@ -871,7 +877,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -944,7 +950,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle->seek(positions.at(column_id));
@@ -1033,7 +1039,7 @@ public:
         nextImpl<true>(batch, num_values, incoming_mask);
     }
 
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
+    void seekToRowGroup(RowGroupPositions & positions) override
     {
         ColumnReader::seekToRowGroup(positions);
         rle.seek(positions.at(column_id));
@@ -1043,7 +1049,7 @@ public:
     }
 
 private:
-    size_t checkedTag(UInt8 tag) const
+    [[nodiscard]] size_t checkedTag(UInt8 tag) const
     {
         if (tag >= num_children)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid union tag {} for union with {} children in ORC column {}", static_cast<UInt32>(tag), num_children, column_id);
@@ -1082,8 +1088,8 @@ private:
 
     ByteRleDecoder rle;
     const size_t num_children;
-    std::vector<std::unique_ptr<ColumnReader>> children;
-    std::vector<UInt64> counts;
+    VectorWithMemoryTracking<std::unique_ptr<ColumnReader>> children;
+    VectorWithMemoryTracking<UInt64> counts;
 };
 
 }
@@ -1136,7 +1142,7 @@ size_t ColumnReader::skip(size_t num_values)
     return num_values;
 }
 
-void ColumnReader::seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions)
+void ColumnReader::seekToRowGroup(RowGroupPositions & positions)
 {
     if (not_null_decoder)
     {

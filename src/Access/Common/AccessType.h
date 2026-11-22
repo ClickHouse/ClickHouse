@@ -153,14 +153,14 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType : uint16_t
 {
-/// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
+/// Macros M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
 /// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
-#define APPLY_FOR_ACCESS_TYPES(M) \
+#define APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M_OBSOLETE) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
     M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
@@ -171,7 +171,7 @@ enum class AccessType : uint16_t
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
     M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
-    M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
+    M(SHOW_FILESYSTEM_CACHES, "", GLOBAL, ALL) /* allows to execute SHOW FILESYSTEM CACHES, DESCRIBE FILESYSTEM CACHE and SELECT from system.filesystem_cache_settings */\
     \
     M(SELECT, "", COLUMN, ALL) \
     M(INSERT, "", COLUMN, ALL) \
@@ -228,7 +228,7 @@ enum class AccessType : uint16_t
     \
     M(ALTER_DATABASE_SETTINGS, "ALTER DATABASE SETTING, ALTER MODIFY DATABASE SETTING, MODIFY DATABASE SETTING", DATABASE, ALTER_DATABASE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute ALTER NAMED COLLECTION */\
-    M(ALTER_HANDLER, "", GLOBAL, ALTER) /* allows to execute ALTER HANDLER */\
+    M(ALTER_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute ALTER HANDLER */\
     \
     M(ALTER_TABLE, "", GROUP, ALTER) \
     M(ALTER_DATABASE, "", GROUP, ALTER) \
@@ -253,10 +253,10 @@ enum class AccessType : uint16_t
     M(CREATE_TEMPORARY_VIEW, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
                                                      implicitly enabled by the grant CREATE_VIEW on any table */ \
     M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
-    M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
-    M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
+    M(CREATE_WORKLOAD, "", GLOBAL, ALL) /* allows to execute CREATE WORKLOAD */ \
+    M(CREATE_RESOURCE, "", GLOBAL, ALL) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
-    M(CREATE_HANDLER, "", GLOBAL, CREATE) /* allows to execute CREATE HANDLER */ \
+    M(CREATE_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute CREATE HANDLER */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
@@ -265,10 +265,10 @@ enum class AccessType : uint16_t
                                     implicitly enabled by the grant DROP_TABLE */\
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
     M(DROP_FUNCTION, "", GLOBAL, DROP) /* allows to execute DROP FUNCTION */\
-    M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
-    M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
+    M(DROP_WORKLOAD, "", GLOBAL, ALL) /* allows to execute DROP WORKLOAD */\
+    M(DROP_RESOURCE, "", GLOBAL, ALL) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
-    M(DROP_HANDLER, "", GLOBAL, DROP) /* allows to execute DROP HANDLER */\
+    M(DROP_HANDLER, "", GLOBAL, HANDLER_ADMIN) /* allows to execute DROP HANDLER */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(UNDROP_TABLE, "", TABLE, ALL) /* allows to execute {UNDROP} TABLE */\
@@ -319,7 +319,8 @@ enum class AccessType : uint16_t
     M(SHOW_NAMED_COLLECTIONS_SECRETS, "SHOW NAMED COLLECTIONS SECRETS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
-    M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, ALL) /* allows to see SQL-defined HTTP handlers in system.handlers */\
+    M(SHOW_HANDLERS, "SHOW HANDLER", GLOBAL, HANDLER_ADMIN) /* allows to see SQL-defined HTTP handlers in system.handlers */\
+    M(HANDLER_ADMIN, "", GROUP, ALL) /* allows to create, alter, drop and see SQL-defined HTTP handlers */\
     M(SHOW_CONNECTIONS, "SHOW CONNECTION", GLOBAL, ALL) /* lets a user see the connections of all users in system.connections */\
     M(SET_DEFINER, "", DEFINER, ALL) \
     \
@@ -340,7 +341,7 @@ enum class AccessType : uint16_t
     M(SYSTEM_DROP_STATISTICS_CACHE, "SYSTEM CLEAR STATISTICS CACHE, DROP STATISTICS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_COLUMNS_CACHE, "SYSTEM CLEAR COLUMNS CACHE, SYSTEM DROP COLUMNS CACHE, DROP COLUMNS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_UNCOMPRESSED_CACHE, "SYSTEM CLEAR UNCOMPRESSED CACHE, SYSTEM DROP UNCOMPRESSED, DROP UNCOMPRESSED CACHE, DROP UNCOMPRESSED", GLOBAL, SYSTEM_DROP_CACHE) \
-    M(SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, "SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE, SYSTEM DROP VECTOR SIMILARITY INDEX CACHE, DROP VECTOR SIMILARITY INDEX CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, "SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE, SYSTEM DROP VECTOR SIMILARITY INDEX CACHE, DROP VECTOR SIMILARITY INDEX CACHE", TABLE, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE, "SYSTEM CLEAR TEXT INDEX TOKENS CACHE, SYSTEM DROP TEXT INDEX TOKENS CACHE, DROP TEXT INDEX TOKENS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE, "SYSTEM CLEAR TEXT INDEX HEADER CACHE, SYSTEM DROP TEXT INDEX HEADER CACHE, DROP TEXT INDEX HEADER CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE, "SYSTEM CLEAR TEXT INDEX POSTINGS CACHE, SYSTEM DROP TEXT INDEX POSTINGS CACHE, DROP TEXT INDEX POSTINGS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
@@ -362,8 +363,8 @@ enum class AccessType : uint16_t
     M(SYSTEM_RELOAD_CONFIG, "RELOAD CONFIG", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_USERS, "RELOAD USERS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_DICTIONARY, "SYSTEM RELOAD DICTIONARIES, RELOAD DICTIONARY, RELOAD DICTIONARIES, SYSTEM UNLOAD DICTIONARY, SYSTEM UNLOAD DICTIONARIES, UNLOAD DICTIONARY, UNLOAD DICTIONARIES", GLOBAL, SYSTEM_RELOAD) \
-    /* The CatBoost integration is removed, but the privilege is kept in place, so that access entities granted before the removal still parse after an upgrade, and so that the numeric values of the other access types in `system.privileges` and `system.grants` do not change. */ \
-    M(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, SYSTEM_RELOAD) \
+    /* The CatBoost integration is removed, but the privilege is kept in place, so that access entities granted before the removal still parse after an upgrade, and so that the numeric values of the other access types in `system.privileges` and `system.grants` do not change. It must stay at this position also so that it remains a member of the `SYSTEM RELOAD`, `SYSTEM`, and `ALL` groups. */ \
+    M_OBSOLETE(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_FUNCTION, "SYSTEM RELOAD FUNCTIONS, RELOAD FUNCTION, RELOAD FUNCTIONS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_EMBEDDED_DICTIONARIES, "RELOAD EMBEDDED DICTIONARIES", GLOBAL, SYSTEM_RELOAD) /* implicitly enabled by the grant SYSTEM_RELOAD_DICTIONARY ON *.* */\
     M(SYSTEM_RELOAD_ASYNCHRONOUS_METRICS, "RELOAD ASYNCHRONOUS METRICS", GLOBAL, SYSTEM_RELOAD) \
@@ -387,6 +388,10 @@ enum class AccessType : uint16_t
     M(SYSTEM_VIRTUAL_PARTS_UPDATE, "SYSTEM STOP VIRTUAL PARTS UPDATE, SYSTEM START VIRTUAL PARTS UPDATE, STOP VIRTUAL PARTS UPDATE, START VIRTUAL PARTS UPDATE", TABLE, SYSTEM) \
     M(SYSTEM_REDUCE_BLOCKING_PARTS, "SYSTEM STOP REDUCE BLOCKING PARTS, SYSTEM START REDUCE BLOCKING PARTS, STOP REDUCE BLOCKING PARTS, START REDUCE BLOCKING PARTS", TABLE, SYSTEM) \
     M(SYSTEM_DROP_REPLICA, "DROP REPLICA", TABLE, SYSTEM) \
+    M(SYSTEM_DROP_AMBER_NODE, "DROP AMBER NODE", GLOBAL, SYSTEM) \
+    M(SYSTEM_ALLOCATE_AMBER_VOLUME, "ALLOCATE AMBER VOLUME", GLOBAL, SYSTEM) \
+    M(SYSTEM_CREATE_AMBER_VOLUME, "CREATE AMBER VOLUME", GLOBAL, SYSTEM) \
+    M(SYSTEM_DROP_AMBER_VOLUME, "DROP AMBER VOLUME", GLOBAL, SYSTEM) \
     M(SYSTEM_SYNC_REPLICA, "SYNC REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_REPLICA_READINESS, "SYSTEM REPLICA READY, SYSTEM REPLICA UNREADY", GLOBAL, SYSTEM) \
     M(SYSTEM_RESTART_REPLICA, "RESTART REPLICA", TABLE, SYSTEM) \
@@ -471,6 +476,9 @@ enum class AccessType : uint16_t
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
+/// Applies M to all access types, including the obsolete ones.
+#define APPLY_FOR_ACCESS_TYPES(M) APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M)
+
 #define DECLARE_ACCESS_TYPE_ENUM_CONST(name, aliases, node_type, parent_group_name) \
     name,
 
@@ -480,5 +488,7 @@ enum class AccessType : uint16_t
 
 
 std::string_view toString(AccessType type);
+
+bool isObsolete(AccessType type);
 
 }

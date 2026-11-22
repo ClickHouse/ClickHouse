@@ -457,17 +457,32 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Tabularis">
-  [Tabularis](https://github.com/TabularisDB/tabularis) هو مساحة عمل مكتبية مفتوحة المصدر للعمل بـ SQL على Windows وmacOS وLinux، ومرخّص بموجب Apache 2.0. ويأتي دعم ClickHouse من plugin رسمي يُثبَّت من داخل التطبيق، ويتواصل مع HTTP interface (`8123`، أو `8443` with TLS) عبر عميل الـ `clickhouse` المكتوب بلغة Rust.
+  [Tabularis](https://github.com/TabularisDB/tabularis) هو مساحة عمل مكتبية مفتوحة المصدر للعمل بـ SQL على Windows وmacOS وLinux، ومرخّص بموجب Apache 2.0. ويأتي دعم ClickHouse من plugin رسمي يُثبَّت من داخل التطبيق، ويتواصل مع واجهة HTTP (`8123`، أو `8443` مع تفعيل TLS) عبر عميل الـ `clickhouse` المكتوب بلغة Rust.
 
   الميزات:
 
-  * استعراض قواعد البيانات والجداول والعروض مع أنواع ClickHouse الـ native، بما في ذلك data-skipping indexes مع نوعها وأعمدتها وgranularity الخاصة بها.
+  * استعراض قواعد البيانات والجداول والعروض مع أنواع ClickHouse الـ Native، بما في ذلك data-skipping indexes مع نوعها وأعمدتها وgranularity الخاصة بها.
   * محرر SQL مبني على Monaco، مع الإكمال التلقائي وتنفيذ عبارات متعددة ونتائج مقسّمة على صفحات.
   * عمليات insert وupdate وdelete بشكل Inline من شبكة البيانات؛ وتوليد DDL لـ `CREATE TABLE` و`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` و`ADD INDEX`.
-  * MCP server مدمج، بحيث يمكن لـ وكلاء AI قراءة الـ المخطط وتشغيل الاستعلامات من التطبيق نفسه.
+  * خادم MCP مدمج، بحيث يمكن لـ وكلاء AI قراءة الـ المخطط وتشغيل الاستعلامات من التطبيق نفسه.
   * ClickHouse جنبًا إلى جنب مع PostgreSQL وMySQL وSQLite وDuckDB وRedis وMongoDB وغيرها من الـ محركات في window واحدة.
 
   [plugin ClickHouse لـ Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [الموقع الإلكتروني](https://tabularis.dev)
+</Accordion>
+
+<Accordion title="DBine">
+  [DBine](https://github.com/addlayer-io/dbine) هو مدير قواعد بيانات مكتبي مجاني ومفتوح المصدر (Apache 2.0) لأنظمة Windows وmacOS وLinux. يتصل بـ ClickHouse عبر واجهة HTTP (`8123`، أو `8443` مع تفعيل TLS)، إلى جانب أكثر من 130 قاعدة بيانات وخدمة سحابية في النافذة نفسها.
+
+  الميزات:
+
+  * محرر SQL يدعم لهجة ClickHouse، مع الإكمال التلقائي لأسماء الجداول والأعمدة، وإمكانية إلغاء الاستعلامات باستخدام `KILL QUERY`.
+  * استعراض قواعد البيانات والجداول والعروض والأعمدة، مع شبكات لعرض النتائج ورسوم بيانية وإمكانية التصدير إلى CSV وJSON وXLSX وSQL.
+  * مصمم جداول يدعم `ENGINE` و`ORDER BY` و`PARTITION BY` وTTL والمرمِّزات؛ وتُحوَّل تعديلات الخلايا إلى عمليات `ALTER TABLE ... UPDATE` تراجعها قبل تشغيلها.
+  * خطط الاستعلام عبر `EXPLAIN json = 1, indexes = 1`، وقائمة بالعمليات الجارية من `system.processes`، وأداة لتحليل الأداء مبنية على `system.query_log`.
+  * مقارنة المخططات ومقارنة البيانات، ودفاتر ملاحظات تستعلم من عدة قواعد بيانات وتدمج نتائجها باستخدام DuckDB.
+  * أنفاق SSH، وجلب كلمات المرور من أدوات إدارة الأسرار، واتصالات للقراءة فقط، وخادم MCP، ومساعد ذكاء اصطناعي يقترح الاستعلامات ولا ينفّذ شيئًا قبل موافقتك.
+
+  [الموقع الإلكتروني](https://dbine.com) · [التنزيل](https://github.com/addlayer-io/dbine/releases)
 </Accordion>
 
 ## تجاري {#commercial}
