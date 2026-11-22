@@ -478,8 +478,7 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
      {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES},
-     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS},
-     {"with_subcolumns", MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS}})
+     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,
