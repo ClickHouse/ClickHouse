@@ -33,3 +33,7 @@ clickhouse_add_microbenchmark(benchmark_sched_getcpu
 clickhouse_add_microbenchmark(benchmark_sip_hash_strings
     SOURCES sip_hash_strings.cpp
     LIBRARIES clickhouse_common_io)
+
+clickhouse_add_microbenchmark(benchmark_thread_pool
+    SOURCES thread_pool.cpp
+    LIBRARIES dbms)
