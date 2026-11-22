@@ -74,7 +74,8 @@ public:
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
         bool read_with_direct_io_,
-        bool allow_remote_fs_prefetch);
+        bool allow_remote_fs_prefetch,
+        bool keep_replicated_columns_);
 
     ~MergeTreeSequentialSource() override;
 
@@ -107,6 +108,10 @@ private:
     /// Should read using direct IO
     bool read_with_direct_io;
 
+    /// Whether a `String` column with dictionary granules is returned as the `ColumnReplicated` it is read
+    /// into.
+    bool keep_replicated_columns;
+
     /// Current mark at which we stop reading
     size_t current_mark = 0;
 
@@ -125,7 +130,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
     bool read_with_direct_io_,
-    bool allow_remote_fs_prefetch)
+    bool allow_remote_fs_prefetch,
+    bool keep_replicated_columns_)
     : ISource(std::move(result_header))
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
@@ -133,6 +139,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , mark_ranges(std::move(mark_ranges_).value_or(MarkRanges{MarkRange(0, read_task_info->data_part_info->getMarksCount())}))
     , mark_cache(storage.getContext()->getMarkCache())
     , read_with_direct_io(read_with_direct_io_)
+    , keep_replicated_columns(keep_replicated_columns_)
 {
     const auto data_part = read_task_info->data_part_info->getDataPart();
     /// This source is only used for background merges/mutations, never the stateless-worker read
@@ -304,6 +311,12 @@ try
         auto pos = reader_header.getPositionByName(name);
         auto & result_column = result_columns.emplace_back(std::move(read_result.columns[pos]));
 
+        /// A `String` column with dictionary granules is read as a `ColumnReplicated`. A merge whose
+        /// algorithm only moves rows keeps it, so that the writer builds the dictionaries from its positions;
+        /// other merges and mutations process plain columns.
+        if (!keep_replicated_columns)
+            result_column = result_column->convertToFullColumnIfReplicated();
+
         /// When read_task_info->merged_part_offsets we need to adjust parent part offset in projection because it will
         /// be different when parent has order by column and merge will change order of rows.
         if (read_task_info->merged_part_offsets && read_task_info->data_part_info->isProjectionPart() && name == "_parent_part_offset")
@@ -378,7 +391,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool allow_remote_fs_prefetch)
+    bool allow_remote_fs_prefetch,
+    bool keep_replicated_columns)
 {
     auto info = std::make_shared<MergeTreeReadTaskInfo>();
     info->alter_conversions = std::move(alter_conversions);
@@ -438,7 +452,8 @@ Pipe createMergeTreeSequentialSource(
         std::move(info),
         std::move(mark_ranges),
         read_with_direct_io,
-        allow_remote_fs_prefetch);
+        allow_remote_fs_prefetch,
+        keep_replicated_columns);
 
     Pipe pipe(std::move(column_part_source));
 
@@ -476,6 +491,7 @@ public:
         std::optional<ActionsDAG> filter_,
         bool read_with_direct_io_,
         bool allow_remote_fs_prefetch_,
+        bool keep_replicated_columns_,
         ContextPtr context_,
         LoggerPtr log_)
         : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
@@ -491,6 +507,7 @@ public:
         , filter(std::move(filter_))
         , read_with_direct_io(read_with_direct_io_)
         , allow_remote_fs_prefetch(allow_remote_fs_prefetch_)
+        , keep_replicated_columns(keep_replicated_columns_)
         , context(std::move(context_))
         , log(log_)
     {
@@ -540,7 +557,8 @@ public:
             filtered_rows_count,
             apply_deleted_mask,
             read_with_direct_io,
-            allow_remote_fs_prefetch);
+            allow_remote_fs_prefetch,
+            keep_replicated_columns);
 
         pipeline.init(Pipe(std::move(source)));
     }
@@ -560,6 +578,7 @@ public:
             filter.has_value() ? std::make_optional(filter->clone()) : std::nullopt,
             read_with_direct_io,
             allow_remote_fs_prefetch,
+            keep_replicated_columns,
             context,
             log);
     }
@@ -577,6 +596,7 @@ private:
     const std::optional<ActionsDAG> filter;
     const bool read_with_direct_io;
     const bool allow_remote_fs_prefetch;
+    const bool keep_replicated_columns;
     const ContextPtr context;
     const LoggerPtr log;
 };
@@ -596,7 +616,8 @@ void createReadFromPartStep(
     bool read_with_direct_io,
     bool allow_remote_fs_prefetch,
     ContextPtr context,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool keep_replicated_columns)
 {
     auto reading = std::make_unique<ReadFromPart>(
         type,
@@ -611,6 +632,7 @@ void createReadFromPartStep(
         std::move(filter),
         read_with_direct_io,
         allow_remote_fs_prefetch,
+        keep_replicated_columns,
         std::move(context),
         log);
 

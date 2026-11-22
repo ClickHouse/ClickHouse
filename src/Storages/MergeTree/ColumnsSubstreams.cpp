@@ -205,6 +205,19 @@ ColumnsSubstreams ColumnsSubstreams::merge(const ColumnsSubstreams & left, const
     return merged;
 }
 
+ColumnsSubstreams ColumnsSubstreams::withoutSubstreams(const std::unordered_set<String> & substreams) const
+{
+    ColumnsSubstreams result;
+    for (const auto & entry : columns_substreams)
+    {
+        result.addColumn(entry->column);
+        for (const auto & substream : entry->substreams)
+            if (!substreams.contains(substream))
+                result.addSubstreamToLastColumn(substream);
+    }
+    return result;
+}
+
 void ColumnsSubstreams::writeText(WriteBuffer & buf) const
 {
     writeString("columns substreams version: 1\n", buf);

@@ -629,6 +629,7 @@ public:
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
+    bool supportsReplicatedStringColumns() const override { return true; }
     bool supportsPinnedSnapshot() const override { return true; }
 
     bool supportsLightweightDelete() const override;

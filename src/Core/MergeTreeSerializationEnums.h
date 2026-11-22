@@ -16,6 +16,9 @@ enum class MergeTreeStringSerializationVersion : uint8_t
 {
     SINGLE_STREAM = 0,
     WITH_SIZE_STREAM = 1,
+    /// Each granule of a top-level `String` column of a `Wide` part is stored either as in `WITH_SIZE_STREAM` or as a
+    /// sorted dictionary of its distinct values plus one code per row. Nested strings use `WITH_SIZE_STREAM`.
+    WITH_DICTIONARIES = 2,
 };
 
 enum class MergeTreeNullableSerializationVersion : uint8_t

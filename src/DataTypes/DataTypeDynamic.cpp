@@ -64,7 +64,7 @@ Field DataTypeDynamic::getDefault() const
 SerializationPtr DataTypeDynamic::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     if (settings.propagate_types_serialization_versions_to_nested_types)
-        return SerializationDynamic::create(max_dynamic_types, settings);
+        return SerializationDynamic::create(max_dynamic_types, settings.forNestedTypes());
     return SerializationDynamic::create(max_dynamic_types);
 }
 

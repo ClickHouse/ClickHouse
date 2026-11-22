@@ -152,6 +152,16 @@ BuildTextIndexTransform::BuildTextIndexTransform(
 void BuildTextIndexTransform::transform(Chunk & chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+    /// An index reads the value of every row of its columns, and a `String` column with dictionary granules
+    /// is read as a `ColumnReplicated`. The other columns of the chunk pass on as they are.
+    for (const auto & index : indexes)
+    {
+        for (const auto & column_name : index->index.column_names)
+        {
+            if (auto * column = block.findByName(column_name))
+                column->column = column->column->convertToFullColumnIfReplicated();
+        }
+    }
     aggregate(block);
 }
 

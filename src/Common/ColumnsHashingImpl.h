@@ -93,6 +93,51 @@ constexpr size_t min_rows_to_batch_pack_sub_range = 256;
 namespace columns_hashing_impl
 {
 
+/// Counts the rows of a block by the position they name in a column of values, for the key states whose rows are
+/// positions: `HashMethodSingleLowCardinalityColumn` over the dictionary of a `LowCardinality` column and
+/// `HashMethodPackedString` over the nested column of a replicated one. It keeps its scratch between blocks.
+class PositionCounter
+{
+public:
+    /// Calls `f(first_row, count)` once for every position that `indexes[row]` names for the rows [row_begin, row_end),
+    /// in the order of their first rows, with the number of those rows. The caller guarantees that every index is
+    /// below `num_positions` and that the range holds at most `UInt32` max rows.
+    template <typename Indexes, typename F>
+    void forEach(const Indexes & indexes, size_t num_positions, size_t row_begin, size_t row_end, F && f)
+    {
+        if (counts.size() < num_positions)
+        {
+            counts.resize_fill(num_positions, 0);
+            first_rows.resize(num_positions);
+        }
+
+        counted.clear();
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            const auto position = indexes[row];
+            if (counts[position]++ == 0)
+            {
+                first_rows[position] = static_cast<UInt32>(row - row_begin);
+                counted.push_back(static_cast<UInt32>(position));
+            }
+        }
+
+        for (const UInt32 position : counted)
+        {
+            const UInt32 count = counts[position];
+            counts[position] = 0;
+            f(row_begin + first_rows[position], count);
+        }
+    }
+
+private:
+    /// Per position: the row count, which is zero between calls, and the first row relative to the range.
+    PaddedPODArray<UInt32> counts;
+    PaddedPODArray<UInt32> first_rows;
+    /// The positions that a call counted.
+    PaddedPODArray<UInt32> counted;
+};
+
 struct LastElementCacheBase
 {
     bool empty = true;

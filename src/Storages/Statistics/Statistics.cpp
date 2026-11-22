@@ -330,8 +330,11 @@ ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_des
 void ColumnStatistics::build(const ColumnPtr & column)
 {
     rows += column->size();
+    /// The statistics read the value of every row, and a `String` column with dictionary granules is read as
+    /// a `ColumnReplicated`.
+    const ColumnPtr full_column = column->convertToFullColumnIfReplicated();
     for (const auto & stat : stats)
-        stat.second->build(column);
+        stat.second->build(full_column);
 }
 
 void ColumnStatistics::merge(const ColumnStatisticsPtr & other)

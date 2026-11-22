@@ -366,6 +366,11 @@ public:
     /// Returns true if storage can store columns in sparse serialization.
     virtual bool supportsSparseSerialization() const { return false; }
 
+    /// Returns true if the sink of `write` takes `String` columns in the replicated representation
+    /// (`ColumnReplicated` over `ColumnString`), as `String` columns with dictionary granules are read,
+    /// without their rows materialized first. Replicated columns of other types reach no sink.
+    virtual bool supportsReplicatedStringColumns() const { return false; }
+
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
     /// 'storage_snapshot' may be nullptr.

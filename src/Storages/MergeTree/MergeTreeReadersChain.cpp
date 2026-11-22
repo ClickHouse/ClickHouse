@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
+#include <Columns/ColumnReplicated.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
@@ -591,6 +592,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 {
     auto * merge_tree_reader = range_reader.getReader();
     const auto * prewhere_info = range_reader.getPrewhereInfo();
+
+    /// A `String` column with dictionary granules is read as a `ColumnReplicated`. When the read met only
+    /// plain granules, the column is its nested column, and the operators get a plain one.
+    for (auto & column : read_columns)
+        if (column)
+            column = removeIdentityReplication(column);
 
     merge_tree_reader->fillVirtualColumns(read_columns, num_read_rows);
 

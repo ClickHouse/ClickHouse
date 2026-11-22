@@ -120,6 +120,11 @@ void Squashing::add(Chunk && input_chunk)
 {
     if (!input_chunk || input_chunk.getNumRows() == 0)
         return;
+
+    /// A buffered chunk is compacted when it enters the buffer, as in the other transforms that buffer
+    /// chunks: a replicated column keeps the nested values that a filter left without rows, which the buffer
+    /// would hold and concatenation copy.
+    compactReplicatedColumns(input_chunk);
     pending.pushBack(std::move(input_chunk));
 }
 
@@ -302,6 +307,8 @@ Chunk Squashing::squashWithoutChunkInfo(Chunks && input_chunks)
     data.reserve(input_chunks.size());
     for (auto & chunk : input_chunks)
     {
+        /// The caller buffered the chunks, so they are compacted here (see `add`).
+        compactReplicatedColumns(chunk);
         size_t rows = chunk.getNumRows();
         data.emplace_back(std::move(chunk), 0, rows);
     }

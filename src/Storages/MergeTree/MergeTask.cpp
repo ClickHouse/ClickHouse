@@ -1067,6 +1067,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    info_settings = info_settings.forPartType(global_ctx->future_part->part_format.part_type);
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     for (const auto & part : global_ctx->future_part->parts)
@@ -2294,7 +2295,8 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             ctx->read_with_direct_io,
             allow_remote_fs_prefetch,
             global_ctx->context,
-            getLogger("VerticalMergeStage"));
+            getLogger("VerticalMergeStage"),
+            /*keep_replicated_columns=*/ global_ctx->new_data_part->getSerialization(column_name)->supportsReplicatedColumns());
 
 
         /// Add step for building missed text indexes and statistics for single parts.
@@ -3754,7 +3756,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             ctx->read_with_direct_io,
             allow_remote_fs_prefetch,
             global_ctx->context,
-            ctx->log);
+            ctx->log,
+            /*keep_replicated_columns=*/ global_ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary);
 
         /// Add step for building missed text indexes and statistics for single parts.
         /// If merge may reduce rows, we will rebuild index and statistics

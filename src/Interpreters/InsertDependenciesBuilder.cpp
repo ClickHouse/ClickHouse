@@ -1935,8 +1935,9 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
 
     Chain result;
 
-    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
-    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(header));
+    /// Add transform to remove Replicated columns, except the `String` ones of a storage that writes them as
+    /// they are.
+    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(header, inner_storage->supportsReplicatedStringColumns()));
 
     /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
     /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
@@ -2267,7 +2268,8 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
 
     const auto & view_id = path.back();
 
-    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
+    /// Add transform to remove Replicated columns before `SelectPartitionTransform`, all of them, as
+    /// `createSinkImpl` does for a storage that does not write them.
     result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(output_headers.at(view_id)));
 
     result.addSink(

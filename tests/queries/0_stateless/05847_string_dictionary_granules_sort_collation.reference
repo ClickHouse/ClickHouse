@@ -1,0 +1,4 @@
+one column	1
+one column, then id, limit	1
+one column, limit	1
+after a nearly unique key	1

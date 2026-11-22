@@ -2,6 +2,8 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnsCommon.h>
+#include <cmath>
 #include <Common/HashTable/HashMap.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -143,6 +145,32 @@ ColumnReplicated::InsertionCache & ColumnReplicated::getInsertionCache()
 void ColumnReplicated::dropInsertionCache()
 {
     insertion_cache.reset();
+}
+
+ColumnPtr ColumnReplicated::getUsedValues(size_t offset, size_t limit) const
+{
+    if (offset > size() || limit > size() - offset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Range [{}, {}) is out of bounds of ColumnReplicated of {} rows", offset, offset + limit, size());
+
+    auto positions = ColumnUInt64::create();
+    auto & positions_data = positions->getData();
+    PaddedPODArray<UInt8> seen(nested_column->size(), 0);
+    auto collect = [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
+    {
+        for (size_t row = offset; row < offset + limit; ++row)
+        {
+            const IndexType index = data[row];
+            if (!seen[index])
+            {
+                seen[index] = 1;
+                positions_data.push_back(index);
+            }
+        }
+    };
+
+    indexes.callForIndexesData(collect);
+
+    return nested_column->index(*positions, 0);
 }
 
 size_t ColumnReplicated::getOrInsertSourceRow(const ColumnReplicated & src, size_t src_row)
@@ -311,11 +339,39 @@ ColumnPtr convertToFullColumnArray(const ColumnArray & src, const IColumn & row_
 
 }
 
+namespace
+{
+
+bool isIdentityIndexes(const IColumn & indexes)
+{
+    return ColumnIndex::callForIndexesData(indexes, [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
+    {
+        for (size_t i = 0; i != data.size(); ++i)
+        {
+            if (static_cast<UInt64>(data[i]) != i)
+                return false;
+        }
+        return true;
+    });
+}
+
+}
+
+bool ColumnReplicated::hasIdentityIndexes() const
+{
+    return nested_column->size() == size() && isIdentityIndexes(*indexes.getIndexes());
+}
+
 /// The generic index path (nested_column->index()) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
 /// For ColumnArray, the convertToFullColumnArray is called instead, so each array is copied once per row instead of per-element
 /// Range copying pays one virtual call to insertRangeFrom per row; the generic path pays 8 bytes of scratch memory and one write element
 ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
+    /// Indexes 0, 1, ..., size - 1 make the nested column the full column, as for a `String` column read from a part
+    /// whose granules are all plain.
+    if (hasIdentityIndexes())
+        return nested_column;
+
     if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
     {
         /// Per-array materialization
@@ -344,6 +400,55 @@ char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const
     return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
 }
 
+void ColumnReplicated::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+{
+    if (empty())
+        return;
+
+    const size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    /// A nested column with more values than the block has rows, as after a filter, would cost more to size
+    /// whole than the rows that use it, as `ColumnLowCardinality::collectSerializedValueSizes` notes for its
+    /// dictionary.
+    if (nested_column->size() > rows && nested_column->getSerializedValueSize(indexes.getIndexAt(0), settings))
+    {
+        indexes.callForIndexesData([&](const auto & data)
+        {
+            for (size_t i = 0; i < rows; ++i)
+                sizes[i] += is_null ? 1 + (is_null[i] ? 0 : *nested_column->getSerializedValueSize(data[i], settings))
+                                    : *nested_column->getSerializedValueSize(data[i], settings);
+        });
+        return;
+    }
+
+    PaddedPODArray<UInt64> nested_sizes;
+    nested_column->collectSerializedValueSizes(nested_sizes, nullptr, settings);
+    if (!is_null)
+    {
+        indexes.collectSerializedValueSizes(sizes, nested_sizes);
+        return;
+    }
+
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            sizes[i] += 1 + (is_null[i] ? 0 : nested_sizes[data[i]]);
+    });
+}
+
+void ColumnReplicated::batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
+{
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (size_t i = 0; i < memories.size(); ++i)
+            memories[i] = nested_column->serializeValueIntoMemory(data[start_row + i], memories[i], settings);
+    });
+}
+
 std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     return nested_column->getSerializedValueSize(indexes.getIndexAt(n), settings);
@@ -369,8 +474,10 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
 
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
-        /// Optimization for case when we insert the whole column (may happen in squashing).
-        if (start == 0 && length == src_replicated->size())
+        /// Optimization for case when we insert the whole column (may happen in squashing). It copies every
+        /// nested value, so it is taken only when the source has no more values than rows: otherwise some
+        /// values are unused for sure.
+        if (start == 0 && length == src_replicated->size() && src_replicated->getNestedColumn()->size() <= length)
         {
             indexes.insertIndexesRangeWithShift(*src_replicated->getIndexesColumn(), start, length, nested_column->size(), nested_column->size() + src_replicated->getNestedColumn()->size());
             nested_column->insertRangeFrom(*src_replicated->getNestedColumn(), 0, src_replicated->getNestedColumn()->size());
@@ -543,6 +650,184 @@ bool ColumnReplicated::hasEqualValues() const
     return indexes.getIndexes()->hasEqualValues();
 }
 
+void ColumnReplicated::compareColumn(const IColumn & rhs, size_t rhs_row_num, PaddedPODArray<UInt64> * row_indexes,
+                                     PaddedPODArray<Int8> & compare_results, int direction, int nan_direction_hint) const
+{
+    const size_t rows = size();
+    if (compare_results.empty())
+        compare_results.resize(rows);
+    else if (compare_results.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}", compare_results.size(), rows);
+
+    /// The value to compare with.
+    const IColumn * rhs_values = &rhs;
+    size_t rhs_value_row = rhs_row_num;
+    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&rhs))
+    {
+        rhs_values = rhs_replicated->getNestedColumn().get();
+        rhs_value_row = rhs_replicated->getIndexes().getIndexAt(rhs_row_num);
+    }
+
+    const size_t rows_to_compare = row_indexes ? row_indexes->size() : rows;
+    PaddedPODArray<Int8> nested_results;
+    const bool by_values = rows_to_compare >= nested_column->size();
+    if (by_values)
+        nested_column->compareColumn(*rhs_values, rhs_value_row, nullptr, nested_results, direction, nan_direction_hint);
+
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        auto result_of = [&](size_t row) -> Int8
+        {
+            if (by_values)
+                return nested_results[data[row]];
+            return static_cast<Int8>(direction * nested_column->compareAt(data[row], rhs_value_row, *rhs_values, nan_direction_hint));
+        };
+
+        if (!row_indexes)
+        {
+            for (size_t row = 0; row < rows; ++row)
+                compare_results[row] = result_of(row);
+            return;
+        }
+
+        /// Keep in `row_indexes` the rows equal to the value, which the next column compares.
+        UInt64 * next_index = row_indexes->data();
+        for (UInt64 row : *row_indexes)
+        {
+            compare_results[row] = result_of(row);
+            if (compare_results[row] == 0)
+                *next_index++ = row;
+        }
+        row_indexes->resize(next_index - row_indexes->data());
+    });
+}
+
+ColumnPtr ColumnReplicated::buildRowRanks(PermutationSortDirection direction, size_t limit, int nan_direction_hint, const Collator * collator) const
+{
+    const size_t rows = size();
+    const size_t nested_size = nested_column->size();
+
+    /// The values of the nested column that the rows use. Each of them has at least one row.
+    IColumn::Filter used(nested_size, 0);
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (auto position : data)
+            used[position] = 1;
+    });
+    const size_t used_count = countBytesInFilter(used);
+    const size_t unused_count = nested_size - used_count;
+
+    /// The values are sorted where they are when the rows use most of them, as a block that starts or ends inside
+    /// a granule uses a part of its dictionary: the unused values take no rank, and a limit grows by their number,
+    /// so that the first `limit` used values are among the sorted ones. When the rows use fewer than half of the
+    /// values, as after a selective filter, the used ones are copied out first, so that the sort skips the others.
+    const bool copy_used = unused_count > used_count;
+    ColumnPtr values = nested_column;
+    if (copy_used)
+        values = nested_column->filter(used, used_count);
+    const size_t values_size = values->size();
+    const size_t sorted_limit = copy_used ? limit : limit + unused_count;
+    const size_t values_limit = limit && sorted_limit < values_size ? sorted_limit : 0;
+
+    IColumn::Permutation order;
+    if (collator)
+        values->getPermutationWithCollation(*collator, direction, PermutationSortStability::Unstable, values_limit, nan_direction_hint, order);
+    else
+        values->getPermutation(direction, PermutationSortStability::Unstable, values_limit, nan_direction_hint, order);
+
+    auto equal = [&](size_t lhs, size_t rhs)
+    {
+        return collator ? values->compareAtWithCollation(lhs, rhs, *values, nan_direction_hint, *collator) == 0
+                        : values->compareAt(lhs, rhs, *values, nan_direction_hint) == 0;
+    };
+    auto is_used = [&](size_t value) { return copy_used || used[value]; };
+
+    /// The rank of each value of `values`. Equal values come from the dictionaries of different granules.
+    PaddedPODArray<UInt32> value_ranks(values_size);
+    const size_t ranked = values_limit ? values_limit : values_size;
+    UInt32 rank = 0;
+    std::optional<size_t> last_ranked;
+    for (size_t i = 0; i < ranked; ++i)
+    {
+        const size_t value = order[i];
+        if (!is_used(value))
+            continue;
+        if (last_ranked && !equal(*last_ranked, value))
+            ++rank;
+        value_ranks[value] = rank;
+        last_ranked = value;
+    }
+    chassert(ranked == values_size || last_ranked);
+    for (size_t i = ranked; i < values_size; ++i)
+    {
+        const size_t value = order[i];
+        if (is_used(value))
+            value_ranks[value] = equal(value, *last_ranked) ? rank : rank + 1;
+    }
+
+    /// The rank of each position of the nested column, then of each row.
+    PaddedPODArray<UInt32> position_ranks;
+    const UInt32 * ranks_by_position = value_ranks.data();
+    if (copy_used)
+    {
+        position_ranks.resize(nested_size);
+        for (size_t position = 0, value = 0; position < nested_size; ++position)
+            if (used[position])
+                position_ranks[position] = value_ranks[value++];
+        ranks_by_position = position_ranks.data();
+    }
+
+    auto res = ColumnUInt32::create(rows);
+    auto & row_ranks = res->getData();
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (size_t row = 0; row < rows; ++row)
+            row_ranks[row] = ranks_by_position[data[row]];
+    });
+    return res;
+}
+
+namespace
+{
+
+/// The comparisons that order the first `limit` of `count` items, or all of them when `limit` is 0: a
+/// selection and a sort of the first `limit` (`::partial_sort`), or a full sort.
+double sortComparisons(size_t count, size_t limit)
+{
+    if (count <= 1)
+        return 0;
+
+    if (limit != 0 && limit < count)
+    {
+        const double sorted = static_cast<double>(std::max<size_t>(limit, 2));
+        return static_cast<double>(count) + sorted * std::log2(sorted);
+    }
+
+    return static_cast<double>(count) * std::log2(static_cast<double>(count));
+}
+
+}
+
+size_t ColumnReplicated::rankingLimit(const EqualRanges & equal_ranges, size_t limit) const
+{
+    const bool all_rows = equal_ranges.size() == 1 && equal_ranges.front().from == 0 && equal_ranges.front().to == size();
+    return all_rows ? limit : 0;
+}
+
+bool ColumnReplicated::updatePermutationByRanksIsCheaper(const EqualRanges & equal_ranges, size_t limit) const
+{
+    double range_comparisons = 0;
+    for (const auto & range : equal_ranges)
+    {
+        if (limit && range.from >= limit)
+            break;
+        range_comparisons += sortComparisons(range.size(), limit && limit < range.to ? limit - range.from : 0);
+    }
+
+    const size_t values = std::min(nested_column->size(), size());
+    return sortComparisons(values, rankingLimit(equal_ranges, limit)) < range_comparisons;
+}
+
 struct ColumnReplicated::ComparatorBase
 {
     const ColumnReplicated & parent;
@@ -583,19 +868,20 @@ struct ColumnReplicated::ComparatorCollationBase
 void ColumnReplicated::getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                                 size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorAscendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorDescendingStable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+    buildRowRanks(direction, limit, nan_direction_hint, nullptr)
+        ->getPermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res);
 }
 
 void ColumnReplicated::updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                                 size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
+    if (updatePermutationByRanksIsCheaper(equal_ranges, limit))
+    {
+        buildRowRanks(direction, rankingLimit(equal_ranges, limit), nan_direction_hint, nullptr)
+            ->updatePermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res, equal_ranges);
+        return;
+    }
+
     auto comparator_equal = ComparatorEqual(*this, nan_direction_hint);
 
     if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
@@ -611,19 +897,20 @@ void ColumnReplicated::updatePermutation(PermutationSortDirection direction, Per
 void ColumnReplicated::getPermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                             size_t limit, int nan_direction_hint, Permutation & res) const
 {
-    if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorCollationAscendingUnstable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorCollationAscendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorCollationDescendingUnstable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
-    else if (direction == PermutationSortDirection::Descending && stability == PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorCollationDescendingStable(*this, nan_direction_hint, &collator), DefaultSort(), DefaultPartialSort());
+    buildRowRanks(direction, limit, nan_direction_hint, &collator)
+        ->getPermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res);
 }
 
 void ColumnReplicated::updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                             size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
 {
+    if (updatePermutationByRanksIsCheaper(equal_ranges, limit))
+    {
+        buildRowRanks(direction, rankingLimit(equal_ranges, limit), nan_direction_hint, &collator)
+            ->updatePermutation(PermutationSortDirection::Ascending, stability, limit, nan_direction_hint, res, equal_ranges);
+        return;
+    }
+
     auto comparator_equal = ComparatorCollationEqual(*this, nan_direction_hint, &collator);
 
     if (direction == PermutationSortDirection::Ascending && stability == PermutationSortStability::Unstable)
@@ -732,20 +1019,14 @@ void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size
 
 UInt64 ColumnReplicated::getNumberOfDefaultRows() const
 {
-    UnorderedSetWithMemoryTracking<size_t> indexes_of_default_values;
-    for (size_t i = 0; i != nested_column->size(); ++i)
-    {
-        if (nested_column->isDefaultAt(i))
-            indexes_of_default_values.insert(i);
-    }
+    /// The rows of each position counted once, then the positions that hold the default value added up.
+    ColumnUInt64::Container counts(nested_column->size(), 0);
+    indexes.countRowsInIndexedData(counts);
 
-    size_t result = 0;
-    auto add = [&](size_t, size_t index)
-    {
-        result += indexes_of_default_values.contains(index);
-    };
-
-    indexes.callForIndexes(std::move(add), 0, size());
+    UInt64 result = 0;
+    for (size_t position = 0; position < counts.size(); ++position)
+        if (counts[position] != 0 && nested_column->isDefaultAt(position))
+            result += counts[position];
     return result;
 }
 
@@ -1027,33 +1308,12 @@ void compactReplicatedColumns(Columns & columns)
     }
 }
 
-namespace
+ColumnPtr removeIdentityReplication(const ColumnPtr & column)
 {
-
-bool isIdentityIndexes(const IColumn & indexes)
-{
-    auto check = [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
-    {
-        for (size_t i = 0; i != data.size(); ++i)
-        {
-            if (static_cast<UInt64>(data[i]) != i)
-                return false;
-        }
-        return true;
-    };
-
-    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
-        return check(indexes_uint8->getData());
-    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
-        return check(indexes_uint16->getData());
-    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
-        return check(indexes_uint32->getData());
-    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&indexes))
-        return check(indexes_uint64->getData());
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", indexes.getName());
-}
-
+    const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get());
+    if (!replicated || !replicated->hasIdentityIndexes())
+        return column;
+    return replicated->getNestedColumn();
 }
 
 void finishMergedReplicatedColumn(MutableColumnPtr & column)
@@ -1064,7 +1324,7 @@ void finishMergedReplicatedColumn(MutableColumnPtr & column)
 
     replicated->dropInsertionCache();
 
-    if (replicated->getNestedColumn()->size() == replicated->size() && isIdentityIndexes(*replicated->getIndexesColumn()))
+    if (replicated->hasIdentityIndexes())
         column = IColumn::mutate(std::move(replicated->getNestedColumn()).detach());
 }
 }

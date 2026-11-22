@@ -78,12 +78,37 @@ public:
 
     void expand(const IColumn::Filter & mask, bool inverted);
 
+    /// Calls `f` with the indexes as a `PaddedPODArray` of their unsigned type.
+    template <typename F>
+    decltype(auto) callForIndexesData(F && f) const
+    {
+        return callForIndexesData(*indexes, std::forward<F>(f));
+    }
+
+    /// The same for a column of one of the unsigned types that `ColumnIndex` takes, such as the codes of a
+    /// dictionary.
+    template <typename F>
+    static decltype(auto) callForIndexesData(const IColumn & column, F && f)
+    {
+        if (const auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(&column))
+            return f(column_uint8->getData());
+        if (const auto * column_uint16 = typeid_cast<const ColumnUInt16 *>(&column))
+            return f(column_uint16->getData());
+        if (const auto * column_uint32 = typeid_cast<const ColumnUInt32 *>(&column))
+            return f(column_uint32->getData());
+        if (const auto * column_uint64 = typeid_cast<const ColumnUInt64 *>(&column))
+            return f(column_uint64->getData());
+        throwUnexpectedIndexesType(column);
+    }
+
     /// Set the stored index to `value` for every row where `mask` is zero.
     /// When `offset` is given, only the rows in `[offset, offset + mask.size())` are affected and `mask`
     /// covers just that range; otherwise it must cover the whole column.
     void setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset = 0);
 
 private:
+    [[noreturn]] static void throwUnexpectedIndexesType(const IColumn & column);
+
     [[nodiscard]] size_t getMaxIndexForCurrentType() const;
 
     void checkSizeOfType();

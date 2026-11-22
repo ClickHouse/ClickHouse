@@ -131,11 +131,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     [[nodiscard]] ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
 
-    /// Scratch of `forEachPositionCount`: per dictionary position, the row count (zero between calls) and the
-    /// first row relative to the range, plus the positions a call counted.
-    PaddedPODArray<UInt32> position_counts;
-    PaddedPODArray<UInt32> position_first_rows;
-    PaddedPODArray<UInt32> counted_positions;
+    /// The scratch of `forEachPositionCount`.
+    columns_hashing_impl::PositionCounter position_counter;
 
     ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
     {
@@ -417,39 +414,18 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     void forEachPositionCount(size_t row_begin, size_t row_end, F && f)
     {
         const size_t dictionary_size = key_columns[0]->size();
-        if (position_counts.size() < dictionary_size)
-        {
-            position_counts.resize_fill(dictionary_size, 0);
-            position_first_rows.resize(dictionary_size);
-        }
-
-        counted_positions.clear();
-        const auto count_rows = [&](const auto & indexes)
-        {
-            for (size_t row = row_begin; row < row_end; ++row)
-            {
-                const auto position = indexes[row];
-                if (position_counts[position]++ == 0)
-                {
-                    position_first_rows[position] = static_cast<UInt32>(row - row_begin);
-                    counted_positions.push_back(static_cast<UInt32>(position));
-                }
-            }
-        };
-
         switch (size_of_index_type)
         {
-            case sizeof(UInt8): count_rows(assert_cast<const ColumnUInt8 &>(*positions).getData()); break;
-            case sizeof(UInt16): count_rows(assert_cast<const ColumnUInt16 &>(*positions).getData()); break;
-            case sizeof(UInt32): count_rows(assert_cast<const ColumnUInt32 &>(*positions).getData()); break;
+            case sizeof(UInt8):
+                position_counter.forEach(assert_cast<const ColumnUInt8 &>(*positions).getData(), dictionary_size, row_begin, row_end, f);
+                break;
+            case sizeof(UInt16):
+                position_counter.forEach(assert_cast<const ColumnUInt16 &>(*positions).getData(), dictionary_size, row_begin, row_end, f);
+                break;
+            case sizeof(UInt32):
+                position_counter.forEach(assert_cast<const ColumnUInt32 &>(*positions).getData(), dictionary_size, row_begin, row_end, f);
+                break;
             default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for counting low cardinality positions.");
-        }
-
-        for (const UInt32 position : counted_positions)
-        {
-            const UInt32 count = position_counts[position];
-            position_counts[position] = 0;
-            f(row_begin + position_first_rows[position], count);
         }
     }
 

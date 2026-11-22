@@ -1,0 +1,10 @@
+one column	1
+one column, descending, limit	1
+after large ties	1
+after large ties, limit	1
+after a nearly unique key	1
+after a nearly unique key, limit	1
+threshold, by values	1
+threshold, by values, after ties	1
+threshold, by rows	1
+threshold, by rows, after ties	1

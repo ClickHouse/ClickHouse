@@ -1,0 +1,15 @@
+insert	1
+0	value_0	19	x0
+1	value_1	20	
+499	value_4	19	
+500	value_0	20	x500
+999	value_4	20	
+mostly_empty	['mostly_empty.strdict.idx','mostly_empty.size','mostly_empty','mostly_empty.strdict.size','mostly_empty.strdict']
+repetitive	['repetitive.strdict.idx','repetitive.size','repetitive','repetitive.strdict.size','repetitive.strdict']
+unique_value	['unique_value.size','unique_value']
+merge	1
+mutation	1
+rename	1
+mostly_empty	['mostly_empty.strdict.idx','mostly_empty.size','mostly_empty','mostly_empty.strdict.size','mostly_empty.strdict']
+renamed_value	['renamed_value.size','renamed_value']
+repetitive	['repetitive.strdict.idx','repetitive.size','repetitive','repetitive.strdict.size','repetitive.strdict']

@@ -24,6 +24,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Interpreters/Set.h>
+#include <Columns/ColumnReplicated.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/DiskSet.h>
 #include <Interpreters/DiskSetBuilder.h>
@@ -527,14 +528,36 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
     holder.key_columns.reserve(keys_size);
     holder.materialized_columns.reserve(keys_size);
 
+    /// A set ignores how many rows hold a key, so replicated key columns over one index column, as `String`
+    /// columns with dictionary granules are read, give each used value once instead of a full copy of their
+    /// rows.
+    const IColumn * shared_indexes = nullptr;
+    bool all_replicated_over_shared_indexes = true;
+    for (size_t i = 0; i < keys_size && all_replicated_over_shared_indexes; ++i)
+    {
+        const auto * replicated = typeid_cast<const ColumnReplicated *>(columns.at(i).get());
+        if (!replicated || (shared_indexes && replicated->getIndexesColumn().get() != shared_indexes))
+            all_replicated_over_shared_indexes = false;
+        else
+            shared_indexes = replicated->getIndexesColumn().get();
+    }
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
+        ColumnPtr key_column = columns.at(i);
+        if (all_replicated_over_shared_indexes)
+            key_column = assert_cast<const ColumnReplicated &>(*key_column).getUsedValues(0, key_column->size());
+        holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(key_column->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
-    size_t rows = columns.at(0)->size();
+    size_t rows = holder.key_columns.at(0)->size();
+
+    /// The filter of new keys, which its users apply to `key_columns`, follows them when the used values
+    /// replace the rows.
+    if (holder.filter)
+        holder.filter->getData().resize(rows);
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};

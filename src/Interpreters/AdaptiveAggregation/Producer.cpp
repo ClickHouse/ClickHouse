@@ -12,6 +12,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -254,9 +255,19 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         return;
     }
 
-    /// A set stores a key once, so the repeats of a missed key combine into its record.
-    const AdaptiveLocalProbes probes = collectCombinedMisses</*with_count=*/false, RecordKey>(
-        local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses);
+    /// A set stores a key once, so the repeats of a missed key combine into its record, and the rows of a position in a
+    /// column of values take one probe and at most one record.
+    const AdaptiveLocalProbes probes = [&]
+    {
+        if constexpr (requires { local_find_state.positionAt(size_t{}); })
+        {
+            if (local_find_state.canCountPositions(row_begin, row_end) && local_find_state.positionsRepeat(row_begin, row_end))
+                return collectPositionMisses</*with_count=*/false, RecordKey>(
+                    local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe);
+        }
+        return collectCombinedMisses</*with_count=*/false, RecordKey>(
+            local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses);
+    }();
 
     if constexpr (keeps_null_key_slot<LocalMethod>)
     {
@@ -487,6 +498,109 @@ AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectCombinedMisses(
         collected = collect_misses.template operator()<false>(row_begin);
     }
     return {.hits = collected.hits, .null_rows = collected.null_rows};
+}
+
+template <bool with_count, typename RecordKey, typename LocalMethod, typename State>
+AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectPositionMisses(
+    LocalMethod & local_method,
+    State & find_state,
+    size_t row_begin,
+    size_t row_end,
+    Arena & scratch_pool,
+    AdaptiveAggregationProducer & adaptive,
+    bool bypass_local_probe) const
+{
+    /// The state reads its keys in place, so the batch keeps no key bytes and is never staged inside the block.
+    static_assert(!adaptive_misses_may_keep_key_bytes<RecordKey, State> && !keeps_null_key_slot<LocalMethod>);
+
+    auto & misses = adaptive.misses;
+    const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(find_state);
+    AdaptiveLocalProbes probes;
+    find_state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
+    {
+        auto && key_holder = find_state.getKeyHolder(first_row, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        const UInt64 hash = local_method.data.hash(key);
+
+        if (!bypass_local_probe)
+        {
+            if (auto it = local_method.data.find(key, hash))
+            {
+                probes.hits += count;
+                if constexpr (with_count)
+                    getInlineCountState(it->getMapped()) += count;
+                keyHolderDiscardKey(key_holder);
+                return;
+            }
+        }
+
+        const RecordKey staged_key = key;
+        if constexpr (with_count)
+            misses.addCount<RecordKey>(static_cast<UInt32>(first_row), hash, staged_key, static_cast<UInt32>(count), keep_key_bytes);
+        else
+            misses.add<RecordKey>(static_cast<UInt32>(first_row), hash, staged_key, keep_key_bytes);
+        keyHolderDiscardKey(key_holder);
+    });
+    return probes;
+}
+
+template <bool record_places, typename RecordKey, typename LocalMethod, typename State>
+AdaptiveLocalProbes ALWAYS_INLINE Aggregator::collectPositionArgumentMisses(
+    LocalMethod & local_method,
+    State & local_find_state,
+    size_t row_begin,
+    size_t row_end,
+    Arena & scratch_pool,
+    AdaptiveAggregationProducer & adaptive,
+    bool bypass_local_probe,
+    AggregateDataPtr * places_data) const
+{
+    /// As in `collectPositionMisses`.
+    static_assert(!adaptive_misses_may_keep_key_bytes<RecordKey, State> && !keeps_null_key_slot<LocalMethod>);
+
+    auto & misses = adaptive.misses;
+    const auto keep_key_bytes = adaptiveMissesKeepKeyBytes<RecordKey>(local_find_state);
+
+    /// The probe of each position that the rows name: the place of a hit or null, and the hash and the key that the
+    /// records of a miss carry.
+    const size_t num_positions = local_find_state.numPositions();
+    PaddedPODArray<AggregateDataPtr> position_places(num_positions);
+    PaddedPODArray<UInt64> position_hashes(num_positions);
+    std::vector<RecordKey> position_keys(num_positions);
+
+    AdaptiveLocalProbes probes;
+    local_find_state.forEachPositionCount(row_begin, row_end, [&](size_t first_row, UInt64 count)
+    {
+        const size_t position = local_find_state.positionAt(first_row);
+        auto && key_holder = local_find_state.getKeyHolder(first_row, scratch_pool);
+        const auto & key = keyHolderGetKey(key_holder);
+        const UInt64 hash = local_method.data.hash(key);
+
+        AggregateDataPtr place = nullptr;
+        if (!bypass_local_probe)
+        {
+            if (auto it = local_method.data.find(key, hash))
+            {
+                place = it->getMapped();
+                probes.hits += count;
+            }
+        }
+        position_places[position] = place;
+        position_hashes[position] = hash;
+        position_keys[position] = key;
+        keyHolderDiscardKey(key_holder);
+    });
+
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        const size_t position = local_find_state.positionAt(i);
+        const AggregateDataPtr place = position_places[position];
+        if constexpr (record_places)
+            places_data[i] = place;
+        if (!place)
+            misses.add<RecordKey>(static_cast<UInt32>(i), position_hashes[position], position_keys[position], keep_key_bytes);
+    }
+    return probes;
 }
 
 template <bool record_places, typename RecordKey, typename LocalMethod, typename State, typename EmplaceNullKey, typename StageMisses>
@@ -722,15 +836,31 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         return;
     }
 
+    /// Whether the rows of the block are positions in a column of values that repeat enough for each position to take
+    /// one probe (see `HashMethodPackedString::forEachPositionCount`).
+    constexpr bool state_has_positions = requires { local_find_state.positionAt(size_t{}); };
+    [[maybe_unused]] bool probes_by_position = false;
+    if constexpr (state_has_positions)
+        probes_by_position
+            = local_find_state.canCountPositions(row_begin, row_end) && local_find_state.positionsRepeat(row_begin, row_end);
+
     /// The records of a lone `count` and those without aggregate functions carry no arguments, so the repeats of a
-    /// missed key combine into its record.
+    /// missed key combine into its record, and the rows of a position into one record.
     if (is_simple_count || params.aggregates_size == 0)
     {
-        const AdaptiveLocalProbes probes = is_simple_count
-            ? collectCombinedMisses</*with_count=*/true, RecordKey>(
-                  local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses)
-            : collectCombinedMisses</*with_count=*/false, RecordKey>(
-                  local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses);
+        const auto collect = [&]<bool with_count>()
+        {
+            if constexpr (state_has_positions)
+            {
+                if (probes_by_position)
+                    return collectPositionMisses<with_count, RecordKey>(
+                        local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe);
+            }
+            return collectCombinedMisses<with_count, RecordKey>(
+                local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, stage_misses);
+        };
+        const AdaptiveLocalProbes probes
+            = is_simple_count ? collect.template operator()<true>() : collect.template operator()<false>();
         if constexpr (keeps_null_key_slot<LocalMethod>)
         {
             if (probes.null_rows)
@@ -745,13 +875,25 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         return;
     }
 
+    /// Probes the rows with aggregate arguments, one probe per position when the rows are positions in a column of values.
+    const auto collect_argument_misses = [&]<bool record_places>(AggregateDataPtr * places_data)
+    {
+        if constexpr (state_has_positions)
+        {
+            if (probes_by_position)
+                return collectPositionArgumentMisses<record_places, RecordKey>(
+                    local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, places_data);
+        }
+        return collectArgumentMisses<record_places, RecordKey>(
+            local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, places_data,
+            emplace_null_key, stage_misses);
+    };
+
     /// With the probe bypassed there is no hit, so there are no places to record, unless the block may have
     /// rows of the NULL key.
     if (bypass_local_probe && !local_find_state.mayHaveNullRows())
     {
-        const AdaptiveLocalProbes probes = collectArgumentMisses</*record_places=*/false, RecordKey>(
-            local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe,
-            /*places_data=*/nullptr, emplace_null_key, stage_misses);
+        const AdaptiveLocalProbes probes = collect_argument_misses.template operator()</*record_places=*/false>(nullptr);
         record_local_probes(probes.hits, row_end - row_begin);
         stage_misses();
         return;
@@ -766,9 +908,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     };
     std::unique_ptr<AggregateDataPtr[], decltype(places_deleter)> places(allocator.allocate(places_size), places_deleter);
 
-    const AdaptiveLocalProbes probes = collectArgumentMisses</*record_places=*/true, RecordKey>(
-        local_method, local_find_state, row_begin, row_end, scratch_pool, adaptive, bypass_local_probe, places.get(),
-        emplace_null_key, stage_misses);
+    const AdaptiveLocalProbes probes = collect_argument_misses.template operator()</*record_places=*/true>(places.get());
     record_local_probes(probes.hits, row_end - row_begin - probes.null_rows);
     stage_misses();
 
@@ -930,12 +1070,14 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         const auto & argument_layout = *adaptive_argument_layout;
 
         /// The arguments are staged in the form the drain rebuilds and the instructions consume (see
-        /// `AdaptiveArgumentLayout::build`): the instructions' `arguments`, which `prepareAggregateInstructions` built
-        /// for the whole block with constant, replicated and `LowCardinality` columns materialized. They hold whole
-        /// rows, unlike the `batch_arguments` that an `-Array` combinator unnests: the drain rebuilds the instructions
-        /// from the staged rows and unnests them again. Building them again from the block's own columns would copy
-        /// each such column once more, however few rows miss. Of a column that several aggregates read, a dense form
-        /// that one of them prepared is preferred to a sparse one, which takes a pass over its offsets (below).
+        /// `AdaptiveArgumentLayout::build`): the instructions' `arguments`, which
+        /// `prepareAggregateInstructions` built for the whole block with constant and `LowCardinality`
+        /// columns materialized, and replicated ones too unless an aggregate of one argument reads a
+        /// replicated `String` through its indexes. They hold whole rows, unlike the `batch_arguments` that
+        /// an `-Array` combinator unnests: the drain rebuilds the instructions from the staged rows and
+        /// unnests them again. Building them again from the block's own columns would copy each such column
+        /// once more, however few rows miss. Of a column that several aggregates read, a dense form that one
+        /// of them prepared is preferred to a sparse one, which takes a pass over its offsets (below).
         std::vector<ArgumentSource> arguments(argument_layout.num_positions, {nullptr, source_rows});
         for (size_t i = 0; i < params.aggregates_size; ++i)
             for (size_t j = 0; j < aggregates_positions[i].size(); ++j)
@@ -952,6 +1094,19 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         const auto read_through_values = [&](size_t position)
         {
             ArgumentSource & argument = arguments[position];
+            /// A replicated `String` column, which an aggregate of one argument reads through its indexes, is
+            /// read through its nested column at the indexes of the source rows.
+            if (const auto * replicated = typeid_cast<const ColumnReplicated *>(argument.column))
+            {
+                auto & rows = value_rows[position];
+                rows.resize(total);
+                const auto & indexes = replicated->getIndexes();
+                for (size_t i = 0; i < total; ++i)
+                    rows[i] = static_cast<UInt32>(indexes.getIndexAt(source_rows[i]));
+                argument = {replicated->getNestedColumn().get(), rows.data()};
+                return;
+            }
+
             const auto * sparse = typeid_cast<const ColumnSparse *>(argument.column);
             if (!sparse)
                 return;

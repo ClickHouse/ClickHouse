@@ -4,12 +4,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
+#include <DataTypes/Serializations/StringGranuleDictionary.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
@@ -28,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -531,6 +534,9 @@ void SerializationString::enumerateStreams(
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
             enumerateStreamsWithSize(settings, callback, data);
             break;
+        case MergeTreeStringSerializationVersion::WITH_DICTIONARIES:
+            enumerateStreamsWithDictionaries(settings, callback, data);
+            break;
     }
 }
 
@@ -549,6 +555,9 @@ void SerializationString::serializeBinaryBulkWithMultipleStreams(
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
             serializeBinaryBulkWithSizeStream(column, offset, limit, settings, state);
             break;
+        case MergeTreeStringSerializationVersion::WITH_DICTIONARIES:
+            serializeBinaryBulkWithDictionaries(column, offset, limit, settings, state);
+            break;
     }
 }
 
@@ -566,6 +575,9 @@ void SerializationString::deserializeBinaryBulkWithMultipleStreams(
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
             deserializeBinaryBulkWithSizeStream(column, limit, settings, cache);
+            break;
+        case MergeTreeStringSerializationVersion::WITH_DICTIONARIES:
+            deserializeBinaryBulkWithDictionaries(column, limit, settings, state, cache);
             break;
     }
 }
@@ -893,6 +905,20 @@ SerializationString::SerializationString(MergeTreeStringSerializationVersion ver
 namespace
 {
 
+/// Writes `count` lengths, `UInt64` each, little-endian, as the stream of substream `StringSizes` holds them.
+void writeStringSizes(const UInt64 * sizes, size_t count, WriteBuffer & ostr)
+{
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        for (size_t i = 0; i < count; ++i)
+            writeBinaryLittleEndian(sizes[i], ostr);
+    }
+    else
+    {
+        ostr.write(reinterpret_cast<const char *>(sizes), sizeof(UInt64) * count);
+    }
+}
+
 void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
 {
     const auto & column_string = typeid_cast<const ColumnString &>(column);
@@ -903,31 +929,19 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
         return;
 
     size_t end = limit && (offset + limit < size) ? offset + limit : size;
+    size_t count = end - offset;
+    PaddedPODArray<UInt64> sizes;
+    sizes.resize(count);
+
     UInt64 prev_offset = offset_values[offset - 1];
-    if constexpr (std::endian::native == std::endian::big)
+    for (size_t i = 0; i < count; ++i)
     {
-        for (size_t i = offset; i < end; ++i)
-        {
-            UInt64 current_offset = offset_values[i];
-            writeBinaryLittleEndian(current_offset - prev_offset, ostr);
-            prev_offset = current_offset;
-        }
+        UInt64 current_offset = offset_values[offset + i];
+        sizes[i] = current_offset - prev_offset;
+        prev_offset = current_offset;
     }
-    else
-    {
-        size_t count = end - offset;
-        PaddedPODArray<UInt64> sizes;
-        sizes.resize(count);
 
-        for (size_t i = 0; i < count; ++i)
-        {
-            UInt64 current_offset = offset_values[offset + i];
-            sizes[i] = current_offset - prev_offset;
-            prev_offset = current_offset;
-        }
-
-        ostr.write(reinterpret_cast<const char *>(sizes.data()), sizeof(UInt64) * count);
-    }
+    writeStringSizes(sizes.data(), count, ostr);
 }
 
 void serializeStringOffsets(const ColumnString::Offsets & offsets, WriteBuffer & ostr, size_t offset, size_t limit)
@@ -989,20 +1003,15 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
 
 }
 
-void SerializationString::enumerateStreamsWithSize(
-    EnumerateStreamsSettings & settings,
-    const StreamCallback & callback,
-    const SubstreamData & data) const
+namespace
 {
-    const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
 
-    auto sizes_serialization = SerializationStringSize::create(version);
-
-    /// Size stream. Same lazy pattern as in `enumerateStreamsWithoutSize`.
-    settings.path.push_back(Substream::StringSizes);
-
-    auto substream_data = SubstreamData(sizes_serialization)
-                              .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
+/// The data of the substream that the `.size` subcolumn is attached to in `WITH_SIZE_STREAM` and `WITH_DICTIONARIES`. The
+/// column is created lazily from the parent column, which `WITH_DICTIONARIES` reads as a `ColumnReplicated`.
+ISerialization::SubstreamData createSizesSubstreamData(MergeTreeStringSerializationVersion version, const ISerialization::SubstreamData & data)
+{
+    auto substream_data = ISerialization::SubstreamData(SerializationStringSize::create(version))
+                              .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
                               .withColumn(nullptr)
                               .withSerializationInfo(data.serialization_info);
 
@@ -1010,11 +1019,28 @@ void SerializationString::enumerateStreamsWithSize(
     {
         substream_data.withLazyColumnCreator([parent_col = data.column]() -> ColumnPtr
         {
+            if (const auto * replicated = typeid_cast<const ColumnReplicated *>(parent_col.get()))
+            {
+                const auto & values = assert_cast<const ColumnString &>(*replicated->getNestedColumn());
+                return values.createSizeSubcolumn()->index(*replicated->getIndexesColumn(), 0);
+            }
             return assert_cast<const ColumnString &>(*parent_col).createSizeSubcolumn();
         });
     }
 
-    settings.path.back().data = std::move(substream_data);
+    return substream_data;
+}
+
+}
+
+void SerializationString::enumerateStreamsWithSize(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
+{
+    /// Size stream. Same lazy pattern as in `enumerateStreamsWithoutSize`.
+    settings.path.push_back(Substream::StringSizes);
+    settings.path.back().data = createSizesSubstreamData(version, data);
     callback(settings.path);
 
     /// Regular stream
@@ -1068,7 +1094,14 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
 void SerializationString::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    /// Only SINGLE_STREAM serialization keeps a deserialize state; WITH_SIZE_STREAM is stateless.
+    if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES)
+    {
+        state = getStringGranulesDeserializeState(settings, cache);
+        checkAndGetState<DeserializeBinaryBulkStateStringWithDictionaries>(state)->need_string_data = true;
+        return;
+    }
+
+    /// WITH_SIZE_STREAM is stateless.
     if (version != MergeTreeStringSerializationVersion::SINGLE_STREAM)
         return;
 
@@ -1203,6 +1236,487 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
 
     /// Nothing is shared across reads, so the rows read equal the growth of the offsets column.
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), string_column.size() - prev_num_rows);
+    settings.path.pop_back();
+}
+
+void SerializationString::enumerateStreamsWithDictionaries(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
+{
+    settings.path.push_back(Substream::StringDictionaryIndexes);
+    callback(settings.path);
+
+    /// The lengths of the rows of plain granules. The `.size` subcolumn is attached here, as in `WITH_SIZE_STREAM`, and
+    /// its serialization reads the records and the lengths of the dictionaries as well.
+    settings.path.back() = Substream::StringSizes;
+    settings.path.back().data = createSizesSubstreamData(version, data);
+    callback(settings.path);
+
+    settings.path.back() = Substream::Regular;
+    settings.path.back().data = data;
+    callback(settings.path);
+
+    settings.path.back() = Substream::StringDictionarySizes;
+    callback(settings.path);
+
+    settings.path.back() = Substream::StringDictionaryElements;
+    callback(settings.path);
+    settings.path.pop_back();
+}
+
+namespace
+{
+
+/// The streams of a column with dictionary granules, in the order of `enumerateStreams`.
+struct StringGranuleOutputStreams
+{
+    WriteBuffer * indexes = nullptr;
+    WriteBuffer * sizes = nullptr;
+    WriteBuffer * data = nullptr;
+    WriteBuffer * dictionary_sizes = nullptr;
+    WriteBuffer * dictionary_data = nullptr;
+};
+
+/// Requests every stream, also those the call does not write: the writer learns the files of a column from the order
+/// of these requests in a call without rows (`MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded`).
+StringGranuleOutputStreams getStringGranuleOutputStreams(ISerialization::SerializeBinaryBulkSettings & settings)
+{
+    using Substream = ISerialization::Substream;
+    StringGranuleOutputStreams streams;
+    settings.path.push_back(Substream::StringDictionaryIndexes);
+    streams.indexes = settings.getter(settings.path);
+    settings.path.back() = Substream::StringSizes;
+    streams.sizes = settings.getter(settings.path);
+    settings.path.back() = Substream::Regular;
+    streams.data = settings.getter(settings.path);
+    settings.path.back() = Substream::StringDictionarySizes;
+    streams.dictionary_sizes = settings.getter(settings.path);
+    settings.path.back() = Substream::StringDictionaryElements;
+    streams.dictionary_data = settings.getter(settings.path);
+    settings.path.pop_back();
+    return streams;
+}
+
+void writeChars(const ColumnString & column, size_t offset, size_t rows, WriteBuffer & out)
+{
+    const auto & offsets = column.getOffsets();
+    const size_t begin = offsets[static_cast<ssize_t>(offset) - 1];
+    const size_t end = offsets[offset + rows - 1];
+    out.write(reinterpret_cast<const char *>(column.getChars().data() + begin), end - begin);
+}
+
+/// Writes the lengths and the bytes of the rows of `slice` as a plain granule stores them.
+void writePlainSlice(const StringGranuleDictionaryBuilder::Slice & slice, WriteBuffer & sizes_out, WriteBuffer & data_out)
+{
+    const auto * replicated = typeid_cast<const ColumnReplicated *>(slice.column.get());
+    if (!replicated)
+    {
+        const auto & column = assert_cast<const ColumnString &>(*slice.column);
+        serializeStringSizes(column, sizes_out, slice.offset, slice.rows);
+        writeChars(column, slice.offset, slice.rows, data_out);
+        return;
+    }
+
+    const auto & nested = assert_cast<const ColumnString &>(*replicated->getNestedColumn());
+    PaddedPODArray<UInt64> sizes(slice.rows);
+    replicated->getIndexes().callForIndexesData([&](const auto & indexes)
+    {
+        for (size_t i = 0; i < slice.rows; ++i)
+            sizes[i] = nested.getDataAt(indexes[slice.offset + i]).size();
+        writeStringSizes(sizes.data(), sizes.size(), sizes_out);
+        for (size_t i = 0; i < slice.rows; ++i)
+        {
+            const std::string_view value = nested.getDataAt(indexes[slice.offset + i]);
+            data_out.write(value.data(), value.size());
+        }
+    });
+}
+
+/// Writes the granule whose rows `state` holds, if any, as a dictionary or plain.
+void writeStringGranule(const StringGranuleOutputStreams & streams, SerializeBinaryBulkStateStringWithDictionaries & state)
+{
+    if (state.rows == 0)
+        return;
+
+    StringGranuleHeader header{.kind = StringGranuleHeader::Kind::Plain, .rows = state.rows};
+    auto & builder = state.builder;
+    if (builder.build(state.slices, state.rows, state.settings))
+    {
+        const auto & dictionary = builder.getDictionary();
+        header.kind = StringGranuleHeader::Kind::Dictionary;
+        header.dictionary_size = dictionary.size();
+        header.code_bits = builder.getCodeBits();
+        header.write(*streams.indexes);
+        builder.writeCodes(*streams.indexes);
+        serializeStringSizes(dictionary, *streams.dictionary_sizes, 0, dictionary.size());
+        writeChars(dictionary, 0, dictionary.size(), *streams.dictionary_data);
+    }
+    else
+    {
+        header.write(*streams.indexes);
+        for (const auto & slice : state.slices)
+            writePlainSlice(slice, *streams.sizes, *streams.data);
+    }
+
+    state.slices.clear();
+    state.rows = 0;
+}
+
+}
+
+void SerializationString::serializeBinaryBulkStatePrefix(
+    const IColumn & /*column*/, SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    if (version != MergeTreeStringSerializationVersion::WITH_DICTIONARIES)
+        return;
+
+    if (settings.data_part_type != MergeTreeDataPartType::Wide)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "String granules with dictionaries can be written only to Wide parts");
+
+    auto granules_state = std::make_shared<SerializeBinaryBulkStateStringWithDictionaries>();
+    granules_state->settings.min_size_reduction = settings.string_dictionary_min_size_reduction;
+    granules_state->settings.max_distinct_ratio = settings.string_dictionary_max_distinct_ratio;
+    state = std::move(granules_state);
+}
+
+void SerializationString::serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const
+{
+    if (version != MergeTreeStringSerializationVersion::WITH_DICTIONARIES)
+        return;
+
+    /// Rows left belong to the last granule of the part, which the writer completes without a data call.
+    const auto streams = getStringGranuleOutputStreams(settings);
+    writeStringGranule(streams, *checkAndGetState<SerializeBinaryBulkStateStringWithDictionaries>(state));
+}
+
+void SerializationString::serializeBinaryBulkWithDictionaries(
+    const IColumn & column,
+    size_t offset,
+    size_t limit,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    auto & granules_state = *checkAndGetState<SerializeBinaryBulkStateStringWithDictionaries>(state);
+    const auto streams = getStringGranuleOutputStreams(settings);
+
+    if (const size_t size = column.size(); limit == 0 || offset + limit > size)
+        limit = size - offset;
+
+    /// Nothing is written before the granule is complete, so the marks that the writer takes at the start of the granule
+    /// point to where its data begins in every stream.
+    if (limit != 0)
+    {
+        granules_state.slices.push_back({.column = column.getPtr(), .offset = offset, .rows = limit});
+        granules_state.rows += limit;
+    }
+
+    if (settings.granule_is_complete)
+        writeStringGranule(streams, granules_state);
+}
+
+SerializationPtr SerializationString::resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const
+{
+    /// Every dictionary granule writes at least one dictionary value, so an empty stream of their lengths means that all
+    /// granules are plain: the streams `StringSizes` and `Regular` then hold the column as `WITH_SIZE_STREAM` writes it.
+    SubstreamPath dictionary_sizes;
+    dictionary_sizes.push_back(Substream::StringDictionarySizes);
+    if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES && substream_is_empty(dictionary_sizes))
+        return SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    return getPtr();
+}
+
+MutableColumnPtr SerializationString::createColumnForDeserialization(const IDataType & type) const
+{
+    if (version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES)
+        return ColumnReplicated::create(type.createColumn(), ColumnUInt8::create());
+    return type.createColumn();
+}
+
+namespace
+{
+
+/// Reads up to `limit` strings into `column`: their lengths (`UInt64` each) from `sizes_stream` and their bytes from
+/// `data_stream`. Values that do not match `filter` are read as empty strings. Returns the number of strings read,
+/// which is less than `limit` only at the end of the streams.
+size_t readStringsWithSizes(
+    ColumnString & column,
+    size_t limit,
+    ReadBuffer & sizes_stream,
+    ReadBuffer & data_stream,
+    PaddedPODArray<UInt64> & sizes,
+    const StringValueFilter * filter)
+{
+    sizes.clear();
+    SerializationNumber<UInt64>::deserializeBinaryBulk(sizes, sizes_stream, limit);
+
+    const size_t prev_num_rows = column.size();
+    auto & chars = column.getChars();
+    const size_t prev_bytes = chars.size();
+    appendStringSizesToColumnStringOffsets(column, sizes.data(), 0, sizes.size());
+
+    if (filter && filter->isEnabled())
+    {
+        deserializeBinaryFilteredWithKnownSizes(chars, column.getOffsets(), data_stream, prev_num_rows, *filter);
+    }
+    else
+    {
+        const size_t bytes = column.getOffsets().back() - prev_bytes;
+        chars.resize(prev_bytes + bytes);
+        data_stream.readBigStrict(reinterpret_cast<char *>(&chars[prev_bytes]), bytes);
+    }
+    return sizes.size();
+}
+
+/// Appends the values of `dictionary` at the codes of rows `[start, start + length)` to `column`.
+void insertDictionaryValues(ColumnString & column, const ColumnString & dictionary, const IColumn & codes, size_t start, size_t length)
+{
+    ColumnIndex::callForIndexesData(codes, [&](const auto & data)
+    {
+        for (size_t row = start; row < start + length; ++row)
+            column.insertFrom(dictionary, data[row]);
+    });
+}
+
+/// The streams of a column with dictionary granules, as the reader requests them.
+struct StringGranuleInputStreams
+{
+    ReadBuffer * indexes = nullptr;
+    ReadBuffer * sizes = nullptr;
+    ReadBuffer * data = nullptr;
+    ReadBuffer * dictionary_sizes = nullptr;
+    ReadBuffer * dictionary_data = nullptr;
+};
+
+/// Reads up to `limit` rows into `column`, a `ColumnReplicated` over a `ColumnString`.
+///
+/// The records and codes of the granules come first. Then the dictionaries of the granules that start in this
+/// call are read with one request to each of their streams, and so are the rows of the plain granules, so
+/// that whole compressed blocks decompress straight into the nested column instead of going through the
+/// buffer of the stream. The nested column gets the dictionaries first and the rows of plain granules after
+/// them, and the indexes of the rows come last, in the order of the rows. A granule that the call does not
+/// finish leaves its codes and a copy of its dictionary in the state for the next call.
+void readGranulesIntoReplicated(
+    ColumnReplicated & column,
+    size_t limit,
+    const StringGranuleInputStreams & streams,
+    DeserializeBinaryBulkStateStringWithDictionaries & state,
+    const StringValueFilter * filter)
+{
+    auto & nested = assert_cast<ColumnString &>(*column.getNestedColumn());
+
+    struct Dictionary
+    {
+        size_t size = 0;
+        MutableColumnPtr codes;
+        size_t position = 0;
+    };
+
+    /// The rows of one granule that the call reads.
+    struct Piece
+    {
+        size_t rows = 0;
+        /// For a dictionary granule: its index in `dictionaries` and the row of the granule the piece starts
+        /// at.
+        std::optional<size_t> dictionary;
+        size_t first_row = 0;
+    };
+
+    std::vector<Dictionary> dictionaries;
+    std::vector<Piece> pieces;
+
+    /// A dictionary granule that an earlier call began: its values, kept in the state, come first. The state
+    /// forgets them when the next granule starts, so the call holds them itself.
+    const bool continues_dictionary = state.rows_left_in_granule != 0 && state.granule.kind == StringGranuleHeader::Kind::Dictionary;
+    const ColumnPtr kept_dictionary = continues_dictionary ? state.dictionary : nullptr;
+    if (continues_dictionary)
+        dictionaries.push_back({.size = state.granule.dictionary_size, .codes = std::move(state.granule_codes), .position = 0});
+
+    size_t new_dictionary_values = 0;
+    size_t plain_rows = 0;
+    size_t rows_read = 0;
+    while (rows_read < limit)
+    {
+        if (state.rows_left_in_granule == 0)
+        {
+            if (!state.startGranule(*streams.indexes))
+                break;
+            if (state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+            {
+                dictionaries.push_back({.size = state.granule.dictionary_size, .codes = std::move(state.granule_codes), .position = 0});
+                new_dictionary_values += state.granule.dictionary_size;
+            }
+        }
+
+        const size_t rows = std::min(limit - rows_read, state.rows_left_in_granule);
+        Piece piece{.rows = rows, .dictionary = std::nullopt, .first_row = 0};
+        if (state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+        {
+            piece.dictionary = dictionaries.size() - 1;
+            piece.first_row = state.firstUnreadRow();
+        }
+        else
+        {
+            plain_rows += rows;
+        }
+        pieces.push_back(piece);
+
+        state.rows_left_in_granule -= rows;
+        rows_read += rows;
+    }
+
+    PaddedPODArray<UInt64> sizes;
+    size_t position = nested.size();
+    if (continues_dictionary)
+    {
+        dictionaries[0].position = position;
+        nested.insertRangeFrom(*kept_dictionary, 0, dictionaries[0].size);
+        position += dictionaries[0].size;
+    }
+
+    if (new_dictionary_values != 0)
+    {
+        if (readStringsWithSizes(nested, new_dictionary_values, *streams.dictionary_sizes, *streams.dictionary_data, sizes, filter)
+            != new_dictionary_values)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the dictionaries of String granules");
+        for (size_t i = continues_dictionary ? 1 : 0; i < dictionaries.size(); ++i)
+        {
+            dictionaries[i].position = position;
+            position += dictionaries[i].size;
+        }
+    }
+
+    size_t plain_position = position;
+    if (plain_rows != 0 && readStringsWithSizes(nested, plain_rows, *streams.sizes, *streams.data, sizes, filter) != plain_rows)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read {} rows of plain String granules", plain_rows);
+
+    auto & indexes = column.getIndexes();
+    indexes.reserve(indexes.size() + rows_read);
+    for (const auto & piece : pieces)
+    {
+        if (!piece.dictionary)
+        {
+            indexes.insertIndexesRange(plain_position, piece.rows);
+            plain_position += piece.rows;
+            continue;
+        }
+
+        const auto & dictionary = dictionaries[*piece.dictionary];
+        indexes.insertIndexesRangeWithShift(
+            *dictionary.codes, piece.first_row, piece.rows, dictionary.position, dictionary.position + dictionary.size);
+    }
+
+    /// A call that ends inside a dictionary granule leaves its codes, and the values of a granule that began
+    /// in this call, in the state for the next call.
+    if (state.rows_left_in_granule != 0 && state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+    {
+        auto & last = dictionaries.back();
+        const bool last_began_in_this_call = !continues_dictionary || dictionaries.size() > 1;
+        if (last_began_in_this_call)
+            state.dictionary = nested.cut(last.position, last.size);
+        state.granule_codes = std::move(last.codes);
+    }
+
+    for (auto & dictionary : dictionaries)
+        if (dictionary.codes)
+            state.recycleCodes(std::move(dictionary.codes));
+}
+
+/// Reads up to `limit` rows into `column`, a `ColumnString`, with the rows of dictionary granules
+/// materialized.
+void readGranulesMaterialized(
+    ColumnString & column,
+    size_t limit,
+    const StringGranuleInputStreams & streams,
+    DeserializeBinaryBulkStateStringWithDictionaries & state,
+    const StringValueFilter * filter)
+{
+    PaddedPODArray<UInt64> sizes;
+    size_t rows_read = 0;
+    while (rows_read < limit)
+    {
+        if (state.rows_left_in_granule == 0)
+        {
+            if (!state.startGranule(*streams.indexes))
+                break;
+            if (state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+            {
+                auto dictionary = ColumnString::create();
+                if (readStringsWithSizes(*dictionary, state.granule.dictionary_size, *streams.dictionary_sizes, *streams.dictionary_data, sizes, filter)
+                    != state.granule.dictionary_size)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the dictionary of a String granule");
+                state.dictionary = std::move(dictionary);
+            }
+        }
+
+        const size_t rows = std::min(limit - rows_read, state.rows_left_in_granule);
+        if (state.granule.kind == StringGranuleHeader::Kind::Plain)
+        {
+            if (readStringsWithSizes(column, rows, *streams.sizes, *streams.data, sizes, filter) != rows)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read {} rows of a plain String granule", rows);
+        }
+        else
+        {
+            insertDictionaryValues(
+                column, assert_cast<const ColumnString &>(*state.dictionary), *state.granule_codes, state.firstUnreadRow(), rows);
+        }
+
+        state.rows_left_in_granule -= rows;
+        rows_read += rows;
+    }
+}
+
+}
+
+void SerializationString::deserializeBinaryBulkWithDictionaries(
+    IColumn & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    settings.path.push_back(Substream::Regular);
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
+    {
+        settings.path.pop_back();
+        return;
+    }
+
+    /// Each stream is requested once per call: in a read that does not continue the previous one, the getter seeks the
+    /// stream to the mark on every request, and every stream has to be sought then, also those this call does not read.
+    StringGranuleInputStreams streams;
+    streams.data = settings.getter(settings.path);
+    settings.path.back() = Substream::StringDictionaryIndexes;
+    streams.indexes = settings.getter(settings.path);
+    settings.path.back() = Substream::StringSizes;
+    streams.sizes = settings.getter(settings.path);
+    settings.path.back() = Substream::StringDictionarySizes;
+    streams.dictionary_sizes = settings.getter(settings.path);
+    settings.path.back() = Substream::StringDictionaryElements;
+    streams.dictionary_data = settings.getter(settings.path);
+    settings.path.pop_back();
+
+    /// The column is not in the part.
+    if (!streams.indexes)
+        return;
+
+    auto & granules_state = *checkAndGetState<DeserializeBinaryBulkStateStringWithDictionaries>(state);
+    /// The streams were sought to a mark, which is the start of a granule.
+    if (!settings.continuous_reading)
+        granules_state.rows_left_in_granule = 0;
+
+    const StringValueFilter * filter = settings.string_value_filter.get();
+    const size_t prev_size = column.size();
+
+    /// A caller that creates the column from the type instead of `createColumnForDeserialization` gets the
+    /// rows of dictionary granules materialized.
+    if (auto * column_replicated = typeid_cast<ColumnReplicated *>(&column))
+        readGranulesIntoReplicated(*column_replicated, limit, streams, granules_state, filter);
+    else
+        readGranulesMaterialized(assert_cast<ColumnString &>(column), limit, streams, granules_state, filter);
+
+    settings.path.push_back(Substream::Regular);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
     settings.path.pop_back();
 }
 

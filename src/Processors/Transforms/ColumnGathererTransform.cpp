@@ -1,4 +1,5 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Columns/ColumnReplicated.h>
 
 #include <Core/Block.h>
 #include <Common/ProfileEvents.h>
@@ -57,6 +58,14 @@ void ColumnGathererStream::updateStats(const IColumn & column)
 
 void ColumnGathererStream::initialize(Inputs inputs)
 {
+    /// A `String` column with dictionary granules is read as a `ColumnReplicated` when the merged part writes
+    /// it as it is (see `MergeTask`). The gather only moves rows, so the result keeps that form when a source
+    /// has it, and the writer builds the dictionaries from the positions.
+    is_result_replicated = std::ranges::any_of(inputs, [](const Input & input)
+    {
+        return input.chunk && input.chunk.getColumns().at(0)->isReplicated();
+    });
+
     VectorWithMemoryTracking<ColumnPtr> source_columns;
     source_columns.reserve(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
@@ -64,9 +73,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
         if (!inputs[i].chunk)
             continue;
 
-        if (!is_result_sparse)
-            removeSpecialColumnRepresentations(inputs[i].chunk);
-
+        prepareSourceChunk(inputs[i].chunk);
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
         source_columns.push_back(sources[i].column);
     }
@@ -77,6 +84,8 @@ void ColumnGathererStream::initialize(Inputs inputs)
     result_column = source_columns[0]->cloneEmpty();
     if (is_result_sparse && !result_column->isSparse())
         result_column = ColumnSparse::create(std::move(result_column));
+    if (is_result_replicated && !result_column->isReplicated())
+        result_column = ColumnReplicated::create(std::move(result_column));
 
     if (result_column->hasDynamicStructure())
         result_column->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
@@ -189,14 +198,25 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
 }
 
 
+void ColumnGathererStream::prepareSourceChunk(Chunk & chunk) const
+{
+    const bool is_replicated = chunk.getColumns().at(0)->isReplicated();
+    /// A sparse serialization does not write a `ColumnReplicated`, so the merge never reads one for a sparse
+    /// result: `ColumnSparse` cannot hold it.
+    chassert(!is_replicated || !is_result_sparse);
+    if (is_replicated && is_result_replicated)
+        return;
+
+    if (!is_result_sparse)
+        removeSpecialColumnRepresentations(chunk);
+}
+
 void ColumnGathererStream::consume(Input & input, size_t source_num)
 {
     auto & source = sources[source_num];
     if (input.chunk)
     {
-        if (!is_result_sparse)
-            removeSpecialColumnRepresentations(input.chunk);
-
+        prepareSourceChunk(input.chunk);
         source.update(input.chunk.getColumns().at(0));
     }
 

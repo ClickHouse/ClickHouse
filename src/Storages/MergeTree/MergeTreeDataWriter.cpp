@@ -603,6 +603,12 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    /// The merging algorithms of the engines other than plain `MergeTree` process plain columns, as their
+    /// merges do (see `MergeTask`), and a `String` column with dictionary granules is read as a
+    /// `ColumnReplicated`.
+    for (auto & column : block)
+        column.column = column.column->convertToFullColumnIfReplicated();
+
     /// The sign, version and is_deleted columns may be subcolumns, which the merging algorithm reads as separate columns.
     for (const auto * column_name : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
     {
@@ -1088,6 +1094,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    settings = settings.forPartType(new_data_part->getType());
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
@@ -1316,6 +1323,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    settings = settings.forPartType(new_data_part->getType());
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
