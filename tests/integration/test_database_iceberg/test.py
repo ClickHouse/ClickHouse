@@ -2874,6 +2874,21 @@ def test_writes_insert_lost_commit_response(started_cluster):
     assert "DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN" in error, error
     assert "Injected connection failure after sending the REST catalog request" in error, error
 
+    # The failpoint fires as soon as the request is sent, before the response is read, so the catalog
+    # may still be applying the commit when the query fails. Wait until the catalog publishes it.
+    catalog = load_catalog_impl(started_cluster)
+
+    def committed_snapshots():
+        return catalog.load_table(f"{root_namespace}.{table_name}").metadata.snapshots
+
+    deadline = time.monotonic() + 60
+    while len(committed_snapshots()) < 2 and time.monotonic() < deadline:
+        time.sleep(0.1)
+
+    # Exactly one new snapshot: the commit was applied, and it was not replayed.
+    snapshots = committed_snapshots()
+    assert len(snapshots) == 2, snapshots
+
     assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "a\nb\n"
 
 
