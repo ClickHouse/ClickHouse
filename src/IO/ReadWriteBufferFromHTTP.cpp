@@ -431,6 +431,17 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             callable();
             return;
         }
+        catch (Poco::Net::MalformedMessageException & e)
+        {
+            /// The server has sent a response that violates the protocol, e.g. a bare CR inside a
+            /// header field. It will send the same response again. A response cut short is
+            /// `MessageException` and is retried. A header that exceeds a limit is reported as
+            /// `LIMIT_EXCEEDED` by `receiveHTTPResponse` and is not retried either.
+            is_retriable = false;
+
+            error_message = e.displayText();
+            exception = std::current_exception();
+        }
         catch (Poco::Net::NetException & e)
         {
             error_message = e.displayText();
@@ -451,6 +462,14 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (Exception & e)
         {
+            is_retriable = false;
+
+            error_message = e.displayText();
+            exception = std::current_exception();
+        }
+        catch (Poco::SyntaxException & e)
+        {
+            /// E.g. a status code that is not a number, or a malformed redirect location.
             is_retriable = false;
 
             error_message = e.displayText();
@@ -507,16 +526,17 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             if (on_retry)
                 on_retry();
 
-            if (!mute_logging)
-                LOG_TRACE(log,
-                         "Failed to make request to '{}'{}. "
-                         "Error: {}. "
-                         "Failed at try {}/{}. "
-                         "Will retry with current backoff wait is {}/{} ms.",
-                         maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
-                         error_message,
-                         attempt + 1, read_settings.http_settings.max_tries,
-                         milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
+            /// The retries are logged even for a request whose final error is muted: they can take
+            /// minutes, and the user must see what the query is waiting for.
+            LOG_TRACE(log,
+                     "Failed to make request to '{}'{}. "
+                     "Error: {}. "
+                     "Failed at try {}/{}. "
+                     "Will retry with current backoff wait is {}/{} ms.",
+                     maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
+                     error_message,
+                     attempt, read_settings.http_settings.max_tries,
+                     milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
 
             const bool cancelled = waitBeforeRetry(milliseconds_to_wait);
             milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
