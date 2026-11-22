@@ -21,10 +21,10 @@ namespace XML {
 
 
 const XMLString NamespaceSupport::EMPTY_STRING;
-const XMLString NamespaceSupport::XML_NAMESPACE          = toXMLString("http://www.w3.org/XML/1998/namespace");
-const XMLString NamespaceSupport::XML_NAMESPACE_PREFIX   = toXMLString("xml");
-const XMLString NamespaceSupport::XMLNS_NAMESPACE        = toXMLString("http://www.w3.org/xmlns/2000/");
-const XMLString NamespaceSupport::XMLNS_NAMESPACE_PREFIX = toXMLString("xmlns");
+[[clang::no_destroy]] const XMLString NamespaceSupport::XML_NAMESPACE          = toXMLString("http://www.w3.org/XML/1998/namespace");
+[[clang::no_destroy]] const XMLString NamespaceSupport::XML_NAMESPACE_PREFIX   = toXMLString("xml");
+[[clang::no_destroy]] const XMLString NamespaceSupport::XMLNS_NAMESPACE        = toXMLString("http://www.w3.org/xmlns/2000/");
+[[clang::no_destroy]] const XMLString NamespaceSupport::XMLNS_NAMESPACE_PREFIX = toXMLString("xmlns");
 
 
 NamespaceSupport::NamespaceSupport()
