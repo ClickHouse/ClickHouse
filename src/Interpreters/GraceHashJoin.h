@@ -205,7 +205,7 @@ private:
     mutable std::mutex hash_join_mutex;
 
     std::shared_ptr<QueryJoinSpillBudget> spill_budget;
-    /// A split decided by the share alone waits until the bucket has doubled since the previous one, so a bucket
+    /// A split decided by the share alone waits until the bucket has doubled since its previous split, so a bucket
     /// that a split cannot divide (one key) is not split again at every block. Guarded by `hash_join_mutex`.
     size_t min_bytes_for_share_split = 0;
 

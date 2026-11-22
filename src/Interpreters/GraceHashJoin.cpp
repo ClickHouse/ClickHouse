@@ -826,6 +826,10 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
+        {
+            std::lock_guard lock(hash_join_mutex);
+            min_bytes_for_share_split = 0;
+        }
         hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed

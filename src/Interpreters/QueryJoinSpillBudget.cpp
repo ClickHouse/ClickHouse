@@ -12,7 +12,7 @@ namespace DB
 {
 
 QueryJoinSpillBudget::QueryJoinSpillBudget(size_t budget_bytes_, size_t own_threshold_bytes_)
-    : budget_bytes(budget_bytes_)
+    : budget_bytes(std::max(budget_bytes_, own_threshold_bytes_))
     , own_threshold_bytes(own_threshold_bytes_)
 {
 }
