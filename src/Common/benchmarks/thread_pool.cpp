@@ -1,33 +1,22 @@
 /// Throughput of `ThreadPool` job hand-off under concurrent schedulers.
 ///
-/// Every case runs `benchmark::State::threads` scheduler threads at once. Each case first runs its workload
-/// untimed for `warmup_s`, then measures for `measure_s` (see `Run`). The result is `jobs_per_second`: jobs of
-/// the units of work all schedulers started inside the window, divided by the time from the start of the
-/// window until the last of those units finished. Cases are parameterized by:
-///   - `cpus`: the process is pinned to the first `cpus` CPUs it may run on, so that schedulers, workers
-///     and the OS compete for a fixed number of real cores, as on a loaded server.
+/// Every case runs `benchmark::State::threads` schedulers at once: a 0.5 s warm-up, then a 2 s measured window
+/// (see `Run`). Parameters:
+///   - `cpus`: the process is pinned to its first `cpus` CPUs, as on a loaded server.
 ///   - `work_ns`: thread CPU time each job spins for. Short jobs expose the cost of the hand-off itself.
 ///   - the pool size and the number of jobs each scheduler keeps in flight.
 ///
-/// Counters:
-///   - `jobs_per_second`: the result.
-///   - `global_lock_wait_us_per_job`, `local_lock_wait_us_per_job`: `GlobalThreadPoolLockWaitMicroseconds`
-///     and `LocalThreadPoolLockWaitMicroseconds` over the window per job, as a server reports them per query.
-///     They count only the explicit acquisitions of the pool mutex that these events instrument, in whole
-///     microseconds, so they support the throughput result but do not measure the whole hand-off.
-///   - `offered_jobs_per_cpu`: jobs the schedulers keep in flight, per CPU.
-///   - `FreePool` also reports `runnable_jobs_per_cpu`: the same, capped by the pool size.
-///   - `process_cpu_seconds`: CPU time of the process when the case reports.
+/// Counters: `jobs_per_second` (the result); `global_lock_wait_us_per_job` and `local_lock_wait_us_per_job`
+/// (`GlobalThreadPoolLockWaitMicroseconds` and `LocalThreadPoolLockWaitMicroseconds` per job);
+/// `offered_jobs_per_cpu`; for `FreePool` also `runnable_jobs_per_cpu` (the same, capped by the pool size).
 ///
 /// Cases:
-///   - `FreePool`: schedulers share one `FreeThreadPool` and each waits for its own batch of jobs. All
-///     `pool_size` workers are created and idle before the warm-up.
+///   - `FreePool`: schedulers share one `FreeThreadPool` and each waits for its own batch of jobs.
 ///   - `QueryPools`: each iteration is one short query: a local `ThreadPool` of `query_threads` takes threads
 ///     from the global pool (server defaults: 10000 threads, 1000 kept free), runs one job per thread and is
-///     destroyed. Global workers up to the demand, at most 1000, are created and idle before the warm-up.
+///     destroyed.
 ///
-/// The global pool and the process state carry over between cases, so run each case in its own process
-/// and compare two builds with interleaved runs on the same machine, for example:
+/// The global pool keeps state between cases, so run each case in its own process, for example:
 ///   benchmark_thread_pool --benchmark_filter='^FreePool/cpus:4/pool_size:256/batch:16/work_ns:0/iterations:1/manual_time/threads:16$'
 
 #include <Common/CurrentMetrics.h>
@@ -47,8 +36,6 @@
 #include <mutex>
 #include <string>
 #include <thread>
-
-#include <sys/resource.h>
 
 #if defined(OS_LINUX)
 #include <sched.h>
@@ -130,7 +117,7 @@ int64_t threadCpuNanoseconds()
     return static_cast<int64_t>(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
 }
 
-/// Counts CPU time, not wall time: a job that is preempted must not finish its work while off the CPU.
+/// Thread CPU time, so that preemption does not shorten the work.
 void spin(int64_t work_ns)
 {
     if (work_ns <= 0)
@@ -138,15 +125,6 @@ void spin(int64_t work_ns)
     const int64_t deadline = threadCpuNanoseconds() + work_ns;
     while (threadCpuNanoseconds() < deadline)
         benchmark::ClobberMemory();
-}
-
-/// CPU time of the whole process so far, so that a harness can tell it apart from other load on its CPUs.
-double processCpuSeconds()
-{
-    rusage usage{};
-    getrusage(RUSAGE_SELF, &usage);
-    const auto seconds = [](const timeval & tv) { return static_cast<double>(tv.tv_sec) + static_cast<double>(tv.tv_usec) / 1e6; };
-    return seconds(usage.ru_utime) + seconds(usage.ru_stime);
 }
 
 struct LockWait
@@ -191,17 +169,10 @@ struct OnPhaseEnd
     void operator()() noexcept;
 };
 
-/// State shared by the scheduler threads of one case. Thread 0 prepares it before the benchmark loop and
-/// reports after it; Google Benchmark puts a barrier at the start and at the end of that loop.
-///
-/// Inside the loop every scheduler runs units of work (`unit` returns the number of jobs it ran) in two
-/// phases separated by barriers: warm-up until a common deadline, then the measured window. A phase ends
-/// once every scheduler has finished its last unit; then the completion step waits until the pool has no
-/// scheduled jobs. A worker updates that count under the pool mutex right after recording its lock wait,
-/// so at that point the bookkeeping of every job is done and counted. `active` takes the mutex without
-/// recording lock wait or waking workers. Measured: jobs of the units started before the end of the window,
-/// divided by the time from the start of the window until the last of those units finished; lock wait of
-/// exactly those jobs.
+/// State shared by the schedulers of one case, set up by thread 0. Every scheduler runs units of work (`unit`
+/// returns the number of jobs it ran) until a common deadline, first to warm up, then for the measured window.
+/// Each phase ends at a barrier, which waits until the pool has no scheduled jobs: a worker decrements that
+/// count right after recording its lock wait, so the window and its counters cover exactly its own jobs.
 struct Run
 {
     bool ok = true;
@@ -264,8 +235,7 @@ struct Run
         }
     }
 
-    /// An exception in a unit must not leave the other schedulers waiting at a barrier: record it, stop
-    /// every scheduler at its next check, and report the case as failed.
+    /// An exception stops every scheduler at its next check, so none waits at a barrier forever.
     template <typename Unit>
     size_t runUnit(Unit & unit)
     {
@@ -324,7 +294,6 @@ struct Run
         state.counters["global_lock_wait_us_per_job"] = static_cast<double>(lock_wait_end.global - lock_wait_start.global) / total_jobs;
         state.counters["local_lock_wait_us_per_job"] = static_cast<double>(lock_wait_end.local - lock_wait_start.local) / total_jobs;
         state.counters["offered_jobs_per_cpu"] = offered_jobs / static_cast<double>(cpus);
-        state.counters["process_cpu_seconds"] = processCpuSeconds();
     }
 };
 
@@ -425,8 +394,7 @@ void QueryPools(benchmark::State & state)
             std::call_once(global_pool_initialized, [] { GlobalThreadPool::initialize(10000, global_pool_max_free_threads); });
             const size_t idle_workers = std::min(schedulers * query_threads, global_pool_max_free_threads);
             createIdleWorkers(GlobalThreadPool::instance(), idle_workers);
-            /// Local pools are destroyed at the end of each unit, after their own bookkeeping; only the
-            /// global workers that ran them can still be busy.
+            /// Each unit destroys its local pool, so only global workers can still be busy at a barrier.
             run.scheduled_jobs = [] { return GlobalThreadPool::instance().active(); };
             if (static_cast<size_t>(CurrentMetrics::get(CurrentMetrics::GlobalThread)) < idle_workers)
                 run.fail("idle workers were not created");
