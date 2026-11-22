@@ -1,12 +1,11 @@
 #include <Disks/DiskFromAST.h>
-#include <Common/assert_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/SipHash.h>
-#include <Common/Config/ConfigProcessor.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IStoragePolicy.h>
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Common/SipHash.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -19,6 +18,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <algorithm>
+#include <memory>
 #include <set>
 
 namespace DB
@@ -157,6 +157,9 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
     const auto disk_settings_hash = hashes[matches.front().first];
     const auto & disk_name = matches.front().second;
 
+    if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
+
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         /// A wrapper (`encrypted`, `cache`) names a disk another session may have created with the opt-in. It is looked up
         /// in the map the wrapper is created from, so that it cannot be registered in between.
@@ -189,24 +192,6 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
-
-    if (!attach && !disk->isRemote() && disk->getName() != "backup")
-    {
-        static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
-        auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
-
-        if (disk_path_expected_prefix.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Base path for custom local disks must be defined in config file by `{}`",
-                custom_local_disks_base_dir_in_config);
-
-        if (!pathStartsWith(disk->getPath(), disk_path_expected_prefix))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Path of the custom local disk must be inside `{}` directory",
-                disk_path_expected_prefix);
-    }
 
     /// The disk may have been created by a session with the opt-in, from a configuration that resolved differently then
     /// (`include` or `from_zk` changed since), so the check of this session's definition does not cover it.
