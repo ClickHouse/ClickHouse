@@ -21,11 +21,11 @@ using QueryParameters = VectorWithMemoryTracking<QueryParameter>;
 
 struct IYTsaurusQuery
 {
-    virtual String getQueryName() const = 0;
-    virtual QueryParameters getQueryParameters() const = 0;
+    [[nodiscard]] virtual String getQueryName() const = 0;
+    [[nodiscard]] virtual QueryParameters getQueryParameters() const = 0;
     virtual ~IYTsaurusQuery() = default;
     /// Follows: https://ytsaurus.tech/docs/en/user-guide/proxy/http-reference#http_method
-    virtual String getHTTPMethod() const = 0;
+    [[nodiscard]] virtual String getHTTPMethod() const = 0;
     virtual bool isHeavyQuery() { return false; }
 };
 
@@ -42,17 +42,17 @@ struct YTsaurusReadTableQuery : public IYTsaurusHeavyQuery
         : cypress_path(fmt::format("{}[#{}:#{}]", cypress_path_, row_range.first, row_range.second))
         {}
 
-    String getQueryName() const override
+    [[nodiscard]] String getQueryName() const override
     {
         return "read_table";
     }
 
-    String getHTTPMethod() const override
+    [[nodiscard]] String getHTTPMethod() const override
     {
         return Poco::Net::HTTPRequest::HTTP_GET;
     }
 
-    QueryParameters getQueryParameters() const override
+    [[nodiscard]] QueryParameters getQueryParameters() const override
     {
         return {{.name="path", .value=cypress_path}};
     }
@@ -64,17 +64,17 @@ struct YTsaurusGetQuery : public IYTsaurusQuery
 {
     explicit YTsaurusGetQuery(const String & cypress_path_) : cypress_path(cypress_path_) {}
 
-    String getQueryName() const override
+    [[nodiscard]] String getQueryName() const override
     {
         return "get";
     }
 
-    String getHTTPMethod() const override
+    [[nodiscard]] String getHTTPMethod() const override
     {
         return Poco::Net::HTTPRequest::HTTP_GET;
     }
 
-    QueryParameters getQueryParameters() const override
+    [[nodiscard]] QueryParameters getQueryParameters() const override
     {
         return {{.name="path", .value=cypress_path}};
     }
@@ -87,22 +87,22 @@ struct YTsaurusSelectRowsQuery : public IYTsaurusHeavyQuery
     explicit YTsaurusSelectRowsQuery(const String & table_path_, const String & columns_str_)
         : table_path(table_path_) , column_names_str(columns_str_) {}
 
-    String getQueryName() const override
+    [[nodiscard]] String getQueryName() const override
     {
         return "select_rows";
     }
 
-    String getHTTPMethod() const override
+    [[nodiscard]] String getHTTPMethod() const override
     {
         return Poco::Net::HTTPRequest::HTTP_GET;
     }
 
-    String constructQuery() const
+    [[nodiscard]] String constructQuery() const
     {
         return fmt::format("{} from [{}]", column_names_str, table_path);
     }
 
-    QueryParameters getQueryParameters() const override
+    [[nodiscard]] QueryParameters getQueryParameters() const override
     {
         return {{.name="query", .value=constructQuery()}};
     }
@@ -115,17 +115,17 @@ struct YTsaurusLookupRows : public IYTsaurusHeavyQuery
 {
     explicit YTsaurusLookupRows(const String & cypress_path_) : cypress_path(cypress_path_) {}
 
-    String getQueryName() const override
+    [[nodiscard]] String getQueryName() const override
     {
         return "lookup_rows";
     }
 
-    String getHTTPMethod() const override
+    [[nodiscard]] String getHTTPMethod() const override
     {
         return Poco::Net::HTTPRequest::HTTP_PUT;
     }
 
-    QueryParameters getQueryParameters() const override
+    [[nodiscard]] QueryParameters getQueryParameters() const override
     {
         return {{.name="path", .value=cypress_path}};
     }
@@ -138,17 +138,17 @@ struct YTsaurusStartTxQuery : public IYTsaurusQuery
 {
     explicit YTsaurusStartTxQuery(size_t timeout_) : timeout(timeout_) {}
 
-    String getQueryName() const override
+    [[nodiscard]] String getQueryName() const override
     {
         return "start_tx";
     }
 
-    String getHTTPMethod() const override
+    [[nodiscard]] String getHTTPMethod() const override
     {
         return Poco::Net::HTTPRequest::HTTP_POST;
     }
 
-    QueryParameters getQueryParameters() const override
+    [[nodiscard]] QueryParameters getQueryParameters() const override
     {
         return {{.name="timeout", .value=std::to_string(timeout) }};
     }
@@ -164,17 +164,17 @@ struct YTsaurusCommitTxQuery : public IYTsaurusQuery
     {
     }
 
-    String getQueryName() const override
+    [[nodiscard]] String getQueryName() const override
     {
         return "commit_tx";
     }
 
-    String getHTTPMethod() const override
+    [[nodiscard]] String getHTTPMethod() const override
     {
         return Poco::Net::HTTPRequest::HTTP_POST;
     }
 
-    QueryParameters getQueryParameters() const override
+    [[nodiscard]] QueryParameters getQueryParameters() const override
     {
         return {{.name="transaction_id", .value=transaction_id}};
     }
@@ -189,17 +189,17 @@ struct YTsaurusLockQuery : public IYTsaurusQuery
         : path(path_)
         , transaction_id(transaction_id_) {}
 
-    String getQueryName() const override
+    [[nodiscard]] String getQueryName() const override
     {
         return "lock";
     }
 
-    String getHTTPMethod() const override
+    [[nodiscard]] String getHTTPMethod() const override
     {
         return Poco::Net::HTTPRequest::HTTP_POST;
     }
 
-    QueryParameters getQueryParameters() const override
+    [[nodiscard]] QueryParameters getQueryParameters() const override
     {
         return {
             {.name="path", .value=path},
