@@ -800,14 +800,9 @@ def _amd_performance_skipped(info):
     return not full_suite_reason(info, "arm_release")
 
 
-# The kv data entry with the build types that this run builds without ThinLTO, PGO and BOLT
-# (see `ci/jobs/build_clickhouse.py`). A pre-hook of a pull request workflow sets it: here
-# `configure_amd_release_thinlto`, and the private repository has its own hook for its own
-# PR workflow. Such a hook also salts the digest of every build job whose variant is not
-# the one that its workflow builds by default (`Cache.DIGEST_SALTS_KV_KEY`), so that the
-# two variants of a build are cached separately and keep their artifacts in separate
-# directories (`Cache.artifact_dir`).
-BUILDS_WITHOUT_THINLTO_KV = "builds_without_thinlto"
+# The kv data flag, set by `configure_amd_release_thinlto`, that makes `Build (amd_release)`
+# build without ThinLTO (see `ci/jobs/build_clickhouse.py`).
+AMD_RELEASE_WITHOUT_THINLTO_KV = "amd_release_without_thinlto"
 AMD_RELEASE_BUILD_JOB = f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE})"
 
 assert AMD_RELEASE_BUILD_JOB in {
@@ -845,14 +840,14 @@ def configure_amd_release_thinlto():
     if (
         info.pr_number <= 0
         or info.workflow_name != SMALL_PR_WORKFLOW
-        # The private repository has its own PR workflow, with its own pre-hook for this.
+        # Private PR builds are deployed to staging (see `flavor_cmake_options`).
         or info.repo_name != "ClickHouse/ClickHouse"
         or force_all
         or not _amd_performance_skipped(info)
     ):
         return
     print(f"NOTE: no AMD performance comparison - [{AMD_RELEASE_BUILD_JOB}] builds without ThinLTO")
-    info.store_kv_data(BUILDS_WITHOUT_THINLTO_KV, [BuildTypes.AMD_RELEASE])
+    info.store_kv_data(AMD_RELEASE_WITHOUT_THINLTO_KV, True)
     salts = info.get_kv_data(Cache.DIGEST_SALTS_KV_KEY) or {}
     salts[AMD_RELEASE_BUILD_JOB] = "without_thinlto"
     info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)

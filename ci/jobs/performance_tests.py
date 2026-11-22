@@ -3404,8 +3404,8 @@ def main():
         )
         res = results[-1].is_ok()
 
-    # A PR run builds a release build without ThinLTO, PGO and BOLT when none of its
-    # performance comparisons needs it (`BUILDS_WITHOUT_THINLTO_KV` in `filter_job.py`).
+    # A PR run builds `amd_release` without ThinLTO, PGO and BOLT when it skips the AMD
+    # performance comparison (`configure_amd_release_thinlto` in `filter_job.py`).
     # CI does not run this job on such a build, but a local run (`praktika run ... --pr N
     # --sha SHA`) downloads the variant that the run at that commit built. Comparing a
     # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
