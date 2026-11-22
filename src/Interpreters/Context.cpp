@@ -5,6 +5,8 @@
 #include <set>
 #include <optional>
 #include <ranges>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -5296,23 +5298,58 @@ std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
 
 void StreamingCursor::merge(const CursorTreeNodePtr & cursor)
 {
+    mergeAt({}, cursor);
+}
+
+void StreamingCursor::mergeAt(const Strings & sub_path, const CursorTreeNodePtr & cursor)
+{
     if (parent)
     {
-        auto wrapped = cursor;
-        for (const auto & key : path | std::views::reverse)
-        {
-            auto node = std::make_shared<CursorTreeNode>();
-            node->setSubtree(key, std::move(wrapped));
-            wrapped = std::move(node);
-        }
-        parent->merge(wrapped);
+        Strings full_path = path;
+        full_path.insert(full_path.end(), sub_path.begin(), sub_path.end());
+        parent->mergeAt(full_path, cursor);
         return;
     }
 
-    auto canonical = buildCursorTree(cursorTreeToMap(cursor));
+    auto wrapped = cursor;
+    for (const auto & key : sub_path | std::views::reverse)
+    {
+        auto node = std::make_shared<CursorTreeNode>();
+        node->setSubtree(key, std::move(wrapped));
+        wrapped = std::move(node);
+    }
+    auto canonical = buildCursorTree(cursorTreeToMap(wrapped));
+
+    /// The path in the persisted form, where a key with a dot is split.
+    Strings canonical_path;
+    for (const auto & key : sub_path)
+    {
+        Strings parts;
+        boost::split(parts, key, boost::is_any_of("."));
+        canonical_path.insert(canonical_path.end(), parts.begin(), parts.end());
+    }
+
     std::lock_guard lock(mutex);
     if (!tree)
         tree = std::make_shared<CursorTreeNode>();
+
+    /// The first report under this path replaces the cursor of the previous refresh there.
+    if (reported_paths.insert(canonical_path).second)
+    {
+        if (canonical_path.empty())
+        {
+            tree = std::make_shared<CursorTreeNode>();
+        }
+        else
+        {
+            CursorTreeNode * node = tree.get();
+            for (size_t i = 0; i + 1 < canonical_path.size() && node; ++i)
+                node = node->hasSubtree(canonical_path[i]) ? node->getSubtree(canonical_path[i]).get() : nullptr;
+            if (node && node->hasSubtree(canonical_path.back()))
+                node->setSubtree(canonical_path.back(), std::make_shared<CursorTreeNode>());
+        }
+    }
+
     mergeCursors(tree, canonical);
 }
 

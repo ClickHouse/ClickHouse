@@ -120,6 +120,19 @@ IProcessor::Status MergeTreeCommitOrderSource::handleShutdown()
     auto & output = outputs.front();
     chassert(output.isFinished());
 
+    /// The query does not need the rest of the rows of the round (e.g. a `DISTINCT` by constants or a `LIMIT BY`
+    /// without keys already has its result), so it stopped the read. A bounded read still has to report the cursor
+    /// after all the rows of the round: these rows are consumed by the query, although they are not read, and the next
+    /// incremental refresh must not get them again. If the query was stopped by an exception or was cancelled instead,
+    /// it fails, and the reported cursor is discarded along with it.
+    /// If the round did not start, the read returned nothing, and the cursor stays in place.
+    const bool is_bounded_subscription = !stream_settings.subscribe_for_updates;
+    if (is_bounded_subscription && current_round.has_value() && !final_cursor_surfaced)
+    {
+        read_state.finishReadRound(current_round->partitions, current_round->safe_block_numbers);
+        surfaceFinalCursor();
+    }
+
     if (inputs.empty() || !inputs.front().isConnected())
         return Status::Finished;
 
@@ -194,6 +207,7 @@ void MergeTreeCommitOrderSource::surfaceFinalCursor()
     if (!cursor)
         return;
 
+    final_cursor_surfaced = true;
     cursor->merge(mergeTreeCursorToCursorTree(read_state.getPartitionCursors()));
 }
 

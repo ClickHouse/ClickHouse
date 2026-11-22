@@ -42,6 +42,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 
 
 namespace Poco::Net
@@ -363,15 +364,23 @@ struct StreamingCursor
     CursorTreeNodePtr tree;
 
     /// Merge the cursor of a finished read into this holder (or into the parent under `path`). The trees are merged
-    /// in the form they are persisted in, where a key with a dot is split into a path, so that a part of the cursor
-    /// reported by a read replaces the same part of the cursor of the previous refresh.
+    /// in the form they are persisted in, where a key with a dot is split into a path.
+    ///
+    /// The holder starts from the cursor of the previous refresh, so that a part of a composite source that is not read
+    /// this time keeps its position. The first cursor reported under a path replaces the subtree of the previous refresh
+    /// at that path (the reads of the parallel streams of one table are merged together), so the entries that the read
+    /// no longer has (e.g. dropped partitions) are retired instead of accumulating forever.
     void merge(const CursorTreeNodePtr & cursor);
 
     static std::shared_ptr<StreamingCursor> createChild(std::shared_ptr<StreamingCursor> parent, Strings path);
 
 private:
+    void mergeAt(const Strings & sub_path, const CursorTreeNodePtr & cursor);
+
     std::shared_ptr<StreamingCursor> parent;
     Strings path;
+    /// The paths (split at dots) under which a cursor was already reported, only in the root holder.
+    std::set<Strings> reported_paths;
 };
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
