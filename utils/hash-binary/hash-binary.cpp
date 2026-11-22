@@ -20,6 +20,8 @@
 #include <vector>
 
 #include <elf.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 
 namespace
@@ -311,6 +313,13 @@ int main(int argc, char ** argv)
         }
         const char * path = argv[argc - 1];
 
+        /// With stdout or stderr closed, the file could get that descriptor, and the output would be written into the file.
+        if (fcntl(STDOUT_FILENO, F_GETFD) == -1 || fcntl(STDERR_FILENO, F_GETFD) == -1)
+        {
+            std::cerr << "stdout and stderr must be open\n";
+            return 1;
+        }
+
         std::fstream file(path, write_section ? (std::ios::in | std::ios::out | std::ios::binary) : (std::ios::in | std::ios::binary));
         if (!file)
         {
@@ -330,6 +339,11 @@ int main(int argc, char ** argv)
         std::ostringstream hex; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         hex << std::uppercase << std::hex << std::setfill('0')
             << std::setw(16) << hi << std::setw(16) << lo;
+        if (!hex.good())
+        {
+            std::cerr << "Failed to format the hash\n";
+            return 1;
+        }
 
         if (write_section)
         {
@@ -345,7 +359,13 @@ int main(int argc, char ** argv)
                 return 1;
         }
 
-        std::cout << hex.str();
+        /// Flush explicitly: an error in the implicit flush at exit would be ignored.
+        std::cout << hex.str() << std::flush;
+        if (!std::cout.good())
+        {
+            std::cerr << "Failed to write the hash to stdout\n";
+            return 1;
+        }
         return 0;
     }
     catch (const std::exception & e)
