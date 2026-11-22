@@ -7597,7 +7597,7 @@ For example, `arrayExists(x -> startsWith(x, 'err'), tokens(s))` can be rewritte
 Disabled by default: when a pattern matches more than `text_index_like_max_matched_tokens` tokens of the index dictionary, such as a one-character prefix,
 the index is abandoned after part of the dictionary scan and the query is slower than without the rewrite.
 )", 0, \
-        {"26.11", false, false, "New setting to rewrite `arrayExists` over `tokens` to `hasTokenLike` or `hasTokenMatch`, which are new in 26.11 and can use a text index."}) \
+        {"26.12", false, false, "New setting to rewrite `arrayExists` over `tokens` to `hasTokenLike` or `hasTokenMatch`, which are new in 26.12 and can use a text index."}) \
     DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(
 Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
 )", 0, \
@@ -11309,7 +11309,7 @@ cost as much as evaluating the predicate on the column with several threads, and
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0, \
-        {"26.11", 20000, 20000, "New setting: abandon the text index dictionary scan of `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` when their patterns match too many tokens, and evaluate them on the column. `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not capped."}) \
+        {"26.12", 20000, 20000, "New setting: abandon the text index dictionary scan of `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` when their patterns match too many tokens, and evaluate them on the column. `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not capped."}) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
