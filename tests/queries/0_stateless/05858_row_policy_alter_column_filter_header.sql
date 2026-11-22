@@ -1,5 +1,8 @@
 -- a modify column must not give a column a type for which a read fails to evaluate the row policy, also when analysis accepts it
 
+-- a remote parallel replica analyzes a policy in its own current database, which does not have the lookup tables
+SET enable_parallel_replicas = 0;
+
 CREATE TABLE t (id UInt32, n UInt32) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE u (id UInt32, f UInt8) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE m (k UInt32) ENGINE = MergeTree ORDER BY tuple();

@@ -1,5 +1,8 @@
 -- the check does not evaluate a filter that reads a scalar subquery, so a modify column must keep the types of the columns it reads
 
+-- a remote parallel replica analyzes a policy in its own current database, which does not have the lookup tables
+SET enable_parallel_replicas = 0;
+
 CREATE TABLE t (id UInt32, n UInt32) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE l (k UInt32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE u (id UInt32) ENGINE = MergeTree ORDER BY id;
