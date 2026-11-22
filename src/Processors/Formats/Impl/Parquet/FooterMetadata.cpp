@@ -896,8 +896,18 @@ std::optional<FooterMetadata::Statistics> FooterMetadata::statistics(size_t row_
     if (!column.physical_type)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Can't decode page statistics for selected column type");
 
+    /// The counts come from the file: check their range before the subtraction, which overflows otherwise.
+    if (chunk.num_values < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values {} in a column chunk of {}", chunk.num_values, column.path);
+    if (thrift_statistics.__isset.null_count && (thrift_statistics.null_count < 0 || thrift_statistics.null_count > chunk.num_values))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Invalid null count {} of a column chunk of {} with {} values",
+            thrift_statistics.null_count, column.path, chunk.num_values);
+
     Statistics result;
-    result.num_values = chunk.num_values - thrift_statistics.null_count;
+    /// An unset null count reads as 0.
+    result.num_values = chunk.num_values - (thrift_statistics.__isset.null_count ? thrift_statistics.null_count : 0);
     if (thrift_statistics.__isset.null_count)
         result.null_count = thrift_statistics.null_count;
     if (thrift_statistics.__isset.distinct_count)
