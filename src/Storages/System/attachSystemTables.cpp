@@ -1971,6 +1971,8 @@ marks_bytes:             48
 .description
 Contains information about existing projections in all tables.
 
+The `total_rows`, `data_compressed_bytes` and `data_uncompressed_bytes` columns are summed over the active parts of the table that contain the projection, so they are zero until the projection is built, for example by inserts made after it was added or by `ALTER TABLE ... MATERIALIZE PROJECTION`. For the size of each projection part, see [system.projection_parts](/operations/system-tables/projection_parts).
+
 .examples
 ```sql
 SELECT * FROM system.projections LIMIT 2 FORMAT Vertical;
@@ -1979,23 +1981,29 @@ SELECT * FROM system.projections LIMIT 2 FORMAT Vertical;
 ```text
 Row 1:
 ──────
-database:    default
-table:       landing
-name:        improved_sorting_key
-type:        Normal
-sorting_key: ['user_id','date']
-query:       SELECT * ORDER BY user_id, date
-settings:     {}
+database:                default
+table:                   landing
+name:                    improved_sorting_key
+type:                    Normal
+total_rows:              100000
+data_compressed_bytes:   27720
+data_uncompressed_bytes: 2300000
+sorting_key:             ['user_id','date']
+query:                   SELECT * ORDER BY user_id, date
+settings:                {}
 
 Row 2:
 ──────
-database:    default
-table:       landing
-name:        agg_no_key
-type:        Aggregate
-sorting_key: []
-query:       SELECT count()
-settings:     {}
+database:                default
+table:                   landing
+name:                    agg_no_key
+type:                    Aggregate
+total_rows:              1
+data_compressed_bytes:   29
+data_uncompressed_bytes: 3
+sorting_key:             []
+query:                   SELECT count()
+settings:                {}
 ```
 )DOCS_MD");
     attachNoDescription<StorageSystemConstraints>(context, system_database, "constraints", R"DOCS_MD(
