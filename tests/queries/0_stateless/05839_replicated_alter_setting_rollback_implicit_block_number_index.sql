@@ -1,5 +1,6 @@
--- Tags: zookeeper, no-parallel, no-replicated-database, no-random-merge-tree-settings
+-- Tags: zookeeper, no-parallel, no-fasttest, no-replicated-database, no-random-merge-tree-settings
 -- Tag no-parallel: the failpoint is global and would fail the settings `ALTER`s of concurrent tests
+-- Tag no-fasttest: tests that enable a failpoint must run alone, and such tests are kept out of the fast test
 -- Tag no-replicated-database: `ALTER`s of replicated and non-replicated types cannot be mixed in one query
 
 -- A settings `ALTER` of `ReplicatedMergeTree` publishes the new live settings, then installs the metadata
