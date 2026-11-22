@@ -2,6 +2,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
+#include <variant>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
@@ -30,6 +31,7 @@
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+#include <IO/ReadHelpers.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -146,6 +148,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_CURSOR_LOOKUP;
 }
 
 namespace
@@ -162,9 +165,29 @@ std::optional<TableExpressionModifiers> getStreamModifiersForShard(const std::op
     if (stream_settings.watermark)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WATERMARK is not supported for STREAM from a distributed table");
 
-    /// A shard without an entry is read from the beginning.
-    const String key = toString(shard_num);
-    stream_settings.cursor = stream_settings.cursor && stream_settings.cursor->hasSubtree(key) ? stream_settings.cursor->getSubtree(key) : nullptr;
+    /// A shard without an entry is read from the beginning: a new shard has no entry in a cursor saved before it was added.
+    /// But an entry which is not a cursor of a shard must not be silently ignored, or the rows would be read again.
+    CursorTreeNodePtr cursor_for_shard;
+    if (stream_settings.cursor)
+    {
+        for (const auto & [key, value] : *stream_settings.cursor)
+        {
+            UInt32 key_shard_num = 0;
+            if (!tryParse(key_shard_num, key) || key_shard_num == 0)
+                throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP,
+                    "The cursor of a distributed table maps the shard number to the cursor of the table on the shard, "
+                    "but its key '{}' is not a shard number", key);
+
+            if (!std::holds_alternative<CursorTreeNodePtr>(value))
+                throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP,
+                    "The cursor of a distributed table maps the shard number to the cursor of the table on the shard, "
+                    "but the value for the shard {} is a number", key);
+
+            if (key_shard_num == shard_num)
+                cursor_for_shard = std::get<CursorTreeNodePtr>(value);
+        }
+    }
+    stream_settings.cursor = std::move(cursor_for_shard);
 
     return TableExpressionModifiers(
         modifiers->hasFinal(), modifiers->getSampleSizeRatio(), modifiers->getSampleOffsetRatio(), std::move(stream_settings));
@@ -188,7 +211,7 @@ public:
             has_stream_read = true;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) const { return !has_stream_read; }
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) const { return !has_stream_read; }
 };
 
 bool hasStreamRead(const QueryTreeNodePtr & query_tree)
@@ -199,45 +222,59 @@ bool hasStreamRead(const QueryTreeNodePtr & query_tree)
 }
 
 /// Replace the cursor of the STREAM read of the distributed table in the query for a shard by its part for the shard.
-/// The distributed table expression was replaced by the table (or the table function) on the shards, which keeps its
-/// alias, unique among the table expressions of the query. Another read of the same table in the query, e.g. in a JOIN,
-/// has its own cursor, which is not keyed by the shard number, so it must not be rewritten.
-void setStreamCursorForShard(const QueryTreeNodePtr & query_for_shard, const String & table_expression_alias, UInt32 shard_num)
+/// The distributed table expression was replaced by the table (or the table function) on the shards, and is found by
+/// its alias in the query for the shards, unique among the table expressions of the whole query. Another read of the
+/// same table in the query, e.g. in a JOIN, has its own cursor, which is not keyed by the shard number, so it must not
+/// be rewritten.
+class SetStreamCursorForShardVisitor : public InDepthQueryTreeVisitor<SetStreamCursorForShardVisitor>
 {
-    auto * query_node = query_for_shard->as<QueryNode>();
-    if (!query_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a query node for a STREAM read from a distributed table, got {}",
-            query_for_shard->getNodeTypeName());
+public:
+    SetStreamCursorForShardVisitor(const String & table_expression_alias_, UInt32 shard_num_)
+        : table_expression_alias(table_expression_alias_), shard_num(shard_num_)
+    {
+    }
 
+    size_t rewritten = 0;
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * table_node = node->as<TableNode>())
+        {
+            if (table_node->getAlias() != table_expression_alias)
+                return;
+
+            if (auto modifiers = getStreamModifiersForShard(table_node->getTableExpressionModifiers(), shard_num))
+                table_node->setTableExpressionModifiers(*modifiers);
+            ++rewritten;
+        }
+        else if (auto * table_function_node = node->as<TableFunctionNode>())
+        {
+            if (table_function_node->getAlias() != table_expression_alias)
+                return;
+
+            if (auto modifiers = getStreamModifiersForShard(table_function_node->getTableExpressionModifiers(), shard_num))
+                table_function_node->setTableExpressionModifiers(*modifiers);
+            ++rewritten;
+        }
+    }
+
+private:
+    const String & table_expression_alias;
+    const UInt32 shard_num;
+};
+
+void setStreamCursorForShard(QueryTreeNodePtr & query_for_shard, const String & table_expression_alias, UInt32 shard_num)
+{
     if (table_expression_alias.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The table expression of a STREAM read from a distributed table has no alias");
 
-    size_t rewritten = 0;
-    for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped()))
-    {
-        if (table_expression->getAlias() != table_expression_alias)
-            continue;
+    SetStreamCursorForShardVisitor visitor(table_expression_alias, shard_num);
+    visitor.visit(query_for_shard);
 
-        if (auto * table_node = table_expression->as<TableNode>())
-        {
-            if (auto modifiers = getStreamModifiersForShard(table_node->getTableExpressionModifiers(), shard_num))
-                table_node->setTableExpressionModifiers(*modifiers);
-        }
-        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
-        {
-            if (auto modifiers = getStreamModifiersForShard(table_function_node->getTableExpressionModifiers(), shard_num))
-                table_function_node->setTableExpressionModifiers(*modifiers);
-        }
-        else
-            continue;
-
-        ++rewritten;
-    }
-
-    if (rewritten != 1)
+    if (visitor.rewritten != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Expected one table expression with the alias '{}' for a STREAM read from a distributed table, found {}",
-            table_expression_alias, rewritten);
+            table_expression_alias, visitor.rewritten);
 }
 
 }
@@ -694,7 +731,8 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function)
+    bool is_remote_function,
+    const String & stream_table_expression_alias)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -778,7 +816,7 @@ void executeQuery(
             /// The cursor differs between the shards, so the query tree shared by all shards must not be modified.
             if (query_for_shard == query_for_all_shards)
                 query_for_shard = query_for_shard->clone();
-            setStreamCursorForShard(query_for_shard, query_info.table_expression->getAlias(), shard_info.shard_num);
+            setStreamCursorForShard(query_for_shard, stream_table_expression_alias, shard_info.shard_num);
 
             /// A local shard reports the cursor of its read under the shard number (a remote one, by the `RemoteQueryExecutor`).
             if (report_streaming_cursor)

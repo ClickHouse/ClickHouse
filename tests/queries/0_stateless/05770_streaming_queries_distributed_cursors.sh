@@ -43,6 +43,31 @@ for prefer_localhost_replica in 0 1; do
         ON l.a = r.a
         ORDER BY ALL"
 
+    # The distributed read can be nested in the query sent to the shards: in a subquery, a CTE, or a branch of UNION.
+    echo "subquery, with cursor"
+    $STREAMING_CLIENT "${opts[@]}" -q "SELECT * FROM (SELECT * FROM (SELECT _shard_num AS s, a FROM d STREAM BOUNDED CURSOR $CURSOR) WHERE a > 0) ORDER BY ALL"
+    echo "CTE, with cursor"
+    $STREAMING_CLIENT "${opts[@]}" -q "WITH x AS (SELECT _shard_num AS s, a FROM d STREAM BOUNDED CURSOR $CURSOR) SELECT * FROM x ORDER BY ALL"
+    echo "UNION ALL, with different cursors"
+    $STREAMING_CLIENT "${opts[@]}" -q "
+        SELECT * FROM
+        (
+            SELECT 'first' AS branch, _shard_num AS s, a FROM d STREAM BOUNDED CURSOR $CURSOR
+            UNION ALL
+            SELECT 'second', _shard_num, a FROM d STREAM BOUNDED CURSOR {'2': {'all': {'block_number': 2, 'block_offset': 0}}}
+        )
+        ORDER BY ALL"
+    $STREAMING_CLIENT "${opts[@]}" -q "
+        SELECT 'first' AS branch, _shard_num AS s, a FROM d STREAM BOUNDED CURSOR $CURSOR
+        UNION ALL
+        SELECT 'second', _shard_num, a FROM d STREAM BOUNDED CURSOR {'2': {'all': {'block_number': 2, 'block_offset': 0}}}" | sort
+
+    # An entry of the cursor which is not a cursor of a shard is rejected instead of reading the shard from the beginning.
+    echo "malformed cursor"
+    $STREAMING_CLIENT "${opts[@]}" -q "SELECT _shard_num, a FROM d STREAM BOUNDED CURSOR {'1': 0} ORDER BY ALL" 2>&1 | grep -o -m1 'INVALID_CURSOR_LOOKUP'
+    $STREAMING_CLIENT "${opts[@]}" -q "SELECT _shard_num, a FROM d STREAM BOUNDED CURSOR {'all': {'block_number': 1, 'block_offset': 1}} ORDER BY ALL" 2>&1 | grep -o -m1 'INVALID_CURSOR_LOOKUP'
+    $STREAMING_CLIENT "${opts[@]}" -q "SELECT _shard_num, a FROM remote('127.0.0.{1,2}', currentDatabase(), t) STREAM BOUNDED CURSOR {'2': 1} ORDER BY ALL" 2>&1 | grep -o -m1 'INVALID_CURSOR_LOOKUP'
+
     # A serialized query plan does not keep the settings of STREAM, so the query text is sent to the shards.
     echo "serialize_query_plan = 1, with cursor"
     $STREAMING_CLIENT "${opts[@]}" --serialize_query_plan=1 -q "SELECT _shard_num, a FROM d STREAM BOUNDED CURSOR $CURSOR ORDER BY ALL"

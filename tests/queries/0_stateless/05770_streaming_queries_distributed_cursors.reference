@@ -17,6 +17,31 @@ remote table function, with cursor
 join with another streaming read of the underlying table
 1	3	3
 2	3	3
+subquery, with cursor
+1	3
+2	2
+2	3
+CTE, with cursor
+1	3
+2	2
+2	3
+UNION ALL, with different cursors
+first	1	3
+first	2	2
+first	2	3
+second	1	1
+second	1	2
+second	1	3
+first	1	3
+first	2	2
+first	2	3
+second	1	1
+second	1	2
+second	1	3
+malformed cursor
+INVALID_CURSOR_LOOKUP
+INVALID_CURSOR_LOOKUP
+INVALID_CURSOR_LOOKUP
 serialize_query_plan = 1, with cursor
 1	3
 2	2
@@ -49,6 +74,31 @@ remote table function, with cursor
 join with another streaming read of the underlying table
 1	3	3
 2	3	3
+subquery, with cursor
+1	3
+2	2
+2	3
+CTE, with cursor
+1	3
+2	2
+2	3
+UNION ALL, with different cursors
+first	1	3
+first	2	2
+first	2	3
+second	1	1
+second	1	2
+second	1	3
+first	1	3
+first	2	2
+first	2	3
+second	1	1
+second	1	2
+second	1	3
+malformed cursor
+INVALID_CURSOR_LOOKUP
+INVALID_CURSOR_LOOKUP
+INVALID_CURSOR_LOOKUP
 serialize_query_plan = 1, with cursor
 1	3
 2	2

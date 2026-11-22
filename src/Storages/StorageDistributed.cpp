@@ -1146,6 +1146,34 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
 }
 
+/// The alias, in the query tree for the shards, of the table expression that replaced the distributed one.
+/// `buildQueryTreeForShard` numbers the aliases of the table expressions again (`createUniqueAliasesIfNecessary`),
+/// so if the read from the distributed table is nested (a subquery, a CTE, a branch of UNION), the alias differs
+/// from the one of the distributed table expression. The table expressions keep their places in the join tree.
+String getAliasOfTableExpressionInQueryTreeForShard(
+    const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression, const QueryTreeNodePtr & query_tree_for_shard)
+{
+    const auto * query_node = query_tree->as<QueryNode>();
+    const auto * query_node_for_shard = query_tree_for_shard->as<QueryNode>();
+    if (!query_node || !query_node_for_shard)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a query node for a read from a distributed table, got {} and {}",
+            query_tree->getNodeTypeName(), query_tree_for_shard->getNodeTypeName());
+
+    const auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+    const auto table_expressions_for_shard = extractTableExpressions(query_node_for_shard->getJoinTreeNodeTyped());
+
+    if (table_expressions.size() == table_expressions_for_shard.size())
+    {
+        for (size_t i = 0; i < table_expressions.size(); ++i)
+            if (table_expressions[i] == table_expression)
+                return table_expressions_for_shard[i]->getAlias();
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Cannot find the table expression of the distributed table in the query for the shards: {}",
+        query_tree_for_shard->formatASTForErrorMessage());
+}
+
 }
 
 void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
@@ -1178,6 +1206,7 @@ void StorageDistributed::read(
     SharedHeader header;
 
     SelectQueryInfo modified_query_info = query_info;
+    String stream_table_expression_alias;
 
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
@@ -1202,6 +1231,11 @@ void StorageDistributed::read(
         auto query_tree_for_ast = query_tree_distributed->clone();
         removeGroupingFunctionSpecializations(query_tree_for_ast);
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+
+        /// The cursor of a STREAM read is rewritten for every shard, in the table expression that replaced this table.
+        if (query_info.isStream())
+            stream_table_expression_alias = getAliasOfTableExpressionInQueryTreeForShard(
+                query_info.query_tree, query_info.table_expression, query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 
@@ -1243,7 +1277,8 @@ void StorageDistributed::read(
         sharding_key_column_name,
         *distributed_settings,
         shard_filter_generator,
-        is_remote_function);
+        is_remote_function,
+        stream_table_expression_alias);
 
     /// This is possible when skip_unavailable_shards is enabled and all shards were skipped
     /// (e.g., every shard had a missing table with no remote replicas).
