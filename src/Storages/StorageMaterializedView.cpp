@@ -6,6 +6,7 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTExpressionList.h>
@@ -43,6 +44,7 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -63,7 +65,15 @@ namespace Setting
     extern const SettingsDouble limit;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsDouble offset;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
 namespace ServerSetting
@@ -183,11 +193,35 @@ namespace
         /// The refresh resumes from the cursor that the read reports after it reaches the end of the snapshot. A `LIMIT`
         /// stops the read before that, so the cursor would stay unchanged and the next refresh would append the same rows
         /// again; and the cursor of the rows that were read would skip the rows read but discarded by the limit.
+        /// `LIMIT BY` stops the read as well, once every group that can appear has reached its limit (e.g. `LIMIT 1 BY tuple()`).
         const auto & select = select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery &>();
+        /// The settings the query will run with: the `SETTINGS` clause of the query is applied on top of the context.
+        Settings query_settings = context->getSettingsCopy();
+        if (auto select_settings = select.settings())
+            query_settings.applyChanges(select_settings->as<ASTSetQuery &>().changes);
         if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil()
-            || context->getSettingsRef()[Setting::limit] != 0 || context->getSettingsRef()[Setting::offset] != 0)
+            || select.limitBy() || select.limitByLength() || select.limitByOffset()
+            || query_settings[Setting::limit] != 0 || query_settings[Setting::offset] != 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Incremental refresh does not support LIMIT and OFFSET: the source would not be read to the end of its snapshot");
+                "Incremental refresh does not support LIMIT, OFFSET and LIMIT BY: the source would not be read to the end of its snapshot");
+
+        /// The same for the limits that stop the read without an error. They can be overridden in the `SETTINGS` clause of the query.
+        auto reject_break_mode = [](bool has_limit, OverflowMode mode, std::string_view mode_setting)
+        {
+            if (has_limit && mode == OverflowMode::BREAK)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Incremental refresh does not support a limit with {} = 'break': the source would not be read to the end of its snapshot",
+                    mode_setting);
+        };
+        reject_break_mode(
+            query_settings[Setting::max_rows_to_read] != 0 || query_settings[Setting::max_bytes_to_read] != 0,
+            query_settings[Setting::read_overflow_mode], "read_overflow_mode");
+        reject_break_mode(
+            query_settings[Setting::max_result_rows] != 0 || query_settings[Setting::max_result_bytes] != 0,
+            query_settings[Setting::result_overflow_mode], "result_overflow_mode");
+        reject_break_mode(
+            query_settings[Setting::max_execution_time].totalMicroseconds() != 0,
+            query_settings[Setting::timeout_overflow_mode], "timeout_overflow_mode");
 
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)

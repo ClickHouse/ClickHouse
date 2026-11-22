@@ -1,6 +1,6 @@
 -- Tags: atomic-database
 -- An incremental refresh resumes from the cursor that the read reports at the end of the snapshot.
--- A LIMIT stops the read before that, so it is rejected (otherwise every refresh would append the same rows).
+-- A LIMIT (or a LIMIT BY, or a limit with the overflow mode 'break') stops the read before that, so it is rejected (otherwise every refresh would append the same rows).
 
 DROP TABLE IF EXISTS lim_src;
 DROP TABLE IF EXISTS lim_tgt;
@@ -18,9 +18,23 @@ CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_
 CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
     AS SELECT k FROM lim_src SETTINGS limit = 1; -- { serverError NOT_IMPLEMENTED }
 
--- LIMIT BY does not stop the read.
+-- LIMIT BY stops the read as well, once every group that can appear has reached its limit.
 CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
-    AS SELECT k FROM lim_src LIMIT 1 BY k;
+    AS SELECT k FROM lim_src LIMIT 1 BY tuple(); -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
+    AS SELECT k FROM lim_src LIMIT 1 BY k; -- { serverError NOT_IMPLEMENTED }
+
+-- The limits that stop the read without an error.
+CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
+    AS SELECT k FROM lim_src SETTINGS max_result_rows = 1, result_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
+    AS SELECT k FROM lim_src SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
+    AS SELECT k FROM lim_src SETTINGS max_execution_time = 100, timeout_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+
+-- The same limits with an error are allowed.
+CREATE MATERIALIZED VIEW lim_mv REFRESH EVERY 10 YEAR APPEND INCREMENTAL TO lim_tgt EMPTY
+    AS SELECT k FROM lim_src SETTINGS max_result_rows = 1000000, result_overflow_mode = 'throw';
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'lim_mv';
 
 DROP TABLE lim_mv;
