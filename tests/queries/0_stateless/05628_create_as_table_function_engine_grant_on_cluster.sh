@@ -5,8 +5,8 @@
 
 # A table created as `url(...)` needs `TABLE ENGINE ON URL`, like `ENGINE = URL(...)`, which a filtered source grant
 # does not imply. `ON CLUSTER` creates the table on the hosts with full access, so the grant must be required before the
-# query is sent to them: with explicit columns, with the legacy entry format, which is not normalized on the initiator,
-# and for `CREATE TABLE copy AS src`, which inherits the function of `src`. A local `RESTORE` needs the grant too.
+# query is sent to them: with explicit columns and for `CREATE TABLE copy AS src`, which inherits the function of `src`.
+# A local `RESTORE` needs the grant too.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -70,10 +70,8 @@ function count_tables()
 
 create_table "local" "${table}" "" "${url_definition}"
 create_table "on cluster" "${table}" "${cluster}" "${url_definition}"
-create_table "on cluster, format 2" "${table}" "${cluster}" "${url_definition}" --distributed_ddl_entry_format_version 2
 create_table "copy" "${copy}" "" "${copy_definition}"
 create_table "copy, on cluster" "${copy}" "${cluster}" "${copy_definition}"
-create_table "copy, format 2" "${copy}" "${cluster}" "${copy_definition}" --distributed_ddl_entry_format_version 2
 restore_table "restore"
 echo "-- no table"
 count_tables

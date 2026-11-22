@@ -848,32 +848,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (patch_part_index && !patch_part_index->empty())
         new_part_info.mutation = patch_part_index->getMaxDataVersion();
 
-    String part_name;
-    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
-        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
-
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-
-        auto min_month = date_lut.toNumYYYYMM(min_date);
-        auto max_month = date_lut.toNumYYYYMM(max_date);
-
-        if (min_month != max_month)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
-
-        part_name = new_part_info.getPartNameV0(min_date, max_date);
-    }
-    else
-        part_name = new_part_info.getPartNameV1();
-
-    std::string temp_prefix = "tmp_insert_";
-    const auto & temp_postfix = data.getPostfixForTempInsertName();
-    if (!temp_postfix.empty())
-        temp_prefix += temp_postfix + "_";
-
-    std::string part_dir = temp_prefix + part_name;
-
     auto indices = collectSkipIndicesToMaterialize(
         metadata_snapshot,
         global_settings[Setting::materialize_skip_indexes_on_insert],
@@ -951,6 +925,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, data.merging_params);
+
+        /// The merge may drop rows, so the min/max index of the part is computed again from the merged rows.
+        /// Otherwise it may hold values of no stored row, and it is used to answer queries such as `max` of a column.
+        minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        minmax_idx->update(block, minmax_columns);
     }
 
     if (expr_after_merge)
@@ -996,6 +975,34 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// part only contains empty tuples. As a result, check rows instead.
     if (block.rows() == 0)
         return temp_part;
+
+    /// The name is built after the insert-time merge, because for the old format it holds the date range of the
+    /// min/max index, which is restored from the name when the part is loaded.
+    String part_name;
+    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
+        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
+
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+
+        auto min_month = date_lut.toNumYYYYMM(min_date);
+        auto max_month = date_lut.toNumYYYYMM(max_date);
+
+        if (min_month != max_month)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
+
+        part_name = new_part_info.getPartNameV0(min_date, max_date);
+    }
+    else
+        part_name = new_part_info.getPartNameV1();
+
+    std::string temp_prefix = "tmp_insert_";
+    const auto & temp_postfix = data.getPostfixForTempInsertName();
+    if (!temp_postfix.empty())
+        temp_prefix += temp_postfix + "_";
+
+    std::string part_dir = temp_prefix + part_name;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
