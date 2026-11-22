@@ -12,7 +12,6 @@
 
 #include <Core/Settings.h>
 
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/hasNullable.h>
 
@@ -537,24 +536,13 @@ public:
         const auto component_id = component_id_it->second;
         auto new_node = id_to_query_node_map.at(component_id)->clone();
 
-        /// `CHECK d = n AND n = f` makes `d` equal to `f`, but `CAST(f, 'Decimal(38, 18)')` rounds `12345` to `12344.999999999999737856`.
-        if (hasTypeThatCanContainFloat(new_node->getResultType()))
-            return;
-
-        /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but `CAST('9', ...)` to the `Enum` of `e` reads the name '9'.
-        if (comparesEnumWithString(node, new_node))
+        /// An equality does not make `CAST` keep the value: `CAST(f, 'Decimal(38, 18)')` rounds 12345 to 12344.999999999999737856,
+        /// `CAST('9', ...)` and `CAST` from another `Enum` read a name, and `CAST` from `UInt128` or a decimal to an `Enum` is not supported.
+        if (!canBeSafelyCast(new_node->getResultType(), node->getResultType()))
             return;
 
         if (!node->getResultType()->equals(*new_node->getResultType()))
         {
-            /// `CHECK e = f` compares two different `Enum`s by the value, but `CAST` from one to the other reads the name.
-            auto contains_enum = [](const DataTypePtr & type)
-            {
-                return anyInTypeTree(*type, [](const IDataType & nested) { return isEnum(nested); });
-            };
-            if (contains_enum(node->getResultType()) && contains_enum(new_node->getResultType()))
-                return;
-
             node = buildCastFunction(new_node, node->getResultType(), context);
             return;
         }
