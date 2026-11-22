@@ -486,6 +486,8 @@ public:
         return true;
     }
 
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
+
     [[nodiscard]] bool isState() const override
     {
         return nested_func->isState();
