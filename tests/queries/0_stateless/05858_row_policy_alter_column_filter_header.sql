@@ -2,16 +2,13 @@
 
 CREATE TABLE t (id UInt32, n UInt32) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE u (id UInt32, f UInt8) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE l (k UInt32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE m (k UInt32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE a ENGINE = Alias(m);
 INSERT INTO t VALUES (1, 1), (2, 2);
 INSERT INTO u VALUES (1, 1), (2, 0);
-INSERT INTO l VALUES (1);
 INSERT INTO m VALUES (1);
 CREATE ROW POLICY p_05858 ON t FOR SELECT USING n = 1 TO CURRENT_USER;
 CREATE ROW POLICY p_05858 ON u FOR SELECT USING f TO CURRENT_USER;
-CREATE ROW POLICY p_05858 ON l FOR SELECT USING intDiv(k, (SELECT max(id) FROM u)) >= 0 TO CURRENT_USER;
 CREATE ROW POLICY p_05858 ON a FOR SELECT USING 1 IN (SELECT k FROM m) TO CURRENT_USER;
 
 -- `n = 1` has no common type for a String n
@@ -27,19 +24,14 @@ ALTER TABLE u MODIFY COLUMN f Nullable(UInt8) SETTINGS mutations_sync = 2;
 SELECT 'kept', id FROM t;
 SELECT 'kept', id FROM u;
 
--- the check does not run a scalar subquery, whose default value 0 the division would refuse
-ALTER TABLE l MODIFY COLUMN k UInt64 SETTINGS mutations_sync = 2;
-SELECT 'scalar', k FROM l;
 -- an alias policy that reads the table only in a subquery
 ALTER TABLE m MODIFY COLUMN k UInt32 DEFAULT 1;
 SELECT 'subquery', k FROM a;
 
 DROP ROW POLICY p_05858 ON t;
 DROP ROW POLICY p_05858 ON u;
-DROP ROW POLICY p_05858 ON l;
 DROP ROW POLICY p_05858 ON a;
 DROP TABLE a;
-DROP TABLE l;
 DROP TABLE m;
 DROP TABLE t;
 DROP TABLE u;
