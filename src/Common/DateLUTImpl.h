@@ -1048,6 +1048,12 @@ public:
     template <typename DateOrTime>
     [[nodiscard]] DateOrTime toStartOfHour(DateOrTime t) const
     {
+        /// Most zones never change the offset by a fraction of an hour, and there the grid counted from the
+        /// local midnight lines up with the clock. This branch is exactly `roundDown`, so that the per-row
+        /// loop of a caller stays as tight as it is for the other rounding functions.
+        if (static_cast<Time>(t) >= 0 && offset_change_is_whole_number_of_hours_during_epoch) [[likely]]
+            return roundDown(t, 3600);
+
         /// On a day when the offset changes by a fraction of an hour (Lord Howe shifts by 30 minutes), the
         /// grid counted from the local midnight does not line up with the clock after the change, so
         /// `roundDown` would return a `:30` boundary.
@@ -1058,22 +1064,27 @@ public:
                 return static_cast<DateOrTime>(toStartOfHourOutOfRange(static_cast<Time>(t)));
             }
 
-        if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_hours_during_epoch) [[likely]]
-            return roundDownToMultiple(t, 3600);
+        return toStartOfHourWithOffsetChange(t);
+    }
 
-        /// No out-of-line call here: a call inside the per-row loop makes the compiler spill registers
-        /// and slows down zones such as `Asia/Kolkata` that take the `roundDownFromDate` path below.
+private:
+    /// `toStartOfHour` inside the lookup table for the times that may be on a day with an offset change by a
+    /// fraction of an hour. It is out of line and only reads memory (`pure`), so that a caller can keep the
+    /// flags checked by `toStartOfHour` in registers and out of its per-row loop: an inlined body, or a call
+    /// that may write memory, slowed down `toStartOfHour` in zones such as `Asia/Kolkata` by a quarter.
+    template <typename DateOrTime>
+    [[nodiscard]] __attribute__((pure)) NO_INLINE DateOrTime toStartOfHourWithOffsetChange(DateOrTime t) const
+    {
         const Values & values = find(t);
-        if (static_cast<Time>(t) >= 0 && offset_change_is_whole_number_of_hours_during_epoch) [[likely]]
-            return roundDownFromDate(t, values.date, 3600);
 
         /// The amount is stored in quarters of an hour, so it is a whole number of hours when it is a multiple of 4.
-        if (values.amount_of_offset_change_value % static_cast<Int8>(3600 / Values::OffsetChangeFactor) != 0) [[unlikely]]
+        if (values.amount_of_offset_change_value % static_cast<Int8>(3600 / Values::OffsetChangeFactor) != 0)
             return roundDownToWallClockHour(t, values);
 
         return roundDownFromDate(t, values.date, 3600);
     }
 
+public:
     /// The start of a window of `hours` hours that is a fixed number of seconds long. Unlike `toStartOfHourInterval`,
     /// a one hour window stays on the grid counted from the local midnight on a day when the offset changes by a
     /// fraction of an hour, so that adding the window length to the start still gives the end of the same window.
