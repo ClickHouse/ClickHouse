@@ -21,6 +21,7 @@
 #include <Poco/UUIDGenerator.h>
 
 #include "config.h"
+#include <Databases/IDatabase.h>
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
@@ -441,6 +442,16 @@ void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & ob
 #if USE_AWS_S3
     if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
         s3_object_storage->checkSessionMayUseServerCredentials(context);
+#endif
+}
+
+void checkSessionMayUseServerIdentityIgnoringSharedFlag(
+    [[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const ContextPtr & context)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (object_storage.getType() == ObjectStorageType::Azure)
+        object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentityIgnoringSharedFlag(
+            context->shouldRestrictUserQueryS3Credentials());
 #endif
 }
 
