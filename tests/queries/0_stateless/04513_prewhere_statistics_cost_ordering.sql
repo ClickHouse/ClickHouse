@@ -207,3 +207,23 @@ FROM (
 ) WHERE explain LIKE '%Prewhere filter column%';
 
 DROP TABLE t_prewhere_cost_mixed_parts;
+
+-- A patch part updates rows of other parts, so it does not add to the rows the sizes are per.
+DROP TABLE IF EXISTS t_prewhere_cost_patch_part;
+CREATE TABLE t_prewhere_cost_patch_part (s String CODEC(NONE), u UInt64 CODEC(NONE), w UInt64 CODEC(NONE))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = 'basic, uniq_v2', string_serialization_version = 'single_stream', enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_prewhere_cost_patch_part;
+INSERT INTO t_prewhere_cost_patch_part SELECT concat('k', toString(cityHash64(number, 13) % 100), repeat('x', 96)), cityHash64(number, 14), number FROM numbers(20000);
+SET enable_lightweight_update = 1;
+UPDATE t_prewhere_cost_patch_part SET w = w + 1 WHERE 1;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_prewhere_cost_patch_part' AND active;
+
+SELECT '-- a patch part of another column keeps the order';
+SELECT position(explain, 'toString(') > 0 AND position(explain, 'toString(') < position(explain, 'equals(__table1.s,')
+FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_prewhere_cost_patch_part WHERE s = concat('k7', repeat('x', 96)) AND toString(u) = '7'
+    SETTINGS min_marks_per_part_to_load_statistics = 0
+) WHERE explain LIKE '%Prewhere filter column%';
+
+DROP TABLE t_prewhere_cost_patch_part;

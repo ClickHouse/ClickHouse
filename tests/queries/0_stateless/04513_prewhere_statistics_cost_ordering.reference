@@ -42,3 +42,6 @@ Compact	9999
 -- one wide and one compact part order the conditions as one wide part
 1
 1
+2
+-- a patch part of another column keeps the order
+1

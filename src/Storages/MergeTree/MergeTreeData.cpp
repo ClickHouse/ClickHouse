@@ -10022,7 +10022,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
         total_column_size.add(part_column_size);
     }
 
-    if (!isCompactPart(part))
+    if (!isCompactPart(part) && !part->info.isPatch())
         rows_of_sized_parts += part->rows_count;
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
@@ -10128,7 +10128,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
-    if (!isCompactPart(part))
+    if (!isCompactPart(part) && !part->info.isPatch())
     {
         if (part->rows_count > rows_of_sized_parts)
             LOG_ERROR(log, "Possibly incorrect rows subtraction: {} - {}, part: {}", rows_of_sized_parts, part->rows_count, part->name);

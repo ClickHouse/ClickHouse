@@ -1355,7 +1355,7 @@ public:
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
     /// The cached column sizes of the active parts together with the rows of the parts that publish per-column sizes
-    /// (not `Compact`), read under one lock, so that both describe the same parts.
+    /// (not `Compact`; patch parts update rows of other parts), read under one lock, so that both describe the same parts.
     std::pair<ColumnSizeByName, UInt64> getColumnSizesAndRowsOfSizedParts() const
     {
         /// Always keep locks order parts_lock -> sizes_lock
@@ -1853,7 +1853,7 @@ private:
     mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
     mutable ColumnSizeByName column_sizes;
-    /// Rows of the active parts that contribute to `column_sizes` with per-column sizes (not `Compact`).
+    /// Rows of the active parts that contribute to `column_sizes` with per-column sizes (not `Compact`, not patch parts).
     mutable UInt64 rows_of_sized_parts = 0;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
