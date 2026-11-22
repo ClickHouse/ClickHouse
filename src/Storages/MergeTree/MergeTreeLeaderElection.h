@@ -71,6 +71,8 @@ namespace DB
   *   `session_timeout` of the leader's own steady time (the longer of its own and the reader's). A node
   *   that stalled for that long may find its parts removed; its queries then fail with an exception
   *   (see `IDataPartStorage::pinSharedStorageIdentity` for the case of a part name that was reused).
+  *   The leader never removes the reader file of another node: it cannot do that conditionally on the
+  *   version it observed, and the node may have just registered again under the same key.
   */
 class MergeTreeLeaderElection
 {
@@ -139,6 +141,10 @@ public:
     /// Writes the reader file of this node right now. Called before the storage lists its parts for the first
     /// time, so that the registration precedes the listing; the heartbeat task keeps the file fresh afterwards.
     void registerReader();
+
+    /// Removes the reader file of this node. Only when nothing on this node can read the table anymore and the
+    /// heartbeat task is stopped (the table is dropped): the leader then does not wait for the file to expire.
+    void unregisterReader() const;
 
     /// Called by the storage after it has refreshed its set of parts from the shared storage as a follower.
     /// `view_time` is a moment of this node's steady clock not later than the start of the listing the set was

@@ -1032,6 +1032,13 @@ void StorageMergeTree::drop()
     /// `startup` was never called.
     bool skip_data_cleanup = (*getSettings())[MergeTreeSetting::leader_election];
     shutdown(true);
+
+    /// The table is dropped once no query uses it anymore, and its heartbeat is stopped by now, so this server
+    /// no longer reads the table: remove its reader file, or the leader would keep the outdated parts for it
+    /// until the file expires. (The file is an object of this server next to the lease, not data of the table.)
+    if (leader_election_ptr)
+        leader_election_ptr->unregisterReader();
+
     if (!skip_data_cleanup)
         dropAllData();
 }

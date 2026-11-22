@@ -68,9 +68,6 @@ static constexpr size_t MAX_READER_FILE_SIZE = 64 * 1024 * 1024;
 /// How many writes of the lease a node remembers until it publishes a view of the parts that is newer than them.
 static constexpr size_t MAX_OBSERVED_LEASE_WRITES = 1024;
 
-/// A reader file whose node is gone is removed after it stayed expired for this many session timeouts.
-static constexpr UInt64 EXPIRED_READER_FILE_REMOVAL_FACTOR = 10;
-
 MergeTreeLeaderElection::MergeTreeLeaderElection(
     const StorageID & storage_id_,
     ObjectStoragePtr object_storage_,
@@ -811,6 +808,11 @@ void MergeTreeLeaderElection::registerReader()
     writeReaderFile();
 }
 
+void MergeTreeLeaderElection::unregisterReader() const
+{
+    removeReaderFileNoThrow();
+}
+
 void MergeTreeLeaderElection::removeReaderFileNoThrow() const
 {
     try
@@ -937,20 +939,12 @@ MergeTreeLeaderElection::ReadersSnapshot MergeTreeLeaderElection::scanReaders()
         {
             /// Its node did not rewrite it for the whole session timeout: the node is gone or stalled, and, like a
             /// leader in that state, it cannot rely on its registration anymore.
+            ///
+            /// The file is only ignored, never removed from here: the removal cannot be made conditional on the
+            /// version that was observed, and the key is the same for every instance of the table on that node,
+            /// so it could remove the registration of a node that has just come back. A node removes its own file
+            /// when it becomes the leader and when the table is dropped on it.
             ++expired_readers;
-            if (unchanged_for >= timeout * EXPIRED_READER_FILE_REMOVAL_FACTOR)
-            {
-                LOG_INFO(log, "Removing the reader file '{}': it was not rewritten for {} ms", key,
-                    std::chrono::duration_cast<std::chrono::milliseconds>(unchanged_for).count());
-                try
-                {
-                    object_storage->removeObjectIfExists(StoredObject(key));
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, fmt::format("Cannot remove the expired reader file '{}'", key));
-                }
-            }
             continue;
         }
 
