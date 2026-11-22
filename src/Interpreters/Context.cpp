@@ -6,6 +6,8 @@
 #include <optional>
 #include <ranges>
 #include <memory>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -5314,6 +5316,45 @@ void StreamingCursor::merge(const CursorTreeNodePtr & cursor)
     if (!tree)
         tree = std::make_shared<CursorTreeNode>();
     mergeCursors(tree, canonical);
+}
+
+void StreamingCursor::replace(const CursorTreeNodePtr & cursor)
+{
+    replaceAt({}, buildCursorTree(cursorTreeToMap(cursor)));
+}
+
+void StreamingCursor::replaceAt(Strings full_path, CursorTreeNodePtr canonical)
+{
+    if (parent)
+    {
+        Strings parent_path = path;
+        parent_path.insert(parent_path.end(), full_path.begin(), full_path.end());
+        parent->replaceAt(std::move(parent_path), std::move(canonical));
+        return;
+    }
+
+    /// The path in the form the cursor is persisted in, where a key with a dot is split into a path, see `merge`.
+    Strings keys;
+    for (const auto & element : full_path)
+    {
+        Strings parts;
+        boost::split(parts, element, boost::is_any_of("."));
+        keys.insert(keys.end(), parts.begin(), parts.end());
+    }
+
+    std::lock_guard lock(mutex);
+    if (keys.empty())
+    {
+        tree = std::move(canonical);
+        return;
+    }
+
+    if (!tree)
+        tree = std::make_shared<CursorTreeNode>();
+    auto * node = tree.get();
+    for (size_t i = 0; i + 1 < keys.size(); ++i)
+        node = node->getSubtreeOrCreate(keys[i]).get();
+    node->setSubtree(keys.back(), std::move(canonical));
 }
 
 std::shared_ptr<StreamingCursor> StreamingCursor::createChild(std::shared_ptr<StreamingCursor> parent, Strings path)

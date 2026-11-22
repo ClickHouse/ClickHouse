@@ -9,7 +9,8 @@
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
-#include <fstream>
+#include <boost/noncopyable.hpp>
+
 #include <map>
 #include <memory>
 #include <optional>
@@ -30,8 +31,9 @@ class StorageFileLog;
 /// reconstructed from the `_filename` and `_offset` virtual columns. Only complete records (ending with a newline) are read.
 ///
 /// The files are identified by their inodes: a file renamed by log rotation keeps its read position, and a file with
-/// several names (hard links) is read once. A file that leaves the directory is closed after its remaining complete
-/// records are read.
+/// several names (hard links) is read once. A file is taken for reading by a name that matches the path of the table,
+/// and is still read after it is renamed to a name that does not match (`app.log` -> `app.log.1` for the path `*.log`).
+/// A file that leaves the directory is closed after its remaining complete records are read.
 ///
 /// An unbounded stream checks the directory for new files and new data every `poll_timeout_ms`.
 /// A bounded stream (`STREAM BOUNDED`) reads the files up to their sizes at the start of the query.
@@ -55,6 +57,14 @@ public:
     std::optional<Chunk> tryGenerate() override;
 
 private:
+    struct FileDescriptor : private boost::noncopyable
+    {
+        explicit FileDescriptor(int fd_) : fd(fd_) {}
+        ~FileDescriptor();
+
+        const int fd;
+    };
+
     struct FileState
     {
         /// The current name of the file (a file may be renamed while it is read).
@@ -69,10 +79,14 @@ private:
         std::optional<UInt64> bound;
         /// The file is not in the directory any more: it is closed after its remaining complete records are read.
         bool removed = false;
-        std::unique_ptr<std::ifstream> reader;
+        /// The opened file. Its inode is the key of the state: the file is read through this descriptor,
+        /// so a file that gets the name later is never read in its place.
+        std::unique_ptr<FileDescriptor> file;
     };
 
     void updateFiles(bool initial);
+    /// Returns false if a name was given to another file while the files were being listed.
+    bool tryUpdateFiles(bool initial);
     void reportFinalCursor() const;
 
     StorageFileLog & storage;

@@ -169,7 +169,7 @@ namespace
         return count;
     }
 
-    void validateIncrementalDefinition(const ASTPtr & select_with_union, const ContextPtr & context)
+    void validateIncrementalDefinition(const ASTPtr & select_with_union, const ContextPtr & context, bool coordinated)
     {
         auto & source_table_expr = getIncrementalSourceTableExpression(select_with_union);
 
@@ -184,6 +184,16 @@ namespace
         auto source = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(identifier->getTableId()), context);
         if (!source)
             return;
+
+        /// The replicas of a coordinated view share one cursor and take turns in refreshing, so a cursor that makes sense
+        /// only on the server that made it (e.g. positions in local files) would make a replica read the records
+        /// of its source again, or skip them.
+        if (coordinated && source->hasServerLocalStreamingCursor())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh source table {} has engine {}, whose streaming cursor is local to a server, "
+                "so the refresh cannot be coordinated between the replicas of a Replicated database. "
+                "Use the refresh setting all_replicas = 1 to refresh the view on every replica independently",
+                source->getStorageID().getNameForLogs(), source->getName());
 
         /// The source engine must support STREAM, otherwise every refresh would re-scan and re-append the whole source.
         if (!source->supportsStreaming())
@@ -300,7 +310,7 @@ StorageMaterializedView::StorageMaterializedView(
         if (query.create_or_replace || query.replace_view)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "CREATE OR REPLACE and REPLACE are not supported for incremental refreshable materialized views");
-        validateIncrementalDefinition(select.select_query, mv_db_context);
+        validateIncrementalDefinition(select.select_query, mv_db_context, /* coordinated = */ false);
     }
 
     storage_metadata.setSelectQuery(select);
@@ -347,6 +357,10 @@ StorageMaterializedView::StorageMaterializedView(
                 refresh_coordinated = true;
             }
         }
+
+        /// Whether the refresh is coordinated is known only now.
+        if (refresh_coordinated && query.refresh_strategy->isIncremental() && is_fresh_definition)
+            validateIncrementalDefinition(select.select_query, mv_db_context, refresh_coordinated);
 
         if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !fixed_uuid)
         {
@@ -819,7 +833,7 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
 
     if (incremental)
     {
-        validateIncrementalDefinition(select_query, refresh_context);
+        validateIncrementalDefinition(select_query, refresh_context, refresh_coordinated);
 
         injectIncrementalStreamModifier(select_query, stream_cursor);
 

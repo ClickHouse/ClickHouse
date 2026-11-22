@@ -1,0 +1,14 @@
+--- unbounded: a rotated file is read after it was drained
+app.log 1
+app.log 50
+app.log.1 7
+--- incremental refresh: two renames of a file
+round1	2	8
+round2	3	10
+round3	4	13
+round4	4	13
+--- incremental refresh: a file truncated to empty
+round5	5	23
+round6	5	23
+round7	7	73
+round8	7	73

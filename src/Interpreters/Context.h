@@ -367,9 +367,16 @@ struct StreamingCursor
     /// reported by a read replaces the same part of the cursor of the previous refresh.
     void merge(const CursorTreeNodePtr & cursor);
 
+    /// Replace the cursor in this holder (or the part of the cursor of the parent under `path`) with the cursor of
+    /// a finished read, for a read whose cursor is complete: what the previous cursor has and the new one does not
+    /// (e.g. a file that does not exist any more) is obsolete.
+    void replace(const CursorTreeNodePtr & cursor);
+
     static std::shared_ptr<StreamingCursor> createChild(std::shared_ptr<StreamingCursor> parent, Strings path);
 
 private:
+    void replaceAt(Strings full_path, CursorTreeNodePtr canonical);
+
     std::shared_ptr<StreamingCursor> parent;
     Strings path;
 };

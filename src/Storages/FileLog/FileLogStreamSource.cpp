@@ -5,7 +5,9 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -17,7 +19,9 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <thread>
@@ -30,7 +34,9 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_STAT;
+extern const int CANNOT_FSTAT;
 extern const int CANNOT_OPEN_FILE;
+extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 namespace
@@ -83,18 +89,30 @@ String decodeFileName(const String & key)
 }
 
 /// A record starts at the beginning of a file or after a newline.
-bool isRecordStart(const String & file_path, UInt64 offset)
+bool isRecordStart(int fd, const String & file_name, UInt64 offset)
 {
     if (offset == 0)
         return true;
 
-    std::ifstream reader(file_path, std::ios::binary);
-    reader.seekg(static_cast<std::streamoff>(offset - 1));
     char c = 0;
-    reader.get(c);
-    if (!reader.good())
-        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot read file {} at offset {}", file_path, offset - 1);
+    ssize_t res = 0;
+    do
+        res = ::pread(fd, &c, 1, static_cast<off_t>(offset - 1));
+    while (res < 0 && errno == EINTR);
+    if (res < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read file {} at offset {}", file_name, offset - 1);
+    /// The file was truncated after its size was taken.
+    if (res == 0)
+        return false;
     return c == '\n';
+}
+
+struct stat statDescriptor(int fd, const String & file_name)
+{
+    struct stat file_stat{};
+    if (fstat(fd, &file_stat) != 0)
+        throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot stat the opened file {}", file_name);
+    return file_stat;
 }
 
 /// An entry of the cursor of the query.
@@ -179,18 +197,36 @@ FileLogStreamSource::FileLogStreamSource(
 
 FileLogStreamSource::~FileLogStreamSource() = default;
 
+FileLogStreamSource::FileDescriptor::~FileDescriptor()
+{
+    if (fd >= 0)
+        [[maybe_unused]] int err = ::close(fd);
+}
+
 void FileLogStreamSource::updateFiles(bool initial)
+{
+    /// A name can be given to another file between the listing of the directory and the opening of the file
+    /// (e.g. by log rotation). Then the directory is listed again, so that every file is read by its own state.
+    while (!tryUpdateFiles(initial))
+        LOG_DEBUG(log, "The files of the table were renamed while they were being listed, listing them again");
+}
+
+bool FileLogStreamSource::tryUpdateFiles(bool initial)
 {
     const bool bounded = !stream_settings.subscribe_for_updates;
 
-    /// The current files by inode. A file with several names (hard links) is read once, under the first name.
-    struct CurrentFile
+    /// The files of the directory by inode. A file with several names (hard links) is read once, under the first name
+    /// that belongs to the table, if any.
+    struct ListedFile
     {
         String name;
-        UInt64 size = 0;
+        /// The name matches the path of the table, so the file can be taken for reading. A file that is already read
+        /// (or is in the cursor) is identified by its inode, so it is still read after it is renamed to a name that
+        /// does not match (e.g. `app.log` -> `app.log.1` for the path `*.log`).
+        bool admissible = false;
     };
-    std::map<UInt64, CurrentFile> current_files;
-    for (const auto & file_name : storage.listStreamFiles())
+    std::map<UInt64, ListedFile> listed_files;
+    for (auto & [file_name, admissible] : storage.listStreamFiles())
     {
         const String file_path = storage.getFullDataPath(file_name);
         struct stat file_stat{};
@@ -201,12 +237,40 @@ void FileLogStreamSource::updateFiles(bool initial)
                 continue;
             throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", file_path);
         }
-        current_files.try_emplace(static_cast<UInt64>(file_stat.st_ino), CurrentFile{file_name, static_cast<UInt64>(file_stat.st_size)});
+        auto [it, inserted] = listed_files.try_emplace(static_cast<UInt64>(file_stat.st_ino), ListedFile{file_name, admissible});
+        if (!inserted && !it->second.admissible && admissible)
+            it->second = ListedFile{file_name, admissible};
     }
 
-    /// A file that left the directory is closed after its remaining records are read.
     for (auto & [inode, state] : files)
-        state.removed = !current_files.contains(inode);
+    {
+        auto it = listed_files.find(inode);
+
+        /// A file that left the directory is closed after its remaining records are read.
+        state.removed = it == listed_files.end();
+        if (state.removed)
+            continue;
+
+        if (state.name != it->second.name)
+        {
+            LOG_DEBUG(log, "File {} was renamed to {}, continuing to read it", state.name, it->second.name);
+            state.name = it->second.name;
+        }
+
+        const UInt64 size = static_cast<UInt64>(statDescriptor(state.file->fd, state.name).st_size);
+        if (size < state.position)
+        {
+            /// The file was truncated in place (e.g. by copytruncate): read it from the beginning.
+            LOG_DEBUG(log, "File {} was truncated, reading it from the beginning", state.name);
+            state.position = 0;
+            state.last_offset = -1;
+            state.skip_record_at_position = false;
+        }
+    }
+
+    /// A bounded stream reads only the files that exist at its start.
+    if (bounded && !initial)
+        return true;
 
     /// The cursor is read only at the start: a file that appears later is a new file.
     std::map<String, CursorEntry> cursor_entries;
@@ -219,36 +283,39 @@ void FileLogStreamSource::updateFiles(bool initial)
                 cursor_entries_by_inode.emplace(*entry.inode, &entry);
     }
 
-    for (const auto & [inode, current_file] : current_files)
+    bool consistent = true;
+    for (const auto & [inode, listed_file] : listed_files)
     {
-        const auto & [file_name, size] = current_file;
+        if (files.contains(inode))
+            continue;
 
-        if (auto it = files.find(inode); it != files.end())
+        const String & file_name = listed_file.name;
+        if (!listed_file.admissible && !cursor_entries_by_inode.contains(inode))
+            continue;
+
+        /// The state of a file is bound to an opened descriptor of the file with this inode: a file that gets
+        /// the name later is not read in its place.
+        const String file_path = storage.getFullDataPath(file_name);
+        const int fd = ::open(file_path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+        if (fd < 0)
         {
-            auto & state = it->second;
-            if (state.name != file_name)
-            {
-                LOG_DEBUG(log, "File {} was renamed to {}, continuing to read it", state.name, file_name);
-                state.name = file_name;
-            }
-            if (size < state.position)
-            {
-                /// The file was truncated in place (e.g. by copytruncate): read it from the beginning.
-                LOG_DEBUG(log, "File {} was truncated, reading it from the beginning", file_name);
-                state.position = 0;
-                state.last_offset = -1;
-                state.skip_record_at_position = false;
-            }
+            /// The file was removed after listing the directory.
+            if (errno == ENOENT)
+                continue;
+            throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open file {}", file_path);
+        }
+        auto file = std::make_unique<FileDescriptor>(fd);
+
+        const struct stat file_stat = statDescriptor(fd, file_name);
+        if (static_cast<UInt64>(file_stat.st_ino) != inode || !S_ISREG(file_stat.st_mode))
+        {
+            consistent = false;
             continue;
         }
-
-        /// A bounded stream reads only the files that exist at its start.
-        if (bounded && !initial)
-            continue;
+        const UInt64 size = static_cast<UInt64>(file_stat.st_size);
 
         FileState state;
         state.name = file_name;
-        const String file_path = storage.getFullDataPath(file_name);
 
         /// The entry of the cursor for the file: by name, or by inode for a file renamed since the cursor was taken
         /// (log rotation). An entry of the same name for another inode belongs to a file replaced by this one.
@@ -266,8 +333,8 @@ void FileLogStreamSource::updateFiles(bool initial)
             /// The cursor of an incremental refresh: a file truncated since then is read from the beginning.
             const bool valid = entry->offset >= 0
                 && (entry->end ? *entry->end > static_cast<UInt64>(entry->offset) && *entry->end <= size
-                                     && isRecordStart(file_path, *entry->end)
-                               : static_cast<UInt64>(entry->offset) < size && isRecordStart(file_path, static_cast<UInt64>(entry->offset)));
+                                     && isRecordStart(fd, file_name, *entry->end)
+                               : static_cast<UInt64>(entry->offset) < size && isRecordStart(fd, file_name, static_cast<UInt64>(entry->offset)));
             if (!valid)
             {
                 LOG_DEBUG(log, "File {} was truncated since the cursor, reading it from the beginning", file_name);
@@ -289,7 +356,7 @@ void FileLogStreamSource::updateFiles(bool initial)
             if (entry->offset < 0 || static_cast<UInt64>(entry->offset) >= size)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Offset {} in the cursor for file {} is outside the file of size {}", entry->offset, file_name, size);
-            if (!isRecordStart(file_path, static_cast<UInt64>(entry->offset)))
+            if (!isRecordStart(fd, file_name, static_cast<UInt64>(entry->offset)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Offset {} in the cursor for file {} is not the beginning of a record", entry->offset, file_name);
             state.last_offset = entry->offset;
@@ -300,8 +367,11 @@ void FileLogStreamSource::updateFiles(bool initial)
         if (bounded)
             state.bound = size;
 
+        state.file = std::move(file);
         files.emplace(inode, std::move(state));
     }
+
+    return consistent;
 }
 
 void FileLogStreamSource::reportFinalCursor() const
@@ -311,6 +381,10 @@ void FileLogStreamSource::reportFinalCursor() const
     if (!streaming_cursor)
         return;
 
+    /// The cursor has the files that exist now, and it replaces the cursor of the previous refresh instead of being
+    /// merged into it. So the cursor does not keep the previous name of a renamed file (a later refresh could take
+    /// its obsolete position for the file by its inode), nor the position in a file that was truncated or replaced
+    /// and has no complete records yet (a later refresh could take it for a valid position in the new contents).
     auto cursor = std::make_shared<CursorTreeNode>();
     for (const auto & [inode, state] : files)
     {
@@ -323,7 +397,7 @@ void FileLogStreamSource::reportFinalCursor() const
         if (!state.skip_record_at_position)
             entry->setValue("end", static_cast<Int64>(state.position));
     }
-    streaming_cursor->merge(cursor);
+    streaming_cursor->replace(cursor);
 }
 
 std::optional<Chunk> FileLogStreamSource::tryGenerate()
@@ -404,25 +478,19 @@ Chunk FileLogStreamSource::generate()
 
         auto & state = files.at(inode);
         const String & file_name = state.name;
-        const String file_path = storage.getFullDataPath(file_name);
-        if (!state.reader)
+
+        /// Nothing to read (also if the file was truncated, which is handled by the next check of the directory).
+        const UInt64 size = static_cast<UInt64>(statDescriptor(state.file->fd, file_name).st_size);
+        if (size <= state.position || (state.bound && state.position >= *state.bound))
         {
-            state.reader = std::make_unique<std::ifstream>(file_path, std::ios::binary);
-            if (!state.reader->is_open())
-            {
-                /// The file was removed. Keep its state for the cursor, unless the stream noticed that it left the directory.
-                state.reader.reset();
-                if (state.removed)
-                    drained_removed_files.push_back(inode);
-                continue;
-            }
+            if (state.removed)
+                drained_removed_files.push_back(inode);
+            continue;
         }
 
-        auto & reader = *state.reader;
-        reader.clear();
-        reader.seekg(static_cast<std::streamoff>(state.position));
-        if (!reader.good())
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot seek to offset {} in file {}", state.position, file_path);
+        /// Reads at the given position of the file, regardless of the position of the descriptor.
+        ReadBufferFromFileDescriptorPRead reader(state.file->fd);
+        reader.seek(static_cast<off_t>(state.position), SEEK_SET);
 
         bool reached_end = false;
         while (total_rows < max_block_size)
@@ -434,15 +502,16 @@ Chunk FileLogStreamSource::generate()
                 break;
             }
 
-            std::getline(reader, line);
+            line.clear();
+            readStringUntilNewlineInto(line, reader);
 
             /// A last line without a newline may still be being written: leave it for a later read.
-            if (reader.eof() || reader.fail())
+            if (reader.eof())
             {
-                reader.clear();
                 reached_end = true;
                 break;
             }
+            reader.ignore();
 
             /// A bounded stream reads only the records that are complete within the size of the file at its start.
             const UInt64 next_position = offset + line.size() + 1;

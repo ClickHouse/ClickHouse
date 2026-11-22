@@ -1261,24 +1261,19 @@ void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
     it->second = FileContext{.inode = inode};
 }
 
-Names StorageFileLog::listStreamFiles() const
+std::vector<std::pair<String, bool>> StorageFileLog::listStreamFiles() const
 {
-    if (!path_is_directory)
-    {
-        const auto file_name = std::filesystem::path(path).filename().string();
-        if (std::filesystem::is_regular_file(getFullDataPath(file_name)))
-            return {file_name};
-        return {};
-    }
+    const String single_file_name = path_is_directory ? String() : std::filesystem::path(path).filename().string();
 
-    Names result;
+    std::vector<std::pair<String, bool>> result;
     for (const auto & dir_entry : std::filesystem::directory_iterator{root_data_path})
     {
-        if (!dir_entry.is_regular_file())
+        std::error_code ec;
+        if (!dir_entry.is_regular_file(ec))
             continue;
         String file_name = dir_entry.path().filename();
-        if (fileNameMatches(file_name))
-            result.push_back(std::move(file_name));
+        const bool matches = path_is_directory ? fileNameMatches(file_name) : file_name == single_file_name;
+        result.emplace_back(std::move(file_name), matches);
     }
     std::sort(result.begin(), result.end());
     return result;
