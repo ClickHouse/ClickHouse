@@ -1033,9 +1033,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         {
             hash_join->addBlockToJoin(current_block, current_block.rows(), context.callerChecksLimits());
             block_added = true;
-            /// The insert can take the query over its budget, or the bucket past its mark.
-            if (!share)
-                share = shareForSplit();
+            /// The insert, or a join that starts building meanwhile, can change the share.
+            share = shareForSplit();
             size_t hash_join_total_keys = hash_join->getTotalRowCount();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             const bool own_overflow = hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes);

@@ -378,7 +378,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
         const size_t total_bytes = hash_join->getTotalByteCount();
         size_t threshold = max_bytes_before_external_join;
-        if (spill_budget && total_bytes)
+        if (spill_budget && hash_join->getTotalRowCount())
             if (const size_t share = spill_budget->getShareWhenOverBudget())
                 threshold = std::min(threshold, share);
 
