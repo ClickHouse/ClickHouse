@@ -616,7 +616,10 @@ void StorageMergeTree::alter(
 
     auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
     if (!maybe_mutation_commands.empty())
+    {
+        stopDelayingMergesAfterStartup();
         delayMutationOrThrowIfNeeded(nullptr, local_context);
+    }
 
     Int64 mutation_version = -1;
 
@@ -1592,6 +1595,7 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
 {
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
     auto context_copy = Context::createCopy(query_context);
 
     /// Unlike `StorageReplicatedMergeTree::updateLightweight`, the partitions of the scoped commands are

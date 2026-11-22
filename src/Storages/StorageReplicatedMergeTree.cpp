@@ -7422,6 +7422,7 @@ void StorageReplicatedMergeTree::alter(
         ReplicatedMergeTreeMutationEntry mutation_entry;
         if (have_mutation)
         {
+            stopDelayingMergesAfterStartup();
             delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
             const String mutations_path(fs::path(zookeeper_path) / "mutations");
 
@@ -9344,6 +9345,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::updateLightweight");
     auto context_copy = Context::createCopy(query_context);
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     /// Resolve the partitions of the scoped commands once, as in `mutate`: the block numbers are
     /// allocated in the partitions they name, and the patch is produced from the same commands, so

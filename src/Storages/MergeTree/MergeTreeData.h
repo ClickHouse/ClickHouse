@@ -2415,7 +2415,7 @@ protected:
     void delayMergesAfterStartup();
     void stopDelayingMergesAfterStartup();
 
-    /// Only a table loaded from its existing metadata (server startup, UNDROP TABLE) delays its merges.
+    /// Only a table the server loads from its metadata at startup delays its merges.
     bool merges_can_be_delayed_after_startup = false;
     /// `CLOCK_MONOTONIC` time of the startup in nanoseconds, 0 if the delay is not armed.
     std::atomic<UInt64> startup_time_ns = 0;
