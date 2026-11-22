@@ -122,7 +122,7 @@ public:
 
     using Bucket = typename Traits::Bucket;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return Traits::getName();
     }
@@ -155,19 +155,19 @@ public:
     {
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<State>;
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(State);
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(State);
     }
@@ -586,7 +586,7 @@ protected:
 
     /// Returns a half-open range [first, last) of bucket indices that fall in a grid point's window. The range has
     /// `buckets_per_window` buckets, except early windows that are truncated at 0 by the dropped leading buckets.
-    std::pair<size_t, size_t> bucketRangeInWindow(size_t grid_index) const
+    [[nodiscard]] std::pair<size_t, size_t> bucketRangeInWindow(size_t grid_index) const
     {
         chassert(grid_index < grid_size);
         const size_t window_begin = grid_index * buckets_per_step;
@@ -612,7 +612,7 @@ protected:
         TimestampType start_time;
         TimestampType end_time;
 
-        bool contains(const TimestampType & timestamp) const
+        [[nodiscard]] bool contains(const TimestampType & timestamp) const
         {
             return timestamp >= start_time && timestamp <= end_time;
         }
