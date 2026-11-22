@@ -1916,10 +1916,9 @@ private:
                 return DataTypeFactory::instance().get("Bool");
             case ElementType::INT64:
             {
-                auto type = std::make_shared<DataTypeInt64>();
                 if (element.getInt64() < 0)
-                    json_inference_info.negative_integers.insert(type.get());
-                return type;
+                    return json_inference_info.getNegativeInt64();
+                return std::make_shared<DataTypeInt64>();
             }
             case ElementType::UINT64:
                 return std::make_shared<DataTypeUInt64>();
@@ -1935,10 +1934,7 @@ private:
                 if (format_settings.json.try_infer_numbers_from_strings)
                 {
                     if (auto type = tryInferJSONNumberFromString(data, format_settings, &json_inference_info))
-                    {
-                        json_inference_info.numbers_parsed_from_json_strings.insert(type.get());
-                        return type;
-                    }
+                        return json_inference_info.getNumberParsedFromString(type);
                 }
 
                 return std::make_shared<DataTypeString>();
