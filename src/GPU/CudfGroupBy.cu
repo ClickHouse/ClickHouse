@@ -8,7 +8,6 @@
 #include <cudf/concatenate.hpp>
 #include <cudf/copying.hpp>
 #include <cudf/groupby.hpp>
-#include <cudf/null_mask.hpp>
 #include <cudf/partitioning.hpp>
 #include <cudf/stream_compaction.hpp>
 #include <cudf/table/table.hpp>
@@ -92,6 +91,23 @@ __host__ void appendColumns(
     }
 }
 
+/// The inputs of a predicate over `columns`, of `rows` rows each.
+__host__ std::vector<GPUExpressionInput> inputsOf(const GPUExpression & expression, GPUSpan<DeviceFixedColumn> columns, size_t rows)
+{
+    if (columns.size() != expression.num_columns)
+        throwGPUError(("a predicate of " + std::to_string(expression.num_columns) + " columns over " + std::to_string(columns.size())).c_str());
+
+    std::vector<GPUExpressionInput> inputs;
+    inputs.reserve(columns.size());
+    for (const auto & column : columns)
+    {
+        if (column.rows != rows)
+            throwGPUError(("a column of a predicate of " + std::to_string(column.rows) + " rows among " + std::to_string(rows)).c_str());
+        inputs.push_back({.data = column.data, .type = column.element_type});
+    }
+    return inputs;
+}
+
 __host__ std::unique_ptr<cudf::groupby_aggregation> cudfAggregationOf(GPUAggregationKind aggregation)
 {
     switch (aggregation)
@@ -110,6 +126,58 @@ __host__ std::unique_ptr<cudf::groupby_aggregation> cudfAggregationOf(GPUAggrega
 /// Not anonymous: the classes are members of `GroupBy`, which is not.
 namespace cudf_group_by
 {
+
+/// The values computed for each batch from its values, see `GPUDerivedValue`.
+class DerivedValues
+{
+public:
+    __host__ DerivedValues(GPUSpan<GPUDerivedValue> derived, cuda::stream_ref stream_) : stream(stream_)
+    {
+        for (const auto & value : derived)
+        {
+            if (value.expression.result != GPUExpressionResult::Value)
+                throwGPUError("a derived value of an expression that is a predicate");
+            expressions.push_back(value.expression);
+            columns.emplace_back(value.columns.begin(), value.columns.end());
+            buffers.emplace_back(0, stream_);
+        }
+    }
+
+    __host__ size_t size() const { return expressions.size(); }
+
+    /// Appends the derived values of a batch to `batch`, of the keys and then the values, the first `num_key_columns`.
+    __host__ void derive(std::vector<cudf::column_view> & batch, size_t num_key_columns, const std::vector<GPUElementType> & values)
+    {
+        const auto rows = static_cast<size_t>(batch[0].size());
+        const size_t num_values = batch.size() - num_key_columns;
+        for (size_t i = 0; i < expressions.size(); ++i)
+        {
+            std::vector<GPUExpressionInput> inputs;
+            inputs.reserve(columns[i].size());
+            for (const uint32_t column : columns[i])
+            {
+                if (column >= num_values)
+                    throwGPUError(("a derived value of value " + std::to_string(column) + " of a batch of " + std::to_string(num_values)).c_str());
+                const DeviceFixedColumn value = deviceViewOf(batch[num_key_columns + column], values[column]);
+                inputs.push_back({.data = value.data, .type = value.element_type});
+            }
+
+            const GPUElementType type = expressions[i].value_type;
+            rmm::device_buffer & out = buffers[i];
+            if (out.size() < rows * sizeOf(type))
+                out.resize(rows * sizeOf(type), stream);
+            evaluateGPUExpression(expressions[i], {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, out.data(), stream);
+            batch.emplace_back(cudfTypeOf(type), static_cast<cudf::size_type>(rows), out.data(), nullptr, 0);
+        }
+    }
+
+private:
+    const cuda::stream_ref stream;
+    std::vector<GPUExpression> expressions;
+    std::vector<std::vector<uint32_t>> columns;
+    /// Of each derived value, its values of the last batch.
+    std::vector<rmm::device_buffer> buffers;
+};
 
 /// The partials that cuDF computes for the aggregates, and the tables of partial results.
 class Partials
@@ -457,28 +525,41 @@ class GroupBy
 public:
     __host__ GroupBy(
         GPUSpan<GPUElementType> keys_,
-        GPUSpan<GPUElementType> values_,
+        const std::vector<GPUElementType> & values_,
+        GPUSpan<GPUDerivedValue> derived_,
         GPUSpan<GPUGroupByAggregate> aggregates_,
         size_t num_parts,
         cuda::stream_ref stream_)
         : keys(keys_.begin(), keys_.end())
-        , values(values_.begin(), values_.end())
+        , values(values_)
         , aggregates(aggregates_.begin(), aggregates_.end())
         , stream(stream_)
         , keyless(keys_.empty())
         , keyless_key(0, stream_)
+        , filter_mask(0, stream_)
         , all_true(0, stream_)
-        , partials(aggregates_, values_, keys.size() + (keyless ? 1 : 0), stream_)
+        , derived(derived_, stream_)
+        , partials(aggregates_, values, keys.size() + (keyless ? 1 : 0), stream_)
         , parts(partials, num_parts, stream_)
         , streaming(partials, parts, stream_)
         , widened_offsets(keys_.size() + aggregates_.size())
     {
     }
 
-    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_keys, GPUSpan<DeviceColumnView> batch_values, DeviceBitmask kept)
+    __host__ void addBatch(
+        GPUSpan<DeviceColumnView> batch_keys,
+        GPUSpan<DeviceColumnView> batch_values,
+        GPUSpan<DeviceFixedColumn> filter_columns,
+        const GPUExpression * filter)
     {
         if (finalized)
             throwGPUError("a batch after the groups were finalized");
+
+        const size_t num_batch_values = values.size() - derived.size();
+        if (batch_keys.size() != keys.size() || batch_values.size() != num_batch_values)
+            throwGPUError(
+                ("a batch of " + std::to_string(batch_keys.size()) + " keys and " + std::to_string(batch_values.size()) + " values, expected "
+                 + std::to_string(keys.size()) + " and " + std::to_string(num_batch_values)).c_str());
 
         const size_t rows = batch_keys.empty() ? batch_values[0].rows() : batch_keys[0].rows();
         if (rows == 0)
@@ -492,8 +573,17 @@ public:
 
         /// Must live until the batch is aggregated.
         std::unique_ptr<cudf::table> compacted;
-        if (!kept.keepsAll() && !applyFilter(columns, kept, compacted))
-            return;
+        if (filter)
+        {
+            const std::vector<GPUExpressionInput> inputs = inputsOf(*filter, filter_columns, rows);
+            const DeviceBitmask kept = evaluateMask(
+                *filter, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, filter_mask, stream);
+            if (!applyFilter(columns, kept, compacted))
+                return;
+        }
+
+        if (derived.size() != 0)
+            derived.derive(columns, partials.keyIndices().size(), values);
 
         if (strategy == Strategy::Undecided)
             chooseStrategy(columns);
@@ -540,13 +630,31 @@ public:
         return numGroups();
     }
 
-    __host__ size_t keepGroups(DeviceBitmask kept)
+    __host__ size_t filterGroups(const GPUExpression & having, GPUSpan<size_t> columns)
     {
         if (!finalized)
             throwGPUError("the groups were filtered before they were finalized");
-        if (numGroups() == 0)
+        const size_t rows = numGroups();
+        if (rows == 0)
             return 0;
 
+        std::vector<DeviceFixedColumn> group_columns;
+        group_columns.reserve(columns.size());
+        for (const size_t column : columns)
+        {
+            if (column >= keys.size() + aggregates.size())
+                throwGPUError(
+                    ("a `HAVING` over column " + std::to_string(column) + " of " + std::to_string(keys.size()) + " keys and "
+                     + std::to_string(aggregates.size()) + " aggregates").c_str());
+            const DeviceColumnView view = column < keys.size() ? key(column) : value(column - keys.size());
+            if (view.kind != GPUColumnKind::Fixed)
+                throwGPUError(("a `HAVING` over column " + std::to_string(column) + ", which is not of a fixed width").c_str());
+            group_columns.push_back(view.fixed);
+        }
+
+        const std::vector<GPUExpressionInput> inputs = inputsOf(having, group_columns, rows);
+        const DeviceBitmask kept = evaluateMask(
+            having, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, filter_mask, stream);
         const cudf::size_type left_out = leftOut(kept, groups->num_rows());
         if (left_out != 0)
             groups = keptRows(groups->view(), kept, left_out, all_true, stream);
@@ -589,7 +697,7 @@ private:
     {
         if (kept.rows != static_cast<size_t>(rows))
             throwGPUError(("a filter of " + std::to_string(kept.rows) + " rows over " + std::to_string(rows)).c_str());
-        return cudf::null_count(kept.words, 0, rows, stream);
+        return leftOutBy(kept, stream);
     }
 
     /// Leaves out the rows that `kept` does not keep, by compacting the columns into `compacted` or by nulls in the first key.
@@ -660,7 +768,10 @@ private:
     const cuda::stream_ref stream;
     const bool keyless;
     rmm::device_buffer keyless_key;
+    /// Of the `WHERE` of the last batch, or of the `HAVING`.
+    rmm::device_buffer filter_mask;
     rmm::device_buffer all_true;
+    DerivedValues derived;
 
     Partials partials;
     Strategy strategy = Strategy::Undecided;
@@ -675,10 +786,108 @@ private:
     bool finalized = false;
 };
 
+class RowCollector
+{
+public:
+    __host__ RowCollector(GPUSpan<GPUElementType> values_, cuda::stream_ref stream_)
+        : values(values_.begin(), values_.end())
+        , stream(stream_)
+        , filter_mask(0, stream_)
+        , all_true(0, stream_)
+        , widened_offsets(values.size())
+    {
+    }
+
+    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
+    {
+        if (batch_values.size() != values.size())
+            throwGPUError(("a batch of " + std::to_string(batch_values.size()) + " columns to collect, expected " + std::to_string(values.size())).c_str());
+
+        const size_t rows = batch_values[0].rows();
+        if (rows == 0)
+            return;
+
+        std::vector<cudf::column_view> columns;
+        appendColumns(columns, batch_values, values, rows);
+        const cudf::table_view batch(columns);
+
+        if (filter)
+        {
+            const std::vector<GPUExpressionInput> inputs = inputsOf(*filter, filter_columns, rows);
+            const DeviceBitmask kept = evaluateMask(
+                *filter, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, filter_mask, stream);
+            const cudf::size_type left_out = leftOutBy(kept, stream);
+            if (static_cast<size_t>(left_out) == rows)
+                return;
+            if (left_out != 0)
+            {
+                collected.push_back(keptRows(batch, kept, left_out, all_true, stream));
+                return;
+            }
+        }
+
+        /// A copy, as the batch's columns are freed once it is added.
+        collected.push_back(guarded("keeping " + std::to_string(rows) + " rows", [&] { return std::make_unique<cudf::table>(batch, stream); }));
+    }
+
+    __host__ size_t collectedRows() const
+    {
+        size_t rows = 0;
+        for (const auto & table : collected)
+            rows += static_cast<size_t>(table->num_rows());
+        return rows;
+    }
+
+    __host__ size_t take()
+    {
+        taken.reset();
+        if (collected.size() == 1)
+        {
+            taken = std::move(collected.front());
+        }
+        else if (!collected.empty())
+        {
+            std::vector<cudf::table_view> views;
+            views.reserve(collected.size());
+            for (const auto & table : collected)
+                views.push_back(table->view());
+            taken = guarded("concatenating " + std::to_string(views.size()) + " batches of collected rows", [&]
+            {
+                return cudf::concatenate(views, stream);
+            });
+        }
+        /// Freed in the order of the stream, after the concatenation has read them.
+        collected.clear();
+        return taken ? static_cast<size_t>(taken->num_rows()) : 0;
+    }
+
+    __host__ DeviceColumnView value(size_t index) const
+    {
+        if (index >= values.size())
+            throwGPUError(("column " + std::to_string(index) + " of " + std::to_string(values.size()) + " collected").c_str());
+        return viewOf(taken.get(), index, values[index], widened_offsets[index], stream);
+    }
+
+private:
+    const std::vector<GPUElementType> values;
+    const cuda::stream_ref stream;
+    rmm::device_buffer filter_mask;
+    rmm::device_buffer all_true;
+    std::vector<std::unique_ptr<cudf::table>> collected;
+    std::unique_ptr<cudf::table> taken;
+    /// Of the columns of varying width of `taken`, see `viewOf`.
+    mutable std::vector<std::unique_ptr<cudf::column>> widened_offsets;
+};
+
 }
 
 __host__ CudfGroupBy::CudfGroupBy(
-    GPUSpan<GPUElementType> keys, GPUSpan<GPUElementType> values, GPUSpan<GPUGroupByAggregate> aggregates, size_t num_parts, cuda::stream_ref stream)
+    GPUSpan<GPUElementType> keys,
+    GPUSpan<GPUElementType> values,
+    GPUSpan<GPUDerivedValue> derived,
+    GPUSpan<GPUGroupByAggregate> aggregates,
+    size_t num_parts,
+    cuda::stream_ref stream)
 {
     if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
         throwGPUError("a `GROUP BY` through cuDF on the device's default stream, where cuco cannot copy its counts back");
@@ -686,12 +895,28 @@ __host__ CudfGroupBy::CudfGroupBy(
         throwGPUError("a `GROUP BY` without values or aggregates");
     if (num_parts == 0 || num_parts > static_cast<size_t>(std::numeric_limits<int>::max()))
         throwGPUError(("a `GROUP BY` split into " + std::to_string(num_parts) + " parts").c_str());
+
+    /// The values of a batch, then the derived ones.
+    std::vector<GPUElementType> all_values(values.begin(), values.end());
+    for (const auto & value : derived)
+    {
+        for (const uint32_t column : value.columns)
+        {
+            if (column >= values.size() || columnKindOf(values[column]) != GPUColumnKind::Fixed)
+                throwGPUError(("a derived value of value " + std::to_string(column) + " of " + std::to_string(values.size())
+                    + ", or of one of varying width").c_str());
+        }
+        all_values.push_back(value.expression.value_type);
+    }
+
     for (const auto & aggregate : aggregates)
     {
         if ((aggregate.aggregation == GPUAggregationKind::Count) != (aggregate.column == GPUGroupByAggregate::no_column))
             throwGPUError("a `count` of a column, or another aggregate of none");
+        if (aggregate.column != GPUGroupByAggregate::no_column && aggregate.column >= all_values.size())
+            throwGPUError(("an aggregate of value " + std::to_string(aggregate.column) + " of " + std::to_string(all_values.size())).c_str());
     }
-    impl = guarded("making a `GROUP BY`", [&] { return new cudf_group_by::GroupBy(keys, values, aggregates, num_parts, stream); });
+    impl = guarded("making a `GROUP BY`", [&] { return new cudf_group_by::GroupBy(keys, all_values, derived, aggregates, num_parts, stream); });
 }
 
 __host__ CudfGroupBy::~CudfGroupBy()
@@ -701,9 +926,10 @@ __host__ CudfGroupBy::~CudfGroupBy()
 
 /// What cuDF, rmm and libstdc++ throw does not leave the island, see `guarded`.
 
-__host__ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, DeviceBitmask kept)
+__host__ void CudfGroupBy::addBatch(
+    GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
 {
-    guarded("adding a batch to a `GROUP BY`", [&] { impl->addBatch(keys, values, kept); });
+    guarded("adding a batch to a `GROUP BY`", [&] { impl->addBatch(keys, values, filter_columns, filter); });
 }
 
 __host__ void CudfGroupBy::absorbPart(const CudfGroupBy & other, size_t part)
@@ -716,9 +942,9 @@ __host__ size_t CudfGroupBy::finalize()
     return guarded("finalizing a `GROUP BY`", [&] { return impl->finalize(); });
 }
 
-__host__ size_t CudfGroupBy::keepGroups(DeviceBitmask kept)
+__host__ size_t CudfGroupBy::filterGroups(const GPUExpression & having, GPUSpan<size_t> columns)
 {
-    return guarded("filtering the groups of a `GROUP BY`", [&] { return impl->keepGroups(kept); });
+    return guarded("filtering the groups of a `GROUP BY`", [&] { return impl->filterGroups(having, columns); });
 }
 
 __host__ DeviceColumnView CudfGroupBy::key(size_t index) const
@@ -729,6 +955,40 @@ __host__ DeviceColumnView CudfGroupBy::key(size_t index) const
 __host__ DeviceColumnView CudfGroupBy::value(size_t index) const
 {
     return guarded("viewing an aggregate of a `GROUP BY`", [&] { return impl->value(index); });
+}
+
+__host__ CudfRowCollector::CudfRowCollector(GPUSpan<GPUElementType> values, cuda::stream_ref stream)
+{
+    if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
+        throwGPUError("a collection of rows on the device's default stream");
+    if (values.empty())
+        throwGPUError("a collection of rows of no columns");
+    impl = guarded("making a collection of rows", [&] { return new cudf_group_by::RowCollector(values, stream); });
+}
+
+__host__ CudfRowCollector::~CudfRowCollector()
+{
+    delete impl;
+}
+
+__host__ void CudfRowCollector::addBatch(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
+{
+    guarded("collecting the rows of a batch", [&] { impl->addBatch(values, filter_columns, filter); });
+}
+
+__host__ size_t CudfRowCollector::collectedRows() const
+{
+    return guarded("counting the collected rows", [&] { return impl->collectedRows(); });
+}
+
+__host__ size_t CudfRowCollector::take()
+{
+    return guarded("taking the collected rows", [&] { return impl->take(); });
+}
+
+__host__ DeviceColumnView CudfRowCollector::value(size_t index) const
+{
+    return guarded("viewing a column of the collected rows", [&] { return impl->value(index); });
 }
 
 }

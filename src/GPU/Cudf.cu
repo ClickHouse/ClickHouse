@@ -1,5 +1,6 @@
 #include <GPU/Cudf.cuh>
 
+#include <cudf/null_mask.hpp>
 #include <cudf/stream_compaction.hpp>
 #include <cudf/strings/strings_column_view.hpp>
 #include <cudf/unary.hpp>
@@ -182,6 +183,28 @@ __host__ DeviceFixedColumn deviceViewByBits(const cudf::column_view & column, GP
             ("cuDF returned a column of type " + std::to_string(static_cast<int32_t>(column.type().id()))
             + ", which is not as wide as element type " + std::to_string(static_cast<int>(type))).c_str());
     return {.element_type = type, .data = column.head<char>(), .rows = static_cast<size_t>(column.size())};
+}
+
+__host__ DeviceBitmask evaluateMask(
+    const GPUExpression & filter, const GPUExpressionInputs & inputs, size_t rows, rmm::device_buffer & mask, cuda::stream_ref stream)
+{
+    if (filter.result != GPUExpressionResult::Bitmask)
+        throwGPUError("a filter by an expression that is not a predicate");
+
+    const cudf::size_type num_rows = rowsForCudf(rows, max_cudf_rows);
+    const size_t mask_bytes = cudf::bitmask_allocation_size_bytes(num_rows);
+    if (mask.size() < mask_bytes)
+        mask.resize(mask_bytes, stream);
+    evaluateGPUExpression(filter, inputs, rows, mask.data(), stream);
+    return {.words = static_cast<const uint32_t *>(mask.data()), .rows = rows};
+}
+
+__host__ cudf::size_type leftOutBy(DeviceBitmask kept, cuda::stream_ref stream)
+{
+    const cudf::size_type rows = rowsForCudf(kept.rows, max_cudf_rows);
+    if (kept.keepsAll())
+        return 0;
+    return guarded("counting the rows a filter leaves out", [&] { return cudf::null_count(kept.words, 0, rows, stream); });
 }
 
 __host__ std::unique_ptr<cudf::table> keptRows(
