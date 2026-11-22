@@ -2,7 +2,6 @@
 sidebarTitle: 'Neon'
 title: 'Migrar do Neon para o ClickHouse Managed Postgres'
 description: 'Aprenda a migrar seus dados PostgreSQL do Neon para o ClickHouse Managed Postgres'
-slug: /products/managed-postgres/migrations/neon
 keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
 doc_type: 'guide'
 ---
@@ -64,7 +63,16 @@ Com o ClickPipes, os clientes podem migrar bancos de dados Postgres de vários t
 O Neon oferece branching instantâneo com copy-on-write. O ClickHouse Managed Postgres usa local NVMe storage para entregar um desempenho de Postgres rápido, previsível e confiável.
 O trade-off é que os branches não são instantâneos: eles são criados como deployments independentes por meio do [Point-in-Time Recovery (PITR)](/pt-BR/products/managed-postgres/backup-and-restore) e, normalmente, ficam disponíveis em poucos minutos.
 
-Para o desenvolvimento do dia a dia, recomendamos manter um database de desenvolvimento menor no ClickHouse Managed Postgres, com dados de produção representativos e sanitizados — alguns gigabytes, por exemplo — e criar branches por PITR a partir dele conforme a necessidade. A criação e a limpeza de branches podem ser automatizadas via [clickhousectl](/pt-BR/concepts/features/interfaces/cli), nossa CLI oficial, ou via [OpenAPI](/pt-BR/products/managed-postgres/openapi) ou [Terraform](/pt-BR/products/managed-postgres/terraform)
+Para o desenvolvimento do dia a dia, recomendamos manter um banco de dados de desenvolvimento menor no ClickHouse Managed Postgres, com dados de produção representativos e sanitizados — alguns gigabytes, por exemplo — e criar branches por PITR a partir dele conforme a necessidade. A criação e a limpeza de branches podem ser automatizadas via [clickhousectl](/pt-BR/concepts/features/interfaces/cli), nossa CLI oficial, a [OpenAPI](/pt-BR/products/managed-postgres/openapi) ou o [Terraform](/pt-BR/products/managed-postgres/terraform). Com o clickhousectl e uma chave de API, um branch é uma restauração para um ponto no tempo em um novo serviço:
+
+```bash
+clickhousectl cloud postgres restore <postgres-id> \
+  --name dev-branch-42 --restore-target 2026-10-20T12:00:00Z
+clickhousectl cloud postgres reset-password <branch-id> --generate
+clickhousectl cloud postgres delete <branch-id>
+```
+
+`restore` retorna o ID do novo serviço, mas não a senha; portanto, defina uma com `reset-password` assim que o branch estiver `running`. O branch herda as regras de acesso IPv4 atuais da origem, a menos que você passe regras `--ip-allow` ou `--block-public-access`. `delete` remove o branch e seus dados permanentemente.
 
 Alguns clientes usam essa abordagem para gerenciar centenas de ambientes de desenvolvimento. Estamos aprimorando ativamente a experiência de forking e sandbox. Consulte a [documentação de branching](/pt-BR/products/managed-postgres/branching).
 
@@ -96,7 +104,7 @@ O ClickHouse Managed Postgres oferece suporte a 500 conexões diretas do Postgre
 * Usar pooling de conexão no lado da aplicação.
 * Usar a instância do PgBouncer incluída, que oferece suporte a até 5.000 conexões de client.
 * Aumentar `max_connections` caso sejam necessárias mais conexões diretas.
-  * `max_connections` pode ser alterado em **Settings → Edit parameters**. Algumas alterações exigem reinicialização. Consulte a [documentação de configuração](/pt-BR/products/managed-postgres/settings#changing-configuration).
+  * `max_connections` pode ser alterado em **Settings → Edit parameters** ou com `clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000`. Algumas alterações exigem reinicialização, que você pode acionar com `clickhousectl cloud postgres restart <postgres-id>`. Consulte a [documentação de configuração](/pt-BR/products/managed-postgres/settings#changing-configuration).
 
 ### Mudanças de schema durante a migração {#schema-changes}
 

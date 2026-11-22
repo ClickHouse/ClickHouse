@@ -160,7 +160,6 @@ BlobStorageDescription BlobStorageDescription::fromConfiguration(const DB::Stora
         .type_name = configuration.getTypeName(),
         .namespace_name = configuration.getNamespace(),
         .allow_foreign_namespaces = configuration.supportsFullyQualifiedPaths(),
-        .is_filesystem = configuration.getType() == ObjectStorageType::Local || configuration.getType() == ObjectStorageType::HDFS,
     };
 }
 
@@ -248,7 +247,7 @@ IcebergPathResolver::IcebergPathResolver(String table_location_, String table_ro
     table_location_namespace = parseNamespace(table_location);
     parsed_location = parse(table_location);
     table_root_is_absolute = table_root.starts_with('/');
-    table_root_components = splitComponents(table_root, table_root_is_absolute ? 1 : 0, blob_storage.is_filesystem);
+    table_root_components = splitComponents(table_root, table_root_is_absolute ? 1 : 0, blob_storage.isFilesystem());
 
     const auto & location_components = parsed_location.components;
     relative_location_not_under_root = location_is_relative
@@ -262,7 +261,7 @@ IcebergPathResolver::IcebergPathResolver(String table_location_, String table_ro
 
 IcebergPathResolver::ParsedPath IcebergPathResolver::parse(std::string_view path) const
 {
-    return parsePath(path, blob_storage.is_filesystem);
+    return parsePath(path, blob_storage.isFilesystem());
 }
 
 std::optional<String> IcebergPathResolver::resolveImpl(const String & raw_path) const
@@ -346,26 +345,26 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     throwUnresolvable(metadata_path);
 }
 
-std::optional<String> IcebergPathResolver::storageIdentity(const IcebergPathFromMetadata & metadata_path) const
+std::optional<String> IcebergPathResolver::tryStorageIdentity(const IcebergPathFromMetadata & metadata_path) const
 {
-    const auto & raw_path = metadata_path.serialize();
-    if (isInForeignNamespace(raw_path))
+    auto path = resolveImpl(metadata_path.serialize());
+    if (!path)
+        return std::nullopt;
+    /// A filesystem names `a/./b`, `a//b` and `a/b/` as `a/b`; an object key is a byte string.
+    if (blob_storage.isFilesystem())
+        return String(trimTrailingSlashes(std::filesystem::path(*path).lexically_normal().string()));
+    /// As in `S3ObjectStorage::splitBucketAndKey`, a fully qualified path names its bucket whatever its scheme.
+    if (blob_storage.type_name == "s3")
     {
-        /// The storage ignores the scheme spelling of its family (`s3a://b/k` is `s3://b/k`).
-        auto qualified = trySplitFullyQualifiedObjectPath(raw_path);
-        auto storage_type = DataLake::tryParseStorageTypeFromString(String(qualified->scheme));
-        return fmt::format("{}://{}/{}", magic_enum::enum_name(*storage_type), qualified->object_namespace, qualified->key);
+        if (auto qualified = trySplitFullyQualifiedObjectPath(*path))
+            return fmt::format("{}/{}", qualified->object_namespace, qualified->key);
     }
-
-    auto key = resolveImpl(raw_path);
-    if (key && blob_storage.is_filesystem)
-        return std::filesystem::path(*key).lexically_normal().string();
-    return key;
+    return fmt::format("{}/{}", blob_storage.namespace_name, *path);
 }
 
-String IcebergPathResolver::storageIdentityOrThrow(const IcebergPathFromMetadata & metadata_path) const
+String IcebergPathResolver::storageIdentity(const IcebergPathFromMetadata & metadata_path) const
 {
-    if (auto identity = storageIdentity(metadata_path))
+    if (auto identity = tryStorageIdentity(metadata_path))
         return std::move(*identity);
     throwUnresolvable(metadata_path);
 }
@@ -384,7 +383,7 @@ std::optional<std::string_view> IcebergPathResolver::canonicalPrefix(std::string
 
 PositionDeleteMatchKey IcebergPathResolver::positionDeleteMatchKey(const IcebergPathFromMetadata & path) const
 {
-    PositionDeleteMatchKey key{.identity = storageIdentity(path), .canonical_prefix = std::nullopt};
+    PositionDeleteMatchKey key{.identity = tryStorageIdentity(path), .canonical_prefix = std::nullopt};
     if (auto prefix = canonicalPrefix(path.serialize()))
         key.canonical_prefix = String(*prefix);
     return key;
@@ -415,5 +414,4 @@ PositionDeleteScope IcebergPathResolver::matchPositionDeleteBounds(
         return PositionDeleteScope::None;
     return PositionDeleteScope::Range;
 }
-
 }

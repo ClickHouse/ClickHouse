@@ -40,9 +40,9 @@ public:
 
     /// Extract the raw path string for writing into Iceberg metadata files,
     /// serialization, cache keys, virtual column values, etc.
-    const String & serialize() const { return raw_path; }
+    [[nodiscard]] const String & serialize() const { return raw_path; }
 
-    bool empty() const { return raw_path.empty(); }
+    [[nodiscard]] bool empty() const { return raw_path.empty(); }
 
     auto operator<=>(const IcebergPathFromMetadata & other) const { return raw_path <=> other.raw_path; }
     auto operator==(const IcebergPathFromMetadata & other) const { return raw_path == other.raw_path; }
@@ -77,10 +77,10 @@ struct BlobStorageDescription
     String type_name;
     String namespace_name;
     bool allow_foreign_namespaces;
-    /// A filesystem (local disk, HDFS) names `a//b` and `a/./b` as `a/b`; an object key is a byte string.
-    bool is_filesystem = false;
 
     static BlobStorageDescription fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration);
+
+    [[nodiscard]] bool isFilesystem() const { return type_name == "local" || type_name == "hdfs"; }
 };
 
 /// Which part of a position delete file applies to one data file.
@@ -131,21 +131,22 @@ public:
 
     /// Convert a metadata path to an actual storage path for I/O operations.
     /// Throws `BAD_ARGUMENTS` for a path that names no file of the configured storage.
-    String resolve(const IcebergPathFromMetadata & metadata_path) const;
+    [[nodiscard]] String resolve(const IcebergPathFromMetadata & metadata_path) const;
 
-    /// The object `metadata_path` names in this storage, equal for every spelling of one file; `std::nullopt` if unresolvable.
-    std::optional<String> storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
-    String storageIdentityOrThrow(const IcebergPathFromMetadata & metadata_path) const;
+    /// A key for the storage object that `resolve(metadata_path)` addresses, the same for paths the storage treats alike.
+    [[nodiscard]] String storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
+    /// `std::nullopt` instead of the exception of `resolve`.
+    [[nodiscard]] std::optional<String> tryStorageIdentity(const IcebergPathFromMetadata & metadata_path) const;
 
     /// The text in front of the first component of `path` (scheme and authority, or `/`) if no component is empty, `.` or `..`.
     /// Another spelling of the same file continues it with a byte other than `/` only if it has such a component.
     static std::optional<std::string_view> canonicalPrefix(std::string_view path);
 
-    PositionDeleteMatchKey positionDeleteMatchKey(const IcebergPathFromMetadata & path) const;
+    [[nodiscard]] PositionDeleteMatchKey positionDeleteMatchKey(const IcebergPathFromMetadata & path) const;
 
     /// Which rows of a position delete file with these manifest bounds of `file_path` can name `data_file_path`.
     /// The keys are `positionDeleteMatchKey` of the paths, default-constructed for an absent bound.
-    PositionDeleteScope matchPositionDeleteBounds(
+    [[nodiscard]] PositionDeleteScope matchPositionDeleteBounds(
         const std::optional<IcebergPathFromMetadata> & lower,
         const PositionDeleteMatchKey & lower_key,
         const std::optional<IcebergPathFromMetadata> & upper,
@@ -155,7 +156,7 @@ public:
 
     static String parseNamespace(std::string_view path);
 
-    IcebergPathFromMetadata reverseResolve(const String & storage_path) const
+    [[nodiscard]] IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
         if (storage_path.size() > table_root.size()
             && storage_path.starts_with(table_root))
@@ -165,7 +166,7 @@ public:
 
     /// Convert a metadata path to a catalog-compatible path.
     /// Done this way because backward compatibility reasons.
-    String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
+    [[nodiscard]] String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
         if (!hasIcebergURIScheme(catalog_filename))
@@ -173,8 +174,8 @@ public:
         return catalog_filename;
     }
 
-    const String & getTableLocation() const { return table_location; }
-    const String & getTableRoot() const { return table_root; }
+    [[nodiscard]] const String & getTableLocation() const { return table_location; }
+    [[nodiscard]] const String & getTableRoot() const { return table_root; }
 
     /// A path split into what names a file: the storage it is in and its components.
     struct ParsedPath
@@ -192,9 +193,9 @@ public:
     };
 
 private:
-    bool isInForeignNamespace(const String & raw_path) const;
-    ParsedPath parse(std::string_view path) const;
-    std::optional<String> resolveImpl(const String & raw_path) const;
+    [[nodiscard]] bool isInForeignNamespace(const String & raw_path) const;
+    [[nodiscard]] ParsedPath parse(std::string_view path) const;
+    [[nodiscard]] std::optional<String> resolveImpl(const String & raw_path) const;
     [[noreturn]] void throwUnresolvable(const IcebergPathFromMetadata & metadata_path) const;
 
     String table_location;

@@ -3,6 +3,12 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Common/Exception.h>
 
+#include "config.h"
+
+#if USE_AVRO
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#endif
+
 using namespace DB;
 using Iceberg::BlobStorageDescription;
 using Iceberg::IcebergPathFromMetadata;
@@ -137,22 +143,22 @@ namespace
 
 BlobStorageDescription localStorage()
 {
-    return {.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false, .is_filesystem = true};
+    return {.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false};
 }
 
 BlobStorageDescription hdfsStorage()
 {
-    return {.type_name = "hdfs", .namespace_name = "", .allow_foreign_namespaces = false, .is_filesystem = true};
+    return {.type_name = "hdfs", .namespace_name = "", .allow_foreign_namespaces = false};
 }
 
 BlobStorageDescription s3Storage(bool allow_foreign_namespaces = false)
 {
-    return {.type_name = "s3", .namespace_name = "bucket", .allow_foreign_namespaces = allow_foreign_namespaces, .is_filesystem = false};
+    return {.type_name = "s3", .namespace_name = "bucket", .allow_foreign_namespaces = allow_foreign_namespaces};
 }
 
 BlobStorageDescription azureStorage()
 {
-    return {.type_name = "azure", .namespace_name = "c", .allow_foreign_namespaces = false, .is_filesystem = false};
+    return {.type_name = "azure", .namespace_name = "c", .allow_foreign_namespaces = false};
 }
 
 IcebergPathFromMetadata metadataPath(const String & path)
@@ -177,7 +183,7 @@ void check(const ResolveCase & test_case)
     if (test_case.expected)
         EXPECT_EQ(resolver.resolve(metadataPath(test_case.path)), *test_case.expected) << test_case.name;
     else
-        EXPECT_THROW(resolver.resolve(metadataPath(test_case.path)), Exception) << test_case.name;
+        EXPECT_THROW((void)resolver.resolve(metadataPath(test_case.path)), Exception) << test_case.name;
 }
 
 }
@@ -258,28 +264,28 @@ TEST(IcebergPathResolver, EmptyComponents)
     check({"hdfs", "hdfs://nn/x/t", "/x/t", hdfsStorage(), "hdfs://nn/x/t/data//a", "/x/t/data//a"});
 }
 
-TEST(IcebergPathResolver, StorageIdentity)
+TEST(IcebergPathResolver, TryStorageIdentity)
 {
     IcebergPathResolver s3("s3://bucket/x/t", "x/t", s3Storage(/* allow_foreign_namespaces */ true));
-    ASSERT_TRUE(s3.storageIdentity(metadataPath("s3://other/k")).has_value());
-    EXPECT_EQ(s3.storageIdentity(metadataPath("s3://other/k")), s3.storageIdentity(metadataPath("s3a://other/k")));
-    EXPECT_NE(s3.storageIdentity(metadataPath("s3://other/k")), s3.storageIdentity(metadataPath("s3://bucket/k")));
-    EXPECT_NE(s3.storageIdentity(metadataPath("s3://bucket/x//t/data/a")), s3.storageIdentity(metadataPath("s3://bucket/x/t/data/a")));
+    ASSERT_TRUE(s3.tryStorageIdentity(metadataPath("s3://other/k")).has_value());
+    EXPECT_EQ(s3.tryStorageIdentity(metadataPath("s3://other/k")), s3.tryStorageIdentity(metadataPath("s3a://other/k")));
+    EXPECT_NE(s3.tryStorageIdentity(metadataPath("s3://other/k")), s3.tryStorageIdentity(metadataPath("s3://bucket/k")));
+    EXPECT_NE(s3.tryStorageIdentity(metadataPath("s3://bucket/x//t/data/a")), s3.tryStorageIdentity(metadataPath("s3://bucket/x/t/data/a")));
 
     IcebergPathResolver local("/t", "t", localStorage());
-    ASSERT_TRUE(local.storageIdentity(metadataPath("t//data/a")).has_value());
-    EXPECT_EQ(local.storageIdentity(metadataPath("t//data/a")), local.storageIdentity(metadataPath("t/data/a")));
+    ASSERT_TRUE(local.tryStorageIdentity(metadataPath("t//data/a")).has_value());
+    EXPECT_EQ(local.tryStorageIdentity(metadataPath("t//data/a")), local.tryStorageIdentity(metadataPath("t/data/a")));
 
     IcebergPathResolver hdfs("hdfs://nn/x/t", "/x/t", hdfsStorage());
-    ASSERT_TRUE(hdfs.storageIdentity(metadataPath("hdfs://nn/x/t/data//a")).has_value());
-    EXPECT_EQ(hdfs.storageIdentity(metadataPath("hdfs://nn/x/t/data//a")), hdfs.storageIdentity(metadataPath("hdfs://nn/x/t/data/a")));
+    ASSERT_TRUE(hdfs.tryStorageIdentity(metadataPath("hdfs://nn/x/t/data//a")).has_value());
+    EXPECT_EQ(hdfs.tryStorageIdentity(metadataPath("hdfs://nn/x/t/data//a")), hdfs.tryStorageIdentity(metadataPath("hdfs://nn/x/t/data/a")));
 
-    EXPECT_EQ(IcebergPathResolver("s3://bucket/x/t", "x/t", s3Storage()).storageIdentity(metadataPath("s3://other/y")), std::nullopt);
+    EXPECT_EQ(IcebergPathResolver("s3://bucket/x/t", "x/t", s3Storage()).tryStorageIdentity(metadataPath("s3://other/y")), std::nullopt);
 }
 
 TEST(IcebergPathResolver, SameStorageIdentity)
 {
-    auto identity = [](const IcebergPathResolver & resolver, const String & path) { return resolver.storageIdentity(metadataPath(path)); };
+    auto identity = [](const IcebergPathResolver & resolver, const String & path) { return resolver.tryStorageIdentity(metadataPath(path)); };
     auto same = [&](const IcebergPathResolver & resolver, const String & lhs, const String & rhs)
     {
         const auto expected = identity(resolver, lhs);
@@ -301,7 +307,7 @@ TEST(IcebergPathResolver, SameStorageIdentity)
     same(foreign, "s3a://bucket/x/t/data/a", "s3://bucket/x/t/data/a");
 
     IcebergPathResolver s3("s3://bucket/x/t", "x/t", s3Storage());
-    EXPECT_EQ(s3.storageIdentity(metadataPath("s3://other/y")), std::nullopt);
+    EXPECT_EQ(s3.tryStorageIdentity(metadataPath("s3://other/y")), std::nullopt);
 }
 
 TEST(IcebergPathResolver, MatchPositionDeleteBounds)
@@ -367,3 +373,56 @@ TEST(IcebergPathResolver, CanonicalPrefix)
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/../t/a"), std::nullopt);
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/data/"), std::nullopt);
 }
+
+TEST(IcebergPathResolver, StorageIdentity)
+{
+    auto identity = [](const IcebergPathResolver & resolver, const String & path)
+    { return resolver.storageIdentity(Iceberg::IcebergPathFromMetadata::deserialize(path)); };
+
+    IcebergPathResolver s3("s3://bucket/tbl", "tbl", {.type_name = "s3", .namespace_name = "bucket", .allow_foreign_namespaces = true});
+    EXPECT_EQ(identity(s3, "s3://bucket/tbl/data/x.parquet"), "bucket/tbl/data/x.parquet");
+    EXPECT_EQ(identity(s3, "s3a://bucket/tbl/data/x.parquet"), "bucket/tbl/data/x.parquet");
+    EXPECT_EQ(identity(s3, "s3://other/tbl/x.parquet"), "other/tbl/x.parquet");
+    EXPECT_EQ(identity(s3, "s3a://other/tbl/x.parquet"), "other/tbl/x.parquet");
+
+    IcebergPathResolver azure("abfss://c@a.dfs.core.windows.net", "", {.type_name = "azure", .namespace_name = "c", .allow_foreign_namespaces = false});
+    EXPECT_EQ(identity(azure, "abfss://c@a.dfs.core.windows.net/foo://bar/x"), "c/foo://bar/x");
+
+    IcebergPathResolver local("/w/t", "/w/t", {.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
+    for (const auto * path : {"/w/t/metadata/s.avro", "file:///w/t/metadata/s.avro", "/w/t/metadata//s.avro", "/w/t/./metadata/s.avro"})
+        EXPECT_EQ(identity(local, path), "/w/t/metadata/s.avro") << path;
+
+    IcebergPathResolver hdfs("hdfs://h:9000/w/t", "/w/t", {.type_name = "hdfs", .namespace_name = "h:9000", .allow_foreign_namespaces = false});
+    for (const auto * path : {"hdfs://h:9000/w/t/data/x.parquet", "hdfs://h:9000/w/t/data//x.parquet", "hdfs://h:9000/w/t/./data/x.parquet"})
+        EXPECT_EQ(identity(hdfs, path), "/w/t/data/x.parquet") << path;
+}
+
+#if USE_AVRO
+TEST(IcebergPathResolver, GroupPositionDeletesByDataFile)
+{
+    IcebergPathResolver resolver("file:///a/t", "a/t", localStorage());
+    auto delete_file = [](const String & lower, const String & upper)
+    {
+        auto parsed = std::make_shared<const Iceberg::ParsedManifestFileEntry>(
+            Iceberg::FileContentType::POSITION_DELETE, metadataPath("file:///a/t/data/d.parquet"), 0, Iceberg::ManifestEntryStatus::ADDED,
+            std::nullopt, std::nullopt, std::nullopt, std::nullopt, Row{}, std::unordered_map<Int32, Iceberg::ColumnInfo>{},
+            std::unordered_map<Int32, std::pair<Field, Field>>{}, "PARQUET", metadataPath(lower), metadataPath(upper),
+            std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, 1, 1);
+        Iceberg::ProcessedManifestFileEntry entry{};
+        entry.parsed_entry = std::move(parsed);
+        return std::make_shared<const Iceberg::ProcessedManifestFileEntry>(std::move(entry));
+    };
+
+    const auto grouped = Iceberg::groupPositionDeletesByDataFile(
+        {delete_file("/a/t/data/m", "/a/t/data/m"),
+         delete_file("file:///a/t/data/m", "file:///a/t/data/m"),
+         delete_file("file:///a/t/data/a", "file:///a/t/data/z"),
+         delete_file("s3://bucket/x/m", "s3://bucket/x/m")},
+        resolver);
+    ASSERT_EQ(grouped.single_data_file.size(), 1);
+    EXPECT_EQ(grouped.single_data_file.begin()->first, resolver.storageIdentity(metadataPath("file:///a/t/data/m")));
+    EXPECT_EQ(grouped.single_data_file.begin()->second.size(), 2);
+    /// A range, and a path in another storage.
+    EXPECT_EQ(grouped.other.size(), 2);
+}
+#endif

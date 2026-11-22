@@ -55,6 +55,7 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
     input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
     input.size = offset();
     input.pos = 0;
+    frame_started = true;
 
     try
     {
@@ -97,6 +98,15 @@ void ZstdDeflatingWriteBuffer::nextImpl()
 {
     if (offset())
         flush(ZSTD_e_flush);
+}
+
+void ZstdDeflatingWriteBuffer::finalizeImpl()
+{
+    /// Nothing compressed yet, so the pending data is the whole frame: let zstd size its context to it.
+    if (!frame_started && offset() > 0)
+        if (auto ret = ZSTD_CCtx_setPledgedSrcSize(cctx.get(), offset()); ZSTD_isError(ret))
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "Cannot set zstd pledged source size: {}", ZSTD_getErrorName(ret));
+    WriteBufferWithOwnMemoryDecorator::finalizeImpl();
 }
 
 void ZstdDeflatingWriteBuffer::finalFlushBefore()

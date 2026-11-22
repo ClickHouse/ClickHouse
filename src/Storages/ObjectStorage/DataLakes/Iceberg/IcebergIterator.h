@@ -34,6 +34,7 @@ namespace DB
 namespace Iceberg
 {
 class ManifestFilesPrefetcher;
+class RuntimeFilterFilePruning;
 }
 
 class IcebergIterator : public IObjectIterator
@@ -51,6 +52,9 @@ public:
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override;
+
+    void setJoinRuntimeFilters(std::shared_ptr<const RuntimeFilterPruningPredicate> predicate) override;
+
     ~IcebergIterator() override;
 
 private:
@@ -72,7 +76,9 @@ private:
     /// Filled under `deletes_mutex` and never mutated after `deletes_ready`, so `next` may read them
     /// unguarded once it has gone through `ensureDeletesReady`.
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
-    /// `positionDeleteMatchKey` of the lower and upper `file_path` bounds of `position_deletes_files[i]`, set once they are sorted.
+    /// `position_deletes_files` grouped by the storage identity of the data file both bounds name.
+    Iceberg::PositionDeletesByDataFile position_deletes_by_data_file;
+    /// `positionDeleteMatchKey` of the lower and upper `file_path` bounds of `position_deletes_by_data_file.other[i]`.
     std::vector<std::pair<Iceberg::PositionDeleteMatchKey, Iceberg::PositionDeleteMatchKey>> position_delete_bound_keys;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
     std::mutex deletes_mutex;
@@ -91,6 +97,8 @@ private:
     std::vector<Iceberg::ManifestIteratorPtr> idle_data_manifests TSA_GUARDED_BY(data_files_mutex);
     size_t data_manifests_in_use TSA_GUARDED_BY(data_files_mutex) = 0;
     std::exception_ptr data_files_exception TSA_GUARDED_BY(data_files_mutex);
+
+    std::unique_ptr<Iceberg::RuntimeFilterFilePruning> runtime_filter_pruning;
 };
 }
 

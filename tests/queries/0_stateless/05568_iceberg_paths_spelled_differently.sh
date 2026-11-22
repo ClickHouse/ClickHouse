@@ -106,48 +106,60 @@ create_table p "INSERT INTO t VALUES (1), (2), (3); ALTER TABLE t DELETE WHERE x
 respell_deletes p
 select_with_both_transforms p
 
+# ClickHouse writes a position delete file per data file. This Spark table has one covering two data files, written
+# without `file_path` bounds, so the rows of the other data file are pruned by the data file path.
+spark_deletes() { echo "$1/data/p=2/00000-20-77b92ac1-4b97-4c84-81e1-283e817c8b90-00001-deletes.parquet"; }
+
+count_with_both_transforms()
+{
+    for roaring in 0 1; do
+        ${CLICKHOUSE_LOCAL} --use_roaring_bitmap_iceberg_positional_deletes=${roaring} \
+            -q "SELECT count(), sum(id) FROM icebergLocal('$1')" < /dev/null
+    done
+}
+
+echo "a position delete file of two data files, as written"
+cp -r "${CUR_DIR}/data_lake_corpus/iceberg/ice143_v2_position_deletes" spark
+count_with_both_transforms spark
+
+# $1: table directory, $2: the query reading the rewritten rows from `DELETES`.
+rewrite_spark_deletes()
+{
+    local deletes
+    cp -r spark "$1"
+    deletes=$(spark_deletes "$1")
+    local_query "INSERT INTO FUNCTION file('${deletes}.new', Parquet) ${2//DELETES/${deletes}}"
+    mv "${deletes}.new" "${deletes}"
+}
+
 echo "position deletes of two data files in the default file system"
-create_table p2 "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
-respell_deletes p2
-select_with_both_transforms p2
+rewrite_spark_deletes p2 "SELECT concat('hdfs://namenode:8020', file_path) AS file_path, pos FROM file('DELETES', Parquet)"
+count_with_both_transforms p2
 
 echo "row groups of a delete file spelled like the data paths are still pruned"
-create_table r "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
-deletes=$(find r/warehouse/db/t/data -name '*-deletes.parquet')
-local_query "
-    INSERT INTO FUNCTION file('${deletes}.new', Parquet)
-    SELECT file_path, pos FROM file('${deletes}', Parquet) ORDER BY file_path, pos
+rewrite_spark_deletes r "
+    SELECT file_path, pos FROM file('DELETES', Parquet) ORDER BY file_path, pos
     SETTINGS output_format_parquet_row_group_size = 1"
-mv "${deletes}.new" "${deletes}"
 ${CLICKHOUSE_LOCAL} -q "
-    SELECT groupArray(x) FROM (SELECT x FROM icebergLocal('r/warehouse/db/t') ORDER BY x);
+    SELECT count(), sum(id) FROM icebergLocal('r');
     SELECT countIf(event = 'ParquetPrunedRowGroups' AND value > 0) FROM system.events" < /dev/null
 
 echo "row groups of a delete file naming files under another top-level directory are still pruned"
-create_table s "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
-deletes=$(find s/warehouse/db/t/data -name '*-deletes.parquet')
-local_query "
-    INSERT INTO FUNCTION file('${deletes}.new', Parquet)
+rewrite_spark_deletes s "
     SELECT file_path, pos FROM
     (
-        SELECT file_path, pos FROM file('${deletes}', Parquet)
+        SELECT file_path, pos FROM file('DELETES', Parquet)
         UNION ALL SELECT '/zz/elsewhere/x.parquet', toInt64(0)
     )
     ORDER BY file_path, pos
     SETTINGS output_format_parquet_row_group_size = 1"
-mv "${deletes}.new" "${deletes}"
 ${CLICKHOUSE_LOCAL} -q "
-    SELECT groupArray(x) FROM (SELECT x FROM icebergLocal('s/warehouse/db/t') ORDER BY x);
+    SELECT count(), sum(id) FROM icebergLocal('s');
     SELECT value FROM system.events WHERE event = 'ParquetPrunedRowGroups'" < /dev/null
 
 echo "position deletes naming data files with a leading //"
-create_table q "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
-deletes=$(find q/warehouse/db/t/data -name '*-deletes.parquet')
-local_query "
-    INSERT INTO FUNCTION file('${deletes}.new', Parquet)
-    SELECT concat('/', file_path) AS file_path, pos FROM file('${deletes}', Parquet)"
-mv "${deletes}.new" "${deletes}"
-select_with_both_transforms q
+rewrite_spark_deletes q "SELECT concat('/', file_path) AS file_path, pos FROM file('DELETES', Parquet)"
+count_with_both_transforms q
 
 # Sorted by `file_path`, the positions are 2, 0, which the streaming transform cannot merge. Read in one piece, they
 # select the bitmap transform. Read one row group at a time, the 0 arrives after row 2 is passed: an exception.

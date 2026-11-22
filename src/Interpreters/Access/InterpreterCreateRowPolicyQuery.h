@@ -20,7 +20,7 @@ public:
     static void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query);
 
 private:
-    AccessRightsElements getRequiredAccess() const;
+    [[nodiscard]] AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
 };

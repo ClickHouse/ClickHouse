@@ -34,7 +34,8 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新しい設定。メモリ内のデータを外部ストレージへアダプティブにスピルできるようにします。"}]}]} />
 
-トリガープロセッサが、データを外部ストレージへアダプティブにスピルします。現時点でサポートされているのは、スピル可能なハッシュ結合、すなわち `grace_hash` とアダプティブな `hash` / `parallel_hash` の経路です。
+クエリがメモリ逼迫状態になった際に、対象となる集約、ソート、`DISTINCT`、ハッシュ結合の各プロセッサのデータを外部ストレージへアダプティブにスピルします。
+サポートされているハッシュ結合は、`grace_hash` と、アダプティブな `hash` / `parallel_hash` の経路です。
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -83,6 +84,16 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 関数やサブクエリの結果を解析し、定数が含まれている場合にクエリを書き換えるクエリ最適化を有効にします
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "実験的な Elasticsearch インテグレーション（`Elasticsearch` テーブルエンジンおよび `elasticsearch` テーブル関数）の利用可否を制御する新しい設定。"}]}]} />
+
+実験的な Elasticsearch インテグレーション (`Elasticsearch` テーブルエンジンおよび `elasticsearch` テーブル関数) を有効化します。
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -154,6 +165,23 @@ true に設定すると、テキスト索引を使用できます。
 
 WITH ステートメントを UNION クエリおよびすべてのサブクエリに伝播します
 
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定: `GROUP BY key [ORDER BY key] LIMIT n` は top-K ヒープの境界を `MergeTree` の読み取りステップにパブリッシュし、読み取りステップはその境界に基づいて行をフィルタし、グラニュールをスキップします。`compatibility` が 26.10 未満の場合は無効になります。"}]}]} />
+
+[enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ja/reference/settings/session-settings/enable#enable_group_by_top_k_optimization) の補助設定です。ランク付けに使われる最初の `GROUP BY` キーが `MergeTree` テーブルから読み取られるカラムである場合、集約処理は top-K ヒープが `LIMIT` 個のキーを保持した時点で、そのヒープの境界を読み取りステップにパブリッシュします。読み取りステップは、他のカラムを読み取る前に (`PREWHERE`) キーが境界外にある行を除外し、さらにそのカラムの主キーまたは `minmax` スキップ索引を使用して、境界外にあるグラニュールをまるごとスキップします。
+
+これは `GROUP BY key ORDER BY key LIMIT n` に加え、`ORDER BY` を伴わない `GROUP BY key LIMIT n` (任意の `n` 個のグループを返せばよいクエリ) にも適用されます。
+
+`FINAL` を伴う読み取りや、並列レプリカを使用する読み取りには適用されません。`FINAL` では行のすべてのバージョンを参照する必要があり、また境界はリモートレプリカ上の読み取りには伝達されないためです。
+
+設定可能な値:
+
+* 0 — 無効。
+* 1 — 有効。
+
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -211,6 +239,16 @@ HTTPリクエストに対するレスポンスでのデータ圧縮を有効ま�
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "クエリ アナライザにおける識別子解決 cache を制御するための新しい設定"}]}]} />
 
 クエリ アナライザで識別子解決 cache を有効にします。この cache は、同じエイリアスが複数回参照されたときに AST が肥大化するのを防ぐため、解決済みのエイリアスノードを共有します。誤った結果が疑われる場合は、false に設定して cache を無効にします。
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "実験的な IP アドレス暗号化関数を有効にする新しい設定。"}]}]} />
+
+実験的な IP アドレス暗号化関数 (`ipcryptEncrypt`、`ipcryptDecrypt`、`ipcryptPrefixEncrypt`、`ipcryptPrefixDecrypt`) を有効にします。
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -409,6 +447,16 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 
 true の場合、テーブルから取得したシリアライゼーションのヒントに基づいて、カスタムシリアライゼーション (例: スパース) を使用するカラムにデータを直接パースできます。
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "ベータ版の `PCO` 圧縮コーデックを有効にする新しい設定。"}]}]} />
+
+`PCO` 圧縮コーデックを有効にします。
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -536,6 +584,18 @@ WHERE (_part, _part_offset) IN (
 機能全体を制御するゲートであり、追加の機能は
 それぞれ独自の設定で制御される場合があります。
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "サブカラムに対するコーデック宣言を有効にする新しい設定。"}]}]} />
+
+カラムのサブカラム (`Tuple` の要素や `Map` のキーと値など) に対して、`CREATE TABLE` 内の `CODEC name (...)` エントリや `ALTER TABLE ... MODIFY COLUMN name CODEC(...)` を使用して圧縮コーデックを宣言できるようにします。
+こうした宣言がすでに含まれているテーブルは、この設定に関係なく動作します。また、宣言はいつでも削除できます。
+サブカラムのコーデックを持つテーブルは、それより古いバージョンのサーバーではアタッチできません。
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
@@ -585,17 +645,17 @@ Prometheus 風の時系列のリサンプリング、rate、delta の計算を�
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`dialect` 設定の `trino` 値を有効にする新しい設定。Trino の SQL 構文を変換し、Trino の関数名を ClickHouse の同等のものにマッピングします。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "`dialect` 設定の `trino` 値を有効にする新しい設定。Trino の SQL 構文を変換し、Trino の関数名を ClickHouse の同等のものにマッピングします。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "`trino` ダイアレクトはベータに移行しました。"}]}]} />
 
 `dialect` 設定の `trino` 値を有効にします。
 
-`dialect` を `trino` に設定すると、クエリは Trino SQL で記述します。Trino 固有の構文 (`ARRAY[...]` literals、`TRY_CAST`、`UNNEST`、`ROW` types、`LIMIT` の前の `OFFSET`) は ClickHouse SQL に変換され、Trino の関数名は ClickHouse の同等のものにマッピングされます。`SET` クエリは引き続き通常の SQL としてパースされるため、ダイアレクトを元に戻すことができます。
+`dialect` を `trino` に設定すると、クエリは Trino SQL で記述します。Trino 固有の構文 (`ARRAY[...]` literals、`TRY_CAST`、`UNNEST`、`ROW` 型、`LIMIT` の前の `OFFSET`) は ClickHouse SQL に変換され、Trino の関数名は ClickHouse の同等のものにマッピングされます。`SET` クエリは引き続き通常の SQL としてパースされるため、ダイアレクトを元に戻すことができます。
 
-このダイアレクトでは、クエリのセマンティクスも Trino に合わせられます。`join_use_nulls` が有効化され、`use_variant_as_common_type` が無効化され、クエリ アナライザが有効化されます。クエリ内で明示的に指定した `SETTINGS` clause は引き続き優先されます。
+このダイアレクトでは、クエリのセマンティクスも Trino に合わせられます。`join_use_nulls` が有効化され、`use_variant_as_common_type` が無効化され、クエリ アナライザが有効化されます。クエリ内で明示的に指定した `SETTINGS` 句 は引き続き優先されます。
 
 ## enable_unaligned_array_join {#enable_unaligned_array_join}
 
@@ -666,6 +726,16 @@ MergeTree ファミリーのエンジンで `UNIQUE KEY` 句を使用したテ�
 
 * 0 - 無効
 * 1 - 有効
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "実験的な XGBoost インテグレーション (`XGBOOST` 辞書レイアウトおよび `predictXGBoost` 関数) を利用可能にするかどうかを制御する新しい設定。"}]}]} />
+
+実験的な XGBoost インテグレーション (`XGBOOST` 辞書レイアウトおよび `predictXGBoost` 関数) を有効にします。
 
 ## enable_zxc_codec {#enable_zxc_codec}
 
