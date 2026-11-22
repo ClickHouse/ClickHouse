@@ -804,7 +804,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 {
                     const auto & column_decl = command_col_decl->as<const ASTColumnDeclaration &>();
 
-                    if (column_decl.hasChildren() || column_decl.null_modifier.has_value() || column_decl.default_specifier != ColumnDefaultSpecifier::Empty
+                    /// The NAME child is always present, so check the property slots explicitly.
+                    const bool has_properties = column_decl.getType() || column_decl.getDefaultExpression()
+                        || column_decl.getComment() || column_decl.getCodec() || column_decl.getStatisticsDesc()
+                        || column_decl.getTTL() || column_decl.getCollation() || column_decl.getSettings();
+
+                    if (has_properties || column_decl.null_modifier.has_value() || column_decl.default_specifier != ColumnDefaultSpecifier::Empty
                         || column_decl.ephemeral_default || column_decl.primary_key_specifier)
                     {
                         throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot specify column properties before '{}'", keyword);

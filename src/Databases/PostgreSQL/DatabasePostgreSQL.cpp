@@ -475,7 +475,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
-        column_declaration->name = column_type_and_name.name;
+        column_declaration->setName(column_type_and_name.name);
         column_declaration->setType(dataTypeToAST(column_type_and_name.type));
         columns_expression_list->children.emplace_back(column_declaration);
     }

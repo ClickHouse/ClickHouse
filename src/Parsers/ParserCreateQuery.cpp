@@ -135,7 +135,7 @@ bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
 bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserColumnDeclaration>(require_type, allow_null_modifiers, check_keywords_after_name), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserColumnDeclaration>(require_type, allow_null_modifiers, check_keywords_after_name, allow_query_parameter), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
@@ -481,8 +481,11 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
             {
                 if (!primary_key_from_columns)
                     primary_key_from_columns = makeASTOperator("tuple");
-                auto column_identifier = make_intrusive<ASTIdentifier>(cd->name);
-                primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
+                if (auto name_id = cd->getNameIdentifier())
+                {
+                    auto column_identifier = name_id->clone();
+                    primary_key_from_columns->children[0]->as<ASTExpressionList>()->children.push_back(column_identifier);
+                }
             }
             columns->children.push_back(elem);
         }

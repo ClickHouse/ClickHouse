@@ -106,10 +106,10 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
             continue;
 
         /// If no column description for the name, let's skip the validation of default expressions, but let's log the fact that something went wrong
-        if (const auto * maybe_column_desc = columns_desc.tryGet(col_decl.name); maybe_column_desc)
+        if (const auto * maybe_column_desc = columns_desc.tryGet(col_decl.getName()); maybe_column_desc)
             getDefaultExpressionInfoInto(col_decl, maybe_column_desc->type, default_expr_info);
         else
-            LOG_WARNING(getLogger("validateCreateQuery"), "Couldn't get column description for column {}", col_decl.name);
+            LOG_WARNING(getLogger("validateCreateQuery"), "Couldn't get column description for column {}", col_decl.getName());
     }
 
     /// Validates the whole resulting metadata (also for ordinary ALTERs), so do not enforce the
@@ -308,7 +308,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         for (const auto & column_name_and_type: columns)
         {
             const auto ast_column_declaration = make_intrusive<ASTColumnDeclaration>();
-            ast_column_declaration->name = column_name_and_type.name;
+            ast_column_declaration->setName(column_name_and_type.name);
             /// parser typename
             {
                 ASTPtr ast_type;

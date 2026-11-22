@@ -609,7 +609,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
     AccessRightsElements required_access;
 
     auto column_name = [&]() -> String { return getIdentifierName(command.column); };
-    auto column_name_from_col_decl = [&]() -> std::string_view { return command.col_decl->as<ASTColumnDeclaration &>().name; };
+    auto column_name_from_col_decl = [&]() -> String { return command.col_decl->as<ASTColumnDeclaration &>().getName(); };
 
     switch (command.type)
     {
@@ -907,7 +907,7 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
             // ADD COLUMN
             if (command->col_decl)
             {
-                elem.query_columns.insert(prefix + command->col_decl->as<ASTColumnDeclaration &>().name);
+                elem.query_columns.insert(prefix + command->col_decl->as<ASTColumnDeclaration &>().getName());
             }
 
             if (!command->from_table.empty())

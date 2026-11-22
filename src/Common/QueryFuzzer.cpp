@@ -2046,7 +2046,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                 if (create.columns_list && create.columns_list->columns)
                     for (const auto & col_ast : create.columns_list->columns->children)
                         if (const auto * col = col_ast->as<ASTColumnDeclaration>())
-                            names.push_back(col->name);
+                            if (const auto name = col->getName(); !name.empty())
+                                names.push_back(name);
                 if (!names.empty() && fuzz_rand() % 4 != 0)
                     return make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, names));
                 return getRandomColumnLike();

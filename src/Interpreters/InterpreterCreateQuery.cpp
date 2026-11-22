@@ -431,7 +431,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
 
-        column_declaration->name = column.name;
+        column_declaration->setName(column.name);
         column_declaration->setType(dataTypeToAST(column.type));
 
         columns_list->children.emplace_back(column_declaration);
@@ -448,7 +448,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
 
-        column_declaration->name = alias_column.name;
+        column_declaration->setName(alias_column.name);
         column_declaration->setType(dataTypeToAST(alias_column.type));
 
         column_declaration->default_specifier = ColumnDefaultSpecifier::Alias;
@@ -474,7 +474,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
 
-        column_declaration->name = column.name;
+        column_declaration->setName(column.name);
         column_declaration->setType(dataTypeToAST(column.type));
 
         if (column.default_desc.expression)
@@ -625,7 +625,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(col_decl.getName(), getColumnType(col_decl, mode, make_columns_nullable));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -659,7 +659,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         auto & col_decl = (*ast_it)->as<ASTColumnDeclaration &>();
 
-        column.name = col_decl.name;
+        column.name = col_decl.getName();
 
         /// ignore or not other database extensions depending on compatibility settings
         if (col_decl.default_specifier == ColumnDefaultSpecifier::AutoIncrement

@@ -157,7 +157,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
 
-        command.column_name = ast_col_decl.name;
+        command.column_name = ast_col_decl.getName();
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
@@ -213,7 +213,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::MODIFY_COLUMN;
 
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
-        command.column_name = ast_col_decl.name;
+        command.column_name = ast_col_decl.getName();
         command.to_remove = removePropertyFromString(command_ast->remove_property);
 
         if (ast_col_decl.getType())

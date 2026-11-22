@@ -210,7 +210,7 @@ std::optional<MutationCommand> MutationCommand::parse(
         if (ast_col_decl.getType() != nullptr)
         {
             res.type = MutationCommand::Type::READ_COLUMN;
-            res.column_name = ast_col_decl.name;
+            res.column_name = ast_col_decl.getName();
             res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
             return res;
         }

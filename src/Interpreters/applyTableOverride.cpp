@@ -29,7 +29,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 auto exists = std::find_if(
                     dest_children.begin(),
                     dest_children.end(),
-                    [&](ASTPtr node) -> bool { return node->as<ASTColumnDeclaration>()->name == override_column->name; });
+                    [&](ASTPtr node) -> bool { return node->as<ASTColumnDeclaration>()->getName() == override_column->getName(); });
                 /// For columns, only allow adding ALIAS (non-physical) for now.
                 /// TODO: This logic should instead be handled by validation that is
                 ///       executed from InterpreterCreateQuery / InterpreterAlterQuery.

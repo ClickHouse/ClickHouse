@@ -458,7 +458,7 @@ boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMat
 {
     auto column_declaration = make_intrusive<ASTColumnDeclaration>();
 
-    column_declaration->name = std::move(name);
+    column_declaration->setName(name);
     column_declaration->setType(makeASTDataType(type));
 
     column_declaration->default_specifier = ColumnDefaultSpecifier::Materialized;
@@ -476,7 +476,7 @@ StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList 
     {
         const auto & column_declaration = make_intrusive<ASTColumnDeclaration>();
 
-        column_declaration->name = name;
+        column_declaration->setName(name);
         column_declaration->setType(dataTypeToAST(type));
 
         if (auto it = defaults.find(name); it != defaults.end())
@@ -558,7 +558,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                     {
                         const auto * column_declaration = child->as<ASTColumnDeclaration>();
                         auto type = DataTypeFactory::instance().get(column_declaration->getType());
-                        ordinary_columns_and_types.emplace_back(NameAndTypePair(column_declaration->name, type));
+                        ordinary_columns_and_types.emplace_back(NameAndTypePair(column_declaration->getName(), type));
                     }
                 }
 
@@ -641,7 +641,8 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                 for (const auto & override_column_ast : columns->columns->children)
                 {
                     auto * override_column = override_column_ast->as<ASTColumnDeclaration>();
-                    if (override_column->name == "_sign" || override_column->name == "_version")
+                    const String name = override_column->getName();
+                    if (name == "_sign" || name == "_version")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot override _sign and _version column");
                 }
             }

@@ -1116,10 +1116,12 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
     if (!col_default_expression)
         return;
 
+    const String name = col_decl.getName();
+
     /// Track DEFAULT/MATERIALIZED columns (value computed and stored); ALIAS/EPHEMERAL are excluded.
     if (col_decl.default_specifier == ColumnDefaultSpecifier::Default
         || col_decl.default_specifier == ColumnDefaultSpecifier::Materialized)
-        info.insert_time_default_columns.insert(col_decl.name);
+        info.insert_time_default_columns.insert(name);
 
     /** For columns with explicitly-specified type create two expressions:
     * 1. default_expression aliased as column name with _tmp suffix
@@ -1127,7 +1129,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
     */
     if (col_decl.getType())
     {
-        const auto & final_column_name = col_decl.name;
+        const String & final_column_name = name;
         const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
         const auto * data_type_ptr = data_type.get();
 
@@ -1139,7 +1141,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
     else
     {
         info.has_columns_with_default_without_type = true;
-        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), col_decl.name));
+        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), name));
     }
 }
 

@@ -162,7 +162,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
 {
-    ParserColumnDeclarationList parser(true, true);
+    ParserColumnDeclarationList parser(true, true, false, /* allow_query_parameter = */ false);
     const Settings & settings = context->getSettingsRef();
 
     ASTPtr columns_list_raw = parseQuery(
@@ -186,7 +186,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
 
 bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescription & columns, const ContextPtr & context, String & error)
 {
-    ParserColumnDeclarationList parser(true, true);
+    ParserColumnDeclarationList parser(true, true, false, /* allow_query_parameter = */ false);
     const Settings & settings = context->getSettingsRef();
 
     const char * start = structure.data();

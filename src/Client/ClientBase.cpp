@@ -1446,7 +1446,8 @@ void ClientBase::updateSuggest(const ASTPtr & ast)
             for (const auto & elem : create->columns_list->columns->children)
             {
                 if (const auto * column = elem->as<ASTColumnDeclaration>())
-                    new_words.push_back(column->name);
+                    if (const auto name = column->getName(); !name.empty())
+                        new_words.push_back(name);
             }
         }
     }

@@ -14,6 +14,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
+#include <type_traits>
+
 
 namespace DB
 {
@@ -115,10 +117,11 @@ template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
-    explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
+    explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false, bool allow_query_parameter_ = true)
         : require_type(require_type_)
         , allow_null_modifiers(allow_null_modifiers_)
         , check_keywords_after_name(check_keywords_after_name_)
+        , allow_query_parameter(allow_query_parameter_)
     {
     }
 
@@ -132,6 +135,7 @@ protected:
     const bool require_type = true;
     const bool allow_null_modifiers = false;
     const bool check_keywords_after_name = false;
+    const bool allow_query_parameter = true;
     /// just for ALTER TABLE ALTER COLUMN use
     bool check_type_keyword = false;
 };
@@ -162,7 +166,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_collate{Keyword::COLLATE};
     ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
-    NameParser name_parser;
+    NameParser name_parser = [&]()
+    {
+        if constexpr (std::is_same_v<NameParser, ParserIdentifier>)
+            return NameParser(/* allow_query_parameter_ = */ allow_query_parameter);
+        else
+            return NameParser(/* table_name_with_optional_uuid_ = */ false, /* allow_query_parameter_ = */ allow_query_parameter);
+    }();
     ParserDataType type_parser;
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
@@ -183,7 +193,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
-    tryGetIdentifierNameInto(name, column_declaration->name);
+    column_declaration->setName(std::move(name));
 
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
@@ -453,10 +463,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 class ParserColumnDeclarationList : public IParserBase
 {
 public:
-    explicit ParserColumnDeclarationList(bool require_type_ = true, bool allow_null_modifiers_ = true, bool check_keywords_after_name_ = false)
+    explicit ParserColumnDeclarationList(bool require_type_ = true, bool allow_null_modifiers_ = true, bool check_keywords_after_name_ = false, bool allow_query_parameter_ = true)
         : require_type(require_type_)
         , allow_null_modifiers(allow_null_modifiers_)
         , check_keywords_after_name(check_keywords_after_name_)
+        , allow_query_parameter(allow_query_parameter_)
     {
     }
 
@@ -467,6 +478,7 @@ protected:
     const bool require_type;
     const bool allow_null_modifiers;
     const bool check_keywords_after_name;
+    const bool allow_query_parameter;
 };
 
 

@@ -104,7 +104,7 @@ namespace
         for (const auto & column : query.columns_list->columns->children)
         {
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
-            const auto & name = column_declaration->name;
+            const String name = column_declaration->getName();
 
             if (name == TimeSeriesColumnNames::TimeSeries && column_declaration->getType())
             {
@@ -155,11 +155,12 @@ namespace
                 continue;
             auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
 
-            if (column_declaration->name == TimeSeriesColumnNames::Timestamp)
+            const String name = column_declaration->getName();
+            if (name == TimeSeriesColumnNames::Timestamp)
                 setOrCheckDataType(timestamp_type, timestamp_src, column_type, "samples inner column `timestamp`", "timestamp", table_id);
-            else if (column_declaration->name == TimeSeriesColumnNames::Value)
+            else if (name == TimeSeriesColumnNames::Value)
                 setOrCheckDataType(scalar_type, scalar_src, column_type, "samples inner column `value`", "scalar", table_id);
-            else if (column_declaration->name == TimeSeriesColumnNames::ID)
+            else if (name == TimeSeriesColumnNames::ID)
                 setOrCheckDataType(id_type, id_src, column_type, "samples inner column `id`", "id", table_id);
         }
     }
@@ -177,7 +178,7 @@ namespace
         for (const auto & column : inner_columns->columns->children)
         {
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
-            if (column_declaration->name != TimeSeriesColumnNames::ID)
+            if (column_declaration->getName() != TimeSeriesColumnNames::ID)
                 continue;
 
             if (column_declaration->getType())
@@ -361,7 +362,7 @@ namespace
         if (inner_table_columns.columns)
         {
             for (auto & child : inner_table_columns.columns->children)
-                original[child->as<ASTColumnDeclaration &>().name] = child;
+                original[child->as<ASTColumnDeclaration &>().getName()] = child;
         }
 
         auto new_list = make_intrusive<ASTExpressionList>();
@@ -378,7 +379,7 @@ namespace
                 return nullptr;
             }
             auto decl = make_intrusive<ASTColumnDeclaration>();
-            decl->name = name;
+            decl->setName(name);
             decl->setType(std::move(type_ast));
             new_list->children.push_back(decl);
             changed = true;
@@ -511,9 +512,10 @@ namespace
         for (const auto & column : create_query.columns_list->columns->children)
         {
             const auto & decl = column->as<ASTColumnDeclaration &>();
-            if (decl.name == TimeSeriesColumnNames::Timestamp
-                || decl.name == TimeSeriesColumnNames::Value
-                || decl.name == TimeSeriesColumnNames::ID)
+            const String name = decl.getName();
+            if (name == TimeSeriesColumnNames::Timestamp
+                || name == TimeSeriesColumnNames::Value
+                || name == TimeSeriesColumnNames::ID)
                 return true;
         }
         return false;
@@ -531,7 +533,7 @@ namespace
         if (create_query.columns_list && create_query.columns_list->columns)
         {
             for (const auto & child : create_query.columns_list->columns->children)
-                outer_columns_by_name[child->as<ASTColumnDeclaration &>().name] = child;
+                outer_columns_by_name[child->as<ASTColumnDeclaration &>().getName()] = child;
         }
 
         auto type_from_outer = [&](const String & name) -> DataTypePtr
@@ -574,7 +576,7 @@ namespace
                     return;
                 }
                 auto decl = make_intrusive<ASTColumnDeclaration>();
-                decl->name = name;
+                decl->setName(name);
                 decl->setType(std::move(type_ast));
                 new_list->children.push_back(decl);
             };
@@ -683,7 +685,7 @@ namespace
 
         /// Replace the prealpha flat outer columns with a single `time_series` column.
         auto time_series_decl = make_intrusive<ASTColumnDeclaration>();
-        time_series_decl->name = TimeSeriesColumnNames::TimeSeries;
+        time_series_decl->setName(TimeSeriesColumnNames::TimeSeries);
         time_series_decl->setType(dataTypeToAST(std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type}))));
 

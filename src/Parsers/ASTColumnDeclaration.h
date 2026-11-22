@@ -30,7 +30,6 @@ ColumnDefaultKind toColumnDefaultKind(ColumnDefaultSpecifier specifier);
 class ASTColumnDeclaration : public IAST
 {
 public:
-    String name;
     ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
 
     std::optional<bool> null_modifier;
@@ -38,9 +37,9 @@ public:
     bool primary_key_specifier : 1 = false;
 
 private:
-    /// Pack 8 indices (4 bits each) into a single UInt32. 0xF means "not set".
+    /// Pack 9 indices (4 bits each) into a single UInt64. 0xF means "not set".
     static constexpr UInt8 kNotSet = 0xF;
-    static constexpr UInt32 kAllNotSet = 0xFFFFFFFF;
+    static constexpr UInt64 kAllNotSet = 0xFFFFFFFFFFFFFFFFULL;
 
     /// Bit positions for each index (4 bits each)
     enum IndexSlot : UInt8
@@ -52,13 +51,14 @@ private:
         STATS = 16,
         TTL = 20,
         COLLATION = 24,
-        SETTINGS = 28
+        SETTINGS = 28,
+        NAME = 32
     };
 
-    UInt32 packed_indices = kAllNotSet;
+    UInt64 packed_indices = kAllNotSet;
 
     UInt8 getIndex(IndexSlot slot) const { return (packed_indices >> slot) & 0xF; }
-    void setIndex(IndexSlot slot, UInt8 val) { packed_indices = (packed_indices & ~(0xFU << slot)) | (static_cast<UInt32>(val) << slot); }
+    void setIndex(IndexSlot slot, UInt8 val) { packed_indices = (packed_indices & ~(0xFULL << slot)) | (static_cast<UInt64>(val) << slot); }
 
     ASTPtr getChildOrNull(IndexSlot slot) const
     {
@@ -94,6 +94,16 @@ public:
     ASTPtr getCollation() const { return getChildOrNull(COLLATION); }
     ASTPtr getSettings() const { return getChildOrNull(SETTINGS); }
 
+    /// Name of the column, derived from the NAME identifier child.
+    /// Throws UNEXPECTED_AST_STRUCTURE if the NAME child is null or not an `ASTIdentifier`.
+    String getName() const;
+
+    /// The NAME identifier child (may be null only in a malformed/partially built node).
+    ASTPtr getNameIdentifier() const { return getChildOrNull(NAME); }
+
+    void setName(ASTPtr && node) { setChild(NAME, std::move(node)); }
+    void setName(const String & name);
+
     void setType(ASTPtr && node) { setChild(TYPE, std::move(node)); }
     void setDefaultExpression(ASTPtr && node) { setChild(DEFAULT_EXPR, std::move(node)); }
     void resetDefaultExpression() { resetChild(DEFAULT_EXPR); }
@@ -104,7 +114,7 @@ public:
     void setCollation(ASTPtr && node) { setChild(COLLATION, std::move(node)); }
     void setSettings(ASTPtr && node) { setChild(SETTINGS, std::move(node)); }
 
-    String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
+    String getID(char delim) const override { return "ColumnDeclaration" + (delim + getName()); }
 
     ASTPtr clone() const override;
     void writeJSON(WriteBuffer & out) const override;
