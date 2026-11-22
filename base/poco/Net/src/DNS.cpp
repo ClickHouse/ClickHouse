@@ -31,17 +31,29 @@
 #include <exception>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <new>
 #include <optional>
 #include <sstream>
 #include <vector>
 
+/// On macOS, host names are resolved by the system (see the comment below), on other platforms by c-ares.
+#if !defined(POCO_NET_DNS_USE_SYSTEM_RESOLVER)
+#if defined(__APPLE__)
+#define POCO_NET_DNS_USE_SYSTEM_RESOLVER 1
+#else
+#define POCO_NET_DNS_USE_SYSTEM_RESOLVER 0
+#endif
+#endif
+
+#if !POCO_NET_DNS_USE_SYSTEM_RESOLVER
 #include <ares.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
 #if !defined(__EMSCRIPTEN__)
 #include <ifaddrs.h>
+#endif
 #endif
 
 
@@ -80,6 +92,7 @@ static Poco::RWLock resolverLock;
 #endif
 
 
+#if !POCO_NET_DNS_USE_SYSTEM_RESOLVER
 namespace
 {
 
@@ -94,6 +107,13 @@ namespace
 /// A channel is created for every lookup: the bundled c-ares is built without thread support, so a
 /// channel cannot be shared between threads, and a new channel reads the current configuration.
 /// The results are cached by `DNSResolver`, so the cost of creating a channel does not matter.
+///
+/// macOS is the exception: host names are resolved with `getaddrinfo` and `getnameinfo` there. Its libc
+/// has no plugins to load, and the configuration of DNS is not in `/etc/resolv.conf` but in the system
+/// configuration daemon, which is queried through `mDNSResponder` (scoped and domain-specific resolvers,
+/// `/etc/resolver`, VPN). c-ares reads only a part of it through a private API, and a process that sends
+/// DNS queries itself can be refused the access to the DNS servers of the local network, so with c-ares
+/// no name was resolved on the macOS machines of the CI.
 class AresChannel
 {
 public:
@@ -320,7 +340,12 @@ struct HostsFileEntry
 std::optional<HostsFileEntry> lookupHostsFile(const std::string& hostname)
 {
 	const char* path = "/etc/hosts";
-	std::FILE* file = std::fopen(path, "re");
+	/// The file is owned from the moment it is opened: reading it into a string can throw.
+	struct FileCloser
+	{
+		void operator()(std::FILE* f) const { std::fclose(f); }
+	};
+	std::unique_ptr<std::FILE, FileCloser> file(std::fopen(path, "re"));
 	if (!file)
 	{
 		if (errno == ENOENT)
@@ -331,11 +356,11 @@ std::optional<HostsFileEntry> lookupHostsFile(const std::string& hostname)
 	std::string content;
 	char buffer[4096];
 	size_t size = 0;
-	while ((size = std::fread(buffer, 1, sizeof(buffer), file)) > 0)
+	while ((size = std::fread(buffer, 1, sizeof(buffer), file.get())) > 0)
 		content.append(buffer, size);
-	const bool failed = std::ferror(file);
+	const bool failed = std::ferror(file.get());
 	const int error = errno;
-	std::fclose(file);
+	file.reset();
 	if (failed)
 		throw DNSException(std::string("Cannot read the hosts file ") + path + ": " + std::strerror(error), hostname, EAI_SYSTEM);
 
@@ -539,6 +564,49 @@ struct NameInfoResult
 
 
 } // namespace
+#endif
+
+
+#if POCO_NET_DNS_USE_SYSTEM_RESOLVER
+
+
+HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
+{
+	struct addrinfo* pAI = nullptr;
+	struct addrinfo hints;
+	std::memset(&hints, 0, sizeof(hints));
+	hints.ai_flags = hintFlags;
+	int rc = getaddrinfo(hostname.c_str(), nullptr, &hints, &pAI);
+	if (rc != 0)
+	{
+		aierror(rc, hostname); // throws an appropriate exception
+		throw DNSException("Cannot resolve the host name", hostname, rc);
+	}
+
+	struct AddrInfoDeleter
+	{
+		void operator()(struct addrinfo* info) const { freeaddrinfo(info); }
+	};
+	std::unique_ptr<struct addrinfo, AddrInfoDeleter> holder(pAI);
+	return HostEntry(pAI);
+}
+
+
+HostEntry DNS::hostByAddress(const IPAddress& address, unsigned hintFlags)
+{
+	SocketAddress sa(address, 0);
+	char fqname[1025];
+	int rc = getnameinfo(sa.addr(), sa.length(), fqname, sizeof(fqname), nullptr, 0, NI_NAMEREQD);
+	if (rc != 0)
+	{
+		aierror(rc, address.toString()); // throws an appropriate exception
+		throw DNSException("Cannot resolve the address", address.toString(), rc);
+	}
+	return hostByName(fqname, hintFlags);
+}
+
+
+#else
 
 
 HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
@@ -593,6 +661,18 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned hintFlags)
 			/// The same read gives both whether the hosts file has the name and its addresses.
 			/// c-ares answers from the hosts file only for the names that it contains, and for the localhost names.
 			hostsFileEntry = lookupHostsFile(hostname);
+
+			/// An entry without an address of the requested family (`AI_ADDRCONFIG`) is as good as no entry.
+			/// It must not be passed to c-ares: for such an entry it reports the initial status of its lookup,
+			/// `ARES_ECONNREFUSED`, which would be thrown instead of trying the next source.
+			if (hostsFileEntry && family != AF_UNSPEC
+				&& std::none_of(hostsFileEntry->addresses.begin(), hostsFileEntry->addresses.end(),
+					[family](const IPAddress& address) { return address.af() == family; }))
+			{
+				hostsFileEntry.reset();
+				status = ARES_ENODATA;
+			}
+
 			if (!hostsFileEntry && !localhost)
 				continue;
 		}
@@ -690,6 +770,9 @@ HostEntry DNS::hostByAddress(const IPAddress& address, unsigned hintFlags)
 
 	return hostByName(response.host, hintFlags);
 }
+
+
+#endif
 
 
 HostEntry DNS::resolve(const std::string& address)

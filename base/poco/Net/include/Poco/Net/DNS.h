@@ -40,6 +40,8 @@ namespace Net
     /// of the libc are not used. Of the hint flags, `DNS_HINT_AI_ADDRCONFIG`,
     /// `DNS_HINT_AI_NUMERICHOST`, `DNS_HINT_AI_V4MAPPED` and `DNS_HINT_AI_ALL`
     /// are respected, and the canonical name is always returned.
+    /// The exception is macOS, where the resolver of the system is used:
+    /// see the comment in DNS.cpp.
     ///
     /// Starting with POCO C++ Libraries release 1.9.0,
     /// this class also supports Internationalized Domain Names (IDNs).
