@@ -2,8 +2,11 @@
     <profiles>
         <row_mask_limited>
             <max_rows_in_set>1</max_rows_in_set>
+            <max_temporary_non_const_columns>12</max_temporary_non_const_columns>
             <set_overflow_mode>throw</set_overflow_mode>
             <enable_sharing_sets_for_mutations>0</enable_sharing_sets_for_mutations>
+            <compile_expressions>0</compile_expressions>
+            <short_circuit_function_evaluation>disable</short_circuit_function_evaluation>
         </row_mask_limited>
     </profiles>
 </clickhouse>

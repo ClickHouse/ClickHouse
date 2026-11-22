@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
-# no-parallel: the failpoint is server-wide and can pause another table's mutation.
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
+# no-parallel, no-fasttest: the failpoint is server-wide and can pause another table's mutation.
 # no-replicated-database, no-shared-merge-tree: the pause must occur in this server's local mutation task.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

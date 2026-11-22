@@ -652,6 +652,199 @@ def test_typed_row_mask_union_respects_background_set_limit():
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
+def test_ready_subquery_union_respects_background_set_limit():
+    table = "ready_union_background_set_limit"
+    try:
+        node.query(
+            f"CREATE TABLE {table} (n UInt64, payload AggregateFunction(sum, UInt64)) "
+            "ENGINE = AggregatingMergeTree ORDER BY n "
+            "SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, "
+            "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, "
+            "enable_block_number_column = 0, enable_block_offset_column = 0, "
+            "enable_row_mask_update_coalescing = 0, enable_row_mask_action_batching = 0, "
+            "enable_row_mask_typed_set_union = 1"
+        )
+        node.query(
+            f"INSERT INTO {table} SELECT toUInt64(number + 1) AS seed_n, "
+            "sumState(toUInt64((number + 1) * 11)) FROM numbers(3) GROUP BY seed_n"
+        )
+        start = node.query("SELECT toUnixTimestamp64Micro(now64(6))").strip()
+        # Each ready subquery Set fits the background row limit of one; their union does not.
+        node.query(
+            f"ALTER TABLE {table} "
+            "UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(arrayJoin([1]))), "
+            "UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(arrayJoin([2]))) "
+            "SETTINGS mutations_sync = 2"
+        )
+        assert node.query(
+            f"SELECT n, _row_exists, sumMerge(payload), count() FROM {table} "
+            "GROUP BY n, _row_exists ORDER BY n "
+            "SETTINGS apply_deleted_mask = 0, apply_mutations_on_fly = 0"
+        ) == "1\t0\t11\t1\n2\t0\t22\t1\n3\t1\t33\t1\n"
+        assert_eq_with_retry(
+            node,
+            "SYSTEM FLUSH LOGS part_log; SELECT count() = 1 AND countIf(error != 0) = 0 "
+            "AND sum(ProfileEvents['RowMaskReadySubquerySetUnionBatches']) = 0 "
+            + typed_union_part_log(table, start)
+            + " SETTINGS max_execution_time = 2",
+            "1",
+            retry_count=20,
+            timeout=3,
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_ready_subquery_union_respects_background_byte_limit():
+    # 1200 `UInt64` keys use 32 KiB per Set; their union crosses the 48 KiB background cap.
+    for instance, expected_batches in ((expanded_ast_node, 0), (replicated_node, 1)):
+        table = f"ready_union_byte_limit_{instance.name}"
+        try:
+            instance.query(
+                f"CREATE TABLE {table} (n UInt64, payload AggregateFunction(sum, UInt64)) "
+                "ENGINE = AggregatingMergeTree ORDER BY n "
+                "SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, "
+                "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, "
+                "enable_block_number_column = 0, enable_block_offset_column = 0, "
+                "enable_row_mask_update_coalescing = 0, enable_row_mask_action_batching = 0, "
+                "enable_row_mask_typed_set_union = 1"
+            )
+            instance.query(
+                f"INSERT INTO {table} SELECT toUInt64(number * 1200 + 1) AS seed_n, "
+                "sumState(toUInt64(number + 1)) FROM numbers(3) GROUP BY seed_n"
+            )
+            start = instance.query("SELECT toUnixTimestamp64Micro(now64(6))").strip()
+            instance.query(
+                f"ALTER TABLE {table} "
+                "UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(number + 1) FROM numbers(1200)), "
+                "UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(number + 1201) FROM numbers(1200)) "
+                "SETTINGS mutations_sync = 2"
+            )
+            assert instance.query(
+                f"SELECT n, _row_exists FROM {table} ORDER BY n "
+                "SETTINGS apply_deleted_mask = 0, apply_mutations_on_fly = 0"
+            ) == "1\t0\n1201\t0\n2401\t1\n"
+            assert_eq_with_retry(
+                instance,
+                "SYSTEM FLUSH LOGS part_log; SELECT count(), countIf(error != 0), "
+                "sum(ProfileEvents['RowMaskReadySubquerySetUnionBatches']) "
+                + typed_union_part_log(table, start)
+                + " SETTINGS max_execution_time = 2",
+                f"1\t0\t{expected_batches}\n",
+                retry_count=20,
+                timeout=3,
+            )
+        finally:
+            instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_ready_subquery_union_respects_background_temporary_column_limits():
+    # Four groups make the replacement wider than each original action. The first
+    # group repeats one key, so the row-limited profile still admits its union.
+    for instance, expected_batches in (
+        (expanded_ast_node, 0), (node, 0), (replicated_node, 1)
+    ):
+        table = f"ready_union_temporary_limit_{instance.name}"
+        try:
+            instance.query(
+                f"CREATE TABLE {table} "
+                "(n UInt8, k0 UInt8, k1 UInt8, k2 UInt8, k3 UInt8, "
+                "payload AggregateFunction(sum, UInt64)) "
+                "ENGINE = AggregatingMergeTree ORDER BY n "
+                "SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, "
+                "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, "
+                "allow_dimensions_outside_sorting_key = 1, "
+                "enable_block_number_column = 0, enable_block_offset_column = 0, "
+                "enable_row_mask_update_coalescing = 0, enable_row_mask_action_batching = 0, "
+                "enable_row_mask_typed_set_union = 1"
+            )
+            instance.query(
+                f"INSERT INTO {table} SELECT toUInt8(number + 1) AS seed_n, "
+                "toUInt8(number = 0) AS k0, toUInt8(number = 1) * 2 AS k1, "
+                "toUInt8(number = 2) * 3 AS k2, toUInt8(number = 3) * 4 AS k3, "
+                "sumState(toUInt64(number + 1)) FROM numbers(5) GROUP BY seed_n, k0, k1, k2, k3"
+            )
+            start = instance.query("SELECT toUnixTimestamp64Micro(now64(6))").strip()
+            instance.query(
+                f"ALTER TABLE {table} "
+                "UPDATE _row_exists = 0 WHERE k0 IN (SELECT toUInt8(arrayJoin([1]))), "
+                "UPDATE _row_exists = 0 WHERE k0 IN (SELECT toUInt8(arrayJoin([1]))), "
+                "UPDATE _row_exists = 0 WHERE k1 IN (SELECT toUInt8(arrayJoin([2]))), "
+                "UPDATE _row_exists = 0 WHERE k2 IN (SELECT toUInt8(arrayJoin([3]))), "
+                "UPDATE _row_exists = 0 WHERE k3 IN (SELECT toUInt8(arrayJoin([4]))) "
+                "SETTINGS mutations_sync = 2"
+            )
+            assert instance.query(
+                f"SELECT n, _row_exists FROM {table} ORDER BY n "
+                "SETTINGS apply_deleted_mask = 0, apply_mutations_on_fly = 0"
+            ) == "1\t0\n2\t0\n3\t0\n4\t0\n5\t1\n"
+            assert_eq_with_retry(
+                instance,
+                "SYSTEM FLUSH LOGS part_log; SELECT count() = 1 AND countIf(error != 0) = 0 "
+                f"AND sum(ProfileEvents['RowMaskReadySubquerySetUnionBatches']) = {expected_batches} "
+                + typed_union_part_log(table, start)
+                + " SETTINGS max_execution_time = 2",
+                "1",
+                retry_count=20,
+                timeout=3,
+            )
+        finally:
+            instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_temporary_column_exception_with_ready_subquery_predicates():
+    # The extra predicate is outside ready-Set union admission. With the feature
+    # enabled or disabled, the existing temporary-column exception still applies.
+    extra_columns = ", ".join(f"c{index} UInt8" for index in range(24))
+    extra_values = ", ".join("toUInt8(0)" for _ in range(24))
+    wide_predicate = "arraySum([" + ", ".join(f"c{index}" for index in range(24)) + "]) = 0"
+    for enabled in (0, 1):
+        table = f"ready_union_original_column_limit_{enabled}"
+        try:
+            expanded_ast_node.query(
+                f"CREATE TABLE {table} "
+                f"(n UInt64, payload AggregateFunction(sum, UInt64), {extra_columns}) "
+                "ENGINE = AggregatingMergeTree ORDER BY n "
+                "SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, "
+                "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, "
+                "allow_dimensions_outside_sorting_key = 1, "
+                "enable_block_number_column = 0, enable_block_offset_column = 0, "
+                "enable_row_mask_update_coalescing = 0, enable_row_mask_action_batching = 0, "
+                f"enable_row_mask_typed_set_union = {enabled}"
+            )
+            expanded_ast_node.query(
+                f"INSERT INTO {table} SELECT toUInt64(number + 1), "
+                f"initializeAggregation('sumState', toUInt64(number + 1)), {extra_values} "
+                "FROM numbers(3)"
+            )
+            expanded_ast_node.query(
+                f"ALTER TABLE {table} "
+                f"UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(arrayJoin([1]))) AND {wide_predicate}, "
+                f"UPDATE _row_exists = 0 WHERE n IN (SELECT toUInt64(arrayJoin([2]))) AND {wide_predicate} "
+                "SETTINGS mutations_sync = 0"
+            )
+            assert_eq_with_retry(
+                expanded_ast_node,
+                "SELECT count(), countIf(position(latest_fail_reason, "
+                "'Too many temporary columns') > 0) >= 1 FROM system.mutations "
+                f"WHERE database = currentDatabase() AND table = '{table}' "
+                "SETTINGS max_execution_time = 2",
+                "2\t1\n",
+                retry_count=20,
+                timeout=3,
+            )
+            assert expanded_ast_node.query(
+                f"SELECT n, _row_exists FROM {table} ORDER BY n "
+                "SETTINGS apply_deleted_mask = 0, apply_mutations_on_fly = 0"
+            ) == "1\t1\n2\t1\n3\t1\n"
+        finally:
+            expanded_ast_node.query(
+                f"KILL MUTATION WHERE database = currentDatabase() AND table = '{table}' "
+                "SETTINGS kill_throw_if_noop = 0"
+            )
+            expanded_ast_node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 @pytest.mark.parametrize("rhs_change", ("insert", "empty"))
 def test_ready_subquery_rhs_replaced_between_main_sets(rhs_change):
     # This instance has unlimited background `Set` limits, which allow the main-phase union.

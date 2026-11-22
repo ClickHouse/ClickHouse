@@ -2,6 +2,8 @@
     <profiles>
         <row_mask_union_unlimited>
             <enable_sharing_sets_for_mutations>0</enable_sharing_sets_for_mutations>
+            <compile_expressions>0</compile_expressions>
+            <short_circuit_function_evaluation>disable</short_circuit_function_evaluation>
         </row_mask_union_unlimited>
     </profiles>
 </clickhouse>

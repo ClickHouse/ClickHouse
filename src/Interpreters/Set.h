@@ -231,9 +231,6 @@ private:
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements = false;
 
-    /// The group that owns the spill binding can differ from the group using the cached set.
-    bool built_with_adaptive_spilling = false;
-
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 

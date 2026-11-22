@@ -703,7 +703,8 @@ The command and AST budgets are controlled by
 `max_row_mask_update_coalescing_commands` and
 `max_row_mask_update_coalescing_ast_bytes`. Prepared actions also have fixed
 limits of 8192 actions, 65536 nodes and 65536 total header columns.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(Bool, enable_row_mask_typed_set_union, false, R"(
 Unite compatible `Set`s for a bounded complete sequence of `UPDATE _row_exists = 0`
 commands with positive `IN` predicates over the same direct integer key or tuple.
@@ -711,8 +712,12 @@ This experimental optimization applies to Wide parts with Full storage, without
 transactions or patch parts. It unites compatible membership checks in the
 affected-row precheck and mutation rewrite, preserving original commands,
 expression and Set preparation, and the exact affected-row count. It requires
-identical physical, expression and `Set` types. Other predicates and finite
-background `Set` or temporary-column limits retain their original execution.
+identical physical, expression and `Set` types. Other predicates retain their
+original execution. Finite background limits are respected.
+Literal `Set`s are not united with finite background `Set` or temporary-column
+limits. Ready subquery `Set`s may be united after their original build steps
+finish if the resulting `Set` fits the finite row and byte limits and both
+the original and replacement expressions fit the temporary-column limits.
 The affected-row precheck admits literal `Set`s. The part rewrite also admits
 compatible in-memory subquery `Set`s after their original build steps finish.
 The precheck also requires complete explicit Set elements within any finite
@@ -723,24 +728,28 @@ and ready-Set group budgets are controlled by `max_row_mask_typed_set_union_sour
 `max_row_mask_typed_set_union_source_key_bytes` and `max_row_mask_typed_set_union_groups`.
 Fixed limits remain at four key components, 32 bytes per key, 8192 actions,
 65536 nodes and 65536 total header columns.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(UInt64, max_row_mask_typed_set_union_source_rows, 4096, R"(
 Maximum sum of original RHS rows eligible for typed row-mask `Set` union.
 Literal `Set`s count input rows before deduplication; ready subquery `Set`s count
 stored keys in each original `Set`, including overlap between the `Set`s.
 This limits work copying the original keys into additional union `Set`s.
 Set to 0 to disable typed row-mask `Set` union.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, \
+        {"26.12", 4096, 4096, "New setting"}) \
     DECLARE(UInt64, max_row_mask_typed_set_union_source_key_bytes, 128 * 1024, R"(
 Maximum aggregate fixed-width source-key payload eligible for typed row-mask
 `Set` union, calculated from counted RHS rows and their key widths. This does
 not measure the allocated memory of the additional union hash tables.
 Set to 0 to disable typed row-mask `Set` union.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, \
+        {"26.12", 128 * 1024, 128 * 1024, "New setting"}) \
     DECLARE(UInt64, max_row_mask_typed_set_union_groups, 4, R"(
 Maximum number of distinct compatible key groups in one ready-subquery
 row-mask `Set` union. Set to 0 to disable typed row-mask `Set` union.
-)", EXPERIMENTAL) \
+)", EXPERIMENTAL, \
+        {"26.12", 4, 4, "New setting"}) \
     DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
 Maximum number of keys in one coalesced row-mask update. The effective limit
 also respects `max_rows_in_set` in the background query settings. Values below

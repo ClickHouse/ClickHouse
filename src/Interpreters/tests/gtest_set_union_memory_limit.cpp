@@ -8,7 +8,10 @@
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/SingleDiskVolume.h>
+#include <Disks/tests/gtest_disk.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <array>
 #include <memory>
@@ -129,4 +132,40 @@ TEST(SetMemoryLimit, ReadyUnionReleasesMemoryAfterLimitException)
     ASSERT_NE(united, nullptr);
     EXPECT_EQ(united->getTotalRowCount(), 2 * rows_per_source);
     expectMembership(*united, type, {1, 1, 1, 1, 0});
+}
+
+TEST(SetMemoryLimit, ReadyUnionCopiesSpillCapableSetUntilItSpills)
+{
+    MainThreadStatus::getInstance();
+
+    const auto type = std::make_shared<DataTypeUInt64>();
+    const ColumnsWithTypeAndName header{ColumnWithTypeAndName(type->createColumn(), type, "x")};
+    auto disk = createDisk("ready_union_spill");
+    SCOPE_EXIT_SAFE({ destroyDisk(disk); });
+
+    auto source = std::make_shared<Set>(SizeLimits{}, 0, false);
+    source->setHeader(header);
+    const size_t spill_threshold = source->getTotalByteCount() + 1;
+    SetSpillSettings spill_settings;
+    spill_settings.tmp_data = std::make_shared<TemporaryDataOnDiskScope>(
+        TemporaryDataOnDiskSettings{}, std::make_shared<SingleDiskVolume>("temporary", disk));
+    spill_settings.max_bytes_before_external_set = spill_threshold;
+    spill_settings.max_block_size = 64;
+    source->setSpillSettings(std::move(spill_settings));
+
+    auto column = ColumnUInt64::create();
+    for (size_t i = 0; i < rows_per_source; ++i)
+        column->insertValue(i);
+    ASSERT_TRUE(source->insertFromColumns({std::move(column)}));
+    source->finishInsert();
+    ASSERT_EQ(source->getTotalRowCount(), rows_per_source);
+    ASSERT_GE(source->getTotalByteCount(), spill_threshold);
+
+    const std::array sources{source};
+    auto united = Set::tryUniteReadyFixedWidthSets(sources, header, rows_per_source);
+    ASSERT_NE(united, nullptr);
+    expectMembership(*united, type, {1, 1, 0, 0, 0});
+
+    EXPECT_GT(source->spill(1), 0);
+    EXPECT_EQ(Set::tryUniteReadyFixedWidthSets(sources, header, rows_per_source), nullptr);
 }

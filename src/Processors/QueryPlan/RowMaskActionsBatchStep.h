@@ -1,11 +1,11 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 #include <functional>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ class RowMaskActionsBatchStep final : public ITransformingStep
 public:
     using MakeUnion = std::function<std::optional<ActionsDAG>()>;
 
-    RowMaskActionsBatchStep(SharedHeader input_header_, std::vector<ActionsDAG> actions_, MakeUnion make_union_ = {});
+    RowMaskActionsBatchStep(SharedHeader input_header_, VectorWithMemoryTracking<ActionsDAG> actions_, MakeUnion make_union_ = {});
 
     [[nodiscard]] String getName() const override { return "RowMaskActionsBatch"; }
 
@@ -28,7 +28,7 @@ public:
 private:
     void updateOutputHeader() override;
 
-    std::vector<ActionsDAG> actions;
+    VectorWithMemoryTracking<ActionsDAG> actions;
     MakeUnion make_union;
     SharedHeaders action_output_headers;
 };

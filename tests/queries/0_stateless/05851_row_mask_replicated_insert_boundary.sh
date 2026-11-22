@@ -50,7 +50,6 @@ run_case()
     local enabled=$2
     local r1="row_mask_replicated_boundary_${label}_r1"
     local r2="row_mask_replicated_boundary_${label}_r2"
-    local keeper_path="/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/row_mask_replicated_boundary_${label}"
     active_r1=$r1
     active_r2=$r2
 
@@ -65,7 +64,7 @@ run_case()
             item_key UInt64,
             s AggregateFunction(sum, Int64)
         )
-        ENGINE = ReplicatedAggregatingMergeTree('${keeper_path}', 'r1')
+        ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/row_mask_replicated_boundary_${label}', 'r1')
         PARTITION BY generation
         ORDER BY (generation, id, item_key)
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
@@ -83,7 +82,7 @@ run_case()
             item_key UInt64,
             s AggregateFunction(sum, Int64)
         )
-        ENGINE = ReplicatedAggregatingMergeTree('${keeper_path}', 'r2')
+        ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/row_mask_replicated_boundary_${label}', 'r2')
         PARTITION BY generation
         ORDER BY (generation, id, item_key)
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,

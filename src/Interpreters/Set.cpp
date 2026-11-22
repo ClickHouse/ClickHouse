@@ -10,7 +10,6 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
@@ -68,12 +67,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
-static bool hasAdaptiveSpillScheduler()
-{
-    const auto group = CurrentThread::getGroup();
-    return group && group->memory_spill_scheduler->isEnabled();
-}
-
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
     :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
     , data(std::make_unique<SetVariants>())
@@ -92,7 +85,6 @@ void Set::setSpillSettings(SetSpillSettings spill_settings_)
 {
     std::lock_guard lock(rwlock);
     chassert(!isCreated());
-    built_with_adaptive_spilling = spill_settings_.tmp_data && hasAdaptiveSpillScheduler();
     spill_settings = std::move(spill_settings_);
 }
 
@@ -453,18 +445,12 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
         return true;
     };
 
-    const bool adaptive_spilling = hasAdaptiveSpillScheduler();
-    const auto is_ready_in_memory = [adaptive_spilling](const Set & set)
+    const auto is_ready_in_memory = [](const Set & set)
     {
-        if (!set.isCreated() || set.isTruncated() || !set.data || set.data->empty()
-            || set.disk_set || set.spill_after_build_started.load())
-            return false;
-
-        /// The thread group's scheduler can request a spill even without a process list element.
-        /// A cached set can also be shared with its builder's thread group.
-        return !set.spill_settings.tmp_data
-            || (!adaptive_spilling && !set.built_with_adaptive_spilling && !set.spill_settings.process_list_element
-                && (!set.spill_settings.max_bytes_before_external_set || !set.isLargeEnoughToSpill()));
+        /// The caller holds the shared lock. A spill can start concurrently, but it cannot replace
+        /// the table until the lock is released.
+        return set.isCreated() && !set.isTruncated() && set.data && !set.data->empty()
+            && !set.disk_set && !set.spill_after_build_started.load();
     };
 
     using Type = SetVariants::Type;

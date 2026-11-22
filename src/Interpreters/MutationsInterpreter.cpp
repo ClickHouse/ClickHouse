@@ -3052,10 +3052,8 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
 
     const auto & query_settings = context->getSettingsRef();
     const ExpressionActionsSettings actions_settings(context);
-    /// A smaller expression must not bypass the original per-Set or temporary-column limits.
-    if (query_settings[Setting::max_rows_in_set] || query_settings[Setting::max_bytes_in_set]
-        || actions_settings.max_temporary_columns || actions_settings.max_temporary_non_const_columns)
-        return {};
+    const size_t max_rows_in_set = query_settings[Setting::max_rows_in_set];
+    const size_t max_bytes_in_set = query_settings[Setting::max_bytes_in_set];
 
     constexpr size_t max_actions = 8192;
     constexpr size_t max_nodes = 65536;
@@ -3390,6 +3388,11 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
     }
     if (updates != commands.size() || literal_sets.size() + subquery_sets.size() != updates || !first_in)
         return {};
+    /// The eager path omits the original expressions. The deferred path prepares them first
+    /// and checks the limits of each ready `Set` and replacement expression before dispatch.
+    if (subquery_sets.empty() && (max_rows_in_set || max_bytes_in_set
+        || actions_settings.max_temporary_columns || actions_settings.max_temporary_non_const_columns))
+        return {};
     /// The eager path owns no Set dependencies. The deferred path keeps all of them.
     if (subquery_sets.empty() && std::ranges::any_of(prepared_stages, [](const auto & stage)
         { return stage.new_prepared_sets && stage.new_prepared_sets->hasSubqueries(); }))
@@ -3494,7 +3497,8 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
         }
 
         return {.after_sets = [input_header, output_header = std::move(expected_header), group_plans = std::move(plans),
-            max_rows = max_input_rows, max_bytes = max_input_bytes]() -> std::optional<ActionsDAG>
+            max_rows = max_input_rows, max_bytes = max_input_bytes,
+            max_set_rows = max_rows_in_set, max_set_bytes = max_bytes_in_set]() -> std::optional<ActionsDAG>
         {
             /// Preflight the aggregate source payload before copying any `Set`. Rejections use all original actions.
             std::vector<VectorWithMemoryTracking<SetPtr>> source_sets;
@@ -3531,6 +3535,9 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
             {
                 auto united = Set::tryUniteReadyFixedWidthSets(source_sets[i], group_plans[i].header, remaining_rows);
                 if (!united)
+                    return {};
+                if ((max_set_rows && united->getTotalRowCount() > max_set_rows)
+                    || (max_set_bytes && united->getTotalByteCount() > max_set_bytes))
                     return {};
                 union_sets.push_back(std::move(united));
                 remaining_rows -= group_rows[i];
@@ -3673,7 +3680,8 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
     {
         return {.after_sets = [futures = std::move(subquery_sets), header = std::move(set_header),
             build_actions = std::move(make_actions), max_rows = max_input_rows,
-            max_bytes = max_input_bytes, key_bytes]() -> std::optional<ActionsDAG>
+            max_bytes = max_input_bytes, key_bytes,
+            max_set_rows = max_rows_in_set, max_set_bytes = max_bytes_in_set]() -> std::optional<ActionsDAG>
         {
             VectorWithMemoryTracking<SetPtr> sets;
             sets.reserve(futures.size());
@@ -3693,6 +3701,9 @@ MutationsInterpreter::RowMaskSetUnion MutationsInterpreter::tryUniteRowMaskSets(
             }
             auto union_set = Set::tryUniteReadyFixedWidthSets(sets, header, max_rows);
             if (!union_set)
+                return {};
+            if ((max_set_rows && union_set->getTotalRowCount() > max_set_rows)
+                || (max_set_bytes && union_set->getTotalByteCount() > max_set_bytes))
                 return {};
             return build_actions(std::move(union_set));
         }};
@@ -3732,7 +3743,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(*united_sets.immediate)));
     else if (batch_actions || defer_union)
     {
-        std::vector<ActionsDAG> actions;
+        VectorWithMemoryTracking<ActionsDAG> actions;
         auto header = plan.getCurrentHeader();
         for (const auto & stage : prepared_stages)
         {

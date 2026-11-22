@@ -260,13 +260,13 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-    bool canBatchRowMaskActions(const std::vector<Stage> & prepared_stages, const Block & input_header) const;
+    [[nodiscard]] bool canBatchRowMaskActions(const std::vector<Stage> & prepared_stages, const Block & input_header) const;
     struct RowMaskSetUnion
     {
         std::optional<ActionsDAG> immediate = std::nullopt;
         std::function<std::optional<ActionsDAG>()> after_sets = {};
     };
-    RowMaskSetUnion tryUniteRowMaskSets(const std::vector<Stage> & prepared_stages, const Block & input_header) const;
+    [[nodiscard]] RowMaskSetUnion tryUniteRowMaskSets(const std::vector<Stage> & prepared_stages, const Block & input_header) const;
     [[nodiscard]] std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 

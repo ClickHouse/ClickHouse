@@ -21,7 +21,7 @@ namespace DB
 namespace
 {
 
-ITransformingStep::Traits getTraits(const std::vector<ActionsDAG> & actions)
+ITransformingStep::Traits getTraits(const VectorWithMemoryTracking<ActionsDAG> & actions)
 {
     return ITransformingStep::Traits
     {
@@ -73,6 +73,19 @@ struct PreparedAction
 };
 
 using PreparedActions = VectorWithMemoryTracking<PreparedAction>;
+
+[[nodiscard]] bool fitsTemporaryColumnLimit(const PreparedActions & prepared, size_t limit)
+{
+    if (!limit)
+        return true;
+
+    /// Linearization allocates at most one column slot per action. This also bounds
+    /// non-constant columns during execution, including compiled-header conversions.
+    return std::ranges::all_of(prepared, [limit](const PreparedAction & action)
+    {
+        return action.expression->getActions().size() <= limit;
+    });
+}
 
 SharedHeader prepareAction(
     PreparedActions & prepared,
@@ -133,8 +146,20 @@ public:
             make_union = {};
             if (dag)
             {
-                prepareAction(union_actions, std::move(*dag), getInputPort().getSharedHeader(), getOutputPort().getSharedHeader(), settings);
-                ProfileEvents::increment(ProfileEvents::RowMaskReadySubquerySetUnionBatches);
+                /// Prepare without the constructor's temporary-column check, then check the
+                /// actual compiled action and any conversion before replacing the originals.
+                /// The runtime non-constant-column limit remains enabled on these actions.
+                auto union_settings = settings;
+                union_settings.max_temporary_columns = 0;
+                PreparedActions prepared_union_actions;
+                prepareAction(prepared_union_actions, std::move(*dag),
+                    getInputPort().getSharedHeader(), getOutputPort().getSharedHeader(), union_settings);
+                if (fitsTemporaryColumnLimit(prepared_union_actions, settings.max_temporary_columns)
+                    && fitsTemporaryColumnLimit(prepared_union_actions, settings.max_temporary_non_const_columns))
+                {
+                    union_actions = std::move(prepared_union_actions);
+                    ProfileEvents::increment(ProfileEvents::RowMaskReadySubquerySetUnionBatches);
+                }
             }
         }
 
@@ -185,7 +210,7 @@ private:
 }
 
 RowMaskActionsBatchStep::RowMaskActionsBatchStep(
-    SharedHeader input_header_, std::vector<ActionsDAG> actions_, MakeUnion make_union_)
+    SharedHeader input_header_, VectorWithMemoryTracking<ActionsDAG> actions_, MakeUnion make_union_)
     : ITransformingStep(input_header_, input_header_, getTraits(actions_))
     , actions(std::move(actions_))
     , make_union(std::move(make_union_))
@@ -223,6 +248,11 @@ void RowMaskActionsBatchStep::transformPipeline(QueryPipelineBuilder & pipeline,
     for (size_t i = 0; i < actions.size(); ++i)
         header = prepareAction(
             *prepared_actions, std::move(actions[i]), header, action_output_headers[i], settings.getActionsSettings());
+
+    /// Skipping an original action must not hide its runtime non-constant-column limit.
+    if (make_union && !fitsTemporaryColumnLimit(
+        *prepared_actions, settings.getActionsSettings().max_temporary_non_const_columns))
+        make_union = {};
 
     const bool single_stream = pipeline.getNumStreams() == 1;
     pipeline.addSimpleTransform([&](const SharedHeader & input_header, Pipe::StreamType stream_type)
