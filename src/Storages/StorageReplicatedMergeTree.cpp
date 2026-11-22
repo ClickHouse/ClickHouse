@@ -958,8 +958,7 @@ std::vector<String> getAncestors(const String & path)
 }
 
 /// The part files that say how its data is to be interpreted and are excluded from the checksums.
-/// Held as bytes: parsing normalizes away differences that change how the data reads, an
-/// AggregateFunction serialization version among them.
+/// Held as bytes: parsing normalizes away differences such as an `AggregateFunction` serialization version.
 struct PartMetadataFiles
 {
     std::map<String, std::optional<String>> files;
@@ -967,8 +966,7 @@ struct PartMetadataFiles
     bool operator==(const PartMetadataFiles &) const = default;
 };
 
-/// A projection's own total checksum is what the parent's checksums roll up, and it excludes these
-/// files just as the parent's does, so the projections are walked too.
+/// The parent's checksums roll up each projection's, which exclude these files too.
 PartMetadataFiles readPartMetadataFiles(const IDataPartStorage & storage, const ReadSettings & read_settings)
 {
     static const std::array names = {
@@ -3723,22 +3721,16 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         /// Declared after the claim, so the staging directory is removed before its name is released.
         MutableDataPartPtr part = get_part();
 
-        /// `ALTER TABLE ... DETACH` claims a detached name under `lockParts`, so holding it here
-        /// makes the two mutually exclusive. The scope is the probe, the occupant's checksum read
-        /// and the rename: no part download and no ZooKeeper access.
+        /// `ALTER TABLE ... DETACH` claims a detached name under `lockParts`, so the two are mutually exclusive.
         auto data_parts_lock = lockParts();
 
-        /// `rename` below only probes our own disk, while the detached namespace spans the whole
-        /// storage policy, so a directory on another disk has to be found explicitly.
+        /// `rename` probes only our own disk, while the detached namespace spans the whole storage policy.
         if (auto occupied_disk = tryGetDiskForDetachedPart(entry.new_part_name))
         {
-            /// `getDetachedParts` skips read-only and write-once disks, so `ATTACH_PART` would find
-            /// no occupant there: accepting one as our own publication would stall the move at
-            /// `DESTINATION_ATTACH` instead of refusing it here.
+            /// `getDetachedParts` skips read-only and write-once disks, so `ATTACH_PART` cannot find an occupant there.
             const bool occupant_is_attachable = !occupied_disk->isReadOnly() && !occupied_disk->isWriteOnce();
 
-            /// This entry is retried until it succeeds, so its own earlier publication has to be
-            /// accepted, and only its content identifies it: the log entry carries no checksum.
+            /// The entry is retried until it succeeds; the log entry has no checksum, so only content identifies its own publication.
             String occupant_checksum;
             std::optional<PartMetadataFiles> occupant_metadata;
             if (occupant_is_attachable)
@@ -3760,14 +3752,12 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                 }
                 catch (...)
                 {
-                    /// An occupant that cannot be identified is foreign.
                     tryLogCurrentException(log, fmt::format(
                         "cannot read metadata of detached part {}, treating it as a foreign part", entry.new_part_name));
                 }
             }
 
-            /// Two parts differing only in those files share a total checksum, so the checksum
-            /// alone does not identify this entry's own publication.
+            /// The total checksum excludes the metadata files, so it alone does not identify this entry's own publication.
             if (occupant_is_attachable && !part->checksums.empty() && !occupant_checksum.empty()
                 && occupant_checksum == part->checksums.getTotalChecksumHex()
                 && occupant_metadata == readPartMetadataFiles(part->getDataPartStorage(), getReadSettings()))
@@ -3783,8 +3773,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
 
         part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, /*remove_new_dir_if_exists=*/ false);
 
-        /// Cleared only once published: until then the destructor has to remove the staging
-        /// directory, since nothing sweeps leftovers inside `detached/`.
+        /// Cleared only once published: until then the destructor removes the staging directory, as nothing sweeps `detached/`.
         part->is_temp = false;
 
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
