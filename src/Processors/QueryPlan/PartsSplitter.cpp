@@ -769,7 +769,7 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
         Values front;
     };
 
-    std::vector<PartCursor> cursors;
+    VectorWithMemoryTracking<PartCursor> cursors;
     cursors.reserve(ranges_in_data_parts.size());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
@@ -852,7 +852,7 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
     if (skipped_rows == 0)
         return 0;
 
-    std::vector<size_t> consumed_marks(ranges_in_data_parts.size(), 0);
+    VectorWithMemoryTracking<size_t> consumed_marks(ranges_in_data_parts.size(), 0);
     for (const auto & cursor : cursors)
         consumed_marks[cursor.part_index] = cursor.consumed;
 

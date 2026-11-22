@@ -37,6 +37,14 @@ public:
         rows_skipped_before = skipped_rows;
     }
 
+    /// Used by the same optimization for a `LIMIT` without offset below the one it changes: the rows skipped
+    /// on read no longer reach this limit, so it passes as many fewer rows to keep passing the same ones.
+    void reduceLimitBySkippedRows(size_t skipped_rows)
+    {
+        chassert(offset == 0 && limit >= skipped_rows);
+        limit -= skipped_rows;
+    }
+
     /// Number of leading rows a source must produce for this `LIMIT` to be satisfiable,
     /// i.e. `limit + offset`. Empty when that sum does not fit in `UInt64`, so there is no
     /// representable bound to push down.

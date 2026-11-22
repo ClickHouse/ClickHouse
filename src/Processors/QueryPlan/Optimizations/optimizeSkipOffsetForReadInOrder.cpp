@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <limits>
 #include <optional>
@@ -17,7 +18,7 @@ namespace DB::QueryPlanOptimizations
 /// Map a column name down through the Expression steps between the Sorting and the read, which the analyzer
 /// uses to qualify names (`k` -> `__table1.k`). Only renames are followed: anything computed, including a
 /// monotonic function of the key, has no counterpart among the read's own columns and gives up.
-static std::optional<String> resolveThroughRenames(const String & name, const std::vector<const ActionsDAG *> & dags)
+static std::optional<String> resolveThroughRenames(const String & name, const VectorWithMemoryTracking<const ActionsDAG *> & dags)
 {
     String current = name;
     for (auto it = dags.rbegin(); it != dags.rend(); ++it)
@@ -77,19 +78,36 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
 
     /// The order the offset counts rows in, resolved into the read's own column names.
     SortDescription offset_order;
-    std::vector<const ActionsDAG *> dags_below_sorting;
+    VectorWithMemoryTracking<const ActionsDAG *> dags_below_sorting;
+
+    /// The tightest limit walked past on the way up, if any, of a LIMIT without offset or of a Sorting. Such a limit
+    /// cuts the prefix the offset above it sees, so trimming granules below it can promote rows the limit would
+    /// have dropped.
+    std::optional<size_t> intermediate_limit;
+    auto add_intermediate_limit = [&](size_t limit)
+    {
+        intermediate_limit = intermediate_limit ? std::min(*intermediate_limit, limit) : limit;
+    };
+
+    /// The steps with such limits. The skipped rows no longer reach them, so after skipping their limits are reduced
+    /// by the skipped rows to keep passing the same rows: otherwise they would pass more rows from the tail, which
+    /// does not change the result, but makes `rows_before_limit_at_least` count rows they would not have passed.
+    VectorWithMemoryTracking<LimitStep *> intermediate_limit_steps;
+    VectorWithMemoryTracking<SortingStep *> intermediate_sorting_steps;
 
     auto apply = [&](size_t offset, auto && set_offset)
     {
         if (offset_order.empty())
             return;
-        if (const size_t skipped_rows = reading->skipRowsForOffset(offset, offset_order))
-            set_offset(offset - skipped_rows, skipped_rows);
+        const size_t skipped_rows = reading->skipRowsForOffset(offset, offset_order);
+        if (!skipped_rows)
+            return;
+        set_offset(offset - skipped_rows, skipped_rows);
+        for (auto * intermediate_limit_step : intermediate_limit_steps)
+            intermediate_limit_step->reduceLimitBySkippedRows(skipped_rows);
+        for (auto * intermediate_sorting_step : intermediate_sorting_steps)
+            intermediate_sorting_step->updateLimit(intermediate_sorting_step->getLimit() - skipped_rows);
     };
-
-    /// The tightest LIMIT walked past on the way up, if any. Such a limit cuts the prefix the offset above it
-    /// sees, so trimming granules below it can promote rows the limit would have dropped.
-    std::optional<size_t> intermediate_limit;
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
@@ -111,14 +129,19 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
             /// A preliminary LIMIT (no offset) only truncates the tail; walk past it to the real offset.
             if (offset == 0)
             {
-                const size_t limit = limit_step->getLimit();
-                intermediate_limit = intermediate_limit ? std::min(*intermediate_limit, limit) : limit;
+                add_intermediate_limit(limit_step->getLimit());
+                intermediate_limit_steps.push_back(limit_step);
                 continue;
             }
 
-            /// Skipping is only invisible to the limits below if they still pass through the whole prefix
-            /// this offset consumes plus everything it keeps.
+            /// `LIMIT 0` returns no rows; skipping could reduce the limits below to 0, which means no limit for a Sorting.
             const size_t limit = limit_step->getLimit();
+            if (limit == 0)
+                return;
+
+            /// Skipping is only invisible to the limits below if they still pass through the whole prefix
+            /// this offset consumes plus everything it keeps. As the skipped rows are at most the offset, each of
+            /// these limits stays positive when reduced by them.
             const bool overflows = limit > std::numeric_limits<size_t>::max() - offset;
             if (intermediate_limit && (overflows || *intermediate_limit < offset + limit))
                 return;
@@ -152,6 +175,12 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
                 if (!resolved)
                     return;
                 offset_order.emplace_back(*resolved, column.direction, column.nulls_direction);
+            }
+
+            if (sorting_step->getLimit())
+            {
+                add_intermediate_limit(sorting_step->getLimit());
+                intermediate_sorting_steps.push_back(sorting_step);
             }
             continue;
         }
