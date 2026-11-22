@@ -17,7 +17,7 @@ class ColumnsDescription;
 /// columns the expression reads from a table with these columns; storage_snapshot, if set, is the real table,
 /// whose name makes qualified names like t.col resolve and whose virtual columns, like _part, the expression may read;
 /// table_id, if set, is the name to resolve instead, e.g. an `Alias` that reads the table;
-/// reads_from, if set, accepts the tables with these columns whose reads in subqueries count too
+/// reads_from, if set, asks for every binding: of folded constants too, and of reads in subqueries from the accepted tables
 Names expressionSourceColumns(
     const ASTPtr & ast,
     const ColumnsDescription & columns,

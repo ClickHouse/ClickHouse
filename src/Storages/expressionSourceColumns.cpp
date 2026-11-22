@@ -98,7 +98,8 @@ Names expressionSourceColumns(
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
     collectSetsAndSourceColumns(expression, planner_context, keep_alias_columns);
-    collectFoldedSourceColumns(expression, planner_context, keep_alias_columns);
+    if (reads_from)
+        collectFoldedSourceColumns(expression, planner_context, keep_alias_columns);
 
     Names result;
     /// a kept alias is registered as selected and its base columns as not selected, an expanded one the other way round
