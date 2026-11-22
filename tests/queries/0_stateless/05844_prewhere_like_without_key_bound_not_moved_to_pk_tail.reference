@@ -4,6 +4,13 @@
 -- LIKE with a fixed prefix is a key condition and stays last
 1
 47
+-- The same LIKE wrapped in IS TRUE or != 0 runs first, with a fixed prefix it stays last
+1
+197
+1
+197
+1
+47
 -- The next key column is not moved to the end either, as the first key column has no key condition
 1
 197

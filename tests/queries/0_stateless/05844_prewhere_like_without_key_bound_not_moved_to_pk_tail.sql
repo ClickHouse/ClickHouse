@@ -36,6 +36,20 @@ SELECT position(e, 'like(v') > 0 AND position(e, 'like(k') > position(e, 'like(v
 FROM (EXPLAIN actions = 1 SELECT count() FROM t_like_pk WHERE k LIKE 'K1%X' AND v LIKE '%AB%') WHERE explain LIKE '%Prewhere filter column%';
 SELECT count() FROM t_like_pk WHERE k LIKE 'K1%X' AND v LIKE '%AB%';
 
+SELECT '-- The same LIKE wrapped in IS TRUE or != 0 runs first, with a fixed prefix it stays last';
+WITH replaceRegexpAll(explain, '__table[0-9]+\\.', '') AS e
+SELECT position(e, 'like(k') > 0 AND position(e, 'like(k') < position(e, 'like(v')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_like_pk WHERE (k LIKE '%X%') IS TRUE AND v LIKE '%AB%') WHERE explain LIKE '%Prewhere filter column%';
+SELECT count() FROM t_like_pk WHERE (k LIKE '%X%') IS TRUE AND v LIKE '%AB%';
+WITH replaceRegexpAll(explain, '__table[0-9]+\\.', '') AS e
+SELECT position(e, 'like(k') > 0 AND position(e, 'like(k') < position(e, 'like(v')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_like_pk WHERE (k LIKE '%X%') != 0 AND v LIKE '%AB%') WHERE explain LIKE '%Prewhere filter column%';
+SELECT count() FROM t_like_pk WHERE (k LIKE '%X%') != 0 AND v LIKE '%AB%';
+WITH replaceRegexpAll(explain, '__table[0-9]+\\.', '') AS e
+SELECT position(e, 'like(v') > 0 AND position(e, 'like(k') > position(e, 'like(v')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_like_pk WHERE (k LIKE 'K1%X') IS TRUE AND v LIKE '%AB%') WHERE explain LIKE '%Prewhere filter column%';
+SELECT count() FROM t_like_pk WHERE (k LIKE 'K1%X') IS TRUE AND v LIKE '%AB%';
+
 SELECT '-- The next key column is not moved to the end either, as the first key column has no key condition';
 WITH replaceRegexpAll(explain, '__table[0-9]+\\.', '') AS e
 SELECT position(e, 'like(k') > 0 AND position(e, 'greaterOrEquals(d') > 0

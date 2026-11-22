@@ -334,8 +334,9 @@ static void collectColumns(
             }
         }
     }
-    else if (!parent && !keyConditionAcceptsConstant(function_node, function_name))
+    else if (!keyConditionAcceptsConstant(function_node, function_name))
     {
+        /// Also below the root: `KeyCondition` unwraps `(k LIKE '%X%') IS TRUE` and `(k LIKE '%X%') != 0` to the same atom.
         may_use_primary_index = false;
     }
 
