@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: the setup asserts one part per table. -->
     <!-- A literal `IN` list of 10000 keys: analysis of the list (set, hash, name) dominates the query. -->
     <create_query>CREATE TABLE t_u64 (k UInt64, v UInt32, s String) ENGINE = MergeTree ORDER BY k</create_query>
     <create_query>CREATE TABLE t_str (k String, v UInt32, s String) ENGINE = MergeTree ORDER BY k</create_query>
