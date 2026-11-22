@@ -79,6 +79,8 @@ public:
         const DataTypePtr & dynamic_type_,
         const SerializationPtr & dynamic_serialization_);
 
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
