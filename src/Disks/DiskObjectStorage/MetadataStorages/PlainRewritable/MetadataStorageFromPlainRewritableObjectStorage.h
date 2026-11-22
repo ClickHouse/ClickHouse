@@ -189,7 +189,6 @@ public:
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
     const std::string & getPath() const override { return storage_path_full; }
     uint32_t getHardlinkCount(const std::string & path) const override;
-    bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
     bool isRemote() const override { return object_storage->isRemote(); }
@@ -312,7 +311,6 @@ protected:
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);
 
-    [[nodiscard]] bool supportsChmod() const override { return false; }
     void setLastModified(const String &, const Poco::Timestamp &) override { /* Noop */ }
     void setReadOnly(const std::string & /*path*/) override { /* Noop */ }
 

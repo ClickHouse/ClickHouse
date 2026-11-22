@@ -775,14 +775,6 @@ struct stat DiskLocal::stat(const String & path) const
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
 }
 
-void DiskLocal::chmod(const String & path, mode_t mode)
-{
-    auto full_path = fs::path(disk_path) / path;
-    if (::chmod(full_path.string().c_str(), mode) == 0)
-        return;
-    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
-}
-
 ObjectStoragePtr DiskLocal::getObjectStorage()
 {
     LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
