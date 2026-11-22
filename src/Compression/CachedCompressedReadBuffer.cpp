@@ -5,6 +5,7 @@
 #include <Compression/LZ4_decompress_faster.h>
 
 #include <utility>
+#include <IO/ByteRangeSet.h>
 
 
 namespace DB
@@ -31,6 +32,10 @@ void CachedCompressedReadBuffer::initInput()
 
 void CachedCompressedReadBuffer::prefetch(Priority priority)
 {
+    /// The next block is served from the cache without touching the file, see `nextImpl`.
+    if (!(read_until_position && file_pos >= *read_until_position) && cache->contains(UncompressedCache::hash(path, file_pos)))
+        return;
+
     initInput();
     file_in->prefetch(priority);
 }
@@ -76,7 +81,7 @@ bool CachedCompressedReadBuffer::nextImpl()
     if (owned_cell->data.size() == 0)
         return false;
 
-    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - owned_cell->additional_bytes);
+    working_buffer = WorkingBuffer::fromPaddedStorage(owned_cell->data, 0, owned_cell->data.size() - owned_cell->additional_bytes);
 
     /// nextimpl_working_buffer_offset is set in the seek function (lazy seek). So we have to
     /// check that we are not seeking beyond working buffer.
@@ -100,8 +105,7 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 {
     /// Nothing to do if we already at required position
     if (!owned_cell && file_pos == offset_in_compressed_file
-        && ((!buffer().empty() && offset() == offset_in_decompressed_block) ||
-            nextimpl_working_buffer_offset == offset_in_decompressed_block))
+        && nextimpl_working_buffer_offset == offset_in_decompressed_block)
         return;
 
     if (owned_cell &&
@@ -124,6 +128,13 @@ void CachedCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t o
         /// the next ReadBuffer::next() call
         nextimpl_working_buffer_offset = offset_in_decompressed_block;
     }
+}
+
+
+void CachedCompressedReadBuffer::setRequestMap(ByteRangeSet ranges)
+{
+    initInput();
+    file_in->setRequestMap(std::move(ranges));
 }
 
 }

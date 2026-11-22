@@ -67,7 +67,7 @@ SELECT count(), countIf(payload = ''), arraySort(groupArray(materialize(t))) = g
     SELECT er_events.t AS t, er_payloads.payload AS payload FROM er_events
     LEFT JOIN er_payloads ON er_events.id = er_payloads.id
     ORDER BY er_events.t
-    SETTINGS join_algorithm = 'parallel_hash', max_threads = 8
+    SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 8
 );
 
 SELECT '-- Identical to the non-spill-capable hash join';
@@ -99,7 +99,7 @@ SELECT count(), countIf(payload = ''), arraySort(groupArray(materialize(t))) = g
     LEFT JOIN er_flags ON toUInt8(er_events.id) = er_flags.id
     ORDER BY er_events.t
 )
-SETTINGS join_algorithm = 'hash', max_threads = 1, log_comment = '05245_empty_switch_merge';
+SETTINGS join_algorithm = 'hash', hash_join_layout = 'serial', max_threads = 1, log_comment = '05245_empty_switch_merge';
 
 -- Correctness only (the INNER in-order pin depends on the virtual-row bounds, so the empty
 -- build may switch to either external join): zero rows either way.
@@ -133,7 +133,7 @@ SELECT count(), countIf(v > 0), countIf(payload != ''), countIf(v > 0 AND payloa
     SELECT fa_left.v AS v, fa_right.payload AS payload FROM fa_left
     FULL JOIN fa_right ON fa_left.k = fa_right.k AND fa_right.flag = 1
 )
-SETTINGS join_algorithm = 'parallel_hash', max_threads = 8, max_bytes_before_external_join = 1000000,
+SETTINGS join_algorithm = 'parallel_hash', hash_join_layout = 'parallel', max_threads = 8, max_bytes_before_external_join = 1000000,
          log_comment = '05245_full_all_filtered_parallel_hash';
 
 SELECT '-- The switches happened';

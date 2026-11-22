@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/EquivalenceClasses.h>
 #include <Core/Block.h>
@@ -42,23 +43,23 @@ struct ExpressionStatistics
     Float64 physical_read_bytes = 0;
 
     /// Statistics for output columns of the expression
-    std::unordered_map<String, ColumnStats> column_statistics;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> column_statistics;
 
     /// Classes of output columns that hold equal values on every row.
     EquivalenceClasses<String> equivalences;
 
     void dump(WriteBuffer & out) const;
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 class IOptimizerStatistics
 {
 public:
     virtual ~IOptimizerStatistics() = default;
-    virtual std::optional<UInt64> getCardinality(const String & table_name) const = 0;
-    virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
-    virtual std::optional<Float64> getAvgRowBytes(const String & table_name) const = 0;
-    virtual std::optional<Float64> getAvgColumnBytes(const String & /*table_name*/, const String & /*column_name*/) const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<UInt64> getCardinality(const String & table_name) const = 0;
+    [[nodiscard]] virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
+    [[nodiscard]] virtual std::optional<Float64> getAvgRowBytes(const String & table_name) const = 0;
+    [[nodiscard]] virtual std::optional<Float64> getAvgColumnBytes(const String & /*table_name*/, const String & /*column_name*/) const { return std::nullopt; }
 };
 
 using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
@@ -70,11 +71,11 @@ class ReadFromMergeTree;
 /// Average bytes per value of each column a read produces: real per-column storage sizes when the
 /// parts carry them (scaled up to the table-level uncompressed total when compact parts hide part
 /// of the data); otherwise type-based estimates scaled to match the measured row width.
-std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
+UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
 
 /// Column widths for a read whose table-level row width is hinted: type-based estimates scaled so
 /// their sum over the table's columns matches the hinted row width, ignoring the parts' sizes.
-std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes);
+UnorderedMapWithMemoryTracking<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes);
 
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
 
@@ -86,7 +87,7 @@ Float64 estimateRowWidthFromHeader(const Block & header);
 
 /// Estimate average bytes per row of the header, preferring the columns' known average sizes
 /// over the type-based estimate.
-Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics);
+Float64 estimateRowWidth(const Block & header, const UnorderedMapWithMemoryTracking<String, ColumnStats> & column_statistics);
 
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
 
