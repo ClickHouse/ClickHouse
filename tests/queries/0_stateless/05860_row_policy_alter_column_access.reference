@@ -1,0 +1,15 @@
+-- a table function or the function file in a policy needs the grants of the user who alters the table
+ACCESS_DENIED
+ACCESS_DENIED
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- the check runs a subquery in the arguments of a table function, which needs the grants of the user
+ACCESS_DENIED
+-- the tables a policy reads need no grant
+ACCESS_DENIED
+tfn	id	UInt32
+tin	id	UInt32
+tin	tenant	UInt64
+tsq	id	UInt32
+tsq	tenant	UInt32
+ttf	id	UInt32
+ttf	tenant	UInt32
