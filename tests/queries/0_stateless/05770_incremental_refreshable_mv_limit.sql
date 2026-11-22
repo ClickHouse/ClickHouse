@@ -35,7 +35,7 @@ SYSTEM REFRESH VIEW incr_limit_mv;
 SYSTEM WAIT VIEW incr_limit_mv;
 SYSTEM REFRESH VIEW incr_limit_mv;
 SYSTEM WAIT VIEW incr_limit_mv;
-SELECT groupArray(k) FROM (SELECT k FROM incr_limit_tgt ORDER BY k);
+SELECT arraySort(groupArray(k)) FROM incr_limit_tgt;
 
 DROP TABLE incr_limit_mv;
 DROP TABLE incr_limit_tgt;
