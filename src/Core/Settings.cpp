@@ -167,6 +167,8 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 </Note>
 
 Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. The block is made smaller still when the codec could compress it to more than 512 MiB, which only a chain of expanding codecs does. Data written in larger blocks by older versions cannot be read.
 )", 0) \
     DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
 In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
@@ -362,6 +364,13 @@ This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent 
 `clickhouse-client` or over the HTTP interface. The writing side of the pipeline
 (squashing the blocks and writing them to the destination table) is parallelized
 across up to this many threads.
+
+Destinations whose results depend on insertion order keep a single write stream when the input has one stream:
+`CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, `ReplacingMergeTree`
+(including their replicated variants), `MergeTree` tables with a `UNIQUE KEY`, `EmbeddedRocksDB`, and `Distributed`
+(the engine of the table on the shard is not known). A `SELECT` with multiple output streams has no input order
+to preserve, so these destinations can retain parallel sinks. `KeeperMap` always keeps a single write stream.
+These restrictions also apply to destinations reached through a materialized view or an `Alias` table.
 
 Possible values:
 
@@ -724,6 +733,12 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(S3RequestPayer, s3_request_payer, S3RequestPayer::NONE, R"(
+Set to `requester` to access a requester-pays `S3` bucket: every request then carries the header `x-amz-request-payer: requester`, so the requester pays for the request and the data transfer. Possible values: `none` (default, the header is not sent), `requester`.
+
+It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk or an `S3` table with its own credentials. For those, use the `request_payer` key of an endpoint section of the `<s3>` server configuration or of the disk definition, which also takes precedence over this setting.
+)", 0, \
+        {"26.12", "none", "none", "New setting to access requester-pays S3 buckets."}) \
     DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
 When set to `true` than for all azure requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
@@ -1462,7 +1477,7 @@ Possible values:
 In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_suspicious_indexes, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
 )", 0, allow_suspicious_indices, \
         {"26.11", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
         {"23.4", true, false, "If true, index can defined with identical expressions"}) \
@@ -5374,6 +5389,10 @@ With this setting, repeated staged keys do not thaw a table, and a remembered ve
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0, \
         {"24.7", false, true, "Use buffering before merging while reading in order of primary key"}) \
+    DECLARE(UInt64, read_in_order_max_bytes_to_prefetch, 128_MiB, R"(
+Maximal total size in bytes of the blocks buffered ahead when reading a single part in order of the primary key with a filter, where the part is split into several streams that are concatenated in order instead of merged. The streams that come later in the order read ahead into memory while the earlier ones are consumed, and this budget is given to the nearest streams first. A larger value allows more streams to be read in parallel. The stream that is currently consumed may buffer a couple of blocks beyond this limit. With 0, there is no limit by bytes, and every stream reads ahead only a couple of blocks.
+)", 0, \
+        {"26.12", 0, 134217728, "New setting to limit the memory for reading ahead the streams concatenated in order when reading a single part in order of the primary key."}) \
     DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, R"(
 Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
 )", 0) \
@@ -5998,6 +6017,15 @@ Possible values:
 - 0 — Queries will be executed with delay.
 - 1 — Queries will be executed without delay.
 )", 0) \
+    DECLARE(Bool, truncate_removes_parts_immediately, false, R"(
+If enabled, `TRUNCATE` of a non-replicated `MergeTree` table removes the truncated parts from disk at once. Otherwise they become inactive and are removed after `old_parts_lifetime` seconds, like the source parts of a merge, so that running queries and readers with a stale list of parts can still read them. Replicated tables always remove the parts at once.
+
+Possible values:
+
+- 0 - The truncated parts are removed after `old_parts_lifetime` seconds.
+- 1 - The truncated parts are removed at once.
+)", 0, \
+        {"26.12", true, false, "New setting. `TRUNCATE` of a `MergeTree` table keeps the removed parts for `old_parts_lifetime` seconds instead of removing them at once"}) \
     DECLARE(Bool, enable_scalar_subquery_optimization, true, R"(
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 )", 0, \
@@ -6132,7 +6160,7 @@ For `DELETE FROM ... ON CLUSTER`, each executing host derives the mode from its 
 hosts whose profiles set different defaults can run the delete in different modes. A replicated
 shard executes on one replica, so there it is that replica's settings that decide. Setting it in
 the session of the initiating query overrides this, because the distributed DDL entry carries
-session changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies.
+session changes.
 A host that constrains the setting clamps the value back.
 )", 0, \
         {"25.5", "alter_update", "alter_update", "A new setting"}) \
@@ -7983,7 +8011,20 @@ Possible values:
 Cloud default value: `none_only_active`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
-Compatibility version of distributed DDL (ON CLUSTER) queries
+Compatibility version of distributed DDL (ON CLUSTER) queries. Use a lower value to keep older servers in the
+cluster able to execute the queries.
+
+Servers do not execute entries with versions `1` and `2`. Older servers write those for the setting values `1`, `2`
+and `3`, so before upgrading set this setting to at least `4` on all servers and wait until the distributed DDL
+queue is processed.
+
+Possible values:
+- `3` — The same as `4`. It is written as `4`, because older servers reject entries with version `3`.
+- `4` — The entry carries the settings changed in the session and the OpenTelemetry tracing context, and `CREATE` queries are normalized on the initiator.
+- `5` — Also preserves the `initial_query_id` of the query.
+- `6` — Also carries whether the query is a part of `BACKUP` or `RESTORE`.
+- `7` — Also carries the UUID of the parent table, which a `Replicated` database uses to execute the query only if the table exists.
+- `8` — Also carries the user and the roles of the initiator, which the hosts use with the server setting `distributed_ddl_use_initial_user_and_roles`.
 
 Cloud default value: `6`.
 )", 0) \
@@ -8290,14 +8331,17 @@ Toggles a query-plan-level optimization which copies filter conjuncts from one s
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
 on the other side can use them.
 
-Applies when the filter and the `MergeTree` read are separated from the join only by expression
-and filter steps, and when the copied conjunct compares a primary key column with a constant
-(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
-comparison between two key columns, is left alone: it could not drive primary key pruning on the
-other side, so copying it would only add work.
+Applies when the filter and the read are separated from the join only by expression and filter
+steps, and when the copied conjunct compares a constant (including `IN` with a constant set) with
+either a primary key column of a `MergeTree` read, or a column of a `Parquet` read (`file`, `url`,
+object storage that is not a data lake) of an integer of up to 64 bits, `Date`, `Date32` or `Decimal` type without a
+default expression, whose row groups the read can skip by min/max statistics. A predicate below a
+nested join or below `DISTINCT`, or a comparison between two key columns, is left alone: it could
+not drive pruning on the other side, so copying it would only add work.
 
 Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0, \
+        {"26.11", true, true, "Also copies filter conjuncts onto integer, Date and Decimal columns of Parquet reads, which skip row groups by their statistics."}, \
         {"26.9", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)
@@ -8365,7 +8409,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, false, R"(
+    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, R"(
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
@@ -8378,6 +8422,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, optimize_read_in_window_order, \
+        {"26.11", false, true, "Enable by default again: the sorting now scatters the merged stream by the `PARTITION BY` columns, so the window functions run in parallel. This also applies to the alias `optimize_read_in_window_order`."}, \
         {"26.1", true, false, "Disable this logic by default. This also applies to the alias `optimize_read_in_window_order`."}) \
     DECLARE(Bool, query_plan_lift_up_union, true, R"(
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
@@ -10076,9 +10121,19 @@ Lets automatic parallel replicas remember, per query plan, where the replicas' s
 repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
 replicas.
 
-Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
+Disables remembered boundaries. To benchmark the cost of building the plan with parallel replicas, also set
+`automatic_parallel_replicas_undecided_retry_after_executions = 0`: the plans whose last build ended without a
+decision are skipped independently of this setting.
 )", 0, \
         {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
+    DECLARE(UInt64, automatic_parallel_replicas_undecided_retry_after_executions, 10, R"(
+How many executions of a query plan skip building the plan with parallel replicas after its last build ended without a decision in automatic parallel replicas: the two plans could not be compared, the planner used no parallel replicas
+in the plan built with them, a step of the plan cannot collect the statistics, or the collection measured nothing. Concurrent executions take turns: one in every `automatic_parallel_replicas_undecided_retry_after_executions + 1` builds the plan again.
+After the first such outcome for a query plan, the next execution builds the plan again at once just in case the first execution populated other statistics caches and the planning decisions will change.
+
+0 disables deferral after undecided outcomes. It is independent of `automatic_parallel_replicas_remember_boundary`, which spares the build for plans decided from statistics.
+)", 0, \
+        {"26.12", 0, 10, "New setting. Automatic parallel replicas now skips building the plan with parallel replicas for a number of executions of a query plan whose last build ended without a decision; previously every execution built it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
@@ -10151,6 +10206,10 @@ This is internal setting that should not be used directly and represents an impl
     DECLARE(UInt64, parallel_replica_offset, 0, R"(
 This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
 )", BETA) \
+    DECLARE(UInt64, distributed_group_by_top_k, 0, R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. The initiator sends it as `n` with a `GROUP BY ... LIMIT n` query without `ORDER BY` when it keeps the smallest `n` merged groups by all grouping keys. Then each replica keeps only its smallest `n` groups in its partial aggregation (see `enable_group_by_top_k_optimization`). It is not forwarded further.
+)", BETA, \
+        {"26.12", 0, 0, "New internal setting: the initiator of a query with parallel replicas lets the replicas apply the `GROUP BY` top-K heap to `GROUP BY ... LIMIT` without `ORDER BY`."}) \
     DECLARE(String, parallel_replicas_custom_key, "", R"(
 An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
@@ -10700,6 +10759,24 @@ independently of its size.
 )", 0, \
         {"26.9", 1024 * 1024 * 1024, 512 * 1024 * 1024, "Aligned with the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB), see https://iceberg.apache.org/docs/1.5.2/configuration/."}, \
         {"25.9", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(UInt64, iceberg_insert_max_data_files_in_upload, 8, R"(
+The maximum number of finished data files of one insert stream whose upload is not waited for while the `INSERT` writes the next
+file, for object storages that upload in the background (S3, Azure). Such a file holds its upload buffers until its upload
+completes, so higher values hide more upload latency at the cost of memory. `0` waits for the upload of each data file before
+writing the next one.
+)", 0, \
+        {"26.11", 0, 8, "New setting. An INSERT into Iceberg on S3 or Azure no longer waits for the upload of each finished data file."}) \
+    DECLARE(UInt64, iceberg_insert_max_sort_buffer_bytes, 1_GiB, R"(
+Max uncompressed bytes an `INSERT` into an Iceberg table with a sort order buffers across all partitions before
+writing them sorted. Past it, the largest buffer is written early as a smaller sorted data file. 0 means unlimited.
+)", 0, \
+        {"26.12", 1_GiB, 1_GiB, "New setting."}) \
+    DECLARE(Bool, iceberg_write_table_statistics_ndv, false, R"(
+A commit to an Iceberg table records the number of distinct values of each column in the table statistics of its
+snapshot, for [`use_iceberg_table_statistics_ndv`](#use_iceberg_table_statistics_ndv). A commit to a table in a REST
+or Unity catalog throws.
+)", EXPERIMENTAL, \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(Bool, iceberg_insert_single_manifest_for_all_partitions, false, R"(
 An `INSERT` into a partitioned Iceberg table writes one manifest file for all the partitions it touches, like Spark
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own

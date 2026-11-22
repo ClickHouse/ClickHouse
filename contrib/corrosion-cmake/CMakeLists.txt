@@ -211,11 +211,30 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
-# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# Clang CFI is whole-program: the Rust code, its standard library included, is emitted as LLVM bitcode with CFI type
+# metadata and checked in the final link with the C and C++ code (which uses the same normalized integer encoding).
+if (ENABLE_CFI)
+    # The final link reads the bitcode of rustc, and LLVM does not read bitcode of a newer version than its own.
+    if (NOT Rust_LLVM_VERSION_MAJOR OR COMPILER_VERSION_MAJOR VERSION_LESS Rust_LLVM_VERSION_MAJOR)
+        message(FATAL_ERROR "ENABLE_CFI requires Clang ${Rust_LLVM_VERSION_MAJOR} or newer, the LLVM version of rustc "
+            "${Rust_VERSION} (${Rust_TOOLCHAIN}); found Clang ${CMAKE_CXX_COMPILER_VERSION}.")
+    endif()
+    set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
+    list(APPEND RUSTFLAGS "-Clinker-plugin-lto" "-Zsanitizer=cfi" "-Zsanitizer-cfi-normalize-integers")
+    # The next trait solver fails to normalize the projections that the CFI type ids of some trait methods build (an
+    # internal compiler error in Cranelift since nightly-2026-08-22, https://github.com/rust-lang/rust/issues/166055),
+    # so CFI builds use the previous one.
+    list(APPEND RUSTFLAGS "-Znext-solver=no")
+    if (ENABLE_CFI_DIAGNOSTICS)
+        list(APPEND RUSTFLAGS "-Zsanitizer-cfi-diag" "-Zsanitizer-cfi-recover")
+    endif()
+endif()
+
+# rustc refuses to combine a sanitizer, CFI included, with a statically linked libc (the musl Rust target
 # defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
 # general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
 # libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
-if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+if (USE_MUSL AND (NOT SANITIZE STREQUAL "" OR ENABLE_CFI))
     list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
