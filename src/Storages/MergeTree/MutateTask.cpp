@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfoNamed.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Disks/SingleDiskVolume.h>
@@ -1627,11 +1628,11 @@ getColumnsForNewDataPart(
             if (rewrites_all_columns && storage_column && !storage_column->type->equals(*source_type))
             {
                 const auto & storage_type = storage_column->type;
-                if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*storage_type))
+                if (settings.isAlwaysDefault() || !settings.shouldCollectSerializationInfo(*storage_type))
                     continue;
 
                 auto rebuilt_info = storage_type->createSerializationInfo(settings);
-                if (old_info->structureEquals(*rebuilt_info))
+                if (canReuseSerializationInfoForTypeChange(*old_info, *rebuilt_info))
                     rebuilt_info = old_info->createWithType(*source_type, *storage_type, settings);
 
                 new_serialization_infos.emplace(new_name, std::move(rebuilt_info));
@@ -1645,17 +1646,12 @@ getColumnsForNewDataPart(
         auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
 
-        if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*new_type))
+        if (settings.isAlwaysDefault() || !settings.shouldCollectSerializationInfo(*new_type))
             continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
-        if (!old_info->structureEquals(*new_info))
-        {
-            new_serialization_infos.emplace(new_name, std::move(new_info));
-            continue;
-        }
-
-        new_info = old_info->createWithType(*old_type, *new_type, settings);
+        if (canReuseSerializationInfoForTypeChange(*old_info, *new_info))
+            new_info = old_info->createWithType(*old_type, *new_type, settings);
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 
@@ -2757,13 +2753,13 @@ static void finalizeMutatedPart(
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto out = serializeStatisticsPacked(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             written_files.push_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings());
+            auto files = serializeStatisticsWide(new_data_part->getDataPartStorage(), new_data_part->checksums, statistics, codec, context->getWriteSettings(), getStatisticsFileVersion(*new_data_part->storage.getSettings()));
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
@@ -4086,7 +4082,8 @@ private:
                 ctx->new_data_part,
                 NamesAndTypesList{} /*expired_columns*/,
                 ctx->time_of_mutation,
-                true);
+                true /*apply_ttl*/,
+                true /*force*/);
             subqueries = transform->getSubqueries();
             builder->addTransform(std::move(transform));
         }
@@ -4142,7 +4139,7 @@ private:
         {
             index_granularity_ptr = createMergeTreeIndexGranularity(
                 ctx->source_part->rows_count,
-                ctx->source_part->getBytesUncompressedOnDisk(),
+                [&] { return ctx->source_part->getTotalColumnsReadSize().data_uncompressed; },
                 *ctx->data->getSettings(),
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
@@ -4543,7 +4540,8 @@ private:
                     ctx->new_data_part,
                     NamesAndTypesList{} /*expired_columns*/,
                     ctx->time_of_mutation,
-                    true);
+                    true /*apply_ttl*/,
+                    true /*force*/);
                 subqueries = transform->getSubqueries();
                 builder->addTransform(std::move(transform));
             }
@@ -5032,26 +5030,40 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (auto alter = command.ast(); alter && alter->partition)
+    /// The partition ids of a command scoped with `IN PARTITION` are resolved once, when the mutation
+    /// entry is created or loaded (`MergeTreeData::resolvePartitionIdsOfScopedCommands`), and they are
+    /// the source of truth here. A partition expression is arbitrary user SQL and may evaluate to a
+    /// different partition later - re-evaluating it per part would let the set of parts the mutation
+    /// rewrites diverge from the one the pending on-the-fly reads have already been answering from.
+    /// The expression is re-evaluated below only for an entry whose ids are not resolved.
+    if (command.has_partition && command.partition_ids)
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-        if (part->info.getPartitionId() != command_partition_id)
+        if (!command.partition_ids->contains(part->info.getPartitionId()))
             return true;
     }
-    else if (alter && alter->partitions)
+    else if (auto alter = command.ast())
     {
-        bool part_in_partitions = false;
-        for (const auto & partition_ast : alter->partitions->children)
+        if (alter->partition)
         {
-            auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
-            if (part->info.getPartitionId() == command_partition_id)
-            {
-                part_in_partitions = true;
-                break;
-            }
+            auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+            if (part->info.getPartitionId() != command_partition_id)
+                return true;
         }
-        if (!part_in_partitions)
-            return true;
+        else if (alter->partitions)
+        {
+            bool part_in_partitions = false;
+            for (const auto & partition_ast : alter->partitions->children)
+            {
+                auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
+                if (part->info.getPartitionId() == command_partition_id)
+                {
+                    part_in_partitions = true;
+                    break;
+                }
+            }
+            if (!part_in_partitions)
+                return true;
+        }
     }
 
     /// APPLY PATCHES command is handled separately.
