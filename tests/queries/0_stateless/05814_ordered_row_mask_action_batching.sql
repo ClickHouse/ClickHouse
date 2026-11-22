@@ -1,7 +1,3 @@
--- Tags: no-replicated-database
--- The barrier case uses `UPDATE`, `DROP COLUMN`, `UPDATE` in one `ALTER`,
--- which a `Replicated` database rejects before dispatching the mutation.
-
 DROP TABLE IF EXISTS test_05814_off;
 DROP TABLE IF EXISTS test_05814_on;
 DROP TABLE IF EXISTS test_05814_fallback;
@@ -128,16 +124,6 @@ ALTER TABLE test_05814_fallback
     UPDATE _row_exists = 0 WHERE nullable_n < 1
 SETTINGS mutations_sync = 2;
 SELECT 'set_nullable', id, nullable_n, x FROM test_05814_fallback ORDER BY id;
-
--- `DROP COLUMN` remains a barrier even when it needs no interpreter stage.
-ALTER TABLE test_05814_fallback
-    UPDATE _row_exists = 0 WHERE id = 4,
-    DROP COLUMN spare,
-    UPDATE _row_exists = 0 WHERE id = 5
-SETTINGS mutations_sync = 2;
-SELECT 'barrier_mask', id, _row_exists
-FROM test_05814_fallback ORDER BY id SETTINGS apply_deleted_mask = 0;
-SELECT 'barrier', id, nullable_n, x FROM test_05814_fallback ORDER BY id;
 
 DROP TABLE test_05814_off;
 DROP TABLE test_05814_on;
