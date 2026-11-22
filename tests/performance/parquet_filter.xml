@@ -1,9 +1,16 @@
 <test>
     <create_query>create table if not exists t (key UInt64, value String) engine = File(Parquet) settings output_format_parquet_row_group_size=100000</create_query>
+    <create_query>create table if not exists s (key UInt64) engine = Memory</create_query>
 
     <fill_query>insert into t select number, toString(number) from numbers(2000000) settings max_threads=16, max_insert_threads=16, max_insert_block_size=100000, max_block_size=100000</fill_query>
+    <fill_query>insert into s select number from numbers(2000000)</fill_query>
 
     <query>select sum(cityHash64(*)) from t where key between 1050000 and 1150000 settings max_threads=1</query>
+    <!-- The filter is copied across the join onto `t`, which skips row groups by it -->
+    <query>select count() from (select * from s where key = 1100000) as s1 inner join t on s1.key = t.key settings max_threads=1</query>
+    <!-- Only `key >= 1000` is copied, and it skips and removes nothing -->
+    <query>select count() from (select * from s where key % 1000 = 0 and key >= 1000) as s1 inner join t on s1.key = t.key settings max_threads=1</query>
 
     <drop_query>drop table if exists t</drop_query>
+    <drop_query>drop table if exists s</drop_query>
 </test>
