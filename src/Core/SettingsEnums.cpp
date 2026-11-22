@@ -618,6 +618,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
 
+IMPLEMENT_SETTING_ENUM(S3RequestPayer, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", S3RequestPayer::NONE},
+     {"requester", S3RequestPayer::REQUESTER}})
+
 IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
     {{"legacy", ExplainQueryPlanDefault::LEGACY},
      {"pretty", ExplainQueryPlanDefault::PRETTY}})
