@@ -724,7 +724,7 @@ bool pingNativeServer(Poco::UInt16 port_number)
         std::istream & body = session.receiveResponse(response);
         std::string text{std::istreambuf_iterator<char>(body), std::istreambuf_iterator<char>()};
         return response.getStatus() == Poco::Net::HTTPResponse::HTTP_BAD_REQUEST
-            && text.find("is for clickhouse-client program") != std::string::npos;
+            && text.contains("is for clickhouse-client program");
     }
     catch (const Poco::Exception &)
     {
