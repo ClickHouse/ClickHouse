@@ -7,7 +7,8 @@ ORDER BY xxHash64(arrayMap(x -> x + 1, arr))
 SETTINGS index_granularity = 1;
 INSERT INTO t_05571 SELECT [number] FROM numbers(1000);
 
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT arr FROM t_05571 WHERE arrayMap(x -> x + 1, arr) = [2])
+-- `extract`, because the plan with parallel replicas is drawn as a tree, with `│` before the line.
+SELECT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT arr FROM t_05571 WHERE arrayMap(x -> x + 1, arr) = [2])
 WHERE explain LIKE '%Granules: %/%';
 SELECT arr FROM t_05571 WHERE arrayMap(x -> x + 1, arr) = [2];
 
