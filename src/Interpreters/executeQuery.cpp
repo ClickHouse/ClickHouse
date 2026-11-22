@@ -3995,8 +3995,15 @@ static BlockIO executeQueryImpl(
                 if (query_pipeline.initialized())
                 {
                     /// The query may have failed with MEMORY_LIMIT_EXCEEDED, try to preserve original exception
-                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-                    logProcessorProfile(context, query_pipeline.getProcessors(), elem.exception_code, elem.exception);
+                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Process);
+                    try
+                    {
+                        logProcessorProfile(context, query_pipeline.getProcessors(), elem.exception_code, elem.exception);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(getLogger("executeQuery"), "while writing processors_profile_log");
+                    }
                 }
             };
 
