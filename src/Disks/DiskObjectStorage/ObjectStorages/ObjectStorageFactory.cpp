@@ -14,7 +14,6 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #endif
 
@@ -26,9 +25,12 @@
 #include <Interpreters/Context.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 
 #include <Common/Macros.h>
+
+#include <Poco/URI.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -134,7 +136,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
         PreformattedMessage::create(
             "Custom disks with endpoints that are not allowed by `remote_url_allow_hosts` were kept while loading existing "
             "metadata (server start or UNDROP): {}. Add `<s3_bucket>host/bucket</s3_bucket>` (S3) or `<host>host</host>` "
-            "(Azure) entries for them or recreate the tables that use them.",
+            "(Azure, HDFS) entries for them or recreate the tables that use them.",
             fmt::join(disks, ", ")));
 }
 
@@ -149,7 +151,7 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, true, uri_style);
+    S3::URI uri((fs::path(endpoint) / endpoint_subpath).string(), false, true, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -232,12 +234,23 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* run_access_check */,
            bool /* run_local_paths_check */,
-        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
+           RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
             if (uri.back() != '/')
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
+
+            /// Checked before `HDFSObjectStorage` connects; a disk loaded from existing metadata is only reported.
+            if (remote_host_filter_check != RemoteHostFilterCheck::None)
+            {
+                const Poco::URI endpoint_uri(uri);
+                if (!context->getGlobalContext()->getRemoteHostFilter().checkURL(
+                        endpoint_uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
+                    warnAboutDiskNotAllowedByRemoteHostFilter(
+                        name, endpoint_uri.getAuthority(), fmt::format("<host>{}</host>", endpoint_uri.getHost()),
+                        context->getGlobalContext());
+            }
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
@@ -291,20 +304,11 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// the table load nor the server start.
         if (remote_host_filter_check != RemoteHostFilterCheck::None)
         {
-            auto check_host = [&](const String & url)
-            {
-                Poco::URI uri(url);
-                /// The query can carry a SAS token, which the error must not quote.
-                uri.setPathEtc("");
+            for (const auto & uri : AzureObjectStorage::getURIsForRemoteHostFilter(params))
                 if (!context->getRemoteHostFilter().checkURL(
                         uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
                     warnAboutDiskNotAllowedByRemoteHostFilter(
                         name, uri.getAuthority(), fmt::format("<host>{}</host>", uri.getHost()), context->getGlobalContext());
-            };
-            check_host(params.getConnectionURL());
-            /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
-            if (isAdlsGen2Endpoint(params.endpoint))
-                check_host(getAdlsGen2Url(params.endpoint, params.auth_method));
         }
 
         const bool drop_credentials = params.checkOrDropServerManagedCredentials();
@@ -317,12 +321,17 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
                 "loading instead.",
                 name);
 
+        /// As for the `AzureBlobStorage` table engine, a connection string is described by its blob service URL.
+        String description = std::holds_alternative<AzureBlobStorage::ConnectionString>(params.auth_method)
+            ? params.getConnectionURLWithoutQuery()
+            : String(stripQueryAndFragment(params.endpoint.getServiceEndpoint()));
+
         return std::make_shared<AzureObjectStorage>(
             name,
             /// A client without credentials must not probe or create the container: the denied request would fail the load.
             AzureBlobStorage::getContainerClient(params, /*readonly=*/ drop_credentials), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
-            params.endpoint.getServiceEndpoint(), common_key_prefix);
+            description, common_key_prefix);
     };
 
     factory.registerObjectStorageType("azure_blob_storage", creator);

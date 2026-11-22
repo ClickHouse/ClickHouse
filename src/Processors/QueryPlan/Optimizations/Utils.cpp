@@ -10,16 +10,24 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Storages/StorageMerge.h>
 
 #include <algorithm>
 #include <optional>
-#include <unordered_set>
 #include <utility>
-#include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -79,6 +87,40 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
         return FilterResult::UNKNOWN;
 
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
+}
+
+bool canProduceTotals(QueryPlan::Node & root)
+{
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        auto * step = node->step.get();
+
+        /// `ReadFromMerge` builds its nested plans when asked, so it is not asked and is assumed to produce totals.
+        if (typeid_cast<const TotalsHavingStep *>(step) || typeid_cast<const ReadFromMerge *>(step))
+            return true;
+        if (const auto * remote = typeid_cast<const ReadFromRemote *>(step); remote && remote->hasTotals())
+            return true;
+        if (const auto * cache = typeid_cast<const ReadFromQueryResultCacheStep *>(step); cache && cache->hasTotals())
+            return true;
+
+        /// An aggregation drops the totals of its input.
+        if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
+            continue;
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        /// `LazyReadReplacingFinalStep` builds its nested plan when asked; it reads one source without totals.
+        if (typeid_cast<const LazyReadReplacingFinalStep *>(step))
+            continue;
+        for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
+            if (child_plan)
+                stack.push_back(child_plan->getRootNode());
+    }
+    return false;
 }
 
 static bool isNotReadySetColumn(const ActionsDAG::Node & node)
@@ -168,8 +210,8 @@ bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
 
 bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
 {
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::vector<const ActionsDAG::Node *> stack{root};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -220,8 +262,8 @@ namespace
 template <typename IsMarkedInput>
 NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
 {
-    std::unordered_map<const ActionsDAG::Node *, bool> marked;
-    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> marked;
+    VectorWithMemoryTracking<std::pair<const ActionsDAG::Node *, bool>> stack;
     for (const auto * output : dag.getOutputs())
         stack.emplace_back(output, false);
 
@@ -270,8 +312,8 @@ ConstantColumns collectConstantColumns(const QueryPlan::Node & root)
         return it == result.end() ? no_columns : it->second;
     };
 
-    std::unordered_set<const QueryPlan::Node *> visited;
-    std::vector<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> visited;
+    VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
     while (!stack.empty())
     {
         auto [node, expanded] = stack.back();

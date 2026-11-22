@@ -59,7 +59,7 @@ namespace
 
     struct Key
     {
-        String plain;
+        SecretString plain;
         std::optional<String> encrypted;
     };
 
@@ -144,7 +144,7 @@ namespace
     }
 
     /// Reads the current encryption key from the configuration.
-    String getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+    SecretString getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
                                    const std::map<UInt64, Key> & keys_by_id, const std::vector<Key> & keys_without_id)
     {
         String key_path = config_prefix + ".current_key";
@@ -154,12 +154,12 @@ namespace
         if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
 
-        auto check_current_key_found = [&](const String & current_key_)
+        auto check_current_key_found = [&](const SecretString & current_key_)
         {
             for (const auto & [_, key] : keys_by_id)
             {
                 if (key.plain == current_key_)
-                    return current_key_;
+                    return key.plain;
 
                 if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
                     return key.plain;
@@ -167,7 +167,7 @@ namespace
             for (const auto & key : keys_without_id)
             {
                 if (key.plain == current_key_)
-                    return current_key_;
+                    return key.plain;
 
                 if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
                     return key.plain;
@@ -177,12 +177,12 @@ namespace
 
         if (config.has(key_path))
         {
-            String current_key = config.getString(key_path);
+            SecretString current_key(config.getString(key_path));
             return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(config.getString(key_hex_path));
+            SecretString current_key(unhexKey(config.getString(key_hex_path)));
             return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
@@ -275,7 +275,7 @@ namespace
                 res->all_keys[fingerprint] = key.plain;
             }
 
-            String current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
+            SecretString current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
             res->current_key = current_key;
             res->current_key_fingerprint = calculateKeyFingerprint(current_key);
 
@@ -329,9 +329,9 @@ namespace
         }
 
         void next() override { delegate->next(); }
-        bool isValid() const override { return delegate->isValid(); }
+        [[nodiscard]] bool isValid() const override { return delegate->isValid(); }
 
-        String path() const override
+        [[nodiscard]] String path() const override
         {
             auto delegate_path = delegate->path();
 
@@ -345,7 +345,7 @@ namespace
             return delegate_path.substr(path_prefix.size());
         }
 
-        String name() const override { return delegate->name(); }
+        [[nodiscard]] String name() const override { return delegate->name(); }
 
     private:
         DirectoryIteratorPtr delegate;
@@ -361,17 +361,17 @@ public:
     {
     }
 
-    UInt64 getSize() const override { return reservation->getSize(); }
-    std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
+    [[nodiscard]] UInt64 getSize() const override { return reservation->getSize(); }
+    [[nodiscard]] std::optional<UInt64> getUnreservedSpace() const override { return reservation->getUnreservedSpace(); }
 
-    DiskPtr getDisk(size_t i) const override
+    [[nodiscard]] DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
             throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
         return disk;
     }
 
-    Disks getDisks() const override { return {disk}; }
+    [[nodiscard]] Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override { reservation->update(new_size); }
 
@@ -555,7 +555,7 @@ void DiskEncrypted::prepareRead(
     pipeline.needDecryption(
         path,
         settings.local_fs_settings.buffer_size,
-        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> SecretString
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
         });
