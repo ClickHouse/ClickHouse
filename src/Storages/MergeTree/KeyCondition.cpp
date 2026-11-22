@@ -3792,6 +3792,15 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 && !element_type->equals(*predicate_column_type)
                 && !(!mapping.set_transform && isTextOfElementValues(mapping.index_mapping.functions, element_type)))
                 return false;
+
+            /// The key cast into a `Bool` element matches every nonzero value, while the element cast into the key names only 1.
+            const auto has_bool = [](const DataTypePtr & type)
+            {
+                return anyInTypeTree(*type, [](const IDataType & node)
+                    { return node.getName() == "Bool" || isSimpleAggregateFunctionOfBool(node); });
+            };
+            if (has_bool(element_type) && !has_bool(predicate_column_type))
+                return false;
         }
 
         /// A float element over a `Decimal`, `DateTime64` or `Time64` input names a key point that misses matching values,
