@@ -731,7 +731,8 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
         if (constant.isNull())
             return std::nullopt;
 
-        return std::make_shared<ConstantNode>(std::move(constant), type);
+        /// The value already has the type of `node`. A second conversion is not supported for some types, like intervals.
+        return std::make_shared<ConstantNode>(ConstantValue(constant, type));
     }
 }
 
