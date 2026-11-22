@@ -3,7 +3,7 @@
 # no-fasttest: needs S3.
 # no-parallel-replicas: `s3` would become `s3Cluster`, and the file would be read on another node.
 # no-distributed-cache: the timings depend on the read path.
-# Random settings limits: input_format_parquet_max_block_size=(65409, None); input_format_parquet_prefer_block_bytes=(1048576, None); input_format_parquet_memory_low_watermark=(None, 2097152); input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_max_dictionary_size=(1048576, None)
+# Random settings limits: input_format_parquet_max_block_size=(65409, None); input_format_parquet_prefer_block_bytes=(1048576, None); input_format_parquet_memory_low_watermark=(None, 2097152); input_format_parquet_memory_high_watermark=(67108864, None); output_format_parquet_row_group_size_bytes=(536870912, None); output_format_parquet_max_dictionary_size=(1048576, None); output_format_parquet_compression_method=('zstd', 'zstd')
 
 # Row group 0 of the file is tiny, row groups 1-4 are 16 MiB each, and reads are throttled to 8 MiB/s.
 # The background reads of row groups 1-4 must not delay the end of a query whose `LIMIT` row group 0
