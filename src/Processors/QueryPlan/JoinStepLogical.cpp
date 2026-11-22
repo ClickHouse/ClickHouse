@@ -2148,8 +2148,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
             eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
         if (eligible_conditions > 2)
         {
-            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
-            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
+            const QueryPlanOptimizations::RelationStatsOptions stats_options{
+                .find_single_node_read = &optimization_settings.find_single_node_read};
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0], stats_options).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1], stats_options).column_stats;
         }
     }
 
@@ -2636,7 +2638,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
     if (join_settings.enable_hash_join_row_store && !planning_context.is_storage_join && children.size() == 2 && right_has_strings)
     {
         auto right_column_stats = right_relation_column_stats.empty()
-            ? QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats
+            ? QueryPlanOptimizations::estimateReadRowsCount(
+                  *children[1],
+                  QueryPlanOptimizations::RelationStatsOptions{.find_single_node_read = &optimization_settings.find_single_node_read})
+                  .column_stats
             : right_relation_column_stats;
         QueryPlanOptimizations::remapColumnStats(right_column_stats, right_dag);
         for (const auto & [name, stats] : right_column_stats)
@@ -2748,7 +2753,8 @@ void JoinStepLogical::buildPhysicalJoin(
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .has_runtime_filters = join_step->hasRuntimeFilters(),
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -3115,6 +3121,8 @@ void JoinStepLogical::serialize(Serialization & ctx) const
         if (join_settings.enable_packed_string_keys_in_hash_join && right_relation.estimated_rows
             && *right_relation.estimated_rows < join_settings.min_rows_for_packed_string_keys_in_hash_join)
             optimizer_flags |= 8;
+        if (has_runtime_filters)
+            optimizer_flags |= 16;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3193,6 +3201,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
             step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
         if (optimizer_flags & 8)
             step->join_settings.enable_packed_string_keys_in_hash_join = false;
+        step->has_runtime_filters = bool(optimizer_flags & 16);
     }
     return step;
 }
@@ -3237,6 +3246,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->has_runtime_filters = has_runtime_filters;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;

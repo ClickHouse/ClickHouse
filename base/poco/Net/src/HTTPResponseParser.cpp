@@ -141,7 +141,7 @@ bool HTTPResponseParser::step(char ch)
                 return true;
             }
             if (!isSpace(ch))
-                throw MessageException("Invalid HTTP version string");
+                throw MalformedMessageException("Invalid HTTP version string");
             _state = State::SpaceBeforeStatus;
             return false;
 
@@ -158,7 +158,7 @@ bool HTTPResponseParser::step(char ch)
                 return true;
             }
             if (!isSpace(ch))
-                throw MessageException("Invalid HTTP status code");
+                throw MalformedMessageException("Invalid HTTP status code");
             _state = State::SpaceBeforeReason;
             return false;
 
@@ -175,20 +175,20 @@ bool HTTPResponseParser::step(char ch)
                 return true;
             }
             if (!isSpace(ch))
-                throw MessageException("HTTP reason string too long");
+                throw MalformedMessageException("HTTP reason string too long");
             if (ch == '\r')
             {
                 _state = State::StatusLineCR;
                 return true;
             }
             if (ch != '\n')
-                throw MessageException("Unterminated HTTP response line");
+                throw MalformedMessageException("Unterminated HTTP response line");
             finishStatusLine();
             return true;
 
         case State::StatusLineCR:
             if (ch != '\n')
-                throw MessageException("Unterminated HTTP response line");
+                throw MalformedMessageException("Unterminated HTTP response line");
             finishStatusLine();
             return true;
 
@@ -260,7 +260,7 @@ bool HTTPResponseParser::step(char ch)
                 _state = State::AfterLine;
                 return true;
             }
-            throw MessageException(_state == State::ValueCR ? "Field value too long/no CRLF found" : "Folded field value too long/no CRLF found");
+            throw MalformedMessageException(_state == State::ValueCR ? "Field value too long/no CRLF found" : "Folded field value too long/no CRLF found");
 
         case State::AfterLine:
             if (ch == ' ' || ch == '\t')
