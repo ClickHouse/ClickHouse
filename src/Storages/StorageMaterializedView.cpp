@@ -191,9 +191,16 @@ namespace
                 "Incremental refresh source table {} has engine {}, which does not support streaming",
                 source->getStorageID().getNameForLogs(), source->getName());
 
-        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
+        /// The refresh resumes from the cursor that the read reports through `Context::getStreamingCursor`, and only
+        /// a `MergeTree` read reports it. A source of another engine that supports STREAM (e.g. a queue) would be
+        /// read from the beginning on every refresh, appending the same rows again.
         const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
-        if (merge_tree)
+        if (!merge_tree)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Incremental refresh source table {} has engine {}; only MergeTree tables are supported",
+                source->getStorageID().getNameForLogs(), source->getName());
+
+        /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -571,6 +578,22 @@ void StorageMaterializedView::readImpl(
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
+
+    /// `context` has a query context of its own only for a `DEFINER` / `NONE` view.
+    if (local_context->hasQueryContext() && context->hasQueryContext()
+        && context->getQueryContext() != local_context->getQueryContext())
+    {
+        auto read_query = make_intrusive<ASTSelectQuery>();
+        auto select_list = make_intrusive<ASTExpressionList>();
+        for (const auto & name : column_names)
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        read_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+        read_query->replaceDatabaseAndTable(storage_id);
+        local_context->getQueryContext()->addSQLSecurityOverriddenBody(getStorageID(), context, read_query);
+        /// `storage->read` below bypasses the planner, which records what a read accesses.
+        context->getQueryContext()->addQueryAccessInfo(storage_id, column_names);
+    }
+
     storage->read(query_plan, column_names, target_storage_snapshot, src_table_query_info, context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
@@ -839,6 +862,8 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
         refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
         refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        /// The temporary table repeats the stored definition of the existing target.
+        refresh_context->setSetting("allow_reserved_column_names", Field(UInt64{1}));
 
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
@@ -986,10 +1011,7 @@ void StorageMaterializedView::alter(
             /// As in InterpreterAlterQuery: the query-scoped cache can hold a snapshot pinned before
             /// this lock, and the alter below reads the inner table's metadata through that cache.
             if (auto metadata_cache = local_context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
+                metadata_cache->clear();
             target_table->checkAlterIsPossible(column_comment_commands, local_context);
             /// Not `local_context`: a `Replicated` database has a single ZooKeeper transaction per query
             /// and commits it at the first metadata change made from the query context itself, which has

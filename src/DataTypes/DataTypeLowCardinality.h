@@ -91,6 +91,8 @@ private:
 
 /// Returns dictionary type if type is DataTypeLowCardinality, type otherwise.
 DataTypePtr removeLowCardinality(const DataTypePtr & type);
+/// Same as above, but does not copy the shared pointer.
+const IDataType & removeLowCardinality(const IDataType & type [[clang::lifetimebound]]);
 
 /// Remove LowCardinality recursively from all nested types.
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);

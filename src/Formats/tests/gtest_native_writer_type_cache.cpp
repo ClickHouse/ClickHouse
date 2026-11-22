@@ -2,6 +2,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
@@ -192,7 +194,46 @@ TEST(NativeWriterTypeCache, KeepsTheSerializationsForTheFirstKindsOnly)
     }
 }
 
-/// The map keeps what the current protocol writes, so a writer that writes the types in another way must not take it.
+/// A typed path of a `JSON` column can be sparse, but the `Native` format always writes it full. The writer
+/// must find the `JSON` column to make its typed paths full also when the column is compressed or constant.
+TEST(NativeWriterTypeCache, MaterializesSparseTypedPathsOfWrappedJSON)
+{
+    constexpr size_t rows = 100;
+    const DataTypePtr json_type = DataTypeFactory::instance().get("JSON(a UInt64)");
+    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(json_type->createColumn(), json_type, "json")});
+
+    auto make_json = [&](size_t size)
+    {
+        auto json = json_type->createColumn();
+        json->insertManyDefaults(size);
+        auto & object = assert_cast<ColumnObject &>(*json);
+        object.getTypedPaths().at("a") = IColumn::mutate(makeNumbers(size, true));
+        object.rebuildSortedTypedPathColumns();
+        return ColumnPtr(std::move(json));
+    };
+
+    const ColumnPtr sparse = make_json(rows);
+    const ColumnPtr dense = recursiveRemoveSparse(sparse);
+    const ColumnPtr compressed = sparse->compress(true);
+    const ColumnPtr constant = ColumnConst::create(make_json(1), rows);
+
+    auto write = [&](const ColumnPtr & column, NativeWriterTypeCache * type_cache)
+    {
+        WriteBufferFromOwnString out;
+        NativeWriter(out, DBMS_TCP_PROTOCOL_VERSION, header, std::nullopt, false, nullptr, 0, type_cache).write(header->cloneWithColumns(Columns{column}));
+        out.finalize();
+        return out.str();
+    };
+
+    const String expected = write(dense, nullptr);
+    NativeWriterTypeCache type_cache;
+    EXPECT_EQ(write(sparse, &type_cache), expected);
+    EXPECT_EQ(write(compressed, &type_cache), expected);
+    EXPECT_EQ(write(compressed, nullptr), expected);
+    EXPECT_EQ(write(constant, &type_cache), write(constant, nullptr));
+    EXPECT_EQ(write(constant, &type_cache), write(constant->convertToFullColumnIfConst(), nullptr));
+}
+
 TEST(NativeWriterTypeCacheDeathTest, RejectsWritersThatChangeTheTypes)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";

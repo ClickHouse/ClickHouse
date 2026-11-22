@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Core/Defines.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ColumnNameMaps.h>
 #include <DataTypes/IDataType.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <generated/parquet_types.h>
 #include <Common/PODArray.h>
 
@@ -32,6 +34,7 @@ struct WriteOptions
     /// Write decimals as INT32, INT64 or FIXED_LEN_BYTE_ARRAY of the minimum width for the precision,
     /// as the Iceberg spec requires, instead of FIXED_LEN_BYTE_ARRAY of the column's width.
     bool output_decimal_minimal_physical_type = false;
+    VariantSettings variant_settings;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:
@@ -41,6 +44,8 @@ struct WriteOptions
     int compression_level = 3;
 
     size_t data_page_size = 1024 * 1024;
+    /// 0 = no limit.
+    size_t data_page_row_limit = 20000;
     size_t write_batch_size = 1024;
 
     bool use_dictionary_encoding = true;
@@ -51,6 +56,8 @@ struct WriteOptions
     /// Encode `FLOAT` and `DOUBLE` columns with `ALP` instead of `encoding`, without a dictionary.
     /// See `writeColumnImpl` for the reasoning.
     bool use_alp_encoding = false;
+    /// Write data pages as `DataPageV2` instead of `DataPage`.
+    bool use_data_page_v2 = false;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;
@@ -101,8 +108,8 @@ struct IcebergOptionality
     /// dotted path and must not add a second OPTIONAL level.
     bool owned_by_enclosing_nullable = false;
 
-    bool isOptional(const String & path) const;
-    bool isLocalTimestamp(const String & path) const;
+    [[nodiscard]] bool isOptional(const String & path) const;
+    [[nodiscard]] bool isLocalTimestamp(const String & path) const;
 };
 
 /// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
@@ -162,7 +169,7 @@ struct ColumnChunkWriteState
     ColumnChunkWriteState & operator=(ColumnChunkWriteState &&) = default;
 
     /// Estimated memory usage.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 };
 
 struct RowGroupWithIndexes

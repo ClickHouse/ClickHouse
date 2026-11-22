@@ -41,6 +41,7 @@ import ReleaseSchedule from "/snippets/ar/components/ReleaseSchedule/ReleaseSche
   * تتم عمليات الطرح تلقائيًا وبشكل تدريجي على مدار عدة أسابيع
   * تُرقّى الخدمات التي جرى تكوين نوافذ الترقية المجدولة لها خلال نافذتها المجدولة في الأسبوع التالي لانتهاء طرح القناة (ابتداءً من يوم الاثنين 00:00 UTC)
   * قد يتأخر اكتمال الطرح بسبب إيقاف الطرح مؤقتًا (مثل فترات التجميد خلال العطلات) أو بسبب مراقبة الحالة
+  * لا يحل [تاريخ انتهاء الدعم (EOL)](https://clickhouse.com/legal/support-services-policy) قبل مرور 60 يومًا على الأقل من اكتمال الطرح في قناة Slow. أما الإصدارات التي لم يُحدَّد بعد تاريخ انتهاء طرحها في قناة Slow، فيكون تاريخ انتهاء الدعم لها `TBD`.
 
   لإجراء اختبارات مسبقة قبل الترقيات في بيئة الإنتاج، استخدم قناة Fast أو Regular للخدمات غير الإنتاجية، وقناة Slow للخدمات الإنتاجية.
 </Warning>
@@ -50,7 +51,7 @@ import ReleaseSchedule from "/snippets/ar/components/ReleaseSchedule/ReleaseSche
 {
 changelog_link: 'https://clickhouse.com/docs/changelogs/26.8',
 version: '26.8',
-fast_start_date: '2026-10-12',
+fast_start_date: '2026-10-19',
 fast_end_date: 'TBD',
 regular_start_date: 'TBD',
 regular_end_date: 'TBD',
@@ -84,7 +85,7 @@ regular_start_date: '2026-08-03',
 regular_end_date: '2026-09-21',
 slow_start_date: '2026-09-28',
 slow_end_date: '2026-09-28',
-eol_date: '2026-11-27',
+eol_date: '2026-11-27 (تقديري)',
 fast_progress: 'green',
 regular_progress: 'green',
 slow_progress: 'green',
@@ -98,7 +99,7 @@ regular_start_date: 'مكتمل',
 regular_end_date: 'مكتمل',
 slow_start_date: 'مكتمل',
 slow_end_date: 'مكتمل',
-eol_date: '2026-09-20',
+eol_date: '2026-10-04',
 fast_progress: 'green',
 regular_progress: 'green',
 slow_progress: 'green',
@@ -119,3 +120,14 @@ slow_progress: 'green',
 },
 ]}
 />
+
+## تواريخ end-of-life لـ ClickHouse Private وClickHouse Government {#private-and-government-eol}
+
+يعرض الجدول أدناه تواريخ انتهاء الدعم (end-of-life أو EOL) للإصدارات الرئيسية من ClickHouse المضمَّنة في ClickHouse Private وClickHouse Government.
+
+| الإصدار | تاريخ الإصدار | تاريخ EOL           | الحالة      |
+| ------- | ------------- | ------------------- | ----------- |
+| 26.4    | 2026-10-09    | 2026-11-27 (تقديري) | مدعوم       |
+| 26.2    | 2026-08-07    | 2026-10-04          | منتهي الدعم |
+
+انتهى دعم جميع الإصدارات الأقدم. وقد تتغير تواريخ EOL المشار إليها بأنها تقديرية.
