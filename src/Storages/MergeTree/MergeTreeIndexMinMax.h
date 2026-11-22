@@ -67,14 +67,14 @@ public:
     [[nodiscard]] std::string getDescription() const override;
 
     /// Evaluate a columnar batch and return its surviving granule numbers.
-    FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
+    [[nodiscard]] FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
 
     /// Only when the RPN is lowered to `minmax_actions`, which requires `use_minmax_index_bulk_filtering`.
-    bool supportsBulkFiltering() const override { return minmax_actions != nullptr; }
+    [[nodiscard]] bool supportsBulkFiltering() const override { return minmax_actions != nullptr; }
 
     /// Bulk omits per-leaf partial-disjunction bits. A rejected granule is reported with all owned leaves `false`,
     /// which excludes it in the final merge only when this index owns no leaf below an `OR` or a `NOT`.
-    bool bulkFilteringPreservesPartialDisjunctions() const override { return condition.everyOwnedLeafIsUnderConjunctionsOnly(); }
+    [[nodiscard]] bool bulkFilteringPreservesPartialDisjunctions() const override { return condition.everyOwnedLeafIsUnderConjunctionsOnly(); }
 
     void reportBulkRejectedGranule(const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override
     {
@@ -106,8 +106,8 @@ public:
 
     /// Bulk filtering: see `MergeTreeIndexBulkGranulesMinMaxColumnar`. Whether a query uses it is decided by
     /// `MergeTreeIndexConditionMinMax::supportsBulkFiltering`.
-    bool supportsBulkFiltering() const override { return true; }
-    MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
+    [[nodiscard]] bool supportsBulkFiltering() const override { return true; }
+    [[nodiscard]] MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
@@ -159,7 +159,7 @@ struct MergeTreeIndexBulkGranulesMinMaxColumnar final : public IMergeTreeIndexBu
     std::vector<PerColumn> cols;
     /// Granules are consecutive: row `i` of the columns holds granule `first_granule + i`.
     size_t first_granule = 0;
-    size_t size() const { return cols.empty() ? 0 : cols.front().min_col->size(); }
+    [[nodiscard]] size_t size() const { return cols.empty() ? 0 : cols.front().min_col->size(); }
 
 private:
     void startGranules(size_t granule_num);

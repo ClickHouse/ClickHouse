@@ -195,12 +195,12 @@ public:
     }
 
     /// Whether `getPossibleGranules` can evaluate this condition, given that the index `supportsBulkFiltering`.
-    virtual bool supportsBulkFiltering() const { return true; }
+    [[nodiscard]] virtual bool supportsBulkFiltering() const { return true; }
 
     /// Whether bulk filtering stays as precise as `mayBeTrueOnGranule` with `use_skip_indexes_for_disjunctions`.
     /// `getPossibleGranules` does not report the partial results of the atoms, so a rejected granule is recorded
     /// with `reportBulkRejectedGranule` instead.
-    virtual bool bulkFilteringPreservesPartialDisjunctions() const { return false; }
+    [[nodiscard]] virtual bool bulkFilteringPreservesPartialDisjunctions() const { return false; }
 
     /// Record into the partial-disjunction bitset that `getPossibleGranules` rejected a granule, so that
     /// `mergePartialResultsForDisjunctions` excludes its marks even when a later index restores them.
