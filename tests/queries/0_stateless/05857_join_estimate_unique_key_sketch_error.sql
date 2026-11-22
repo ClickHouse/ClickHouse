@@ -15,15 +15,15 @@ DROP TABLE IF EXISTS t_u3;
 DROP TABLE IF EXISTS t_o1;
 DROP TABLE IF EXISTS t_o2;
 
-CREATE TABLE t_u1 (id UInt64, d UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'uniq_v2';
-CREATE TABLE t_u2 (id UInt64, d UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'uniq_v2';
+CREATE TABLE t_u1 (id UInt64, d UInt64, e UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'uniq_v2';
+CREATE TABLE t_u2 (id UInt64, d UInt64, e UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'uniq_v2';
 CREATE TABLE t_u3 (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'uniq_v2';
 CREATE TABLE t_o1 (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'uniq_v2';
 CREATE TABLE t_o2 (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'uniq_v2';
 
--- `uniq_v2` counts 98160 distinct values in 100000 rows and 40663 in 40000.
-INSERT INTO t_u1 SELECT number, intDiv(number, 2) FROM numbers(100000);
-INSERT INTO t_u2 SELECT number, intDiv(number, 2) FROM numbers(100000);
+-- `uniq_v2` counts 98160 distinct values in 100000 rows, 40663 in 40000 and 90921 in 100000 for `e`.
+INSERT INTO t_u1 SELECT number, intDiv(number, 2), number - (number % 13 = 12) FROM numbers(100000);
+INSERT INTO t_u2 SELECT number, intDiv(number, 2), number - (number % 13 = 12) FROM numbers(100000);
 INSERT INTO t_u3 SELECT number FROM numbers(100000);
 INSERT INTO t_o1 SELECT number FROM numbers(40000);
 INSERT INTO t_o2 SELECT number FROM numbers(40000);
@@ -48,10 +48,15 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '')
 FROM (EXPLAIN SELECT count() FROM t_u1 JOIN t_o1 USING (id))
 WHERE explain LIKE '%Selectivity:%' OR explain LIKE '%Output rows:%';
 
--- Every value of `d` is there twice: not a unique key, so the join keeps about twice the rows.
+-- `d` (every value twice) and `e` (about 92% distinct, below the 95% cutoff) are not unique keys.
 SELECT 'not unique';
 SELECT toFloat64(extract(explain, 'estimated ([0-9.]+) thousand')) BETWEEN 190 AND 210
 FROM (EXPLAIN SELECT count() FROM t_u1 JOIN t_u2 ON t_u1.d = t_u2.d)
+WHERE explain LIKE '%Output rows:%';
+
+SELECT 'near the cutoff';
+SELECT toFloat64(extract(explain, 'estimated ([0-9.]+) thousand')) BETWEEN 105 AND 112
+FROM (EXPLAIN SELECT count() FROM t_u1 JOIN t_u2 ON t_u1.e = t_u2.e)
 WHERE explain LIKE '%Output rows:%';
 
 DROP TABLE t_u1;

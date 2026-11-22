@@ -16,3 +16,5 @@ Selectivity: estimated (NDV) 1e-05
 Output rows: estimated 40.00 thousand
 not unique
 1
+near the cutoff
+1
