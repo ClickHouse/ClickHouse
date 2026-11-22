@@ -58,6 +58,16 @@ namespace
     };
 
 
+    /// Get the fully qualified domain name. Like `hostName`, it is constant on a single server, but not in distributed queries.
+    class FunctionFQDN final : public FunctionServerConstantBase<FunctionFQDN, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "FQDN";
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionFQDN>(context); }
+        explicit FunctionFQDN(ContextPtr context) : FunctionServerConstantBase(getFQDNOrHostName(), context->isDistributed()) {}
+    };
+
+
     class FunctionServerUUID final : public FunctionServerConstantBase<FunctionServerUUID, UUID, DataTypeUUID>
     {
     public:
@@ -220,6 +230,37 @@ SELECT hostName()
 
     factory.registerFunction<FunctionHostName>(documentation);
     factory.registerAlias("hostname", "hostName");
+}
+
+REGISTER_FUNCTION(FQDN)
+{
+    FunctionDocumentation::Description description = R"(
+Returns the fully qualified domain name of the ClickHouse server.
+If the function executes in the context of a distributed table, it generates a normal column with values relevant to each shard.
+Otherwise it produces a constant value.
+    )";
+    FunctionDocumentation::Syntax syntax = "FQDN()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the fully qualified domain name of the ClickHouse server.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT fqdn()
+        )",
+        R"(
+┌─FQDN()────────────────────────┐
+│ clickhouse.us-east-2.internal │
+└───────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFQDN>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("fullHostName", "FQDN");
 }
 
 REGISTER_FUNCTION(ServerUUID)

@@ -17,6 +17,9 @@
 
 using namespace DB;
 
+namespace
+{
+
 struct ResourceTest : public ResourceTestBase
 {
     TimeSharedScheduler scheduler;
@@ -42,6 +45,8 @@ struct ResourceTest : public ResourceTestBase
         return distribution(rng);
     }
 };
+
+}
 
 struct ResourceHolder
 {
