@@ -15,6 +15,9 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <queue>
 #include <ranges>
 
@@ -37,6 +40,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 /// Recreates ALTER UPDATE command but with assignment
@@ -390,7 +398,7 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     if (mutation_commands.empty())
         return {};
 
-    auto chain = buildMutationChainForRead(read_columns, metadata_snapshot, context);
+    auto chain = buildMutationChainForRead(part_info, read_columns, metadata_snapshot, context);
     auto settings = ExpressionActionsSettings(context);
 
     /// Columns the surviving on-fly chain will overwrite. Attached to every
@@ -578,6 +586,7 @@ static void addColumnsRequiredForMaterialized(
 }
 
 AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRead(
+    const IMergeTreeDataPartInfoForReader & part_info,
     const NamesAndTypesList & read_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context) const
@@ -603,7 +612,7 @@ AlterConversions::MutationChainForRead AlterConversions::buildMutationChainForRe
     {
         old_read_columns_size = chain.read_columns.size();
         addColumnsRequiredForMaterialized(chain.read_columns, read_columns_set, dependencies, all_updated_columns);
-        chain.commands = filterMutationCommands(chain.read_columns, read_columns_set, metadata_snapshot);
+        chain.commands = filterMutationCommands(part_info, chain.read_columns, read_columns_set, metadata_snapshot);
     } while (old_read_columns_size != chain.read_columns.size());
 
     return chain;
@@ -648,7 +657,39 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
     return interpreter.getMutationActions();
 }
 
+/// `MutationsInterpreter` checks an update of a `Nested` member the part does not store as an array
+/// against the members the part stores, so those members are read with their earlier updates.
+static void addNestedMembersStoredInPart(
+    const IMergeTreeDataPartInfoForReader & part_info,
+    const String & column_name,
+    const ColumnsDescription & columns,
+    IdentifierNameSet & source_columns)
+{
+    if (!(*part_info.getStorageSettings())[MergeTreeSetting::share_nested_offsets])
+        return;
+
+    const auto & part_columns = part_info.getColumnsDescription();
+    auto is_stored_as_array = [&](const String & name)
+    {
+        auto column = part_columns.tryGetPhysical(name);
+        return column && isArray(column->type);
+    };
+
+    auto column = columns.tryGetPhysical(column_name);
+    auto [group, member] = Nested::splitName(column_name);
+    if (!column || !isArray(column->type) || member.empty() || is_stored_as_array(column_name))
+        return;
+
+    for (const auto & sibling : columns.getAllPhysical())
+    {
+        auto [sibling_group, sibling_member] = Nested::splitName(sibling.name);
+        if (sibling_group == group && !sibling_member.empty() && isArray(sibling.type) && is_stored_as_array(sibling.name))
+            source_columns.insert(sibling.name);
+    }
+}
+
 MutationCommands AlterConversions::filterMutationCommands(
+    const IMergeTreeDataPartInfoForReader & part_info,
     Names & read_columns,
     NameSet & read_columns_set,
     const StorageMetadataPtr & metadata_snapshot) const
@@ -701,6 +742,7 @@ MutationCommands AlterConversions::filterMutationCommands(
                     {
                         expr->collectIdentifierNames(source_columns);
                         new_updated_columns.emplace(assignment.column_name, expr->clone());
+                        addNestedMembersStoredInPart(part_info, assignment.column_name, columns_desc, source_columns);
                     }
                 }
             }

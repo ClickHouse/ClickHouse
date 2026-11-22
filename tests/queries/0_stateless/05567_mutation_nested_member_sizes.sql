@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS t12;
 DROP TABLE IF EXISTS t13;
 DROP TABLE IF EXISTS t14;
 DROP TABLE IF EXISTS t15;
+DROP TABLE IF EXISTS t16;
 
 SELECT 'materialize a default of other sizes';
 CREATE TABLE t1 (id UInt64, n Nested(a UInt64, c String)) ENGINE = MergeTree ORDER BY id
@@ -193,6 +194,22 @@ SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM syste
 KILL MUTATION WHERE database = currentDatabase() AND table = 't15' SYNC FORMAT Null;
 SELECT id, n.a, n.c FROM t15 ORDER BY id;
 
+SELECT 'pending updates applied on the fly';
+CREATE TABLE t16 (id UInt64, n Nested(a UInt64, c UInt64)) ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t16 VALUES (0, [1, 2], [3, 4]);
+ALTER TABLE t16 ADD COLUMN `n.x` Array(UInt64) DEFAULT [];
+SYSTEM STOP MERGES t16;
+ALTER TABLE t16 UPDATE `n.x` = [5, 6] WHERE 1 SETTINGS mutations_sync = 0;
+SELECT n.x FROM t16 SETTINGS apply_mutations_on_fly = 1;
+SELECT n.c, n.x FROM t16 SETTINGS apply_mutations_on_fly = 1;
+ALTER TABLE t16 UPDATE `n.a` = [1, 2, 3], `n.c` = [4, 5, 6], `n.x` = [7, 8, 9] WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t16 UPDATE `n.x` = [10, 11, 12] WHERE 1 SETTINGS mutations_sync = 0;
+SELECT n.a, n.c, n.x FROM t16 SETTINGS apply_mutations_on_fly = 1;
+SELECT n.c, n.x FROM t16 SETTINGS apply_mutations_on_fly = 1;
+SELECT n.x FROM t16 SETTINGS apply_mutations_on_fly = 1;
+SYSTEM START MERGES t16;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
@@ -208,3 +225,4 @@ DROP TABLE t12;
 DROP TABLE t13;
 DROP TABLE t14;
 DROP TABLE t15;
+DROP TABLE t16;

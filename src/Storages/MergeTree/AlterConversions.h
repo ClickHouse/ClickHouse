@@ -102,6 +102,7 @@ private:
     };
 
     [[nodiscard]] MutationChainForRead buildMutationChainForRead(
+        const IMergeTreeDataPartInfoForReader & part_info,
         const NamesAndTypesList & read_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
@@ -118,6 +119,7 @@ private:
     /// Returns only mutations commands that affect columns from set, extending the set with the
     /// columns those commands read.
     MutationCommands filterMutationCommands(
+        const IMergeTreeDataPartInfoForReader & part_info,
         Names & read_columns,
         NameSet & read_columns_set,
         const StorageMetadataPtr & metadata_snapshot) const;
