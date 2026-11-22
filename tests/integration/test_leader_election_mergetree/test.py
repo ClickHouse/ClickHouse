@@ -5586,6 +5586,69 @@ def test_lease_expiry_respects_writer_session_timeout(started_cluster):
             pass
 
 
+SHARED_UUID_LEASE_READ_FAILURE = "12345678-abcd-abcd-abcd-12345678ab69"
+
+
+def test_failure_to_read_lease_is_not_a_takeover(started_cluster):
+    """
+    A lease that cannot be parsed is corrupted, and a node takes it over at once, without waiting for
+    it to expire. Only an error of the parser may be treated this way. Parsing a valid lease allocates,
+    and a memory limit hit there used to be taken for corruption as well: the follower tried to claim
+    the lease of a healthy leader at once. If that write got ahead of the next renewal of the leader,
+    the leader kept accepting writes until its next heartbeat, next to the new one.
+
+    The failpoint fails the next parsing of a lease on the follower like such an allocation. The
+    follower must count it as a failed heartbeat, stay a follower, and leave the lease to the leader.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_lease_read_failure"
+    uuid = SHARED_UUID_LEASE_READ_FAILURE
+    failpoint = "merge_tree_leader_election_fail_parsing_lease"
+
+    def heartbeat_errors(node):
+        return int(
+            node.query(
+                "SELECT sum(value) FROM system.events WHERE event = 'MergeTreeLeaderElectionHeartbeatErrors'"
+            ).strip()
+        )
+
+    try:
+        create_table_on_first_node(node1, table, uuid)
+        wait_for_leader([node1], table_name=table)
+        attach_table_on_second_node(node2, table, uuid)
+        leader_id = read_lease(uuid)["leader_id"]
+
+        errors_before = heartbeat_errors(node2)
+        node2.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        assert _wait_until(lambda: heartbeat_errors(node2) > errors_before, timeout=60), (
+            "The follower did not report a failed heartbeat: it took the failure for a corrupted lease"
+        )
+
+        # The lease is still the one of the leader, which keeps renewing it. A lease taken over by the
+        # follower would have another `leader_id`, and its `sequence` would start again.
+        lease = read_lease(uuid)
+        assert lease["leader_id"] == leader_id, lease
+        sequence = lease["sequence"]
+        assert _wait_until(lambda: read_lease(uuid)["sequence"] >= sequence + 2), (
+            f"The leader stopped renewing its lease: {read_lease(uuid)}"
+        )
+        assert read_lease(uuid)["leader_id"] == leader_id
+
+        leader, _ = wait_for_leader([node1, node2], table_name=table)
+        assert leader is node1, f"The leadership moved to {leader.name}"
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
 SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS = "12345678-abcd-abcd-abcd-12345678ab67"
 SHARED_UUID_REUSED_PART_NAME = "12345678-abcd-abcd-abcd-12345678ab65"
 SHARED_UUID_REUSED_PART_NAME_WITHOUT_CHECKSUMS = "12345678-abcd-abcd-abcd-12345678ab66"

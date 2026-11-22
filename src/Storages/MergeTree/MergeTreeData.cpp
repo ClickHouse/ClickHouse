@@ -14604,6 +14604,24 @@ void MergeTreeData::Transaction::renameParts()
     precommitted_parts_need_rename.clear();
 }
 
+/// Moves the parts of all entries of the journal of published parts to the abandoned ones.
+/// An entry leaves the journal in the same step in which its part is recorded as abandoned, and that step cannot
+/// throw: the storage is reserved first, and moving a pointer does not allocate. So if anything here throws (the
+/// reservation, the log message), every entry that is still in the journal is intact. The transaction rollback
+/// calls the undo again after an exception, and it must never find an entry whose part was moved out.
+template <typename Journal, typename AbandonedParts, typename Log>
+static void abandonPublishedParts(Journal & journal, AbandonedParts & abandoned_parts, Log & log, std::string_view reason)
+{
+    abandoned_parts.reserve(abandoned_parts.size() + journal.size());
+    while (!journal.empty())
+    {
+        auto & entry = journal.back();
+        LOG_WARNING(log, "Leaving published part {} in place: {}", entry.first->name, reason);
+        abandoned_parts.push_back(std::move(entry.first));
+        journal.pop_back();
+    }
+}
+
 void MergeTreeData::Transaction::undoPublishedRenames()
 {
     /// Rename the published parts back to the temporary directories they came from. The command
@@ -14613,14 +14631,15 @@ void MergeTreeData::Transaction::undoPublishedRenames()
     /// with the new leader's own work. A rollback failure is a command failure too: swallowing it
     /// would claim the command was rejected while leaving a persistent part for the next leader.
     ///
-    /// Each entry is consumed as soon as it is handled, and only the entries whose undo failed stay in
-    /// the journal for a retry (e.g. by the transaction rollback after `validateCommitPreconditions`
-    /// rethrows). A retry must not see an entry that was already restored: its part would then be at
-    /// its recorded source, and `renameTo` with `remove_new_dir_if_exists` removes the destination
-    /// before moving, i.e. it would delete the restored part (for `ATTACH PARTITION`, the detached
-    /// input of the command). For the same reason an entry whose part is already at its recorded
-    /// source is dropped without renaming: entries are journaled before the publishing rename, which
-    /// can fail without moving the part.
+    /// Each entry is consumed as soon as it is handled, and not earlier: an exception thrown while an
+    /// entry is being handled (the paths below allocate) leaves it in the journal. Only the entries
+    /// whose undo failed stay in the journal for a retry (e.g. by the transaction rollback after
+    /// `validateCommitPreconditions` rethrows). A retry must not see an entry that was already
+    /// restored: its part would then be at its recorded source, and `renameTo` with
+    /// `remove_new_dir_if_exists` removes the destination before moving, i.e. it would delete the
+    /// restored part (for `ATTACH PARTITION`, the detached input of the command). For the same reason
+    /// an entry whose part is already at its recorded source is dropped without renaming: entries are
+    /// journaled before the publishing rename, which can fail without moving the part.
     ///
     /// The undo is itself a write to shared storage, so it is done only while this node still holds
     /// the lease in the epoch of the publish. Otherwise another leader may already have taken over
@@ -14638,58 +14657,53 @@ void MergeTreeData::Transaction::undoPublishedRenames()
             || (data.mayMutateSharedStorage() && data.currentLeadershipEpoch() == *publish_fence_epoch);
     };
 
-    auto abandon_entry = [&](std::pair<MutableDataPartPtr, String> & entry)
-    {
-        LOG_WARNING(data.log, "Leaving published part {} in place: this node no longer holds the leader lease in the epoch of the publish",
-            entry.first->name);
-        abandoned_published_parts.push_back(std::move(entry.first));
-    };
-
     std::exception_ptr first_exception;
-    std::vector<std::pair<MutableDataPartPtr, String>> failed_entries;
-    while (!published_parts_pending_commit.empty())
+
+    /// The journal is walked backwards. The entries before `num_unvisited` are not visited yet, and the ones
+    /// after them are the entries whose undo failed: they stay where they are, so the journal keeps its order.
+    size_t num_unvisited = published_parts_pending_commit.size();
+    while (num_unvisited > 0)
     {
         if (!owns_publish_epoch())
         {
-            for (auto & remaining : published_parts_pending_commit)
-                abandon_entry(remaining);
-            published_parts_pending_commit.clear();
             /// The entries whose undo failed earlier are not retried by anyone else either.
-            for (auto & failed : failed_entries)
-                abandon_entry(failed);
-            failed_entries.clear();
+            abandonPublishedParts(published_parts_pending_commit, abandoned_published_parts, data.log,
+                "this node no longer holds the leader lease in the epoch of the publish");
             first_exception = nullptr;
             break;
         }
 
-        auto entry = std::move(published_parts_pending_commit.back());
-        published_parts_pending_commit.pop_back();
+        const size_t index = num_unvisited - 1;
+        auto & entry = published_parts_pending_commit[index];
 
         /// Compare whole paths: the recorded source is relative to the table root (`detached/attaching_...`),
         /// while after a rename `getPartDirectory` holds only the last component.
         const auto current_path = fs::path(entry.first->getDataPartStorage().getRelativePath()).lexically_normal();
         const auto source_path = (fs::path(data.relative_data_path) / entry.second / "").lexically_normal();
-        if (current_path == source_path)
-            continue;
-
-        try
+        if (current_path != source_path)
         {
-            LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", entry.first->name, entry.second);
-            entry.first->renameTo(entry.second, true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(data.log, "Cannot rename part " + entry.first->name + " back to " + entry.second);
+            try
+            {
+                LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", entry.first->name, entry.second);
+                entry.first->renameTo(entry.second, true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(data.log, "Cannot rename part " + entry.first->name + " back to " + entry.second);
 
-            if (!first_exception)
-                first_exception = std::current_exception();
-            failed_entries.push_back(std::move(entry));
+                if (!first_exception)
+                    first_exception = std::current_exception();
+
+                /// The entry stays in the journal.
+                --num_unvisited;
+                continue;
+            }
         }
+
+        /// The part is at its recorded source. Erasing moves the entries after this one, which does not throw.
+        published_parts_pending_commit.erase(published_parts_pending_commit.begin() + static_cast<std::ptrdiff_t>(index));
+        --num_unvisited;
     }
-
-    /// Keep the journal order (the undo walks it backwards).
-    published_parts_pending_commit.assign(
-        std::make_move_iterator(failed_entries.rbegin()), std::make_move_iterator(failed_entries.rend()));
 
     if (first_exception)
         std::rethrow_exception(first_exception);
@@ -14697,13 +14711,8 @@ void MergeTreeData::Transaction::undoPublishedRenames()
 
 void MergeTreeData::Transaction::abandonPublishedRenames()
 {
-    for (auto & entry : published_parts_pending_commit)
-    {
-        LOG_WARNING(data.log, "Leaving published part {} in place: the other side of the operation cannot retract its publish",
-            entry.first->name);
-        abandoned_published_parts.push_back(std::move(entry.first));
-    }
-    published_parts_pending_commit.clear();
+    abandonPublishedParts(published_parts_pending_commit, abandoned_published_parts, data.log,
+        "the other side of the operation cannot retract its publish");
 }
 
 bool MergeTreeData::Transaction::isAbandonedPublishedPart(const MutableDataPartPtr & part) const

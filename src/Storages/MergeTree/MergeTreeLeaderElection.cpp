@@ -50,11 +50,13 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_tree_leader_election_pause_heartbeat[];
+    extern const char merge_tree_leader_election_fail_parsing_lease[];
 }
 
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int TABLE_IS_READ_ONLY;
 }
@@ -646,6 +648,11 @@ MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(
 {
     try
     {
+        fiu_do_on(FailPoints::merge_tree_leader_election_fail_parsing_lease,
+        {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure of an allocation while the lease is parsed");
+        });
+
         JSON json(content);
 
         /// An unknown payload version is a forward-compatibility signal — a newer binary
@@ -677,9 +684,13 @@ MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(
         result.status = LeaseParseStatus::Ok;
         return result;
     }
-    catch (...)
+    catch (const JSONException &)
     {
         /// Corrupted lease file: caller will treat it as expired and overwrite it.
+        /// Only an error of the parser says that the content is corrupted. Any other exception says nothing about
+        /// the lease: reading the strings allocates, so a valid lease of a healthy leader can fail here with a
+        /// memory limit. Taking the lease over on that would leave two nodes that consider themselves the leader,
+        /// so such an exception propagates to the heartbeat, which stays (or becomes) a follower and retries.
         tryLogCurrentException("MergeTreeLeaderElection", "Failed to parse lease file content");
         ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLeaseParseErrors);
         ParsedLease error;

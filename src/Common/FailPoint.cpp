@@ -117,6 +117,7 @@ static struct InitFiu
     REGULAR(merge_tree_leader_election_stale_lease_mid_detached_mutation) \
     REGULAR(merge_tree_leader_election_stale_lease_mid_detached_rename) \
     ONCE(merge_tree_leader_election_fail_recording_detached_change) \
+    ONCE(merge_tree_leader_election_fail_parsing_lease) \
     REGULAR(merge_tree_leader_election_stale_lease_dedup_log_write) \
     REGULAR(merge_tree_leader_election_stale_lease_dedup_log_mid_batch) \
     REGULAR(merge_tree_leader_election_stale_lease_dedup_log_before_rotate) \
