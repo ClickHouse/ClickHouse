@@ -89,6 +89,12 @@ static void checkStringsAreValidUTF8(const ::ArrowArray & array, const ::ArrowSc
 static FormatSettings getArrowFormatSettings(const FormatSettings & format_settings)
 {
     FormatSettings result = format_settings;
+    /// The mapping to Arrow is the one of Vortex, not of the `Arrow` format: no `output_format_arrow_*` setting applies
+    /// (`output_format_arrow_date_as_uint16`, which older compatibility values enable, would turn `Date` into a number).
+    result.arrow = FormatSettings{}.arrow;
+    result.arrow.output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
+    /// A chunk is handed to Vortex as Arrow record batches, which have the same 32-bit offset limit.
+    result.arrow.output_max_record_batch_bytes = format_settings.arrow.output_max_record_batch_bytes;
     result.arrow.output_string_as_string = format_settings.vortex.output_string_as_string;
     /// There is no fixed-width binary type on the Vortex side, so `FixedString` is written as `Binary`.
     result.arrow.output_fixed_string_as_fixed_byte_array = false;

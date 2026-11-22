@@ -10,6 +10,7 @@
 
 #include <base/scope_guard.h>
 #include <Common/PODArray.h>
+#include <IO/BufferWithOwnMemory.h>
 
 #include <cctype>
 #include <charconv>
@@ -235,7 +236,7 @@ struct ExportedArray
     VectorWithMemoryTracking<std::unique_ptr<::ArrowArray>> children;
     VectorWithMemoryTracking<::ArrowArray *> children_pointers;
     /// Copies of the buffers of the body that are not aligned enough, see `ArrayBuilder::nextBuffer`.
-    VectorWithMemoryTracking<PODArray<char>> aligned_copies;
+    VectorWithMemoryTracking<Memory<>> aligned_copies;
 
     ~ExportedArray()
     {
@@ -397,9 +398,7 @@ private:
         if (reinterpret_cast<uintptr_t>(data) % 16 == 0)
             return data;
         /// A small allocation is aligned only to its size (8 bytes for an 8-byte buffer), so ask for the alignment.
-        auto & copy = exported.aligned_copies.emplace_back();
-        copy.reserve_exact(static_cast<size_t>(buffer.length()), 16);
-        copy.resize(static_cast<size_t>(buffer.length()));
+        auto & copy = exported.aligned_copies.emplace_back(static_cast<size_t>(buffer.length()), /* alignment */ 16);
         memcpy(copy.data(), data, copy.size());
         chassert(reinterpret_cast<uintptr_t>(copy.data()) % 16 == 0);
         return copy.data();
