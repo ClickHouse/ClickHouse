@@ -44,6 +44,7 @@
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
+#include <IO/ZstdContext.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
@@ -64,6 +65,7 @@
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <zlib.h>
+#include <zstd.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -95,6 +97,7 @@ namespace ProfileEvents
     extern const Event ParquetRuntimeFilterPrunedRowGroups;
     extern const Event ParquetRuntimeFilterPrunedPages;
     extern const Event ParquetTopKRowGroupsBoundedByDictionary;
+    extern const Event ParquetMetadataCacheOffsetIndexHits;
 }
 
 namespace DB::Parquet
@@ -286,6 +289,57 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
     return uncompressed_size == 0;
 }
 
+/// Decodes the ZSTD frames at the start of the page until `uncompressed_size` bytes are produced; the rest of the page
+/// is not read. Returns the produced size or a zstd error code.
+static size_t decompressZSTDFramesUntilFull(ZSTD_DCtx * ctx, const char * data, size_t compressed_size, char * out, size_t uncompressed_size)
+{
+    size_t consumed = 0;
+    size_t produced = 0;
+    while (produced < uncompressed_size && consumed < compressed_size)
+    {
+        size_t frame_size = ZSTD_findFrameCompressedSize(data + consumed, compressed_size - consumed);
+        if (ZSTD_isError(frame_size))
+            return frame_size;
+        size_t res = ZSTD_decompressDCtx(ctx, out + produced, uncompressed_size - produced, data + consumed, frame_size);
+        if (ZSTD_isError(res))
+            return res;
+        consumed += frame_size;
+        produced += res;
+    }
+    return produced;
+}
+
+namespace
+{
+
+/// The context shared by the ZSTD pages that the current `decodePrimitiveColumn` call decodes on this thread.
+thread_local ZstdDCtxPtr * current_zstd_context = nullptr;
+
+class ScopedZstdContext
+{
+public:
+    ScopedZstdContext() : outer(current_zstd_context)
+    {
+        if (!outer)
+            current_zstd_context = &ctx;
+    }
+
+    ~ScopedZstdContext()
+    {
+        if (!outer)
+            current_zstd_context = nullptr;
+    }
+
+    ScopedZstdContext(const ScopedZstdContext &) = delete;
+    ScopedZstdContext & operator=(const ScopedZstdContext &) = delete;
+
+private:
+    ZstdDCtxPtr ctx;
+    ZstdDCtxPtr * outer;
+};
+
+}
+
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
     /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
@@ -333,8 +387,24 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             method = CompressionMethod::Brotli;
             break;
         case parq::CompressionCodec::ZSTD:
-            method = CompressionMethod::Zstd;
-            break;
+        {
+            ZstdDCtxPtr own_ctx;
+            ZstdDCtxPtr & ctx = current_zstd_context ? *current_zstd_context : own_ctx;
+            if (!ctx)
+            {
+                ctx.reset(ZSTD_createDCtx());
+                if (!ctx)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create a ZSTD decompression context");
+            }
+            size_t res = ZSTD_decompressDCtx(ctx.get(), out, uncompressed_size, data, compressed_size);
+            if (ZSTD_isError(res))
+                res = decompressZSTDFramesUntilFull(ctx.get(), data, compressed_size, out, uncompressed_size);
+            if (ZSTD_isError(res))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed ZSTD compressed page: {}", ZSTD_getErrorName(res));
+            if (res != uncompressed_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected uncompressed page size");
+            return;
+        }
         case parq::CompressionCodec::LZ4_RAW:
         {
             /// LZ4 block.
@@ -464,11 +534,19 @@ void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_du
 void Reader::setFileFooter(
     std::shared_ptr<const FileFooter> footer,
     VectorWithMemoryTracking<FileColumnChunksPtr> cached_column_chunks_,
-    SharedFileColumnChunksPtr shared_column_chunks_)
+    SharedFileColumnChunksPtr shared_column_chunks_,
+    KeptOffsetIndexesPtr kept_offset_indexes_)
 {
     file_footer = std::move(footer);
     cached_column_chunks = std::move(cached_column_chunks_);
     shared_column_chunks = std::move(shared_column_chunks_);
+    kept_offset_indexes = std::move(kept_offset_indexes_);
+}
+
+VectorWithMemoryTracking<KeptOffsetIndexes::Entry> Reader::takeReadOffsetIndexes()
+{
+    std::lock_guard lock(read_offset_indexes_mutex);
+    return std::exchange(read_offset_indexes, {});
 }
 
 size_t Reader::numColumnChunks(size_t row_group_idx) const
@@ -2086,14 +2164,23 @@ void Reader::initializePrefetches()
             if (use_offset_index && (!column.served_from_cache || !primitive_columns[column_idx].column_index_conditions.empty()) &&
                 column.meta->__isset.offset_index_offset && column.meta->__isset.offset_index_length)
             {
-                column.offset_index_prefetch = prefetcher.registerRange(
-                    size_t(column.meta->offset_index_offset),
-                    size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
+                /// An offset index read before is kept with the cached footer, already validated.
+                auto kept_offset_index = kept_offset_indexes
+                    ? kept_offset_indexes->get(row_group.row_group_idx, primitive_columns[column_idx].column_idx) : nullptr;
+                if (kept_offset_index)
+                {
+                    column.offset_index = *kept_offset_index;
+                    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheOffsetIndexHits);
+                }
+                else
+                    column.offset_index_prefetch = prefetcher.registerRange(
+                        size_t(column.meta->offset_index_offset),
+                        size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
             }
 
             /// Column index.
             column.use_column_index = !primitive_columns[column_idx].column_index_conditions.empty()
-                && column.offset_index_prefetch
+                && (column.offset_index_prefetch || !column.offset_index.page_locations.empty())
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
                 column.column_index_prefetch = prefetcher.registerRange(
@@ -3612,7 +3699,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
 }
 
-void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
+void Reader::decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group)
 {
     auto data = prefetcher.getRangeData(column.offset_index_prefetch);
     deserializeThriftStruct(column.offset_index, data.data(), data.size());
@@ -3656,6 +3743,21 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
     {
         column.offset_index.page_locations.clear();
         column.use_column_index = false;
+        return;
+    }
+
+    if (max_read_offset_indexes_bytes)
+    {
+        size_t bytes = KeptOffsetIndexes::entryBytes(column.offset_index);
+        std::lock_guard lock(read_offset_indexes_mutex);
+        if (read_offset_indexes_bytes + bytes <= max_read_offset_indexes_bytes)
+        {
+            read_offset_indexes_bytes += bytes;
+            read_offset_indexes.push_back(
+                {.row_group_idx = row_group.row_group_idx,
+                 .column_idx = column_info.column_idx,
+                 .offset_index = std::make_shared<const parq::OffsetIndex>(column.offset_index)});
+        }
     }
 }
 
@@ -3945,6 +4047,8 @@ static constexpr size_t max_coalesced_value_bytes = 8;
 
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
 {
+    ScopedZstdContext zstd_context;
+
     /// Allocate columns for values, null map, and array offsets.
     /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
     constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE) / 4;
@@ -4176,16 +4280,18 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (subchunk.dictionary_values)
     {
-        if (column_info.last_step_can_throw)
-        {
-            /// Drop the values no read row references: the step must not evaluate them.
-            ColumnIndex indexes(std::move(subchunk.column));
-            ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
-            subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
-        }
-        else
-            subchunk.column = ColumnReplicated::create(subchunk.dictionary_values->assumeMutable(), std::move(subchunk.column));
+        /// `dictionary_values` is still shared with the column chunk (other row subgroups read it too),
+        /// so it must not be aliased as mutable, and copying it for every row subgroup would be
+        /// expensive. Use the immutable `ColumnReplicated::create` overload, which shares the values.
+        /// The resulting `ColumnReplicated` itself is exclusively owned, so the outer `assumeMutable`
+        /// is sound; any later mutation has to go through `IColumn::mutate`, which unshares the values.
+        ColumnPtr values = std::move(subchunk.dictionary_values);
         subchunk.dictionary_values = nullptr;
+        ColumnIndex indexes(std::move(subchunk.column));
+        /// Drop the values no read row references: the step must not evaluate them.
+        if (column_info.last_step_can_throw)
+            values = indexes.removeUnusedRowsInIndexedData(values);
+        subchunk.column = ColumnReplicated::create(values, std::move(indexes))->assumeMutable();
         ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
 
@@ -4204,7 +4310,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (column_info.levels_only_arrays)
     {
-        /// Nothing takes the values, and the row subgroup keeps its columns until the end of the read.
+        /// Nothing takes the values: free them now instead of when the row subgroup is delivered.
         subchunk.column.reset();
         subchunk.null_map.reset();
         subchunk.arrays_offsets.resize(column_info.levels_only_arrays);
