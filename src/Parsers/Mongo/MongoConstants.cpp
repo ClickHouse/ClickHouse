@@ -1,6 +1,7 @@
 #include <unordered_set>
 #include <Parsers/Mongo/MongoConstants.h>
 
+#include <cmath>
 #include <limits>
 
 #include <Core/Field.h>
@@ -364,6 +365,37 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
         rapidjson::Value value;
         value.CopyFrom(member.value, allocator);
         return {"String", std::move(value)};
+    }
+
+    /// The numeric wrappers are read and range-checked the same way as a direct value, in
+    /// `tryParseMongoConstant`: an embedded document must not accept a number its field would refuse.
+    if (name == "$numberInt")
+    {
+        rapidjson::Value value;
+        value.SetInt(extendedJSONNumber<Int32>(member.value, name));
+        return {"Int32", std::move(value)};
+    }
+
+    if (name == "$numberLong")
+    {
+        rapidjson::Value value;
+        value.SetInt64(extendedJSONNumber<Int64>(member.value, name));
+        return {"Int64", std::move(value)};
+    }
+
+    if (name == "$numberDouble")
+    {
+        const Float64 number = extendedJSONNumber<Float64>(member.value, name);
+        /// JSON has no spelling for a NaN or an infinity, so such a value cannot be a part of a
+        /// stored document, and writing it would produce a document that cannot be parsed.
+        if (!std::isfinite(number))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The non-finite value of '$numberDouble'{} is not supported inside a document",
+                describeMongoField(field_name));
+        rapidjson::Value value;
+        value.SetDouble(number);
+        return {"Float64", std::move(value)};
     }
 
     if (name == "$numberDecimal" && member.value.IsString())
