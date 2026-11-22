@@ -32,11 +32,11 @@ CollectionShape getCollectionShape(const CollectionRef & collection, std::shared
         "SELECT countIf(name = {} AND type = 'JSON'), countIf(name = {}), count(), "
         "(SELECT count() FROM system.tables WHERE database = {} AND table = {} AND comment = {}) "
         "FROM system.columns WHERE database = {} AND table = {} FORMAT TSV",
-        quoteString(String(Mongo::DOCUMENT_COLUMN)),
-        quoteString(String(Mongo::OBJECT_ID_COLUMN)),
+        quoteString(Mongo::DOCUMENT_COLUMN),
+        quoteString(Mongo::OBJECT_ID_COLUMN),
         quoteString(collection.database),
         quoteString(collection.collection),
-        quoteString(String(Mongo::DOCUMENT_COLLECTION_COMMENT)),
+        quoteString(Mongo::DOCUMENT_COLLECTION_COMMENT),
         quoteString(collection.database),
         quoteString(collection.collection)));
 

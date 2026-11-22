@@ -262,7 +262,7 @@ rapidjson::Value documentToStore(const rapidjson::Value & document, rapidjson::D
 
         rapidjson::Value key;
         key.CopyFrom(it->name, allocator);
-        rapidjson::Value value = convertMongoExtendedJSONWrappersDeep(it->value, String(name), allocator);
+        rapidjson::Value value = convertMongoExtendedJSONWrappersDeep(it->value, name, allocator);
         stored.AddMember(key, value, allocator);
     }
     return stored;
@@ -312,10 +312,10 @@ bool InsertHandler::createCollection(const CollectionRef & collection, std::shar
             fmt::format(
                 "CREATE TABLE {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {} COMMENT {}",
                 collection.getQualifiedName(),
-                backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
-                backQuoteIfNeed(String(Mongo::DOCUMENT_COLUMN)),
-                backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
-                quoteString(String(Mongo::DOCUMENT_COLLECTION_COMMENT))));
+                backQuoteIfNeed(Mongo::OBJECT_ID_COLUMN),
+                backQuoteIfNeed(Mongo::DOCUMENT_COLUMN),
+                backQuoteIfNeed(Mongo::OBJECT_ID_COLUMN),
+                quoteString(Mongo::DOCUMENT_COLLECTION_COMMENT)));
     }
     catch (const Exception & e)
     {
