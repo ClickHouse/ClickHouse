@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -528,6 +529,15 @@ ColumnPtr makeNullableColumn(const DataTypePtr & nested_type, const std::vector<
     return ColumnNullable::create(std::move(nested), std::move(null_map));
 }
 
+/// Rows of a `LowCardinality(Nullable(...))` column, `std::nullopt` is a NULL.
+ColumnPtr makeLowCardinalityNullableColumn(const DataTypePtr & type, const std::vector<std::optional<String>> & rows)
+{
+    auto column = type->createColumn();
+    for (const auto & value : rows)
+        column->insert(value ? Field(*value) : Field());
+    return column;
+}
+
 }
 
 TEST(RuntimeFilterSerialization, TransportedPartialsOfNullableKeysSkipNulls)
@@ -566,6 +576,41 @@ TEST(RuntimeFilterSerialization, TransportedPartialsOfNullableKeysSkipNulls)
             EXPECT_EQ(maskToVector(mask, 4), (std::vector<bool>{true, true, false, false})) << type->getName();
             EXPECT_EQ(rows_passed.value_or(0), 2u) << type->getName();
         }
+    }
+}
+
+TEST(RuntimeFilterSerialization, TransportedPartialsOfLowCardinalityNullableKeysSkipNulls)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(makeNullable(stringType()));
+    const auto make_partial = [&](UInt64 from, UInt64 to)
+    {
+        std::vector<std::optional<String>> rows{std::nullopt, std::nullopt};
+        for (UInt64 value = from; value < to; ++value)
+            rows.emplace_back(std::to_string(value));
+        AdaptiveSetRuntimeFilter filter(type, makeGeometry(), /*distinct_keys_hint_=*/std::nullopt, /*distinct_keys_hint_matches_filter_key_=*/false);
+        filter.boundExactSetByKeyBytes();
+        filter.insert(makeLowCardinalityNullableColumn(type, rows));
+        return serializeToString(filter);
+    };
+    const String bloom_state = make_partial(1, 1001);
+    const String exact_state = make_partial(5001, 5011);
+    ASSERT_TRUE(isBloomState(bloom_state));
+    ASSERT_FALSE(isBloomState(exact_state));
+
+    for (const auto & [first, second] : {std::pair{bloom_state, exact_state}, std::pair{exact_state, bloom_state}})
+    {
+        ReadBufferFromString first_in(first);
+        auto merged = AdaptiveSetRuntimeFilter::deserialize(first_in, type, makeGeometry());
+        ReadBufferFromString second_in(second);
+        merged.mergeFrom(AdaptiveSetRuntimeFilter::deserialize(second_in, type, makeGeometry()));
+        finishInsert(merged);
+
+        /// A key of each partial, a NULL, and the default nested value.
+        const auto probe_column = makeLowCardinalityNullableColumn(type, {"10", "5005", std::nullopt, ""});
+        std::optional<size_t> rows_passed;
+        const auto mask = merged.find({probe_column, type, "probe"}, rows_passed);
+        EXPECT_EQ(maskToVector(mask, 4), (std::vector<bool>{true, true, false, false}));
+        EXPECT_EQ(rows_passed.value_or(0), 2u);
     }
 }
 

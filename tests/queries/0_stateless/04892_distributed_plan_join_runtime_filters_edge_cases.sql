@@ -10,6 +10,8 @@ INSERT INTO mid SELECT number * 10 FROM numbers(10000);
 INSERT INTO huge SELECT number, number, toString(number) FROM numbers(1000000);
 INSERT INTO big_nullable SELECT number, number FROM numbers(100000);
 INSERT INTO small_nullable SELECT number * 100 FROM numbers(100);
+INSERT INTO big_nullable SELECT NULL, number FROM numbers(100000, 1000);
+INSERT INTO small_nullable SELECT NULL FROM numbers(10);
 
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;

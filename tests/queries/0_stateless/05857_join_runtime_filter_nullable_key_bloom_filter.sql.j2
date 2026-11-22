@@ -111,6 +111,23 @@ FROM (EXPLAIN ANALYZE SELECT count() FROM probe AS p INNER JOIN (SELECT * FROM b
 WHERE explain LIKE '%Runtime filter (%';
 {% endfor %}
 
+-- `RIGHT ANTI JOIN` builds a positive filter: the Bloom filter past the limit, the exact set below it.
+{% for limit in [1, 10000] %}
+SELECT 'right_anti {{ limit }}', replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
+FROM (EXPLAIN ANALYZE SELECT count() FROM probe AS p RIGHT ANTI JOIN (SELECT * FROM build WHERE grp = 0) AS b ON p.ki = b.ki
+    SETTINGS join_runtime_filter_exact_values_limit = {{ limit }}, max_threads = 1)
+WHERE explain LIKE '%Runtime filter (%';
+{% endfor %}
+
+-- Every type of Matrix C gets a Bloom filter once its exact set overflows.
+{% for type, probe_key, build_key in types %}
+SELECT '{{ type }}', replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
+FROM (EXPLAIN ANALYZE SELECT count() FROM (SELECT {{ probe_key }} AS k, v FROM probe) AS p
+    INNER JOIN (SELECT {{ build_key }} AS k, id FROM build WHERE grp = 0) AS b ON p.k = b.k
+    SETTINGS join_runtime_filter_exact_values_limit = 1, max_threads = 1)
+WHERE explain LIKE '%Runtime filter (%';
+{% endfor %}
+
 -- A probe side of only NULLs: the nested default value is a key of the build side, but no row passes.
 SELECT count() FROM null_probe AS p INNER JOIN (SELECT * FROM build WHERE grp = 0) AS b ON p.ki = b.ki
 SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = '05857_null_probe_int';
