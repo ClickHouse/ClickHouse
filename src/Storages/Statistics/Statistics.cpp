@@ -498,8 +498,9 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
 
 std::optional<Float64> ColumnStatistics::estimateEqualForAll(const IColumn & values) const
 {
-    /// `estimateEqual` depends on the value only for NaN, in `Basic` and in these statistics.
-    if (values.empty() || stats.contains(StatisticsType::TDigest) || stats.contains(StatisticsType::CountMinSketch))
+    /// `estimateEqual` has a common estimate only with a cardinality, and depends on the value only for NaN, in `Basic`
+    /// and in these statistics.
+    if (values.empty() || !hasCardinality() || stats.contains(StatisticsType::TDigest) || stats.contains(StatisticsType::CountMinSketch))
         return std::nullopt;
 
     const auto basic = stats.find(StatisticsType::Basic);
