@@ -1592,13 +1592,16 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
                 /// The stored values of an invalidated system column are not used, so the skip indices built from
-                /// them are refused on the source part (see `getDeserializedFormatImpl`). The mutation writes valid
+                /// them are refused on the source part (see `IMergeTreeIndex::getDeserializedFormat`). The mutation writes valid
                 /// values, and the new part may not invalidate the column (see `IMergeTreeDataPart::ignoresStoredBlockOffset`),
-                /// so hardlinked indices would be used with the stale values. Rebuild them from the written values.
+                /// so hardlinked indices and projections would be used with the stale values. Rebuild them from the written values.
                 if (merge_tree_data_part->isSystemColumnInvalidated(command.column_name))
                 {
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
+                        if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
+                            continue;
+
                         const auto & index_cols = index.expression->getRequiredColumns();
                         if (std::find(index_cols.begin(), index_cols.end(), command.column_name) == index_cols.end())
                             continue;
@@ -1606,6 +1609,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                         for (const auto & col : index_cols)
                             dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
                         materialized_indices.insert(index.name);
+                    }
+
+                    for (const auto & projection : metadata_snapshot->getProjections())
+                    {
+                        if (!source.hasProjection(projection.name))
+                            continue;
+
+                        const auto & projection_cols = projection.required_columns;
+                        if (std::find(projection_cols.begin(), projection_cols.end(), command.column_name) == projection_cols.end())
+                            continue;
+
+                        for (const auto & col : projection_cols)
+                            dependencies.emplace(col, ColumnDependency::PROJECTION);
+                        materialized_projections.insert(projection.name);
                     }
                 }
 
