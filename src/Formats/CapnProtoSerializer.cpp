@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int CAPN_PROTO_BAD_CAST;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 namespace
@@ -1101,6 +1102,14 @@ namespace
                 field_builder = std::make_unique<ListBuilder>(capnp::DynamicList::Builder(list_schema, initListBuilder(parent_builder, offset_or_index, size)), size);
 
             auto & list_builder = assert_cast<ListBuilder &>(*field_builder);
+            /// Several columns with flattened names (like `l.x` and `l.y`) write to the same list.
+            if (list_builder.nested_builders.size() != size)
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Arrays that are written to the same CapnProto list have different sizes: {} and {}",
+                    list_builder.nested_builders.size(),
+                    size);
+
             for (UInt32 i = 0; i != size; ++i)
                 nested_serializer->writeRow(nested_column, list_builder.nested_builders[i], list_builder.impl, i, offset + i);
         }
