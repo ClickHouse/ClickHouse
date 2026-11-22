@@ -708,10 +708,17 @@ struct OneSampleTTestMoments
 
     void merge(const OneSampleTTestMoments & rhs)
     {
+        /// The population mean is set by the first value a state sees, so a state without values does not
+        /// have it yet. A merge usually starts from such a state (`-Merge`, `finalizeAggregation`,
+        /// `WITH TOTALS`, the results of several shards or parts), which has to take the mean from the
+        /// state it is merged with: otherwise the test is done against zero. It is the same for all the
+        /// states of one aggregation, so a state that already has values keeps its own.
+        if (n == 0 && rhs.n != 0)
+            population_mean = rhs.population_mean;
+
         n += rhs.n;
         x1 += rhs.x1;
         x2 += rhs.x2;
-        // Note: population_mean should be the same for merged data
     }
 
     void write(WriteBuffer & buf) const
