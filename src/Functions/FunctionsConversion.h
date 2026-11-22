@@ -2201,9 +2201,8 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
         if constexpr (!std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
         {
-            /// The loop must remain scalar: the scalar and the vector instructions convert a value outside of the range of
-            /// the result type differently, and the result of a row would depend on whether it is converted by the vectorized
-            /// body or by the scalar remainder. Interleaving would let the SLP vectorizer pack the interleaved iterations.
+            /// The loop must remain scalar and not interleaved (the SLP vectorizer can pack interleaved iterations): scalar and vector
+            /// instructions convert an out-of-range value differently, so the result of a row would depend on which of them converts it.
             #pragma clang loop vectorize(disable) interleave(disable)
             for (size_t i = 0; i < input_rows_count; ++i)
                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
