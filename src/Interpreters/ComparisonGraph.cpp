@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -699,6 +700,10 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
     else
     {
         const auto & equal_constant = graph.vertices[index].getConstant();
+
+        /// `CHECK f = 0` holds for `f = -0`, but `1 / f` is `-inf` and `1 / 0` is `inf`.
+        if (hasTypeThatCanContainFloat(node->getResultType()))
+            return std::nullopt;
 
         /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but '9' cast to the `Enum` of `e` is the name '9'.
         if (mixesEnumAndString(equal_constant->getResultType(), node->getResultType()))

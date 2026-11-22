@@ -14,6 +14,7 @@
 
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Storages/IStorage.h>
 
@@ -527,6 +528,10 @@ public:
     {
         auto component_id_it = query_node_to_component.find(node);
         if (component_id_it == query_node_to_component.end())
+            return;
+
+        /// `CHECK f = g` holds for `f = -0` and `g = 0`, but `1 / f` is `-inf` and `1 / g` is `inf`.
+        if (hasTypeThatCanContainFloat(node->getResultType()))
             return;
 
         const auto component_id = component_id_it->second;
