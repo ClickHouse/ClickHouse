@@ -62,6 +62,8 @@ OPTIMIZE TABLE t_small_read_top_k FINAL;
 SET use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000;
 -- 20 marks: 2 tasks and a remainder of 4.
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT v FROM t_small_read_top_k ORDER BY v LIMIT 10) WHERE explain ILIKE '%MergeTreeSelect%';
+-- The same with more than 16 requested streams.
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT v FROM t_small_read_top_k ORDER BY v LIMIT 10 SETTINGS max_threads = 32) WHERE explain ILIKE '%MergeTreeSelect%';
 -- 11 marks: 1 task and a remainder of 3.
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT v FROM t_small_read_top_k WHERE k < 11 * 8192 ORDER BY v LIMIT 10) WHERE explain ILIKE '%MergeTreeSelect%';
 -- Without TopK, one stream.

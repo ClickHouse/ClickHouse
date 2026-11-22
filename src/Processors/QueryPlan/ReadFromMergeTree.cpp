@@ -2096,7 +2096,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         /// TopK, which sorts the rows anyway. With the columns cache, the pool does not align tasks to the stripes
         /// of the cache when a stripe exceeds the share of a stream, so the small tasks stay small.
         if (allow_spreading_small_read && pool_cuts_tasks_of_exact_size
-            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && (num_streams > 1 || top_k_filter_info)
+            && (top_k_filter_info || (requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1))
             && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
