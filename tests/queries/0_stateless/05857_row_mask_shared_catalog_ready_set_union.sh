@@ -61,7 +61,39 @@ SELECT 'replicas', count() = 2 AND uniqExact(serverUUID()) = 2
 FROM clusterAllReplicas('test_cluster_shared_catalog', system.one);
 SQL
 
-$CLICKHOUSE_CLIENT --query 'SYSTEM FLUSH LOGS ON CLUSTER test_cluster_shared_catalog part_log' >/dev/null
+# `mutations_sync` may return before the `MutatePart` entries reach `part_log`.
+# Wait for both tables before checking the dispatch counters.
+poll_deadline=$((SECONDS + 60))
+both_logged=0
+while (( SECONDS < poll_deadline ))
+do
+    poll_seconds=$((poll_deadline - SECONDS))
+    (( poll_seconds > 0 )) || break
+    timeout --foreground -k 1 "$poll_seconds" $CLICKHOUSE_CLIENT --query \
+        'SYSTEM FLUSH LOGS ON CLUSTER test_cluster_shared_catalog part_log' >/dev/null
+    poll_seconds=$((poll_deadline - SECONDS))
+    (( poll_seconds > 0 )) || break
+    both_logged=$(timeout --foreground -k 1 "$poll_seconds" $CLICKHOUSE_CLIENT --max_execution_time 10 --query "
+        SELECT countIf(table = 'test_05857_off') > 0 AND countIf(table = 'test_05857_on') > 0
+        FROM clusterAllReplicas('test_cluster_shared_catalog', system.part_log)
+        WHERE event_date >= yesterday()
+            AND database = currentDatabase()
+            AND (table, table_uuid) IN
+            (
+                SELECT name, uuid FROM system.tables
+                WHERE database = currentDatabase() AND name IN ('test_05857_off', 'test_05857_on')
+            )
+            AND event_type = 'MutatePart' AND error = 0
+    ")
+    [[ "$both_logged" == 1 ]] && break
+    sleep 0.1
+done
+
+if [[ "$both_logged" != 1 ]]
+then
+    echo 'Timed out waiting for Shared Catalog row-mask mutation logs' >&2
+    exit 1
+fi
 
 $CLICKHOUSE_CLIENT --multiquery <<'SQL'
 SELECT 'dispatch',
