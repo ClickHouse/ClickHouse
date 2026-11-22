@@ -1,4 +1,16 @@
--- Tags: shared-catalog
+#!/usr/bin/env bash
+# Tags: shared-catalog
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+set -euo pipefail
+
+# Keep unrelated parallel replica randomization out of this mutation test.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas=0 --automatic_parallel_replicas_mode=0"
+
+$CLICKHOUSE_CLIENT --multiquery <<'SQL'
 
 DROP TABLE IF EXISTS test_05857_off;
 DROP TABLE IF EXISTS test_05857_on;
@@ -45,6 +57,28 @@ ALTER TABLE test_05857_on
     UPDATE _row_exists = 0 WHERE k IN (SELECT toUInt64(number + 3) FROM numbers(2))
 SETTINGS mutations_sync = 2;
 
+SELECT 'replicas', count() = 2 AND uniqExact(serverUUID()) = 2
+FROM clusterAllReplicas('test_cluster_shared_catalog', system.one);
+SQL
+
+$CLICKHOUSE_CLIENT --query 'SYSTEM FLUSH LOGS ON CLUSTER test_cluster_shared_catalog part_log' >/dev/null
+
+$CLICKHOUSE_CLIENT --multiquery <<'SQL'
+SELECT 'dispatch',
+    countIf(table = 'test_05857_off') > 0,
+    sumIf(ProfileEvents['RowMaskReadySubquerySetUnionBatches'], table = 'test_05857_off') = 0,
+    countIf(table = 'test_05857_on') > 0,
+    sumIf(ProfileEvents['RowMaskReadySubquerySetUnionBatches'], table = 'test_05857_on') > 0
+FROM clusterAllReplicas('test_cluster_shared_catalog', system.part_log)
+WHERE event_date >= yesterday()
+    AND database = currentDatabase()
+    AND (table, table_uuid) IN
+    (
+        SELECT name, uuid FROM system.tables
+        WHERE database = currentDatabase() AND name IN ('test_05857_off', 'test_05857_on')
+    )
+    AND event_type = 'MutatePart' AND error = 0;
+
 SELECT 'before_off', k, sumMerge(s) FROM test_05857_off GROUP BY k ORDER BY k;
 SELECT 'before_on', k, sumMerge(s) FROM test_05857_on GROUP BY k ORDER BY k;
 
@@ -65,3 +99,4 @@ SELECT 'after_on', k, sumMerge(s) FROM test_05857_on GROUP BY k ORDER BY k;
 
 DROP TABLE test_05857_off;
 DROP TABLE test_05857_on;
+SQL
