@@ -694,6 +694,11 @@ protected:
     /// Set for the context `system.tables` reads table totals with: a storage that would have to read remote
     /// storage (e.g. data lake metadata) to compute `totalRows`/`totalBytes` returns nullopt instead.
     bool totals_without_storage_access = false;
+    /// Set for the context the check of row policies before `ALTER TABLE` analyzes a policy with. The analysis reads no data,
+    /// so the tables of the policy resolve, and a plan that is only analyzed uses them, without a grant of the user.
+    /// All other access checks apply, e.g. of a table function, a dictionary, the function `file`, or of a scalar subquery
+    /// that the analysis executes (in the arguments of a table function).
+    bool analyze_tables_without_grants = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -2137,6 +2142,9 @@ public:
 
     [[nodiscard]] bool totalsWithoutStorageAccess() const { return totals_without_storage_access; }
     void setTotalsWithoutStorageAccess(bool value) { totals_without_storage_access = value; }
+
+    [[nodiscard]] bool analyzeTablesWithoutGrants() const { return analyze_tables_without_grants; }
+    void setAnalyzeTablesWithoutGrants(bool value) { analyze_tables_without_grants = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 

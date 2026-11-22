@@ -1731,6 +1731,7 @@ ContextData::ContextData(const ContextData &o) :
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     totals_without_storage_access(o.totals_without_storage_access),
+    analyze_tables_without_grants(o.analyze_tables_without_grants),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     is_metadata_query(o.is_metadata_query),

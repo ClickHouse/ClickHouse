@@ -202,12 +202,11 @@ void checkRowPoliciesBeforeAlter(
     /// built only when a policy reads a modified column
     StorageSnapshotPtr new_storage_snapshot;
 
-    /// binding the lookup tables of a policy needs no grant of the user who alters the table: a copy of the global context has full access
-    auto analysis_context = Context::createCopy(context->getGlobalContext());
+    /// the analysis reads no data, so the tables of a policy need no grant of the user who alters the table;
+    /// a table function or a function such as `file` still needs the grants of the user, as in a read
+    auto analysis_context = Context::createCopy(context);
     analysis_context->makeQueryContext();
-    analysis_context->setSettings(context->getSettingsRef());
-    if (const auto & database = context->getCurrentDatabase(); !database.empty())
-        analysis_context->setCurrentDatabase(database);
+    analysis_context->setAnalyzeTablesWithoutGrants(true);
 
     const auto tables = tablesWithPoliciesOnColumnsOf(table, context);
 
