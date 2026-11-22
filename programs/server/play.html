@@ -2605,7 +2605,6 @@ function freshResourceState()
         io_at_ns: 0,
         io_sampled: 0,
         io: 0, /// Smoothed IO rate, in bytes/second.
-        has_events: false, /// Whether any `profile_events` batch arrived, so the CPU meter has data.
         /// Per-host memory/disk gauges, keyed by host name: { memory, peak, disk } in bytes.
         /// The display shows the total across hosts and, for a distributed query (many hosts),
         /// the maximum over hosts as "max/host" - like `clickhouse-client`.
@@ -2633,19 +2632,12 @@ function accumulateResourceEvents(state, events)
             continue;
         }
 
-        /// Exclude compressed `NetworkSendBytes`, whose service bytes cannot be separated; the result leg
-        /// counts decoded payload bytes in `makeEventStreamHandler`, more than a compressed response sends.
-        /// An HTTP query does not count `NativeProtocolDataBytes` itself, so it only comes from the remote
-        /// shards of a distributed query, for their result sends to the initiator, like in `clickhouse-client`.
-        /// Streaming exchanges of a distributed plan are not counted by the `Network*Bytes` events.
-        /// `NativeProtocolDataReceiveBytes` rather than `NetworkReceiveBytes`, which also counts protocol service
-        /// traffic, such as the `Progress` and `ProfileEvents` packets of remote servers.
-        /// `InterfaceHTTPReceiveBytes` is the request body the browser uploads (e.g. `INSERT` data), without the headers.
+        /// The same events as in `clickhouse-client`. Streaming exchanges of a distributed plan are not
+        /// counted by the `Network*Bytes` events.
         if (e.name === 'OSReadBytes' || e.name === 'OSWriteBytes' || e.name === 'ReadBufferFromS3Bytes'
             || e.name === 'WriteBufferFromS3Bytes' || e.name === 'ReadBufferFromAzureBytes' || e.name === 'WriteBufferFromAzureBytes'
             || e.name === 'ReadWriteBufferFromHTTPBytes' || e.name === 'WriteBufferFromHTTPBytes'
-            || e.name === 'NativeProtocolDataBytes' || e.name === 'NativeProtocolDataReceiveBytes'
-            || e.name === 'InterfaceHTTPReceiveBytes'
+            || e.name === 'NetworkSendBytes' || e.name === 'NetworkReceiveBytes'
             || e.name === 'StreamingExchangeSendBytes' || e.name === 'StreamingExchangeReceiveBytes')
         {
             state.io_bytes += value;
@@ -2666,15 +2658,6 @@ function accumulateResourceEvents(state, events)
         else if (e.name === 'TemporaryDataOnDiskUsage')
             host.disk = value;
     }
-    state.has = true;
-    state.has_events = true;
-}
-
-/// Add the decoded payload bytes of a result packet to the IO meter. It makes the meter live by
-/// itself, so a stream without `profile_events` (e.g. `send_profile_events = 0`) still shows it.
-function accumulateResultPayload(state, bytes)
-{
-    state.io_bytes += bytes;
     state.has = true;
 }
 
@@ -3002,9 +2985,9 @@ class QueryProgressElement extends HTMLElement
         this._renderResources();
     }
 
-    /// Show a (tab-owned) resource state after result payload bytes were added to it: samples only
-    /// the IO rate, since the CPU time arrives only with `profile_events` batches and sampling it in
-    /// between would see idle intervals.
+    /// Show a (tab-owned) resource state after a `progress` packet: samples only the IO rate, since
+    /// the CPU time arrives only with `profile_events` batches and sampling it in between would see
+    /// idle intervals.
     renderPayloadFrom(r)
     {
         this._resources_state = r;
@@ -3057,14 +3040,13 @@ class QueryProgressElement extends HTMLElement
         /// query (many hosts), also show the maximum over hosts as "max/host", like the client.
         /// Each metric is padded to the widest it has been so the text does not bounce as values
         /// grow and shrink (e.g. CPU going from "12.3" to "9.1").
-        const parts = [];
-        if (r.has_events) parts.push(this._padMetric('cpu', `${Math.max(0, r.cpu).toFixed(1)} CPU`));
+        const parts = [this._padMetric('cpu', `${Math.max(0, r.cpu).toFixed(1)} CPU`)];
         if (mem_total > 0) parts.push(this._padMetric('ram', `${formatReadableBytes(mem_total)} RAM`));
         if (mem_max < mem_total) parts.push(this._padMetric('ram_max', `${formatReadableBytes(mem_max)} max/host`));
         if (disk_total > 0) parts.push(this._padMetric('disk', `${formatReadableBytes(disk_total)} disk`));
         if (disk_max < disk_total) parts.push(this._padMetric('disk_max', `${formatReadableBytes(disk_max)} max/host`));
-        /// Live IO rate; its result leg is decoded payload bytes, so it can exceed the compressed download rate.
-        if (r.io > 0) parts.push(this._padMetric('io', `${formatReadableBytes(r.io)}/s IO`));
+        /// Live IO rate. A small rate is mostly the progress packets themselves, so it is not shown.
+        if (r.io >= 1e6) parts.push(this._padMetric('io', `${formatReadableBytes(r.io)}/s IO`));
 
         this._resources_text = parts.join(', ');
         this._renderProgressLine();
@@ -10984,9 +10966,8 @@ function plainOutputDropsTotalsAndExtremes(format)
 
 /// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
 /// element. `options.onStop` is called when the result element asks to stop (e.g. a row limit was
-/// reached); `options.resourceMeter` receives profile-event batches (on replay, with the replay clock
-/// in nanoseconds as the second argument) and `options.payloadMeter` receives decoded result-payload
-/// byte counts for the live meters;
+/// reached); `options.resourceMeter` receives profile-event batches for the live meters (on replay,
+/// with the replay clock in nanoseconds as the second argument);
 /// `options.onBytes`, if given (a non-default output format under the base64 wire, see
 /// `makeVerbatimPayloadSink`), receives the base64-decoded payload bytes; `options.onException` is
 /// called when an `exception` packet arrives (the query failed even if the HTTP status was already
@@ -11037,11 +11018,6 @@ function makeEventStreamHandler(targetResultEl, options = {})
     {
         if (name === 'data' || name === 'totals' || name === 'extremes')
         {
-            const payload_bytes = options.base64
-                ? base64ToBytes(dataLines.join(''))
-                : new TextEncoder().encode(dataLines.join('\n'));
-            if (options.payloadMeter) options.payloadMeter(payload_bytes.length);
-
             /// Both verbatim modes below (the base64 bytes and the raw text) rebuild the output of
             /// the format itself by concatenating the payloads, so for a format whose plain output
             /// drops the totals and the extremes rows only the `data` packets belong to it - the
@@ -11055,11 +11031,11 @@ function makeEventStreamHandler(targetResultEl, options = {})
             /// off to the sink, which streams text incrementally or renders an image at the end.
             if (options.onBytes)
             {
-                options.onBytes(payload_bytes);
+                options.onBytes(base64ToBytes(dataLines.join('')));
                 return;
             }
             const payload = payload_decoder
-                ? payload_decoder.decode(payload_bytes, { stream: true })
+                ? payload_decoder.decode(base64ToBytes(dataLines.join('')), { stream: true })
                 : dataLines.join('\n');
             /// For a non-default output format (`options.rawText`), the payload is the format's own
             /// text (e.g. `Pretty`, `TSV`), shown verbatim: concatenating the payloads reproduces
@@ -11199,8 +11175,7 @@ function dispatchEventStreamBlock(block, handleEvent)
 /// after a reload / Back / Forward - where `clearCell` dropped that state - gets its shared
 /// CPU/RAM/peak-RAM line back. The IO rate is sampled on every replayed batch and on every replayed
 /// `progress` packet, from the later of the replay clock (`replayTimeSeconds`) and the packet's
-/// `elapsed_ns` - so a stream without `profile_events` (`send_profile_events = 0`) keeps its rate too -
-/// offset by the state's last sample time so that the next statement of the run continues the clock
+/// `elapsed_ns`, offset by the state's last sample time so that the next statement of the run continues the clock
 /// of the previous one. The state is only rebuilt here; the shared progress line is
 /// repainted from it by `syncActiveTabChrome` (which runs after the result is materialized),
 /// exactly as for a cell whose query streamed in the background. As live, it is one aggregate per
@@ -11230,7 +11205,6 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, format, ce
             sampleReplayIo(replay_ns);
         } : undefined,
         progressMeter: cell ? (elapsed_ns) => sampleReplayIo(elapsed_ns) : undefined,
-        payloadMeter: cell ? (bytes) => accumulateResultPayload(cell.resources, bytes) : undefined,
         onBytes: verbatim ? (bytes) => verbatim.onBytes(bytes) : undefined,
     });
     for (const block of text.split('\n\n'))
@@ -11339,11 +11313,6 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
         rawText,
         format,
         base64,
-        payloadMeter: (bytes) => {
-            accumulateResultPayload(cell.resources, bytes);
-            if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
-            sampleBackgroundIo();
-        },
         advanceClock: (stream_elapsed_ns) => {
             const elapsed_ns = io_clock_base_ns + stream_elapsed_ns;
             if (stream_elapsed_ns && cell.progress && cell.progress.elapsed_ns < elapsed_ns)
@@ -11351,7 +11320,7 @@ async function readEventStream(response, targetResultEl, abortController, cell, 
             if (stream_elapsed_ns && cellOwnsChrome(cell) && progressEl._last_elapsed_ns < elapsed_ns)
                 progressEl._last_elapsed_ns = elapsed_ns;
         },
-        /// Progress packets advance the IO clock too, so the rate falls once the payload stops.
+        /// Progress packets advance the IO clock too, so the rate falls once the IO stops.
         progressMeter: () => {
             if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);
             sampleBackgroundIo();

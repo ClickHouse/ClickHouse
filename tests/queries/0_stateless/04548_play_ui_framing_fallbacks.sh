@@ -299,17 +299,16 @@ echo "$page" | grep -q -F 'return (tab.inFlight && tab.runCell) ? tab.runCell : 
 # cell that already holds the editor, one after handing it the editor first.
 [ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 5 ] && echo 'a cell run ends the tab run first: OK'
 echo "$page" | grep -q -F 'cancelTabRun(getActiveTab());' && echo 'Stop goes through the same path: OK'
-# Only decoded result payloads feed the browser-side network leg; both live and replay keep them.
-echo "$page" | grep -q -F 'if (options.payloadMeter) options.payloadMeter(payload_bytes.length);' && echo 'result payload bytes feed the IO meter: OK'
-echo "$page" | grep -q -F 'if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);' && echo 'live result payload bytes accumulate: OK'
-echo "$page" | grep -q -F 'payloadMeter: cell ? (bytes) => accumulateResultPayload(cell.resources, bytes) : undefined,' && echo 'replayed result payload bytes accumulate: OK'
+# The IO meter sums the plain network events and shows only a rate of at least 1 MB/s.
+echo "$page" | grep -q -F "|| e.name === 'NetworkSendBytes' || e.name === 'NetworkReceiveBytes'" && echo 'network bytes feed the IO meter: OK'
+echo "$page" | grep -q -F 'if (r.io >= 1e6) parts.push' && echo 'a small IO rate is not shown: OK'
 # A replayed stream samples the IO rate from its own clock, so a restored snapshot keeps the `IO` term.
 echo "$page" | grep -q -F 'sampleIoRate(cell.resources, io_clock_base_ns + io_clock_ns);' && echo 'replayed IO rate is sampled: OK'
-# The replayed `progress` packets sample it too, so a stream without `profile_events` keeps the rate.
+# The replayed `progress` packets sample it too.
 echo "$page" | grep -q -F 'if (options.progressMeter) options.progressMeter(+progress.elapsed_ns || 0);' \
     && echo "$page" | grep -q -F 'progressMeter: cell ? (elapsed_ns) => sampleReplayIo(elapsed_ns) : undefined,' \
     && echo 'replayed progress samples the IO rate: OK'
-# Live progress packets sample the IO rate too, so it falls once the payload stops (send_profile_events = 0).
+# Live progress packets sample the IO rate too, so it falls once the IO stops.
 echo "$page" | grep -A1 -F 'progressMeter: () => {' | grep -q -F 'if (cellOwnsChrome(cell)) progressEl.renderPayloadFrom(cell.resources);' \
     && echo 'live progress samples the IO rate: OK'
 # In `Run all`, each group's statement clocks are offset by the run elapsed time at the group's start,
@@ -317,12 +316,6 @@ echo "$page" | grep -A1 -F 'progressMeter: () => {' | grep -q -F 'if (cellOwnsCh
 echo "$page" | grep -q -F 'elapsed_ns: statementBaseNs[i] + (+e.detail.elapsed_ns || 0),' \
     && echo "$page" | grep -q -F 'cell.runElapsedBaseNs = group_base_ns;' \
     && echo 'live multi-statement IO clock is offset per group: OK'
-# The result sends of remote shards to the initiator count too: an HTTP query has no own `NativeProtocolDataBytes`.
-echo "$page" | grep -q -F "|| e.name === 'NativeProtocolDataBytes' || e.name === 'NativeProtocolDataReceiveBytes'" && echo 'remote native result sends feed the IO meter: OK'
-# The page sends the query and its data as the HTTP request body, so the browser's upload counts too.
-echo "$page" | grep -q -F "|| e.name === 'InterfaceHTTPReceiveBytes'" && echo 'browser upload feeds the IO meter: OK'
-# Result payload bytes make the meter live without any profile_events batch (send_profile_events = 0).
-echo "$page" | awk '/^function accumulateResultPayload/,/^}/' | grep -q -F 'state.has = true;' && echo 'result payload alone makes the meter live: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline
 # (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.

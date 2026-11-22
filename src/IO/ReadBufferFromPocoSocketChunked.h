@@ -86,10 +86,6 @@ public:
 
     bool hasBufferedData() const;
 
-    /// Bytes of chunk framing (chunk sizes and end markers) read so far. In chunked mode `count` gives
-    /// only the bytes of the packets themselves, so `count() + chunkFramingBytes()` is the bytes on the wire.
-    size_t chunkFramingBytes() const { return chunk_framing_bytes; }
-
     bool poll(size_t timeout_microseconds) override;
 
     Poco::Net::SocketAddress peerAddress() { return peer_address; }
@@ -108,7 +104,6 @@ private:
     UInt32 chunk_left = 0;       // chunk left to read from socket
     UInt32 next_chunk = 0;       // size of the next cnunk
     UInt8 chunked = 0;           // 0 - disabled; 1 - started; 2 - enabled;
-    size_t chunk_framing_bytes = 0;
 };
 
 }

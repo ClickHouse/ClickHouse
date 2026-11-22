@@ -27,7 +27,7 @@ struct ThreadEventData
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
 
-    /// Per-packet IO byte deltas, including explicit native result bytes when supported.
+    /// Per-packet IO byte deltas.
     UInt64 io_bytes = 0;
 
     // -1 used as flag 'is not shown for old servers'
@@ -111,8 +111,7 @@ private:
         double cpu_usage = 0;
         /// Average number of threads sleeping in throttlers or waiting for the IO scheduler.
         double waited = 0;
-        /// IO (disk + object storage + network) rate in bytes per second, without the native
-        /// protocol's own service packets (0 when the server does not report the underlying counters).
+        /// IO (disk + object storage + network) rate in bytes per second.
         double io_rate = 0;
         MemoryUsage memory;
         TempDataOnDiskUsage temp_data_on_disk;

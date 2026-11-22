@@ -1,5 +1,5 @@
-client-fed INSERT streams NativeProtocolDataReceiveBytes to the client: 1
-client-fed INSERT logs NativeProtocolDataReceiveBytes: 1
+client-fed INSERT streams NetworkReceiveBytes to the client: 1
+client-fed INSERT logs NetworkReceiveBytes: 1
 client-fed INSERT rows	100000
 url() write streams WriteBufferFromHTTPBytes to the client: 1
 url() write logs WriteBufferFromHTTPBytes: 1

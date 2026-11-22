@@ -213,7 +213,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     const ProfileSnapshot profile = getProfileSnapshot();
     double cpu_usage = std::max(profile.cpu_usage, 0.);
     double waited = std::max(profile.waited, 0.);
-    double io_rate = profile.io_rate;
+    /// A small rate is mostly the progress packets themselves, so it is not shown.
+    double io_rate = profile.io_rate >= 1'000'000 ? profile.io_rate : 0;
     auto [memory_usage, max_host_usage, peak_usage] = profile.memory;
     auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = profile.temp_data_on_disk;
 

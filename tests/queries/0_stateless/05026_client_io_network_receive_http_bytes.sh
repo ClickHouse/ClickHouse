@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# NativeProtocolDataReceiveBytes (client-fed INSERT), WriteBufferFromHTTPBytes and ReadWriteBufferFromHTTPBytes (url() write/read)
+# NetworkReceiveBytes (client-fed INSERT), WriteBufferFromHTTPBytes and ReadWriteBufferFromHTTPBytes (url() write/read)
 # must reach the client's ProfileEvents stream, which ClientBase::onProfileEvents sums into the live IO rate.
 
 # Prints the thread-group total of one counter as the client received it in the ProfileEvents stream.
@@ -30,12 +30,12 @@ query_id_prefix="05026_client_io_network_receive_http_bytes_${CLICKHOUSE_DATABAS
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_05026_io_upload (x UInt64) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_05026_io_http_write (x UInt64) ENGINE = Memory"
 
-# (a) A client-fed INSERT: the data packets read from the socket count as NativeProtocolDataReceiveBytes.
+# (a) A client-fed INSERT: the data packets read from the socket count as NetworkReceiveBytes.
 upload_bytes=$(seq 1 100000 | ${CLICKHOUSE_CLIENT} --query_id "${query_id_prefix}_upload" \
     --print-profile-events --profile-events-delay-ms=-1 \
-    -q "INSERT INTO t_05026_io_upload FORMAT TSV" 2>&1 | client_total NativeProtocolDataReceiveBytes)
-echo "client-fed INSERT streams NativeProtocolDataReceiveBytes to the client: $(( ${upload_bytes:-0} > 0 ))"
-echo "client-fed INSERT logs NativeProtocolDataReceiveBytes: $(query_log_counter_positive "${query_id_prefix}_upload" NativeProtocolDataReceiveBytes)"
+    -q "INSERT INTO t_05026_io_upload FORMAT TSV" 2>&1 | client_total NetworkReceiveBytes)
+echo "client-fed INSERT streams NetworkReceiveBytes to the client: $(( ${upload_bytes:-0} > 0 ))"
+echo "client-fed INSERT logs NetworkReceiveBytes: $(query_log_counter_positive "${query_id_prefix}_upload" NetworkReceiveBytes)"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'client-fed INSERT rows', count() FROM t_05026_io_upload"
 
 # (b) A write through url() to the server's own HTTP endpoint: the request body goes out through

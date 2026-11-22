@@ -1159,15 +1159,16 @@ async function main() {
                 };
             }
 
-            const payloadB64 = btoa('x'.repeat(1000));
+            const ioEvent = (bytes) => 'event: profile_events\\ndata: '
+                + JSON.stringify([{ thread_id: '0', host_name: 'h', name: 'NetworkSendBytes', value: String(bytes) }]) + '\\n\\n';
             const shortStream =
                 'event: progress\\ndata: {"read_rows":"1","read_bytes":"1000","total_rows_to_read":"1","elapsed_ns":"1000000000"}\\n\\n' +
-                'event: data\\ndata: ' + payloadB64 + '\\n\\n' +
+                ioEvent(1000) +
                 'event: progress\\ndata: {"read_rows":"1","read_bytes":"1000","total_rows_to_read":"1","elapsed_ns":"2000000000"}\\n\\n';
             const barrierStream =
                 'event: progress\\ndata: {"read_rows":"10","read_bytes":"0","total_rows_to_read":"10","elapsed_ns":"10000000000"}\\n\\n';
             const barrierWithIoStream =
-                'event: data\\ndata: ' + btoa('y'.repeat(50000)) + '\\n\\n' +
+                ioEvent(50000) +
                 'event: progress\\ndata: {"read_rows":"10","read_bytes":"50000","total_rows_to_read":"10","elapsed_ns":"10000000000"}\\n\\n';
 
             function setupCell(title, query) {
@@ -1185,7 +1186,7 @@ async function main() {
                 return cell;
             }
 
-            /// 1) Standalone 2-second statement with 1,000 result bytes.
+            /// 1) Standalone 2-second statement that sends 1,000 bytes.
             const soloCell = setupCell('Solo', 'SELECT short');
             clearCell(soloCell);
             soloCell.progressPhase = 'running';

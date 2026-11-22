@@ -224,8 +224,8 @@ namespace ProfileEvents
     extern const Event WriteBufferFromAzureBytes;
     extern const Event ReadWriteBufferFromHTTPBytes;
     extern const Event WriteBufferFromHTTPBytes;
-    extern const Event NativeProtocolDataBytes;
-    extern const Event NativeProtocolDataReceiveBytes;
+    extern const Event NetworkSendBytes;
+    extern const Event NetworkReceiveBytes;
     extern const Event StreamingExchangeSendBytes;
     extern const Event StreamingExchangeReceiveBytes;
 }
@@ -2327,10 +2327,8 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view azure_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromAzureBytes);
         std::string_view http_rw_bytes_name = ProfileEvents::getName(ProfileEvents::ReadWriteBufferFromHTTPBytes);
         std::string_view http_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromHTTPBytes);
-        std::string_view native_data_bytes_name = ProfileEvents::getName(ProfileEvents::NativeProtocolDataBytes);
-        /// Not `NetworkReceiveBytes`: it also counts protocol service traffic, such as the `Progress`
-        /// and `ProfileEvents` packets of remote servers, which is not query data.
-        std::string_view native_data_receive_bytes_name = ProfileEvents::getName(ProfileEvents::NativeProtocolDataReceiveBytes);
+        std::string_view network_send_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkSendBytes);
+        std::string_view network_receive_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
         /// `NetworkSendBytes` and `NetworkReceiveBytes` do not count the sockets of streaming exchanges.
         std::string_view exchange_send_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeSendBytes);
         std::string_view exchange_receive_bytes_name = ProfileEvents::getName(ProfileEvents::StreamingExchangeReceiveBytes);
@@ -2370,7 +2368,7 @@ void ClientBase::onProfileEvents(Block & block)
                 event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
                 || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
                 || event_name == http_rw_bytes_name || event_name == http_write_bytes_name
-                || event_name == native_data_bytes_name || event_name == native_data_receive_bytes_name
+                || event_name == network_send_bytes_name || event_name == network_receive_bytes_name
                 || event_name == exchange_send_bytes_name || event_name == exchange_receive_bytes_name)
                 thread_times[host_name].io_bytes += value;
             /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
