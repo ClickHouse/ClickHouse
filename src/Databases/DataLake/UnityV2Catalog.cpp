@@ -41,11 +41,6 @@ namespace DB::DatabaseDataLakeSetting
 namespace
 {
 
-bool hasValueAndItsNotNone(const std::string & value, const Poco::JSON::Object::Ptr & object)
-{
-    return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
-}
-
 /// `ALTER DATABASE ... MODIFY SETTING` on a Unity catalog may only switch the implementation.
 [[maybe_unused]] const bool unity_settings_alter_validator_registered = []
 {
@@ -79,24 +74,17 @@ static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials"
 
 /// Formats handled by the Delta reader. UniForm (`DELTA_UNIFORM_ICEBERG`) can be read as either
 /// Delta or Iceberg, and we choose to read it as Delta because the Delta log is the source of truth.
-static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> DELTA_READER_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
 /// Formats handled by the Iceberg reader (via the Iceberg REST catalog endpoint).
-static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
+[[clang::no_destroy]] static const std::unordered_set<std::string> ICEBERG_READER_FORMATS = {"ICEBERG"};
 
 /// Other table types (views, materialized views, streaming tables, foreign tables, shallow clones)
 /// do not support direct reads of their storage.
-static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
-
-/// An absent `table_type` does not reject the table; the format checks handle that case.
-static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
-{
-    return !hasValueAndItsNotNone("table_type", table_json)
-        || READABLE_TABLE_TYPES.contains(table_json->get("table_type").extract<String>());
-}
+[[clang::no_destroy]] static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
 
 /// Databricks reports managed Iceberg tables with `data_source_format` == `DELTA`,
 /// so only `securable_kind` tells them apart from plain Delta tables.
-static const std::unordered_set<std::string> ICEBERG_SECURABLE_KINDS = {
+[[clang::no_destroy]] static const std::unordered_set<std::string> ICEBERG_SECURABLE_KINDS = {
     "TABLE_DELTA_ICEBERG_MANAGED",
     "TABLE_DELTA_ICEBERG_EXTERNAL",
 };
@@ -107,14 +95,24 @@ static bool hasIcebergSecurableKind(const Poco::JSON::Object::Ptr & table_json)
         && ICEBERG_SECURABLE_KINDS.contains(table_json->get("securable_kind").extract<String>());
 }
 
-/// Backwards compatibility with the pre-unified Unity catalog, which accepted a table by
+/// Backwards compatibility with the Delta-only Unity catalog, which accepted a table by
 /// `securable_kind` alone. Delta tables are documented to always carry `data_source_format`,
 /// so this likely never fires, but it keeps the shipped acceptance rule for records without the format.
 static bool hasCompatDeltaSecurableKind(const Poco::JSON::Object::Ptr & table_json)
 {
-    static const std::unordered_set<std::string> compat_delta_kinds = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
     return hasValueAndItsNotNone("securable_kind", table_json)
-        && compat_delta_kinds.contains(table_json->get("securable_kind").extract<String>());
+        && UNITY_DELTA_SECURABLE_KINDS.contains(table_json->get("securable_kind").extract<String>());
+}
+
+/// An absent `table_type` does not reject the table; the format checks handle that case.
+static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
+{
+    if (!hasValueAndItsNotNone("table_type", table_json)
+        || READABLE_TABLE_TYPES.contains(table_json->get("table_type").extract<String>()))
+        return true;
+
+    /// Backwards compatibility with the Delta-only Unity catalog, which reads a Delta table with any `table_type`.
+    return isUnityDeltaTable(table_json);
 }
 
 struct UnityV2CatalogFullSchemaName
@@ -471,6 +469,14 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
     /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
     /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
     const auto table_type = getTableType(full_table_name);
+
+    /// The data fate on drop is known only for these types.
+    if (!READABLE_TABLE_TYPES.contains(table_type))
+        throw DB::Exception(
+            DB::ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot drop table {}.{} because it has table_type {} in Unity catalog. Droppable table types are: [{}]",
+            namespace_name, table_name, table_type, fmt::join(READABLE_TABLE_TYPES, ", "));
+
     const bool data_will_be_deleted = table_type == "MANAGED";
     if (data_will_be_deleted != delete_data)
         throw DB::Exception(
@@ -804,7 +810,8 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
     /// Iceberg credentials are vended by the Iceberg REST catalog.
     if (table_metadata.getTableFormat() == DataLakeTableFormat::ICEBERG)
     {
-        return [this, table_id, table_metadata]() -> std::shared_ptr<IStorageCredentials>
+        /// `self` keeps catalog alive while S3 client holds this callback.
+        return [this, self = shared_from_this(), table_id, table_metadata]() -> std::shared_ptr<IStorageCredentials>
         {
             /// Resolved per call, because refreshing the token replaces `iceberg_rest_catalog`.
             return requestWithRetry([&](bool force_refresh) -> std::shared_ptr<IStorageCredentials>
@@ -841,7 +848,8 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getWriteCredentialsConfigur
 
 ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation)
 {
-    return [this, unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
+    /// `self` keeps catalog alive while S3 client holds this callback.
+    return [this, self = shared_from_this(), unity_table_id, operation]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
 
