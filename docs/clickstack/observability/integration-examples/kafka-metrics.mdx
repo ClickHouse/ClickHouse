@@ -1,0 +1,310 @@
+---
+slug: /clickstack/observability/integration-examples/kafka-metrics
+title: 'Monitoring Kafka metrics with ClickHouse Observability'
+sidebarTitle: 'Kafka metrics'
+description: 'Collect Kafka broker metrics with the OpenTelemetry JMX Metric Gatherer and send them to ClickHouse Observability.'
+doc_type: 'guide'
+keywords: ['Kafka', 'metrics', 'OTEL', 'ClickHouse Observability', 'JMX']
+---
+
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+Collect Kafka broker metrics with the OpenTelemetry JMX Metric Gatherer and send them to ClickHouse Observability. Use the [demo dataset](#demo-dataset) to try the integration without a Kafka deployment.
+
+## Prerequisites {#prerequisites}
+
+- A ClickHouse Observability service
+- Docker with Docker Compose and `curl`
+- For your own metrics, a Kafka broker with remote JMX enabled and reachable from the gatherer
+
+### Connection details {#connection-details}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open ClickHouse Observability and go to **Team Settings → Data → Managed Telemetry**. Copy your OTLP HTTP endpoint and API key. You can use **Copy connection details** to copy the configuration, or **Reveal key** to view the masked key.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Managed Telemetry connection details](/images/clickstack/getting-started/observability-managed-telemetry.png)
+
+</Frame>
+
+</div>
+
+Set these variables in the terminal where you will run the JMX gatherer or demo collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='Bearer YOUR_API_KEY'
+```
+
+Replace the placeholders with the exact endpoint, including its port, and API key from your service. Use the base HTTP endpoint without a `/v1/metrics` suffix; the exporter appends the signal path.
+
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's reachable OTLP HTTP endpoint (for example, `http://YOUR_COLLECTOR_HOST:4318`) and authentication settings. If your collector does not require authentication, omit the JMX gatherer's `-Dotel.exporter.otlp.headers` argument and the demo collector's `headers` block. See the [self-managed getting-started guide](/clickstack/self-configured/getting-started/managed) for setup guidance.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT='http://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_AUTHORIZATION='YOUR_INGESTION_KEY'
+```
+
+</Tab>
+</Tabs>
+
+The endpoint must be reachable from the gatherer or collector container. For a destination collector running on this computer, use `http://host.docker.internal:4318`. The Docker commands below include the host mapping.
+
+## Integration with an existing Kafka deployment {#existing-kafka}
+
+<Steps>
+<Step title="Check the broker's JMX endpoint" id="verify-jmx">
+
+Use the remote JMX endpoint configured for your broker. For a broker exposing JMX on port `9999`:
+
+```bash
+export KAFKA_JMX_URL='service:jmx:rmi:///jndi/rmi://YOUR_KAFKA_HOST:9999/jmxrmi'
+export KAFKA_BROKER_ID='broker-0'
+```
+
+Replace the hostname and broker ID with your own values. The RMI hostname advertised by the broker must also be reachable from the gatherer. If the broker uses separate registry and RMI ports, allow both through the network. The gatherer reads JMX; it does not need the Kafka client port `9092`.
+
+For containers on a shared Docker network, use the broker's container hostname. For a broker on the Docker host, use `host.docker.internal` and configure the broker to advertise a hostname the container can reach. Keep JMX access restricted to your monitoring network and retain your broker's authentication and TLS settings.
+
+</Step>
+<Step title="Download the JMX Metric Gatherer" id="download-jmx">
+
+```bash
+curl -fL -o opentelemetry-jmx-metrics.jar \
+  https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
+```
+
+</Step>
+<Step title="Configure the gatherer" id="configure-gatherer">
+
+Save this as `compose.yaml` beside the downloaded JAR:
+
+```yaml
+services:
+  kafka-jmx-gatherer:
+    image: eclipse-temurin:11-jre
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - KAFKA_JMX_URL
+      - KAFKA_BROKER_ID
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+      - OTEL_EXPORTER_OTLP_AUTHORIZATION
+    volumes:
+      - ./opentelemetry-jmx-metrics.jar:/app/opentelemetry-jmx-metrics.jar:ro
+    command:
+      - sh
+      - -c
+      - >-
+        exec java
+        -Dotel.jmx.service.url="$${KAFKA_JMX_URL}"
+        -Dotel.jmx.target.system=kafka
+        -Dotel.jmx.interval.milliseconds=10000
+        -Dotel.metrics.exporter=otlp
+        -Dotel.exporter.otlp.protocol=http/protobuf
+        -Dotel.exporter.otlp.endpoint="$${OTEL_EXPORTER_OTLP_ENDPOINT}"
+        -Dotel.exporter.otlp.headers="authorization=$${OTEL_EXPORTER_OTLP_AUTHORIZATION}"
+        -Dotel.resource.attributes="service.name=kafka-service,kafka.broker.id=$${KAFKA_BROKER_ID}"
+        -jar /app/opentelemetry-jmx-metrics.jar
+```
+
+If the broker is on an existing Docker network, attach `kafka-jmx-gatherer` to that network in your Compose configuration. For authenticated JMX, add `otel.jmx.username` and `otel.jmx.password` properties; for TLS, configure the appropriate trust store. See the [gatherer's authentication and TLS configuration](https://github.com/open-telemetry/opentelemetry-java-contrib/tree/v1.32.0/jmx-metrics#configuration).
+
+</Step>
+<Step title="Start collection" id="run-gatherer">
+
+Set the [connection variables](#connection-details) and broker variables in this terminal, then run from the directory containing `compose.yaml`:
+
+```bash
+docker compose up kafka-jmx-gatherer
+```
+
+Keep the terminal open and check for JMX connection or OTLP export errors. The gatherer collects every 10 seconds. Allow at least two collection intervals before checking your service. Stop it with **Ctrl+C** when finished testing.
+
+For multiple brokers, run one gatherer per broker with its own JMX URL and `kafka.broker.id`.
+
+</Step>
+<Step title="Verify metrics" id="verify-metrics">
+
+Open **Chart Explorer**, select your **Metrics** source, filter for `ServiceName:kafka-service`, and select **Last 15 minutes**. Look for `kafka.partition.count`, `kafka.partition.under_replicated`, or `kafka.message.count`. Traffic-related metrics need broker activity to produce meaningful values.
+
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+The sample contains 6,282 gauge and sum points sampled every five minutes across roughly 29 hours. It preserves the original dataset's traffic surges, request latency, consumer lag, and partition health patterns. No Kafka deployment or direct database access is needed.
+
+Set the [connection variables](#connection-details) before starting.
+
+<Steps>
+<Step title="Download the sample metrics" id="download-sample">
+
+[Download the sample bundle](/assets/kafka-metrics-demo.zip) (about 53 KB) and extract `kafka-metrics-demo.json` into your working directory.
+
+</Step>
+<Step title="Configure the demo collector" id="configure-demo-collector">
+
+Save this as `kafka-metrics-demo.yaml`:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  resource/demo:
+    attributes:
+      - key: service.name
+        value: kafka-demo
+        action: upsert
+  transform/demo_timestamps:
+    error_mode: propagate
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(cache["interval_ns"], time_unix_nano - start_time_unix_nano)
+          - set(time, Now() - Duration("2m") - (Time("2025-11-06T22:14:00Z", "%Y-%m-%dT%H:%M:%SZ") - time))
+          - set(start_time_unix_nano, time_unix_nano - cache["interval_ns"])
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 500
+exporters:
+  otlp_http/managed:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    headers:
+      authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [resource/demo, transform/demo_timestamps, batch]
+      exporters: [otlp_http/managed]
+```
+
+<Note>
+The demo-only transform refreshes timestamps while preserving metric values and the interval between each point's start and end timestamps. Omit it for live Kafka metrics. The batch limit keeps uploads small enough for the destination collector.
+</Note>
+
+</Step>
+<Step title="Run the demo collector" id="run-demo-collector">
+
+From the directory containing the configuration, run the collector and leave this terminal open:
+
+```bash
+docker run --rm --name kafka-metrics-demo-collector \
+  --add-host=host.docker.internal:host-gateway \
+  --memory=512m \
+  -p 127.0.0.1:14318:4318 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT \
+  -e OTEL_EXPORTER_OTLP_AUTHORIZATION \
+  -v "$(pwd)/kafka-metrics-demo.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+  otel/opentelemetry-collector-contrib:0.161.0 \
+  --config=/etc/otelcol-contrib/config.yaml
+```
+
+</Step>
+<Step title="Send the sample" id="load-metrics">
+
+In another terminal, run this command from the download directory:
+
+```bash
+curl --fail-with-body -sS http://localhost:14318/v1/metrics \
+  -H 'Content-Type: application/json' \
+  --data-binary @kafka-metrics-demo.json
+```
+
+A response such as `{}` or `{"partialSuccess":{}}` indicates the local collector accepted the request. Check the collector terminal for export errors and allow a few seconds for forwarding. Stop it with **Ctrl+C** after verifying the data. Sending the sample again can produce duplicate points.
+
+</Step>
+<Step title="Verify the metrics" id="verify-demo-metrics">
+
+Import the dashboard in the [next section](#dashboards), filter for `ServiceName:kafka-demo`, and select **Last 2 days**. The sample includes both gauge and sum metrics; no direct database access is needed.
+
+</Step>
+</Steps>
+
+
+## Dashboards and visualization {#dashboards}
+
+<Steps>
+<Step title={<TrackedLink href="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json" download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Download the dashboard configuration</TrackedLink>} id="download-dashboard" />
+<Step title="Import the dashboard" id="import-dashboard">
+
+1. Open **Dashboards** and click **Import** in the upper-right corner.
+2. Upload `kafka-metrics-dashboard.json`.
+3. Map the charts to your **Metrics** source and click **Finish Import**.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Import dashboard button](/images/clickstack/observability-import-dashboard.png)
+
+</Frame>
+
+</div>
+
+</Step>
+<Step title="View the dashboard" id="view-dashboard">
+
+For the sample, filter for `ServiceName:kafka-demo` and select **Last 2 days**. The dashboard shows throughput, consumer lag, request latency, queue depth, and offline partitions.
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![Kafka metrics demo dashboard in ClickHouse Observability showing throughput, consumer lag, request latency, queue depth, and offline partitions](/images/clickstack/observability-kafka-metrics-dashboard.png)
+
+</Frame>
+
+</div>
+
+<Note>
+The dashboard uses the demo's metric names, including precomputed rates and consumer lag. The broker JMX gatherer exposes a different set of metrics, so adjust charts to match your live data. Broker JMX alone does not provide consumer-group lag.
+</Note>
+
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### JMX connection fails {#jmx-connection-fails}
+
+Check the gatherer output with `docker compose logs kafka-jmx-gatherer`. Confirm JMX is enabled, both the registry and advertised RMI endpoint are reachable, and the configured JMX credentials and trust store match the broker. Containers must share the intended network when using container hostnames.
+
+### No metrics appearing {#no-metrics}
+
+- Check the gatherer or demo collector output for connection, authentication, or export errors.
+- Verify the OTLP HTTP endpoint and authentication against your service's connection details.
+- Check the **Metrics** source, service-name filter, and time range. For the demo, use **Last 2 days**.
+- For an existing collector, confirm its metrics pipeline includes the OTLP receiver and a metrics exporter.
+- Verify live metric names in **Chart Explorer** before using the demo dashboard.
+
+### JMX port conflicts in Kafka client commands {#port-conflicts}
+
+If you run Kafka client commands inside the broker container, unset the inherited broker JMX settings for that command so the client does not try to bind the same port:
+
+```bash
+env -u JMX_PORT -u KAFKA_JMX_OPTS kafka-topics --list --bootstrap-server YOUR_KAFKA_HOST:9092
+```
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/observability/features/alerts) for partition health or request latency.
+- Create additional [dashboards](/clickstack/observability/features/dashboards/overview) for your broker metrics.
+- See [Sending OpenTelemetry data](/clickstack/observability/ingesting-data/opentelemetry) for collector deployment guidance.
