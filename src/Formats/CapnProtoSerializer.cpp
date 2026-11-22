@@ -948,15 +948,18 @@ namespace
             auto first = union_fields[0];
             auto second = union_fields[1];
             auto nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
-            nested_slot_offset = getFieldSlotOffset(first); /// Both fields have the same offset.
+            /// The offset of the value is taken from the non-`Void` member: `Void` always has offset 0,
+            /// while the value of a union declared inline in a struct can be in any slot of that struct.
             if (first.getType().isVoid())
             {
+                nested_slot_offset = getFieldSlotOffset(second);
                 nested_serializer = createSerializer(nested_type, column_name, second.getType(), settings);
                 null_discriminant = 0;
                 nested_discriminant = 1;
             }
             else if (second.getType().isVoid())
             {
+                nested_slot_offset = getFieldSlotOffset(first);
                 nested_serializer = createSerializer(nested_type, column_name, first.getType(), settings);
                 null_discriminant = 1;
                 nested_discriminant = 0;
@@ -1004,9 +1007,8 @@ namespace
             const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
             if (nullable_column.isNullAt(row_num))
             {
-                auto struct_builder_impl = struct_builder.impl.getBuilderImpl();
-                struct_builder_impl.setDataField<uint16_t>(discriminant_offset, null_discriminant);
-                struct_builder_impl.setDataField<capnp::Void>(nested_slot_offset, capnp::Void());
+                /// `Void` occupies no space, so only the discriminant is written.
+                struct_builder.impl.getBuilderImpl().setDataField<uint16_t>(discriminant_offset, null_discriminant);
             }
             else
             {
