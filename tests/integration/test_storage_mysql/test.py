@@ -124,6 +124,43 @@ CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGI
     conn.close()
 
 
+def test_limit_pushdown_case_insensitive_collation(started_cluster):
+    table_name = "test_limit_pushdown_ci_collation"
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO `clickhouse`.`{table_name}` (id, name) VALUES (1, 'ABC'), (2, 'Abc'), (3, 'abc'), (4, 'abc')"
+        )
+    conn.commit()
+
+    table_function = f"mysql('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')"
+
+    # MySQL compares `name` with a case-insensitive collation by default, so it also returns 'ABC'
+    # and 'Abc' for the pushed-down filter; ClickHouse drops them when it applies the filter itself.
+    # A `LIMIT` pushed down along with the filter would be used up by those rows.
+    assert (
+        node1.query(f"SELECT id FROM {table_function} WHERE name = 'abc' ORDER BY id")
+        == "3\n4\n"
+    )
+    assert (
+        node1.query(
+            f"SELECT count() FROM (SELECT id FROM {table_function} WHERE name = 'abc' LIMIT 2)"
+        )
+        == "2\n"
+    )
+    assert (
+        node1.query(
+            f"SELECT count() FROM (SELECT id FROM {table_function} WHERE name IN ('abc', 'xyz') LIMIT 2)"
+        )
+        == "2\n"
+    )
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 def test_insert_select(started_cluster):
     table_name = "test_insert_select"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

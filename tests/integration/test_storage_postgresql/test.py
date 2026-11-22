@@ -995,6 +995,46 @@ def test_limit_pushdown(started_cluster):
     node1.query("DROP TABLE pg_limit_pushdown")
 
 
+def test_limit_pushdown_case_insensitive_collation(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_limit_pushdown_ci")
+    cursor.execute("DROP COLLATION IF EXISTS test_limit_pushdown_ci")
+    cursor.execute(
+        "CREATE COLLATION test_limit_pushdown_ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false)"
+    )
+    cursor.execute(
+        "CREATE TABLE test_limit_pushdown_ci (id integer, name text COLLATE test_limit_pushdown_ci)"
+    )
+    cursor.execute(
+        "INSERT INTO test_limit_pushdown_ci VALUES (1, 'ABC'), (2, 'Abc'), (3, 'abc'), (4, 'abc')"
+    )
+
+    table_function = f"postgresql('postgres1:5432', 'postgres', 'test_limit_pushdown_ci', 'postgres', '{pg_pass}')"
+
+    # PostgreSQL compares `name` with a case-insensitive collation, so it also returns 'ABC' and 'Abc'
+    # for the pushed-down filter; ClickHouse drops them when it applies the filter itself. A `LIMIT`
+    # pushed down along with the filter would be used up by those rows.
+    assert (
+        node1.query(f"SELECT id FROM {table_function} WHERE name = 'abc' ORDER BY id")
+        == "3\n4\n"
+    )
+    assert (
+        node1.query(
+            f"SELECT count() FROM (SELECT id FROM {table_function} WHERE name = 'abc' LIMIT 2)"
+        )
+        == "2\n"
+    )
+    assert (
+        node1.query(
+            f"SELECT count() FROM (SELECT id FROM {table_function} WHERE name IN ('abc', 'xyz') LIMIT 2)"
+        )
+        == "2\n"
+    )
+
+    cursor.execute("DROP TABLE test_limit_pushdown_ci")
+    cursor.execute("DROP COLLATION test_limit_pushdown_ci")
+
+
 def test_fixed_string_type(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_fixed_string")

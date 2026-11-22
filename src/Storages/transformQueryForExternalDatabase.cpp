@@ -461,6 +461,32 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
     return false;
 }
 
+/// Returns true if `node` references a column of a string type (`String` or `FixedString`, also inside
+/// `Nullable` or `LowCardinality`). An external database compares the values of such a column with the
+/// collation of the column, which is not known here, while ClickHouse compares them byte-wise. With a
+/// case-insensitive collation (the default of MySQL, `citext` or a nondeterministic collation in
+/// PostgreSQL) `name = 'abc'` also selects `'ABC'` there, and a linguistic collation orders the values
+/// differently, so a predicate over such a column does not provably select the same rows remotely.
+bool containsStringColumn(const ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    /// The depth of the AST is user-controlled: fail with TOO_DEEP_RECURSION instead of exhausting the stack.
+    checkStackSize();
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        for (const auto & column : available_columns)
+            if (column.name == identifier->name())
+                return WhichDataType(removeLowCardinalityAndNullable(column.type)).isStringOrFixedString();
+        return false;
+    }
+
+    for (const auto & child : node->children)
+        if (containsStringColumn(child, available_columns))
+            return true;
+
+    return false;
+}
+
 /// Returns true if the AST node is a tuple: either an `ASTLiteral` holding a `Tuple` field
 /// (the parser's fast-path literal conversion) or an explicit `tuple(...)` function call.
 bool isTupleNode(const ASTPtr & node)
@@ -1025,7 +1051,8 @@ String transformQueryForExternalDatabaseImpl(
     const NameSet & unsupported_functions,
     const NameSet & local_only_columns,
     bool require_dialect_neutral_literals,
-    bool allow_limit_push_down)
+    bool allow_limit_push_down,
+    bool string_comparisons_are_byte_wise)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
     bool push_down_limit = allow_limit_push_down && context->getSettingsRef()[Setting::external_storage_push_down_limit];
@@ -1106,7 +1133,13 @@ String transformQueryForExternalDatabaseImpl(
         if (isCompatible(original_where, literal_escaping_style, pushdown_columns, RowValueContext::BooleanPredicate, unsupported_functions,
                          require_dialect_neutral_literals))
         {
-            if (limit_push_down_allowed && original_where->dumpTree() == dumped_original_where)
+            /// The filter is applied again locally, so the `LIMIT` can be pushed down only if the external
+            /// database selects exactly the rows the local filter keeps. A copied filter is not enough
+            /// for that when it compares strings with a collation of its own: the rows it selects in
+            /// addition (`'ABC'` for `name = 'abc'`) use up the remote `LIMIT` and are then dropped
+            /// locally, and the query returns fewer rows than it should, possibly none.
+            if (limit_push_down_allowed && original_where->dumpTree() == dumped_original_where
+                && (string_comparisons_are_byte_wise || !containsStringColumn(original_where, available_columns)))
                 where_fully_copied = true;
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -1264,7 +1297,8 @@ String transformQueryForExternalDatabase(
     const NameSet & unsupported_functions,
     const NameSet & local_only_columns,
     bool require_dialect_neutral_literals,
-    bool allow_limit_push_down)
+    bool allow_limit_push_down,
+    bool string_comparisons_are_byte_wise)
 {
     allow_limit_push_down = allow_limit_push_down && !hasLocalFilterAppliedBeforeLimit(query_info, context);
 
@@ -1297,7 +1331,8 @@ String transformQueryForExternalDatabase(
             unsupported_functions,
             local_only_columns,
             require_dialect_neutral_literals,
-            allow_limit_push_down);
+            allow_limit_push_down,
+            string_comparisons_are_byte_wise);
     }
 
     auto clone_query = query_info.query->clone();
@@ -1315,7 +1350,8 @@ String transformQueryForExternalDatabase(
         unsupported_functions,
         local_only_columns,
         require_dialect_neutral_literals,
-        allow_limit_push_down);
+        allow_limit_push_down,
+        string_comparisons_are_byte_wise);
 }
 
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(

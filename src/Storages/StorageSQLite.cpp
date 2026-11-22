@@ -460,7 +460,12 @@ Pipe StorageSQLite::read(
             context_,
             {},
             unsupported_functions,
-            local_only_columns);
+            local_only_columns,
+            /* require_dialect_neutral_literals = */ false,
+            /* allow_limit_push_down = */ true,
+            /// A `String` column is pushdown-eligible only with the byte-wise BINARY collation (see
+            /// `isPushdownSafeColumn`), so a filter over it selects the same rows on both sides.
+            /* string_comparisons_are_byte_wise = */ true);
     }
     LOG_TRACE(log, "Query: {}", query);
 
