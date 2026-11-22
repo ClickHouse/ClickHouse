@@ -27,4 +27,23 @@ struct Settings;
 /// The demotion runs first, so the `dialect` override is marked changed afterwards.
 void prepareSecondaryQuerySettings(Settings & settings);
 
+/// Marks the settings that choose the method of an aggregation key as changed, with their effective values:
+/// `enable_packed_string_keys_in_aggregation` and `enable_fixed_and_packed_string_keys_in_aggregation`.
+/// For the senders of `SELECT` secondary queries, `MultiplexedConnections` and `HedgedConnections`.
+/// Two-level aggregation bucket numbers depend on the method, so all servers of a distributed query must
+/// agree on these values, even when they come only from the initiator's server or profile defaults. Such
+/// values are not marked changed, so `Connection::sendQuery` would not send them otherwise.
+void markAggregationMethodSettingsChanged(Settings & settings);
+
+/// The receiving side of `markAggregationMethodSettingsChanged`, for the server of a secondary query. Returns
+/// whether `settings`, the settings of the query after the server applied its settings constraints to the
+/// settings that the initiator passed (`initiator_settings`), differ from them in a setting that chooses the
+/// method of an aggregation key. A setting that the initiator did not pass does not count. A constraint drops
+/// or clamps a passed value that it does not allow, and the server then numbers two-level buckets differently
+/// from the initiator. For example, a remote user whose profile pins
+/// `enable_packed_string_keys_in_aggregation = 0` as `READONLY` aggregates a single `String` key with the
+/// legacy method, while the initiator takes the packed one, and the two methods put a 12-byte key into
+/// different buckets.
+bool aggregationMethodSettingsDifferFromInitiator(const Settings & initiator_settings, const Settings & settings);
+
 }
