@@ -11,6 +11,9 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/randomSeed.h>
+
+#include <pcg-random/pcg_random.hpp>
 
 namespace DB
 {
@@ -149,8 +152,11 @@ Pipe StorageFuzzQuery::read(
     ParserQuery parser(end, false);
     auto query = parseQuery(parser, begin, end, "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
+    /// One seed per stream, otherwise all streams emit the same rows. Derived from the given seed, so the result stays stable.
+    pcg64 generate(config.random_seed ? *config.random_seed : randomSeed());
     for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<FuzzQuerySource>(max_block_size, std::make_shared<const Block>(block_header), config, query));
+        pipes.emplace_back(
+            std::make_shared<FuzzQuerySource>(max_block_size, std::make_shared<const Block>(block_header), config, query, generate()));
 
     return Pipe::unitePipes(std::move(pipes));
 }
