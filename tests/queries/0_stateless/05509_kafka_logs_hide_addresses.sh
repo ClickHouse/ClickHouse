@@ -4,6 +4,8 @@
 # no-replicated-database: named collections created by SQL are not replicated
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The dead broker's connection errors are logged by whichever query serves the consumer queue (the final DROP).
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 

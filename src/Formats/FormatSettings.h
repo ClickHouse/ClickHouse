@@ -385,6 +385,7 @@ struct FormatSettings : FormatSettingsEnums
         bool write_bloom_filter = false;
         bool write_checksums = true;
         bool use_alp_encoding = false;
+        bool use_data_page_v2 = false;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
