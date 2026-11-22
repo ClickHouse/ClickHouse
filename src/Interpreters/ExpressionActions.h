@@ -68,6 +68,9 @@ public:
         /// if the action is lazy executed.
         std::optional<size_t> short_circuit_eager_argument = {};
 
+        /// Lazily executed and used by several consumers: its result is reused within one `ColumnFunction` tree.
+        bool is_shared_lazy_executed = false;
+
         [[nodiscard]] std::string toString() const;
         [[nodiscard]] JSONBuilder::ItemPtr toTree() const;
     };
@@ -94,7 +97,12 @@ private:
     ExpressionActionsSettings settings;
 
 public:
-    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    /// `uncompiled_actions_dag`, if set, receives the DAG as built when JIT replaces a node, and stays empty otherwise.
+    explicit ExpressionActions(
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        std::shared_ptr<const ActionsDAG> * uncompiled_actions_dag = nullptr);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
 

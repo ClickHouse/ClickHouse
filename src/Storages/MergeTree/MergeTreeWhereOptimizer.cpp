@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
@@ -522,7 +523,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     std::vector<NameSet> storage_columns_guarding_throwing_condition;
     for (size_t i = 0; i < infos.size(); ++i)
     {
-        if (!infos[i].viable || infos[i].expensive || !conditionMayThrow(infos[i].node.getDAGNode()))
+        const auto * dag_node = infos[i].node.getDAGNode();
+        if (!infos[i].viable || infos[i].expensive || !conditionMayThrow(dag_node) || prewhereConditionCannotThrow(dag_node))
             continue;
         for (size_t j = 0; j < i; ++j)
         {
