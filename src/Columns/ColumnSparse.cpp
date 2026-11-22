@@ -1170,7 +1170,8 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
             column_object->getMaxDynamicPathsUpperBound(),
             column_object->getGlobalMaxDynamicPaths(),
             column_object->getMaxDynamicTypes(),
-            column_object->getStatistics());
+            column_object->getStatistics(),
+            column_object->getSharedDataPathMatcher());
     }
 
     return column->convertToFullColumnIfSparse();
