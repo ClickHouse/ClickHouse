@@ -187,7 +187,7 @@ struct StatisticsFixedStringCopy
     std::array<uint8_t, S> min {};
     std::array<uint8_t, S> max {};
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         if constexpr (RUNTIME_SIZE)
             return fixed_string_size;
