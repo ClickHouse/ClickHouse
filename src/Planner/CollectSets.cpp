@@ -106,7 +106,7 @@ public:
 
             /// A long literal list keeps its values as a `Field`: read them without building its column if possible.
             std::optional<ColumnsWithTypeAndName> set_from_values;
-            if (const auto * deferred_field = constant_node->tryGetDeferredField())
+            if (const auto deferred_field = constant_node->tryGetDeferredField())
                 set_from_values = tryGetSetElementsForTupleOfPlainValues(
                     in_first_argument->getResultType(), deferred_field->safeGet<Tuple>(), params);
 

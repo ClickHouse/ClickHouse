@@ -59,16 +59,16 @@ public:
     /// only needs a scalar - they avoid the `Field`.
     Field getValue() const
     {
-        if (const auto * deferred_field = tryGetDeferredField())
+        if (auto deferred_field = tryGetDeferredField())
             return *deferred_field;
         return getConstantValue().getField();
     }
 
-    /** A long literal tuple of plain values, such as the right side of `x IN (1, 2, ...)`, keeps its `Field`
-      * and builds its column (one size-1 column per element) only on the first `getColumn` call.
-      * Returns that `Field` (valid whether or not the column was built since), or nullptr.
+    /** A long tuple of plain literals, such as the right side of `x IN (1, 2, ...)`, keeps its `Field` until a consumer
+      * needs its column (one size-1 column per element). Returns that `Field` until then, else nullptr; the result keeps
+      * it alive.
       */
-    const Field * tryGetDeferredField() const;
+    std::shared_ptr<const Field> tryGetDeferredField() const;
 
     /// Typed value accessors - read the constant without materializing a `Field` (delegate to ConstantValue).
     bool isNull() const { return getConstantValue().isNull(); }

@@ -136,12 +136,34 @@ void updateHashAsColumn(SipHash & hash, const Field & value, const IDataType & t
 
 struct ConstantNode::DeferredValue
 {
-    DeferredValue(Field && value_, DataTypePtr type_) : value(std::move(value_)), type(std::move(type_)) {}
+    DeferredValue(Field && value_, DataTypePtr type_)
+        : type(std::move(type_)), value(std::make_shared<const Field>(std::move(value_)))
+    {}
 
-    const Field value;
+    std::shared_ptr<const Field> getValue()
+    {
+        std::lock_guard lock(mutex);
+        return value;
+    }
+
+    /// Builds the column on the first call and drops the `Field`, for every node sharing this value.
+    const ConstantValue & getMaterialized()
+    {
+        std::lock_guard lock(mutex);
+        if (!materialized)
+        {
+            materialized.emplace(*value, type);
+            value.reset();
+        }
+        return *materialized;
+    }
+
     const DataTypePtr type;
-    std::once_flag built;
-    std::optional<ConstantValue> materialized;
+
+private:
+    std::mutex mutex;
+    std::shared_ptr<const Field> value TSA_GUARDED_BY(mutex);
+    std::optional<ConstantValue> materialized TSA_GUARDED_BY(mutex);
 };
 
     ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
@@ -194,18 +216,16 @@ ConstantNode::ValueOrDeferred ConstantNode::makeConstantValue(Field && value)
     return makeConstantValue(std::move(value), std::move(value_data_type));
 }
 
-const Field * ConstantNode::tryGetDeferredField() const
+std::shared_ptr<const Field> ConstantNode::tryGetDeferredField() const
 {
     if (const auto * deferred = std::get_if<std::shared_ptr<DeferredValue>>(&constant_value))
-        return &(*deferred)->value;
+        return (*deferred)->getValue();
     return nullptr;
 }
 
 const ConstantValue & ConstantNode::materializeDeferred() const
 {
-    auto & deferred = *std::get<std::shared_ptr<DeferredValue>>(constant_value);
-    std::call_once(deferred.built, [&deferred] { deferred.materialized.emplace(deferred.value, deferred.type); });
-    return *deferred.materialized;
+    return std::get<std::shared_ptr<DeferredValue>>(constant_value)->getMaterialized();
 }
 
 DataTypePtr ConstantNode::getResultType() const
@@ -217,7 +237,7 @@ DataTypePtr ConstantNode::getResultType() const
 
 String ConstantNode::getValueStringRepresentation() const
 {
-    if (const auto * deferred_field = tryGetDeferredField())
+    if (const auto deferred_field = tryGetDeferredField())
         return applyVisitor(FieldVisitorToString(), *deferred_field);
 
     // Special handling for Bool literals that are stored as UInt64 internally
@@ -336,8 +356,8 @@ bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
         return false;
 
     /// With equal types, the elements of two deferred values are `Field`s of the same types.
-    const auto * field = tryGetDeferredField();
-    const auto * rhs_field = rhs_typed.tryGetDeferredField();
+    const auto field = tryGetDeferredField();
+    const auto rhs_field = rhs_typed.tryGetDeferredField();
     if (field && rhs_field)
         return field == rhs_field || *field == *rhs_field;
 
@@ -348,11 +368,12 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
 {
     const DataTypePtr type = getResultType();
 
-    if (const auto * deferred_field = tryGetDeferredField())
+    if (const auto deferred_field = tryGetDeferredField())
     {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// A temporary column: `getColumn` would drop the values of every node sharing them.
         HashState column_hash_state = hash_state;
-        getColumn()->updateHashFast(column_hash_state);
+        type->createColumnConst(1, *deferred_field)->updateHashFast(column_hash_state);
 #endif
         /// The same bytes as `updateHashFast` of the column would give: the `ColumnTuple` of a `ColumnConst` hashes
         /// its size-1 element columns in order.
@@ -406,13 +427,13 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     /// A deferred value has plain elements only, which the column would give back as the same `Field`.
     static const auto from_column = [](const ConstantNode &node)
     {
-        if (const auto * deferred_field = node.tryGetDeferredField())
+        if (const auto deferred_field = node.tryGetDeferredField())
             return make_intrusive<ASTLiteral>(*deferred_field);
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.getColumn(), 0, node.getResultType(), /*date_time_as_numbers=*/true));
     };
     static const auto from_column_date_time_as_text = [](const ConstantNode &node)
     {
-        if (const auto * deferred_field = node.tryGetDeferredField())
+        if (const auto deferred_field = node.tryGetDeferredField())
             return make_intrusive<ASTLiteral>(*deferred_field);
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.getColumn(), 0, node.getResultType(), /*date_time_as_numbers=*/false));
     };
