@@ -118,7 +118,7 @@ private:
         QueryFinishCallback query_finish_callback);
 
     /// Copies the request context and sets the settings required by the SQL generated from PromQL.
-    ContextMutablePtr makeQueryContext() const;
+    [[nodiscard]] ContextMutablePtr makeQueryContext() const;
 
     /// Evaluates a range query in chunks split at multiples of the interval, one after another, and writes the merged result.
     void executeRangeQueryInChunks(
