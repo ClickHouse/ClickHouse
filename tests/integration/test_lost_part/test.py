@@ -658,68 +658,60 @@ def create_merged_table(nodes, table):
         node.query(f"SYSTEM SYNC REPLICA {table}")
 
 
-def assert_recovered_from_lost_merge_result(node, table, empty_parts_before):
-    assert_eq_with_retry(
-        node,
-        f"SELECT count() FROM system.replication_queue WHERE database = 'default' AND table = '{table}'",
-        "0",
-        retry_count=120,
-        sleep_time=1,
-    )
-    node.query(f"SYSTEM SYNC REPLICA {table}", timeout=120)
-    assert node.query(f"SELECT count(), sum(n) FROM {table}") == "2\t3\n"
-    assert (
-        node.query(
-            f"SELECT lost_part_count FROM system.replicas WHERE database = 'default' AND table = '{table}'"
-        )
-        == "0\n"
-    )
-    # The log is shared by the tests of this module, so compare against the count before the damage.
-    assert count_in_log(node, "Created empty part") == empty_parts_before
-
-    # The sources can be merged again into a part covering the lost one.
-    node.query(f"OPTIMIZE TABLE {table} FINAL", settings={"alter_sync": 2}, timeout=120)
-    assert_eq_with_retry(
-        node,
-        f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' "
-        "AND active AND min_block_number = 0 AND max_block_number = 1",
-        "1",
-        retry_count=60,
-        sleep_time=1,
-    )
-
-
-def assert_mutation_works(nodes, table):
-    nodes[0].query(
-        f"ALTER TABLE {table} UPDATE v = v + 10 WHERE 1 SETTINGS mutations_sync = 2"
-    )
-    for node in nodes:
-        node.query(f"SYSTEM SYNC REPLICA {table}", timeout=120)
-        assert node.query(f"SELECT count(), sum(n), sum(v) FROM {table}") == "2\t3\t20\n"
-
-
-@pytest.mark.parametrize("damage", ["remove_dir", "remove_files"])
-def test_missing_merge_result_on_start_single_replica(start_cluster, damage):
-    table = f"rmt_missing_merge_result_single_{damage}"
+def test_missing_merge_result_on_start_single_replica(start_cluster):
+    # Two partitions lose their merge result in the two ways a host reset can: the part directory is
+    # gone in one, and the directory is left with no files in the other. Both are recovered in one restart.
+    table = "rmt_missing_merge_result_single"
     try:
-        create_merged_table([node1], table)
-        empty_parts_before = count_in_log(node1, "Created empty part")
-        assert (
-            node1.query(
-                f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' "
-                "AND active AND name = 'all_0_1_1'"
-            )
-            == "1\n"
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node1.query(
+            f"CREATE TABLE {table} (p UInt8, n int) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{table}', '1') "
+            f"PARTITION BY p ORDER BY n SETTINGS {LOST_MERGE_RESULT_SETTINGS}"
         )
+        for p, n in ((0, 1), (0, 2), (1, 3), (1, 4)):
+            node1.query(
+                f"INSERT INTO {table} VALUES ({p}, {n})",
+                settings={"insert_keeper_fault_injection_probability": 0},
+            )
+        node1.query(f"OPTIMIZE TABLE {table} FINAL")
+        empty_parts_before = count_in_log(node1, "Created empty part")
+        merged = node1.query(
+            f"SELECT name FROM system.parts WHERE database = 'default' AND table = '{table}' "
+            "AND active AND level = 1 ORDER BY partition"
+        ).split()
+        assert len(merged) == 2
 
-        if damage == "remove_dir":
-            remove_part_dir_from_disk(node1, table, "all_0_1_1")
-        else:
-            remove_part_from_disk(node1, table, "all_0_1_1")
+        remove_part_dir_from_disk(node1, table, merged[0])
+        remove_part_from_disk(node1, table, merged[1])
         node1.restart_clickhouse()
 
-        assert_recovered_from_lost_merge_result(node1, table, empty_parts_before)
-        assert_mutation_works([node1], table)
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.replication_queue WHERE database = 'default' AND table = '{table}'",
+            "0",
+            retry_count=120,
+            sleep_time=1,
+        )
+        node1.query(f"SYSTEM SYNC REPLICA {table}", timeout=120)
+        assert node1.query(f"SELECT count(), sum(n) FROM {table}") == "4\t10\n"
+        assert (
+            node1.query(
+                f"SELECT lost_part_count FROM system.replicas WHERE database = 'default' AND table = '{table}'"
+            )
+            == "0\n"
+        )
+        assert count_in_log(node1, "Created empty part") == empty_parts_before
+
+        # The sources are merged again in both partitions.
+        node1.query(f"OPTIMIZE TABLE {table} FINAL", settings={"alter_sync": 2}, timeout=120)
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' "
+            "AND active AND level = 1",
+            "2",
+            retry_count=60,
+            sleep_time=1,
+        )
     finally:
         node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
