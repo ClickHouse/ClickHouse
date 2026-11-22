@@ -153,6 +153,9 @@ public:
 
     bool isRemote() const override { return true; }
 
+    /// The endpoint and the bucket, so that a `<s3_bucket>` entry allows the storage, as it does for the `s3` table function.
+    void checkRemoteHostFilter(const RemoteHostFilter & filter) const override { uri.checkRemoteHostFilter(filter); }
+
     bool supportParallelWrite() const override { return true; }
 
     /// An object becomes visible only on the completion of `PutObject` or `CompleteMultipartUpload`.
