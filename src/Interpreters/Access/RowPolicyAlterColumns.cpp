@@ -18,6 +18,7 @@
 #include <Storages/expressionSourceColumns.h>
 
 #include <algorithm>
+#include <string_view>
 #include <unordered_set>
 
 namespace DB
@@ -37,6 +38,12 @@ bool removesColumn(const AlterCommand & command)
     if (command.ignore)
         return false;
     return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
+}
+
+/// a new type can lack a subcolumn the policy reads or break a function the policy applies to the column
+bool modifiesColumn(const AlterCommand & command)
+{
+    return !command.ignore && command.type == AlterCommand::MODIFY_COLUMN;
 }
 
 /// a used name is a column or a subcolumn of one; a command on n changes the column n, or the whole Nested n if there is no column n
@@ -60,7 +67,8 @@ Names columnsReadByFilter(
     const StorageSnapshotPtr & storage_snapshot,
     const StorageID & table_id,
     const TableNames & tables,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    std::string_view stage)
 {
     try
     {
@@ -72,7 +80,7 @@ Names columnsReadByFilter(
     }
     catch (Exception & e)
     {
-        e.addMessage("while checking row policy {} before ALTER TABLE", policy_name);
+        e.addMessage("while checking row policy {} {} ALTER TABLE", policy_name, stage);
         throw;
     }
 }
@@ -111,13 +119,27 @@ TableNames tablesWithPoliciesOnColumnsOf(const StoragePtr & table, const Context
 }
 
 void checkRowPoliciesBeforeAlter(
-    const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const AlterCommands & commands, const ContextPtr & context)
+    const StoragePtr & table,
+    const StorageMetadataPtr & metadata_snapshot,
+    const AlterCommands & commands,
+    bool share_nested_offsets,
+    const ContextPtr & context)
 {
     /// row policies are local to a server, so a replica must apply what its initiator already committed
-    if (isSecondaryDDLReplay(context) || std::none_of(commands.begin(), commands.end(), removesColumn))
+    if (isSecondaryDDLReplay(context)
+        || std::none_of(commands.begin(), commands.end(), [](const auto & command) { return removesColumn(command) || modifiesColumn(command); }))
         return;
 
     const auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
+    const auto & old_columns = metadata_snapshot->getColumns();
+
+    StorageSnapshotPtr new_storage_snapshot;
+    if (std::any_of(commands.begin(), commands.end(), modifiesColumn))
+    {
+        auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*metadata_snapshot);
+        commands.apply(*new_metadata, context, share_nested_offsets);
+        new_storage_snapshot = table->getStorageSnapshotWithoutData(new_metadata, context);
+    }
 
     /// binding the lookup tables of a policy needs no grant of the user who alters the table: a copy of the global context has full access
     auto analysis_context = Context::createCopy(context->getGlobalContext());
@@ -148,14 +170,33 @@ void checkRowPoliciesBeforeAlter(
                 if (filter.empty())
                     continue;
 
-                const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, tables, analysis_context);
+                const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, tables, analysis_context, "before");
                 for (const auto & command : commands)
                 {
-                    if (removesColumn(command) && usesColumn(used_columns, metadata_snapshot->getColumns(), command.column_name))
+                    if (removesColumn(command) && usesColumn(used_columns, old_columns, command.column_name))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "Cannot {} column {}: it is used by row policy {}. Change or drop the policy first",
                             command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename", backQuote(command.column_name), policy_name);
                 }
+
+                const bool modifies_used = std::any_of(commands.begin(), commands.end(), [&](const auto & command)
+                {
+                    return modifiesColumn(command) && usesColumn(used_columns, old_columns, command.column_name);
+                });
+                if (!modifies_used)
+                    continue;
+
+                /// a subquery reads the table before the alter, so only the names tell if its subcolumns are kept
+                const auto & new_columns = new_storage_snapshot->metadata->getColumns();
+                for (const auto & used : used_columns)
+                {
+                    const auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
+                    if (old_column && !new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot modify column {}: row policy {} reads {}, which the new type does not have. Change or drop the policy first",
+                            backQuote(old_column->getNameInStorage()), policy_name, backQuote(used));
+                }
+                columnsReadByFilter(filter, policy_name, new_storage_snapshot, table_id, tables, analysis_context, "against the columns after");
             }
         }
     }
