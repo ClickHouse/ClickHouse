@@ -6819,7 +6819,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     local_context,
                     /*is_loading_from_existing_metadata=*/true);
 
-            if (!(*new_settings)[MergeTreeSetting::escape_index_filenames])
+            const bool old_escape_index_filenames = (*settings_from_storage)[MergeTreeSetting::escape_index_filenames];
+            const bool new_escape_index_filenames = (*new_settings)[MergeTreeSetting::escape_index_filenames];
+
+            if (!new_escape_index_filenames)
             {
                 for (const auto & index : new_metadata.secondary_indices)
                 {
@@ -6831,9 +6834,49 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 }
 
                 /// An index dropped in this batch, or earlier with its `DROP INDEX` mutation still
-                /// pending, does not block the change: that mutation resolves the files of an index
-                /// named with '/' with escaping regardless of the current policy
-                /// (`getDroppedIndexFileName`).
+                /// pending, does not block the change by itself: that mutation resolves the files of an
+                /// index named with '/' with escaping regardless of the current policy
+                /// (`getDroppedIndexFileName`). The files it has not removed yet are covered below.
+            }
+
+            /// Changing the policy changes the file name of every index whose name needs escaping, and
+            /// the new name of one index must not be the name under which the files of another index
+            /// are still stored in the parts. Otherwise the files and marks of that other index, which
+            /// the part owns, would be read as granules of this one: wrong query results, and
+            /// `system.parts.secondary_indices_materialized` reporting an index that was never built.
+            /// For example, with escaping on, `a/b` is stored as `skp_idx_a%2Fb` and `a%2Fb` as
+            /// `skp_idx_a%252Fb`; with escaping off, `a%2Fb` resolves to `skp_idx_a%2Fb`.
+            /// The files that may still exist are those of the indices the table has now (including
+            /// the ones dropped in this very batch) and of the indices whose `DROP INDEX` mutation
+            /// has not finished yet.
+            if (new_escape_index_filenames != old_escape_index_filenames)
+            {
+                /// File name under the current policy -> the index it belongs to.
+                std::unordered_map<String, String> stored_file_name_to_index;
+                for (const auto & index : old_metadata.secondary_indices)
+                    stored_file_name_to_index.emplace(getDroppedIndexFileName(index.name, old_escape_index_filenames), index.name);
+
+                for (const auto & [mutation_id, mutation_commands] : getUnfinishedMutationCommands())
+                    for (const auto & mutation_command : mutation_commands)
+                        if (mutation_command.type == MutationCommand::DROP_INDEX)
+                            stored_file_name_to_index.emplace(
+                                getDroppedIndexFileName(mutation_command.column_name, old_escape_index_filenames),
+                                mutation_command.column_name);
+
+                for (const auto & index : new_metadata.secondary_indices)
+                {
+                    /// The legacy state (a name with '/' and escaping off) has no file name at all.
+                    if (!new_escape_index_filenames && index.name.contains('/'))
+                        continue;
+
+                    auto it = stored_file_name_to_index.find(getIndexFileName(index.name, new_escape_index_filenames));
+                    if (it != stored_file_name_to_index.end() && it->second != index.name)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot change setting `escape_index_filenames`: skip index ({}) would get the file name "
+                            "under which the data of skip index ({}) is stored in the existing parts. "
+                            "Drop one of these indices and wait for its `DROP INDEX` mutation to finish first.",
+                            index.name, it->second);
+                }
             }
         }
     }
