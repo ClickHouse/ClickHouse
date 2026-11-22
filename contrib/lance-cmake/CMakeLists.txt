@@ -46,9 +46,11 @@ endif()
 # `protoc` binary at build time. Point it at the one ClickHouse builds from
 # `contrib/google-protobuf` so the build does not silently depend on a host installation.
 # When cross-compiling, `protoc` comes from the nested native build, the same way
-# `protobuf_generate` uses it.
+# `protobuf_generate` uses it. The condition has to match the one of the nested native build
+# (see the root `CMakeLists.txt`): a musl build for the host platform is not a cross-compilation,
+# there is no nested native build, and the statically linked `protoc` of the main build runs on the host.
 set (_lance_protoc_depends "")
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set (_lance_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
 else ()
     set (_lance_protoc "$<TARGET_FILE:protoc>")
