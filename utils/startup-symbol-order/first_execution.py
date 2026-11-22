@@ -38,6 +38,11 @@ PTRACE_O_EXITKILL = 0x100000
 NT_PRSTATUS = 1
 WALL = 0x40000000
 
+# The linker folds identical functions (`--icf`), so one address can have thousands of names, e.g. the trivial
+# methods of template instantiations. All of them refer to the same code, and one name is enough to place it.
+# A few are kept, because the function with the first name may be absent or not folded in another build.
+MAX_NAMES_PER_ADDRESS = 4
+
 SHT_SYMTAB = 2
 SHF_EXECINSTR = 0x4
 STT_FUNC = 2
@@ -84,6 +89,7 @@ def read_functions(path):
         name_begin = strtab_offset + st_name
         name = elf[name_begin:elf.find(b"\0", name_begin)].decode(errors="replace")
         functions.setdefault(st_value, []).append(name)
+    functions = {address: sorted(names)[:MAX_NAMES_PER_ADDRESS] for address, names in functions.items()}
     return machine, loads, functions, elf
 
 
