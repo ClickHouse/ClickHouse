@@ -606,6 +606,10 @@ public:
         /// How many permanent changes were recorded so far. Zero when the journal is disarmed.
         [[nodiscard]] size_t recordedChanges() const { return changes.size(); }
 
+        /// Makes room in the journal for one more record, so that appending it after the storage was changed
+        /// cannot throw. Called after the record itself is built and before the change is made.
+        void reserveSlotForChange();
+
         /// The command succeeded: its changes to `detached/` are final.
         void commit() { changes.clear(); }
 

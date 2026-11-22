@@ -567,6 +567,9 @@ namespace FailPoints
     /// exercised.
     extern const char merge_tree_leader_election_stale_lease_mid_detached_mutation[];
     extern const char merge_tree_leader_election_stale_lease_mid_detached_rename[];
+    /// Fails the recording of a change of the detached namespace in `DetachedNamespaceRollback` once, like an
+    /// allocation that fails while the undo record is prepared. The change itself must not have been made.
+    extern const char merge_tree_leader_election_fail_recording_detached_change[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
@@ -8966,30 +8969,61 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
     }
 }
 
+void MergeTreeData::DetachedNamespaceRollback::reserveSlotForChange()
+{
+    fiu_do_on(FailPoints::merge_tree_leader_election_fail_recording_detached_change,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED,
+            "Injected failure while recording a change of the detached namespace (leader_election)");
+    });
+
+    if (changes.size() == changes.capacity())
+        changes.reserve(std::max<size_t>(8, changes.capacity() * 2));
+
+    /// With a free slot, appending a record moves it and cannot throw.
+    static_assert(std::is_nothrow_move_constructible_v<Change>);
+}
+
 void MergeTreeData::DetachedNamespaceRollback::renameDirectory(
     const DiskPtr & disk, const String & from_relative, const String & to_relative)
 {
+    if (!armed)
+    {
+        disk->moveDirectory(from_relative, to_relative);
+        return;
+    }
+
+    /// The whole undo record and its slot in the journal are prepared before the storage is changed: copying
+    /// the paths and growing the journal allocate memory, and an allocation that failed after the move (e.g.
+    /// with `MEMORY_LIMIT_EXCEEDED`) would leave the move without a record, so it would not be undone. After
+    /// the move, only the prepared record is moved into the reserved slot, which cannot throw.
+    Change change{disk, from_relative, to_relative, {}, {}};
+    reserveSlotForChange();
+
     disk->moveDirectory(from_relative, to_relative);
-    if (armed)
-        changes.push_back(Change{disk, from_relative, to_relative, {}, {}});
+    changes.push_back(std::move(change));
 }
 
 void MergeTreeData::DetachedNamespaceRollback::removeFileIfExists(const DiskPtr & disk, const String & relative_path)
 {
-    /// Read the contents before the removal so that the file can be recreated verbatim. These
-    /// files (`txn_version.txt` and its temporary counterpart) are a few dozen bytes.
-    String content;
-    const bool remember = armed && disk->existsFile(relative_path);
-    if (remember)
+    if (!armed || !disk->existsFile(relative_path))
     {
-        auto in = disk->readFile(relative_path, getReadSettingsForMetadata());
-        readStringUntilEOF(content, *in);
+        disk->removeFileIfExists(relative_path);
+        return;
     }
 
-    disk->removeFileIfExists(relative_path);
+    /// Read the contents before the removal so that the file can be recreated verbatim. These
+    /// files (`txn_version.txt` and its temporary counterpart) are a few dozen bytes.
+    /// As in `renameDirectory`, the record and its slot are ready before the file is removed.
+    Change change{disk, {}, {}, relative_path, {}};
+    {
+        auto in = disk->readFile(relative_path, getReadSettingsForMetadata());
+        readStringUntilEOF(change.removed_content, *in);
+    }
+    reserveSlotForChange();
 
-    if (remember)
-        changes.push_back(Change{disk, {}, {}, relative_path, std::move(content)});
+    disk->removeFileIfExists(relative_path);
+    changes.push_back(std::move(change));
 }
 
 MergeTreeData::DetachedNamespaceRollback::~DetachedNamespaceRollback()

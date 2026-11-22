@@ -2312,6 +2312,7 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
     """
     ensure_node_up(node1)
     failpoint = "merge_tree_leader_election_stale_lease_mid_detached_mutation"
+    recording_failpoint = "merge_tree_leader_election_fail_recording_detached_change"
     table = "test_detached_mutation_rollback"
     try:
         # `old_parts_lifetime = 0`: the source parts of the merge below must be gone from the
@@ -2394,6 +2395,17 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
             f" the restart did not reset the block-number counter as expected"
         )
 
+        # A failure to record the first change (e.g. an allocation that fails while the undo record
+        # is prepared) must leave `detached/` as it was: the record and its slot in the journal are
+        # prepared before the directory is moved. The failpoint fires once.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {recording_failpoint}")
+        with pytest.raises(Exception, match="Injected failure while recording a change of the detached namespace"):
+            node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+        assert detached_names() == detached_before, (
+            "A change of the detached namespace was made although recording it failed"
+        )
+
         node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         try:
             # The covered part gets its permanent `inactive_` rename first, arming the journal;
@@ -2419,10 +2431,11 @@ def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_
         assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
         assert detached_names() == ["inactive_" + covered[0]]
     finally:
-        try:
-            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        except Exception:
-            pass
+        for name in (failpoint, recording_failpoint):
+            try:
+                node1.query(f"SYSTEM DISABLE FAILPOINT {name}")
+            except Exception:
+                pass
         try:
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
