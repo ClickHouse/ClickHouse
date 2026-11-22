@@ -8,6 +8,15 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <base/defines.h>
+
+#include <compare>
+#include <functional>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <tuple>
+#include <utility>
 
 
 namespace DB::Iceberg
@@ -106,6 +115,46 @@ public:
     [[nodiscard]] PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
 
     [[nodiscard]] const std::unordered_map<Int32, DB::DataTypePtr> & getMinMaxColumnTypes() const { return min_max_column_types; }
+};
+
+/// Identifies the manifest's partition specification and schema metadata.
+struct ManifestPrunerCacheKey
+{
+    String partition_specification_header;
+    Int32 manifest_schema_id;
+    String schema_header;
+
+    auto operator<=>(const ManifestPrunerCacheKey & other) const
+    {
+        return std::tie(partition_specification_header, manifest_schema_id, schema_header)
+            <=> std::tie(other.partition_specification_header, other.manifest_schema_id, other.schema_header);
+    }
+};
+
+/// Pruners shared by the manifest iterators of one scan walk.
+/// The cache is scoped to one IcebergIterator, so its filter, schema processor and table schema are common.
+/// Pruners are never erased; returned pointers remain valid for the lifetime of this cache.
+class SharedManifestFilesPruners
+{
+public:
+    using Factory = std::function<std::unique_ptr<ManifestFilesPruner>(const DB::KeyDescription * partition_key)>;
+
+    const ManifestFilesPruner * getOrCreate(
+        const ManifestPrunerCacheKey & key,
+        Int32 resolved_schema_id,
+        const std::shared_ptr<const DB::KeyDescription> & partition_key,
+        const Factory & factory);
+
+private:
+    struct Entry
+    {
+        /// The pruner stores a raw pointer to this description, so it must outlive the pruner.
+        std::shared_ptr<const DB::KeyDescription> partition_key;
+        std::unique_ptr<ManifestFilesPruner> pruner;
+    };
+
+    std::mutex mutex;
+    std::map<std::pair<ManifestPrunerCacheKey, Int32>, Entry> pruners TSA_GUARDED_BY(mutex);
 };
 
 }

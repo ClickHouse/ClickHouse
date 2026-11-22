@@ -584,6 +584,30 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     return PruningReturnStatus::NOT_PRUNED;
 }
+
+const ManifestFilesPruner * SharedManifestFilesPruners::getOrCreate(
+    const ManifestPrunerCacheKey & key,
+    Int32 resolved_schema_id,
+    const std::shared_ptr<const DB::KeyDescription> & partition_key,
+    const Factory & factory)
+{
+    std::lock_guard lock(mutex);
+    auto [it, inserted] = pruners.try_emplace(std::pair{key, resolved_schema_id});
+    if (inserted)
+    {
+        try
+        {
+            it->second.partition_key = partition_key;
+            it->second.pruner = factory(partition_key.get());
+        }
+        catch (...)
+        {
+            pruners.erase(it);
+            throw;
+        }
+    }
+    return it->second.pruner.get();
+}
 }
 
 #endif

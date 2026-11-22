@@ -22,6 +22,7 @@ namespace DB::Iceberg
 {
 
 class ManifestFilesPruner;
+class SharedManifestFilesPruners;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
@@ -120,7 +121,8 @@ public:
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
-        Int32 table_snapshot_schema_id_);
+        Int32 table_snapshot_schema_id_,
+        std::shared_ptr<SharedManifestFilesPruners> shared_pruners_ = nullptr);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
@@ -161,7 +163,8 @@ private:
         size_t partition_spec_fields_count,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
-        Int32 table_snapshot_schema_id);
+        Int32 table_snapshot_schema_id,
+        std::shared_ptr<SharedManifestFilesPruners> shared_pruners);
 
     ProcessedManifestFileEntryPtr processRow(size_t row_index);
 
@@ -199,10 +202,13 @@ private:
     /// Filtering (partition and min-max index pruning)
     const std::shared_ptr<const ActionsDAG> filter_dag;
     IcebergSchemaProcessor * const schema_processor_ptr;
+    const std::shared_ptr<SharedManifestFilesPruners> shared_pruners;
 
-    /// Cache of pruners by schema_id to avoid recreation on each row
+    /// Cache of pruner pointers by schema_id to avoid recreation on each row.
+    /// Pruners are owned by shared_pruners, or by owned_pruners when no shared cache is supplied.
     mutable std::mutex pruners_mutex;
-    std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners_by_schema_id;
+    std::unordered_map<Int32, const ManifestFilesPruner *> pruners_by_schema_id;
+    std::vector<std::unique_ptr<ManifestFilesPruner>> owned_pruners;
     const ManifestFilesPruner * getOrCreatePruner(Int32 schema_id);
 };
 

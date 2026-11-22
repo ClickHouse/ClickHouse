@@ -1822,20 +1822,6 @@ IcebergMetadata::estimateRead(
         std::unique_ptr<ManifestFilesPruner> pruner;
     };
 
-    /// Identifies the manifest's partition specification and schema metadata.
-    struct ManifestPrunerCacheKey
-    {
-        String partition_specification_header;
-        Int32 manifest_schema_id;
-        String schema_header;
-
-        auto operator<=>(const ManifestPrunerCacheKey & other) const
-        {
-            return std::tie(partition_specification_header, manifest_schema_id, schema_header)
-                <=> std::tie(other.partition_specification_header, other.manifest_schema_id, other.schema_header);
-        }
-    };
-
     /// The inner map is keyed by each data file's `resolved_schema_id`, which can differ from
     /// `manifest_schema_id`. A merged manifest can contain multiple resolved schema IDs, and
     /// each `ManifestFilesPruner` is constructed for one resolved schema.

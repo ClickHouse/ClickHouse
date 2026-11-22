@@ -190,6 +190,7 @@ IcebergIterator::IcebergIterator(
     , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
     , manifest_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
+    , shared_file_pruners(std::make_shared<Iceberg::SharedManifestFilesPruners>())
     , callback(std::move(callback_))
 {
     chassert(local_context);
@@ -379,7 +380,8 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
         manifest_list_entry.first_row_id,
         local_context,
         manifest_filter_dag,
-        table_state_snapshot->schema_id);
+        table_state_snapshot->schema_id,
+        shared_file_pruners);
 }
 
 Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
