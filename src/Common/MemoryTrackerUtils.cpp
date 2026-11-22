@@ -31,7 +31,7 @@ static std::optional<UInt64> getMostStrictAvailableMemory(MemoryTracker * memory
     return available;
 }
 
-std::optional<UInt64> getAvailableMemoryForSpilling()
+static std::optional<UInt64> getAvailableMemoryForSpilling()
 {
     auto * memory_tracker = DB::CurrentThread::getMemoryTracker();
     while (memory_tracker && memory_tracker->level == VariableContext::Thread)

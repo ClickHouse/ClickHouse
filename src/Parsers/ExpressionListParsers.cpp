@@ -4577,9 +4577,7 @@ the memory that the set keeps when it is on disk, such as its Bloom filter, exce
 written to disk, and most of its memory is released for the rest of the query, such as an aggregation that
 grows after the set is built.
 
-`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
-set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
-other query processing and the spill itself.
+These thresholds do not cap memory usage. Leave room for other query processing and the spill itself.
 
 A set on disk keeps a Bloom filter of its keys in memory, so that lookups of keys that are not in the set
 can skip reading the disk. `max_bytes_for_external_set_bloom_filter` limits the memory of the filter,
