@@ -279,7 +279,13 @@ namespace
                 bool is_negative = json_info && json_info->isNegativeInteger(*type);
                 have_negative_integers |= is_negative;
                 if (!is_negative)
-                    type = std::make_shared<DataTypeUInt64>();
+                {
+                    auto new_type = std::make_shared<DataTypeUInt64>();
+                    if (json_info && json_info->isNumberParsedFromString(*type))
+                        type = json_info->getNumberParsedFromString(new_type);
+                    else
+                        type = new_type;
+                }
             }
         }
 
