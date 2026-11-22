@@ -413,7 +413,7 @@ private:
     struct RangeState;
 
     bool align(size_t & target, ssize_t & required_source);
-    size_t alignedUniqueRun(size_t limit) const;
+    [[nodiscard]] size_t alignedUniqueRun(size_t limit) const;
     void appendProduct(const VectorWithMemoryTracking<size_t> & starts, const VectorWithMemoryTracking<size_t> & lengths);
     Chunk emitBatch(size_t num_rows);
     std::optional<Status> handleRangeState();

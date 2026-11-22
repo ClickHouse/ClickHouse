@@ -75,7 +75,8 @@ const FullSortingMergeJoin * getMemberJoin(const QueryPlan::Node & node)
 bool isProjection(const QueryPlan::Node & node)
 {
     const auto * expression = typeid_cast<const ExpressionStep *>(node.step.get());
-    if (!expression || node.children.size() != 1)
+    /// An `arrayJoin` changes the number of rows even when its result is not an output.
+    if (!expression || node.children.size() != 1 || expression->getExpression().hasArrayJoin())
         return false;
 
     for (const auto * output : expression->getExpression().getOutputs())
