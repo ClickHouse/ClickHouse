@@ -25,6 +25,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 
 #include <Common/randomSeed.h>
@@ -232,6 +233,7 @@ private:
     std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
+    std::optional<IcebergColumnSketches> column_sketches;
 
     MultipleFileWriter & getWriter(const ChunkPartitioner::PartitionKey & partition_key);
     void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file);
