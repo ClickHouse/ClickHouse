@@ -12290,9 +12290,6 @@ LostMergeResultDrop StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zk
         if (local_sources[i].min_block != local_sources[i - 1].max_block + 1)
             return LostMergeResultDrop::NotDropped;
 
-    if (zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "status"))
-        return LostMergeResultDrop::NotDropped;
-
     auto replicas_path = fs::path(zookeeper_path) / "replicas";
     Coordination::Stat replicas_stat;
     Strings replicas = zookeeper->getChildren(replicas_path, &replicas_stat);
@@ -12308,14 +12305,34 @@ LostMergeResultDrop StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zk
     /// without changing the log, and bumps its `is_lost`. If that happens between our scan of its queue and of its
     /// parts, we would see neither. The version of `is_lost` is checked when the entry is removed.
     std::vector<std::pair<String, int32_t>> peers_is_lost_versions;
+    Strings inactive_lost_peers;
     {
         Strings is_lost_paths;
         for (const String & replica : replicas)
             if ((replicas_path / replica).string() != replica_path)
                 is_lost_paths.push_back(replicas_path / replica / "is_lost");
-        auto responses = zookeeper->get(is_lost_paths);
+        auto responses = zookeeper->tryGet(is_lost_paths);
         for (size_t i = 0; i < is_lost_paths.size(); ++i)
+        {
+            /// A replica that is being dropped, or was created by a very old version, may have no `is_lost`.
+            if (responses[i].error == Coordination::Error::ZNONODE)
+                return LostMergeResultDrop::NotDropped;
+            if (responses[i].error != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(responses[i].error, is_lost_paths[i]);
             peers_is_lost_versions.emplace_back(is_lost_paths[i], responses[i].stat.version);
+
+            /// A lost replica clones from the others, and until it is done it does not have the parts or queue entries
+            /// that the scans below look for. It copies our `GET_PART` for the lost part, which it could not satisfy
+            /// if we merge the sources differently. Wait for it to finish. A replica that is not active cannot start
+            /// cloning before it becomes active, so for it the multi-op checks that it stays inactive.
+            if (responses[i].data != "0")
+            {
+                auto is_active_path = fs::path(is_lost_paths[i]).parent_path() / "is_active";
+                if (zookeeper->exists(is_active_path))
+                    return LostMergeResultDrop::RetryLater;
+                inactive_lost_peers.push_back(is_active_path);
+            }
+        }
     }
 
     /// Some replica may be about to produce the lost part (or a covering one): a merge that is in its queue,
@@ -12417,6 +12434,8 @@ LostMergeResultDrop StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zk
     ops.emplace_back(zkutil::makeCheckRequest(replicas_path, replicas_stat.version));
     for (const auto & [peer_is_lost_path, peer_is_lost_version] : peers_is_lost_versions)
         ops.emplace_back(zkutil::makeCheckRequest(peer_is_lost_path, peer_is_lost_version));
+    for (const String & is_active_path : inactive_lost_peers)
+        zkutil::addCheckNotExistsRequest(ops, *zookeeper, is_active_path);
     /// Bump the version of `is_lost` to race with `cloneReplica` the same way `removePartAndEnqueueFetch` does.
     ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "is_lost", is_lost_value, is_lost_stat.version));
 
