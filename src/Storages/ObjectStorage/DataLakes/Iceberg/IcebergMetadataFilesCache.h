@@ -155,8 +155,7 @@ public:
 
     static String getKey(const String& table_uuid, const String & data_path) { return table_uuid + data_path; }
 
-    /// `table_directory_key` is `Iceberg::getTableDirectoryKey` of the table. Not keyed by `table-uuid` alone: copies of a table share it.
-    /// `selection` is how the lookup chooses among the metadata files: lookups choosing differently get other files.
+    /// Copies of a table share its `table-uuid`, and lookups that choose the file differently (`selection`) get other files.
     static String getLatestMetadataVersionKey(
         const String & table_directory_key,
         const String & table_path,
@@ -172,7 +171,6 @@ public:
         return key;
     }
 
-    /// Removes the latest metadata versions cached for every spelling of the table directory.
     void removeLatestMetadataVersions(const String & table_directory_key)
     {
         Base::remove([&](const String & key, const MappedPtr & cell)

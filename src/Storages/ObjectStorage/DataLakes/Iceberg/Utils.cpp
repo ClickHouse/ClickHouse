@@ -1828,7 +1828,6 @@ String getTableDirectoryKey(const IObjectStorage & object_storage, const String 
     return getObjectStorageHash(object_storage) + '\0' + directory + '\0';
 }
 
-/// The part of the latest metadata cache key that says how the lookup chooses the file.
 static String getLatestMetadataSelection(
     bool follows_version_hint,
     bool by_last_updated_ms,
