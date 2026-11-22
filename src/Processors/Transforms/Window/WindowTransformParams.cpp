@@ -217,8 +217,8 @@ WindowTransformParams WindowTransformParams::create(
     auto range_offset_comparator = chooseRangeOffsetComparator(header, window_description.frame, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, order_by_indices);
     auto requirements = collectRequirements(description, functions);
-    auto needs_missing_keys = needsMissingKeys(header, order_by_indices, description, requirements);
     auto needs_peer_group_indexes = needsPeerGroupIndexes(description, requirements);
+    auto needs_missing_keys = needsMissingKeys(header, order_by_indices, description, requirements);
 
     return WindowTransformParams{
         std::move(header),
@@ -228,8 +228,8 @@ WindowTransformParams WindowTransformParams::create(
         std::move(should_materialize),
         std::move(range_offset_comparator),
         std::move(requirements),
-        std::move(needs_missing_keys),
         std::move(needs_peer_group_indexes),
+        std::move(needs_missing_keys),
     };
 }
 
