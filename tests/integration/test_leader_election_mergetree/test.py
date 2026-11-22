@@ -2,10 +2,12 @@ import io
 import json
 import logging
 import random
+import re
 import threading
 import time
 
 import pytest
+from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
 
@@ -1301,28 +1303,42 @@ def test_cleanup_skipped_on_stale_lease_after_partition_ddl(started_cluster):
 SHARED_UUID_BROKEN = "12345678-abcd-abcd-abcd-12345678ab09"
 
 
-def find_part_object_key_prefix(uuid, part_name):
-    """Locate the S3 key prefix of a part directory on the `plain_rewritable` disk.
+def directory_paths_on_storage():
+    """Yields `(object name of its prefix.path, logical path)` for every directory of the `plain_rewritable` disk.
 
     The disk stores each logical directory under a random remapped prefix:
     `data/__meta/<prefix>/prefix.path` holds the logical directory path, and the
     directory's files live flat under `data/<prefix>/`.
+
+    A server may remove a directory between the listing and the read of its `prefix.path`.
+    Such a directory is skipped: it is gone.
     """
     for obj in cluster.minio_client.list_objects(
         cluster.minio_bucket, "data/__meta/", recursive=True
     ):
         if not obj.object_name.endswith("/prefix.path"):
             continue
-        response = cluster.minio_client.get_object(
-            cluster.minio_bucket, obj.object_name
-        )
+        try:
+            response = cluster.minio_client.get_object(
+                cluster.minio_bucket, obj.object_name
+            )
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                continue
+            raise
         try:
             content = response.read().decode().strip()
         finally:
             response.close()
             response.release_conn()
+        yield obj.object_name, content
+
+
+def find_part_object_key_prefix(uuid, part_name):
+    """Locate the S3 key prefix of a part directory on the `plain_rewritable` disk, see `directory_paths_on_storage`."""
+    for object_name, content in directory_paths_on_storage():
         if uuid in content and content.rstrip("/").endswith("/" + part_name):
-            return obj.object_name.replace("__meta/", "", 1)[: -len("prefix.path")]
+            return object_name.replace("__meta/", "", 1)[: -len("prefix.path")]
     return None
 
 
@@ -5595,6 +5611,24 @@ FAST_CLEANUP_SETTINGS = (
 )
 
 
+def part_directories_on_storage(uuid):
+    """The directories of parts that the table still has on the `plain_rewritable` disk, including the
+    temporary ones (`delete_tmp_<part>`), which have the name of a part at the end.
+
+    `system.parts` does not show the parts that are being removed, so it says nothing about the storage.
+    """
+    names = []
+    for _, content in directory_paths_on_storage():
+        components = content.rstrip("/").split("/")
+        if (
+            len(components) >= 2
+            and components[-2] == uuid
+            and re.search(r"_\d+_\d+_\d+(_\d+)?$", components[-1])
+        ):
+            names.append(components[-1])
+    return sorted(names)
+
+
 def part_objects(uuid, part_name):
     """The S3 objects of a part directory, empty if the directory is gone."""
     prefix = find_part_object_key_prefix(uuid, part_name)
@@ -5719,8 +5753,11 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
             ).strip()
             == "0"
         ), "The source parts were not removed after the query on the follower had finished"
+        # `system.parts` stops showing a part when the cleanup takes it, before its files are removed.
         for part in source_parts:
-            assert not part_objects(uuid, part), f"The objects of part {part} are left on the storage"
+            assert _wait_until(
+                lambda part=part: not part_objects(uuid, part)
+            ), f"The objects of part {part} are left on the storage"
     finally:
         for node in (node1, node2):
             try:
@@ -5858,13 +5895,15 @@ def test_follower_query_does_not_read_reused_part_name(started_cluster, scenario
             follower.query(f"SYSTEM ENABLE FAILPOINT {pause_heartbeat}")
 
             # Once the reader file has expired, the leader removes the truncated part, and then the empty part
-            # that covered it.
+            # that covered it. `system.parts` stops showing a part when the cleanup takes it, before its files
+            # are removed, and a leader restarted in between would load what is left and not reuse the name.
             leader.query(f"TRUNCATE TABLE {table}")
             assert _wait_until(
                 lambda: leader.query(
                     f"SELECT count() FROM system.parts WHERE table = '{table}'"
                 ).strip()
-                == "0",
+                == "0"
+                and not part_directories_on_storage(uuid),
                 timeout=120,
             ), "The leader did not remove the parts kept by a node whose reader file has expired"
 
