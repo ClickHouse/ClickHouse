@@ -66,7 +66,9 @@ pub type FFI_VortexWriteCallback =
     unsafe extern "C" fn(context: *mut c_void, data: *const u8, length: u64) -> i32;
 
 /// The queue a task waits in.
-#[repr(i32)]
+// `repr(C)`, not `repr(i32)`: CFI encodes a `repr(C)` type in a callback signature by its name,
+// as C++ does, so the type id of `FFI_VortexTaskReadyCallback` matches the C++ callback.
+#[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FFI_VortexTaskQueue {
     /// Decoding, filtering and exporting to Arrow: work that needs a core.
@@ -762,7 +764,7 @@ pub struct FFI_VortexScanCallbacks {
     /// to stop it, and it surfaces from `on_finish` as an error.
     pub on_chunk: unsafe extern "C" fn(
         context: *mut c_void,
-        array: *mut FFI_ArrowArray,
+        array: *mut ArrowArray,
         split_index: u64,
     ) -> i32,
     /// Reports the end of the scan, exactly once: null if every split was delivered, otherwise
@@ -775,12 +777,17 @@ pub struct FFI_VortexScanCallbacks {
     pub on_finish: unsafe extern "C" fn(context: *mut c_void, error: *const c_char),
 }
 
+/// `FFI_ArrowArray` under its C Data Interface name, for `on_chunk`: CFI encodes a `repr(C)` struct
+/// in a callback signature by its name, and the C++ callback takes an `ArrowArray *`.
+#[repr(C)]
+pub struct ArrowArray(FFI_ArrowArray);
+
 /// The callbacks as the tasks carry them: the pointer is kept as an integer so that the struct
 /// stays `Send`. The caller guarantees the context outlives the scan.
 #[derive(Clone, Copy)]
 struct ScanCallbacks {
     context: usize,
-    on_chunk: unsafe extern "C" fn(*mut c_void, *mut FFI_ArrowArray, u64) -> i32,
+    on_chunk: unsafe extern "C" fn(*mut c_void, *mut ArrowArray, u64) -> i32,
     on_finish: unsafe extern "C" fn(*mut c_void, *const c_char),
     report_empty_splits: bool,
 }
@@ -805,7 +812,13 @@ impl ScanCallbacks {
                 // or releases it - and does not keep the pointer. It must not be released here as
                 // well, so the local is a `ManuallyDrop`.
                 let mut array = std::mem::ManuallyDrop::new(array);
-                unsafe { (self.on_chunk)(self.context as *mut c_void, &mut *array, split_index) }
+                unsafe {
+                    (self.on_chunk)(
+                        self.context as *mut c_void,
+                        (&mut *array as *mut FFI_ArrowArray).cast(),
+                        split_index,
+                    )
+                }
             }
         };
         if result != 0 {
@@ -1895,9 +1908,10 @@ mod tests {
 
     unsafe extern "C" fn test_on_chunk(
         context: *mut c_void,
-        array: *mut FFI_ArrowArray,
+        array: *mut ArrowArray,
         split_index: u64,
     ) -> i32 {
+        let array = array.cast::<FFI_ArrowArray>();
         let consumer = unsafe { &*(context as *const TestConsumer) };
         // Rejecting a chunk does not hand it back: releasing it is still on us.
         if consumer.fail_all || consumer.fail_on_split == Some(split_index) {
