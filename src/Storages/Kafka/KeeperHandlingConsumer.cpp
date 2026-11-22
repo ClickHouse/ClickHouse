@@ -5,6 +5,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/randomSeed.h>
 
@@ -13,7 +14,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int FAULT_INJECTED;
 extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char kafka2_throw_after_taking_replica_tmp_lock[];
 }
 
 namespace fs = std::filesystem;
@@ -489,9 +496,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
         tmp_locks_quota = 0;
     }
     /// We had a temporary lock, but there is at least one replica without locks, let's drop the quota to give the other
-    /// replica a chance to lock some partitions. A replica still below its quota after the yield rounds doesn't drop it:
-    /// the polling cursor survives the refresh, so alternating the assignment size could skip the temporary partition
-    /// in every round.
+    /// replica a chance to lock some partitions
     else if (tmp_locks_quota > 0 && has_replica_without_locks)
     {
         LOG_TRACE(log, "There is at least one replica without locks, won't lock any temporary locks this round");
@@ -502,16 +507,37 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         tmp_locks_quota = 1;
     }
-    /// Otherwise the replica holds at most one temporary lock, i.e. at most its permanent quota + 1 topic partitions
-    else if (bool expected = false; replica_holds_tmp_lock->compare_exchange_strong(expected, true))
+    /// The replica below its quota didn't take the free topic partitions during the yield rounds, so it is probably not
+    /// polling. Cover its share without the per-replica limit by growing the quota by one per round. The quota is not
+    /// dropped in every other round: the polling cursor survives the refresh, so alternating the size of the assignment
+    /// could skip the temporary partitions in every round.
+    else if (has_replica_below_quota)
     {
-        tmp_locks_quota = 1;
-        release_replica_tmp_lock = [flag = replica_holds_tmp_lock] { flag->store(false); };
+        if (tmp_locks_quota > available_topic_partitions.size())
+            tmp_locks_quota = std::min(tmp_locks_quota - 1, available_topic_partitions.size() - 1);
+        else
+            tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
+    /// Otherwise the replica holds at most one temporary lock, i.e. at most its permanent quota + 1 topic partitions.
+    /// The guard is created before the flag is taken, because creating it allocates and a flag taken without a guard
+    /// would never be given back.
     else
     {
-        LOG_TRACE(log, "Another consumer of this replica holds its temporary lock");
-        tmp_locks_quota = 0;
+        release_replica_tmp_lock = [flag = replica_holds_tmp_lock] { flag->store(false); };
+        if (bool expected = false; replica_holds_tmp_lock->compare_exchange_strong(expected, true))
+        {
+            tmp_locks_quota = 1;
+            fiu_do_on(FailPoints::kafka2_throw_after_taking_replica_tmp_lock,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after taking the temporary lock of the replica");
+            });
+        }
+        else
+        {
+            release_replica_tmp_lock.release();
+            LOG_TRACE(log, "Another consumer of this replica holds its temporary lock");
+            tmp_locks_quota = 0;
+        }
     }
     /// Logged for every round, including the ones that reset the quota, so the sequence of quotas can be followed
     LOG_INFO(
@@ -535,11 +561,13 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
         auto maybe_lock = createLocksInfoIfFree(tp);
         if (!maybe_lock.has_value())
             continue;
-        /// The quota is at most 1, so the loop stops after this lock
-        maybe_lock->release_replica_tmp_lock = std::move(release_replica_tmp_lock);
         tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
-        break;
     }
+
+    /// The temporary lock of the replica is given back with the temporary lock it was taken for, or here if no topic
+    /// partition could be locked
+    if (release_replica_tmp_lock && !tmp_locks.empty())
+        tmp_locks.begin()->second.release_replica_tmp_lock = std::move(release_replica_tmp_lock);
 }
 
 // If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no

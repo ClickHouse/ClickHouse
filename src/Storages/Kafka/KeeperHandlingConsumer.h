@@ -183,7 +183,7 @@ private:
     const size_t num_consumers;
 
     /// Shared by the consumers of the storage on this replica, so the replica holds at most one temporary lock while every
-    /// active replica holds locks.
+    /// active replica holds locks and none of them stays below its permanent quota.
     const std::shared_ptr<std::atomic<bool>> replica_holds_tmp_lock;
 
     /// Partition affinity settings (enabled when shard_count > 0)
