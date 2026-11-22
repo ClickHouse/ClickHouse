@@ -271,6 +271,9 @@ def test_manifest_list_partition_pruning_null_partition_values(
     assert select_values("NOT (b IS NOT NULL) AND NOT (a >= 0)") == "[5]"
     assert select_values("a IN (2, 100) AND b IS NULL") == "[2]"
     assert select_values("a = 3 AND s IS NULL") == "[3]"
+    assert select_values("ifNull(b, 0) IN (0)") == "[2,5]"
+    assert select_values("coalesce(b, 0) IN (0, 1)") == "[2,5]"
+    assert select_values("ifNull(s, '') IN ('')") == "[3]"
     assert instance.query(f"SELECT sum(v) FROM {creation_expression}").strip() == "15"
 
     query_id_pruned = f"{TABLE_NAME}-pruned"
