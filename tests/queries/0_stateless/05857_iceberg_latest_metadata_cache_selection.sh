@@ -72,7 +72,7 @@ ${CLIENT} -q "
 
 read_s3_sum()
 {
-    ${CLIENT} --iceberg_list_only_v_prefixed_metadata_files="$2" --send_logs_level=error \
+    ${CLIENT} --iceberg_list_only_v_prefixed_metadata_files="$2" --send_logs_level=error "${@:4}" \
         -q "SELECT '$1', sum(c0) FROM icebergS3(s3_conn, filename = '${S3_PATH}'$3)"
 }
 
@@ -81,9 +81,11 @@ read_s3_sum all-files 0 ""
 
 # A hint naming no file falls back (with a warning) to listing the files of the scheme it spells, here the `v`
 # files, and that listing does not replace the file cached for a listing of all files.
-${CLIENT} --s3_truncate_on_insert=1 -q "
+# No server-side AST fuzzer: a fuzzed path or hint makes the hint read fail on a missing S3 key, which the stress
+# test reports as a lost key.
+${CLIENT} --s3_truncate_on_insert=1 --ast_fuzzer_runs=0 -q "
     INSERT INTO FUNCTION s3(s3_conn, filename = '${S3_PATH}/metadata/version-hint.text', format = 'RawBLOB') SELECT '9'"
-read_s3_sum hint-fallback 0 "${HINT}"
+read_s3_sum hint-fallback 0 "${HINT}" --ast_fuzzer_runs=0
 read_s3_sum all-files 0 ""
 
 ${CLIENT} -q "DROP TABLE t_s3"
