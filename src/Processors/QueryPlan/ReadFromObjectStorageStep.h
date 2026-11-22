@@ -60,6 +60,8 @@ public:
     /// threshold of the TopN filter, so the read must neither consult nor write the TopK cache entries.
     void disableTopKQueryConditionCache() { allow_top_k_query_condition_cache = false; }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD
@@ -155,7 +157,7 @@ private:
     /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
     bool isReadPinnedToListedGeneration() const;
 
-    bool sortingKeyIsComputableFromSourceHeader() const;
+    [[nodiscard]] bool sortingKeyIsComputableFromSourceHeader() const;
     Pipe buildInOrderPipe(
         const ContextPtr & local_context,
         const FormatFilterInfoPtr & format_filter_info,
