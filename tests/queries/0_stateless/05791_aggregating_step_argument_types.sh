@@ -66,9 +66,11 @@ def node(step, payload, out_columns, children=(), version=VERSION, settings=()):
     out = vu(len(children)) + b"".join(children)
     out += sb(step) + (vu(0) if version >= 19 else b"")   # step name, per-step version
     out += sb("") + header(out_columns)   # description, header
-    for name, value in settings:   # name, flags, value; an empty name terminates
-        out += sb(name) + vu(0) + sb(value)
-    return out + vu(0) + payload
+    # In this branch the step settings are in the binary format: their number, then name, flags and value of each.
+    out += vu(len(settings))
+    for name, value in settings:
+        out += sb(name) + vu(0) + value
+    return out + payload
 
 def read_nothing(columns):
     return node("ReadNothing", b"", columns)
@@ -175,14 +177,14 @@ forge("memory-efficient grouping sets merge", GS, [[("__grouping_set", U64)] + K
       [("__grouping_set", U64)] + K_A, "MergingAggregated")
 # The output header and the reconstruction of the missing keys take every key from the input by name.
 forge("grouping set key is repeated after the states", GS, [[("__grouping_set", U64)] + K_STATE + [("k", U64)]], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", vu(0))])
 # The memory-bound merge (with a non-empty sort description) does not support grouping sets either.
 MEMORY_BOUND = 32
 GS_SORTED = bytes([GS[0] | MEMORY_BOUND]) + GS[1:-2] + vu(1) + sb("k") + b"\x03" + vu(0)
 forge("memory-bound grouping sets merge", GS_SORTED, [[("__grouping_set", U64)] + K_STATE], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", vu(0))])
 forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", vu(0))])
 
 # Without grouping sets, the merge does not produce `__grouping_set`, so the input must not have it.
 MERGING = bytes([FINAL]) + vu(1) + sb("k") + aggregating(FINAL, aggregates=ANY_SUM[:1])[2:-1] + vu(0) + vu(0)
