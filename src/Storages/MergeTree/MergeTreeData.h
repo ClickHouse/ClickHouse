@@ -2413,6 +2413,7 @@ protected:
     void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
 
     void delayMergesAfterStartup();
+    void stopDelayingMergesAfterStartup();
 
     /// Only a table loaded from its existing metadata (server startup, UNDROP TABLE) delays its merges.
     bool merges_can_be_delayed_after_startup = false;

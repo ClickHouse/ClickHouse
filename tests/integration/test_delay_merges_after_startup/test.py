@@ -63,6 +63,18 @@ def wait_merges_delayed_in_log(table):
     )
 
 
+def wait_merges_postponed(table):
+    assert_eq_with_retry(
+        node,
+        "SELECT count() > 0 FROM system.replication_queue WHERE database = 'default' "
+        f"AND table = '{table}' AND type = 'MERGE_PARTS' "
+        "AND postpone_reason LIKE '%delay_merges_after_startup_seconds%'",
+        "1\n",
+        retry_count=240,
+        sleep_time=0.5,
+    )
+
+
 def test_delay_merges_after_startup(started_cluster):
     # The harness pins the server default to 0, so every table sets the setting explicitly.
     create_with_parts(
@@ -72,7 +84,18 @@ def test_delay_merges_after_startup(started_cluster):
         "t_expire", "MergeTree", "delay_merges_after_startup_seconds = 10"
     )
     create_with_parts(
-        "t_optimize", "MergeTree", "delay_merges_after_startup_seconds = 3600"
+        "t_insert", "MergeTree", "delay_merges_after_startup_seconds = 3600"
+    )
+    create_with_parts(
+        "t_mutation", "MergeTree", "delay_merges_after_startup_seconds = 3600"
+    )
+    # 4 parts in total, 2 in each partition.
+    create_with_parts(
+        "t_optimize",
+        "MergeTree",
+        "delay_merges_after_startup_seconds = 3600",
+        partition_by="PARTITION BY x % 2",
+        count=4,
     )
     create_with_parts(
         "t_control", "MergeTree", "delay_merges_after_startup_seconds = 0"
@@ -90,26 +113,39 @@ def test_delay_merges_after_startup(started_cluster):
         partition_by="PARTITION BY x % 2",
         count=4,
     )
-    create_with_parts(
-        "r_delayed",
-        "ReplicatedMergeTree('/clickhouse/tables/r_delayed', 'node')",
-        "delay_merges_after_startup_seconds = 3600",
-    )
+    replicated = ["r_delayed", "r_insert", "r_optimize", "r_mutation"]
+    for table in replicated:
+        create_with_parts(
+            table,
+            f"ReplicatedMergeTree('/clickhouse/tables/{table}', 'node')",
+            "delay_merges_after_startup_seconds = 3600",
+        )
 
     # `SYSTEM STOP MERGES` is not persisted, so after the restart only the setting holds the merges back.
     node.restart_clickhouse()
 
     # Merges run in this window when they are not delayed.
     wait_active_parts("t_control", "1\n")
-    wait_merges_delayed_in_log("t_delayed")
+    for table in ["t_delayed", "t_insert", "t_mutation", "t_optimize"]:
+        wait_merges_delayed_in_log(table)
     assert active_parts("t_delayed") == "3\n"
 
-    # Mutations are not delayed.
+    # An INSERT, a mutation and OPTIMIZE end the delay.
+    assert active_parts("t_insert") == "3\n"
+    node.query("INSERT INTO t_insert VALUES (100)")
+    wait_active_parts("t_insert", "1\n")
+
+    assert active_parts("t_mutation") == "3\n"
     node.query(
-        "ALTER TABLE t_delayed DELETE WHERE x = 100 SETTINGS mutations_sync = 1",
+        "ALTER TABLE t_mutation DELETE WHERE x = 100 SETTINGS mutations_sync = 1",
         timeout=120,
     )
-    assert active_parts("t_delayed") == "3\n"
+    wait_active_parts("t_mutation", "1\n")
+
+    # Only partition 0 is merged by OPTIMIZE, partition 1 by a background merge.
+    assert active_parts("t_optimize") == "4\n"
+    node.query("OPTIMIZE TABLE t_optimize PARTITION 0 FINAL")
+    wait_active_parts("t_optimize", "2\n")
 
     # The delay ends on its own, not earlier than its seconds after the server start.
     wait_active_parts("t_expire", "1\n")
@@ -121,10 +157,6 @@ def test_delay_merges_after_startup(started_cluster):
         == "1\n"
     )
 
-    # OPTIMIZE is not delayed.
-    node.query("OPTIMIZE TABLE t_optimize FINAL")
-    assert active_parts("t_optimize") == "1\n"
-
     # A partition with `parts_to_delay_insert` parts ends the delay.
     wait_active_parts("t_bypass", "1\n")
 
@@ -133,19 +165,30 @@ def test_delay_merges_after_startup(started_cluster):
     assert active_parts("t_partitions") == "4\n"
 
     # A replica postpones the merges of its queue, and the setting is applied at once.
-    assert_eq_with_retry(
-        node,
-        "SELECT count() > 0 FROM system.replication_queue WHERE database = 'default' AND table = 'r_delayed' "
-        "AND type = 'MERGE_PARTS' AND postpone_reason LIKE '%delay_merges_after_startup_seconds%'",
-        "1\n",
-        retry_count=240,
-        sleep_time=0.5,
-    )
-    assert active_parts("r_delayed") == "3\n"
+    for table in replicated:
+        wait_merges_postponed(table)
+        assert active_parts(table) == "3\n"
     node.query(
         "ALTER TABLE r_delayed MODIFY SETTING delay_merges_after_startup_seconds = 0"
     )
     wait_active_parts("r_delayed", "1\n")
+
+    # On a replica too an INSERT, OPTIMIZE and a mutation end the delay. The postponed merge
+    # runs at once; merging the inserted part as well waits for the next merge assignment.
+    node.query("INSERT INTO r_insert VALUES (100)")
+    assert_eq_with_retry(
+        node,
+        "SELECT count() < 4 FROM system.parts WHERE database = 'default' AND table = 'r_insert' AND active",
+        "1\n",
+        retry_count=240,
+        sleep_time=0.5,
+    )
+    node.query("OPTIMIZE TABLE r_optimize FINAL", timeout=120)
+    assert active_parts("r_optimize") == "1\n"
+    node.query(
+        "ALTER TABLE r_mutation DELETE WHERE x = 100 SETTINGS mutations_sync = 1",
+        timeout=120,
+    )
 
     # A runtime ATTACH does not delay merges.
     node.query("DETACH TABLE t_delayed")
@@ -163,11 +206,12 @@ def test_delay_merges_after_startup(started_cluster):
     for table in [
         "t_delayed",
         "t_expire",
+        "t_insert",
+        "t_mutation",
         "t_optimize",
         "t_control",
         "t_bypass",
         "t_partitions",
-        "r_delayed",
         "t_new",
-    ]:
+    ] + replicated:
         node.query(f"DROP TABLE {table} SYNC")

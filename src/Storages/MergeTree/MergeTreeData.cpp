@@ -9162,6 +9162,13 @@ void MergeTreeData::delayMergesAfterStartup()
 }
 
 
+void MergeTreeData::stopDelayingMergesAfterStartup()
+{
+    if (startup_time_ns.exchange(0, std::memory_order_relaxed))
+        background_operations_assignee.trigger();
+}
+
+
 bool MergeTreeData::areMergesDelayedAfterStartup() const
 {
     const UInt64 startup_ns = startup_time_ns.load(std::memory_order_relaxed);

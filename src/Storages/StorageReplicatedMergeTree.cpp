@@ -6593,6 +6593,8 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
             "Table is in readonly mode since table metadata was not found in zookeeper: replica_path={}",
             replica_path);
 
+    stopDelayingMergesAfterStartup();
+
     const auto storage_settings_ptr = getSettings();
     const Settings & query_settings = local_context->getSettingsRef();
 
@@ -6625,6 +6627,7 @@ bool StorageReplicatedMergeTree::optimize(
     auto table_lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
@@ -9106,6 +9109,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     /// the version of this mutation), the mutation is considered done and can be deleted.
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::mutate");
+    stopDelayingMergesAfterStartup();
     delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
 
     /// Fail closed before creating the mutation entry: this replica does not execute mutations,

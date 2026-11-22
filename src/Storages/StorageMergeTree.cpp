@@ -541,6 +541,8 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
             "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
             getStorageID().getNameForLogs());
 
+    stopDelayingMergesAfterStartup();
+
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
 }
@@ -1493,6 +1495,7 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
@@ -3288,6 +3291,7 @@ bool StorageMergeTree::optimize(
     ContextPtr local_context)
 {
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
