@@ -14,6 +14,10 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 enum MergeTreeSequentialSourceType
 {
     Mutation,
+    /// A mutation that rewrites every column of the part instead of hardlinking the untouched ones
+    /// (e.g. of a `Compact` part or a part with packed storage), so it writes every column it reads,
+    /// like a merge does.
+    MutationOfAllColumns,
     Merge,
 };
 

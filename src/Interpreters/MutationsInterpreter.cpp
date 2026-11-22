@@ -740,6 +740,73 @@ static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const 
     return key_columns;
 }
 
+/// For an array subcolumn of a `Nested` structure with shared offsets, returns another array
+/// subcolumn of the same structure that the mutated part stores, if any: its sizes are the sizes
+/// the shared offsets of the part pin down.
+static std::optional<String> getStoredNestedSiblingOfArray(
+    const MutationsInterpreter::Source & source,
+    const ColumnsDescription & columns_desc,
+    const String & column_name,
+    const DataTypePtr & column_type)
+{
+    const auto * merge_tree_data = source.getMergeTreeData();
+    auto part = source.getMergeTreeDataPart();
+    if (!merge_tree_data || !part || !isArray(column_type)
+        || !(*merge_tree_data->getSettings())[MergeTreeSetting::share_nested_offsets])
+        return {};
+
+    auto split = Nested::splitName(column_name);
+    if (split.second.empty())
+        return {};
+
+    for (const auto & part_column : part->getColumns())
+    {
+        if (part_column.name == column_name || !isArray(part_column.type))
+            continue;
+
+        auto sibling_split = Nested::splitName(part_column.name);
+        if (sibling_split.second.empty() || sibling_split.first != split.first)
+            continue;
+
+        auto storage_column = columns_desc.tryGetPhysical(part_column.name);
+        if (storage_column && isArray(storage_column->type))
+            return part_column.name;
+    }
+
+    return {};
+}
+
+/// An array subcolumn of a `Nested` structure shares its offsets with the sibling subcolumns the
+/// part stores. A mutation that writes the subcolumn without rewriting the siblings would overwrite
+/// the shared offsets with the sizes of @value, and corrupt the siblings when they differ. So, as a
+/// merge does (see `reconcileEvaluatedDefaultWithSharedOffsets`), keep the value in the rows where
+/// its size agrees with a stored sibling and degrade to the type-default values of the sibling's
+/// size elsewhere: this is what a column without a default reads as.
+/// The two occurrences of @value are one node of the actions, so it is evaluated once.
+static ASTPtr reconcileWithStoredNestedSibling(
+    const ASTPtr & value,
+    const MutationsInterpreter::Source & source,
+    const ColumnsDescription & columns_desc,
+    const String & column_name,
+    const DataTypePtr & column_type)
+{
+    auto sibling_name = getStoredNestedSiblingOfArray(source, columns_desc, column_name, column_type);
+    if (!sibling_name)
+        return value;
+
+    auto type_literal = make_intrusive<ASTLiteral>(column_type->getName());
+    auto sibling_size = makeASTFunction("length", make_intrusive<ASTIdentifier>(*sibling_name));
+
+    return makeASTFunction("_CAST",
+        makeASTFunction("if",
+            makeASTFunction("equals", makeASTFunction("length", value->clone()), sibling_size->clone()),
+            value->clone(),
+            makeASTFunction("arrayResize",
+                makeASTFunction("_CAST", make_intrusive<ASTLiteral>(Array{}), type_literal->clone()),
+                sibling_size->clone())),
+        type_literal);
+}
+
 static void validateUpdateColumns(
     const MutationsInterpreter::Source & source,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1150,6 +1217,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     bool need_rebuild_indexes_for_update_delete = false;
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
+    NameSet patch_read_columns;
 
     /// Cleared values are injected before rebuilding their dependencies.
     NameSet cleared_columns_with_dependencies;
@@ -1378,8 +1446,12 @@ void MutationsInterpreter::prepare(bool dry_run)
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
-            auto materialized_column = makeASTFunction(
+            ASTPtr materialized_column = makeASTFunction(
                 "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
+
+            /// The default expression knows nothing about the offsets the subcolumn shares with its
+            /// siblings, which this mutation does not rewrite.
+            materialized_column = reconcileWithStoredNestedSibling(materialized_column, source, columns_desc, column.name, column.type);
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
@@ -1634,6 +1706,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
+            if (command.read_for_patch)
+                patch_read_columns.insert(command.column_name);
             materialized_statistics.insert(command.column_name);
 
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
@@ -1771,8 +1845,23 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!read_columns.empty())
     {
         stages.emplace_back(context);
+        const auto & mutated_part = source.getMergeTreeDataPart();
         for (auto & column_name : read_columns)
-            stages.back().column_to_updated.emplace(column_name, make_intrusive<ASTIdentifier>(column_name));
+        {
+            ASTPtr read_column = make_intrusive<ASTIdentifier>(column_name);
+
+            /// A column the part does not store is read as its default expression and written to the
+            /// new part by this stage (e.g. a column that `MATERIALIZE INDEX` records for its index).
+            /// The expression knows nothing about the offsets the column shares with its siblings.
+            /// The values of a patch part are not a default, so they are left as they are.
+            if (mutated_part && !mutated_part->tryGetColumn(column_name) && !patch_read_columns.contains(column_name))
+            {
+                if (auto physical_column = columns_desc.tryGetPhysical(column_name))
+                    read_column = reconcileWithStoredNestedSibling(read_column, source, columns_desc, column_name, physical_column->type);
+            }
+
+            stages.back().column_to_updated.emplace(column_name, read_column);
+        }
     }
 
     /// Recompute MATERIALIZED columns derived from patch-updated columns that the patch part
@@ -2491,7 +2580,8 @@ void MutationsInterpreter::Source::read(
     if (data)
     {
         createReadFromPartStep(
-            MergeTreeSequentialSourceType::Mutation,
+            mutation_settings.rewrites_all_part_columns ? MergeTreeSequentialSourceType::MutationOfAllColumns
+                                                        : MergeTreeSequentialSourceType::Mutation,
             plan,
             *data,
             storage_snapshot,

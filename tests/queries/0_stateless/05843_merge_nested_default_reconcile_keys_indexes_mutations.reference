@@ -1,0 +1,36 @@
+A stored partition key column is not recomputed
+1	1	[10,20]	['','']
+2	2	[30]	['x']
+2	2
+A stored sorting key column is not recomputed
+2	1	[30]	['x']
+1	2	[10,20]	['','']
+1	2
+A stored column with a non-deterministic function behind an alias is not recomputed
+1	0	[10,20]	['','']
+2	0	[30]	['x']
+A text index over a recomputed stored column is rebuilt by the merge
+1	 	[10,20]	['','']
+2	x	[30]	['x']
+1
+1
+A projection is rebuilt by an unrelated mutation that rewrites the whole part
+1	[10,20]	['','']
+2	[30,40]	['','']
+2
+2
+MATERIALIZE COLUMN of the missing subcolumn keeps the shared offsets
+1	[10,20]	['','']
+2	[30]	['x']
+1
+MATERIALIZE INDEX that records the missing subcolumn keeps the shared offsets
+1	[10,20]	['','']
+2	[30]	['x']
+1
+1
+1
+A recomputed stored column reads its other inputs in a vertical merge
+1	['x']	100	301	301
+2	['x']	200	601	601
+1	['','']	100	302	302
+2	['x']	200	601	601

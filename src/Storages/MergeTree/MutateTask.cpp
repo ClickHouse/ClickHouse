@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/MergeTree/NestedDefaultsReconciliation.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -3764,6 +3765,22 @@ private:
         bool is_full_wide_part = is_per_file_compatible_part_storage && isWidePart(ctx->source_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
+        /// This task stores every column it reads, and its reads reconcile a missing `Nested` default
+        /// with the shared offsets of the source part, as a merge does (see `MutationOfAllColumns`).
+        /// The skip indexes and projections of the source part were built from the value before the
+        /// reconciliation, so the ones that read such a column are rebuilt from the values written
+        /// to the new part instead of being hardlinked.
+        NameSet reconciled_columns;
+        if (ctx->mutating_pipeline_builder.initialized() && (*ctx->data->getSettings())[MergeTreeSetting::share_nested_offsets])
+            reconciled_columns = getNestedColumnsReconciledInSomePart(ctx->storage_columns, {ctx->source_part});
+
+        const auto storage_column_names = ctx->storage_columns.getNameSet();
+        auto may_read_reconciled_column = [&](const Names & required_columns)
+        {
+            return mayReadReconciledNestedDefault(
+                required_columns, reconciled_columns, ctx->metadata_snapshot->getColumns(), storage_column_names);
+        };
+
         /// Source skp_idx.packed bundles several indices into one file: hardlinking it would
         /// inherit data for every contained index, including ones we're about to drop or that
         /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
@@ -3805,7 +3822,9 @@ private:
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
                 || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
                 || index_checksums_missing
-                || index_refused;
+                || index_refused
+                || (ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot)
+                    && may_read_reconciled_column(idx.expression->getRequiredColumns()));
 
             if (need_recalculate)
             {
@@ -3853,11 +3872,14 @@ private:
             if (removed_projections.contains(projection.name))
                 continue;
 
+            bool has_valid_projection
+                = (ctx->source_part->hasProjection(projection.name) || ctx->source_part->hasUnloadedProjection(projection.name))
+                && !ctx->source_part->hasBrokenProjection(projection.name);
+
             bool need_recalculate =
                 (ctx->materialized_projections.contains(projection.name)
-                || (!is_per_file_compatible_part_storage
-                    && (ctx->source_part->hasProjection(projection.name) || ctx->source_part->hasUnloadedProjection(projection.name))
-                    && !ctx->source_part->hasBrokenProjection(projection.name)))
+                || (!is_per_file_compatible_part_storage && has_valid_projection)
+                || (has_valid_projection && may_read_reconciled_column(projection.getRequiredColumns())))
                 && !lightweight_delete_drop;
 
             if (need_recalculate)
@@ -5493,6 +5515,10 @@ bool MutateTask::prepare()
         ctx->materialized_statistics = ctx->interpreter->grabMaterializedStatistics();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
 
+        /// A mutation that rewrites every column stores the missing `Nested` defaults it reads, so it
+        /// must reconcile them with the shared offsets, as a merge does.
+        ctx->interpreter->setRewritesAllPartColumns(!ctx->recalculate_ttl_only && MutationHelpers::rewritesAllPartColumns(
+            ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type));
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         /// TTL inputs remain in the pipeline header, but none of them are written in recalc-only mode.
         if (!ctx->recalculate_ttl_only)

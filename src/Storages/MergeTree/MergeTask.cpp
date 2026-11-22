@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/NestedDefaultsReconciliation.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -18,6 +19,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
@@ -466,6 +468,93 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             add_ttl_expression_columns(recompression_ttl);
     }
 
+    /// A missing column recomputed from its `DEFAULT` that reads a missing array subcolumn of a `Nested`
+    /// structure with shared offsets (e.g. `b_length MATERIALIZED length(n.b)`) must be computed from the
+    /// value of that subcolumn reconciled with the shared offsets (see `IMergeTreeReader::evaluateMissingDefaults`).
+    /// The reconciliation only happens for a requested column, so read both columns in the same step:
+    /// the vertical algorithm reads every gathered column separately.
+    if ((*global_ctx->data_settings)[MergeTreeSetting::share_nested_offsets])
+    {
+        std::unordered_map<String, size_t> array_subcolumns_by_nested_name;
+        for (const auto & storage_column : global_ctx->storage_columns)
+        {
+            auto split = Nested::splitName(storage_column.name);
+            if (!split.second.empty() && isArray(storage_column.type))
+                ++array_subcolumns_by_nested_name[split.first];
+        }
+
+        auto has_shared_offsets = [&](const String & name)
+        {
+            auto column = global_ctx->storage_columns.tryGetByName(name);
+            if (!column || !isArray(column->type))
+                return false;
+            auto split = Nested::splitName(name);
+            if (split.second.empty())
+                return false;
+            auto nested_it = array_subcolumns_by_nested_name.find(split.first);
+            return nested_it != array_subcolumns_by_nested_name.end() && nested_it->second >= 2;
+        };
+
+        std::vector<NameSet> part_column_names;
+        part_column_names.reserve(global_ctx->future_part->parts.size());
+        for (const auto & part : global_ctx->future_part->parts)
+            part_column_names.emplace_back(part->getColumns().getNameSet());
+
+        auto missing_together_in_some_part = [&](const String & lhs, const String & rhs)
+        {
+            return std::ranges::any_of(part_column_names, [&](const NameSet & names) { return !names.contains(lhs) && !names.contains(rhs); });
+        };
+
+        /// The stored values of a deterministic `MATERIALIZED` column are computed again from the
+        /// reconciled value of its dependency, so it is read in the same step even where it is stored.
+        const auto reconciled_in_some_part = getNestedColumnsReconciledInSomePart(global_ctx->storage_columns, global_ctx->future_part->parts);
+
+        const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
+        for (const auto & storage_column : global_ctx->storage_columns)
+        {
+            auto column_default = columns_desc.getDefault(storage_column.name);
+            if (!column_default || !column_default->expression)
+                continue;
+
+            std::optional<bool> recomputed_where_stored;
+            auto is_recomputed_where_stored = [&]
+            {
+                if (!recomputed_where_stored)
+                    recomputed_where_stored = isStoredMaterializedColumnRecomputable(
+                        storage_column.name, columns_desc, *global_ctx->metadata_snapshot, global_ctx->context);
+                return *recomputed_where_stored;
+            };
+
+            const auto dependencies = collectDefaultStorageDependencies(column_default->expression, columns_desc, storage_columns);
+
+            bool recomputed_from_stored_values = false;
+            for (const auto & dependency : dependencies)
+            {
+                if (dependency == storage_column.name || !has_shared_offsets(dependency))
+                    continue;
+
+                const bool recomputed = reconciled_in_some_part.contains(dependency) && is_recomputed_where_stored();
+                if (recomputed || missing_together_in_some_part(storage_column.name, dependency))
+                {
+                    key_columns.insert(storage_column.name);
+                    key_columns.insert(dependency);
+                }
+                recomputed_from_stored_values |= recomputed;
+            }
+
+            /// Recomputing a stored column evaluates its whole expression again, so every column the
+            /// expression reads has to be in the same step, not only the reconciled one: the reader
+            /// does not inject the inputs of a column the part stores. The closure is transitive
+            /// through the defaults of the intermediate columns.
+            if (recomputed_from_stored_values)
+            {
+                for (const auto & dependency : dependencies)
+                    if (storage_columns.contains(dependency))
+                        key_columns.insert(dependency);
+            }
+        }
+    }
+
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
     {
         auto & [column_name, indexes] = *it;
@@ -733,11 +822,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     std::map<String, MissingColumnMergeState> missing_column_states;
     NameSet missing_columns_to_materialize;
+    /// Current names of the columns each source part omits with a marker, aligned with `parts`.
+    std::vector<NameSet> marker_columns_by_part(global_ctx->future_part->parts.size());
     size_t non_empty_parts = 0;
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
-    for (const auto & part : global_ctx->future_part->parts)
+    for (size_t part_index = 0; part_index < global_ctx->future_part->parts.size(); ++part_index)
     {
+        const auto & part = global_ctx->future_part->parts[part_index];
         auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
 #if CLICKHOUSE_CLOUD
             , nullptr
@@ -759,6 +851,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (conversions->isColumnDropped(marker.name, share_nested)
                 || conversions->isColumnDropped(current_name, share_nested))
                 continue;
+
+            marker_columns_by_part[part_index].emplace(current_name);
 
             auto [it, inserted] = missing_column_states.try_emplace(current_name);
             auto & state = it->second;
@@ -800,11 +894,77 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
 
+        /// A source part without rows contributes no values to the merged part, so the columns it
+        /// stores must not change the materialize-vs-expire decision for the parts that do (for
+        /// example, a part whose rows were all deleted by a mutation after `MATERIALIZE COLUMN`).
+        /// When every source part is empty, all of them are taken into account as before.
+        auto contributes_rows = [&](const auto & part)
+        {
+            return non_empty_parts == 0 || part->rows_count != 0;
+        };
+        const size_t contributing_parts = non_empty_parts == 0 ? global_ctx->future_part->parts.size() : non_empty_parts;
+
         /// Collect all column names that actually exist in the source parts
         for (const auto & part : global_ctx->future_part->parts)
         {
+            if (!contributes_rows(part))
+                continue;
+
             for (const auto & col : part->getColumns())
                 columns_present_in_parts.emplace(col.name);
+        }
+
+        /// The merge reads a column with a `DEFAULT` expression from a source part in one of three
+        /// ways, decided per part (see `IMergeTreeReader::fillMissingColumns`): stored in the part,
+        /// it is read as stored; omitted with a `MissingColumnInfo` marker, it is filled with the
+        /// type default frozen when the part was written; absent without a marker, it is recomputed
+        /// from its current expression. Only the last one evaluates the expression, so only it can
+        /// produce values inconsistent with the shared `Nested` offsets, and only it lets the
+        /// expression's dependencies reach the column. Count the parts in which each storage column
+        /// takes that path.
+        ///
+        /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time, so a part that still
+        /// physically stores `old` stores the values of `new` (unless `old` is itself a live storage
+        /// column again, see `renamed_column_targets` below).
+        NameSet storage_column_names;
+        storage_column_names.reserve(global_ctx->storage_columns.size());
+        for (const auto & storage_column : global_ctx->storage_columns)
+            storage_column_names.emplace(storage_column.name);
+
+        std::unordered_map<String, size_t> recomputed_from_default_part_counts;
+        for (size_t part_index = 0; part_index < global_ctx->future_part->parts.size(); ++part_index)
+        {
+            if (!contributes_rows(global_ctx->future_part->parts[part_index]))
+                continue;
+
+            NameSet part_column_names;
+            for (const auto & col : global_ctx->future_part->parts[part_index]->getColumns())
+                part_column_names.emplace(col.name);
+
+            for (const auto & rename : global_ctx->alter_conversions[part_index]->getRenameMap())
+            {
+                if (part_column_names.contains(rename.rename_from) && !storage_column_names.contains(rename.rename_from))
+                    part_column_names.emplace(rename.rename_to);
+            }
+
+            for (const auto & storage_column : global_ctx->storage_columns)
+            {
+                if (!part_column_names.contains(storage_column.name)
+                    && !marker_columns_by_part[part_index].contains(storage_column.name))
+                    ++recomputed_from_default_part_counts[storage_column.name];
+            }
+        }
+
+        /// A column recomputed for the rows of every part is the only kind the merge may leave out
+        /// entirely: a column stored in some part, or omitted with a marker in some part, has live or
+        /// frozen values there that the merged part must carry, and a marker cannot be re-emitted when
+        /// another part lacks it or freezes a different type (see `missing_columns_to_materialize`),
+        /// so such a column is written by the merge instead.
+        NameSet columns_recomputed_from_default_in_all_parts;
+        for (const auto & [column_name, part_count] : recomputed_from_default_part_counts)
+        {
+            if (part_count == contributing_parts)
+                columns_recomputed_from_default_in_all_parts.emplace(column_name);
         }
 
         /// The only live values of a column may sit in the patch parts selected for this merge: a
@@ -817,11 +977,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             for (const auto & col : patch_part->getColumns())
                 columns_present_in_patch_parts.emplace(col.name);
         }
-
-        NameSet storage_column_names;
-        storage_column_names.reserve(global_ctx->storage_columns.size());
-        for (const auto & storage_column : global_ctx->storage_columns)
-            storage_column_names.emplace(storage_column.name);
 
         /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: `storage_columns`
         /// already carries `new`, while the source parts still physically store `old`. Treat `new`
@@ -857,6 +1012,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             }
         }
 
+        /// The intermediates the dependency closure follows (see `collectDefaultStorageDependencies`):
+        /// the columns without values in any source. A column with values in a patch part, or a pending
+        /// rename target, has live values and is never expired (see the guard below), so the merged
+        /// part stores it and reads never recompute it. Following its expression would drag an
+        /// unrelated `Nested` subcolumn onto the `expired_columns` path, turning it from materialized
+        /// at merge time into recomputed at read time from the stored intermediate.
+        NameSet default_dependencies_to_follow;
+        for (const auto & column_name : columns_recomputed_from_default_in_all_parts)
+        {
+            if (!columns_present_in_patch_parts.contains(column_name) && !renamed_column_targets.contains(column_name))
+                default_dependencies_to_follow.emplace(column_name);
+        }
+
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
 
         /// A due `TTL ... GROUP BY ... SET` assignment can give such a column non-default values. `has_due_ttl` is
@@ -878,6 +1046,82 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
+
+        /// Partial fix for (1) above: for Nested subcolumns whose DEFAULT transitively depends on
+        /// an already-expired column, also expire them — vertical merge cannot materialize them
+        /// correctly, and the wrong array dimensions corrupt shared Nested offsets.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/86123
+        {
+            auto & expired_columns = global_ctx->new_data_part->expired_columns;
+
+            /// Only an array subcolumn of a `Nested` structure whose outermost offsets are shared with a
+            /// sibling array subcolumn can corrupt those offsets. A dotted scalar (`x.y UInt64`), an array
+            /// without array siblings, or any column of a table with `share_nested_offsets = 0` writes
+            /// its own offsets, so its default is materialized by the merge as for any other column.
+            const bool share_nested_offsets = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+            std::unordered_map<String, size_t> array_subcolumns_by_nested_name;
+            if (share_nested_offsets)
+            {
+                for (const auto & storage_column : global_ctx->storage_columns)
+                {
+                    auto split = Nested::splitName(storage_column.name);
+                    if (!split.second.empty() && isArray(storage_column.type))
+                        ++array_subcolumns_by_nested_name[split.first];
+                }
+            }
+
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (const auto & storage_column : global_ctx->storage_columns)
+                {
+                    if (expired_columns.contains(storage_column.name))
+                        continue;
+
+                    /// A column stored in a base part, omitted from a base part with a
+                    /// `MissingColumnInfo` marker, stored in a patch part, or being a pending rename
+                    /// target cannot be expired: that would drop its live values, or its frozen
+                    /// write-time default in the marker case. Such a column is materialized during the
+                    /// merge, and for the parts where it is recomputed from its DEFAULT the values are
+                    /// reconciled with the shared Nested offsets those parts store (see
+                    /// `reconcileEvaluatedDefaultWithSharedOffsets`), so the mixed case does not
+                    /// corrupt the shared offsets either.
+                    if (!columns_recomputed_from_default_in_all_parts.contains(storage_column.name)
+                        || columns_present_in_patch_parts.contains(storage_column.name)
+                        || renamed_column_targets.contains(storage_column.name))
+                        continue;
+
+                    auto split = Nested::splitName(storage_column.name);
+                    if (split.second.empty() || !isArray(storage_column.type))
+                        continue;
+
+                    auto nested_it = array_subcolumns_by_nested_name.find(split.first);
+                    if (nested_it == array_subcolumns_by_nested_name.end() || nested_it->second < 2)
+                        continue;
+
+                    auto col_default = columns_desc.getDefault(storage_column.name);
+                    if (!col_default || !col_default->expression)
+                        continue;
+
+                    /// Determine the physical storage columns the DEFAULT expression actually reads.
+                    /// This uses scope-aware dependency analysis (lambda parameters excluded) and
+                    /// expands `ALIAS` columns, so both false positives (a lambda parameter that
+                    /// happens to share a name with an expired column) and false negatives (a
+                    /// dependency reached through an alias) are avoided.
+                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc, default_dependencies_to_follow))
+                    {
+                        if (expired_columns.contains(dependency))
+                        {
+                            expired_columns.emplace(storage_column.name);
+                            global_ctx->columns_expired_by_unmaterializable_default.emplace(storage_column.name);
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Determine whether projections and minmax indexes need to be updated during merge,
@@ -895,6 +1139,40 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// Merging text indexes maps rows to source parts by the `_part_index` virtual column, which a table column of that name shadows.
     global_ctx->rebuild_text_indexes = global_ctx->merge_may_reduce_rows || global_ctx->metadata_snapshot->getColumns().has("_part_index");
+
+    /// The merge may reconcile a `Nested` default with the shared offsets of a source part, and
+    /// recompute the stored `MATERIALIZED` columns that read it. The segments of a text index over
+    /// such a column were built from the values before the reconciliation, so the index is built
+    /// from the values written to the merged part instead of merging those segments.
+    if (!global_ctx->rebuild_text_indexes && (*global_ctx->data_settings)[MergeTreeSetting::share_nested_offsets])
+    {
+        NameSet reconciled_in_some_part;
+        bool reconciled_columns_collected = false;
+
+        for (const auto & index : global_ctx->metadata_snapshot->getSecondaryIndices())
+        {
+            if (index.type != "text")
+                continue;
+
+            if (!reconciled_columns_collected)
+            {
+                reconciled_in_some_part = getNestedColumnsReconciledInSomePart(global_ctx->storage_columns, global_ctx->future_part->parts);
+                reconciled_columns_collected = true;
+            }
+
+            if (mayReadReconciledNestedDefault(
+                    index.expression->getRequiredColumns(), reconciled_in_some_part,
+                    global_ctx->metadata_snapshot->getColumns(), global_ctx->storage_columns.getNameSet()))
+            {
+                LOG_DEBUG(
+                    ctx->log,
+                    "Text indexes will be rebuilt because index {} reads a `Nested` column the merge may reconcile with the shared offsets",
+                    index.name);
+                global_ctx->rebuild_text_indexes = true;
+                break;
+            }
+        }
+    }
 
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
@@ -939,20 +1217,122 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
     if (!expired_columns.empty())
     {
-        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
+        /// Columns read out of the merged block during this merge: the ones the merge algorithm itself
+        /// consumes (`merge_required_columns`, e.g. the columns summed by `SummingMergeTree`), the
+        /// inputs of the TTL expressions, and the inputs of the consumers rebuilt during this merge -
+        /// projections and skip indexes (`merge_required_columns` does not cover the latter, it is
+        /// snapshotted before their inputs are added to the merged column set).
+        NameSet columns_required_during_merge = global_ctx->merge_required_columns;
+        {
+            const auto all_storage_columns = global_ctx->storage_columns.getNameSet();
+            const auto all_virtual_columns = global_ctx->virtual_columns.getNameSet();
+
+            auto add_required_column = [&](const String & name)
+            {
+                columns_required_during_merge.emplace(getColumnNameInStorage(name, all_storage_columns, all_virtual_columns));
+            };
+
+            auto add_required_columns = [&](const Names & names)
+            {
+                for (const auto & name : names)
+                    add_required_column(name);
+            };
+
+            for (const auto * projection : global_ctx->projections_to_rebuild)
+                add_required_columns(projection->getRequiredColumns());
+
+            for (const auto & index : global_ctx->merging_skip_indexes)
+                add_required_columns(index.expression->getRequiredColumns());
+
+            for (const auto & index : global_ctx->text_indexes_to_merge)
+                add_required_columns(index.expression->getRequiredColumns());
+
+            /// Single-column skip indexes are built in the vertical stage from the gathered column.
+            for (const auto & [column_name, _] : global_ctx->skip_indexes_by_column)
+                columns_required_during_merge.emplace(column_name);
+
+            /// The TTL step evaluates its expressions over the merged block, so their inputs must be
+            /// produced by the merge.
+            auto add_ttl_columns = [&](const TTLDescription & ttl)
+            {
+                for (const auto & column : ttl.expression_columns)
+                    add_required_column(column.name);
+                for (const auto & column : ttl.where_expression_columns)
+                    add_required_column(column.name);
+            };
+
+            const auto & metadata = *global_ctx->metadata_snapshot;
+            if (metadata.hasRowsTTL())
+                add_ttl_columns(metadata.getRowsTTL());
+            for (const auto & ttl : metadata.getRowsWhereTTLs())
+                add_ttl_columns(ttl);
+            for (const auto & ttl : metadata.getMoveTTLs())
+                add_ttl_columns(ttl);
+            for (const auto & ttl : metadata.getRecompressionTTLs())
+                add_ttl_columns(ttl);
+            /// `TTL GROUP BY` aggregates every column of the merged block: the `SET` targets with their
+            /// aggregate functions and all the other columns with an implicit `any` (see
+            /// `TTLAggregationAlgorithm`). Its keys and aggregate arguments may be computed expressions,
+            /// and the `SET` expressions read aggregate results, neither of which names a storage column.
+            /// So all storage columns are inputs of that step.
+            if (metadata.hasAnyGroupByTTL())
+                columns_required_during_merge.insert(all_storage_columns.begin(), all_storage_columns.end());
+            for (const auto & ttl : metadata.getGroupByTTLs())
+                add_ttl_columns(ttl);
+            for (const auto & [column_name, ttl] : metadata.getColumnTTLs())
+            {
+                add_required_column(column_name);
+                add_ttl_columns(ttl);
+            }
+        }
+
+        /// A column expired because its `DEFAULT` cannot be materialized here is not expired after all
+        /// when the merge needs it: nothing else would produce it, and the TTL step must not (see
+        /// below). It is merged and written like any other column instead. Reading it goes through
+        /// `reconcileEvaluatedDefaultWithSharedOffsets`, which makes the values consistent with the
+        /// offsets the source parts store, so the written `Nested` offsets are not corrupted.
+        /// Writing it is what keeps the merged part consistent: if the column were still dropped from
+        /// the written part, ordinary reads would recompute it from its `DEFAULT` without that
+        /// reconciliation, and could return a value different from the one the projection or skip
+        /// index was built from, or lose the result of the merge algorithm (e.g. summed values).
+        NameSet columns_kept_for_merge;
+        NameSet columns_to_drop_from_merge;
+        for (const auto & name : expired_columns)
+        {
+            if (global_ctx->columns_expired_by_unmaterializable_default.contains(name)
+                && columns_required_during_merge.contains(name))
+                columns_kept_for_merge.emplace(name);
+            else
+                columns_to_drop_from_merge.emplace(name);
+        }
+
+        for (const auto & name : columns_kept_for_merge)
+        {
+            global_ctx->new_data_part->expired_columns.erase(name);
+            global_ctx->columns_expired_by_unmaterializable_default.erase(name);
+        }
+
+        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(columns_to_drop_from_merge);
 
         auto filter_columns = [&](const NamesAndTypesList & input, NamesAndTypesList & expired_out)
         {
             NamesAndTypesList result;
             for (const auto & column : input)
             {
-                bool is_expired = expired_columns.contains(column.name);
+                bool is_dropped = columns_to_drop_from_merge.contains(column.name);
                 bool is_required_for_merge = global_ctx->merge_required_columns.contains(column.name);
 
-                if (is_expired)
+                /// The TTL step fills expired columns with the value of their `DEFAULT`, so that
+                /// skip indexes and projections rebuilt during the merge see the value the table
+                /// logically reads. A column expired because its `DEFAULT` cannot be materialized
+                /// here must be left out of that: evaluating it is what writes array sizes that
+                /// disagree with the shared `Nested` offsets, and the expression is not even
+                /// resolvable there when it reads an `ALIAS` column. Such a column is either written
+                /// by the merge (see above), or recomputed on read, where the full context is available.
+                if (is_dropped && !global_ctx->columns_expired_by_unmaterializable_default.contains(column.name))
                     expired_out.push_back(column);
 
-                if (!is_expired || is_required_for_merge)
+                if (!is_dropped || is_required_for_merge)
                     result.push_back(column);
             }
 
@@ -1652,6 +2032,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
 
+    /// The merge may reconcile a `Nested` default with the shared offsets of a source part, so the
+    /// values a projection part of that source part was built from may differ from the ones written
+    /// to the merged part, including the values of the defaults computed from the reconciled column.
+    NameSet reconciled_in_some_part;
+    if ((*global_ctx->data_settings)[MergeTreeSetting::share_nested_offsets] && !projections.empty())
+        reconciled_in_some_part = getNestedColumnsReconciledInSomePart(global_ctx->storage_columns, global_ctx->future_part->parts);
+
+    const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
+    const auto storage_column_names = global_ctx->storage_columns.getNameSet();
+
+    auto may_read_reconciled_column = [&](const Names & required_columns)
+    {
+        return mayReadReconciledNestedDefault(required_columns, reconciled_in_some_part, columns_desc, storage_column_names);
+    };
+
     for (const auto & projection : projections)
     {
         const auto & required_columns = projection.getRequiredColumns();
@@ -1659,6 +2054,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             required_columns.begin(),
             required_columns.end(),
             [&](const String & name) { return global_ctx->new_data_part->expired_columns.contains(name); });
+
 
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
@@ -1713,6 +2109,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             LOG_DEBUG(
                 ctx->log,
                 "Projection {} will be rebuilt because some projection parts miss columns the projection now expects",
+                projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (projection_parts.size() == global_ctx->future_part->parts.size() && may_read_reconciled_column(required_columns))
+        {
+            /// Rebuild from the values written to the merged part rather than merge the projection
+            /// parts built from the values before the reconciliation.
+            LOG_DEBUG(
+                ctx->log,
+                "Projection {} will be rebuilt because it reads a `Nested` column the merge may reconcile with the shared offsets",
                 projection.name);
             global_ctx->projections_to_rebuild.push_back(&projection);
         }
