@@ -185,7 +185,8 @@ bool RabbitMQSource::driveLoopUntilMessage()
             consumer->waitForMessages(std::min(LOOP_DRIVE_POLL_MS, drive_budget_ms - elapsed_ms), is_cancelled);
     }
 
-    return true;
+    /// A delivery may wake the wait right after SYSTEM PAUSE.
+    return drive_loop_on_worker || !storage.isConsumeBlocked();
 }
 
 Chunk RabbitMQSource::generate()

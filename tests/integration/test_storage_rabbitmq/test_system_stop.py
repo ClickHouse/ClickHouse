@@ -804,7 +804,7 @@ def test_refresh_drains_backlog_with_single_broker_worker(rabbitmq_cluster):
         table, exchange, node=node, flush_interval_ms=0, num_consumers=2
     )
     # Stop before publishing so the backlog is only ever consumed by the self-driving REFRESH cycle,
-    # never by normal streaming (which cannot make progress with a single worker anyway).
+    # never by normal streaming.
     node.query(f"SYSTEM STOP test.{table}")
 
     publish(rabbitmq_cluster, exchange, 0, 20)

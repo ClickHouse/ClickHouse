@@ -2316,7 +2316,7 @@ def test_rabbitmq_idle_table_does_not_rebuild_insert_pipeline(rabbitmq_cluster, 
     time.sleep(10)
     empty = int(instance.count_in_log(empty_calls)) - before
     # About 16 with a 500 ms poll timeout; several hundred when every empty read rebuilds the pipeline.
-    assert empty < 60, f"{empty} insert pipelines built for empty reads in 10 s of idle"
+    assert 0 < empty < 60, f"{empty} insert pipelines built for empty reads in 10 s of idle"
 
     # A message published while idle still arrives.
     publish(1)

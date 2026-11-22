@@ -1364,9 +1364,9 @@ void StorageRabbitMQ::threadFunc()
                     /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
                     /// iteration is an ordinary cycle (the loop below breaks while blocked).
                     const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
-                    /// A cycle ran, so the next round starts soon; the backoff grows only while nothing can be read.
-                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                     bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
+                    /// A cycle ran, so the next round starts soon; the backoff grows only while cycles fail.
+                    milliseconds_to_wait = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_empty_queue_backoff_start_ms];
                     if (!continue_reading)
                         break;
 
