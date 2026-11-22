@@ -4164,14 +4164,18 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
 
     try:
         # Aggressive cleanup on the leader: the tombstone must actually be removed from the
-        # shared storage during the test, which is the situation the fix is about.
+        # shared storage during the test, which is the situation the fix is about. The dropped
+        # parts are no longer removed by `DROP PARTITION` itself (the reader file of the follower
+        # is still fresh then), but by the cleanup thread, whose iteration that removes nothing
+        # is followed by a sleep of `max_cleanup_delay_period`.
         node1.query(
             f"""
             CREATE TABLE {table} UUID '{SHARED_UUID_VANISHED_PARTS}' {columns}
             SETTINGS {TABLE_SETTINGS},
                      old_parts_lifetime = 0,
                      merge_tree_clear_old_parts_interval_seconds = 1,
-                     cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
+                     cleanup_delay_period = 1, max_cleanup_delay_period = 1,
+                     cleanup_delay_period_random_add = 0
             """
         )
         wait_for_leader([node1], table_name=table)
@@ -5555,6 +5559,16 @@ def test_lease_expiry_respects_writer_session_timeout(started_cluster):
 
 SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS = "12345678-abcd-abcd-abcd-12345678ab64"
 SHARED_UUID_REUSED_PART_NAME = "12345678-abcd-abcd-abcd-12345678ab65"
+SHARED_UUID_REUSED_PART_NAME_WITHOUT_CHECKSUMS = "12345678-abcd-abcd-abcd-12345678ab66"
+
+# A longer heartbeat than in `TABLE_SETTINGS`: the tests below need the leader to stay the leader while a
+# query on the follower is paused, and a write is refused once the lease was not renewed for two heartbeats.
+READERS_TABLE_SETTINGS = (
+    "storage_policy = 's3', "
+    "leader_election = true, "
+    "leader_election_heartbeat_interval = 2, "
+    "leader_election_session_timeout = 6"
+)
 
 # The cleanup thread looks at the outdated parts every second and removes them at once, so a part that
 # stays is kept by something else than its lifetime.
@@ -5588,22 +5602,23 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
 
     Every node that is not the leader now keeps a reader file next to the lease, which tells the leader
     how recent its set of parts is and which outdated parts its queries still hold. A query on the
-    follower is paused in the middle of a read, the leader merges the parts it reads and has nothing
-    else to wait for (`old_parts_lifetime = 0`), and the parts must stay on the storage until the query
-    has finished, with its exact result. After that they must be removed.
+    follower is paused in the middle of a read (after `PREWHERE` has read `y` of the first block, before
+    anything of `x` is opened), the leader merges the parts it reads and has nothing else to wait for
+    (`old_parts_lifetime = 0`), and the parts must stay on the storage until the query has finished, with
+    its exact result. After that they must be removed.
     """
     ensure_node_up(node1)
     ensure_node_up(node2)
     table = "test_follower_query_keeps_parts"
     uuid = SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS
-    failpoint = "remote_fs_gather_pause_in_read"
+    failpoint = "merge_tree_readers_chain_pause_before_next_reader"
     try:
         for statement, node in (("CREATE", node1), ("ATTACH", node2)):
             node.query(
                 f"""
                 {statement} TABLE {table} UUID '{uuid}' (x UInt64, y UInt64)
                 ENGINE = MergeTree ORDER BY x
-                SETTINGS {TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}
+                SETTINGS {READERS_TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}
                 """
             )
         leader, followers = wait_for_leader([node1, node2], table_name=table)
@@ -5612,7 +5627,9 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
         leader.query(f"SYSTEM STOP MERGES {table}")
         leader.query(f"INSERT INTO {table} SELECT number + 1, number FROM numbers(1000)")
         leader.query(f"INSERT INTO {table} SELECT number + 1001, number FROM numbers(1000)")
-        query = f"SELECT sum(x), sum(y), count() FROM {table} WHERE x > 0"
+        # `y` is not in the primary key, so the condition does not prune any part, including the one with
+        # the probe row of `wait_for_leader`: the query holds every part that the merge below replaces.
+        query = f"SELECT sum(x), sum(y), count() FROM {table} PREWHERE y >= 0"
         expected = leader.query(query)
         source_parts = leader.query(
             f"SELECT name FROM system.parts WHERE table = '{table}' AND active ORDER BY name"
@@ -5632,7 +5649,15 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
 
         def run_query():
             try:
-                result["value"] = follower.query(query, settings={"max_threads": 1}, timeout=300)
+                result["value"] = follower.query(
+                    query,
+                    settings={
+                        "max_threads": 1,
+                        "remote_filesystem_read_prefetch": 0,
+                        "allow_prefetched_read_pool_for_remote_filesystem": 0,
+                    },
+                    timeout=300,
+                )
             except Exception as e:
                 result["error"] = str(e)
 
@@ -5655,7 +5680,7 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
             assert _wait_until(lambda: follower_active_parts() == merged_parts), (
                 f"The follower never saw the merged part: {follower_active_parts()}"
             )
-            time.sleep(8)
+            time.sleep(10)
 
             for part in source_parts:
                 assert part_objects(uuid, part), (
@@ -5694,7 +5719,8 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
                 pass
 
 
-def test_follower_query_does_not_read_reused_part_name(started_cluster):
+@pytest.mark.parametrize("without_checksums", [False, True])
+def test_follower_query_does_not_read_reused_part_name(started_cluster, without_checksums):
     """
     A node whose reader file expired (here its heartbeat is paused) is not waited for, so the leader may
     remove a part that a query of that node still holds. Block numbers restart when the table is empty
@@ -5703,46 +5729,57 @@ def test_follower_query_does_not_read_reused_part_name(started_cluster):
     had not read yet: with `PREWHERE` it returned `x` of the old part next to `y` of the new one.
 
     The storage of a part is now bound to its directory, so the query must either return its original
-    row or fail, and never return a mix.
+    row or fail, and never return a mix. The follower must also load the part that replaced the old one,
+    which has another number of rows.
+
+    The directory is identified by the key prefix of its files, not by a particular file. In the second
+    variant the old part has no `checksums.txt` (it is optional for `MergeTree`), which used to leave it
+    without an identity: neither bound, nor replaced on the follower.
     """
     ensure_node_up(node1)
     ensure_node_up(node2)
-    table = "test_reused_part_name"
-    uuid = SHARED_UUID_REUSED_PART_NAME
+    leader, follower = node1, node2
+    table = "test_reused_part_name" + ("_without_checksums" if without_checksums else "")
+    uuid = SHARED_UUID_REUSED_PART_NAME_WITHOUT_CHECKSUMS if without_checksums else SHARED_UUID_REUSED_PART_NAME
     pause_read = "merge_tree_readers_chain_pause_before_next_reader"
     pause_heartbeat = "merge_tree_leader_election_pause_heartbeat"
+    definition = f"""
+        TABLE {table} UUID '{uuid}' (x UInt64, y UInt64)
+        ENGINE = MergeTree ORDER BY x
+        SETTINGS {READERS_TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}, min_bytes_for_wide_part = 0
+        """
+
+    def insert_when_leader(values):
+        """Without the probe insert of `wait_for_leader`: the first part must be the one with the data."""
+        deadline = time.monotonic() + 90
+        while True:
+            try:
+                leader.query(f"INSERT INTO {table} VALUES {values}")
+                return
+            except Exception as e:
+                if "TABLE_IS_READ_ONLY" not in str(e):
+                    raise
+            assert time.monotonic() < deadline, f"{leader.name} did not become the leader"
+            time.sleep(1)
+
+    def active_parts(node):
+        return node.query(
+            f"SELECT name FROM system.parts WHERE table = '{table}' AND active"
+        ).split()
+
     try:
-        for statement, node in (("CREATE", node1), ("ATTACH", node2)):
-            node.query(
-                f"""
-                {statement} TABLE {table} UUID '{uuid}' (x UInt64, y UInt64)
-                ENGINE = MergeTree ORDER BY x
-                SETTINGS {TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}, min_bytes_for_wide_part = 0
-                """
-            )
-
-        def insert_on_leader(values):
-            """Without the probe insert of `wait_for_leader`: the first part must be the one with the data."""
-            deadline = time.monotonic() + 90
-            while True:
-                for node in (node1, node2):
-                    try:
-                        node.query(f"INSERT INTO {table} VALUES {values}")
-                        return node
-                    except Exception as e:
-                        if "TABLE_IS_READ_ONLY" not in str(e):
-                            raise
-                assert time.monotonic() < deadline, "No node became the leader"
-                time.sleep(1)
-
-        def active_parts(node):
-            return node.query(
-                f"SELECT name FROM system.parts WHERE table = '{table}' AND active"
-            ).split()
-
-        leader = insert_on_leader("(1, 10)")
-        follower = node2 if leader is node1 else node1
+        # The follower attaches the table only after the part is written, so that it loads the part
+        # as it is on the storage at that moment.
+        leader.query(f"CREATE {definition}")
+        insert_when_leader("(1, 10)")
         assert active_parts(leader) == ["all_1_1_0"]
+        old_prefix = find_part_object_key_prefix(uuid, "all_1_1_0")
+        assert old_prefix is not None
+
+        if without_checksums:
+            cluster.minio_client.remove_object(cluster.minio_bucket, old_prefix + "checksums.txt")
+
+        follower.query(f"ATTACH {definition}")
         assert _wait_until(lambda: follower.query(f"SELECT count() FROM {table}").strip() == "1")
 
         result = {}
@@ -5783,24 +5820,41 @@ def test_follower_query_does_not_read_reused_part_name(started_cluster):
             ), "The leader did not remove the parts kept by a node whose reader file has expired"
 
             leader.restart_clickhouse()
-            assert insert_on_leader("(2, 20)") is leader
-            assert active_parts(leader) == ["all_1_1_0"], (
+            insert_when_leader("(2, 20), (3, 30)")
+
+            # The name is reused on the storage by a new directory. Usually it is the part of the insert above.
+            # If the leader lost the lease between publishing a part and committing it, that attempt failed and
+            # left its directory under this name, and the retry wrote the same rows to the next part.
+            new_prefix = find_part_object_key_prefix(uuid, "all_1_1_0")
+            assert new_prefix is not None and new_prefix != old_prefix, (
                 "The name of the removed part was not reused, so the test checks nothing"
             )
-            assert _wait_until(lambda: follower.query(f"SELECT x, y FROM {table}") == "2\t20\n"), (
-                "The follower never saw the part that replaced the removed one"
-            )
+
+            # The follower loads the new directory under the old name, with its own number of rows.
+            assert _wait_until(
+                lambda: follower.query(
+                    f"SELECT rows FROM system.parts WHERE table = '{table}' AND name = 'all_1_1_0' AND active"
+                ).strip()
+                == "2"
+            ), "The follower never loaded the part that replaced the removed one"
+            assert follower.query(f"SELECT DISTINCT x, y FROM {table} ORDER BY x") == "2\t20\n3\t30\n"
         finally:
             follower.query(f"SYSTEM DISABLE FAILPOINT {pause_read}")
             thread.join(timeout=300)
 
-        assert result.get("value") != "1\t20\n", "The query combined the columns of two different parts"
+        assert "\t20" not in result.get("value", "") and "\t30" not in result.get("value", ""), (
+            f"The query combined the columns of two different parts: {result}"
+        )
         if "error" in result:
             assert "DATA_PART_CHANGED_ON_SHARED_STORAGE" in result["error"], result["error"]
         else:
             assert result["value"] == "1\t10\n", result
     finally:
         for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
             for failpoint in (pause_read, pause_heartbeat):
                 try:
                     node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
