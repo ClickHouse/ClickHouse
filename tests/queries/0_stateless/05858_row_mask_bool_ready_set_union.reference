@@ -1,0 +1,24 @@
+bool_off_dispatch	1	1
+bool_off_mask	0	0	1	10
+bool_off_mask	1	1	0	20
+bool_off_mask	2	2	0	30
+bool_off_mask	3	3	0	40
+bool_off_visible	1
+bool_on_dispatch	1	1
+bool_on_mask	0	0	1	10
+bool_on_mask	1	1	0	20
+bool_on_mask	2	2	0	30
+bool_on_mask	3	3	0	40
+bool_on_visible	1
+mixed_off_dispatch	1	1
+mixed_off_mask	0	0	0	10
+mixed_off_mask	1	1	0	20
+mixed_off_mask	2	2	0	30
+mixed_off_mask	3	3	0	40
+mixed_off_visible	1
+mixed_on_dispatch	1	1
+mixed_on_mask	0	0	0	10
+mixed_on_mask	1	1	0	20
+mixed_on_mask	2	2	0	30
+mixed_on_mask	3	3	0	40
+mixed_on_visible	1

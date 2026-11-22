@@ -433,14 +433,20 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
     }
 
     const auto & first = *sets.front();
-    const auto matches_header = [](const Set & set, const ColumnsWithTypeAndName & expected_header)
+    const auto same_type = [](const DataTypePtr & lhs, const DataTypePtr & rhs)
+    {
+        /// `equals` ignores custom names, but `Bool` and `UInt8` keys have different membership conversions.
+        return lhs->equals(*rhs) && lhs->getName() == rhs->getName();
+    };
+    const auto matches_header = [&same_type](const Set & set, const ColumnsWithTypeAndName & expected_header)
     {
         if (set.data_types.size() != expected_header.size() || set.set_elements_types.size() != expected_header.size())
             return false;
 
         for (size_t i = 0; i < expected_header.size(); ++i)
         {
-            if (!set.data_types[i]->equals(*expected_header[i].type) || !set.set_elements_types[i]->equals(*expected_header[i].type))
+            if (!same_type(set.data_types[i], expected_header[i].type)
+                || !same_type(set.set_elements_types[i], expected_header[i].type))
                 return false;
         }
 
@@ -485,7 +491,7 @@ std::shared_ptr<Set> Set::tryUniteReadyFixedWidthSets(
                     return {};
                 for (size_t i = 0; i < header.size(); ++i)
                 {
-                    if (!tuple->getElements()[i]->equals(*header[i].type))
+                    if (!same_type(tuple->getElements()[i], header[i].type))
                         return {};
                 }
                 tuple_header.emplace_back(type->createColumn(), type, "");
