@@ -180,13 +180,20 @@ void AsyncDecompressor::wait()
     batch.waitAndCheck();
 }
 
-void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination)
+DecompressionBatch::DecompressionBatch(cuda::stream_ref stream_)
+    : stream(stream_)
 {
-    const cuda::stream_ref stream = GPUResources::get().decompression;
+}
 
+void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination, cudaEvent_t destination_ready_event)
+{
     /// The destination is the caller's, which may have just allocated or written it on the compute stream.
-    checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute.get()), "Cannot mark a point in the compute stream");
-    checkCuda(cudaStreamWaitEvent(stream.get(), destination_ready.get(), 0), "Cannot make the decompression stream wait for the compute stream");
+    if (!destination_ready_event)
+    {
+        checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute.get()), "Cannot mark a point in the compute stream");
+        destination_ready_event = destination_ready.get();
+    }
+    checkCuda(cudaStreamWaitEvent(stream.get(), destination_ready_event, 0), "Cannot make the decompression stream wait for its destination");
 
     size_t num_blocks = 0;
     size_t decompressed_total = 0;
@@ -238,6 +245,11 @@ void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece>
     size_t at = 0;
     for (const CompressedPiece & piece : pieces)
     {
+        if (piece.destination)
+        {
+            destination = piece.destination;
+            at = 0;
+        }
         for (const CompressedBlock & block : piece.blocks)
         {
             compressed_ptrs[block_index] = piece.device_compressed + block.offset;

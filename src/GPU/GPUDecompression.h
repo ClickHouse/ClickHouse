@@ -31,27 +31,36 @@ struct CompressedPiece
     size_t compressed_bytes = 0;
     std::span<const CompressedBlock> blocks;
     cudaEvent_t uploaded = nullptr;
+    /// Where the piece expands to, the bytes of its blocks one after another; without it, after the piece before, from
+    /// the destination of the call.
+    char * destination = nullptr;
 };
 
-/// One batched nvcomp call on the decompression stream, shared by both decompressors. Only the codecs of `GPUCodec`
-/// are expanded on the device; `codecOf` gives nothing for the others, whose columns are read decompressed by the CPU
-/// and sent through `ColumnUploadPipe` instead.
+/// One batched nvcomp call on a stream, the decompression stream unless the caller gives one of its own, shared by both
+/// decompressors and `GPUBatchUploader`. Only the codecs of `GPUCodec` are expanded on the device; `codecOf` gives
+/// nothing for the others, whose columns are read decompressed by the CPU and sent through `ColumnUploadPipe` instead.
 class DecompressionBatch
 {
 public:
-    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination);
+    explicit DecompressionBatch(cuda::stream_ref stream_ = GPUResources::get().decompression);
+
+    /// The destination is written once `destination_ready_event` has happened, or, without it, once all that the compute
+    /// stream has queued before has.
+    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination, cudaEvent_t destination_ready_event = nullptr);
 
     void wait();
 
     void waitAndCheck();
 
 private:
+    cuda::stream_ref stream;
+
     PinnedBuffer host_arguments;
     PinnedBuffer host_results;
 
-    DeviceBuffer device_arguments{GPUResources::get().decompression};
-    DeviceBuffer device_results{GPUResources::get().decompression};
-    DeviceBuffer device_temp{GPUResources::get().decompression};
+    DeviceBuffer device_arguments{stream};
+    DeviceBuffer device_results{stream};
+    DeviceBuffer device_temp{stream};
 
     EventPtr destination_ready = createEvent();
     EventPtr expanded = createEvent();
