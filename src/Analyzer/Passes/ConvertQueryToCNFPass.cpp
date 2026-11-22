@@ -537,6 +537,10 @@ public:
         const auto component_id = component_id_it->second;
         auto new_node = id_to_query_node_map.at(component_id)->clone();
 
+        /// `CHECK d = n AND n = f` makes `d` equal to `f`, but `CAST(f, 'Decimal(38, 18)')` rounds `12345` to `12344.999999999999737856`.
+        if (hasTypeThatCanContainFloat(new_node->getResultType()))
+            return;
+
         /// `CHECK e = n AND n = '9'` makes `e` equal to the number 9, but `CAST('9', ...)` to the `Enum` of `e` reads the name '9'.
         if (comparesEnumWithString(node, new_node))
             return;
