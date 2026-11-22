@@ -5554,6 +5554,7 @@ def test_lease_expiry_respects_writer_session_timeout(started_cluster):
 
 
 SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS = "12345678-abcd-abcd-abcd-12345678ab64"
+SHARED_UUID_REUSED_PART_NAME = "12345678-abcd-abcd-abcd-12345678ab65"
 
 # The cleanup thread looks at the outdated parts every second and removes them at once, so a part that
 # stays is kept by something else than its lifetime.
@@ -5687,6 +5688,124 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
                 node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
             except Exception:
                 pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
+def test_follower_query_does_not_read_reused_part_name(started_cluster):
+    """
+    A node whose reader file expired (here its heartbeat is paused) is not waited for, so the leader may
+    remove a part that a query of that node still holds. Block numbers restart when the table is empty
+    and the leader restarts, so another part can then get the same name. The query opens the files of a
+    part by the name of its directory, and it used to open the files of the new part for the columns it
+    had not read yet: with `PREWHERE` it returned `x` of the old part next to `y` of the new one.
+
+    The storage of a part is now bound to its directory, so the query must either return its original
+    row or fail, and never return a mix.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_reused_part_name"
+    uuid = SHARED_UUID_REUSED_PART_NAME
+    pause_read = "merge_tree_readers_chain_pause_before_next_reader"
+    pause_heartbeat = "merge_tree_leader_election_pause_heartbeat"
+    try:
+        for statement, node in (("CREATE", node1), ("ATTACH", node2)):
+            node.query(
+                f"""
+                {statement} TABLE {table} UUID '{uuid}' (x UInt64, y UInt64)
+                ENGINE = MergeTree ORDER BY x
+                SETTINGS {TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}, min_bytes_for_wide_part = 0
+                """
+            )
+
+        def insert_on_leader(values):
+            """Without the probe insert of `wait_for_leader`: the first part must be the one with the data."""
+            deadline = time.monotonic() + 90
+            while True:
+                for node in (node1, node2):
+                    try:
+                        node.query(f"INSERT INTO {table} VALUES {values}")
+                        return node
+                    except Exception as e:
+                        if "TABLE_IS_READ_ONLY" not in str(e):
+                            raise
+                assert time.monotonic() < deadline, "No node became the leader"
+                time.sleep(1)
+
+        def active_parts(node):
+            return node.query(
+                f"SELECT name FROM system.parts WHERE table = '{table}' AND active"
+            ).split()
+
+        leader = insert_on_leader("(1, 10)")
+        follower = node2 if leader is node1 else node1
+        assert active_parts(leader) == ["all_1_1_0"]
+        assert _wait_until(lambda: follower.query(f"SELECT count() FROM {table}").strip() == "1")
+
+        result = {}
+
+        def run_query():
+            try:
+                result["value"] = follower.query(
+                    f"SELECT x, y FROM {table} PREWHERE x = 1",
+                    settings={
+                        "max_threads": 1,
+                        "remote_filesystem_read_prefetch": 0,
+                        "allow_prefetched_read_pool_for_remote_filesystem": 0,
+                    },
+                    timeout=300,
+                )
+            except Exception as e:
+                result["error"] = str(e)
+
+        # The query has read `x` and stops before it opens the files of `y`.
+        follower.query(f"SYSTEM ENABLE FAILPOINT {pause_read}")
+        thread = threading.Thread(target=run_query)
+        thread.start()
+        try:
+            follower.query(f"SYSTEM WAIT FAILPOINT {pause_read} PAUSE", timeout=60)
+
+            # The follower stops rewriting its reader file, and cannot take the lease over while the leader restarts.
+            follower.query(f"SYSTEM ENABLE FAILPOINT {pause_heartbeat}")
+
+            # Once the reader file has expired, the leader removes the truncated part, and then the empty part
+            # that covered it.
+            leader.query(f"TRUNCATE TABLE {table}")
+            assert _wait_until(
+                lambda: leader.query(
+                    f"SELECT count() FROM system.parts WHERE table = '{table}'"
+                ).strip()
+                == "0",
+                timeout=120,
+            ), "The leader did not remove the parts kept by a node whose reader file has expired"
+
+            leader.restart_clickhouse()
+            assert insert_on_leader("(2, 20)") is leader
+            assert active_parts(leader) == ["all_1_1_0"], (
+                "The name of the removed part was not reused, so the test checks nothing"
+            )
+            assert _wait_until(lambda: follower.query(f"SELECT x, y FROM {table}") == "2\t20\n"), (
+                "The follower never saw the part that replaced the removed one"
+            )
+        finally:
+            follower.query(f"SYSTEM DISABLE FAILPOINT {pause_read}")
+            thread.join(timeout=300)
+
+        assert result.get("value") != "1\t20\n", "The query combined the columns of two different parts"
+        if "error" in result:
+            assert "DATA_PART_CHANGED_ON_SHARED_STORAGE" in result["error"], result["error"]
+        else:
+            assert result["value"] == "1\t10\n", result
+    finally:
+        for node in (node1, node2):
+            for failpoint in (pause_read, pause_heartbeat):
+                try:
+                    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                except Exception:
+                    pass
             try:
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:

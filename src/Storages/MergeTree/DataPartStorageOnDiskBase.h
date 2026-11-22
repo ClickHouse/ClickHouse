@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -183,7 +184,37 @@ public:
 
     bool isCaseInsensitive() const override;
 
+    /// The identity of a part directory, by its disk and path. Works before a storage object exists.
+    static std::optional<String> getSharedStorageIdentity(const IDisk & disk, const String & directory);
+
+    std::optional<String> getSharedStorageIdentity() const override;
+    void pinSharedStorageIdentity(const String & identity) override;
+    bool isPinnedToSharedStorageIdentity() const override;
+    void assertSharedStorageIdentityUnchanged() const override;
+
 protected:
+    /// Checks that a directory is still the one a storage was bound to (see `pinSharedStorageIdentity`).
+    /// Self-contained, so that a read prepared now and built later can run the check after it has opened its files.
+    struct SharedStorageIdentityCheck
+    {
+        DiskPtr disk;
+        String directory;
+        String identity;
+
+        void operator()() const;
+    };
+
+    /// The check for the current location of the part, `std::nullopt` if the storage is not bound to a directory.
+    ///
+    /// It has to run AFTER the files are resolved to objects, never before: the mapping of a name to a directory
+    /// changes atomically and never returns to a directory it has left (every directory has a unique key prefix),
+    /// so a name that still refers to the bound directory after the resolution referred to it during the resolution
+    /// too. A check before the resolution proves nothing about the mapping the resolution will see.
+    std::optional<SharedStorageIdentityCheck> getSharedStorageIdentityCheck() const;
+
+    /// Binds a storage created for a projection of this part to the directory of that projection, if this storage
+    /// is bound itself.
+    void pinProjectionStorage(DataPartStorageOnDiskBase & projection_storage) const;
 
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
@@ -258,6 +289,12 @@ protected:
     mutable std::shared_ptr<const PackedFilesReader> skip_indices_packed_reader TSA_GUARDED_BY(skip_indices_packed_mutex);
     /// The archive exists but has an unsupported format version; the reader then has an empty index.
     mutable bool skip_indices_packed_unsupported TSA_GUARDED_BY(skip_indices_packed_mutex) = false;
+
+    /// See `pinSharedStorageIdentity`. The flag lets the storages that are not bound, which is all of them
+    /// outside of `leader_election`, skip the mutex when a file is opened.
+    std::atomic<bool> is_pinned_to_shared_storage_identity{false};
+    mutable std::mutex shared_storage_identity_mutex;
+    std::optional<String> pinned_shared_storage_identity TSA_GUARDED_BY(shared_storage_identity_mutex);
 
     template <typename Op>
     void executeWriteOperation(Op && op)

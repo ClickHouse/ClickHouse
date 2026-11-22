@@ -83,6 +83,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::
         projection->temporary_data_for_transaction = temporary_data_for_transaction;
         projection->setTemporaryDataToWriter();
     }
+    pinProjectionStorage(*projection);
     return projection;
 }
 
@@ -94,12 +95,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize
         projection->temporary_data_for_transaction = temporary_data_for_transaction;
         projection->setTemporaryDataToWriter();
     }
+    pinProjectionStorage(*projection);
     return projection;
 }
 
 DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
 {
-    return std::make_shared<DataPartStorageOnDiskPacked>(volume, std::string(fs::path(root_path) / part_dir), name, getReadSettings());
+    auto projection = std::make_shared<DataPartStorageOnDiskPacked>(volume, std::string(fs::path(root_path) / part_dir), name, getReadSettings());
+    pinProjectionStorage(*projection);
+    return projection;
 }
 
 bool DataPartStorageOnDiskPacked::exists() const
@@ -367,6 +371,8 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
                 {
                     auto outer_buf = reader->readFile(
                         volume->getDisk(), getRelativeDataPath(), String(SKIP_INDICES_PACKED_FILENAME), s, std::nullopt);
+                    /// The archive is opened here, not when the pipeline was prepared. See `pinSharedStorageIdentity`.
+                    assertSharedStorageIdentityUnchanged();
                     return std::make_unique<ReadBufferFromFileView>(std::move(outer_buf), file_name, inner.offset, inner.offset + inner.size);
                 };
             pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
@@ -389,7 +395,10 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
         [this, file_name = name, read_hint](const StoredObject &, const ReadSettings & read_settings, bool, bool)
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
-            return reader->readFile(volume->getDisk(), getRelativeDataPath(), file_name, read_settings, read_hint);
+            auto buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file_name, read_settings, read_hint);
+            /// The archive is opened here, not when the pipeline was prepared. See `pinSharedStorageIdentity`.
+            assertSharedStorageIdentityUnchanged();
+            return buf;
         },
         StoredObjects{StoredObject(name, "", reader->getFileSize(name))},
         settings);

@@ -225,6 +225,26 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     [[nodiscard]] virtual String getUniqueId() const = 0;
 
+    /// The identity of the directory of the part on a shared object storage: the key of the object that holds a file
+    /// every part directory has. Another directory created later under the same name has another identity, even if
+    /// its part has the same name (see `MergeTreeData::getPartSharedStorageIncarnation`). `std::nullopt` if the part
+    /// is not stored on a remote disk or the directory has no such file.
+    [[nodiscard]] virtual std::optional<String> getSharedStorageIdentity() const { return std::nullopt; }
+
+    /// Binds this storage to the directory with the given identity (see `getSharedStorageIdentity`), which must be
+    /// the one it refers to now. Files are opened by the name of the directory, and on a storage shared between
+    /// servers (a `MergeTree` table with `leader_election`) another server can remove the directory and create a new
+    /// one with the same name while a query still reads the part. From now on, opening a file throws
+    /// `DATA_PART_CHANGED_ON_SHARED_STORAGE` if the name no longer refers to the directory with this identity, so
+    /// that a reader cannot combine the files of two different parts. A projection storage created from this one
+    /// is bound to the directory of the projection that belongs to this directory.
+    virtual void pinSharedStorageIdentity(const String & /*identity*/) {}
+    [[nodiscard]] virtual bool isPinnedToSharedStorageIdentity() const { return false; }
+
+    /// Throws `DATA_PART_CHANGED_ON_SHARED_STORAGE` if this storage is bound to a directory
+    /// (see `pinSharedStorageIdentity`) and its name no longer refers to it. Does nothing otherwise.
+    virtual void assertSharedStorageIdentityUnchanged() const {}
+
     /// Represents metadata which is required for fetching of part.
     struct ReplicatedFilesDescription
     {

@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int DATA_PART_CHANGED_ON_SHARED_STORAGE;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
@@ -124,7 +125,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED
             || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM
-            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK
+            /// Another server removed or replaced the directory of the part on the shared storage (`leader_election`).
+            /// This says nothing about the data: the files of the part were not read, and the part is reloaded
+            /// or retired by the next refresh. It must not be detached or removed as a broken one.
+            || e.code() == ErrorCodes::DATA_PART_CHANGED_ON_SHARED_STORAGE;
     }
     catch (const std::filesystem::filesystem_error & e)
     {

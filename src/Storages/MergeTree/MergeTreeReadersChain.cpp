@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -26,6 +27,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    /// Pauses a read after one reader of the chain (e.g. the one of `PREWHERE`) returned and before the next
+    /// one reads: the next reader opens its files only then, so a test can change the part on a shared storage
+    /// in between.
+    extern const char merge_tree_readers_chain_pause_before_next_reader[];
 }
 
 LoggerPtr getMergeTreeReadersChainLogger()
@@ -440,6 +449,10 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     {
         if (prewhere_granule_stats_enabled && i == first_query_prewhere_reader_index)
             rows_entering_prewhere = read_result.survivingRowsPerGranule();
+
+        /// The cheap check first: this runs for every block.
+        if (FailPointInjection::hasAnyFailPointBeenRegistered())
+            FailPointInjection::pauseFailPoint(FailPoints::merge_tree_readers_chain_pause_before_next_reader);
 
         const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;

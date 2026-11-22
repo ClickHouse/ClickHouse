@@ -21,6 +21,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -40,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
+    extern const int DATA_PART_CHANGED_ON_SHARED_STORAGE;
 }
 
 namespace
@@ -1164,6 +1166,91 @@ bool DataPartStorageOnDiskBase::isCaseInsensitive() const
     return getDisk()->isCaseInsensitive();
 }
 
+std::optional<String> DataPartStorageOnDiskBase::getSharedStorageIdentity(const IDisk & disk, const String & directory)
+{
+    if (!disk.isRemote())
+        return std::nullopt;
+
+    /// A `Packed` part keeps `checksums.txt` inside its archive, so the archive itself identifies the directory.
+    /// Both names are probed regardless of the storage format of the part: the directory may have been replaced by
+    /// a part of the other format (e.g. a one-row `Packed` part by a two-row `Full` part with the same name),
+    /// and probing only the file of the cached format would find nothing and keep the stale part.
+    for (const auto & identity_file : {String("checksums.txt"), DataPartStorageOnDiskPacked::DATA_FILE_NAME})
+    {
+        auto objects = disk.getStorageObjectsIfExist(fs::path(directory) / identity_file);
+        if (objects && !objects->empty())
+            return objects->front().remote_path;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<String> DataPartStorageOnDiskBase::getSharedStorageIdentity() const
+{
+    return getSharedStorageIdentity(*volume->getDisk(), fs::path(root_path) / part_dir);
+}
+
+void DataPartStorageOnDiskBase::pinSharedStorageIdentity(const String & identity)
+{
+    std::lock_guard lock(shared_storage_identity_mutex);
+    pinned_shared_storage_identity = identity;
+    is_pinned_to_shared_storage_identity.store(true, std::memory_order_release);
+}
+
+bool DataPartStorageOnDiskBase::isPinnedToSharedStorageIdentity() const
+{
+    return is_pinned_to_shared_storage_identity.load(std::memory_order_acquire);
+}
+
+std::optional<DataPartStorageOnDiskBase::SharedStorageIdentityCheck> DataPartStorageOnDiskBase::getSharedStorageIdentityCheck() const
+{
+    if (!is_pinned_to_shared_storage_identity.load(std::memory_order_acquire))
+        return std::nullopt;
+
+    std::lock_guard lock(shared_storage_identity_mutex);
+    if (!pinned_shared_storage_identity)
+        return std::nullopt;
+
+    return SharedStorageIdentityCheck{
+        .disk = volume->getDisk(),
+        .directory = fs::path(root_path) / part_dir,
+        .identity = *pinned_shared_storage_identity};
+}
+
+void DataPartStorageOnDiskBase::SharedStorageIdentityCheck::operator()() const
+{
+    const auto current_identity = getSharedStorageIdentity(*disk, directory);
+    if (current_identity && *current_identity == identity)
+        return;
+
+    throw Exception(ErrorCodes::DATA_PART_CHANGED_ON_SHARED_STORAGE,
+        "The directory {} of a data part on disk {} was {} on the shared storage by another server while the part was in use. "
+        "Nothing was read from the other directory. Retry the query",
+        directory, disk->getName(), current_identity ? "replaced by another directory with the same name" : "removed");
+}
+
+void DataPartStorageOnDiskBase::assertSharedStorageIdentityUnchanged() const
+{
+    if (const auto check = getSharedStorageIdentityCheck())
+        (*check)();
+}
+
+void DataPartStorageOnDiskBase::pinProjectionStorage(DataPartStorageOnDiskBase & projection_storage) const
+{
+    const auto check = getSharedStorageIdentityCheck();
+    if (!check)
+        return;
+
+    /// The directory of the projection is found by the name of this directory, so it belongs to the bound directory
+    /// only if the name still refers to that directory afterwards (see `getSharedStorageIdentityCheck`). A projection
+    /// directory that does not exist (yet) has no identity and stays unbound.
+    if (const auto projection_identity = projection_storage.getSharedStorageIdentity())
+    {
+        (*check)();
+        projection_storage.pinSharedStorageIdentity(*projection_identity);
+    }
+}
+
 std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveReaderForFile(const std::string & name) const
 {
     /// Prefix gate: only "skp_idx_..." names can be archive members, so unrelated files never load
@@ -1202,15 +1289,24 @@ void DataPartStorageOnDiskBase::prepareRead(
         /// The archive's current location is captured here, so the reader holds no path of its own.
         auto disk = volume->getDisk();
         String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+        /// The archive is opened when the pipeline is built, so that is when the directory is checked.
         ReadPipeline::BufferCreator creator =
-            [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+            [reader, disk, archive_path, name, read_hint, identity_check = getSharedStorageIdentityCheck()]
+            (const StoredObject &, const ReadSettings & s, bool, bool)
             {
-                return reader->readFile(disk, archive_path, name, s, read_hint);
+                auto buf = reader->readFile(disk, archive_path, name, s, read_hint);
+                if (identity_check)
+                    (*identity_check)();
+                return buf;
             };
         pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
         return;
     }
     prepareReadImpl(name, settings, read_hint, pipeline);
+
+    /// The pipeline of a file on the disk already holds the objects it will read. A storage that opens its files
+    /// when the pipeline is built (`Packed`) checks the directory again at that point.
+    assertSharedStorageIdentityUnchanged();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExists(
@@ -1218,12 +1314,19 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExi
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
+    std::unique_ptr<ReadBufferFromFileBase> buf;
     if (auto reader = getArchiveReaderForFile(name))
-        return reader->readFile(
+        buf = reader->readFile(
             volume->getDisk(),
             fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
             name, settings, read_hint);
-    return readFileIfExistsImpl(name, settings, read_hint);
+    else
+        buf = readFileIfExistsImpl(name, settings, read_hint);
+
+    /// The file is resolved to its objects by now. A file reported as missing is checked too: it may be missing
+    /// only in the directory that replaced the one this storage is bound to.
+    assertSharedStorageIdentityUnchanged();
+    return buf;
 }
 
 std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const

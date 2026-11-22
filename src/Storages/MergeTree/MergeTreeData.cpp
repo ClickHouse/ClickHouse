@@ -3539,6 +3539,11 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             ErrnoException::throwWithErrno(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, EIO, "Injected I/O error while loading part {}", part_name);
         });
         res.part->loadColumnsChecksumsIndexes(require_part_metadata, !part_disk_ptr->isReadOnly());
+
+        /// Every file was opened through the storage bound to the directory by `setSharedStorageIncarnation` above,
+        /// and the storages of the projections were bound to the directories found under its name. Checking the
+        /// directory once more, after all of that, proves that the projections belong to it.
+        res.part->getDataPartStorage().assertSharedStorageIdentityUnchanged();
     }
     catch (...)
     {
@@ -4382,21 +4387,10 @@ std::optional<String> MergeTreeData::getPartSharedStorageIncarnation(const IMerg
 std::optional<String> MergeTreeData::getPartDirectorySharedStorageIncarnation(const String & disk_name, const String & directory) const
 {
     auto disk = getStoragePolicy()->tryGetDiskByName(disk_name);
-    if (!disk || !disk->isRemote())
+    if (!disk)
         return std::nullopt;
 
-    /// A `Packed` part keeps `checksums.txt` inside its archive, so the archive itself identifies the directory.
-    /// Both names are probed regardless of the storage format of the part: the directory may have been replaced by
-    /// a part of the other format (e.g. a one-row `Packed` part by a two-row `Full` part with the same name),
-    /// and probing only the file of the cached format would find nothing and keep the stale part.
-    for (const auto & identity_file : {String("checksums.txt"), DataPartStorageOnDiskPacked::DATA_FILE_NAME})
-    {
-        auto objects = disk->getStorageObjectsIfExist(fs::path(directory) / identity_file);
-        if (objects && !objects->empty())
-            return objects->front().remote_path;
-    }
-
-    return std::nullopt;
+    return DataPartStorageOnDiskBase::getSharedStorageIdentity(*disk, directory);
 }
 
 size_t MergeTreeData::retirePartsReplacedOnStorage(

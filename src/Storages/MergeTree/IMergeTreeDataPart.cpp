@@ -1629,6 +1629,31 @@ void IMergeTreeDataPart::setSharedStorageIncarnation(const std::optional<String>
     shared_storage_incarnation = incarnation;
     for (const auto & [_, projection_part] : projection_parts)
         projection_part->setSharedStorageIncarnation(incarnation);
+
+    if (!incarnation)
+        return;
+
+    /// The caches are not the only place where the name of the part is not enough: its files are opened by the
+    /// name of the directory too, so a reader that still holds this part after the directory was replaced would
+    /// open the files of the replacement. Bind the storage to the directory, so that it throws instead.
+    auto & part_storage = getDataPartStorage();
+    if (!isProjectionPart())
+    {
+        part_storage.pinSharedStorageIdentity(*incarnation);
+
+        /// The projections above were bound to the directories found under the name of this part. They belong to
+        /// this part only if the name still refers to its directory (see `pinSharedStorageIdentity`).
+        if (!projection_parts.empty())
+            part_storage.assertSharedStorageIdentityUnchanged();
+    }
+    else if (!part_storage.isPinnedToSharedStorageIdentity())
+    {
+        /// A projection has its own directory: `incarnation` is the identity of the directory of the parent.
+        /// The storage of a projection loaded from a bound parent is bound already, when it is created; this
+        /// is for a projection written by this server, whose parent is bound only when it is committed.
+        if (auto projection_identity = part_storage.getSharedStorageIdentity())
+            part_storage.pinSharedStorageIdentity(*projection_identity);
+    }
 }
 
 String IMergeTreeDataPart::getCacheKeySuffix() const

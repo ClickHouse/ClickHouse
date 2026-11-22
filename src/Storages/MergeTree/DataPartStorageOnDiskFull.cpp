@@ -41,12 +41,16 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::st
     /// Not arena-scoped: most callers use this only as a short-lived filesystem handle (CHECK TABLE,
     /// mutation hardlink/copy, existence probes). The part-lifetime projection storage is created via
     /// `getProjectionPartBuilder`, which scopes the arena itself.
-    return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
+    auto projection = std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
+    pinProjectionStorage(*projection);
+    return projection;
 }
 
 DataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name) const
 {
-    return std::make_shared<DataPartStorageOnDiskFull>(volume, std::string(fs::path(root_path) / part_dir), name);
+    auto projection = std::make_shared<DataPartStorageOnDiskFull>(volume, std::string(fs::path(root_path) / part_dir), name);
+    pinProjectionStorage(*projection);
+    return projection;
 }
 
 bool DataPartStorageOnDiskFull::exists() const

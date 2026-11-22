@@ -408,6 +408,11 @@ public:
     /// Sets `shared_storage_incarnation` of this part and of its projection parts. A projection part
     /// keeps its own copy, because it may outlive its parent (and then must not dereference it), e.g.
     /// when a temporary part is destroyed and its projection part is still referenced by a writer.
+    ///
+    /// Also binds the storage of the part, and the storage of every projection part, to its directory
+    /// (see `IDataPartStorage::pinSharedStorageIdentity`): a query that still holds the part after another
+    /// leader replaced the directory gets `DATA_PART_CHANGED_ON_SHARED_STORAGE` when it opens a file, instead
+    /// of the file of the replacement. Throws that exception itself if the directory was replaced meanwhile.
     void setSharedStorageIncarnation(const std::optional<String> & incarnation);
 
     /// This type and the field remove_tmp_policy is used as a hint
