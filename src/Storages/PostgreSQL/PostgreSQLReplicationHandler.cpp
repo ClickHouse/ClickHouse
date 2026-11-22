@@ -882,6 +882,8 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
 
     if (!is_attach || !publication_exists)
     {
+        /// The tables of the publication, as they are written in `CREATE PUBLICATION`.
+        String publication_tables_list;
         if (tables_list.empty())
         {
             if (materialized_storages.empty())
@@ -895,6 +897,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             }
             tables_list = buf.str();
             tables_list.resize(tables_list.size() - 1);
+            publication_tables_list = tables_list;
         }
         else if (!is_materialized_postgresql_database)
         {
@@ -903,18 +906,27 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             /// quoting pass that `fetchRequiredTables` applies for the database engine. Quote it here,
             /// otherwise `CREATE PUBLICATION ... FOR TABLE ONLY <name>` folds an upper-case table name
             /// to lower case and fails with `relation "..." does not exist`.
-            tables_list = doubleQuoteWithSchema(tables_list);
+            ///
+            /// The quoted name is not written back into `tables_list`: on attach, a failed startup is
+            /// retried with this same handler (see `checkConnectionAndStart`), and the next attempt
+            /// would quote the result of this one again - `"t"`, `""t""`, `""""t""""`, ... - so the
+            /// publication could never be created, and the name doubled in size with every attempt.
+            publication_tables_list = doubleQuoteWithSchema(tables_list);
+        }
+        else
+        {
+            publication_tables_list = tables_list;
         }
 
-        if (tables_list.empty())
+        if (publication_tables_list.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
         /// 'ONLY' means just a table, without descendants.
-        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), tables_list);
+        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), publication_tables_list);
         try
         {
             tx.exec(query_str);
-            LOG_DEBUG(log, "Created publication {} with tables list: {}", doubleQuoteString(publication_name), tables_list);
+            LOG_DEBUG(log, "Created publication {} with tables list: {}", doubleQuoteString(publication_name), publication_tables_list);
         }
         catch (Exception & e)
         {
