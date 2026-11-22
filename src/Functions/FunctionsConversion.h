@@ -2201,9 +2201,22 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
 
         if constexpr (!std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
         {
-            /// The loop must remain scalar and not interleaved (the SLP vectorizer can pack interleaved iterations): scalar and vector
-            /// instructions convert an out-of-range value differently, so the result of a row would depend on which of them converts it.
-            #pragma clang loop vectorize(disable) interleave(disable)
+#if defined(__aarch64__)
+            /// A vector instruction wraps a `Float64` outside of the range of a 32-bit integer, while the scalar one saturates it.
+            /// Clamping gives the saturated value in every row, so this loop can be vectorized.
+            if constexpr (std::is_same_v<FromFieldType, Float64> && is_any_of<ToFieldType, Int32, UInt32>)
+            {
+                constexpr auto lower = static_cast<Float64>(std::numeric_limits<ToFieldType>::min());
+                constexpr auto upper = static_cast<Float64>(std::numeric_limits<ToFieldType>::max());
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<ToFieldType>(std::fmin(std::fmax(vec_from[i], lower), upper));
+                return std::move(col_to);
+            }
+#endif
+            /// The loop must remain scalar. A value outside of the range of the result type wraps around here,
+            /// while the vector instructions saturate or return another value, and the result of a row
+            /// would depend on whether it is converted by the vectorized body or by the scalar remainder.
+            #pragma clang loop vectorize(disable)
             for (size_t i = 0; i < input_rows_count; ++i)
                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
 
