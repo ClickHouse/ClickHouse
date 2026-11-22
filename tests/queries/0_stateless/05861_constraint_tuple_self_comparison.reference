@@ -1,0 +1,12 @@
+nullable a = a	0
+nullable a = a	0
+nullable a <= a	0
+nullable a <= a	0
+nan a = a	0
+nan a = a	0
+nan a <= a	0
+nan a <= a	0
+nan a != a	1
+nan a != a	1
+equal a = b	1
+equal a = b	1
