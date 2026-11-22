@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <list>
 #include <numeric>
+#include <queue>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
@@ -765,7 +766,6 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
         size_t range_index;
         size_t mark;
         size_t consumed = 0;
-        bool active = true;
         Values front;
     };
 
@@ -777,7 +777,7 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
         if (ranges.empty())
             continue;
 
-        PartCursor cursor{part_index, &ranges, 0, ranges.front().begin, 0, true, {}};
+        PartCursor cursor{part_index, &ranges, 0, ranges.front().begin, 0, {}};
         cursor.front = getPrefixValue(part_index, cursor.mark);
         cursors.push_back(std::move(cursor));
     }
@@ -785,53 +785,58 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
     if (cursors.empty())
         return 0;
 
-    /// Move a cursor to its next granule (across range gaps), refreshing `front`; deactivate when exhausted.
-    auto advance = [&](PartCursor & cursor)
+    /// Move a cursor to its next granule (across range gaps) and refresh `front`, which is `next_value` unless there
+    /// is a gap. Returns false when the part has no granules left.
+    auto advance = [&](PartCursor & cursor, Values && next_value)
     {
         ++cursor.mark;
-        if (cursor.mark == (*cursor.ranges)[cursor.range_index].end)
+        if (cursor.mark != (*cursor.ranges)[cursor.range_index].end)
         {
-            ++cursor.range_index;
-            if (cursor.range_index == cursor.ranges->size())
-            {
-                cursor.active = false;
-                return;
-            }
-            cursor.mark = (*cursor.ranges)[cursor.range_index].begin;
+            cursor.front = std::move(next_value);
+            return true;
         }
+
+        ++cursor.range_index;
+        if (cursor.range_index == cursor.ranges->size())
+            return false;
+        cursor.mark = (*cursor.ranges)[cursor.range_index].begin;
         cursor.front = getPrefixValue(cursor.part_index, cursor.mark);
+        return true;
     };
 
-    /// A min-heap of the active cursors by front value, so that a step costs O(log parts) rather than a scan of
-    /// all parts, which made skipping slower than reading the rows for tables with many parts.
+    /// A min-heap by front value of the cursors of the other parts than the current one: O(log parts) per step.
     auto front_greater = [&](size_t lhs, size_t rhs) { return compareValues(cursors[lhs].front, cursors[rhs].front, in_reverse_order) > 0; };
-    VectorWithMemoryTracking<size_t> heap(cursors.size());
-    std::iota(heap.begin(), heap.end(), 0);
-    std::make_heap(heap.begin(), heap.end(), front_greater);
+    VectorWithMemoryTracking<size_t> indices(cursors.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    std::priority_queue<size_t, VectorWithMemoryTracking<size_t>, decltype(front_greater)> heap(front_greater, std::move(indices));
 
+    auto pop_min = [&]
+    {
+        const size_t index = heap.top();
+        heap.pop();
+        return index;
+    };
+
+    /// The current cursor has the smallest front value, so it holds the smallest not-yet-skipped rows.
+    size_t current = pop_min();
     size_t remaining = offset;
     size_t skipped_rows = 0;
 
-    while (remaining > 0 && !heap.empty())
+    while (remaining > 0)
     {
-        /// The cursor with the smallest front value holds the smallest not-yet-skipped rows. After it is popped,
-        /// the top of the heap has the smallest front value of the other parts.
-        std::pop_heap(heap.begin(), heap.end(), front_greater);
-        const size_t best = heap.back();
-        heap.pop_back();
-
-        PartCursor & cursor = cursors[best];
+        PartCursor & cursor = cursors[current];
         const auto & index_granularity = *ranges_in_data_parts[cursor.part_index].data_part->index_granularity;
 
         /// Drop the granule only if its upper bound value(mark+1) is strictly less than every other part's
         /// front value, so no tie spans the cut (result independent of merge tie-breaking). value(mark+1) is
         /// undefined for a part's last granule (+inf): droppable only when no other part has granules left.
-        /// With equal front values, whichever cursor is popped first, its upper bound is not less than the other
+        /// With equal front values, whichever cursor is current, its upper bound is not less than the other
         /// front value, so the order among ties does not matter.
         const bool end_value_defined = (cursor.mark + 1) < index_granularity.getMarksCount();
-        if (!heap.empty()
-            && (!end_value_defined
-                || compareValues(getPrefixValue(cursor.part_index, cursor.mark + 1), cursors[heap.front()].front, in_reverse_order) >= 0))
+        Values end_value;
+        if (end_value_defined)
+            end_value = getPrefixValue(cursor.part_index, cursor.mark + 1);
+        if (!heap.empty() && (!end_value_defined || compareValues(end_value, cursors[heap.top()].front, in_reverse_order) >= 0))
             break;
 
         const size_t rows = index_granularity.getMarkRows(cursor.mark);
@@ -841,11 +846,18 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
         remaining -= rows;
         skipped_rows += rows;
         ++cursor.consumed;
-        advance(cursor);
-        if (cursor.active)
+
+        if (!advance(cursor, std::move(end_value)))
         {
-            heap.push_back(best);
-            std::push_heap(heap.begin(), heap.end(), front_greater);
+            if (heap.empty())
+                break;
+            current = pop_min();
+        }
+        /// Without a range gap the new front value is the upper bound checked above, so the cursor stays current.
+        else if (!heap.empty() && compareValues(cursor.front, cursors[heap.top()].front, in_reverse_order) >= 0)
+        {
+            heap.push(current);
+            current = pop_min();
         }
     }
 
