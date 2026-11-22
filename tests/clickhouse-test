@@ -7792,6 +7792,12 @@ ORDER BY (test_name, callee_offset)
         # Some queries may execute in background for some time after test was finished. This is normal.
         print("Checking the hung queries: ", end="")
         hung_count = 0
+        # A rejection of the polling query is not necessarily the terminal
+        # outcome: when earlier probes saw running queries, the check goes on to
+        # collect stacktraces and to recheck the processlist. So it is only
+        # recorded here, and the `Server rejects queries.` marker is printed
+        # once, after the final outcome is known.
+        polling_rejection = None
         try:
             deadline = datetime.now() + timedelta(seconds=90)
             while datetime.now() < deadline:
@@ -7812,14 +7818,9 @@ ORDER BY (test_name, callee_offset)
                 )
             )
             # An HTTP response is an answer from the server: it rejected the
-            # query, it was not unreachable and it is not hung. Print the same
-            # marker the startup probe prints, so that the stress test names
-            # the failure after the rejection and not after a deadlock.
+            # query, it was not unreachable and it is not hung.
             if isinstance(e, HTTPError):
-                print(
-                    "Server rejects queries. Cannot get the processlist size: "
-                    + " ".join(str(e).split())
-                )
+                polling_rejection = e
             exit_code.value = 1
 
         processlist = ""
@@ -7848,12 +7849,15 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
-                    # The recheck is the terminal query here. When the server
-                    # answered it with an error, it rejected the query and is
-                    # not hung: print the same marker as the polling loop, so
-                    # that the stress test names the failure after the
-                    # rejection. A transport failure, or a recheck that still
-                    # sees running queries, stays on the deadlock path.
+                    # The recheck is the terminal query here, and its outcome
+                    # supersedes an earlier rejection of the polling query.
+                    # When the server answered it with an error, it rejected
+                    # the query and is not hung: print the marker, so that the
+                    # stress test names the failure after the rejection. A
+                    # transport failure, or a recheck that still sees running
+                    # queries, stays on the deadlock path. It is printed before
+                    # the dumps below, which can outlast the deadline.
+                    polling_rejection = None
                     if isinstance(recheck_error, HTTPError):
                         print(
                             "Server rejects queries. Cannot get the processlist size: "
@@ -7897,6 +7901,16 @@ ORDER BY (test_name, callee_offset)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
+
+        # The rejection of the polling query was the terminal outcome: nothing
+        # after it found running queries or failed in another way. Print the
+        # same marker the startup probe prints, so that the stress test names
+        # the failure after the rejection and not after a deadlock.
+        if polling_rejection is not None and not processlist:
+            print(
+                "Server rejects queries. Cannot get the processlist size: "
+                + " ".join(str(polling_rejection).split())
+            )
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
