@@ -339,6 +339,19 @@ StorageMergeTree::StorageMergeTree(
             /// `S3` (Minio) integration tests. Restrict to `S3` until an Azurite two-node failover
             /// test exists. The lease code already maps `AZURE_BLOB_STORAGE_ERROR`, so re-enabling
             /// `Azure` here is a one-line change once it is covered.
+            /// A read-only disk still lets the lease be written (the lease goes to the object storage directly,
+            /// not through the disk), while the table on it is permanently read-only. Such a node would take the
+            /// lease, keep renewing it and reject every write, and the writable nodes would stay followers of it
+            /// forever. A node that can only read does not take part in the election.
+            if (disk->isReadOnly())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The `leader_election` setting requires every disk in the storage policy to be writable,"
+                    " because any node of the table may become the leader, but disk '{}' is read-only."
+                    " A node with a read-only disk would hold the lease without being able to write.",
+                    disk->getName());
+            }
+
             if (description.object_storage_type != ObjectStorageType::S3)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
