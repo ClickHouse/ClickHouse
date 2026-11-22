@@ -48,6 +48,7 @@
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -105,6 +106,27 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A `Replicated`-database host applies the statement without the submitting user, so the checks that
+/// `AlterCommands::validate` makes of a `CHECK` constraint there do not see the user's access rights:
+/// `x IN table` would be accepted or rejected depending on whether `table` exists and is a `Set` table,
+/// even when the user may not see it. Run them here as the submitting user, before the statement is enqueued.
+void checkAddedConstraintPermissions(const ASTAlterQuery & alter, const String & database_name, const ContextPtr & context)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if ((command.type != ASTAlterCommand::ADD_CONSTRAINT && command.type != ASTAlterCommand::MODIFY_CONSTRAINT)
+            || !command.constraint_decl)
+            continue;
+
+        /// On a copy with the default database added to the table identifiers, as the hosts do it.
+        ASTPtr constraint = command.constraint_decl->clone();
+        AddDefaultDatabaseVisitor visitor(context, database_name);
+        visitor.visit(constraint);
+        ConstraintsDescription::validateNoSubqueries({constraint}, context);
+    }
+}
 
 /// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
 /// not reach this: it is refused unless its hosts run as the initiating user.
@@ -726,6 +748,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        checkAddedConstraintPermissions(alter, table_id.database_name, getContext());
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {.run_as_submitting_user = is_mutation}, std::move(guard));
