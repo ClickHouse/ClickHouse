@@ -17,10 +17,10 @@ class ParserCreateQueryMaskingRuleQuery : public IParserBase
 public:
     void useAttachMode(bool attach_mode_ = true) { attach_mode = attach_mode_; }
 
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
-    const char * getName() const override { return "CREATE QUERY MASKING RULE or ALTER QUERY MASKING RULE query"; }
+    [[nodiscard]] const char * getName() const override { return "CREATE QUERY MASKING RULE or ALTER QUERY MASKING RULE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:

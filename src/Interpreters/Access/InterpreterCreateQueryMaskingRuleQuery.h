@@ -17,8 +17,8 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
+    [[nodiscard]] bool ignoreQuota() const override { return true; }
+    [[nodiscard]] bool ignoreLimits() const override { return true; }
 
     /// Also validates the resulting rule, so an invalid rule is rejected wherever it comes from.
     static void updateQueryMaskingRuleFromQuery(QueryMaskingRule & rule, const ASTCreateQueryMaskingRuleQuery & query);

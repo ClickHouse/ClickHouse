@@ -15,12 +15,12 @@ struct QueryMaskingRule : public IAccessEntity
     String regexp;
     String replace = "******";
 
-    bool equal(const IAccessEntity & other) const override;
-    std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<QueryMaskingRule>(); }
+    [[nodiscard]] bool equal(const IAccessEntity & other) const override;
+    [[nodiscard]] std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<QueryMaskingRule>(); }
     static constexpr auto TYPE = AccessEntityType::QUERY_MASKING_RULE;
-    AccessEntityType getType() const override { return TYPE; }
+    [[nodiscard]] AccessEntityType getType() const override { return TYPE; }
 
-    bool isBackupAllowed() const override { return true; }
+    [[nodiscard]] bool isBackupAllowed() const override { return true; }
 };
 
 using QueryMaskingRulePtr = std::shared_ptr<const QueryMaskingRule>;

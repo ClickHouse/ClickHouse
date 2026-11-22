@@ -957,7 +957,7 @@ SHOW CREATE QUERY MASKING RULES
 
 ## SHOW QUERY MASKING RULES {#show-query-masking-rules}
 
-The `SHOW QUERY MASKING RULES` statement returns a list of the query masking rules created by [CREATE QUERY MASKING RULE](/reference/statements/create/query-masking-rule). The rules from the `query_masking_rules` server setting are not listed. Requires the `QUERY MASKING RULE ADMIN` privilege.
+The `SHOW QUERY MASKING RULES` statement returns a list of the query masking rules created by [CREATE QUERY MASKING RULE](/reference/statements/create/query-masking-rule). The rules from the `query_masking_rules` server setting are not listed. Requires the `QUERY MASKING RULE ADMIN` privilege, or `SELECT` on `system.query_masking_rules` when `select_from_system_db_requires_grant` is enabled.
 
 ### Syntax {#syntax-28}
 
