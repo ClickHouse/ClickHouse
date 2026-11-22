@@ -21,10 +21,12 @@ ENGINE = MergeTree
 ORDER BY c
 SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_projection_index_parallel SELECT number % 50, intDiv(number, 50) % 50, number FROM numbers(2000000);
-OPTIMIZE TABLE t_projection_index_parallel FINAL;
+-- One insert block, so one part without a merge.
+INSERT INTO t_projection_index_parallel SELECT number % 50, intDiv(number, 50) % 50, number FROM numbers(2000000)
+SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 4000000, min_insert_block_size_bytes = 0, max_insert_block_size = 4000000;
 
 SELECT 'one part';
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_projection_index_parallel' AND active;
 SELECT count(), sum(c) FROM t_projection_index_parallel WHERE a = 3 AND b = 5 SETTINGS max_threads = 8, log_comment = 'projection_index_parallel_8';
 SELECT count(), sum(c) FROM t_projection_index_parallel WHERE a = 3 AND b = 5 SETTINGS max_threads = 1, log_comment = 'projection_index_parallel_1';
 SELECT count(), sum(c) FROM t_projection_index_parallel WHERE a = 3 AND b = 5 SETTINGS optimize_use_projection_filtering = 0;
