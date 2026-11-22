@@ -16,6 +16,9 @@ SET enable_group_by_top_k_optimization = 1;
 -- In-order aggregation bypasses the heap the assertions observe.
 SET optimize_aggregation_in_order = 0;
 SET optimize_read_in_order = 0;
+-- A repeated top-K read skips the granules the query condition cache recorded
+-- as beyond the final threshold; the heap must see every key.
+SET use_query_condition_cache_for_top_k = 0;
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
 SET log_queries = 1;
