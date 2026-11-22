@@ -1,0 +1,20 @@
+<test iceberg="0">
+    <!-- About 1000 parts with small granules: the granules skipped for OFFSET are chosen among all parts, which must not cost
+         more than reading the rows. Iceberg has no parts, so the test does not apply there. -->
+    <substitutions>
+        <substitution>
+            <name>skip_offset</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE t_read_in_order_skip_offset_many_parts (key UInt64) ENGINE = MergeTree PARTITION BY intDiv(key, 12800) ORDER BY key SETTINGS index_granularity = 64</create_query>
+    <fill_query>INSERT INTO t_read_in_order_skip_offset_many_parts SELECT number FROM numbers(12800000) SETTINGS max_partitions_per_insert_block = 0</fill_query>
+
+    <query>SELECT key FROM t_read_in_order_skip_offset_many_parts ORDER BY key LIMIT 3 OFFSET 12736000 SETTINGS query_plan_optimize_read_in_order_skip_offset = {skip_offset}, max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_read_in_order_skip_offset_many_parts</drop_query>
+</test>

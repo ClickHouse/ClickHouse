@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <list>
+#include <numeric>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
@@ -801,41 +802,36 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
         cursor.front = getPrefixValue(cursor.part_index, cursor.mark);
     };
 
+    /// A min-heap of the active cursors by front value, so that a step costs O(log parts) rather than a scan of
+    /// all parts, which made skipping slower than reading the rows for tables with many parts.
+    auto front_greater = [&](size_t lhs, size_t rhs) { return compareValues(cursors[lhs].front, cursors[rhs].front, in_reverse_order) > 0; };
+    VectorWithMemoryTracking<size_t> heap(cursors.size());
+    std::iota(heap.begin(), heap.end(), 0);
+    std::make_heap(heap.begin(), heap.end(), front_greater);
+
     size_t remaining = offset;
     size_t skipped_rows = 0;
 
-    while (remaining > 0)
+    while (remaining > 0 && !heap.empty())
     {
-        /// The active cursor with the smallest front value holds the smallest not-yet-skipped rows.
-        std::optional<size_t> best;
-        for (size_t i = 0; i < cursors.size(); ++i)
-            if (cursors[i].active && (!best || compareValues(cursors[i].front, cursors[*best].front, in_reverse_order) < 0))
-                best = i;
+        /// The cursor with the smallest front value holds the smallest not-yet-skipped rows. After it is popped,
+        /// the top of the heap has the smallest front value of the other parts.
+        std::pop_heap(heap.begin(), heap.end(), front_greater);
+        const size_t best = heap.back();
+        heap.pop_back();
 
-        if (!best)
-            break;
-
-        PartCursor & cursor = cursors[*best];
+        PartCursor & cursor = cursors[best];
         const auto & index_granularity = *ranges_in_data_parts[cursor.part_index].data_part->index_granularity;
 
         /// Drop the granule only if its upper bound value(mark+1) is strictly less than every other part's
         /// front value, so no tie spans the cut (result independent of merge tie-breaking). value(mark+1) is
         /// undefined for a part's last granule (+inf): droppable only when no other part has granules left.
+        /// With equal front values, whichever cursor is popped first, its upper bound is not less than the other
+        /// front value, so the order among ties does not matter.
         const bool end_value_defined = (cursor.mark + 1) < index_granularity.getMarksCount();
-        Values end_value;
-        if (end_value_defined)
-            end_value = getPrefixValue(cursor.part_index, cursor.mark + 1);
-
-        bool strictly_separated = true;
-        for (size_t i = 0; i < cursors.size() && strictly_separated; ++i)
-        {
-            if (i == *best || !cursors[i].active)
-                continue;
-            if (!end_value_defined || compareValues(end_value, cursors[i].front, in_reverse_order) >= 0)
-                strictly_separated = false;
-        }
-
-        if (!strictly_separated)
+        if (!heap.empty()
+            && (!end_value_defined
+                || compareValues(getPrefixValue(cursor.part_index, cursor.mark + 1), cursors[heap.front()].front, in_reverse_order) >= 0))
             break;
 
         const size_t rows = index_granularity.getMarkRows(cursor.mark);
@@ -846,6 +842,11 @@ size_t skipLeadingGranulesForOffset(RangesInDataParts & ranges_in_data_parts, si
         skipped_rows += rows;
         ++cursor.consumed;
         advance(cursor);
+        if (cursor.active)
+        {
+            heap.push_back(best);
+            std::push_heap(heap.begin(), heap.end(), front_greater);
+        }
     }
 
     if (skipped_rows == 0)
