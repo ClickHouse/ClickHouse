@@ -1591,6 +1591,24 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
+                /// The stored values of an invalidated system column are not used, so the skip indices built from
+                /// them are refused on the source part (see `getDeserializedFormatImpl`). The mutation writes valid
+                /// values, and the new part may not invalidate the column (see `IMergeTreeDataPart::ignoresStoredBlockOffset`),
+                /// so hardlinked indices would be used with the stale values. Rebuild them from the written values.
+                if (merge_tree_data_part->isSystemColumnInvalidated(command.column_name))
+                {
+                    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                    {
+                        const auto & index_cols = index.expression->getRequiredColumns();
+                        if (std::find(index_cols.begin(), index_cols.end(), command.column_name) == index_cols.end())
+                            continue;
+
+                        for (const auto & col : index_cols)
+                            dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+                        materialized_indices.insert(index.name);
+                    }
+                }
+
                 /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
                 /// that depend on it. We should rebuild such projections and indices
                 DataTypePtr old_type;

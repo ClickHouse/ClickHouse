@@ -1,0 +1,40 @@
+-- Tags: no-random-merge-tree-settings
+
+-- A skip index on `_block_offset` of a part that stores `_block_offset` without `_block_number` is built from the stored offsets.
+-- They are ignored with `use_block_offset_only_with_block_number = 1`, so the index is refused for such a part.
+-- A mutation that materializes `_block_number` rewrites `_block_offset` and must rebuild the index,
+-- otherwise the new part stores both columns, the stale index is used and prunes granules with matching rows.
+
+SET mutations_sync = 2;
+SET alter_update_mode = 'heavy';
+SET use_skip_indexes = 1;
+
+DROP TABLE IF EXISTS t_lwu_block_offset_index;
+
+CREATE TABLE t_lwu_block_offset_index (uid UInt64, v UInt64) ENGINE = MergeTree ORDER BY uid
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 1, use_block_offset_only_with_block_number = 0,
+    add_minmax_index_for_block_offset_column = 1, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+-- Three blocks of 4 rows. The merged part stores `_block_offset` = [0..3, 0..3, 0..3], and each granule is indexed as [0, 3].
+INSERT INTO t_lwu_block_offset_index SELECT number, number FROM numbers(4);
+INSERT INTO t_lwu_block_offset_index SELECT number + 4, number FROM numbers(4);
+INSERT INTO t_lwu_block_offset_index SELECT number + 8, number FROM numbers(4);
+OPTIMIZE TABLE t_lwu_block_offset_index FINAL;
+
+ALTER TABLE t_lwu_block_offset_index MODIFY SETTING use_block_offset_only_with_block_number = 1;
+
+SELECT groupArray(_block_offset) FROM (SELECT _block_offset FROM t_lwu_block_offset_index ORDER BY uid);
+SELECT uid FROM t_lwu_block_offset_index WHERE _block_offset = 10;
+
+-- The mutation of `v` materializes `_block_number` and rewrites `_block_offset`. The files of `uid` are hardlinked.
+ALTER TABLE t_lwu_block_offset_index UPDATE v = v + 1 WHERE uid = 0;
+
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_lwu_block_offset_index' AND active AND column IN ('_block_number', '_block_offset')
+ORDER BY column;
+
+SELECT groupArray(_block_offset) FROM (SELECT _block_offset FROM t_lwu_block_offset_index ORDER BY uid);
+SELECT uid FROM t_lwu_block_offset_index WHERE _block_offset = 10;
+SELECT uid FROM t_lwu_block_offset_index WHERE _block_offset = 10 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_lwu_block_offset_index;

@@ -111,6 +111,9 @@ std::optional<Int64> findDataVersionInRange(const DataVersionsByPartition & data
 
 /// A patch row must match one row only. A second match means that the part has duplicate
 /// `(_block_number, _block_offset)` pairs, and applying the patch would change rows the update did not match.
+/// This is a best-effort check: it sees only the rows of one read block (and for v2 patches, of one run of equal
+/// sorting keys in it). Ranges of a part are read independently and in parallel, so duplicates in different read
+/// blocks are not detected, and the patch is applied to all of them.
 [[noreturn]] void throwDuplicateRowIdentity(UInt64 block_number, UInt64 block_offset);
 
 }
