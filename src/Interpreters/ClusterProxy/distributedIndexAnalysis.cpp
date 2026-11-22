@@ -889,6 +889,15 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     /// Disable parallel replicas to avoid O(N^2) spawned queries when the predicate has a subquery,
     /// because each replica would independently spawn parallel replicas for the subquery.
     context_copy->setSetting("enable_parallel_replicas", false);
+    /// The analysis is a server-internal query, so run it as the user this node reads as.
+    /// On a shard reached over a cluster without a secret `current_user` is the cluster user, not
+    /// `initial_user`, and `Connection::sendQuery` refuses to forward such an `initial_user` over the cluster secret.
+    const auto & client_info = context_copy->getClientInfo();
+    if (const auto & current_user = client_info.current_user; !current_user.empty() && current_user != client_info.initial_user)
+    {
+        context_copy->setInitialUserName(current_user);
+        context_copy->setInitialAddress(*client_info.current_address);
+    }
 
     DistributedIndexAnalyzer analyzer(
         storage_id,
