@@ -271,7 +271,8 @@ struct Reader
         /// Not in the file but sized like an array of the file; set in block missing values so that its DEFAULT applies.
         bool report_as_missing = false;
         bool needs_cast = false; // if output_type is different from input_type
-        /// If `is_missing_column`, the memory that a default value takes in the column, see `formOutputColumn`.
+        /// If `is_missing_column`, the memory that the value it is filled with takes in the column: `missing_column_default`
+        /// if set, otherwise the default value of the type, see `formOutputColumn`.
         double missing_bytes_per_value = 0;
         /// If `is_missing_column`, whether the output of the default values is not bounded by `missing_bytes_per_value`:
         /// the type has a `JSON` or a `Dynamic` in it, see `maxByteSizeWithExpandedValues`.

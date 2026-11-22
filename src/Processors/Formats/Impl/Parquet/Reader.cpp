@@ -1380,7 +1380,13 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
         if (info.is_missing_column)
         {
             auto column = info.output_type->createColumn();
-            column->insertDefault();
+            /// The value that `formOutputColumn` fills the column with. The default of a data lake field (e.g. the
+            /// `initial-default` of Iceberg) may be much larger than the default value of the type: a long string, or
+            /// a non-empty array.
+            if (info.missing_column_default)
+                column->insert(*info.missing_column_default);
+            else
+                column->insertDefault();
             info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0) + sumEnumBytesPerValue(*info.output_type));
             /// E.g. `toJSONString` of a default `JSON` repeats the names of its typed paths in every row.
             info.missing_size_unknown = !maxByteSizeWithExpandedValues(*column, 0).has_value();
