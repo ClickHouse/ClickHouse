@@ -71,6 +71,9 @@ struct AdaptiveArgumentLayout;
 /// What the record writer staged beyond the fixed parts of a batch's records, for the accounting of the batch.
 struct AdaptiveStagedBytes;
 
+/// How a frozen local table took the rows of a block: the hits, and the rows of the NULL key.
+struct AdaptiveLocalProbes;
+
 /// An adaptive merge task: the bucket it merged last and the working memory it keeps across its buckets.
 struct AdaptiveMergeTask;
 

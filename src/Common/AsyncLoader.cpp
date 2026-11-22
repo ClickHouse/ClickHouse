@@ -142,9 +142,13 @@ void LoadJob::canceled(const std::exception_ptr & ptr)
 
 void LoadJob::finish()
 {
-    // To ensure functions are destructed before `AsyncLoader::wait()` returns
-    func = {};
-    dependency_failure = {};
+    {
+        /// Called with allocations denied, but destroying captured state may allocate.
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        // To ensure functions are destructed before `AsyncLoader::wait()` returns
+        func = {};
+        dependency_failure = {};
+    }
 
     finish_time = std::chrono::system_clock::now();
     if (waiters > 0)

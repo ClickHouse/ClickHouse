@@ -236,7 +236,8 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    if (!update_registry_thread)
+    /// Only `unordered` mode uses the active-server hash ring.
+    if (mode == ObjectStorageQueueMode::UNORDERED && !update_registry_thread)
         update_registry_thread = std::make_unique<ThreadFromGlobalPool>(
             ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this](){ updateRegistryFunc(); });
 
@@ -735,7 +736,7 @@ namespace
             return self;
         }
 
-        UInt128 hash() const
+        [[nodiscard]] UInt128 hash() const
         {
             SipHash hash;
             hash.update(hostname);
@@ -744,7 +745,7 @@ namespace
             return hash.get128();
         }
 
-        std::string serialize() const
+        [[nodiscard]] std::string serialize() const
         {
             WriteBufferFromOwnString buf;
             buf << version << "\n";
@@ -1162,7 +1163,7 @@ public:
         nodes_num = servers.size();
     }
 
-    std::string chooseServer(const UInt128 & hash) const
+    [[nodiscard]] std::string chooseServer(const UInt128 & hash) const
     {
         if (virtual_nodes.empty())
             return {};
@@ -1172,7 +1173,7 @@ public:
         return it->second;
     }
 
-    size_t size() const { return nodes_num; }
+    [[nodiscard]] size_t size() const { return nodes_num; }
 
     template<typename... Args>
     static UInt128 hash(Args... args)

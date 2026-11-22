@@ -535,7 +535,7 @@ ZooKeeper::ZooKeeper(
     }
 
     if (!args.auth_scheme.empty())
-        sendAuth(args.auth_scheme, args.identity);
+        sendAuth(args.auth_scheme, String(args.identity));
 
     /// From now on, one thread writes to the socket and another one reads from it.
     if (socket.secure())
@@ -771,7 +771,7 @@ void ZooKeeper::sendHandshake()
     int32_t handshake_length = 45;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
-    std::string password = args.password;
+    std::string password(args.password);
     password.resize(Coordination::PASSWORD_LENGTH, '\0');
     bool read_only = true;
 
@@ -1871,7 +1871,7 @@ bool ZooKeeper::isFeatureEnabled(KeeperFeatureFlag feature_flag) const
     return keeper_feature_flags.isEnabled(feature_flag);
 }
 
-std::optional<String> ZooKeeper::tryGetSystemZnode(const std::string & path, const std::string & description)
+std::optional<String> ZooKeeper::tryGetSystemZnode(std::string_view path, const std::string & description)
 {
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
