@@ -25,7 +25,6 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Storages/StorageMerge.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <optional>

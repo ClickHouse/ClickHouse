@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <memory>
-#include <unordered_map>
-#include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/ColumnConst.h>
@@ -68,7 +68,7 @@ FilterResult filterResultForMatchedRows(
         return FilterResult::UNKNOWN;
 
     /// The filter reads the outputs of `pre_actions_dag` by name, so a name produced twice cannot be attributed.
-    std::unordered_map<String, const ActionsDAG::Node *> not_null_outputs;
+    UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> not_null_outputs;
     for (const auto * output : pre_actions_dag.getOutputs())
     {
         if (!not_null_columns.contains(output->result_name))
@@ -77,7 +77,7 @@ FilterResult filterResultForMatchedRows(
             it->second = nullptr;
     }
 
-    std::unordered_set<const ActionsDAG::Node *> not_null_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> not_null_nodes;
     for (const auto & [_, output] : not_null_outputs)
         if (output)
             not_null_nodes.insert(skipAliasAndToNullable(output));
