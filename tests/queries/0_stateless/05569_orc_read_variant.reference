@@ -31,10 +31,6 @@
 6	\N
 -- nested
 ['{"age":30,"name":"Alice"}','{"age":30,"name":"Alice"}']	{'k':'{"age":30,"name":"Alice"}'}	(1,'{"age":30,"name":"Alice"}')
--- a dotted subcolumn
-1	{"age":30,"name":"Alice"}	JSON
-{"age":30,"name":"Alice"}	{"age":30,"name":"Alice"}
-1
 -- in a nullable struct
 1	(NULL,NULL)
 3	(3,'{"age":30,"name":"Alice"}')
