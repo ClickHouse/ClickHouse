@@ -191,7 +191,7 @@ private:
     VectorWithMemoryTracking<size_t> & data;
     Cmp cmp;
 
-    bool less(size_t i, size_t j) const { return cmp(data[i], data[j]) < 0; }
+    [[nodiscard]] bool less(size_t i, size_t j) const { return cmp(data[i], data[j]) < 0; }
     void swap(size_t i, size_t j) { std::swap(data[i], data[j]); }
 
     void insertionSort(size_t a, size_t b)
@@ -474,21 +474,21 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesSortGroupsByTags>(context); }
     explicit FunctionTimeSeriesSortGroupsByTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     /// The result depends on the tags stored in the query context, so it's deterministic only in the scope of the current query.
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isStateful() const override { return true; }
-    bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministicInScopeOfQuery() const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 3 && arguments.size() != 4)
         {
@@ -520,7 +520,7 @@ public:
         return arguments[0].type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         /// An empty name is allowed: as in Prometheus, it names a label no series has.
         auto tag_names = TimeSeriesTagsFunctionHelpers::extractConstStringsFromArgument(name, arguments, 1);
