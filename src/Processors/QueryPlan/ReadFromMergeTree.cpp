@@ -4839,9 +4839,13 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset, const SortDescription
     /// The reader computes the default of a column a part does not have (e.g. one added by `ALTER ADD COLUMN` after
     /// the part was written) on the blocks it reads, and a default like `rowNumberInBlock()` would give other values
     /// for the trimmed ranges. Such a default is in no step above the read, so the optimization does not see it.
+    /// A pending `DROP COLUMN` or `CLEAR COLUMN` makes the reader ignore the values a part still has and compute
+    /// the default too, and so may a pending conversion of the column, so with any of them the optimization gives up.
     const auto & metadata_columns = metadata->getColumns();
     if (metadata_columns.hasDefaults())
     {
+        const bool has_pending_column_changes
+            = mutations_snapshot && (mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasAlterMutations());
         for (const auto & column_name : all_column_names)
         {
             /// An `ALIAS` column is computed in a step above the read, which the optimization checks itself.
@@ -4851,6 +4855,8 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset, const SortDescription
             const auto column_default = metadata_columns.getDefault(column->getNameInStorage());
             if (!column_default || column_default->kind == ColumnDefaultKind::Alias)
                 continue;
+            if (has_pending_column_changes)
+                return 0;
             for (const auto & part : result.parts_with_ranges)
                 if (!part.data_part->tryGetColumn(column->getNameInStorage()))
                     return 0;

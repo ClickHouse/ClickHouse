@@ -68,3 +68,35 @@ SELECT k, m FROM t_skip_offset_missing_default ORDER BY k OFFSET 3
 SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
 
 DROP TABLE t_skip_offset_missing_default;
+
+-- A pending `DROP COLUMN` or `CLEAR COLUMN` makes the reader compute the default of a column the part still has.
+DROP TABLE IF EXISTS t_skip_offset_pending_drop;
+CREATE TABLE t_skip_offset_pending_drop (k UInt64, n UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_skip_offset_pending_drop SELECT number, number FROM numbers(10);
+SYSTEM STOP MERGES t_skip_offset_pending_drop;
+ALTER TABLE t_skip_offset_pending_drop DROP COLUMN n SETTINGS alter_sync = 0;
+ALTER TABLE t_skip_offset_pending_drop ADD COLUMN n UInt64 DEFAULT rowNumberInBlock();
+
+SELECT 'pending drop, disabled';
+SELECT k, n FROM t_skip_offset_pending_drop ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 0, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+SELECT 'pending drop, enabled';
+SELECT k, n FROM t_skip_offset_pending_drop ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+
+DROP TABLE t_skip_offset_pending_drop;
+
+DROP TABLE IF EXISTS t_skip_offset_pending_clear;
+CREATE TABLE t_skip_offset_pending_clear (k UInt64, n UInt64 DEFAULT rowNumberInBlock()) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_skip_offset_pending_clear SELECT number, number + 100 FROM numbers(10);
+SYSTEM STOP MERGES t_skip_offset_pending_clear;
+ALTER TABLE t_skip_offset_pending_clear CLEAR COLUMN n SETTINGS alter_sync = 0;
+
+SELECT 'pending clear, disabled';
+SELECT k, n FROM t_skip_offset_pending_clear ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 0, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+SELECT 'pending clear, enabled';
+SELECT k, n FROM t_skip_offset_pending_clear ORDER BY k OFFSET 3
+SETTINGS query_plan_optimize_read_in_order_skip_offset = 1, max_threads = 1, max_block_size = 10, preferred_block_size_bytes = 0;
+
+DROP TABLE t_skip_offset_pending_clear;
