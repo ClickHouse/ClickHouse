@@ -205,6 +205,7 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptionsWithoutArguments(aggregates, ctx.in, ctx.max_type_complexity);
+    checkDeserializedGroupByModifierInput(keys, aggregates, final, *ctx.input_headers.front());
 
     const auto & query_settings = ctx.context->getSettingsRef();
 
