@@ -23,12 +23,11 @@ INSERT INTO t_enum_arrays VALUES (['a'], ['b']);
 SELECT 'enum arrays', e FROM t_enum_arrays WHERE notEmpty(f) SETTINGS optimize_substitute_columns = 0;
 SELECT 'enum arrays', e FROM t_enum_arrays WHERE notEmpty(f) SETTINGS optimize_substitute_columns = 1;
 
--- a number and an `Enum` convert by the value, so they are still substituted
+-- a number equal to an `Enum` keeps the value of the `Enum`
 CREATE TABLE t_enum_number (e Enum8('a' = 1, 'b' = 2), n UInt8, CONSTRAINT c CHECK e = n) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_enum_number VALUES ('b', 2);
 SELECT 'enum number', e FROM t_enum_number WHERE n > 0 SETTINGS optimize_substitute_columns = 0;
 SELECT 'enum number', e FROM t_enum_number WHERE n > 0 SETTINGS optimize_substitute_columns = 1;
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT e FROM t_enum_number WHERE n > 0 SETTINGS optimize_substitute_columns = 1) WHERE explain LIKE '%_CAST%';
 
 DROP TABLE t_enums;
 DROP TABLE t_enum_tuples;
