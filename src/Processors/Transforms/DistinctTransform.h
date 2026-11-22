@@ -3,6 +3,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/SpillableAdapter.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <optional>
@@ -59,6 +60,15 @@ public:
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
+    /// `shared_set_bytes_` accounts for retained set memory across disjoint streams and attaches
+    /// snapshots to output chunks for global limit accounting by `DistinctLimitsCheckingTransform`.
+    /// A nonzero `coalesce_rows_` merges the output chunks until they hold this many rows, or until
+    /// `COALESCE_INPUT_BLOCKS` times as many input rows were consumed since the last output. Preliminary
+    /// deduplication of highly duplicated input emits a stream of tiny chunks, and each of them costs
+    /// scheduling in the consumer. This is worst for a parallel final `DISTINCT`, which scatters every
+    /// chunk across all partitions and merges the many resulting pieces into the query output. The bound
+    /// in input rows keeps the delay finite on an unbounded input that adds no new keys, so a downstream
+    /// limit can still stop the query. Chunks with a `ChunkInfo` are not coalesced, see `transform`.
     /// `allow_spilling_` permits the scheduler to request the same release for preliminary deduplication.
     DistinctTransform(
         SharedHeader header_,
@@ -68,18 +78,29 @@ public:
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
         UInt64 max_bytes_before_pass_through_ = 0,
+        DistinctSetMemoryTracker::SharedCounter shared_set_bytes_ = nullptr,
+        UInt64 coalesce_rows_ = 0,
         bool allow_spilling_ = false);
 
     String getName() const override { return "DistinctTransform"; }
+
+    Status prepare() override;
 
     std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, allow_spilling ? 1uz : 0uz}; }
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
 
 protected:
+    void transform(Chunk & input_chunk, Chunk & output_chunk) override;
     void transform(Chunk & chunk) override;
+    bool needInputData() const override { return !forward_input_after_flush; }
 
 private:
+    void deduplicate(Chunk & chunk);
+    Chunk flushPendingChunks();
+
+    /// Outlives the set so its contribution is removed after the retained allocations are released.
+    DistinctSetMemoryTracker set_memory;
     SpillableAdapter<DistinctTransform> spillable{*this};
     ISpillable * const spillable_ptr = &spillable;
     /// An absent filter means subsequent chunks pass through without deduplication.
@@ -89,6 +110,17 @@ private:
     std::optional<DeduplicationAbandonController> abandon_controller;
 
     const UInt64 max_bytes_before_pass_through;
+
+    /// A parallel final `DISTINCT` splits every chunk into up to 16 partitions (see `DistinctStep`).
+    static constexpr UInt64 COALESCE_INPUT_BLOCKS = 16;
+
+    const UInt64 coalesce_rows;
+    /// Output chunks held back for coalescing, their rows, and the input rows consumed since the last output.
+    Chunks pending_chunks;
+    UInt64 pending_rows = 0;
+    UInt64 pending_input_rows = 0;
+    /// The held back rows were emitted ahead of an input chunk with a `ChunkInfo`, which is processed next.
+    bool forward_input_after_flush = false;
     const bool allow_spilling;
 };
 
