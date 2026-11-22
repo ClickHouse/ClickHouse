@@ -47,7 +47,7 @@ const String PART_NAME_COLUMN = "part_name";
 const String COLUMN_COLUMN = "column";
 const String SUBSTREAM_COLUMN = "substream";
 const String DATA_COMPRESSED_BYTES_COLUMN = "data_compressed_bytes";
-const String DATA_UNCOMPRESSED_BYTES_COLUMN = "data_uncompressed_bytes";
+[[clang::no_destroy]] const String DATA_UNCOMPRESSED_BYTES_COLUMN = "data_uncompressed_bytes";
 const String CODEC_BLOCK_COUNTS_COLUMN = "codec_block_counts";
 
 Map codecCountsToField(const std::map<String, UInt64> & counts)

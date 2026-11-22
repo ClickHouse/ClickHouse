@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
@@ -127,6 +129,8 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
+    /// The first push_back into an empty PODArray allocates 4 KiB; a constant needs one row.
+    column->reserve(1);
     column->insert(field);
     return ColumnConst::create(std::move(column), size);
 }
@@ -462,9 +466,30 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
     return std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings);
 }
 
+namespace
+{
+
+/// Whether some nested column has a layout (`Sparse`, `Replicated` or `Detached`) that only the recursive serialization info describes.
+bool hasNestedColumnWithNonDefaultKind(const IColumn & column)
+{
+    bool found = false;
+    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn)
+    {
+        found = found || subcolumn.isSparse() || typeid_cast<const ColumnReplicated *>(&subcolumn) || typeid_cast<const ColumnBLOB *>(&subcolumn);
+    });
+    return found;
+}
+
+}
+
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
-    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
+    auto settings = SerializationInfoSettings::enableAllSupportedSerializations();
+    /// The recursive info describes the same serialization as the plain one when all nested columns have the default layout,
+    /// and it is expensive to build for types with many subcolumns, such as `JSON` with many typed paths.
+    if (hasSparseSerializationSubcolumns(settings) && hasNestedColumnWithNonDefaultKind(column))
+        settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+    return getSerializationInfo(column, settings);
 }
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
@@ -502,7 +527,13 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return wrapSerializationBasedOnKindStack(getSerialization(info.getSettings()), info.getKindStack(), info.getSettings());
+    return getSerialization(info, true);
+}
+
+SerializationPtr IDataType::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
+{
+    auto serialization = use_type_serialization_settings ? getSerialization(info.getSettings()) : getDefaultSerialization();
+    return wrapSerializationBasedOnKindStack(std::move(serialization), info.getKindStack(), info.getSettings());
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const

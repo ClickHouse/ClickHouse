@@ -98,6 +98,9 @@ struct ReadOptions
     /// (e.g. elements of tuples). For files whose top-level fields can have names like `m.value`, which are
     /// different from the nested field `value` of the map `m`.
     bool match_only_top_level_columns = false;
+
+    NameSet map_columns_read_by_keys;
+    NameSet map_columns_read_by_values;
 };
 
 struct SharedResourcesExt

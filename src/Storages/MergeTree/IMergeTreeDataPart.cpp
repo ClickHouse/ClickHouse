@@ -659,7 +659,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
-    getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
+    getDataPartStorage().setPreferredFileOrder(getCommonMetadataFiles());
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -749,14 +749,14 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
 }
 
 /// Remove all vector similarity index cache entries for this part.
-/// The cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
-/// the key used during insertion in `MergeTreeIndexReader::read`.
+/// The cache key must use `getPathForCacheKey` to match the
+/// key used during insertion in `MergeTreeIndexReader::read`.
 void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
 {
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)

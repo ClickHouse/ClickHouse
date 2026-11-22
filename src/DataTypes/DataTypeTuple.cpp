@@ -236,6 +236,29 @@ bool DataTypeTuple::isDefaultInsertTrivial() const
             [](const DataTypePtr & elem) { return elem->isDefaultInsertTrivial(); });
 }
 
+MutableColumnConstPtr DataTypeTuple::createColumnConst(size_t size, const Field & field) const
+{
+    /// `ColumnTuple::insert` skips the elements' `createColumnConst`, which for `JSON` gives the typed paths absent from an empty `Object` their type default.
+    if (isDefaultInsertTrivial() || field.getType() != Field::Types::Tuple || field.safeGet<Tuple>().size() != elems.size())
+        return IDataType::createColumnConst(size, field);
+
+    const auto & tuple = field.safeGet<Tuple>();
+    Columns columns;
+    columns.reserve(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (elems[i]->isDefaultInsertTrivial())
+        {
+            auto column = elems[i]->createColumn();
+            column->insert(tuple[i]);
+            columns.push_back(std::move(column));
+        }
+        else
+            columns.push_back(elems[i]->createColumnConst(1, tuple[i])->getDataColumnPtr());
+    }
+    return ColumnConst::create(ColumnTuple::create(columns), size);
+}
+
 bool DataTypeTuple::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -352,13 +375,17 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
 {
+    return getSerialization(info, true);
+}
+
+SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
+{
     SerializationTuple::ElementSerializations serializations(elems.size());
     const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
-
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
+        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i), use_type_serialization_settings);
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
@@ -373,9 +400,14 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (const auto & elem : elems)
-        infos.push_back(elem->createSerializationInfo(settings));
+    {
+        auto elem_settings = settings;
+        if (!settings.shouldCollectSerializationInfo(*elem))
+            elem_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        infos.push_back(elem->createSerializationInfo(elem_settings));
+    }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
 
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
@@ -406,9 +438,16 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
 
+bool DataTypeTuple::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
+{
+    return std::any_of(elems.begin(), elems.end(), [&](const auto & elem)
+    {
+        return elem->hasSparseSerializationSubcolumns(settings);
+    });
+}
 
 DataTypePtr DataTypeTuple::doCloneWithChildren(const DataTypes & new_children) const
 {

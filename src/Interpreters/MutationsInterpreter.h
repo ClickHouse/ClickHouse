@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <IO/Progress.h>
 
 
 namespace DB
@@ -52,8 +53,12 @@ IsStorageTouched isStorageTouchedByMutations(
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
 /// other accesses; the function does not call `MutationCommand::ast` itself.
+/// `resolved_partition_ids` is `MutationCommand::partition_ids` - the partitions of a scoped command as
+/// they were resolved when the mutation entry was created or loaded. When it is set, it is the source of
+/// truth for the `IN PARTITION` part of the filter and the partition expression is not evaluated at all.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const ASTAlterCommand * alter,
+    const std::optional<NameSet> & resolved_partition_ids,
     const StoragePtr & storage,
     ContextPtr context
 );
@@ -94,6 +99,9 @@ public:
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
+        /// Snapshotted MergeTree settings from the mutation task. When set, TTL-related
+        /// settings are read from here instead of the live table settings.
+        MergeTreeSettingsPtr merge_tree_settings;
         /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
         /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
         bool apply_on_fly_for_read = false;
@@ -248,7 +256,8 @@ private:
     [[nodiscard]] std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
+        const ASTAlterCommand * alter, const std::optional<NameSet> & resolved_partition_ids) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;
