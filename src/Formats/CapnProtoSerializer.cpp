@@ -96,17 +96,12 @@ namespace
         std::vector<std::unique_ptr<FieldBuilder>> field_builders;
     };
 
-    /// A group (`g :group { ... }`, and a named union `u :union { ... }` as well) is not a separate object:
-    /// its fields are stored inline in the data and pointer sections of the struct that contains it,
-    /// and the offsets of its fields are relative to that struct. So a group field doesn't have its own slot
-    /// and must never be accessed as a pointer field of the parent struct.
-    bool isGroup(const capnp::StructSchema & struct_schema)
+    /// A group (or a named union) is stored inline in its parent struct: it has no slot and shares the parent's storage.
+    bool isGroup(const capnp::StructSchema & schema)
     {
-        return struct_schema.getProto().getStruct().getIsGroup();
+        return schema.getProto().getStruct().getIsGroup();
     }
 
-    /// Offset of the field inside its struct. A group doesn't have a slot (see above),
-    /// the offset is not used for it and we must not read it from the wrong union member of the field proto.
     UInt32 getFieldSlotOffset(const capnp::StructSchema::Field & field)
     {
         auto proto = field.getProto();
@@ -119,11 +114,8 @@ namespace
         capnp::DynamicStruct::Builder builder_impl;
         if constexpr (std::is_same_v<ParentBuilder, capnp::DynamicStruct::Builder>)
         {
-            /// A group shares the storage with its parent struct.
-            if (isGroup(schema))
-                builder_impl = capnp::DynamicStruct::Builder(schema, parent_builder.getBuilderImpl());
-            else
-                builder_impl = capnp::DynamicStruct::Builder(schema, parent_builder.getBuilderImpl().getPointerField(offset_or_index).initStruct(struct_size));
+            auto parent_impl = parent_builder.getBuilderImpl();
+            builder_impl = capnp::DynamicStruct::Builder(schema, isGroup(schema) ? parent_impl : parent_impl.getPointerField(offset_or_index).initStruct(struct_size));
         }
         else
             builder_impl = capnp::DynamicStruct::Builder(schema, parent_builder.getBuilderImpl().getStructElement(offset_or_index));
@@ -132,10 +124,8 @@ namespace
 
     capnp::DynamicStruct::Reader getStructReader(const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset, const capnp::StructSchema & schema)
     {
-        /// A group shares the storage with its parent struct.
-        if (isGroup(schema))
-            return capnp::DynamicStruct::Reader(schema, parent_struct_reader.getReaderImpl());
-        return capnp::DynamicStruct::Reader(schema, parent_struct_reader.getReaderImpl().getPointerField(slot_offset).getStruct(nullptr));
+        auto parent_impl = parent_struct_reader.getReaderImpl();
+        return capnp::DynamicStruct::Reader(schema, isGroup(schema) ? parent_impl : parent_impl.getPointerField(slot_offset).getStruct(nullptr));
     }
 
     class ICapnProtoSerializer

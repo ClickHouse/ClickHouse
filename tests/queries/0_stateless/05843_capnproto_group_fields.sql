@@ -1,17 +1,11 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: the Cap'n Proto format is not built in the Fast test build.
 
--- A Cap'n Proto group (`g :group { ... }`, and a named union `u :union { ... }` as well) is stored inline
--- in the struct that contains it, it is not a separate object behind a pointer. The serializer used to treat
--- a group field as a pointer field of the parent struct. If the parent struct had no pointers, the pointer slot
--- was outside of the struct, the values of the group were written over that slot and then interpreted as
--- a wire pointer, which led to out-of-bounds writes in the message arena.
+-- A group (or a named union) is stored inline in its parent struct, not behind a pointer.
 
--- Parallel formatting/parsing changes how many format objects are built, pin them to keep the run deterministic.
 SET output_format_parallel_formatting = 0;
 SET input_format_parallel_parsing = 0;
-
--- The `file` table function is used on purpose: it is what makes the writer and the reader use the schema below.
+-- The `file` table function is used so that both the writer and the reader use the schema below.
 SET engine_file_truncate_on_insert = 1;
 
 SET format_schema_source = 'string';
@@ -19,7 +13,6 @@ SET format_schema = '@0xd508eaf2a79b4a10; struct Inner { a @0 :UInt64; g :group 
 
 SELECT 'two groups in a struct without pointers';
 SET format_schema_message_name = 'TwoGroups';
--- The values of `g.x` look like far pointers, they used to crash the server or to fail with "invalid segment id".
 INSERT INTO FUNCTION file(currentDatabase() || '_05843_1.capnp', CapnProto, '`g.x` UInt64, m1 UInt64, m2 UInt64, `h.y` UInt64') VALUES (6, 1, 2, 3), (20971526, 4, 5, 6), (117440518, 7, 8, 9), (16045690984833335023, 1229782938533634594, 3689348815028241476, 18446744073709551615);
 SELECT * FROM file(currentDatabase() || '_05843_1.capnp', CapnProto, '`g.x` UInt64, m1 UInt64, m2 UInt64, `h.y` UInt64') ORDER BY m1;
 
