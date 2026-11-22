@@ -6,6 +6,7 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTExpressionList.h>
@@ -64,6 +65,30 @@ namespace Setting
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsDouble limit;
     extern const SettingsDouble offset;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsUInt64 max_bytes_to_read_leaf;
+    extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsSeconds max_execution_time_leaf;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_rows_in_distinct;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
 }
 
 namespace ServerSetting
@@ -183,12 +208,59 @@ namespace
         /// A streaming read reports its cursor once it has read everything up to the end of the bounded stream. A `LIMIT`
         /// stops the read earlier and may drop the rows of an already read chunk, so the next refresh would start from
         /// a cursor that does not match the appended rows (and append the same rows again, or skip some of them).
+        /// `LIMIT BY` stops the read as well, once no more rows can pass it (when all its keys are constants).
         const auto & select = *select_with_union->as<ASTSelectWithUnionQuery &>().list_of_selects->children[0]->as<ASTSelectQuery>();
-        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT and OFFSET are not supported in the query of an incremental refresh");
-        if (context->getSettingsRef()[Setting::limit] != 0 || context->getSettingsRef()[Setting::offset] != 0)
+        if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil() || select.limitBy())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "LIMIT, OFFSET and LIMIT BY are not supported in the query of an incremental refresh");
+
+        /// The settings of the query itself are not in the context when the view is created.
+        Settings settings = context->getSettingsCopy();
+        if (auto select_settings = select.settings())
+            settings.applyChanges(select_settings->as<ASTSetQuery &>().changes);
+
+        if (settings[Setting::limit] != 0 || settings[Setting::offset] != 0)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The settings `limit` and `offset` are not supported in the query of an incremental refresh");
+
+        /// A limit with the overflow mode `break` finishes the query successfully with a partial result. The read stops
+        /// before the end of the bounded stream, while the cursor may advance over the rows that were not read
+        /// (a `MergeTree` read advances it to the end of the snapshot), and the next refreshes would skip them forever.
+        auto reject_partial_result = [](bool has_limit, bool is_break, std::string_view mode_name)
+        {
+            if (has_limit && is_break)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "A limit with the setting `{} = 'break'` is not supported in the query of an incremental refresh, "
+                    "because it would finish successfully with a partial result",
+                    mode_name);
+        };
+        reject_partial_result(
+            settings[Setting::max_rows_to_read] != 0 || settings[Setting::max_bytes_to_read] != 0,
+            settings[Setting::read_overflow_mode] == OverflowMode::BREAK, "read_overflow_mode");
+        reject_partial_result(
+            settings[Setting::max_rows_to_read_leaf] != 0 || settings[Setting::max_bytes_to_read_leaf] != 0,
+            settings[Setting::read_overflow_mode_leaf] == OverflowMode::BREAK, "read_overflow_mode_leaf");
+        reject_partial_result(
+            settings[Setting::max_execution_time].totalMicroseconds() != 0,
+            settings[Setting::timeout_overflow_mode] == OverflowMode::BREAK, "timeout_overflow_mode");
+        reject_partial_result(
+            settings[Setting::max_execution_time_leaf].totalMicroseconds() != 0,
+            settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK, "timeout_overflow_mode_leaf");
+        reject_partial_result(
+            settings[Setting::max_result_rows] != 0 || settings[Setting::max_result_bytes] != 0,
+            settings[Setting::result_overflow_mode] == OverflowMode::BREAK, "result_overflow_mode");
+        reject_partial_result(
+            settings[Setting::max_rows_to_group_by] != 0,
+            settings[Setting::group_by_overflow_mode] == OverflowMode::BREAK, "group_by_overflow_mode");
+        reject_partial_result(
+            settings[Setting::max_rows_to_sort] != 0 || settings[Setting::max_bytes_to_sort] != 0,
+            settings[Setting::sort_overflow_mode] == OverflowMode::BREAK, "sort_overflow_mode");
+        reject_partial_result(
+            settings[Setting::max_rows_in_distinct] != 0 || settings[Setting::max_bytes_in_distinct] != 0,
+            settings[Setting::distinct_overflow_mode] == OverflowMode::BREAK, "distinct_overflow_mode");
+        reject_partial_result(
+            settings[Setting::max_rows_in_set] != 0 || settings[Setting::max_bytes_in_set] != 0,
+            settings[Setting::set_overflow_mode] == OverflowMode::BREAK, "set_overflow_mode");
 
         const auto * identifier = source_table_expr.database_and_table_name->as<ASTTableIdentifier>();
         if (!identifier)
@@ -220,8 +292,8 @@ namespace
                     "Incremental refresh source table {} uses a merging engine that rewrites historical rows on merge; only plain MergeTree is supported",
                     source->getStorageID().getNameForLogs());
 
-            const auto settings = merge_tree->getSettings();
-            if (!(*settings)[MergeTreeSetting::enable_block_number_column] || !(*settings)[MergeTreeSetting::enable_block_offset_column])
+            const auto merge_tree_settings = merge_tree->getSettings();
+            if (!(*merge_tree_settings)[MergeTreeSetting::enable_block_number_column] || !(*merge_tree_settings)[MergeTreeSetting::enable_block_offset_column])
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Incremental refresh source table {} must set enable_block_number_column = 1 and enable_block_offset_column = 1",
                     source->getStorageID().getNameForLogs());
