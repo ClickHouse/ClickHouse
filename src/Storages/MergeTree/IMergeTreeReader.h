@@ -183,9 +183,6 @@ protected:
 
     /// See `countCompressedBytesRead`.
     CountedCompressedBlocksPtr counted_compressed_blocks;
-    /// Granules served from the columns cache load nothing from the part, so the bytes read are not measured then. Not
-    /// expected after `countCompressedBytesRead`, which stops the reads from the cache.
-    bool served_from_columns_cache = false;
 
     [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 

@@ -46,11 +46,8 @@ catch (...)
 
 std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
-    if (!counted_compressed_blocks || served_from_columns_cache)
-    {
-        ranges_read.clear();
+    if (!counted_compressed_blocks)
         return std::nullopt;
-    }
 
     if (!counted_ranges)
         counted_ranges = &counted_compressed_blocks->getCountedRanges(

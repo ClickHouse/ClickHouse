@@ -47,8 +47,7 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStream> stream;
-    /// The ranges in the file of the compressed blocks read since `takeCompressedBytesRead` was called, see
-    /// `CompressedReadBufferBase::setBlocksReadSink`.
+    /// Read since the last `takeCompressedBytesRead`, see `CompressedReadBufferBase::setBlocksReadSink`.
     CompressedBlockRanges ranges_read;
     /// Of `counted_compressed_blocks`, looked up at the first take.
     CountedCompressedBlocks::CountedRanges * counted_ranges = nullptr;

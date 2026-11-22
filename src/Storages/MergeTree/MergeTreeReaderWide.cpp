@@ -760,7 +760,6 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
 
         if (served_columns)
         {
-            served_from_columns_cache = true;
             for (size_t i = run_begin; i < run_end; ++i)
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
                     hits += served_columns;
@@ -1192,13 +1191,6 @@ std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
         return std::nullopt;
 
     std::lock_guard lock(ranges_read_mutex);
-    if (served_from_columns_cache)
-    {
-        /// Not measured, but the buffers of the streams keep appending the blocks they load: drop them.
-        for (auto & [_, stream_ranges] : ranges_read)
-            stream_ranges.ranges.clear();
-        return std::nullopt;
-    }
 
     size_t bytes = 0;
     for (auto & [stream_name, stream_ranges] : ranges_read)

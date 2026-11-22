@@ -135,9 +135,8 @@ private:
     /// Called on the reading thread only, see the body.
     double * avgValueSizeHintSlot(const ResolvedSubstream & resolved);
 
-    /// The ranges in the files of the compressed blocks read, by stream, since `takeCompressedBytesRead` was called, see
-    /// `CompressedReadBufferBase::setBlocksReadSink`. Only after `countCompressedBytesRead`. The buffers of the streams append
-    /// to the ranges of their own stream, the map is guarded.
+    /// Read by stream since the last `takeCompressedBytesRead`, see `CompressedReadBufferBase::setBlocksReadSink`. The buffer
+    /// of each stream appends to the ranges of its own stream; the map is guarded.
     struct StreamRangesRead
     {
         CompressedBlockRanges ranges;

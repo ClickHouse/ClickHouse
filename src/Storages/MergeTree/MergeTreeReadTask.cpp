@@ -127,7 +127,6 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        /// The compressed bytes read are taken by `dataflow_cache_update_cb`.
         readers.countCompressedBytesRead(updater->getCountedCompressedBlocks());
 
         dataflow_cache_update_cb = [this](std::optional<size_t> compressed_bytes_read)
