@@ -1,6 +1,5 @@
 #include <Processors/Transforms/Window/Frame.h>
 
-#include <Columns/ColumnNullable.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 
 #include <Common/VectorWithMemoryTracking.h>
@@ -108,15 +107,15 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
     const int direction = params.window_description.order_by[0].direction;
     const bool offset_is_preceding = frame_preceding == (direction > 0);
     const size_t key_position = params.order_by_indices[0];
-    const ColumnPtr current_key_column = removeNullable(current_block.materialized_columns[key_position]);
+    const IColumn * current_key_column = current_block.non_nullable_columns[key_position].get();
     const RowNumber partition_end = partition.end;
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
-        const ColumnPtr key_column = removeNullable(block.materialized_columns[key_position]);
+        const IColumn * key_column = block.non_nullable_columns[key_position].get();
         const int64_t rows_end = partition_end.block == bound.location.block ? partition_end.row : block.rows_count;
         int64_t row = bound.location.row;
-        while (row < rows_end && keyBeforeRangeBoundAt(params, block, key_column.get(), row, current, current_key_column.get(), offset, offset_is_preceding, direction, past))
+        while (row < rows_end && keyBeforeRangeBoundAt(params, block, key_column, row, current, current_key_column, offset, offset_is_preceding, direction, past))
             ++row;
 
         bound.row_index_in_partition += row - bound.location.row;

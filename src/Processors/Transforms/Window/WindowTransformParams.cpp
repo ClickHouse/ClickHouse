@@ -4,6 +4,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <DataTypes/IDataType.h>
+
 #include <Interpreters/convertFieldToType.h>
 
 #include <WindowFunctions/IGeneralWindowFunction.h>
@@ -193,10 +195,12 @@ bool needsPeerGroupIndexes(const WindowDescription & description, const WindowFu
     return functions_read_peer_groups || frame_reads_peer_groups;
 }
 
-bool needsMissingKeys(const WindowDescription & description, const WindowFunctionRequirements & requirements)
+bool needsMissingKeys(const Block & header, const VectorWithMemoryTracking<size_t> & order_by_indices, const WindowDescription & description, const WindowFunctionRequirements & requirements)
 {
+    const auto range_column_type = isRangeOffsetFrame(description.frame) ? header.getByPosition(order_by_indices[0]).type : nullptr;
     const bool functions_read_frame = requirements.frame_start || requirements.frame_end;
-    return isRangeOffsetFrame(description.frame) && functions_read_frame;
+    const bool range_key_can_be_missing = range_column_type && (range_column_type->isNullable() || isFloat(range_column_type));
+    return functions_read_frame && range_key_can_be_missing;
 }
 
 }
@@ -213,7 +217,7 @@ WindowTransformParams WindowTransformParams::create(
     auto range_offset_comparator = chooseRangeOffsetComparator(header, window_description.frame, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, order_by_indices);
     auto requirements = collectRequirements(description, functions);
-    auto needs_missing_keys = needsMissingKeys(description, requirements);
+    auto needs_missing_keys = needsMissingKeys(header, order_by_indices, description, requirements);
     auto needs_peer_group_indexes = needsPeerGroupIndexes(description, requirements);
 
     return WindowTransformParams{

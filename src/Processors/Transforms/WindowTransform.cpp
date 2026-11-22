@@ -2,6 +2,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <algorithm>
@@ -21,6 +22,14 @@ Columns materializeColumns(Columns columns, const VectorWithMemoryTracking<bool>
     for (auto && [column, materialize] : std::views::zip(columns, should_materialize))
         if (materialize)
             column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
+
+    return columns;
+}
+
+Columns unwrapNullableColumns(Columns columns)
+{
+    for (auto & column : columns)
+        column = removeNullable(column);
 
     return columns;
 }
@@ -159,9 +168,10 @@ void WindowTransform::addInputBlock(Chunk chunk)
 {
     auto rows_count = static_cast<int64_t>(chunk.getNumRows());
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
+    auto non_nullable_columns = unwrapNullableColumns(materialized_columns);
     auto index = indexes.calculate(materialized_columns, rows_count);
     arguments.add(materialized_columns, rows_count);
-    blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
+    blocks.add(std::move(chunk), std::move(materialized_columns), std::move(non_nullable_columns), std::move(index));
     partition.advance(blocks);
 }
 

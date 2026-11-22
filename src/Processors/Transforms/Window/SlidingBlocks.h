@@ -30,6 +30,7 @@ struct SlidingBlock
     /// Inputs
     Columns input_columns;
     Columns materialized_columns;
+    Columns non_nullable_columns;
 
     /// Helper data
     int64_t rows_count = 0;
@@ -42,7 +43,7 @@ struct SlidingBlock
 class SlidingBlocks
 {
 public:
-    void add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
+    void add(Chunk chunk, Columns materialized_columns, Columns non_nullable_columns, SlidingIndex index);
     void pop();
 
     [[nodiscard]] const SlidingBlock & blockAt(int64_t block_number) const;
