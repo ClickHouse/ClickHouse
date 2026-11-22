@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDynamic.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
@@ -21,6 +22,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <base/find_symbols.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
