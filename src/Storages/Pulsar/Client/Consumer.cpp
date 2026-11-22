@@ -689,13 +689,20 @@ void ConsumerImpl::acknowledge(std::span<const MessageId> ids)
             if (id.batch_index >= 0 && id.batch_size > 1)
             {
                 /// A batch is acknowledged when all its messages are.
-                auto & acked = partial_acks[BatchKey{id.sub_consumer, id.entry}];
-                if (acked.empty())
-                    acked.resize(id.batch_size);
-                if (static_cast<size_t>(id.batch_index) >= acked.size())
+                auto & batch = partial_acks[BatchKey{id.sub_consumer, id.entry}];
+                if (batch.acked.empty())
+                {
+                    batch.acked.resize(id.batch_size);
+                    batch.unacked = batch.acked.size();
+                }
+                if (static_cast<size_t>(id.batch_index) >= batch.acked.size())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid batch index in the Pulsar message {}", id.toString());
-                acked[id.batch_index] = true;
-                if (!std::all_of(acked.begin(), acked.end(), [](bool x) { return x; }))
+                if (!batch.acked[id.batch_index])
+                {
+                    batch.acked[id.batch_index] = true;
+                    --batch.unacked;
+                }
+                if (batch.unacked != 0)
                     continue;
                 partial_acks.erase(BatchKey{id.sub_consumer, id.entry});
             }

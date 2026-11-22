@@ -93,6 +93,12 @@ private:
         size_t operator()(const BatchKey & key) const;
     };
 
+    struct PartialBatch
+    {
+        VectorWithMemoryTracking<bool> acked;
+        size_t unacked = 0;
+    };
+
     struct PartitionedTopic
     {
         String name;
@@ -135,7 +141,7 @@ private:
     size_t queued_messages = 0;
 
     /// The acknowledged messages of the batches that are not acknowledged completely.
-    UnorderedMapWithMemoryTracking<BatchKey, VectorWithMemoryTracking<bool>, BatchKeyHash> partial_acks;
+    UnorderedMapWithMemoryTracking<BatchKey, PartialBatch, BatchKeyHash> partial_acks;
     /// The connections with acknowledgements to send.
     VectorWithMemoryTracking<UInt64> acked_connections;
 

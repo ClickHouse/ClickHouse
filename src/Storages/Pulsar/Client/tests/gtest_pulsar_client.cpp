@@ -642,6 +642,55 @@ TEST(PulsarClient, Acknowledgements)
     EXPECT_EQ(redeliver.message_ids(0).entryid(), 20);
 }
 
+TEST(PulsarClient, LargeBatchAcknowledgement)
+{
+    FakeBroker broker;
+    Client client(broker.url(), configuration());
+    auto consumer = client.subscribe({"t"}, "s", {});
+    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+
+    constexpr size_t count = 200'000;
+    const String entry = batchEntry("");
+    String batch;
+    batch.reserve(entry.size() * count);
+    for (size_t i = 0; i < count; ++i)
+        batch += entry;
+    auto metadata = metadataOf();
+    metadata.set_num_messages_in_batch(static_cast<Int32>(count));
+    broker.sendMessage(connection, consumer_id, 1, metadata, batch);
+    broker.sendMessage(connection, consumer_id, 2, metadataOf(), "x");
+
+    auto messages = receiveAtLeast(*consumer, count + 1);
+    ASSERT_EQ(messages.size(), count + 1);
+    std::vector<MessageId> ids; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    for (size_t i = 0; i < count; ++i)
+        ids.push_back(messages[i].id());
+
+    const auto start = std::chrono::steady_clock::now();
+    /// The first half in order in one call, then again, then the second half but its first message in reverse order over many calls.
+    consumer->acknowledge(std::span(ids.data(), count / 2));
+    consumer->acknowledge(std::span(ids.data(), count / 2));
+    std::vector<MessageId> rest(ids.rbegin(), ids.rbegin() + count / 2 - 1); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    for (size_t i = 0; i < rest.size(); i += 1000)
+        consumer->acknowledge(std::span(rest.data() + i, std::min<size_t>(1000, rest.size() - i)));
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    /// The batch is incomplete, so the acknowledgement of the single message is the first one sent.
+    consumer->acknowledge(std::span(&messages[count].id(), 1));
+    ASSERT_TRUE(broker.waitForCount(Type::ACK, 1));
+    consumer->acknowledge(std::span(&ids[count / 2], 1));
+    ASSERT_TRUE(broker.waitForCount(Type::ACK, 2));
+    auto acks = broker.eventsOf(Type::ACK);
+    ASSERT_EQ(acks.size(), 2);
+    ASSERT_EQ(acks[0].command.ack().message_id_size(), 1);
+    EXPECT_EQ(acks[0].command.ack().message_id(0).entryid(), 2);
+    ASSERT_EQ(acks[1].command.ack().message_id_size(), 1);
+    EXPECT_EQ(acks[1].command.ack().message_id(0).entryid(), 1);
+
+    /// Constant time per message: rescanning the batch for each one takes about 30 s in a debug build.
+    EXPECT_LT(elapsed, 10s);
+}
+
 TEST(PulsarClient, ChecksumMismatchIsDiscarded)
 {
     FakeBroker broker;
