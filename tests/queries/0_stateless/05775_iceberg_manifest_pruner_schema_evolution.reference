@@ -1,7 +1,7 @@
 --- data files across both schema versions
 8	2000
 --- logical-plan estimate; manifest-list pruning disabled
-Join: m[1000] ⋈ p[no_stats~2]
-ResultRows: ~~2
+Join: m[1000] ⋈ p[no_stats~1]
+ResultRows: ~~1
 --- actual rows
 1
