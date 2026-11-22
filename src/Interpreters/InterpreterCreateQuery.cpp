@@ -53,7 +53,9 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -64,6 +66,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
@@ -892,6 +896,28 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 
 }
 
+/// `CREATE TABLE t AS s3(...)` creates the same permanent table as `CREATE TABLE t ENGINE = S3(...)`, so it needs the
+/// same `TABLE ENGINE ON S3` grant. Only unfiltered `READ ON S3` and `WRITE ON S3` imply that grant, because writes
+/// to a table are not checked against the source grants: a key renamed by `s3_create_new_file_on_insert`, or an
+/// insert by another user, could go outside a filter such as `WRITE ON S3('<regex>')`. Without this grant,
+/// a filtered grant, which passes the check of the function's URI, would be enough to create the table.
+/// Engines without a source, such as `Merge`, are not affected by source grants, so they keep their behavior.
+std::optional<String> InterpreterCreateQuery::getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context)
+{
+    /// The arguments are parsed, because `url` takes the engine of the scheme, e.g. `S3` for `url('s3://...')`. A copy is
+    /// parsed, because parsing may change the arguments, e.g. `mysql` takes out its `SETTINGS`, which the structure
+    /// inference of the table still needs.
+    const ASTPtr parsed_ast = table_function_ast->clone();
+    const auto table_function = TableFunctionFactory::instance().get(parsed_ast, query_context);
+    /// A definition that cannot be a table is refused the same way whatever the grants of the user.
+    throwIfTableFunctionCannotBeUsedToCreateTable(parsed_ast, *table_function, query_context);
+    String engine_name = table_function->getEngineNameForAccessCheck();
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    if (auto it = storages.find(engine_name); it != storages.end() && it->second.features.source_access_type)
+        return engine_name;
+    return {};
+}
+
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
@@ -914,6 +940,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
+
+    /// A table function inherited by `CREATE TABLE copy AS src` from `src`.
+    if (create.as_table_function)
+        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
+            getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -2150,7 +2181,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
     /// A replay of a stored definition was checked when it was created.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         checkExportAccess(create);
+        checkDictionaryEngineAccess(create);
+    }
 
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
@@ -3807,6 +3841,9 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
+            if (!is_create_database)
+                checkDictionaryEngineAccess(create);
+
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())
@@ -3831,6 +3868,9 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                if (inherited.as_table_function)
+                    if (auto engine_name = getSourceEngineOfTableFunction(inherited.as_table_function->ptr(), getContext()))
+                        getContext()->checkAccess(AccessType::TABLE_ENGINE, *engine_name);
 
                 /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
                 /// its inner engines while normalizing, so add the ones this query does not give itself
@@ -3846,6 +3886,7 @@ BlockIO InterpreterCreateQuery::execute()
 
                 /// the worker inherits the move destination of the source too, and runs with no user
                 checkExportAccess(inherited);
+                checkDictionaryEngineAccess(inherited);
 
                 /// A worker copies the source's indices with no user, so declare their transforms here.
                 if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
@@ -3988,6 +4029,11 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
     required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
+    /// Required here, not where the table is built: `ON CLUSTER` and `Replicated` databases build it with full access.
+    if (create.as_table_function)
+        if (auto engine_name = getSourceEngineOfTableFunction(create.as_table_function->ptr(), getContext()))
+            required_access.emplace_back(AccessType::TABLE_ENGINE, *engine_name);
+
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
     /// taking it away from `user_files` needs `WRITE`, like renaming files after processing does. Without this,
@@ -4005,6 +4051,67 @@ void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) co
         return;
 
     getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
+}
+
+void InterpreterCreateQuery::checkDictionaryEngineAccess(ASTCreateQuery & create) const
+{
+    /// Internal queries (initiated by the server itself) always have access to everything. A replay of `ON CLUSTER` or of a
+    /// `Replicated` database was checked before it was enqueued, while it still ran as the user, and runs without the user.
+    if (internal || getContext()->isDDLOrOnClusterInternal())
+        return;
+
+    /// An unqualified dictionary name is resolved against the current database of the query that creates the storage
+    /// and loads the dictionary, so check the dictionary that this query resolves to.
+    const String & server_default_database = getContext()->getGlobalContext()->getCurrentDatabase();
+    String execution_database;
+    if (!create.cluster.empty())
+    {
+        /// A replay of `ON CLUSTER` runs in the default database of the server.
+        execution_database = server_default_database;
+    }
+    else
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        /// A replay in a `Replicated` database runs in that database.
+        execution_database = database && database->shouldReplicateQuery(getContext(), query_ptr) ? database_name : getContext()->getCurrentDatabase();
+    }
+
+    auto check = [&](ASTs & arguments, const String & current_database)
+    {
+        /// A wrong number of arguments is reported when the storage is created.
+        if (arguments.size() != 1)
+            return;
+
+        /// Keep the name that is checked in the query, so that a replica executing it does not evaluate the argument
+        /// to another dictionary.
+        arguments[0] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], getContext());
+        auto dictionary_name = checkAndGetLiteralArgument<String>(arguments[0], "dictionary_name");
+        const auto & external_loader = getContext()->getExternalDictionariesLoader();
+        StorageDictionary::checkDictionaryAccess(external_loader.resolveDictionary(dictionary_name, current_database, getContext()).id, getContext());
+    };
+
+    auto check_engine = [&](ASTStorage & storage)
+    {
+        if (storage.engine && storage.engine->name == "Dictionary" && storage.engine->arguments)
+            check(storage.engine->arguments->children, execution_database);
+    };
+
+    if (create.storage)
+        check_engine(*create.storage);
+    if (create.targets)
+    {
+        for (ASTStorage * inner_engine : create.targets->getInnerEngines())
+            check_engine(*inner_engine);
+    }
+
+    /// `CREATE TABLE ... AS dictionary(...)` creates the storage with the global context, see `doCreateTable`.
+    if (create.as_table_function)
+    {
+        auto & function = create.as_table_function->as<ASTFunction &>();
+        if (function.name == "dictionary" && function.arguments)
+            check(function.arguments->children, server_default_database);
+    }
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

@@ -1,12 +1,19 @@
--- Tags: no-fasttest
+#!/usr/bin/env bash
+# Tags: no-fasttest
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -q "
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
-settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test1/');
+settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='${CLICKHOUSE_DISKS_FILES}/02963_test1/');
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
-settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/'); -- { serverError BAD_ARGUMENTS }
+settings disk=disk(name='02963_custom_disk', type = object_storage, object_storage_type = local_blob_storage, path='${CLICKHOUSE_DISKS_FILES}/02963_test2/'); -- { serverError BAD_ARGUMENTS }
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
@@ -26,7 +33,7 @@ settings disk='s3_disk_02963';
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
-settings disk=disk(name='s3_disk_02963', type = object_storage, object_storage_type = local_blob_storage, path='./02963_test2/'); -- { serverError BAD_ARGUMENTS }
+settings disk=disk(name='s3_disk_02963', type = object_storage, object_storage_type = local_blob_storage, path='${CLICKHOUSE_DISKS_FILES}/02963_test2/'); -- { serverError BAD_ARGUMENTS }
 
 drop table if exists test;
 create table test (a Int32) engine = MergeTree() order by tuple()
@@ -102,7 +109,7 @@ create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='02963_web_meta_on_local',
                    type = object_storage,
                    object_storage_type = local_blob_storage,
-                   path='./02963_web_meta_on_local/',
+                   path='${CLICKHOUSE_DISKS_FILES}/02963_web_meta_on_local/',
                    metadata_type = web); -- { serverError INVALID_CONFIG_PARAMETER }
 
 drop table if exists test;
@@ -110,5 +117,6 @@ create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='02963_web_index_meta_on_local',
                    type = object_storage,
                    object_storage_type = local_blob_storage,
-                   path='./02963_web_index_meta_on_local/',
+                   path='${CLICKHOUSE_DISKS_FILES}/02963_web_index_meta_on_local/',
                    metadata_type = web_index); -- { serverError INVALID_CONFIG_PARAMETER }
+"

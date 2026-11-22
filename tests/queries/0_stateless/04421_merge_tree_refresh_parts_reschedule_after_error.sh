@@ -22,7 +22,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/04421/${CLICKHOUSE_DATABASE}/')
+      path = '${CLICKHOUSE_DISKS_FILES}/04421/${CLICKHOUSE_DATABASE}/')
 "
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -34,7 +34,7 @@ SETTINGS table_disk = true, refresh_parts_interval = 1,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/04421/${CLICKHOUSE_DATABASE}/')
+      path = '${CLICKHOUSE_DISKS_FILES}/04421/${CLICKHOUSE_DATABASE}/')
 "
 
 # Sanity check: the background refresh picks up the first part.
