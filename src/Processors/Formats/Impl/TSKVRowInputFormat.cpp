@@ -137,13 +137,17 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     NullOutput sink;
                     readEscapedStringInto<NullOutput,false>(sink, *in);
                 }
+                else if (seen_columns[it->getMapped()])
+                {
+                    if (!format_settings.skip_duplicated_fields)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing TSKV format: {}", name_ref);
+
+                    NullOutput sink;
+                    readEscapedStringInto<NullOutput, false>(sink, *in);
+                }
                 else
                 {
                     index = it->getMapped();
-
-                    if (seen_columns[index])
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing TSKV format: {}", name_ref);
-
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];

@@ -352,6 +352,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.schema.output_format_schema = settings[Setting::output_format_schema];
+    format_settings.skip_duplicated_fields = settings[Setting::input_format_skip_duplicated_fields];
     format_settings.skip_unknown_fields = settings[Setting::input_format_skip_unknown_fields];
     format_settings.template_settings.resultset_format = settings[Setting::format_template_resultset];
     format_settings.template_settings.row_between_delimiter = settings[Setting::format_template_rows_between_delimiter];

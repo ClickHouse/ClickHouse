@@ -839,11 +839,15 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             current_key_name.assign(name.data(), name.size());
             skipUnknownField(BSONType(type), current_key_name);
         }
-        else
+        else if (seen_columns[index])
         {
-            if (seen_columns[index])
+            if (!format_settings.skip_duplicated_fields)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
 
+            skipBSONField(*in, BSONType(type));
+        }
+        else
+        {
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
         }

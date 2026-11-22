@@ -60,10 +60,9 @@ const String & FormRowInputFormat::columnName(size_t i) const
 
 void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
-    if (seen_columns[index])
+    if (seen_columns[index] && !format_settings.skip_duplicated_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
 
-    seen_columns[index] = true;
     const auto & serialization = serializations[index];
 
     String encoded_str;
@@ -73,6 +72,10 @@ void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
     if (!in->eof())
         assertChar('&', *in);
 
+    if (seen_columns[index])
+        return;
+
+    seen_columns[index] = true;
     decodeFormValue(encoded_str, decoded_str);
     ReadBufferFromString buf(decoded_str);
     serialization->deserializeWholeText(*columns[index], buf, format_settings);
