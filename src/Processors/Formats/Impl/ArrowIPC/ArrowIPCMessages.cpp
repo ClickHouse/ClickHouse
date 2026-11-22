@@ -243,7 +243,13 @@ EncodedStream encodeStream(const Block & header, const Chunks & chunks, const Fo
         WriteBufferFromString out(data);
         ArrowIPCBlockOutputFormat output(out, std::make_shared<const Block>(header), /* stream_ */ true, settings);
         for (const auto & chunk : chunks)
-            output.write(header.cloneWithColumns(chunk.getColumns()));
+        {
+            /// The writer expects full columns, as a pipeline gives it after `MaterializingTransform`. These
+            /// chunks come straight from a query, where a constant expression is still a `ColumnConst`.
+            Chunk materialized = chunk.clone();
+            materializeChunk(materialized);
+            output.write(header.cloneWithColumns(materialized.detachColumns()));
+        }
         output.finalize();
         out.finalize();
     }
