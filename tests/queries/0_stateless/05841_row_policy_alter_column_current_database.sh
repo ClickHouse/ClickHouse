@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# the unqualified lookup table resolves in the current database, which remote parallel replicas do not get
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas 0"
+
 DB=$CLICKHOUSE_DATABASE
 DB2=$CLICKHOUSE_DATABASE_2
 
