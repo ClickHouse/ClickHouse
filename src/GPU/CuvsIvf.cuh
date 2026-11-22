@@ -7,27 +7,33 @@
 namespace DB::GPU
 {
 
-class IvfCentroids
+/// The tree of the lists of an `ivf` index on the device (see `IvfTree`), which assigns rows to their lists.
+class IvfTreeRouter
 {
 public:
-    IvfCentroids(const float * centroids, size_t num_centroids, size_t dimensions);
-    ~IvfCentroids();
+    /// The levels top first: level `l` has `nodes[l]` centroids at `centroids[l]`, and, but for the leaves, `nodes[l] + 1`
+    /// offsets of their children in the next level at `child_offsets[l]`. `rotation` is the row-major R of the index, and
+    /// `rotated_leaves` the R c of each leaf.
+    IvfTreeRouter(size_t dimensions, size_t num_levels, const size_t * nodes, const float * const * centroids,
+        const uint32_t * const * child_offsets, const float * rotation, const float * rotated_leaves);
+    ~IvfTreeRouter();
 
-    IvfCentroids(const IvfCentroids &) = delete;
-    IvfCentroids & operator=(const IvfCentroids &) = delete;
+    IvfTreeRouter(const IvfTreeRouter &) = delete;
+    IvfTreeRouter & operator=(const IvfTreeRouter &) = delete;
 
-    void assign(const float * vectors, size_t rows, uint32_t * positions, const float * rotation = nullptr, float * rotated = nullptr) const;
+    static size_t maxBeam();
 
-    void nearestLists(const float * queries, size_t num_queries, size_t probes, uint32_t * lists) const;
+    /// Of each of the `rows` vectors, the rows `first_row`, `first_row + 1`, ...: the record of its entry in its list, that is the
+    /// nearest leaf by a beam of `beam` nodes on each level above the leaves, the row, and the `IvfQuantization` of
+    /// R x - R c, `recordBytes(dimensions)` bytes each.
+    void assignAndEncode(const float * vectors, size_t rows, size_t beam, uint32_t first_row, char * records) const;
 
-    size_t deviceMemoryBytes() const;
+    static size_t recordBytes(size_t dimensions);
 
 private:
     struct State;
     State * state = nullptr;
 };
-
-void trainIvfCentroids(const float * vectors, size_t rows, size_t dimensions, size_t num_centroids, float * centroids);
 
 class IvfListScan
 {

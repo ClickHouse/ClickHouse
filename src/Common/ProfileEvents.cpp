@@ -174,6 +174,19 @@
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
+    M(IvfIndexBuildMicroseconds, "Total time of building vector similarity indexes of the `ivf` method, without writing them.", ValueType::Microseconds) \
+    M(IvfIndexTrainMicroseconds, "Time of training the trees of centroids of vector similarity indexes of the `ivf` method on their samples.", ValueType::Microseconds) \
+    M(IvfIndexAssignMicroseconds, "Time of assigning the rows of vector similarity indexes of the `ivf` method to their lists and encoding them on the GPU.", ValueType::Microseconds) \
+    M(IvfIndexSpillMicroseconds, "Time of writing and reading the rows of vector similarity indexes of the `ivf` method to and from temporary data while they are built.", ValueType::Microseconds) \
+    M(IvfIndexWriteMicroseconds, "Time of sorting the entries of vector similarity indexes of the `ivf` method by lists and writing them to their parts.", ValueType::Microseconds) \
+    M(IvfIndexSearches, "Number of searches of parts by vector similarity indexes of the `ivf` method.", ValueType::Number) \
+    M(IvfIndexSearchMicroseconds, "Total time of searches of parts by vector similarity indexes of the `ivf` method.", ValueType::Microseconds) \
+    M(IvfIndexRouteMicroseconds, "Time of finding the lists to probe in the trees of centroids of vector similarity indexes of the `ivf` method.", ValueType::Microseconds) \
+    M(IvfIndexListReadMicroseconds, "Time of reading the probed lists of vector similarity indexes of the `ivf` method from their parts.", ValueType::Microseconds) \
+    M(IvfIndexListScanMicroseconds, "Time of scanning the probed lists of vector similarity indexes of the `ivf` method on the GPU.", ValueType::Microseconds) \
+    M(IvfIndexListsProbed, "Number of lists of vector similarity indexes of the `ivf` method probed by searches.", ValueType::Number) \
+    M(IvfIndexListBytesRead, "Bytes of lists of vector similarity indexes of the `ivf` method read by searches.", ValueType::Bytes) \
+    M(IvfIndexListReads, "Number of reads of ranges of lists of vector similarity indexes of the `ivf` method by searches.", ValueType::Number) \
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
     M(TextIndexTokensCacheHits, "Number of times a text index token info has been found in the cache.", ValueType::Number) \
     M(TextIndexTokensCacheMisses, "Number of times a text index token info has not been found in the cache.", ValueType::Number) \

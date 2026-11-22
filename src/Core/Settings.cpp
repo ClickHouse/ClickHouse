@@ -10311,8 +10311,9 @@ Allows to create a vector similarity index of the `ivf` method, which is built a
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, vector_search_ivf_probes, 64, R"(
-How many lists a vector similarity index of the `ivf` method searches per query: those of the nearest centroids. More lists
-give a better recall and take proportionally longer.
+How many lists a vector similarity index of the `ivf` method searches per query: those of the nearest centroids, found by a
+search through the tree of centroids above the lists that keeps as many nodes on each level. More lists give a better recall
+and take proportionally longer.
 )", EXPERIMENTAL, \
         {"26.11", 64, 64, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(

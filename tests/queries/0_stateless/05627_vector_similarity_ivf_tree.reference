@@ -1,0 +1,5 @@
+t_tree: recall at least 0.9: 1
+-- The index built anew by a merge of two parts
+t_merged: recall at least 0.9: 1
+-- All lists probed: the search is exact
+1

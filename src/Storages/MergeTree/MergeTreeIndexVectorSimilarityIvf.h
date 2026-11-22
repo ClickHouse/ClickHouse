@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IvfTree.h>
 #include <Common/Logger.h>
 
 #include <pcg_random.hpp>
@@ -18,7 +19,7 @@
 namespace DB
 {
 /// vector_similarity('ivf', 'L2Distance' | 'cosineDistance', dimensions[, lists]): lists of 4-bit codes of rotated residuals,
-/// built and searched on the GPU, and the exact distances of the best candidates.
+/// scanned on the GPU, reached through a tree of centroids (see `IvfTree`), and the exact distances of the best candidates.
 enum class IvfMetric : uint8_t
 {
     L2 = 0,
@@ -29,11 +30,6 @@ struct IvfParams
 {
     size_t lists = 0;
 };
-
-namespace GPU
-{
-class IvfCentroids;
-}
 
 class TemporaryDataBuffer;
 
@@ -66,7 +62,8 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     size_t dimensions;
     size_t rows = 0;
     size_t lists = 0;
-    std::vector<float> centroids;
+    /// The lists are the leaves of the tree.
+    IvfTree tree;
     std::vector<UInt64> list_offsets;
 
     std::vector<float> rotation;
@@ -75,20 +72,15 @@ struct MergeTreeIndexGranuleIvf final : public IMergeTreeIndexGranule
     std::vector<IvfListBucket> buckets;
 
 private:
-    static constexpr UInt64 FILE_FORMAT_VERSION = 4;
+    static constexpr UInt64 FILE_FORMAT_VERSION = 5;
 
     size_t entryBytes() const;
     size_t entries() const { return list_offsets.empty() ? 0 : list_offsets.back(); }
-
-    std::shared_ptr<GPU::IvfCentroids> getDeviceCentroids() const;
 
     UInt64 lists_byte_begin = 0;
 
     DataPartStoragePtr data_part_storage;
     String index_file_name;
-
-    mutable std::mutex device_mutex;
-    mutable std::shared_ptr<GPU::IvfCentroids> device_centroids;
 
     LoggerPtr logger = getLogger("VectorSimilarityIndexIvf");
 };

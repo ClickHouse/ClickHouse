@@ -2,15 +2,13 @@
 #include <GPU/GPUTypes.cuh>
 #include <GPU/IvfQuantization.cuh>
 
-#include <cuvs/cluster/kmeans.hpp>
+#include <cub/device/device_radix_sort.cuh>
 #include <cuvs/selection/select_k.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/gemm.cuh>
-#include <raft/linalg/matrix_vector_op.cuh>
-#include <raft/linalg/norm.cuh>
 #include <raft/matrix/detail/select_warpsort.cuh>
 #include <raft/matrix/init.cuh>
 #include <rmm/device_uvector.hpp>
@@ -29,8 +27,6 @@ namespace
 constexpr size_t SCORES_BYTES = 64 << 20;
 
 constexpr size_t WORKSPACE_BYTES = 256 << 20;
-
-constexpr size_t KMEANS_ROWS_PER_CENTROID = 40;
 
 constexpr uint32_t MISSING_ROW = std::numeric_limits<uint32_t>::max();
 
@@ -100,87 +96,395 @@ void fillMissing(raft::resources & res, float * distances, uint32_t * rows, size
 
 }
 
-struct IvfCentroids::State
+namespace
 {
-    size_t num_centroids;
-    size_t dimensions;
-    mutable raft::resources resources;
-    rmm::device_uvector<float> centroids;
-    rmm::device_uvector<float> centroid_squared_lengths;
 
-    static raft::resources & limited(raft::resources & res)
+constexpr int ROUTE_MAX_BEAM = 8;
+constexpr int ROUTE_WARPS_PER_BLOCK = 4;
+
+/// The `take` smallest of the scores the lanes of a warp hold, `local_count` of them sorted in each lane, into `chosen`, the same
+/// in every lane. Returns how many there were.
+__device__ int warpSmallest(const float * local_scores, const uint32_t * local_nodes, int local_count, int take, uint32_t * chosen)
+{
+    int head = 0;
+    int count = 0;
+    for (; count < take; ++count)
     {
-        limitWorkspace(res);
-        return res;
+        float score = head < local_count ? local_scores[head] : INFINITY;
+        uint32_t node = head < local_count ? local_nodes[head] : 0xFFFFFFFFu;
+        for (int offset = 16; offset > 0; offset /= 2)
+        {
+            const float other_score = __shfl_xor_sync(0xFFFFFFFFu, score, offset);
+            const uint32_t other_node = __shfl_xor_sync(0xFFFFFFFFu, node, offset);
+            if (other_score < score || (other_score == score && other_node < node))
+            {
+                score = other_score;
+                node = other_node;
+            }
+        }
+        if (node == 0xFFFFFFFFu)
+            break;
+        chosen[count] = node;
+        if (head < local_count && local_nodes[head] == node)
+            ++head;
+    }
+    return count;
+}
+
+/// A warp per row, the row `order[w]` of warp `w` (or `w` without `order`): descends the levels [first_level, end_level),
+/// keeping on each the `beam` nodes nearest to the row among the children of the nodes kept on the level above (all nodes of
+/// the top level), then writes the nearest leaf, or, above the leaves, the nodes kept to `frontiers` (`ROUTE_MAX_BEAM` per
+/// row) and their number to `frontier_sizes`, which a level below the top also starts from. Scores are |c|^2 - 2 x c,
+/// which order as the L2 distance.
+__global__ void routeRows(const float * vectors, size_t rows, size_t dimensions, const float * centroids, const float * squared_lengths,
+    const uint32_t * child_first, const uint32_t * level_begin, uint32_t first_level, uint32_t end_level, uint32_t num_levels, int beam,
+    const uint32_t * order, uint32_t * frontiers, uint8_t * frontier_sizes, uint32_t * leaves)
+{
+    extern __shared__ float shared_rows[];
+    const int warp = int(threadIdx.x) / 32;
+    const int lane = int(threadIdx.x) % 32;
+    const size_t index = size_t(blockIdx.x) * ROUTE_WARPS_PER_BLOCK + warp;
+    if (index >= rows)
+        return;
+    const size_t row = order ? order[index] : index;
+    float * x = shared_rows + size_t(warp) * dimensions;
+    for (size_t i = lane; i < dimensions; i += 32)
+        x[i] = vectors[row * dimensions + i];
+    __syncwarp();
+
+    uint32_t frontier[ROUTE_MAX_BEAM];
+    int frontier_size = 0;
+    if (first_level > 0)
+    {
+        frontier_size = frontier_sizes[row];
+        for (int k = 0; k < frontier_size; ++k)
+            frontier[k] = frontiers[row * ROUTE_MAX_BEAM + k];
+    }
+    float local_scores[ROUTE_MAX_BEAM];
+    uint32_t local_nodes[ROUTE_MAX_BEAM];
+
+    for (uint32_t level = first_level; level < end_level; ++level)
+    {
+        const bool is_leaves = level + 1 == num_levels;
+        const int keep = is_leaves ? 1 : beam;
+        int local_count = 0;
+
+        /// The candidates: all nodes of the top level, else the children of the frontier. The warp reads each centroid
+        /// together, a lane per 32nd component, so that its reads are adjacent; the lane of every 32nd candidate keeps it.
+        const int num_ranges = level == 0 ? 1 : frontier_size;
+        uint32_t seen = 0;
+        for (int r = 0; r < num_ranges; ++r)
+        {
+            const uint32_t first = level == 0 ? level_begin[0] : child_first[frontier[r]];
+            const uint32_t last = level == 0 ? level_begin[1] : child_first[frontier[r] + 1];
+            /// Four candidates at a time, whose sums do not wait for one another.
+            for (uint32_t group = first; group < last; group += 4)
+            {
+                float dots[4] = {0, 0, 0, 0};
+                const uint32_t group_size = min(4u, last - group);
+                for (size_t i = lane; i < dimensions; i += 32)
+                {
+                    const float component = x[i];
+#pragma unroll
+                    for (uint32_t k = 0; k < 4; ++k)
+                        if (k < group_size)
+                            dots[k] += component * centroids[size_t(group + k) * dimensions + i];
+                }
+#pragma unroll
+                for (int offset = 16; offset > 0; offset /= 2)
+#pragma unroll
+                    for (uint32_t k = 0; k < 4; ++k)
+                        dots[k] += __shfl_xor_sync(0xFFFFFFFFu, dots[k], offset);
+
+                for (uint32_t k = 0; k < group_size; ++k)
+                {
+                    const uint32_t c = group + k;
+                    if (int((seen + c - first) % 32) != lane)
+                        continue;
+                    const float score = squared_lengths[c] - 2 * dots[k];
+                    if (local_count < keep || score < local_scores[local_count - 1])
+                    {
+                        int at = local_count < keep ? local_count++ : keep - 1;
+                        while (at > 0 && local_scores[at - 1] > score)
+                        {
+                            local_scores[at] = local_scores[at - 1];
+                            local_nodes[at] = local_nodes[at - 1];
+                            --at;
+                        }
+                        local_scores[at] = score;
+                        local_nodes[at] = c;
+                    }
+                }
+            }
+            seen += last - first;
+        }
+
+        frontier_size = warpSmallest(local_scores, local_nodes, local_count, keep, frontier);
+        if (is_leaves)
+        {
+            if (lane == 0)
+                leaves[row] = frontier_size ? frontier[0] - level_begin[level] : MISSING_ROW;
+            return;
+        }
     }
 
-    State(const float * host_centroids, size_t num_centroids_, size_t dimensions_)
-        : num_centroids(num_centroids_)
-        , dimensions(dimensions_)
-        , centroids(num_centroids_ * dimensions_, streamOf(limited(resources)))
-        , centroid_squared_lengths(num_centroids_, streamOf(resources))
+    if (lane == 0)
     {
-        checkCuda(cudaMemcpyAsync(centroids.data(), host_centroids, centroids.size() * sizeof(float), cudaMemcpyHostToDevice,
-            streamOf(resources).get()), "copying IVF centroids to the device");
-        raft::linalg::norm<raft::linalg::L2Norm, raft::Apply::ALONG_ROWS>(resources,
-            ConstRowMatrix(centroids.data(), int64_t(num_centroids), int64_t(dimensions)),
-            raft::make_device_vector_view<float, int64_t>(centroid_squared_lengths.data(), int64_t(num_centroids)));
+        frontier_sizes[row] = uint8_t(frontier_size);
+        for (int k = 0; k < frontier_size; ++k)
+            frontiers[row * ROUTE_MAX_BEAM + k] = frontier[k];
+    }
+}
+
+/// The key of a row for the order of the last level: its nearest node above the leaves.
+__global__ void frontierKeys(const uint32_t * frontiers, const uint8_t * frontier_sizes, size_t rows, uint32_t * keys, uint32_t * indices)
+{
+    const size_t row = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (row >= rows)
+        return;
+    keys[row] = frontier_sizes[row] ? frontiers[row * ROUTE_MAX_BEAM] : 0xFFFFFFFFu;
+    indices[row] = uint32_t(row);
+}
+
+/// A warp per row: the record of its entry, see `IvfTreeRouter::assignAndEncode` and `IvfQuantization::encode`.
+__global__ void encodeRows(const float * rotated, const uint32_t * leaves, const float * rotated_leaves, size_t rows, size_t dimensions,
+    uint32_t first_row, size_t record_bytes, char * records)
+{
+    const int warp = int(threadIdx.x) / 32;
+    const int lane = int(threadIdx.x) % 32;
+    const size_t row = size_t(blockIdx.x) * ROUTE_WARPS_PER_BLOCK + warp;
+    if (row >= rows)
+        return;
+    const uint32_t leaf = leaves[row];
+    if (leaf == MISSING_ROW)
+    {
+        if (lane == 0)
+            memcpy(records + row * record_bytes, &leaf, sizeof(leaf));
+        return;
+    }
+    const float * x = rotated + row * dimensions;
+    const float * c = rotated_leaves + size_t(leaf) * dimensions;
+
+    float lo = INFINITY;
+    float hi = -INFINITY;
+    for (size_t i = lane; i < dimensions; i += 32)
+    {
+        const float r = x[i] - c[i];
+        lo = fminf(lo, r);
+        hi = fmaxf(hi, r);
+    }
+    for (int offset = 16; offset > 0; offset /= 2)
+    {
+        lo = fminf(lo, __shfl_xor_sync(0xFFFFFFFFu, lo, offset));
+        hi = fmaxf(hi, __shfl_xor_sync(0xFFFFFFFFu, hi, offset));
+    }
+    const float step = hi > lo ? (hi - lo) / 15 : 1.0f;
+
+    char * record = records + row * record_bytes;
+    uint32_t * codes = reinterpret_cast<uint32_t *>(record + 2 * sizeof(uint32_t) + sizeof(IvfQuantization::CodeParams));
+    float squared_length = 0;
+    const size_t words = IvfQuantization::codeWords(dimensions);
+    for (size_t w = 0; w < words; ++w)
+    {
+        const size_t i = w * 32 + size_t(lane);
+        uint32_t code = 0;
+        if (i < dimensions)
+        {
+            code = uint32_t(min(max(int(lroundf((x[i] - c[i] - lo) / step)), 0), 15));
+            const float decoded = lo + float(code) * step;
+            squared_length += decoded * decoded;
+        }
+        /// Component i is the nibble i % 8 of the 32-bit part (i % 32) / 8 of the word i / 32.
+        uint32_t part = code << (4 * (lane % 8));
+        part |= __shfl_xor_sync(0xFFFFFFFFu, part, 1);
+        part |= __shfl_xor_sync(0xFFFFFFFFu, part, 2);
+        part |= __shfl_xor_sync(0xFFFFFFFFu, part, 4);
+        if (lane % 8 == 0)
+            codes[w * 4 + size_t(lane / 8)] = part;
+    }
+    for (int offset = 16; offset > 0; offset /= 2)
+        squared_length += __shfl_xor_sync(0xFFFFFFFFu, squared_length, offset);
+
+    if (lane == 0)
+    {
+        const uint32_t row_number = first_row + uint32_t(row);
+        const IvfQuantization::CodeParams params{lo, step, squared_length};
+        memcpy(record, &leaf, sizeof(leaf));
+        memcpy(record + sizeof(uint32_t), &row_number, sizeof(row_number));
+        memcpy(record + 2 * sizeof(uint32_t), &params, sizeof(params));
+    }
+}
+
+}
+
+struct IvfTreeRouter::State
+{
+    size_t dimensions;
+    uint32_t num_levels;
+    std::vector<uint32_t> level_begin_host;
+    mutable raft::resources resources;
+    rmm::device_uvector<float> centroids;
+    rmm::device_uvector<float> squared_lengths;
+    rmm::device_uvector<uint32_t> child_first;
+    rmm::device_uvector<uint32_t> level_begin;
+    rmm::device_uvector<float> rotation;
+    rmm::device_uvector<float> rotated_leaves;
+
+    State(size_t dimensions_, size_t num_levels_, const size_t * nodes, const float * const * host_centroids,
+        const uint32_t * const * child_offsets, const float * host_rotation, const float * host_rotated_leaves)
+        : dimensions(dimensions_)
+        , num_levels(uint32_t(num_levels_))
+        , centroids(0, streamOf(resources))
+        , squared_lengths(0, streamOf(resources))
+        , child_first(0, streamOf(resources))
+        , level_begin(0, streamOf(resources))
+        , rotation(dimensions_ * dimensions_, streamOf(resources))
+        , rotated_leaves(nodes[num_levels_ - 1] * dimensions_, streamOf(resources))
+    {
+        limitWorkspace(resources);
+        const auto stream_view = streamOf(resources);
+        const cudaStream_t stream = stream_view.get();
+
+        level_begin_host.assign(num_levels + 1, 0);
+        for (uint32_t l = 0; l < num_levels; ++l)
+            level_begin_host[l + 1] = level_begin_host[l] + uint32_t(nodes[l]);
+        const size_t total = level_begin_host[num_levels];
+
+        std::vector<float> all_centroids(total * dimensions);
+        std::vector<float> all_lengths(total);
+        /// The children of node `g` are [child_first[g], child_first[g + 1]) of all nodes; the offsets of a level end where
+        /// those of the next begin.
+        std::vector<uint32_t> all_child_first(level_begin_host[num_levels - 1] + 1, 0);
+        for (uint32_t l = 0; l < num_levels; ++l)
+        {
+            std::copy(host_centroids[l], host_centroids[l] + nodes[l] * dimensions, all_centroids.begin() + size_t(level_begin_host[l]) * dimensions);
+            if (l + 1 < num_levels)
+                for (size_t i = 0; i <= nodes[l]; ++i)
+                    all_child_first[level_begin_host[l] + i] = level_begin_host[l + 1] + child_offsets[l][i];
+        }
+        for (size_t g = 0; g < total; ++g)
+        {
+            double sum = 0;
+            for (size_t i = 0; i < dimensions; ++i)
+                sum += double(all_centroids[g * dimensions + i]) * double(all_centroids[g * dimensions + i]);
+            all_lengths[g] = float(sum);
+        }
+
+        centroids.resize(all_centroids.size(), stream_view);
+        squared_lengths.resize(all_lengths.size(), stream_view);
+        child_first.resize(all_child_first.size(), stream_view);
+        level_begin.resize(level_begin_host.size(), stream_view);
+        checkCuda(cudaMemcpyAsync(centroids.data(), all_centroids.data(), all_centroids.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
+            "copying the tree of an IVF index to the device");
+        checkCuda(cudaMemcpyAsync(squared_lengths.data(), all_lengths.data(), all_lengths.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
+            "copying the tree of an IVF index to the device");
+        checkCuda(cudaMemcpyAsync(child_first.data(), all_child_first.data(), all_child_first.size() * sizeof(uint32_t), cudaMemcpyHostToDevice, stream),
+            "copying the tree of an IVF index to the device");
+        checkCuda(cudaMemcpyAsync(level_begin.data(), level_begin_host.data(), level_begin_host.size() * sizeof(uint32_t), cudaMemcpyHostToDevice, stream),
+            "copying the tree of an IVF index to the device");
+        checkCuda(cudaMemcpyAsync(rotation.data(), host_rotation, rotation.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
+            "copying the rotation to the device");
+        checkCuda(cudaMemcpyAsync(rotated_leaves.data(), host_rotated_leaves, rotated_leaves.size() * sizeof(float), cudaMemcpyHostToDevice,
+            stream), "copying the rotated leaves of an IVF index to the device");
         raft::resource::sync_stream(resources);
     }
 };
 
-__host__ IvfCentroids::IvfCentroids(const float * centroids, size_t num_centroids, size_t dimensions)
+__host__ IvfTreeRouter::IvfTreeRouter(size_t dimensions, size_t num_levels, const size_t * nodes, const float * const * centroids,
+    const uint32_t * const * child_offsets, const float * rotation, const float * rotated_leaves)
 {
-    translateErrors("uploading IVF centroids", [&] { state = new State(centroids, num_centroids, dimensions); });
+    if (num_levels == 0)
+        throwGPUError("the tree of an IVF index has no levels");
+    translateErrors("uploading the tree of an IVF index", [&]
+    {
+        state = new State(dimensions, num_levels, nodes, centroids, child_offsets, rotation, rotated_leaves);
+    });
 }
 
-__host__ IvfCentroids::~IvfCentroids()
+__host__ IvfTreeRouter::~IvfTreeRouter()
 {
     delete state;
 }
 
-__host__ size_t IvfCentroids::deviceMemoryBytes() const
+__host__ size_t IvfTreeRouter::maxBeam()
 {
-    return (state->centroids.size() + state->centroid_squared_lengths.size()) * sizeof(float);
+    return ROUTE_MAX_BEAM;
 }
 
-__host__ void IvfCentroids::assign(const float * vectors, size_t rows, uint32_t * positions, const float * rotation, float * rotated) const
+__host__ size_t IvfTreeRouter::recordBytes(size_t dimensions)
 {
-    translateErrors("assigning vectors to IVF centroids", [&]
+    return 2 * sizeof(uint32_t) + sizeof(IvfQuantization::CodeParams) + IvfQuantization::codeBytes(dimensions);
+}
+
+__host__ void IvfTreeRouter::assignAndEncode(const float * vectors, size_t rows, size_t beam, uint32_t first_row, char * records) const
+{
+    if (beam == 0 || beam > size_t(ROUTE_MAX_BEAM))
+        throwGPUError("the beam of the assignment of rows to the lists of an IVF index is out of range");
+    translateErrors("assigning rows to the lists of an IVF index", [&]
     {
         auto & res = state->resources;
         const auto stream_view = streamOf(res);
         const cudaStream_t stream = stream_view.get();
 
-        const size_t k = state->num_centroids;
         const size_t d = state->dimensions;
-        const size_t chunk = std::clamp<size_t>(SCORES_BYTES / (d * sizeof(float)), 1, rows);
+        const size_t record_bytes = recordBytes(d);
+        const size_t shared_bytes = ROUTE_WARPS_PER_BLOCK * d * sizeof(float);
+        if (shared_bytes > 48 * 1024)
+            checkCuda(cudaFuncSetAttribute(routeRows, cudaFuncAttributeMaxDynamicSharedMemorySize, int(shared_bytes)),
+                "allowing the shared memory of the assignment of IVF rows");
 
+        const size_t chunk = std::clamp<size_t>(SCORES_BYTES / (d * sizeof(float)), 1, std::max<size_t>(rows, 1));
         rmm::device_uvector<float> device_vectors(chunk * d, stream_view);
-        rmm::device_uvector<uint32_t> device_primary(chunk, stream_view);
-        rmm::device_uvector<float> device_rotation(rotated ? d * d : 0, stream_view);
-        rmm::device_uvector<float> device_rotated(rotated ? chunk * d : 0, stream_view);
-        if (rotated)
-            checkCuda(cudaMemcpyAsync(device_rotation.data(), rotation, d * d * sizeof(float), cudaMemcpyHostToDevice, stream),
-                "copying the rotation to the device");
-
-        const auto device_centroids = ConstRowMatrix(state->centroids.data(), int64_t(k), int64_t(d));
-        const cuvs::cluster::kmeans::balanced_params params;
+        rmm::device_uvector<float> device_rotated(chunk * d, stream_view);
+        rmm::device_uvector<uint32_t> device_leaves(chunk, stream_view);
+        rmm::device_uvector<char> device_records(chunk * record_bytes, stream_view);
+        rmm::device_uvector<uint32_t> device_frontiers(chunk * ROUTE_MAX_BEAM, stream_view);
+        rmm::device_uvector<uint8_t> device_frontier_sizes(chunk, stream_view);
+        rmm::device_uvector<uint32_t> device_keys(chunk, stream_view);
+        rmm::device_uvector<uint32_t> device_sorted_keys(chunk, stream_view);
+        rmm::device_uvector<uint32_t> device_indices(chunk, stream_view);
+        rmm::device_uvector<uint32_t> device_order(chunk, stream_view);
+        size_t sort_bytes = 0;
+        checkCuda(cub::DeviceRadixSort::SortPairs(nullptr, sort_bytes, device_keys.data(), device_sorted_keys.data(), device_indices.data(),
+            device_order.data(), int(chunk), 0, 32, stream), "sizing the order of IVF rows");
+        rmm::device_buffer sort_storage(sort_bytes, stream_view);
         for (size_t begin = 0; begin < rows; begin += chunk)
         {
             const size_t n = std::min(chunk, rows - begin);
             checkCuda(cudaMemcpyAsync(device_vectors.data(), vectors + begin * d, n * d * sizeof(float), cudaMemcpyHostToDevice, stream),
                 "copying vectors to the device");
-            cuvs::cluster::kmeans::predict(res, params, ConstRowMatrix(device_vectors.data(), int64_t(n), int64_t(d)), device_centroids,
-                raft::make_device_vector_view<uint32_t, int64_t>(device_primary.data(), int64_t(n)));
-            checkCuda(cudaMemcpyAsync(positions + begin, device_primary.data(), n * sizeof(uint32_t), cudaMemcpyDeviceToHost, stream),
-                "copying the assignment to the host");
-            if (rotated)
+            const size_t blocks = (n + ROUTE_WARPS_PER_BLOCK - 1) / ROUTE_WARPS_PER_BLOCK;
+            const uint32_t levels = state->num_levels;
+            if (levels == 1)
+                routeRows<<<blocks, ROUTE_WARPS_PER_BLOCK * 32, shared_bytes, stream>>>(device_vectors.data(), n, d,
+                    state->centroids.data(), state->squared_lengths.data(), state->child_first.data(), state->level_begin.data(), 0, 1, 1,
+                    int(beam), nullptr, nullptr, nullptr, device_leaves.data());
+            else
             {
-                rotateRows(res, device_vectors.data(), n, device_rotation.data(), d, device_rotated.data());
-                checkCuda(cudaMemcpyAsync(rotated + begin * d, device_rotated.data(), n * d * sizeof(float), cudaMemcpyDeviceToHost, stream),
-                    "copying the rotated vectors to the host");
+                /// Above the leaves in the order of the rows, then the leaves in the order of the nearest nodes above them, so
+                /// that warps nearby read the same leaves.
+                routeRows<<<blocks, ROUTE_WARPS_PER_BLOCK * 32, shared_bytes, stream>>>(device_vectors.data(), n, d,
+                    state->centroids.data(), state->squared_lengths.data(), state->child_first.data(), state->level_begin.data(), 0,
+                    levels - 1, levels, int(beam), nullptr, device_frontiers.data(), device_frontier_sizes.data(), nullptr);
+                checkCuda(cudaGetLastError(), "launching the assignment of IVF rows");
+                frontierKeys<<<(n + 255) / 256, 256, 0, stream>>>(device_frontiers.data(), device_frontier_sizes.data(), n,
+                    device_keys.data(), device_indices.data());
+                checkCuda(cudaGetLastError(), "launching the order of IVF rows");
+                size_t sort_capacity = sort_storage.size();
+                checkCuda(cub::DeviceRadixSort::SortPairs(sort_storage.data(), sort_capacity, device_keys.data(), device_sorted_keys.data(),
+                    device_indices.data(), device_order.data(), int(n), 0, 32, stream), "ordering IVF rows");
+                routeRows<<<blocks, ROUTE_WARPS_PER_BLOCK * 32, shared_bytes, stream>>>(device_vectors.data(), n, d,
+                    state->centroids.data(), state->squared_lengths.data(), state->child_first.data(), state->level_begin.data(),
+                    levels - 1, levels, levels, int(beam), device_order.data(), device_frontiers.data(), device_frontier_sizes.data(),
+                    device_leaves.data());
             }
+            checkCuda(cudaGetLastError(), "launching the assignment of IVF rows");
+            rotateRows(res, device_vectors.data(), n, state->rotation.data(), d, device_rotated.data());
+            encodeRows<<<blocks, ROUTE_WARPS_PER_BLOCK * 32, 0, stream>>>(device_rotated.data(), device_leaves.data(),
+                state->rotated_leaves.data(), n, d, first_row + uint32_t(begin), record_bytes, device_records.data());
+            checkCuda(cudaGetLastError(), "launching the encoding of IVF rows");
+            checkCuda(cudaMemcpyAsync(records + begin * record_bytes, device_records.data(), n * record_bytes, cudaMemcpyDeviceToHost, stream),
+                "copying the records of the rows to the host");
             raft::resource::sync_stream(res);
         }
     });
@@ -286,81 +590,6 @@ void launchScan(size_t blocks, size_t dimensions, size_t select, cudaStream_t st
     checkCuda(cudaGetLastError(), "launching the scan of IVF lists");
 }
 
-}
-
-__host__ void trainIvfCentroids(const float * vectors, size_t rows, size_t dimensions, size_t num_centroids, float * centroids)
-{
-    translateErrors("training IVF centroids", [&]
-    {
-        auto & res = searchResources();
-        const auto stream_view = streamOf(res);
-        const cudaStream_t stream = stream_view.get();
-
-        const size_t sample = std::min(rows, std::max<size_t>(num_centroids * KMEANS_ROWS_PER_CENTROID, 65536));
-        std::vector<float> host_sample(sample * dimensions);
-        for (size_t i = 0; i < sample; ++i)
-        {
-            const size_t row = i * rows / sample;
-            std::copy(vectors + row * dimensions, vectors + (row + 1) * dimensions, host_sample.data() + i * dimensions);
-        }
-
-        rmm::device_uvector<float> device_sample(host_sample.size(), stream_view);
-        rmm::device_uvector<float> device_centroids(num_centroids * dimensions, stream_view);
-        checkCuda(cudaMemcpyAsync(device_sample.data(), host_sample.data(), host_sample.size() * sizeof(float), cudaMemcpyHostToDevice, stream),
-            "copying the k-means sample to the device");
-
-        cuvs::cluster::kmeans::balanced_params params;
-        cuvs::cluster::kmeans::fit(res, params, ConstRowMatrix(device_sample.data(), int64_t(sample), int64_t(dimensions)),
-            RowMatrix(device_centroids.data(), int64_t(num_centroids), int64_t(dimensions)));
-
-        checkCuda(cudaMemcpyAsync(centroids, device_centroids.data(), device_centroids.size() * sizeof(float), cudaMemcpyDeviceToHost, stream),
-            "copying the IVF centroids to the host");
-        raft::resource::sync_stream(res);
-    });
-}
-
-__host__ void IvfCentroids::nearestLists(const float * queries, size_t num_queries, size_t probes, uint32_t * lists) const
-{
-    translateErrors("probing IVF centroids", [&]
-    {
-        auto & res = searchResources();
-        const auto stream_view = streamOf(res);
-        const cudaStream_t stream = stream_view.get();
-
-        const size_t k = state->num_centroids;
-        const size_t d = state->dimensions;
-        if (probes == 0 || probes > k)
-            throwGPUError("the number of probed IVF lists must be in [1, the number of lists]");
-        const size_t chunk = std::clamp<size_t>(SCORES_BYTES / (k * sizeof(float)), 1, num_queries);
-
-        rmm::device_uvector<float> device_queries(chunk * d, stream_view);
-        rmm::device_uvector<float> scores(chunk * k, stream_view);
-        rmm::device_uvector<float> probe_scores(chunk * probes, stream_view);
-        rmm::device_uvector<uint32_t> probe_lists(chunk * probes, stream_view);
-        float minus_two = -2;
-
-        for (size_t begin = 0; begin < num_queries; begin += chunk)
-        {
-            const size_t n = std::min(chunk, num_queries - begin);
-            checkCuda(cudaMemcpyAsync(device_queries.data(), queries + begin * d, n * d * sizeof(float), cudaMemcpyHostToDevice, stream),
-                "copying queries to the device");
-            const auto scores_view = RowMatrix(scores.data(), int64_t(n), int64_t(k));
-            raft::linalg::gemm(res, RowMatrix(device_queries.data(), int64_t(n), int64_t(d)),
-                raft::make_device_matrix_view<float, int64_t, raft::col_major>(state->centroids.data(), int64_t(d), int64_t(k)), scores_view,
-                std::make_optional(raft::make_host_scalar_view<float, uint32_t>(&minus_two)));
-            raft::linalg::matrix_vector_op<raft::Apply::ALONG_ROWS>(res, raft::make_const_mdspan(scores_view),
-                raft::make_device_vector_view<const float, int64_t>(state->centroid_squared_lengths.data(), int64_t(k)), scores_view,
-                raft::add_op{});
-            cuvs::selection::select_k(res, raft::make_const_mdspan(scores_view),
-                std::optional<raft::device_matrix_view<const uint32_t, int64_t, raft::row_major>>{},
-                RowMatrix(probe_scores.data(), int64_t(n), int64_t(probes)),
-                raft::make_device_matrix_view<uint32_t, int64_t>(probe_lists.data(), int64_t(n), int64_t(probes)),
-                /*select_min=*/ true, /*sorted=*/ true);
-            checkCuda(cudaMemcpyAsync(lists + begin * probes, probe_lists.data(), n * probes * sizeof(uint32_t), cudaMemcpyDeviceToHost, stream),
-                "copying the probed lists to the host");
-            raft::resource::sync_stream(res);
-        }
-    });
 }
 
 struct IvfListScan::State
