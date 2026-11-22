@@ -41,7 +41,7 @@ namespace
         FunctionTimeSeriesHistogramFraction() : FunctionTimeSeriesHistogramWithScalarParams(name, 2) {}
 
     private:
-        Float64 computeRow(
+        [[nodiscard]] Float64 computeRow(
             const ColumnTuple & tuple_column,
             const TimeSeriesHistogramPayloadPositions & element_positions,
             const ColumnsWithTypeAndName & arguments,

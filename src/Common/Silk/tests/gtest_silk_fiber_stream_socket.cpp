@@ -6,18 +6,28 @@
 
 #include <Common/Silk/FiberStreamSocketImpl.h>
 #include <Common/Silk/SecureFiberStreamSocketImpl.h>
+#include <IO/HTTP/HTTPClientIO.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SocketPeerClosed.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
 
+#include <base/errnoToString.h>
+#include <base/scope_guard.h>
+
 #include <silk/fibers/future.h>
 
 #include <Poco/Exception.h>
 #include <Poco/Net/Context.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SecureServerSocket.h>
 #include <Poco/Net/SecureStreamSocket.h>
@@ -32,11 +42,22 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include <linux/sockios.h>
+#include <sys/ioctl.h>
+
+#include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <latch>
 #include <string>
+#include <vector>
 
+
+namespace DB::FailPoints
+{
+    extern const char silk_fiber_socket_send_timeout_expires_after_write[];
+}
 
 namespace
 {
@@ -45,9 +66,9 @@ struct PlainPolicy
 {
     using Listener = Poco::Net::ServerSocket;
 
-    Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1); }
+    [[nodiscard]] Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1); }
 
-    Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::FiberStreamSocketImpl; }
+    [[nodiscard]] Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::FiberStreamSocketImpl; }
 };
 
 struct SecurePolicy
@@ -58,9 +79,9 @@ struct SecurePolicy
     Poco::Net::Context::Ptr server_ctx{cert.makeContext(Poco::Net::Context::SERVER_USE)};
     Poco::Net::Context::Ptr client_ctx{cert.makeContext(Poco::Net::Context::CLIENT_USE)};
 
-    Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx); }
+    [[nodiscard]] Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx); }
 
-    Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
+    [[nodiscard]] Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
 };
 
 struct RetryOnceWriteBIOState
@@ -211,6 +232,71 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
 }
 
 
+/// An HTTP request body sent through `sendHTTPRequest` on a fiber socket, as the connection pool
+/// creates them for `HTTPConnectionGroupType::AMBER`.
+TYPED_TEST(SilkFiberSocketTest, HTTPRequestBody)
+{
+    auto listener = this->policy.makeListener();
+    const uint16_t port = listener.address().port();
+    const std::string body(1'000'000, 'x');
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, body, impl = this->policy.makeClient()]() -> int
+        {
+            try
+            {
+                Poco::Net::HTTPClientSession session{Poco::Net::StreamSocket(impl)};
+                session.setHost("127.0.0.1");
+                session.setPort(port);
+                session.setTimeout(Poco::Timespan(10, 0), Poco::Timespan(10, 0), Poco::Timespan(10, 0));
+
+                Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", Poco::Net::HTTPMessage::HTTP_1_1);
+                request.setContentLength(body.size());
+                auto request_body = DB::sendHTTPRequest(session, request);
+                DB::writeString(body, *request_body);
+                request_body->finalize();
+
+                Poco::Net::HTTPResponse response;
+                auto response_body = DB::receiveHTTPResponse(session, response);
+                EXPECT_EQ(response.getStatus(), Poco::Net::HTTPResponse::HTTP_OK);
+                std::string result;
+                DB::readStringUntilEOF(result, *response_body);
+                EXPECT_EQ(result, "OK");
+                return 0;
+            }
+            catch (...)
+            {
+                ADD_FAILURE() << DB::getCurrentExceptionMessage(/*with_stacktrace*/ false);
+                return 1;
+            }
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    peer.setReceiveTimeout(Poco::Timespan(10, 0));
+    std::string request;
+    char buf[4096];
+    size_t header_end = std::string::npos;
+    while (header_end == std::string::npos || request.size() < header_end + 4 + body.size())
+    {
+        int n = peer.receiveBytes(buf, sizeof(buf));
+        ASSERT_GT(n, 0);
+        request.append(buf, n);
+        if (header_end == std::string::npos)
+            header_end = request.find("\r\n\r\n");
+    }
+    EXPECT_EQ(request.substr(header_end + 4), body);
+
+    const std::string reply = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+    peer.sendBytes(reply.data(), static_cast<int>(reply.size()));
+
+    client_future.wait();
+    peer.close();
+}
+
+
 TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
 {
     auto listener = this->policy.makeListener();
@@ -334,6 +420,76 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 
     client_future.wait();
     peer.close();
+}
+
+
+using SilkFiberPlainSocketTest = SilkFiberSocketTest<PlainPolicy>;
+
+
+/// When the send timeout runs out after a partial write, `sendBytes` throws before it submits another write: a write
+/// abandoned by the exception would complete into the stack of the finished call. The failpoint spends the timeout
+/// after the first write and pauses there, while the peer reads everything that write sent. So every byte the peer
+/// receives after the pause comes from a write submitted after the timeout.
+TEST_F(SilkFiberPlainSocketTest, SendTimeoutAfterPartialWriteSubmitsNoFurtherWrite)
+{
+    const char * fail_point = DB::FailPoints::silk_fiber_socket_send_timeout_expires_after_write;
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+    /// Far more than the socket buffers of both sides hold while the peer does not read, so the first write is partial.
+    const std::string data(64 << 20, 'x');
+    std::atomic<int> client_fd = -1;
+
+    DB::FailPointInjection::enableFailPoint(fail_point);
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = policy.makeClient(), &data, &client_fd, fail_point]() -> int
+        {
+            /// Lets the test go on if the fiber ends without reaching the failpoint.
+            SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(fail_point); });
+
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            socket.setSendTimeout(Poco::Timespan(60, 0));
+            client_fd = impl->sockfd();
+            EXPECT_THROW(socket.sendBytes(data.data(), static_cast<int>(data.size())), Poco::TimeoutException);
+            socket.close();
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+    /// The fiber uses the locals above, so it finishes before the test returns, also when an assertion fails.
+    SCOPE_EXIT({
+        DB::FailPointInjection::disableFailPoint(fail_point);
+        client_future.wait();
+    });
+
+    auto peer = listener.acceptConnection();
+    peer.setReceiveTimeout(Poco::Timespan(60, 0));
+    std::vector<char> buffer(1 << 20);
+    DB::FailPointInjection::waitForPause(fail_point);
+
+    /// The paused client sends nothing new, so its send queue empties once the peer has read everything it holds.
+    size_t received_before_resume = 0;
+    while (true)
+    {
+        int unacked = 0;
+        ASSERT_EQ(ioctl(client_fd, SIOCOUTQ, &unacked), 0) << errnoToString();
+        const int available = peer.available();
+        if (unacked == 0 && available == 0)
+            break;
+        if (available > 0)
+            received_before_resume += peer.receiveBytes(buffer.data(), std::min(available, static_cast<int>(buffer.size())));
+    }
+    EXPECT_GT(received_before_resume, 0);
+    EXPECT_LT(received_before_resume, data.size());
+
+    DB::FailPointInjection::disableFailPoint(fail_point);
+
+    /// Until the client closes the connection.
+    size_t received_after_resume = 0;
+    while (const int received = peer.receiveBytes(buffer.data(), static_cast<int>(buffer.size())))
+        received_after_resume += received;
+    EXPECT_EQ(received_after_resume, 0);
 }
 
 

@@ -32,22 +32,22 @@ public:
     FunctionTimeSeriesHistogramElement(String name_, String element_name_)
         : name(std::move(name_)), element_name(std::move(element_name_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Constant columns are materialized, so executeImpl always sees a plain ColumnTuple.
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        getElementPosition(arguments);
+        UNUSED(getElementPosition(arguments));
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         const auto * tuple_column = checkAndGetColumn<ColumnTuple>(arguments[0].column.get());
         if (!tuple_column)
@@ -62,7 +62,7 @@ public:
 private:
     /// Validates that the argument is a named tuple containing the element of type Float64 and returns
     /// the element's position. The lookup is by name; the position is never hardcoded.
-    size_t getElementPosition(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] size_t getElementPosition(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -139,22 +139,22 @@ public:
     explicit FunctionTimeSeriesHistogramStatistic(String name_)
         : name(std::move(name_)) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Constant columns are materialized, so executeImpl always sees a plain ColumnTuple.
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        resolveElementPositions(arguments);
+        UNUSED(resolveElementPositions(arguments));
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         const auto * tuple_column = checkAndGetColumn<ColumnTuple>(arguments[0].column.get());
         if (!tuple_column)
@@ -175,7 +175,7 @@ public:
 protected:
     /// Computes the statistic for one row of the payload tuple. `element_positions` maps a payload
     /// element index (TimeSeriesHistogramPayloadTupleIndex) to the element's position in `tuple_column`.
-    virtual Float64 computeRow(
+    [[nodiscard]] virtual Float64 computeRow(
         const ColumnTuple & tuple_column,
         const TimeSeriesHistogramPayloadPositions & element_positions,
         size_t row) const = 0;
@@ -183,7 +183,7 @@ protected:
 private:
     /// Validates that the argument is a named tuple containing all 15 payload elements with the canonical
     /// types (at any positions) and returns the element positions.
-    TimeSeriesHistogramPayloadPositions resolveElementPositions(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] TimeSeriesHistogramPayloadPositions resolveElementPositions(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -340,11 +340,11 @@ public:
     FunctionTimeSeriesHistogramWithScalarParams(String name_, size_t num_scalar_params_)
         : name(std::move(name_)), num_scalar_params(num_scalar_params_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1 + num_scalar_params; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1 + num_scalar_params; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         ColumnNumbers arguments(num_scalar_params);
         for (size_t i = 0; i < num_scalar_params; ++i)
@@ -352,13 +352,13 @@ public:
         return arguments;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Constant columns are materialized, so executeImpl always sees a plain ColumnTuple
     /// (the scalar parameters stay ColumnConst, see getArgumentsThatAreAlwaysConstant).
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1 + num_scalar_params)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -383,7 +383,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         const auto * tuple_column = checkAndGetColumn<ColumnTuple>(arguments[0].column.get());
         if (!tuple_column)
@@ -404,7 +404,7 @@ public:
 protected:
     /// Computes the function for one row of the payload tuple: `element_positions` maps a payload element index
     /// to the element's position in `tuple_column`; the constant scalar parameters are arguments[1..] read as Float64 per row.
-    virtual Float64 computeRow(
+    [[nodiscard]] virtual Float64 computeRow(
         const ColumnTuple & tuple_column,
         const TimeSeriesHistogramPayloadPositions & element_positions,
         const ColumnsWithTypeAndName & arguments,
@@ -424,9 +424,9 @@ public:
         : FunctionTimeSeriesHistogramStatistic(std::move(name_)) {}
 
 protected:
-    virtual Float64 transformResult(Float64 variance) const = 0;
+    [[nodiscard]] virtual Float64 transformResult(Float64 variance) const = 0;
 
-    Float64 computeRow(
+    [[nodiscard]] Float64 computeRow(
         const ColumnTuple & tuple_column,
         const TimeSeriesHistogramPayloadPositions & element_positions,
         size_t row) const override
