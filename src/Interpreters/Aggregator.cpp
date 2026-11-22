@@ -2325,7 +2325,13 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
-        if (inst->has_low_cardinality_argument)
+        if (inst->constant_argument_rows)
+        {
+            const size_t rows = aggregate_functions[i]->ignoresRepeatedValues() ? 1 : row_end - row_begin;
+            for (size_t added = 0; added < rows; added += inst->constant_argument_rows)
+                addBatchSinglePlace(0, std::min(inst->constant_argument_rows, rows - added), inst, res + inst->state_offset, arena);
+        }
+        else if (inst->has_low_cardinality_argument)
         {
             const IColumn * argument = inst->batch_arguments[0];
             auto it = std::find_if(
@@ -2473,13 +2479,39 @@ void Aggregator::prepareAggregateInstructions(
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
 
+        size_t constant_argument_rows = 0;
+        if (params.keys_size == 0 && !aggregate_columns[i].empty())
+        {
+            const size_t rows = columns.at(aggregates_positions[i][0])->size();
+            bool all_constant = rows > 0;
+            size_t row_bytes = 0;
+            for (size_t j = 0; all_constant && j < aggregate_columns[i].size(); ++j)
+            {
+                const auto * column_const = typeid_cast<const ColumnConst *>(columns.at(aggregates_positions[i][j]).get());
+                if (column_const)
+                    row_bytes += recursiveRemoveLowCardinality(column_const->getDataColumnPtr())->byteSize();
+                else
+                    all_constant = false;
+            }
+
+            static constexpr size_t max_bytes_of_constant_copy = 1_MiB;
+            if (all_constant)
+                constant_argument_rows = aggregate_functions[i]->ignoresRepeatedValues()
+                    ? 1
+                    : std::clamp(max_bytes_of_constant_copy / std::max<size_t>(row_bytes, 1), static_cast<size_t>(1), rows);
+        }
+
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = aggregates_positions[i][j];
             aggregate_columns[i][j] = columns.at(pos).get();
 
+            ColumnPtr column = columns.at(pos);
+            if (constant_argument_rows)
+                column = column->cloneResized(constant_argument_rows);
+
             /// Only the converted columns have to be held here, the original ones are held by the caller.
-            auto converted_column = columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+            auto converted_column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
             if (converted_column.get() != aggregate_columns[i][j])
             {
                 materialized_columns.push_back(std::move(converted_column));
@@ -2522,6 +2554,7 @@ void Aggregator::prepareAggregateInstructions(
 
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
         aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
+        aggregate_functions_instructions[i].constant_argument_rows = constant_argument_rows;
     }
 }
 
@@ -5089,7 +5122,9 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
             data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
-    std::vector<AggregatedChunks> res(max_threads);
+    /// The chunks by bucket number: the threads take the buckets in turn, but the result must be in the order of buckets,
+    /// as the memory-efficient merging (`GroupingAggregatedTransform`) of a remote result relies on it.
+    std::vector<std::optional<AggregatedChunk>> res(Method::Data::NUM_BUCKETS);
 
     auto converter = [this, &next_bucket_to_merge, &method, &data_variants, &res, final](size_t thread_id)
     {
@@ -5105,11 +5140,14 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
 
             /// Select Arena to avoid race conditions
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
-            res[thread_id].emplace_back(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
+            res[bucket].emplace(convertOneBucketToChunk(data_variants, method, arena, final, bucket, /*untruncated_keys=*/nullptr, /*merged_group_count=*/nullptr));
         }
     };
 
     ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+    /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
+    /// has accepted a job, and nothing would wait for that job while it uses `converter` and `res` by reference.
+    runner.reserve(max_threads);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -5126,13 +5164,16 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     catch (...) // Ok: wait for parallel tasks to finish before rethrowing
     {
         runner.waitForAllToFinishAndRethrowFirstError();
+        /// The exception may come from the synchronous conversion or from scheduling, with no task having failed.
+        throw;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
     AggregatedChunks chunks;
-    for (auto & chunks_list : res)
-        chunks.splice(chunks.end(), std::move(chunks_list));
+    for (auto & chunk : res)
+        if (chunk)
+            chunks.push_back(std::move(*chunk));
     return chunks;
 }
 
@@ -5713,6 +5754,10 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
         mergeAndDestroyRowOrDefer(dst, src, arena, deferred);
         src = nullptr;
     });
+
+    /// The merged cells are null by now, so this destroys the states of the keys missing from `table_dst`.
+    if (!all_aggregates_has_trivial_destructor)
+        destroyImpl<Method>(table_src);
     table_src.clearAndShrink();
 }
 
@@ -6070,17 +6115,22 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
             };
 
             ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
+            const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
+            /// Reserve the tracking slots before scheduling: otherwise `enqueueAndKeepTrack` could throw after the pool
+            /// has accepted a job, and nothing would wait for that job while it uses `converter` by reference.
+            runner.reserve(threads);
             try
             {
                 /// Passing converter as a reference is fine: `runner` waits for all tasks before
                 /// this scope (and the captured state) is destroyed.
-                const size_t threads = std::min({params.max_threads, variants_to_convert.size(), max_parallel_two_level_conversions});
                 for (size_t i = 0; i < threads; ++i)
                     runner.enqueueAndKeepTrack([&converter]() { converter(); }, Priority{});
             }
             catch (...) // Ok: wait for parallel tasks to finish before rethrowing
             {
                 runner.waitForAllToFinishAndRethrowFirstError();
+                /// A failure to schedule must not leave some variants unconverted.
+                throw;
             }
             runner.waitForAllToFinishAndRethrowFirstError();
         }

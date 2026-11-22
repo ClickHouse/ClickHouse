@@ -139,6 +139,7 @@ namespace Setting
     extern const SettingsBool optimize_throw_if_noop;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsBool truncate_removes_parts_immediately;
     extern const SettingsUInt64 max_parts_to_move;
     extern const SettingsUpdateParallelMode update_parallel_mode;
 }
@@ -1263,7 +1264,15 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    /** Resolve the partitions of the commands that name some, once, here: the per-part selection of the
+      * commands to apply on the fly has to respect that scope, and a partition expression is arbitrary
+      * user SQL (`getPartitionIDFromQuery` ends in `evaluateConstantExpression`, and the expression may
+      * contain a subquery over this very table), so it must not be evaluated on the read path.
+      */
+    MutationCommands commands_with_partitions = commands;
+    resolvePartitionIdsOfScopedCommands(commands_with_partitions, query_context);
+
+    MergeTreeMutationEntry entry(std::move(commands_with_partitions), disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1302,14 +1311,13 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
     background_operations_assignee.trigger();
 }
 
-Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
+Int64 StorageMergeTree::startMutation(PreparedMutationEntry prepared, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startMutation");
 
-    /// File I/O (`writeFile` + `sync` + `moveFile`) happens in `prepareMutationEntry`
+    /// File I/O (`writeFile` + `sync` + `moveFile`) happened in `prepareMutationEntry`
     /// outside the mutex; only the in-memory registration is locked. Holding the
     /// mutex across the file I/O would block merge selection for its full duration.
-    auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
     String mutation_id = prepared.mutation_id;
     FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_register_mutation);
@@ -1507,11 +1515,18 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
-    /// Validate explicit IN PARTITION ids (if any) before starting mutation.
+    /// A command whose partition is not a scope (`IN PARTITION ALL`) is never resolved;
+    /// validate it here, so that it is rejected before the mutation starts.
+    /// The partitions of a scoped command are resolved exactly once, by `prepareMutationEntry`, under
+    /// the `alter_lock` below: a partition expression may depend on the table state (e.g. a subquery
+    /// over this table), so it must be evaluated after the mutation is ordered with metadata `ALTER`s.
     /// Unlike the replicated case there is no need to analyze the predicate here:
     /// parts of unaffected partitions are skipped by `canSkipMutationCommandForPart`.
     for (const auto & command : commands)
     {
+        if (command.has_partition)
+            continue;
+
         auto alter = command.ast();
         if (!alter)
             continue;
@@ -1527,11 +1542,16 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
         }
     }
 
-    Int64 version = 0;
+    std::optional<PreparedMutationEntry> prepared;
     {
         /// It's important to serialize order of mutations with alter queries because
         /// they can depend on each other.
-        if (auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]); alter_lock == std::nullopt)
+        /// The lock is held through `prepareMutationEntry`, which resolves the partitions of scoped
+        /// commands and allocates the mutation version. The registration of the prepared entry does
+        /// not need it: a mutation or `ALTER` that gets a higher version in the meantime handles a
+        /// version that is allocated but not registered yet.
+        auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        if (alter_lock == std::nullopt)
         {
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
@@ -1539,8 +1559,9 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
                 "You can change this timeout with `lock_acquire_timeout` setting",
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }
-        version = startMutation(commands, query_context);
+        prepared.emplace(prepareMutationEntry(commands, query_context));
     }
+    Int64 version = startMutation(std::move(*prepared), query_context);
 
     if (query_context->getSettingsRef()[Setting::mutations_sync] > 0 || query_context->getCurrentTransaction())
     {
@@ -1589,6 +1610,10 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     assertNotReadonly();
     auto context_copy = Context::createCopy(query_context);
 
+    /// Unlike `StorageReplicatedMergeTree::updateLightweight`, the partitions of the scoped commands are
+    /// not resolved here: a single global block number is allocated (not one per affected partition),
+    /// and no pending mutation entry is persisted, so the partition expression is evaluated only once,
+    /// by `MutationsInterpreter` while it produces the patch.
     PlainLightweightUpdateHolder update_holder;
     update_holder.update_lock = getLockForLightweightUpdate(commands, context_copy);
     update_holder.block_holder = allocateBlockNumber(CommittingBlock::Op::Update);
@@ -2007,6 +2032,16 @@ void StorageMergeTree::loadMutations()
 
                 MergeTreeMutationEntry entry = loadMutationEntry(disk, name);
                 UInt64 block_number = entry.block_number;
+
+                /** Only the command text is persisted with the entry, so resolve the partition ids of the
+                  * scoped commands again here - once, and not while a storage snapshot is built. An entry
+                  * created by this version names its partitions as `ID '...'` already, so this reads back
+                  * exactly the partitions resolved at creation and evaluates nothing. An older entry may
+                  * still carry a partition expression; it is left unresolved, because the table is not
+                  * attached yet and the expression may refer to it.
+                  */
+                resolvePartitionIdsOfScopedCommands(*entry.commands, getContext(), /* only_pinned = */ true);
+
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", name, entry.commands->size());
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
@@ -2979,8 +3014,21 @@ enum class PartitionScope
 };
 
 static PartitionScope getPartitionScope(
-    const MergeTreeData & storage, const ASTAlterCommand * alter, const String & partition_id, const ContextPtr & context)
+    const MergeTreeData & storage,
+    const ASTAlterCommand * alter,
+    const std::optional<NameSet> & resolved_partition_ids,
+    const String & partition_id,
+    const ContextPtr & context)
 {
+    /// The partitions of a scoped command were resolved when the mutation entry was created or loaded,
+    /// so the scope is read off the command here instead of evaluating the partition expression again.
+    if (resolved_partition_ids)
+    {
+        return resolved_partition_ids->contains(partition_id)
+            ? PartitionScope::ThisPartition
+            : PartitionScope::OtherPartitions;
+    }
+
     if (!alter)
         return PartitionScope::Unscoped;
 
@@ -3013,7 +3061,7 @@ static bool isMaterializedByMerge(
     return std::all_of(commands.begin(), commands.end(), [&](const auto & command)
     {
         auto alter = command.ast();
-        auto scope = getPartitionScope(storage, alter.get(), partition_id, context);
+        auto scope = getPartitionScope(storage, alter.get(), command.partition_ids, partition_id, context);
 
         /// A command scoped to other partitions is not applied to this part: `MutateTask` skips it
         /// through `canSkipMutationCommandForPart` and clones the untouched part forward to the
@@ -3745,7 +3793,7 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
 }
 
 
-DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
+DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool remove_covered_parts_immediately)
 {
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
@@ -3824,8 +3872,9 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
              removed_parts.size(), covered_parts.size(), new_parts.size(), transaction.getTID());
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
-    for (auto & part : removed_parts)
-        part->remove_time.store(0, std::memory_order_relaxed);
+    if (remove_covered_parts_immediately)
+        for (auto & part : removed_parts)
+            part->remove_time.store(0, std::memory_order_relaxed);
 
     if (deduplication_log)
         for (const auto & part : removed_parts)
@@ -3860,12 +3909,14 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         Stopwatch watch;
         ProfileEventsScope profile_events_scope;
 
+        const bool remove_parts_immediately = query_context->getSettingsRef()[Setting::truncate_removes_parts_immediately];
+
         auto txn = query_context->getCurrentTransaction();
         if (txn)
         {
             auto data_parts_lock = lockParts();
             auto parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
-            removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
+            removePartsFromWorkingSet(txn.get(), parts_to_remove, /*clear_without_timeout=*/ remove_parts_immediately, data_parts_lock);
             LOG_INFO(log, "Removed {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
         }
         else
@@ -3890,7 +3941,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      transaction.getTID());
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            renameAndCommitEmptyParts(new_data_parts, transaction, remove_parts_immediately);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3959,7 +4010,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          transaction.getTID());
 
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
+                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, /*remove_covered_parts_immediately=*/ true);
 
                 if (detach)
                     clonePartsToDetached(removed_parts, query_context);
@@ -4084,7 +4135,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
+            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, /*remove_covered_parts_immediately=*/ true);
 
             if (detach)
                 clonePartsToDetached(removed_parts, query_context);
@@ -4817,6 +4868,12 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 
         addSupportedCommands(*commands, mutation_version, result);
     }
+
+    /// A command that names a partition applies to that partition alone. Selecting the pending commands
+    /// by mutation version alone applied it to every part whose data version predates the mutation, so
+    /// while a `CLEAR COLUMN c IN PARTITION p` was pending, reads of *all* partitions answered the
+    /// column's default, and went back to the stored values once the mutation materialized.
+    filterCommandsOutsidePartition(result, part->info.getOriginalPartitionId());
 
     std::reverse(result.begin(), result.end());
     return result;

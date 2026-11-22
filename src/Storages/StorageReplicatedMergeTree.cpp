@@ -957,6 +957,24 @@ std::vector<String> getAncestors(const String & path)
     return result;
 }
 
+/// Device and inode of every file under `dir` (recursively, projections included), by path relative to `dir`.
+using FileIds = std::map<String, std::pair<UInt64, UInt64>>;
+
+void collectFileIds(const IDisk & disk, const fs::path & dir, const fs::path & relative, FileIds & ids)
+{
+    for (auto it = disk.iterateDirectory(dir / relative); it->isValid(); it->next())
+    {
+        const fs::path file = relative / it->name();
+        if (disk.existsDirectory(dir / file))
+            collectFileIds(disk, dir, file, ids);
+        else
+        {
+            const auto st = disk.stat(dir / file);
+            ids.emplace(file.string(), std::pair<UInt64, UInt64>{st.st_dev, st.st_ino});
+        }
+    }
+}
+
 }
 
 void StorageReplicatedMergeTree::createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info)
@@ -2103,11 +2121,44 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     std::unordered_set<String> restorable_unexpected_parts;
     UInt64 uncovered_unexpected_parts_rows = 0;
 
+    /// `makeCloneInDetached` hard-links a part into detached/<reason>_<name>[_tryN] and outdates it in memory only, so a
+    /// restart before cleanup loads it again; such a part has exactly the files of its copy, each the same inode.
+    static constexpr std::array<std::string_view, 4> clone_reasons = {"broken", "covered-by-broken", "unexpected", "clone"};
+    std::map<std::pair<String, MergeTreePartInfo>, std::vector<String>> detached_copies;
+    if (!unexpected_data_parts.empty())
+        for (const auto & detached : getDetachedParts())
+            if (detached.valid_name && detached.disk->supportsStat()
+                && std::ranges::find(clone_reasons, detached.prefix) != clone_reasons.end())
+                detached_copies[{detached.disk->getName(), static_cast<const MergeTreePartInfo &>(detached)}].push_back(detached.dir_name);
+    std::unordered_set<const IMergeTreeDataPart *> parts_already_detached;
+
     for (const auto & load_state : unexpected_data_parts)
     {
         if (load_state.is_broken)
             continue;
         unexpected_parts_rows += load_state.part->rows_count;
+
+        const auto & disk = load_state.loading_info->disk;
+        if (auto copies = detached_copies.find({disk->getName(), load_state.part->info}); copies != detached_copies.end())
+        {
+            const fs::path data_path = relative_data_path;
+            FileIds part_files;
+            collectFileIds(*disk, data_path / load_state.part->name, "", part_files);
+            auto copy = std::ranges::find_if(copies->second, [&](const String & dir_name)
+            {
+                FileIds copy_files;
+                collectFileIds(*disk, data_path / DETACHED_DIR_NAME / dir_name, "", copy_files);
+                return !part_files.empty() && copy_files == part_files;
+            });
+            if (copy != copies->second.end())
+            {
+                LOG_INFO(log, "Unexpected part {} has the same files as detached part {}, assuming it was detached just before restart",
+                         load_state.part->name, *copy);
+                covered_unexpected_parts.push_back(load_state.part->name);
+                parts_already_detached.insert(load_state.part.get());
+                continue;
+            }
+        }
 
         /// This part may be covered by some expected part that is active and present locally
         /// Probably we just did not remove this part from disk before restart (but removed from ZooKeeper)
@@ -2223,7 +2274,21 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     /// detached all unexpected data parts after sanity check.
     for (auto & part_state : unexpected_data_parts)
-        part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
+    {
+        if (!parts_already_detached.contains(part_state.part.get()))
+        {
+            part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
+            continue;
+        }
+        try
+        {
+            part_state.part->remove();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while removing unexpected part {}", part_state.part->name));
+        }
+    }
     unexpected_data_parts.clear();
 
     return true;
@@ -7500,6 +7565,8 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.alter_version = new_metadata_version;
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
+            /// Pin the partitions of the scoped commands as `ID '...'` before the entry is written, see `mutate`.
+            resolvePartitionIdsOfScopedCommands(mutation_entry.commands, query_context);
 
             int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
@@ -9199,6 +9266,13 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// Resolve the partitions of the scoped commands (`... IN PARTITION p`) once, with the submitting
+    /// query's context, and replace each partition expression in the command text with the `ID '...'`
+    /// it resolved to. The entry written to `/mutations` then names exactly these partitions: every
+    /// replica, the block numbers allocated below, and every later reload agree on them, and none of
+    /// them evaluates the user's partition expression again.
+    resolvePartitionIdsOfScopedCommands(mutation_entry.commands, query_context);
+
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
     const auto zookeeper = getZooKeeper();
 
@@ -9401,11 +9475,17 @@ void StorageReplicatedMergeTree::waitForCommittingOpsToFinish(zkutil::ZooKeeperP
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to sync replica with timeout {}", sync_timeout_ms);
 }
 
-QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
+QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationCommands & original_commands, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::updateLightweight");
     auto context_copy = Context::createCopy(query_context);
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
+
+    /// Resolve the partitions of the scoped commands once, as in `mutate`: the block numbers are
+    /// allocated in the partitions they name, and the patch is produced from the same commands, so
+    /// both steps agree on the partitions without evaluating the partition expression twice.
+    MutationCommands commands = original_commands;
+    resolvePartitionIdsOfScopedCommands(commands, query_context);
 
     LightweightUpdateHolderInKeeper update_holder;
     update_holder.zookeeper = zookeeper;
