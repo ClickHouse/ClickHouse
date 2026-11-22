@@ -896,6 +896,8 @@ Status ArrowFlightServer::getSchema(const AuthMiddleware & auth, const FlightDes
                     FLIGHT_ASSIGN_OR_RAISE(schema, ArrowFlight::flightSchema(executor.getHeader(), query_context, schema_modifier))
                 }
 
+                /// The pipeline was not run, so it is reset before `onFinish` to not write an empty result into the query result cache.
+                block_io.resetPipeline(/*cancel=*/ true);
                 block_io.onFinish();
                 query_finished = true;
             }
