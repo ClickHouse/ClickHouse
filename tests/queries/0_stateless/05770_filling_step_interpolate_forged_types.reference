@@ -19,6 +19,11 @@ lambda captures a column named as its argument INCORRECT_DATA
 lambda captures two columns of the same name INCORRECT_DATA
 folded lambda captures a column named as its argument INCORRECT_DATA
 lambda body has two inputs of the same name INCORRECT_DATA
+lambda announces more arguments than its type has INCORRECT_DATA
+folded lambda announces more arguments than its type has INCORRECT_DATA
+interpolate announces more sources than it requires INCORRECT_DATA
+interpolate source is repeated INCORRECT_DATA
+well-formed two sources accepted
 well-formed lambda accepted
 well-formed lambda with a captured column accepted
 well-formed folded lambda accepted

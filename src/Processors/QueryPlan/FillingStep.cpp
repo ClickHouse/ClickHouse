@@ -234,6 +234,14 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
         UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
         size_t num_required_columns = 0;
         readVarUInt(num_required_columns, ctx.in);
+
+        /// The planner writes one pair per column that the expression requires, so the number of the pairs
+        /// is known before they are read, and the serialized data cannot make this loop any longer than that.
+        if (num_required_columns != dag_required_columns.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "FillingStep: INTERPOLATE expects {} source columns, got {}",
+                dag_required_columns.size(), num_required_columns);
+
         for (size_t i = 0; i < num_required_columns; ++i)
         {
             String key;
@@ -262,13 +270,12 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
 
             /// The type comes from the DAG, never from the wire: it decides the column the transform
             /// stages the value in before executing the expression.
-            required_columns_map[key] = *name_and_type;
+            /// The keys are distinct: with the number of the pairs checked above, a repeated key would
+            /// leave a column required by the expression without a source.
+            if (!required_columns_map.emplace(key, *name_and_type).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE source column '{}' occurs more than once", key);
         }
-
-        if (required_columns_map.size() != dag_required_columns.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "FillingStep: INTERPOLATE expects {} source columns, got {}",
-                dag_required_columns.size(), required_columns_map.size());
 
         /// One entry per DAG output, in output order - the pairing `FillingTransform` relies on.
         VectorWithMemoryTracking<std::string> result_columns_order;

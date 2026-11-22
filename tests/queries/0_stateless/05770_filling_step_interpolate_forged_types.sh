@@ -13,6 +13,8 @@
 # function trusts all of these, both for a `FunctionCapture` node and for a lambda folded into a constant.
 # The names of the captured columns and of the arguments of a lambda must be distinct, and so must be the names
 # of the inputs of its body: a repeated name stands for the first column of that name.
+# The number of the arguments of a lambda and the number of the `INTERPOLATE` sources are known before the lists
+# are read (from the type of the lambda, and from the expression), so the plan cannot announce longer lists.
 # The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh; the last plan is
 # well-formed, so the refusals are specific.
 
@@ -71,8 +73,8 @@ def skip_hello(f):
 def header(columns):
     return vu(len(columns)) + b"".join(sb(n) + t for n, t in columns)
 
-def dag(nodes, outputs, inputs=1):
-    # A serialized ActionsDAG with its first nodes (node 0 only by default) as its inputs. A node is either a tuple or raw bytes.
+def dag_nodes(nodes):
+    # The nodes of a serialized ActionsDAG. A node is either a tuple or raw bytes.
     out = vu(len(nodes))
     for node in nodes:
         if isinstance(node, bytes):
@@ -81,7 +83,11 @@ def dag(nodes, outputs, inputs=1):
         kind, name, type_, children = node
         out += bytes([kind]) + sb(name) + type_ + vu(len(children))
         out += b"".join(vu(c) for c in children) + NUL   # no constant column on the node
-    return (out + vu(inputs) + b"".join(vu(i) for i in range(inputs))   # inputs
+    return out
+
+def dag(nodes, outputs, inputs=1):
+    # A serialized ActionsDAG with its first nodes (node 0 only by default) as its inputs.
+    return (dag_nodes(nodes) + vu(inputs) + b"".join(vu(i) for i in range(inputs))   # inputs
             + vu(len(outputs)) + b"".join(vu(i) for i in outputs))
 
 def interpolate(nodes, outputs, pairs):
@@ -194,6 +200,25 @@ with_lambda("lambda captures two columns of the same name",
 with_lambda("folded lambda captures a column named as its argument",
             lambda_node(("x", U8), ("x", U8), U8, captured=("x", U8), folded=True))
 with_lambda("lambda body has two inputs of the same name", lambda_node(("e", U8), ("e", U8), U8, inputs=2))
+# A lambda has as many arguments as its type, and `INTERPOLATE` has one source per column that its expression
+# requires, so a list of another length is refused before it is read. These plans end right at the announced
+# length: a server that went on to read 2^40 arguments, or sources, would wait for them instead of answering.
+MANY = vu(1 << 40)
+ALIAS_Z = [(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,))]
+LAMBDA = sb("lambda") + b"\x24" + vu(1) + U8 + U8   # the name of the node and its type, `Function(UInt8) -> UInt8`
+RETURNS = sb("r") + U8 + vu(0) + vu(0)              # the result of the lambda, which captures no columns
+for label, node in (("lambda", bytes([FUNCTION]) + LAMBDA + vu(0) + b"\x04" + sb("lambda")),
+                    ("folded lambda", bytes([COLUMN]) + LAMBDA + vu(0) + b"\x03")):
+    forge(label + " announces more arguments than its type has",
+          FILL + bytes([2]) + dag_nodes(ALIAS_Z + [node + RETURNS + MANY]), [X8Z], VERSION, X8Z)
+forge("interpolate announces more sources than it requires",
+      FILL + bytes([2]) + dag(ALIAS_Z, [1]) + MANY, [X8Z], VERSION, X8Z)
+# The expression requires `x` and `z`, and the plan gives two sources, but both of them under the key `x`.
+TWO_SOURCES = bytes([2]) + dag([(INPUT, "x", U8, ()), (INPUT, "z", U8, ())], [1], 2) + vu(2)
+forge("interpolate source is repeated",
+      FILL + TWO_SOURCES + sb("x") + sb("x") + sb("x") + sb("z") + vu(0), [X8Z], VERSION, X8Z)
+forge("well-formed two sources",
+      FILL + TWO_SOURCES + sb("x") + sb("x") + sb("z") + sb("z") + vu(0), [X8Z], VERSION, X8Z)
 with_lambda("well-formed lambda", lambda_node(("e", U8), ("e", U8), U8))
 with_lambda("well-formed lambda with a captured column", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8)))
 with_lambda("well-formed folded lambda", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8), folded=True))

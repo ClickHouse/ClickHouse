@@ -5016,8 +5016,15 @@ static void serializeCapture(const LambdaCapture & capture, WriteBuffer & out, b
     }
 }
 
-static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in, size_t max_type_complexity)
+/// `function_type` is the type of the lambda: of the `FunctionCapture` node, or of the constant holding the lambda.
+/// It is decoded before the lambda itself.
+static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in, const IDataType & function_type, size_t max_type_complexity)
 {
+    const auto * lambda_type = typeid_cast<const DataTypeFunction *>(&function_type);
+    if (!lambda_type)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Deserialized lambda has type {}, which is not a Function type", function_type.getName());
+
     readStringBinary(capture.return_name, in);
     capture.return_type = decodeDataType(in, max_type_complexity);
 
@@ -5047,6 +5054,14 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in, size_t 
 
     UInt64 num_args = 0;
     readVarUInt(num_args, in);
+    /// The lambda has the type `Function(types of the lambda arguments) -> return_type`, and the decoder of the type
+    /// has bounded its size. So the number of the lambda arguments is known before they are read, and the serialized
+    /// data cannot make this loop any longer than that. `checkDeserializedLambda` compares the types themselves.
+    const size_t num_argument_types = lambda_type->getArgumentTypes().size();
+    if (num_args != num_argument_types)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Serialized lambda capture has {} lambda arguments, but the type of the lambda has {}",
+            num_args, num_argument_types);
     capture.lambda_arguments.clear();
     for (size_t i = 0; i < num_args; ++i)
     {
@@ -5306,7 +5321,7 @@ static ColumnConst::Ptr deserializeConstant(
     if (WhichDataType(type).isFunction())
     {
         LambdaCapture capture;
-        deserializeCapture(capture, in, max_type_complexity);
+        deserializeCapture(capture, in, type, max_type_complexity);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
         checkDeserializedLambda(capture_dag, capture, type);
 
@@ -5623,7 +5638,7 @@ ActionsDAG ActionsDAG::deserialize(
             if (column_flags & 4)
             {
                 LambdaCapture capture;
-                deserializeCapture(capture, in, max_type_complexity);
+                deserializeCapture(capture, in, *node.result_type, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
                 checkDeserializedLambda(capture_dag, capture, *node.result_type);
 
