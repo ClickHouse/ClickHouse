@@ -45,7 +45,30 @@ struct SortingProperty
 
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::Stream;
+    /// Columns equal on every row (the keys of the INNER merge joins below), so the data is sorted by any column
+    /// equal to a sort column as well.
+    EquivalenceClasses<String> equivalences = {};
 };
+
+/// Maps the equivalences through `dag`. A sort column that `dag` does not pass on unchanged is replaced first by an
+/// equal column that it does, so the order survives `applyActionsToSortDescription`, which follows the sort column.
+static void applyActionsToEquivalences(SortingProperty & property, const ActionsDAG & dag, const ActionsDAG::Node * output_to_skip)
+{
+    if (property.equivalences.getMemberToClassMap().empty())
+        return;
+
+    auto identity_outputs = identityOutputNames(dag, output_to_skip);
+    for (auto & column : property.sort_description)
+    {
+        if (identity_outputs.contains(column.column_name))
+            continue;
+        if (auto equal = property.equivalences.getClass(column.column_name))
+            if (auto it = std::ranges::find_if(*equal, [&](const String & member) { return identity_outputs.contains(member); });
+                it != equal->end())
+                column.column_name = *it;
+    }
+    property.equivalences = remapEquivalences(property.equivalences, identity_outputs);
+}
 
 /// Whether `step` is a join that emits the rows of its probe side (`children.front()`) in their
 /// original order, with the same conditions as `findReadingStep` in `optimizeReadInOrder`.
@@ -207,13 +230,36 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
     /// Every row of an INNER join has equal keys on both sides, so a key of the other side carries the same
     /// order as the ordered key it is compared with. That matters when the ordered key itself is not needed
     /// above the join and only the other one is kept, as in `a JOIN b ON a.id = b.id JOIN c ON b.id = c.id`.
-    /// It does not hold for the last key of an ASOF join, which is not compared for equality.
+    /// It does not hold for the last key of an ASOF join, which is not compared for equality. The equalities of
+    /// the inputs are carried as well.
+    const bool keys_are_equal = isInner(kind) && table_join.strictness() != JoinStrictness::Asof;
     NameToNameMap ordered_key_to_equal_key;
-    if (isInner(kind) && table_join.strictness() != JoinStrictness::Asof)
+    if (keys_are_equal)
     {
         for (size_t i = 0; i < clause.key_names_left.size(); ++i)
             ordered_key_to_equal_key.emplace(clause.key_names_left[i], clause.key_names_right[i]);
     }
+
+    /// A name carried by both inputs is ambiguous (see above), so it is never taken as equal to anything.
+    UnorderedMapWithMemoryTracking<String, Names> unambiguous_inputs;
+    for (const auto * header : {&ordered_input_header, &other_input_header})
+        for (const auto & column : *header)
+            if (!ordered_input_header.has(column.name) || !other_input_header.has(column.name))
+                unambiguous_inputs.emplace(column.name, Names{column.name});
+
+    auto equivalences = remapEquivalences(children_properties[ordered_child].equivalences, unambiguous_inputs);
+    if (keys_are_equal)
+    {
+        equivalences.merge(remapEquivalences(children_properties[1 - ordered_child].equivalences, unambiguous_inputs));
+        for (const auto & [ordered_key, equal_key] : ordered_key_to_equal_key)
+            if (unambiguous_inputs.contains(ordered_key) && unambiguous_inputs.contains(equal_key))
+                equivalences.add(ordered_key, equal_key);
+    }
+
+    UnorderedMapWithMemoryTracking<String, Names> unambiguous_outputs;
+    for (const auto & column : output_header)
+        if (unambiguous_inputs.contains(column.name))
+            unambiguous_outputs.emplace(column.name, Names{column.name});
 
     size_t num_columns_in_output = 0;
     for (; num_columns_in_output < sort_description.size(); ++num_columns_in_output)
@@ -235,7 +281,16 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
             /// The equal key comes from the other side, so it must not be shadowed by the ordered side.
             auto it = ordered_key_to_equal_key.find(name);
             if (it == ordered_key_to_equal_key.end() || !output_header.has(it->second) || ordered_input_header.has(it->second))
-                break;
+            {
+                auto equal = equivalences.getClass(name);
+                if (!equal)
+                    break;
+                auto member = std::ranges::find_if(*equal, [&](const String & column) { return unambiguous_outputs.contains(column); });
+                if (member == equal->end())
+                    break;
+                name = *member;
+                continue;
+            }
             name = it->second;
             continue;
         }
@@ -249,7 +304,7 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
 
     /// A single merge join is resized to `max_streams` outputs, and a sharded one has one output per shard,
     /// so the order holds within every stream rather than globally.
-    return {std::move(sort_description), SortingProperty::SortScope::Stream};
+    return {std::move(sort_description), SortingProperty::SortScope::Stream, remapEquivalences(equivalences, unambiguous_outputs)};
 }
 
 static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
@@ -312,6 +367,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
     if (auto * expression_step = typeid_cast<ExpressionStep *>(parent->step.get()))
     {
+        applyActionsToEquivalences(*properties, expression_step->getExpression(), nullptr);
         applyActionsToSortDescription(properties->sort_description, expression_step->getExpression());
         return std::move(*properties);
     }
@@ -330,6 +386,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
                     expr.dumpDAG());
         }
 
+        applyActionsToEquivalences(*properties, expr, out_to_skip);
         applyActionsToSortDescription(properties->sort_description, expr, out_to_skip);
         return std::move(*properties);
     }
@@ -339,8 +396,16 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (optimization_settings.optimize_sorting_by_input_stream_properties
             && !sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::Full)
         {
+            /// A column equal on every row to a sort column of the input is sorted the same way.
+            auto input_description = properties->sort_description;
+            const auto & sort_description = sorting_step->getSortDescription();
+            for (size_t i = 0; i < std::min(input_description.size(), sort_description.size()); ++i)
+                if (auto equal = properties->equivalences.getClass(input_description[i].column_name);
+                    equal && std::ranges::find(*equal, sort_description[i].column_name) != equal->end())
+                    input_description[i].column_name = sort_description[i].column_name;
+
             /// Convert Sorting to FinishSorting based on plan's sorting properties.
-            auto common_prefix = commonPrefix(properties->sort_description, sorting_step->getSortDescription());
+            auto common_prefix = commonPrefix(input_description, sort_description);
             if (!common_prefix.empty())
                 /// Buffering is useful for reading from MergeTree, and it is applied in optimizeReadInOrder only.
                 sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false, false);
@@ -355,7 +420,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             return {};
 
         auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;
-        return {sorting_step->getSortDescription(), scope};
+        return {sorting_step->getSortDescription(), scope, std::move(properties->equivalences)};
     }
 
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
@@ -399,6 +464,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
     {
+        /// A step may add rows (`WITH FILL`), so the equalities do not survive it.
+        properties->equivalences = {};
         if (transforming->getDataStreamTraits().preserves_sorting)
             return std::move(*properties);
     }

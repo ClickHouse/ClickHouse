@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/IStorage.h>
@@ -479,59 +480,6 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
     }
 }
 
-/// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
-/// Value equality between renamed columns survives; a computed expression changes the values,
-/// so it must not keep an equivalence.
-static UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions)
-{
-    UnorderedMapWithMemoryTracking<String, Names> input_to_outputs;
-    for (const auto * output : actions.getOutputs())
-    {
-        const auto * node = output;
-        while (node->type == ActionsDAG::ActionType::ALIAS)
-            node = node->children.front();
-        if (node->type == ActionsDAG::ActionType::INPUT)
-            input_to_outputs[node->result_name].push_back(output->result_name);
-    }
-    return input_to_outputs;
-}
-
-static EquivalenceClasses<String> remapEquivalences(
-    const EquivalenceClasses<String> & equivalences, const ActionsDAG & actions)
-{
-    auto input_to_outputs = identityOutputNames(actions);
-    EquivalenceClasses<String> result;
-    UnorderedSetWithMemoryTracking<const void *> visited_classes;
-    for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
-    {
-        if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
-            continue;
-        Names renamed;
-        for (const auto & class_member : *class_ptr)
-        {
-            auto it = input_to_outputs.find(class_member);
-            if (it != input_to_outputs.end())
-                renamed.insert(renamed.end(), it->second.begin(), it->second.end());
-        }
-        /// A class with fewer than two surviving members says nothing, and `add` skips it.
-        for (size_t i = 1; i < renamed.size(); ++i)
-            result.add(renamed[0], renamed[i]);
-    }
-    return result;
-}
-
-namespace
-{
-
-const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
-{
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.front();
-    return node;
-}
-
-}
-
 /// The TRUE fraction of a filter expression, estimated from the input column NDVs and
 /// equivalence classes. The input of a standalone filter is an arbitrary subplan (e.g. an
 /// aggregation for `HAVING`), so there are no table statistics here, and the column statistics
@@ -624,7 +572,7 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
 {
     ExpressionStatistics result_statistics = input_statistics;
     QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, filter_step.getExpression());
-    result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, filter_step.getExpression());
+    result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, identityOutputNames(filter_step.getExpression()));
 
     const ActionsDAG::Node * filter_node = nullptr;
     for (const auto & dag_node : filter_step.getExpression().getNodes())
@@ -655,7 +603,7 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
 {
     ExpressionStatistics result_statistics = input_statistics;
     QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, expression_step.getExpression());
-    result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, expression_step.getExpression());
+    result_statistics.equivalences = remapEquivalences(input_statistics.equivalences, identityOutputNames(expression_step.getExpression()));
     /// Keep the input row width: most projections pass columns through, and the input width may carry
     /// storage-derived or hinted byte sizes that a header-based type-default estimate would discard.
     /// TODO: recompute only for added/dropped columns (needs per-column widths); an arrayJoin also

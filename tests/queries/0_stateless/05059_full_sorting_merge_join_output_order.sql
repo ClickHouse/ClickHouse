@@ -260,6 +260,115 @@ FROM fsmj_order_a AS a ASOF LEFT JOIN fsmj_order_b AS b ON a.id = b.id AND a.v >
 WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, b.v AS v FROM fsmj_order_a AS a ASOF INNER JOIN fsmj_order_b AS b ON a.id = b.id AND a.v >= b.v ORDER BY a.id, b.v)) AS rows
 SELECT 'asof order by result', length(rows), rows = arraySort(rows);
 
+-- Every row of an INNER join has equal keys, so when a join keeps both of them, or keeps a column that a join below
+-- made equal to its key, a sort by any of these columns merges the sorted streams as well.
+SELECT 'inner chain both keys plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(b.v) + sum(c.v) + sum(d.v)
+    FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+    INNER JOIN fsmj_order_b AS d ON a.id = d.id);
+
+SELECT 'inner chain both keys filter plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(b.v) + sum(c.v) + sum(d.v)
+    FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+    INNER JOIN fsmj_order_b AS d ON a.id = d.id
+    WHERE a.v + b.v > 100);
+
+SELECT 'inner subquery other side plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(d.v) FROM fsmj_order_a AS a
+    INNER JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+    INNER JOIN fsmj_order_b AS d ON s.y = d.id);
+
+SELECT 'inner subquery function of key plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT count(), sum(length(s.sx)) FROM (SELECT toString(a.id) AS sx, b.id AS y FROM fsmj_order_a AS a
+    INNER JOIN fsmj_order_b AS b ON a.id = b.id) AS s INNER JOIN fsmj_order_c AS c ON s.y = c.id);
+
+-- Not through an outer join: its non-matched rows carry defaults on the other side.
+SELECT 'left subquery other side plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(d.v) FROM fsmj_order_a AS a
+    LEFT JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+    INNER JOIN fsmj_order_b AS d ON s.y = d.id);
+
+SELECT 'inner both keys order by plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT b.id, a.id, a.v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY b.id, a.v);
+
+WITH (SELECT groupArray((id, aid, v)) FROM (SELECT b.id AS id, a.id AS aid, a.v AS v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY b.id, a.v)) AS rows
+SELECT 'inner both keys order by result', length(rows), rows = arraySort(rows);
+
+SELECT 'inner chain both keys', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+INNER JOIN fsmj_order_b AS d ON a.id = d.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'inner chain both keys', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+INNER JOIN fsmj_order_b AS d ON a.id = d.id;
+SELECT 'inner chain both keys', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+INNER JOIN fsmj_order_b AS d ON a.id = d.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+SELECT 'inner chain both keys where', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+INNER JOIN fsmj_order_b AS d ON a.id = d.id
+WHERE a.v + b.v > 100
+SETTINGS join_algorithm = 'hash';
+SELECT 'inner chain both keys where', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+INNER JOIN fsmj_order_b AS d ON a.id = d.id
+WHERE a.v + b.v > 100;
+SELECT 'inner chain both keys where', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+INNER JOIN fsmj_order_b AS d ON a.id = d.id
+WHERE a.v + b.v > 100
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+SELECT 'inner subquery other side', count(), sum(a.v), sum(s.y), sum(d.v)
+FROM fsmj_order_a AS a
+INNER JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+INNER JOIN fsmj_order_b AS d ON s.y = d.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'inner subquery other side', count(), sum(a.v), sum(s.y), sum(d.v)
+FROM fsmj_order_a AS a
+INNER JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+INNER JOIN fsmj_order_b AS d ON s.y = d.id;
+SELECT 'inner subquery other side', count(), sum(a.v), sum(s.y), sum(d.v)
+FROM fsmj_order_a AS a
+INNER JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+INNER JOIN fsmj_order_b AS d ON s.y = d.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+SELECT 'inner subquery function of key', count(), sum(length(s.sx))
+FROM (SELECT toString(a.id) AS sx, b.id AS y FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id) AS s
+INNER JOIN fsmj_order_c AS c ON s.y = c.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'inner subquery function of key', count(), sum(length(s.sx))
+FROM (SELECT toString(a.id) AS sx, b.id AS y FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id) AS s
+INNER JOIN fsmj_order_c AS c ON s.y = c.id;
+SELECT 'inner subquery function of key', count(), sum(length(s.sx))
+FROM (SELECT toString(a.id) AS sx, b.id AS y FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id) AS s
+INNER JOIN fsmj_order_c AS c ON s.y = c.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+SELECT 'left subquery other side', count(), sum(a.v), sum(s.y), sum(d.v), countIf(s.y = 0)
+FROM fsmj_order_a AS a
+LEFT JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+INNER JOIN fsmj_order_b AS d ON s.y = d.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'left subquery other side', count(), sum(a.v), sum(s.y), sum(d.v), countIf(s.y = 0)
+FROM fsmj_order_a AS a
+LEFT JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+INNER JOIN fsmj_order_b AS d ON s.y = d.id;
+SELECT 'left subquery other side', count(), sum(a.v), sum(s.y), sum(d.v), countIf(s.y = 0)
+FROM fsmj_order_a AS a
+LEFT JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
+INNER JOIN fsmj_order_b AS d ON s.y = d.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
 DROP TABLE fsmj_order_a;
 DROP TABLE fsmj_order_b;
 DROP TABLE fsmj_order_c;

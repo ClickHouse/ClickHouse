@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 #include <limits>
+#include <Common/EquivalenceClasses.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -139,6 +140,14 @@ void applyActionsToSortDescription(
     const ActionsDAG & dag,
     /// Ignore this one output of DAG. Used for FilterStep where filter column is removed.
     const ActionsDAG::Node * output_to_skip = nullptr);
+
+/// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only, by input name.
+/// Value equality between renamed columns survives; a computed expression changes the values.
+UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions, const ActionsDAG::Node * output_to_skip = nullptr);
+
+/// The classes with every member replaced by its names in `renames`; a member absent there is dropped.
+EquivalenceClasses<String> remapEquivalences(
+    const EquivalenceClasses<String> & equivalences, const UnorderedMapWithMemoryTracking<String, Names> & renames);
 
 /// Traverses a set of root nodes (`nodes`) and attempts to replace them (and their subtrees)
 /// with matched input nodes from the `matches` map, under the condition that:

@@ -53,3 +53,25 @@ asof chain plan	0	4
 asof	1004	753298	199248	260766
 asof	1004	753298	199248	260766
 asof order by result	750	1
+inner chain both keys plan	0	6
+inner chain both keys filter plan	0	6
+inner subquery other side plan	0	6
+inner subquery function of key plan	0	4
+left subquery other side plan	1	5
+inner both keys order by plan	0	3
+inner both keys order by result	1400	1
+inner chain both keys	1804	1299992	696896	445864	696896
+inner chain both keys	1804	1299992	696896	445864	696896
+inner chain both keys	1804	1299992	696896	445864	696896
+inner chain both keys where	1756	1298408	696104	438136	684104
+inner chain both keys where	1756	1298408	696104	438136	684104
+inner chain both keys where	1756	1298408	696104	438136	684104
+inner subquery other side	1804	1299992	525792	696896
+inner subquery other side	1804	1299992	525792	696896
+inner subquery other side	1804	1299992	525792	696896
+inner subquery function of key	936	2580
+inner subquery function of key	936	2580
+inner subquery function of key	936	2580
+left subquery other side	4302	3172596	525792	1321396	2522
+left subquery other side	4302	3172596	525792	1321396	2522
+left subquery other side	4302	3172596	525792	1321396	2522

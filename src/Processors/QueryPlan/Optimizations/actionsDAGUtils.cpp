@@ -671,6 +671,45 @@ void applyActionsToSortDescription(
     description.resize(prefix_size);
 }
 
+UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions, const ActionsDAG::Node * output_to_skip)
+{
+    UnorderedMapWithMemoryTracking<String, Names> input_to_outputs;
+    for (const auto * output : actions.getOutputs())
+    {
+        if (output == output_to_skip)
+            continue;
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            input_to_outputs[node->result_name].push_back(output->result_name);
+    }
+    return input_to_outputs;
+}
+
+EquivalenceClasses<String> remapEquivalences(
+    const EquivalenceClasses<String> & equivalences, const UnorderedMapWithMemoryTracking<String, Names> & renames)
+{
+    EquivalenceClasses<String> result;
+    UnorderedSetWithMemoryTracking<const void *> visited_classes;
+    for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
+    {
+        if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
+            continue;
+        Names renamed;
+        for (const auto & class_member : *class_ptr)
+        {
+            auto it = renames.find(class_member);
+            if (it != renames.end())
+                renamed.insert(renamed.end(), it->second.begin(), it->second.end());
+        }
+        /// A class with fewer than two surviving members says nothing, and `add` skips it.
+        for (size_t i = 1; i < renamed.size(); ++i)
+            result.add(renamed[0], renamed[i]);
+    }
+    return result;
+}
+
 std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
     const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,

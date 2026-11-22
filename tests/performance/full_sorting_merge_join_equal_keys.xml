@@ -1,0 +1,18 @@
+<test>
+    <create_query>CREATE TABLE fsm_eq_a (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE fsm_eq_b (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE fsm_eq_c (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO fsm_eq_a SELECT number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO fsm_eq_b SELECT number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO fsm_eq_c SELECT number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_eq_a FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_eq_b FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_eq_c FINAL</fill_query>
+
+    <!-- The first join keeps both keys (`a.k` for the third join, `b.k` for the second): its result is sorted by both. -->
+    <query>SELECT count() FROM fsm_eq_a AS a JOIN fsm_eq_b AS b ON a.k = b.k JOIN fsm_eq_c AS c ON b.k = c.k JOIN fsm_eq_a AS d ON a.k = d.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', query_plan_optimize_join_order_limit = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS fsm_eq_a</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_eq_b</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_eq_c</drop_query>
+</test>
