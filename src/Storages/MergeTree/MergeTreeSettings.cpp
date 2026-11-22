@@ -344,10 +344,13 @@ This makes settings like `string_serialization_version` effective.
 - `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
 listing omitted columns and the type whose default represents their values.
 Required to enable `skip_empty_columns_on_insert`.
+- `with_subcolumns` - Everything `with_missing_columns` records (so `skip_empty_columns_on_insert`
+keeps working), plus serialization information for the declared paths of `JSON` columns,
+so that each declared path can use sparse serialization independently.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
+switch to `with_types`, `with_missing_columns`, or `with_subcolumns` to enable the corresponding features.
 )", 0, \
         {"25.11", "basic", "with_types", "Change to the newer format allowing custom string serialization"}, \
         {"25.10", "basic", "basic", "New setting"}) \
@@ -2232,7 +2235,7 @@ The maximum postpone time for failed replicated task. The value is used if the t
         {"25.4", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."}) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
     )", 0) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax

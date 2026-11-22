@@ -428,8 +428,8 @@ public:
 protected:
     /// Constructs the result array for one grid (one aggregate state). For each grid point the window's value is
     /// computed by a per-function sliding `Aggregator` (built by `createAggregator` in the derived class): as the
-    /// grid advances, buckets entering the window are fed to `Aggregator::add` (which preaggregates them into a
-    /// `Summary` where needed), buckets leaving are dropped by `removeBefore`, and `getResult` reads off the window's
+    /// grid advances, buckets leaving the window are dropped by `removeBefore`, then buckets entering it are fed to
+    /// `Aggregator::add` (which preaggregates them into a `Summary` where needed), and `getResult` reads off the window's
     /// value. The aggregator keeps only the window's worth of data, so there is no materialization of all buckets and
     /// no global sort in the dense case.
     void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const
@@ -454,6 +454,7 @@ protected:
             size_t next_bucket = 0;
             for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
             {
+                removeOutOfWindow(aggregator, grid_index);
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; next_bucket < window_end; ++next_bucket)
                 {
@@ -461,7 +462,6 @@ protected:
                     if (it)
                         aggregator.add(it->getMapped(), bucketEnd(next_bucket));
                 }
-                removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
         }
@@ -477,10 +477,10 @@ protected:
             size_t pos = 0;
             for (size_t grid_index = 0; grid_index < grid_size; ++grid_index)
             {
+                removeOutOfWindow(aggregator, grid_index);
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; pos < ordered_buckets.size() && ordered_buckets[pos].first < window_end; ++pos)
                     aggregator.add(*ordered_buckets[pos].second, bucketEnd(ordered_buckets[pos].first));
-                removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
         }

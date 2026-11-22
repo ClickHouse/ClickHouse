@@ -78,9 +78,10 @@ FORMAT Null SETTINGS log_comment = 'undecided_no_rows_4', automatic_parallel_rep
 -- paired with those of the single-node plan and take no row estimates from its index analysis. The joins of the two
 -- plans are ordered differently, and the plans cannot be compared. The first run measures the hash tables; with their
 -- sizes, the second, which builds the plan again at once, orders both plans alike, matches them and collects
--- statistics. The third decides from them.
+-- statistics. The third decides from them: the read is too small to occupy more threads, so it declines. The CI
+-- profile with automatic parallel replicas ignores that cap.
 SET use_statistics = 1, enable_join_runtime_filters = 0, query_plan_propagate_predicate_across_join = 0,
-    parallel_replicas_plan_based = 0, optimize_move_to_prewhere = 1;
+    parallel_replicas_plan_based = 0, optimize_move_to_prewhere = 1, automatic_parallel_replicas_ignore_thresholds = 0;
 SELECT count(), sum(d.v), sum(a.v), sum(b.v)
 FROM t_undecided_wd AS d
 INNER JOIN (SELECT id, k, v FROM t_undecided_wt WHERE id < 20000) AS a ON d.id = a.id
