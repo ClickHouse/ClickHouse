@@ -634,7 +634,7 @@ Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference
 The default values of the following advanced parameters will work well in virtually all situations.
 We do not recommend changing them.
 
-Optional parameter `dictionary_block_size` (default: 512) specifies the size of dictionary blocks in rows.
+Optional parameter `dictionary_block_size` (default: 8192) specifies the size of dictionary blocks in rows.
 
 Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
@@ -1719,7 +1719,7 @@ During index creation, three files are created (per part):
 
 **Dictionary blocks file (.dct)**
 
-The tokens in the text index are sorted and stored in dictionary blocks of 512 tokens each (the block size is configurable by parameter `dictionary_block_size`).
+The tokens in the text index are sorted and stored in dictionary blocks of 8192 tokens each (the block size is configurable by parameter `dictionary_block_size`).
 A dictionary blocks file (.dct) consists all the dictionary blocks of all index granules in a part.
 
 **Index header file (.idx)**
