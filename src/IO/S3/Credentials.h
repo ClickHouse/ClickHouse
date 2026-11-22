@@ -162,10 +162,14 @@ public:
         Aws::String role_arn_,
         Aws::String token_file_,
         Aws::String session_name_,
-        Aws::String tmp_region);
+        Aws::String tmp_region,
+        bool sts_region_is_from_s3_client);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
     void SetNeedRefresh() override;
+
+    /// The STS endpoint which the next request for credentials is sent to.
+    Aws::String getStsEndpoint() const;
 
     struct CacheKey
     {
@@ -185,7 +189,16 @@ protected:
     void Reload() override;
 
 private:
+    /// The client to send the next request for credentials with.
+    Aws::Internal::STSCredentialsClient & getClient() const;
+
     std::unique_ptr<Aws::Internal::STSCredentialsClient> client;
+
+    /// Set if the region of the STS endpoint is taken from the S3 client. Then `client` is used only while
+    /// `remote_url_allow_hosts` allows its endpoint, and this client, which calls STS in `us-east-1`, is used otherwise.
+    std::unique_ptr<Aws::Internal::STSCredentialsClient> client_for_default_region;
+    const RemoteHostFilter * remote_host_filter = nullptr;
+
     Aws::Auth::AWSCredentials credentials;
     Aws::String role_arn;
     Aws::String token_file;

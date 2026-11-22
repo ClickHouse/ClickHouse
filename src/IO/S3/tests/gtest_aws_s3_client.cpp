@@ -62,7 +62,10 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
 #include <IO/S3RequestSettings.h>
+#include <Poco/AutoPtr.h>
+#include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/ServerApplication.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <IO/S3/tests/TestPocoHTTPServer.h>
 
@@ -1575,6 +1578,90 @@ TEST(IOTestAwsS3Client, WebIdentityStsRegionFollowsS3RegionThroughCredentialsCha
     EXPECT_EQ(web_identity_provider_for("example.org/eu-west-1"), web_identity_provider_for("us-east-1"));
 }
 
+/// The providers are cached per process and keep a pointer to the filter, so the filter lives as long as the process.
+static DB::RemoteHostFilter & remoteHostFilterForWebIdentityStsTests(const std::string & allowed_hosts)
+{
+    static DB::RemoteHostFilter remote_host_filter;
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(
+        allowed_hosts.empty()
+            ? "<clickhouse></clickhouse>"
+            : "<clickhouse><remote_url_allow_hosts>" + allowed_hosts + "</remote_url_allow_hosts></clickhouse>");
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    remote_host_filter.setValuesFromConfig(*config);
+
+    return remote_host_filter;
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsRegionOfClientIsUsedOnlyWhileItsEndpointIsAllowed)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    /// The provider is cached per process, so use a new role each time to make the constructor run.
+    static int run = 0;
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_allowed_hosts_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_allowed_hosts");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+
+    const auto set_allowed_hosts = [](const std::string & allowed_hosts) { remoteHostFilterForWebIdentityStsTests(allowed_hosts); };
+    SCOPE_EXIT({ set_allowed_hosts(""); });
+
+    /// Everything is allowed without `remote_url_allow_hosts`.
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("");
+
+    /// Built for `eu-west-1`.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    auto provider = std::dynamic_pointer_cast<Provider>(
+        Provider::create(client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    ASSERT_TRUE(provider);
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+
+    /// The list has the hosts which the server accessed before the region of the S3 client was taken into account.
+    /// It applies to the provider which already exists, and no request goes to a host which is not in the list.
+    set_allowed_hosts("<host>s3.eu-west-1.amazonaws.com</host><host>sts.us-east-1.amazonaws.com</host>");
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
+
+    /// The same for a provider which is created with this list.
+    ScopedEnvVarForAwsS3ClientTests another_role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_allowed_hosts_another_" + std::to_string(run));
+    auto another_client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    auto another_provider = std::dynamic_pointer_cast<Provider>(
+        Provider::create(another_client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    ASSERT_TRUE(another_provider);
+    EXPECT_NE(another_provider, provider);
+    EXPECT_EQ(another_provider->getStsEndpoint(), "https://sts.us-east-1.amazonaws.com");
+
+    /// The STS endpoint of the region of the S3 client is used again as soon as it is allowed.
+    set_allowed_hosts(R"(<host>s3.eu-west-1.amazonaws.com</host><host_regexp>^sts\.[a-z0-9-]+\.amazonaws\.com$</host_regexp>)");
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+    EXPECT_EQ(another_provider->getStsEndpoint(), "https://sts.eu-west-1.amazonaws.com");
+}
+
+TEST(IOTestAwsS3Client, WebIdentityStsConfiguredRegionDoesNotDependOnAllowedHosts)
+{
+    using Provider = DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider;
+
+    static int run = 0;
+    ScopedEnvVarForAwsS3ClientTests role_env(
+        "AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/clickhouse_web_identity_sts_configured_region_" + std::to_string(++run));
+    ScopedEnvVarForAwsS3ClientTests token_env("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/clickhouse_web_identity_token_for_gtest_sts_configured_region");
+    ScopedEnvVarForAwsS3ClientTests region_env("AWS_DEFAULT_REGION", "eu-central-1");
+    ScopedEnvVarForAwsS3ClientTests sts_endpoint_env("AWS_ENDPOINT_URL_STS", "");
+
+    SCOPE_EXIT({ remoteHostFilterForWebIdentityStsTests(""); });
+    auto & remote_host_filter = remoteHostFilterForWebIdentityStsTests("<host>s3.eu-west-1.amazonaws.com</host>");
+
+    /// The region from `AWS_DEFAULT_REGION` is set by the one who set `remote_url_allow_hosts`, and it is used as before.
+    auto client_configuration = createWebIdentityClientConfiguration(remote_host_filter);
+    auto provider = std::dynamic_pointer_cast<Provider>(
+        Provider::create(client_configuration, /* expiration_window_seconds = */ 120, /* role_arn = */ {}));
+    ASSERT_TRUE(provider);
+    EXPECT_EQ(provider->getStsEndpoint(), "https://sts.eu-central-1.amazonaws.com");
+}
+
 TEST(IOTestAwsS3Client, HttpResponseCodeToString)
 {
     EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::OK), "200");
@@ -2192,7 +2279,8 @@ TEST(IOTestAwsS3Client, WebIdentityInvalidationDuringRefreshIsKept)
         "arn:aws:iam::123456789012:role/clickhouse_web_identity_invalidation_role",
         Aws::String(token_file.data(), token_file.size()),
         "session",
-        "eu-west-1");
+        "eu-west-1",
+        /* sts_region_is_from_s3_client = */ false);
     EXPECT_EQ(provider.GetAWSCredentials().GetAWSAccessKeyId(), "web_identity_invalidation_access_key");
 
     provider.SetNeedRefresh();
@@ -2319,7 +2407,8 @@ TEST(IOTestAwsS3Client, WebIdentityRefreshWithoutTokenFileFailsOnlyInFiber)
         "arn:aws:iam::123456789012:role/clickhouse_unit_test_role",
         "/nonexistent/clickhouse_web_identity_token_for_gtest",
         "session",
-        "eu-west-1");
+        "eu-west-1",
+        /* sts_region_is_from_s3_client = */ false);
 
     /// A thread keeps the previous behavior.
     EXPECT_TRUE(provider.GetAWSCredentials().IsEmpty());
@@ -2384,7 +2473,8 @@ TEST(IOTestAwsS3Client, WebIdentityRefreshInFiber)
         "arn:aws:iam::123456789012:role/clickhouse_web_identity_fiber_role",
         Aws::String(token_file.data(), token_file.size()),
         "session",
-        "eu-west-1");
+        "eu-west-1",
+        /* sts_region_is_from_s3_client = */ false);
 
     /// A thread keeps the previous behavior: no credentials, cached as the result of this refresh.
     EXPECT_TRUE(provider.GetAWSCredentials().IsEmpty());

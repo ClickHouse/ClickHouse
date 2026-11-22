@@ -778,6 +778,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
 
 
     /// The caller's region is in `force_region`: `createClientConfiguration` leaves `region` at the AWS SDK default.
+    const bool sts_region_is_from_s3_client = tmp_region.empty();
     tmp_region = resolveStsRegion(tmp_region, aws_client_configuration.force_region);
     LOG_DEBUG(logger, "Resolved STS region to be {}", tmp_region);
 
@@ -803,7 +804,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
                 std::move(role_arn),
                 std::move(token_file),
                 std::move(session_name),
-                std::move(tmp_region));
+                std::move(tmp_region),
+                sts_region_is_from_s3_client);
         });
 }
 
@@ -813,7 +815,8 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     Aws::String role_arn_,
     Aws::String token_file_,
     Aws::String session_name_,
-    Aws::String tmp_region)
+    Aws::String tmp_region,
+    bool sts_region_is_from_s3_client)
     : role_arn(std::move(role_arn_))
     , token_file(std::move(token_file_))
     , session_name(std::move(session_name_))
@@ -839,7 +842,34 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
 
     client = std::make_unique<Aws::Internal::STSCredentialsClient>(aws_client_configuration);
+
+    /// The STS endpoint of the region of the S3 client is a host which the server did not access before that region
+    /// was taken into account, and `remote_url_allow_hosts` may list only the hosts which it accessed: the S3 endpoint
+    /// and `sts.us-east-1.amazonaws.com`. So this endpoint is used only while it is allowed, see `getClient`.
+    if (sts_region_is_from_s3_client && aws_client_configuration.endpointOverride.empty()
+        && aws_client_configuration.region != Aws::Region::US_EAST_1)
+    {
+        auto configuration_for_default_region = aws_client_configuration;
+        configuration_for_default_region.region = Aws::Region::US_EAST_1;
+        client_for_default_region = std::make_unique<Aws::Internal::STSCredentialsClient>(configuration_for_default_region);
+        remote_host_filter = &aws_client_configuration.remote_host_filter;
+    }
+
     LOG_INFO(logger, "Creating STS AssumeRole with web identity creds provider.");
+}
+
+Aws::Internal::STSCredentialsClient & AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::getClient() const
+{
+    /// It is checked for every request, because the list of the allowed hosts is reloaded with the configuration.
+    /// If the endpoint is not allowed, STS is called in `us-east-1`, as before the region of the S3 client was taken into account.
+    if (client_for_default_region && !remote_host_filter->checkURL(Poco::URI(client->GetEndpoint().c_str()), /* throw_on_error = */ false))
+        return *client_for_default_region;
+    return *client;
+}
+
+Aws::String AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::getStsEndpoint() const
+{
+    return getClient().GetEndpoint();
 }
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::GetAWSCredentials()
@@ -898,7 +928,11 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
     }
     Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
-    auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
+    auto & sts_client = getClient();
+    if (&sts_client != client.get())
+        LOG_INFO(logger, "STS endpoint {} is not allowed by `remote_url_allow_hosts`, using {}", client->GetEndpoint(), sts_client.GetEndpoint());
+
+    auto result = sts_client.GetAssumeRoleWithWebIdentityCredentials(request);
     if (result.creds.IsEmpty() && Silk::isInsideFiber())
     {
         throw_in_fiber_without_usable_credentials("STS returned no credentials");
