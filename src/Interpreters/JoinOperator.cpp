@@ -583,7 +583,7 @@ UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_exter
         if (ratio < 0 || ratio >= 1.)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_join should be >= 0 and < 1 ({:.3f})", ratio);
 
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
+        auto available_system_memory = getAvailableMemoryForSpilling();
         if (available_system_memory.has_value())
         {
             UInt64 ratio_in_bytes = static_cast<UInt64>(static_cast<double>(*available_system_memory) * ratio);
@@ -592,7 +592,7 @@ UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_exter
             else
                 threshold = ratio_in_bytes;
 
-            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {:.3f}, available system memory: {})",
+            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {:.3f}, available memory: {})",
                 formatReadableSizeWithBinarySuffix(ratio_in_bytes),
                 ratio,
                 formatReadableSizeWithBinarySuffix(*available_system_memory));

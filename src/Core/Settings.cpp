@@ -3990,8 +3990,8 @@ The ratio of available memory that is allowed for `GROUP BY`. Once reached,
 external memory is used for aggregation.
 
 For example, if set to `0.6`, `GROUP BY` will allow using 60% of the available memory
-(to server/user/merges) at the beginning of the execution, after that, it will
-start using external aggregation.
+(under the query's `max_memory_usage` and the server/user/merges limits) at the beginning of the execution, after that, it will
+start using external aggregation. The userspace page cache above `page_cache_min_size` counts as available memory.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
@@ -4047,7 +4047,7 @@ Possible values:
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
 The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
 
-For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (under the query's `max_memory_usage` and the server/user/merges limits) at the beginning of the execution, after that, it will start using external sort. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
 )", 0, \
@@ -4071,14 +4071,12 @@ See [DISTINCT in external memory](/reference/statements/select/distinct#distinct
 )", 0, \
         {"26.9", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
-Fraction of available server or user memory used to calculate the external `DISTINCT` threshold at
-the start of execution. For example, `0.5` uses half of the available memory.
+Fraction of the memory available under the query's `max_memory_usage` and the server or user memory limits,
+used to calculate the external `DISTINCT` threshold at the start of execution. For example, `0.5` uses half
+of the available memory. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
-server or user memory limit, the ratio has no effect.
-
-`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
-use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
+query, server or user memory limit, the ratio has no effect.
 )", 0, \
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
     \
@@ -4094,14 +4092,13 @@ See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
         {"26.10", 0, 0, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_set` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_set, 0.5, R"(
-Fraction of available server or user memory used to calculate the threshold for spilling the set of `IN`
-with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
+Fraction of the memory available under the query's `max_memory_usage` and the server or user memory limits,
+used to calculate the threshold for spilling the set of `IN` with a subquery to disk, at the start of
+execution. For example, `0.5` uses half of the available memory. The userspace page cache above
+`page_cache_min_size` counts as available memory.
 
 Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
-server or user memory limit, the ratio has no effect.
-
-`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
-use `max_bytes_before_external_set`, leaving room for additional memory usage.
+query, server or user memory limit, the ratio has no effect.
 )", 0, \
         {"26.11", 0.5, 0.5, "The default change to 0.5 was backported to 26.10."}, \
         {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
@@ -10942,7 +10939,7 @@ If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `def
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, a hash join spills the right-side data to disk. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. After the spill, the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (see `max_bytes_before_external_join`).
 
-For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
+For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (under the query's `max_memory_usage` and the server/user/merges limits) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 

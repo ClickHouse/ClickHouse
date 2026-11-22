@@ -132,12 +132,12 @@ static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before
     if (ratio < 0 || ratio >= 1.)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({:.3f})", ratio);
 
-    auto available_system_memory = getMostStrictAvailableSystemMemory();
+    auto available_system_memory = getAvailableMemoryForSpilling();
     if (available_system_memory.has_value())
     {
         size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
 
-        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {:.3f}, available system memory: {})",
+        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {:.3f}, available memory: {})",
             formatReadableSizeWithBinarySuffix(ratio_in_bytes),
             ratio,
             formatReadableSizeWithBinarySuffix(*available_system_memory));

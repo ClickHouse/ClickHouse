@@ -508,7 +508,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
         if (ratio < 0 || ratio >= 1.)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({:.3f})", ratio);
 
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
+        auto available_system_memory = getAvailableMemoryForSpilling();
         if (available_system_memory.has_value())
         {
             size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
@@ -517,7 +517,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
             else
                 threshold = ratio_in_bytes;
 
-            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {:.3f}, available system memory: {})",
+            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {:.3f}, available memory: {})",
                 formatReadableSizeWithBinarySuffix(ratio_in_bytes),
                 ratio,
                 formatReadableSizeWithBinarySuffix(*available_system_memory));
