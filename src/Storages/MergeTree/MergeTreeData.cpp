@@ -12702,7 +12702,8 @@ void MergeTreeData::optimizeDryRun(
             /*require_checksums=*/ true,
             is_broken_projection,
             /*is_cancelled=*/ [] { return false; },
-            /*throw_on_broken_projection=*/ true);
+            /*throw_on_broken_projection=*/ true,
+            /*allow_direct_io=*/ false);
 
         LOG_INFO(log, "OPTIMIZE DRY RUN: part {} passed checkDataPart", new_part->name);
     }

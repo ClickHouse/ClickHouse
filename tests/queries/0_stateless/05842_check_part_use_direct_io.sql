@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS t_idx_r2;
 
 -- Packed parts read their files through the page cache, so the parts have to be full.
 CREATE TABLE t_mt (x UInt64, s String) ENGINE = MergeTree ORDER BY x
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, min_merge_bytes_to_use_direct_io = 0;
 CREATE TABLE t_rmt (x UInt64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rmt', 'r1') ORDER BY x
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
@@ -19,6 +19,10 @@ INSERT INTO t_rmt SELECT number, toString(number) FROM numbers(1000);
 
 CHECK TABLE t_mt SETTINGS check_query_single_value_result = 1, log_comment = 'mt_on';
 CHECK TABLE t_rmt SETTINGS check_query_single_value_result = 1, log_comment = 'rmt_on';
+
+-- The part written by a dry run is checked through the page cache. The merge of a dry run reads with the query settings.
+OPTIMIZE TABLE t_mt DRY RUN PARTS 'all_1_1_0'
+SETTINGS optimize_dry_run_check_part = 1, min_bytes_to_use_direct_io = 0, log_comment = 'mt_dry_run';
 
 -- Skip indices both in skp_idx.packed and in a standalone file, and a column named like a skip index file. A fetched part
 -- is loaded without the consistency check, so the index of skp_idx.packed is not read yet (a prewarmed mark cache, or a
@@ -53,7 +57,7 @@ SELECT
         AND ProfileEvents['CreatedReadBufferOrdinary'] > 0 AS buffered
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('mt_on', 'rmt_on', 'idx_on', 'mt_off', 'rmt_off')
+    AND log_comment IN ('mt_on', 'rmt_on', 'idx_on', 'mt_dry_run', 'mt_off', 'rmt_off')
 ORDER BY log_comment;
 
 DROP TABLE t_mt;

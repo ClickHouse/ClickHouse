@@ -622,7 +622,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
     bool require_checksums,
     bool & is_broken_projection,
     std::function<bool()> is_cancelled,
-    bool throw_on_broken_projection)
+    bool throw_on_broken_projection,
+    bool allow_direct_io)
 {
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
@@ -691,7 +692,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     try
     {
         ReadSettings read_settings;
-        if (isCheckedWithDirectIO(*data_part))
+        if (allow_direct_io && isCheckedWithDirectIO(*data_part))
         {
             read_settings.local_fs_settings.direct_io_threshold = 1;
             read_settings.local_fs_settings.buffer_size = 4 * 1024 * 1024;
