@@ -914,6 +914,67 @@ def test_repeating_reapply_entry_may_go_when_the_original_is_out_again_on_arriva
     assert _verify(back_base, without_reapply, back) is not None
 
 
+def test_strict_revert_of_a_reapply_does_not_stand_on_a_cancelling_revert():
+    """All on one night: `#100`, `#200` reverting it with a `Bug Fix` entry,
+    `#300` re-applying it with no entry, and `#600` reverting `#300` with a
+    `Bug Fix` entry. `#600` takes the change out again: what it restores is
+    the revert `#200`, whose bullet has to go like that of any revert of
+    something of this release. So the entry of `#600` is optional too, and all
+    four bullets may go - or `#600` may keep one for a change of its own."""
+    first_revert = _bullet(INNER_REVERT, "Remove the thing, it broke.")
+    second_revert = _bullet(REMOVER, "Remove the thing once more.")
+    base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            FEATURE: [FEATURE_BULLET],
+            BUG_FIX: [first_revert, second_revert, UNRELATED_BULLET],
+            "NO CL ENTRY": [_revert_bullet(OUTER_REVERT)],
+        },
+    )
+    reverts = _analyze_with_ledger(base, {}, REVERTED_ON_ARRIVAL)
+    assert INNER_REVERT in reverts["cancelling"]
+    assert reverts["optional"] == [REMOVER]
+    gone = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(base, gone, reverts) is None
+    independent = _sections(
+        {BUG_FIX: [_bullet(REMOVER, "Fix something else."), UNRELATED_BULLET]}
+    )
+    assert _verify(base, independent, reverts) is None
+    # The first revert leaves no trace, whatever category it came under.
+    lingering = _sections({BUG_FIX: [first_revert, UNRELATED_BULLET]})
+    assert _verify(base, lingering, reverts) is not None
+
+
+def test_reapply_of_a_change_published_earlier_is_optional():
+    """`#50` is in a released section. Today `#200` reverts it and `#300`
+    reverts `#200`, with an entry about restoring the old behaviour. The entry
+    of `#50` cannot take a link, and nothing changed for users: the entry of
+    `#300` is optional, and the reverted `#200` leaves none."""
+    revert = _bullet(INNER_REVERT, "Stop fixing something old.")
+    restoring = _bullet(OUTER_REVERT, "Fix something old again.")
+    base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {BUG_FIX: [revert, restoring, UNRELATED_BULLET]},
+    )
+    reverts = _analyze_with_ledger(
+        base, {}, {INNER_REVERT: {"50"}, OUTER_REVERT: {INNER_REVERT}}
+    )
+    # A revert of a published change is a change of its own, not a cancelling
+    # one - but it is reverted here.
+    assert INNER_REVERT not in reverts["cancelling"]
+    assert reverts["credits"] == {INNER_REVERT: OUTER_REVERT}
+    assert reverts["brought_back"][OUTER_REVERT] == ["50"]
+    assert reverts["optional"] == [OUTER_REVERT]
+    gone = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(base, gone, reverts) is None
+    independent = _sections(
+        {BUG_FIX: [_bullet(OUTER_REVERT, "Fix something else."), UNRELATED_BULLET]}
+    )
+    assert _verify(base, independent, reverts) is None
+    reverted_kept = _sections({BUG_FIX: [revert, UNRELATED_BULLET]})
+    assert _verify(base, reverted_kept, reverts) is not None
+
+
 def test_optional_reapply_is_no_entry_for_a_later_reapply_to_stand_on():
     """`#300` and `#700` both re-apply `#100` with an entry repeating it (`#600`
     reverts `#300` in between), and `#800` reverts `#100` again, all on one

@@ -211,7 +211,11 @@ carries a change of its own with its own entry (case 6).
    in the same range). There is then no entry for the link to sit on. An entry
    that only repeats the original describes a change that is not in the
    release, so it is deleted with it; an entry describing a change of its own
-   that still ships is kept as a bullet.
+   that still ships is kept as a bullet. The same goes for a revert of a
+   revert that puts back nothing of this release for another reason: what it
+   restores is itself a revert of a change of this release (a revert of a
+   re-apply takes the change out again), or a change that was already
+   published in an earlier release.
 
    When a release is edited in daily increments, the three PRs arrive on
    three different days: the entry was integrated on the first day, deleted

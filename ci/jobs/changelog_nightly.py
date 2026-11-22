@@ -1177,26 +1177,35 @@ def analyze_reverts(text, anchor, range_prs=()):
 
     def carries_entry(pr):
         """Whether `pr` is in the release as something the link of a re-apply
-        can stand for: an original change that no standing revert takes out
-        (also one whose entry an edit pruned - it ships, and a re-apply of it
-        with an entry is where it shows), or a revert with an entry of its
-        own that the release keeps (not an `optional` one, which may well be
-        deleted). A plain re-apply in between is neither: when `#700`
-        re-applies `#300`, which had re-applied `#100`, what it brings back is
-        `#100`."""
-        if pr in credits or pr in optional:
+        can stand for, which is an entry that stays in the in-progress section:
+
+        - an original change of this cycle that no standing revert takes out
+          (also one whose entry an edit pruned - it ships, and a re-apply of it
+          with an entry is where it shows). Not one published in an earlier
+          release: putting that back changes nothing users do not have, and
+          its entry is in a released section that is not amended;
+        - a revert with an entry of its own that the release keeps. Not a
+          `cancelling` one, whose bullet has to go whatever category it came
+          under, and not an `optional` one, which may well be deleted.
+
+        A plain re-apply in between is neither: when `#700` re-applies `#300`,
+        which had re-applied `#100`, what it brings back is `#100`."""
+        if pr in credits or pr in optional or pr in cancelling:
             return False
         if pr not in targets:
-            return True
+            return pr in cycle_entries
         return bool(own_entry(pr)[1]) or pr in strict_prs or pr in restore
 
     # A raw entry of a re-apply that is placed on this run - arriving today, or
     # unplaced and brought back today - is kept because the re-apply puts
     # something back: its link belongs on that entry, or on a bullet of its
-    # own. When nothing it brought back ships, because the original change was
-    # reverted once more, there is no entry for the link to sit on, and a raw
-    # entry that only repeats the original describes a change that is not in
-    # the release. Whether it says more than that is a judgement the verifier
+    # own. When nothing it brought back is an entry of this release, there is
+    # no entry for the link to sit on, and a raw entry that only describes the
+    # re-apply describes nothing that is new in the release: the original
+    # change was reverted once more, or what the pull request restores is
+    # itself a revert of something of this release (a revert of a re-apply
+    # takes the change out again), or it was published in an earlier release.
+    # Whether the entry says more than that is a judgement the verifier
     # cannot make, so it neither demands the entry nor forbids it: such a
     # re-apply is exempt from retention like a cancelling revert, and allowed
     # a bullet of its own unlike one.
@@ -1619,11 +1628,13 @@ def _unplaced_reapply_note(group):
         )
     return (
         f"\n     This is the raw entry of a pull request that re-applied "
-        f"{brought}, and it was deleted before any edit had placed it. What "
-        f"it re-applied has been reverted once more, so it is offered rather "
-        f"than required: restore it as a bullet of its own only if it "
-        f"describes a change of its own that still ships, and leave it out if "
-        f"it only repeats the reverted change."
+        f"{brought}, and it was deleted before any edit had placed it. "
+        f"Nothing it put back is an entry of this release - the change was "
+        f"reverted once more, or what it restores is itself a revert of a "
+        f"change of this release, or was published earlier - so it is offered "
+        f"rather than required: restore it as a bullet of its own only if it "
+        f"describes a change of its own that ships and is new in this "
+        f"release, and leave it out otherwise."
     )
 
 
@@ -1693,7 +1704,7 @@ Re-applies with an entry of their own. These pull requests revert reverts of thi
 """
     if reverts.get("optional_new"):
         own += f"""
-Re-applies of changes that are out again. These pull requests also revert reverts of this release and have a changelog entry under one of the categories of point 3, but what they put back has been reverted once more, so that change is not in {version} and there is no entry for their link to sit on: {_pr_list(reverts["optional_new"])}. Read each with `gh pr view <N> --json title,body`. If its entry describes a change of its own that still ships, keep it as a bullet of its own. If it only repeats the reverted change, delete it: point 3 does not protect such an entry.
+Reverts of reverts with nothing of {version} to put back. These pull requests also revert reverts of this release and have a changelog entry under one of the categories of point 3, but nothing they put back is an entry of {version}, so there is no entry for their link to sit on: {_pr_list(reverts["optional_new"])}. Either the change they re-applied has been reverted once more, or what they restore is itself a revert of a change of {version} (they take that change out again), or it was already published in an earlier release. Read each with `gh pr view <N> --json title,body`. If its entry describes a change of its own that ships in {version} and is new in it, keep it as a bullet of its own. If it only describes the revert, or repeats a change that is out or was published before, delete it: point 3 does not protect such an entry.
 """
     outside = ""
     if reverts["case_five"]:
