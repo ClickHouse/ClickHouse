@@ -6,8 +6,6 @@ tags: ['Erreurs et exceptions']
 keywords: ['OOM', 'limite de mémoire dépassée']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="troubleshooting-out-of-memory-issues">
   ## Limite de mémoire dépassée pour la requête
 </div>
@@ -66,7 +64,15 @@ impossibles, par exemple dans le cas d’une sous-requête complexe. Dans ce cas
 sont toutes deux triées sur disque si elles ne tiennent pas en mémoire, ce qui permet de
 joindre de grandes tables.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Algorithmes de jointure" />
+<div className="ch-image-md">
+
+<Frame>
+
+![Algorithmes de jointure](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</Frame>
+
+</div>
 
 Depuis la version 20.3, ClickHouse prend en charge la valeur auto pour le paramètre `join_algorithm`.
 Cela indique à ClickHouse d’appliquer une approche adaptative des jointures, dans laquelle l’algorithme de hash join

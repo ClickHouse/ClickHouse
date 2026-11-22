@@ -21,7 +21,7 @@ public:
     WriteBufferFromEncryptedFile(
         size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
-        const String & key_,
+        const SecretString & key_,
         const FileEncryption::Header & header_,
         size_t old_file_size,
         bool use_adaptive_buffer_size_,
@@ -30,6 +30,8 @@ public:
     ~WriteBufferFromEncryptedFile() override;
 
     void sync() override;
+
+    void preFinalize() override;
 
     std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out)->getFileName(); }
 
