@@ -25,7 +25,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <Interpreters/DatabaseCatalog.h>
+
 #include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
@@ -64,6 +69,8 @@ setting). The value specified when the table is created overrides the global
 value for this setting.
 
 For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB.
 )", 0) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows
@@ -820,6 +827,13 @@ OPTIMIZE FINAL query.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
         {"26.1", true, true, "New setting"}) \
+    DECLARE(Bool, serialize_statistics_bounds_with_column_type, false, R"(
+When enabled, the minimum and maximum of `minmax` and `basic` statistics are written with the serialization
+of the column type, in statistics file format `V5`, instead of the generic `Field` encoding of `V4`.
+Older versions cannot read the statistics files of `V5`, so do not enable it before all replicas are upgraded:
+the statistics of the parts written with it have to be rematerialized after a downgrade.
+)", 0, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)
@@ -861,10 +875,11 @@ ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
 ```
 )", 0, \
         {"25.10", "", "", "New setting."}) \
-    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 512, R"(
+    DECLARE(NonZeroUInt64, text_index_dictionary_block_size, 8192, R"(
 Default dictionary block size for text indexes.
 Can be overridden by explicit `dictionary_block_size` index argument.
 )", 0, \
+        {"26.11", 512, 8192, "Increase the default dictionary block size of text indexes"}, \
         {"26.6", 512, 512, "New setting"}) \
     DECLARE(Bool, text_index_dictionary_block_frontcoding_compression, true, R"(
 Default front-coding compression for text index dictionary blocks.
@@ -1085,12 +1100,12 @@ one step takes longer time
     DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
 Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
 
-Only applies to merges that do not change rows, i.e. plain `MergeTree`
-(`Ordinary` merge mode). It has no effect on engines with merge-time
-semantics such as `ReplacingMergeTree`, `CollapsingMergeTree`,
-`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
-`GraphiteMergeTree` and `VersionedCollapsingMergeTree`, which keep using the
-default queue regardless of this setting.
+Only applies to merges that do not change rows: the merges of plain `MergeTree` parts
+(`Ordinary` merge mode) and of normal projection parts. The merges of parts of engines with
+merge-time semantics, such as `ReplacingMergeTree`, `CollapsingMergeTree`, `SummingMergeTree`,
+`AggregatingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree` and
+`VersionedCollapsingMergeTree`, and of aggregate projection parts keep using the default queue
+regardless of this setting.
 )", 0, \
         {"26.8", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."}) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
@@ -1950,6 +1965,10 @@ Maximum number of replicas across the service that may concurrently hold the par
 Maximum number of replicas within one availability zone that may concurrently hold the parts-update leader role. Both this limit and `shared_merge_tree_max_parts_update_leaders_in_total` apply. Only available in ClickHouse Cloud.
 )", 0, \
         {"25.1", 2, 2, "Cloud sync"}) \
+    DECLARE(Float, shared_merge_tree_parts_update_leader_tables_budget_factor, 2.0, R"(
+A replica does not take new parts update leader locks once it holds `factor * attached SharedMergeTree tables * shared_merge_tree_max_parts_update_leaders_per_az / active replicas in its AZ` of them. 0 disables the limit. Only available in ClickHouse Cloud.
+)", 0, \
+        {"26.11", 0, 2.0, "New setting"}) \
     DECLARE(UInt64, shared_merge_tree_leader_update_period_seconds, 30, R"(
 Maximum period to recheck leadership for parts update. Only available in
 ClickHouse Cloud
@@ -1966,6 +1985,13 @@ Read virtual parts from leader when possible. Only available in ClickHouse
 Cloud
 )", 0, \
         {"25.1", true, true, "Cloud sync"}) \
+    DECLARE(UInt64, shared_merge_tree_max_noop_updates_from_leader, 16, R"(
+Number of consecutive metadata updates that changed neither virtual parts nor
+mutations, after which a follower reads metadata from Keeper instead of the
+parts update leader until something changes again. 0 disables the switch. Only
+available in ClickHouse Cloud
+)", 0, \
+        {"26.11", 16, 16, "New setting: after this many consecutive no-op metadata updates a follower reads metadata from Keeper instead of the parts update leader"}) \
     DECLARE(UInt64, shared_merge_tree_initial_parts_update_backoff_ms, 50, R"(
 Initial delay, in milliseconds, before retrying a `SharedMergeTree` parts-update operation. Repeated retries increase the delay up to `shared_merge_tree_max_parts_update_backoff_ms`. Only available in ClickHouse Cloud.
 )", 0, \
@@ -2206,7 +2232,7 @@ The maximum postpone time for failed replicated task. The value is used if the t
         {"25.4", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."}) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
     )", 0) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
@@ -2538,8 +2564,8 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0, \
-        {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
-        {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
+        {"26.7", "basic, uniq_v2", "basic, uniq_v2", "26.7 replaced `minmax, uniq` with `basic, uniq_v2` (`basic` is a superset of the deprecated `minmax`, `uniq_v2` has less overhead on inserts, merges and memory). The change is recorded at 26.4, so that `compatibility` with 26.4 to 26.6 does not bring back `minmax, uniq`."}, \
+        {"26.4", "", "basic, uniq_v2", "Enable auto statistics by default. 26.4 to 26.6 shipped `minmax, uniq`, but `compatibility` with these versions gives `basic, uniq_v2`: statistics affect only query planning, not results, and merging the large `uniq` states of every part makes query planning many times slower in newer versions."}, \
         {"25.10", "", "", "New setting"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -3400,6 +3426,16 @@ SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) c
             res.emplace_back(String{setting.getName()}, value);
     }
     return res;
+}
+
+bool MergeTreeSettings::isSystemDatabaseForDisks(const String & database_name)
+{
+#if CLICKHOUSE_CLOUD
+    /// The tables of the former local `system` database keep its exemption.
+    if (SharedSystemDatabase::isLocalDatabase(database_name))
+        return true;
+#endif
+    return database_name == DatabaseCatalog::SYSTEM_DATABASE;
 }
 
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
