@@ -15,6 +15,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/expressionSourceColumns.h>
 
 #include <algorithm>
@@ -138,6 +139,8 @@ void checkRowPoliciesBeforeAlter(
     if (std::any_of(commands.begin(), commands.end(), modifiesColumn))
     {
         auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*metadata_snapshot);
+        /// as the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one
+        removeImplicitStatistics(new_metadata->columns);
         commands.apply(*new_metadata, context, share_nested_offsets);
         new_storage_snapshot = table->getStorageSnapshotWithoutData(new_metadata, context);
     }
