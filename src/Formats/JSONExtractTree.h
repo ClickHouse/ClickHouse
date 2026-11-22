@@ -41,6 +41,7 @@ struct JSONExtractInsertSettings
     /// as non-integral floats (e.g. `"3.14"`) are not silently truncated to integer types.
     /// Used inside `VariantNode` so that `Variant(IntT, FloatT)` picks the float member
     /// for fractional values instead of silently dropping the fractional part.
+    /// Also makes `Bool` accept only JSON booleans, so `Variant(Bool, IntT)` keeps `2` as `IntT`.
     bool no_int_truncation_from_double = false;
 };
 

@@ -367,7 +367,7 @@ public:
             return false;
         }
 
-        if (is_bool_type && !insert_settings.allow_type_conversion)
+        if (is_bool_type && (!insert_settings.allow_type_conversion || insert_settings.no_int_truncation_from_double))
         {
             if (!element.isBool())
                 return false;
@@ -423,7 +423,7 @@ public:
             return false;
         }
 
-        if (this->is_bool_type && !insert_settings.allow_type_conversion)
+        if (this->is_bool_type && (!insert_settings.allow_type_conversion || insert_settings.no_int_truncation_from_double))
         {
             if (!element.isBool())
                 return false;

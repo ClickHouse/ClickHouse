@@ -1,0 +1,18 @@
+-1	-1	Int64
+0	0	Int64
+1	1	Int64
+2	2	Int64
+255	255	Int64
+256	256	Int64
+false	false	Bool
+true	true	Bool
+2.5	Float64
+2	Float64
+7	String
+true	String
+2	Int64
+[2,255,true]	['Int64','Int64','Bool']
+2	Int64	7	String
+true	Bool	false	Bool
+true	Bool
+true
