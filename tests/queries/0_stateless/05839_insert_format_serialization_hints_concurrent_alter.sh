@@ -28,8 +28,8 @@ $CLICKHOUSE_CLIENT --query "
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $FP"
 
-# Over HTTP the data is inlined into the query, so the input format gets the serialization hints.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_parsing_to_custom_serialization=1" \
+# Over HTTP the data is inlined into the query, so the input format gets the serialization hints (not for an asynchronous insert).
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_parsing_to_custom_serialization=1&async_insert=0" \
     --data-binary @- <<< 'INSERT INTO t_hints_alter FORMAT JSONEachRow {"k": 1, "s": {"a": "p", "b": "q"}}' &
 insert_pid=$!
 
