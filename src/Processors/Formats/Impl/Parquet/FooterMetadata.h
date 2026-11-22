@@ -7,6 +7,7 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <atomic>
 #include <optional>
 #include <string_view>
 
@@ -64,6 +65,8 @@ public:
 
     /// Reads the footer of the Parquet file `in`.
     static FooterMetadata read(ReadBuffer & in, const FormatSettings & format_settings);
+    /// The same, but returns `std::nullopt` if `is_cancelled` gets set while a non-seekable input is read into memory.
+    static std::optional<FooterMetadata> read(ReadBuffer & in, const FormatSettings & format_settings, const std::atomic<int> & is_cancelled);
     /// Parses a serialized `FileMetaData`. The schema can be nested up to `max_schema_depth` deep, 0 means unlimited.
     static FooterMetadata parse(const char * data, size_t size, size_t max_schema_depth);
 
@@ -89,6 +92,8 @@ public:
     static T decodeStatisticsValue(std::string_view encoded);
 
 private:
+    static std::optional<FooterMetadata> readImpl(ReadBuffer & in, const FormatSettings & format_settings, const std::atomic<int> * is_cancelled);
+
     struct WriterVersion
     {
         String application = "unknown";

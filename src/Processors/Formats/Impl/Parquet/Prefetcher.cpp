@@ -30,12 +30,16 @@ namespace ProfileEvents
 namespace DB::Parquet
 {
 
-void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatParserSharedResourcesPtr parser_shared_resources_)
+void Prefetcher::init(
+    ReadBuffer * reader_,
+    const ReadOptions & options,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    const std::atomic<int> * is_cancelled)
 {
     min_bytes_for_seek = options.min_bytes_for_seek;
     bytes_per_read_task = options.bytes_per_read_task;
     parser_shared_resources = parser_shared_resources_;
-    determineReadModeAndFileSize(reader_, options);
+    determineReadModeAndFileSize(reader_, options, is_cancelled);
     range_sets.resize(1);
 }
 
@@ -55,7 +59,7 @@ Prefetcher::~Prefetcher()
     }));
 }
 
-void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options)
+void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOptions & options, const std::atomic<int> * is_cancelled)
 {
     /// `input_format_allow_seeks`. When seeks are disallowed we read the whole file sequentially
     /// below instead of fetching the footer and the needed column ranges.
@@ -99,7 +103,10 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
         }
 
         WriteBufferFromVector<PaddedPODArray<char>> out(entire_file);
-        copyData(*reader_, out);
+        if (is_cancelled)
+            copyData(*reader_, out, *is_cancelled);
+        else
+            copyData(*reader_, out);
         out.finalize();
 
         read_mode = ReadMode::EntireFileIsInMemory;

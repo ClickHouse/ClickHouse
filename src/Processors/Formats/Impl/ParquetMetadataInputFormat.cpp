@@ -221,7 +221,10 @@ Chunk ParquetMetadataInputFormat::read()
     if (done)
         return res;
 
-    const auto metadata = Parquet::FooterMetadata::read(*in, format_settings);
+    const auto maybe_metadata = Parquet::FooterMetadata::read(*in, format_settings, is_stopped);
+    if (!maybe_metadata)
+        return res;
+    const auto & metadata = *maybe_metadata;
     const auto & file_metadata = metadata.metadata();
 
     const auto & header = getPort().getHeader();

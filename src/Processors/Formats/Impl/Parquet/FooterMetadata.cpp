@@ -653,10 +653,22 @@ private:
 
 FooterMetadata FooterMetadata::read(ReadBuffer & in, const FormatSettings & format_settings)
 {
+    return *readImpl(in, format_settings, nullptr);
+}
+
+std::optional<FooterMetadata> FooterMetadata::read(ReadBuffer & in, const FormatSettings & format_settings, const std::atomic<int> & is_cancelled)
+{
+    return readImpl(in, format_settings, &is_cancelled);
+}
+
+std::optional<FooterMetadata> FooterMetadata::readImpl(ReadBuffer & in, const FormatSettings & format_settings, const std::atomic<int> * is_cancelled)
+{
     ReadOptions options;
     options.format = format_settings;
     Prefetcher prefetcher;
-    prefetcher.init(&in, options, /* parser_shared_resources_ */ nullptr);
+    prefetcher.init(&in, options, /* parser_shared_resources_ */ nullptr, is_cancelled);
+    if (is_cancelled && is_cancelled->load())
+        return std::nullopt;
 
     const size_t file_size = prefetcher.getFileSize();
     if (file_size < 8)

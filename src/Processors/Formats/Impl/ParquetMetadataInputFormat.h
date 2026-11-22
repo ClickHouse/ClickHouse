@@ -70,6 +70,11 @@ public:
 private:
     Chunk read() override;
 
+    void onCancel() noexcept override
+    {
+        is_stopped = 1;
+    }
+
     static void fillColumnsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column);
     static void fillRowGroupsMetadata(const Parquet::FooterMetadata & metadata, IColumn & column);
     static void fillColumnChunksMetadata(const Parquet::FooterMetadata & metadata, size_t row_group, IColumn & column);
@@ -80,6 +85,8 @@ private:
 
     const FormatSettings format_settings;
     bool done = false;
+    /// Stops reading a non-seekable input into memory when the query is cancelled.
+    std::atomic<int> is_stopped{0};
 };
 
 class ParquetMetadataSchemaReader final : public ISchemaReader
