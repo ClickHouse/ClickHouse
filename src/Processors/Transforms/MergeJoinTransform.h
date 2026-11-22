@@ -362,4 +362,98 @@ protected:
     void onFinish() override;
 };
 
+/// INNER ALL join of N inputs sorted by the same key tuple, in one pass. Every output row combines
+/// one row of every input with an equal key. The output is sorted by the key, like that of
+/// `MergeJoinAlgorithm`.
+class MultiwayMergeJoinAlgorithm final : public IMergingAlgorithm
+{
+public:
+    /// Where an output column comes from.
+    struct OutputColumn
+    {
+        size_t input = 0;
+        size_t position = 0;
+    };
+
+    MultiwayMergeJoinAlgorithm(
+        const SharedHeaders & input_headers,
+        const VectorWithMemoryTracking<Names> & key_names,
+        VectorWithMemoryTracking<OutputColumn> output_columns_,
+        size_t max_block_size_,
+        int null_direction_hint_);
+
+    ~MultiwayMergeJoinAlgorithm() override;
+
+    [[nodiscard]] const char * getName() const override { return "MultiwayMergeJoinAlgorithm"; }
+    void initialize(Inputs inputs) override;
+    void consume(Input & input, size_t source_num) override;
+    Status merge() override;
+
+    void logElapsed(double seconds) const;
+    [[nodiscard]] MergedStats getMergedStats() const override;
+
+private:
+    /// Rows of one input that go to the current output block.
+    struct InputBatch
+    {
+        /// While the rows are consecutive they are kept as a range, and `indices` stays empty.
+        bool contiguous = true;
+        size_t begin = 0;
+        size_t size = 0;
+        PaddedPODArray<UInt64> indices;
+
+        void appendRange(size_t from, size_t count);
+        void appendRepeated(size_t row, size_t count);
+        void clear();
+
+    private:
+        void materialize();
+    };
+
+    struct RangeState;
+
+    bool align(size_t & target, ssize_t & required_source);
+    size_t alignedUniqueRun(size_t limit) const;
+    void appendProduct(const VectorWithMemoryTracking<size_t> & starts, const VectorWithMemoryTracking<size_t> & lengths);
+    Chunk emitBatch(size_t num_rows);
+    std::optional<Status> handleRangeState();
+
+    VectorWithMemoryTracking<FullMergeJoinCursor> cursors;
+    VectorWithMemoryTracking<InputBatch> batches;
+    VectorWithMemoryTracking<OutputColumn> output_columns;
+    std::unique_ptr<RangeState> range_state;
+
+    size_t max_block_size;
+    int null_direction_hint;
+    /// Equal keys of these types have equal bytes, so aligned runs can be found with `memcmp`.
+    bool fast_path_key_types = true;
+
+    struct Statistic
+    {
+        size_t num_blocks = 0;
+        size_t num_rows = 0;
+        size_t num_bytes = 0;
+    };
+    Statistic stat;
+
+    LoggerPtr log;
+};
+
+class MultiwayMergeJoinTransform final : public IMergingTransform<MultiwayMergeJoinAlgorithm>
+{
+public:
+    MultiwayMergeJoinTransform(
+        const SharedHeaders & input_headers,
+        SharedHeader output_header,
+        const VectorWithMemoryTracking<Names> & key_names,
+        VectorWithMemoryTracking<MultiwayMergeJoinAlgorithm::OutputColumn> output_columns,
+        size_t max_block_size,
+        int null_direction_hint);
+
+    String getName() const override { return "MultiwayMergeJoinTransform"; }
+
+protected:
+    void onFinish() override;
+};
+
 }

@@ -374,6 +374,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 bool optimizeLazyMaterialization3(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+/// Replace a subtree of `full_sorting_merge` inner joins on one key by one merge join of all its inputs.
+void optimizeMultiwayMergeJoin(QueryPlan::Node & root);
 void optimizeJoinByShards(QueryPlan::Node & root);
 /// Mark hash joins with a probe-side MergeTree read prunable by the join's runtime filter:
 /// the reading is then gated on the build completion seal which delivers the filter for
