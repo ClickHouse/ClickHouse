@@ -380,3 +380,31 @@ def test_mapped_role_with_legacy_escaped_name_not_granted_after_recreation(ldap_
         instance1.query("SYSTEM RELOAD USERS", user="common_user", password="qwerty")
         instance1.query("DROP ROLE IF EXISTS `ldap.recreated.role`", user="common_user", password="qwerty")
         delete_ldap_group(ldap_cluster, group_cn=group_cn.replace("\\", "\\\\"))
+
+
+def test_failed_role_reconciliation_is_retried(ldap_cluster):
+    # The mapped role is renamed, so the mapped name does not resolve to it anymore and the role must be revoked.
+    # The first attempt to update the user fails. The change must stay pending and be reconciled
+    # on the next notification, even though that notification is not about this role.
+    admin = {"user": "common_user", "password": "qwerty"}
+    group_cn = "clickhouse-retried_role"
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn="johndoe")
+
+    try:
+        instance1.query("CREATE ROLE retried_role", **admin)
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == TSV([["retried_role"]])
+
+        instance1.query("SYSTEM ENABLE FAILPOINT ldap_access_storage_fail_role_reconciliation", **admin)
+        instance1.query("ALTER ROLE retried_role RENAME TO retried_role_renamed", **admin)
+
+        instance1.query("CREATE ROLE retried_role_unrelated", **admin)
+
+        assert instance1.query(
+            "SELECT role_name FROM system.current_roles", user="johndoe", password="qwertz"
+        ) == ""
+    finally:
+        instance1.query("SYSTEM DISABLE FAILPOINT ldap_access_storage_fail_role_reconciliation", **admin)
+        instance1.query("DROP ROLE IF EXISTS retried_role, retried_role_renamed, retried_role_unrelated", **admin)
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
