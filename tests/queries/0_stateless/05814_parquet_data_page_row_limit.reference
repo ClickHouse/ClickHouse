@@ -1,0 +1,7 @@
+limit 10000
+1000
+pruned pages: yes
+limit 0
+1000
+pruned pages: no
+nested pages: 10

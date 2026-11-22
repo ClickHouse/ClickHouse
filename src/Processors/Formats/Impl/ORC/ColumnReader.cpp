@@ -366,9 +366,10 @@ public:
         : ColumnReader(type, stripe)
         , writer_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getWriterTimezone())
         , reader_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getReaderTimezone())
-        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone())
         , writer_offset_of(writer_timezone)
         , reader_offset_of(reader_timezone)
+        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone()
+              || (writer_offset_of.fixedOffset() && writer_offset_of.fixedOffset() == reader_offset_of.fixedOffset()))
     {
         /// The base of the seconds is 2015-01-01 00:00:00 in the time zone of the writer.
         static constexpr Int64 UTC_2015_01_01 = 1420070400;
@@ -459,9 +460,9 @@ private:
 
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
-    const bool same_timezone;
     const TimezoneOffset writer_offset_of;
     const TimezoneOffset reader_offset_of;
+    const bool same_timezone;
     Int64 epoch_offset = 0;
     std::unique_ptr<IntRleDecoder> seconds_rle;
     std::unique_ptr<IntRleDecoder> nanos_rle;
@@ -549,7 +550,7 @@ protected:
 
     /// The scale of each value is read from the file. The valid scales are from 0 to 38, the bound
     /// also keeps the differences of the scales and the rescaling work small.
-    Int32 getValueScale(Int64 value_scale) const
+    [[nodiscard]] Int32 getValueScale(Int64 value_scale) const
     {
         if (value_scale < -Int64(MAX_PRECISION_128) || value_scale > Int64(MAX_PRECISION_128))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Decimal scale {} is out of range in ORC column {}", value_scale, column_id);
@@ -1048,7 +1049,7 @@ public:
     }
 
 private:
-    size_t checkedTag(UInt8 tag) const
+    [[nodiscard]] size_t checkedTag(UInt8 tag) const
     {
         if (tag >= num_children)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid union tag {} for union with {} children in ORC column {}", static_cast<UInt32>(tag), num_children, column_id);
