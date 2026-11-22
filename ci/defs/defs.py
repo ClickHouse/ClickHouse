@@ -579,7 +579,7 @@ class ArtifactNames:
     UNITTEST_ARM_DEBUG = "UNITTEST_ARM_DEBUG"
     UNITTEST_ARM_ASAN_UBSAN = "UNITTEST_ARM_ASAN_UBSAN"
     UNITTEST_ARM_TSAN = "UNITTEST_ARM_TSAN"
-    UNITTEST_ARM_MSAN = "UNITTEST_ARM_MSAN"
+    UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
     # Packages are built for the release builds only - they are what gets published, and
@@ -858,7 +858,7 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_ARM_DEBUG,
             ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
             ArtifactNames.UNITTEST_ARM_TSAN,
-            ArtifactNames.UNITTEST_ARM_MSAN,
+            ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )

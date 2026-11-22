@@ -99,7 +99,7 @@ BUILD_TYPE_TO_DEB_PACKAGE_TYPE = {
 }
 
 # Outputs that nothing reads after a CI build: the artifacts of these builds are
-# `programs/self-extracting/clickhouse`, the packages and the ARM `unit_tests_dbms` (see `ci/defs/`),
+# `programs/self-extracting/clickhouse`, the packages and `unit_tests_dbms` (see `ci/defs/`),
 # and their post hooks read the plain binaries of the release builds only.
 PLAIN_BINARIES = (
     "programs/clickhouse",
@@ -589,10 +589,10 @@ def main():
             BuildTypes.AMD_DEBUG,
             BuildTypes.AMD_ASAN_UBSAN,
             BuildTypes.AMD_TSAN,
-            BuildTypes.AMD_MSAN,
+            BuildTypes.ARM_MSAN,
         ):
             # `clickhouse-bundle` without `clickhouse-tests`: the unit tests run on
-            # the aarch64 builds.
+            # the build of the other architecture.
             targets = "self-extracting"
         elif build_type in (
             BuildTypes.AMD_TIDY,

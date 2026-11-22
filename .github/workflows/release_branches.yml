@@ -1323,9 +1323,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   unit_tests_msan:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, amd-large]
     needs:
-    - build_arm_msan
+    - build_amd_msan
     - config_workflow
     - dockers_build_amd
     - dockers_build_arm

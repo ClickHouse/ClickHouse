@@ -322,11 +322,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_darwin
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1086,10 +1086,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1149,10 +1149,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1212,10 +1212,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1498,10 +1498,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1561,11 +1561,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1629,7 +1629,6 @@ jobs:
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1689,11 +1688,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1753,11 +1752,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1817,11 +1816,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1881,11 +1880,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -1945,11 +1944,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2009,11 +2008,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2073,11 +2072,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2137,11 +2136,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2561,10 +2560,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2624,10 +2623,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2687,10 +2686,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2750,10 +2749,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2813,10 +2812,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2876,10 +2875,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -2940,10 +2939,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3004,10 +3003,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3068,10 +3067,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3132,10 +3131,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3196,10 +3195,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3260,10 +3259,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3324,10 +3323,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3388,10 +3387,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3452,10 +3451,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3516,10 +3515,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3625,10 +3624,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3688,10 +3687,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3751,10 +3750,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -3994,11 +3993,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4058,10 +4057,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4121,10 +4120,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4184,10 +4183,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4247,10 +4246,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4310,10 +4309,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4373,10 +4372,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4436,10 +4435,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4499,10 +4498,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4562,10 +4561,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4625,10 +4624,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4688,10 +4687,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4751,10 +4750,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4814,10 +4813,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4877,10 +4876,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -4940,10 +4939,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5003,10 +5002,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5067,10 +5066,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5131,10 +5130,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5196,10 +5195,10 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_binary
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5259,10 +5258,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5323,10 +5322,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5387,10 +5386,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5451,10 +5450,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5515,10 +5514,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5579,10 +5578,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5643,10 +5642,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5707,10 +5706,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5772,10 +5771,10 @@ jobs:
     - build_amd_asan_ubsan
     - build_amd_binary
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -5966,9 +5965,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "PR" --ci --timestamp
 
   unit_tests_msan:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-amd-large]
     needs:
-    - build_arm_msan
+    - build_amd_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -6101,9 +6100,9 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan, function_prop_fuzzer)' --workflow "PR" --ci --timestamp
 
   unit_tests_msan_function_prop_fuzzer:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-amd-large]
     needs:
-    - build_arm_msan
+    - build_amd_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -6150,10 +6149,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -6886,10 +6885,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -6949,10 +6948,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7012,11 +7011,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7080,7 +7079,6 @@ jobs:
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7207,10 +7205,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7270,10 +7268,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7333,10 +7331,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7396,10 +7394,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7459,6 +7457,7 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
@@ -7589,10 +7588,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7652,10 +7651,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7715,11 +7714,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7783,7 +7782,6 @@ jobs:
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7910,10 +7908,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -7973,10 +7971,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -8036,11 +8034,11 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_amd_tsan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -8104,7 +8102,6 @@ jobs:
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -10834,10 +10831,10 @@ jobs:
     needs:
     - build_amd_asan_ubsan
     - build_amd_debug
+    - build_amd_msan
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4
@@ -10927,7 +10924,6 @@ jobs:
     - build_arm_asan_ubsan
     - build_arm_binary
     - build_arm_debug
-    - build_arm_msan
     - build_arm_tidy_1_4
     - build_arm_tidy_2_4
     - build_arm_tidy_3_4

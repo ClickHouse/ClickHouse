@@ -480,7 +480,10 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MSAN,
-            provides=[ArtifactNames.CH_AMD_MSAN],
+            provides=[
+                ArtifactNames.CH_AMD_MSAN,
+                ArtifactNames.UNITTEST_AMD_MSAN,
+            ],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -514,10 +517,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
-            provides=[
-                ArtifactNames.CH_ARM_MSAN,
-                ArtifactNames.UNITTEST_ARM_MSAN,
-            ],
+            provides=[ArtifactNames.CH_ARM_MSAN],
             runs_on=RunnerLabels.ARM_MEDIUM_CPU,
         ),
         Job.ParamSet(
@@ -1417,10 +1417,11 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.UNITTEST_ARM_TSAN],
         ),
+        # aarch64 MSan reports uninitialized values in fiber code that x86-64 MSan finds clean.
         Job.ParamSet(
             parameter="msan",
-            runs_on=RunnerLabels.ARM_LARGE,
-            requires=[ArtifactNames.UNITTEST_ARM_MSAN],
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="asan_ubsan, function_prop_fuzzer",
@@ -1436,8 +1437,8 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="msan, function_prop_fuzzer",
-            runs_on=RunnerLabels.ARM_LARGE,
-            requires=[ArtifactNames.UNITTEST_ARM_MSAN],
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_AMD_MSAN],
             command=_fuzzer_command,
         ),
     )
