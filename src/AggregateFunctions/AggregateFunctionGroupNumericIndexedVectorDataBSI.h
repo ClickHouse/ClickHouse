@@ -79,6 +79,8 @@ public:
     using IndexType = IT;
     using ValueType = VT;
 
+    static_assert(sizeof(IndexType) <= 4, "IndexType must be at most 32 bits in BSI format");
+
     static constexpr auto type = "BSI";
 
     /** For Float ValueType:
@@ -174,7 +176,7 @@ public:
         initialize(integer_bit_num, fraction_bit_num);
     }
 
-    std::string shortDebugString() const
+    [[nodiscard]] std::string shortDebugString() const
     {
         JSONBuilder::JSONMap debug_info_map;
 
@@ -235,7 +237,7 @@ public:
                 MAX_TOTAL_BIT_NUM);
     }
 
-    bool isEmpty() const
+    [[nodiscard]] bool isEmpty() const
     {
         if (zero_indexes->size() > 0)
             return false;
@@ -248,7 +250,7 @@ public:
         return true;
     }
 
-    bool isValueTypeSigned() const
+    [[nodiscard]] bool isValueTypeSigned() const
     {
         WhichDataType second_which(DataTypeNumber<ValueType>().getTypeId());
         if (second_which.isInt() || second_which.isFloat())
@@ -334,7 +336,7 @@ public:
         }
     }
 
-    std::shared_ptr<Roaring> getAllNonZeroIndex() const
+    [[nodiscard]] std::shared_ptr<Roaring> getAllNonZeroIndex() const
     {
         auto bm = std::make_shared<Roaring>();
         const UInt32 total_bit_num = getTotalBitNum();
@@ -345,7 +347,7 @@ public:
         return bm;
     }
 
-    std::shared_ptr<Roaring> getAllIndex() const
+    [[nodiscard]] std::shared_ptr<Roaring> getAllIndex() const
     {
         auto bm = getAllNonZeroIndex();
         bm->rb_or(*zero_indexes);
@@ -354,7 +356,7 @@ public:
 
     /// Whether any bit slice holds the index, that is, whether its value is not zero. `lookup` is the
     /// index mapped through `make_unsigned`, the domain in which `rb_contains` compares it.
-    bool hasNonZeroValue(UInt64 lookup) const
+    [[nodiscard]] bool hasNonZeroValue(UInt64 lookup) const
     {
         const UInt32 total_bit_num = getTotalBitNum();
         for (size_t i = 0; i < total_bit_num; ++i)
@@ -387,7 +389,7 @@ public:
         data_array = rhs.data_array;
     }
 
-    inline UInt32 getTotalBitNum() const
+    [[nodiscard]] inline UInt32 getTotalBitNum() const
     {
         checkIntergerFractionBitNum(integer_bit_num, fraction_bit_num);
         return integer_bit_num + fraction_bit_num;
@@ -466,32 +468,29 @@ public:
         return max_integer_bit_num + max_fraction_bit_num;
     }
 
+    /// The throw path is kept out of line: `getDataArrayAt` is inlined into thousands of call
+    /// sites across all template instantiations, and inlining the exception construction into
+    /// each of them bloats the object file and slows down compilation.
+    [[noreturn]] NO_INLINE void throwDataArrayIndexOutOfBounds(size_t index) const
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Array index out of bounds. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
+            index,
+            integer_bit_num,
+            fraction_bit_num,
+            data_array.size());
+    }
     std::shared_ptr<Roaring> & getDataArrayAt(size_t index)
     {
         if (index >= data_array.size())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Array index out of bounds. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
-                index,
-                integer_bit_num,
-                fraction_bit_num,
-                data_array.size());
-        }
+            throwDataArrayIndexOutOfBounds(index);
         return data_array[index];
     }
-    const std::shared_ptr<Roaring> & getDataArrayAt(size_t index) const
+    [[nodiscard]] const std::shared_ptr<Roaring> & getDataArrayAt(size_t index) const
     {
         if (index >= data_array.size())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Array index out of bounds in const. index: {}; integer_bit_num: {}; fraction_bit_num: {}; data_array_size: {}",
-                index,
-                integer_bit_num,
-                fraction_bit_num,
-                data_array.size());
-        }
+            throwDataArrayIndexOutOfBounds(index);
         return data_array[index];
     }
 
@@ -651,7 +650,7 @@ public:
         res.pointwiseSubtractInplace(rhs_vec);
     }
 
-    bool allValuesEqualOne() const
+    [[nodiscard]] bool allValuesEqualOne() const
     {
         if (zero_indexes->size() > 0)
             return false;
@@ -1756,11 +1755,6 @@ public:
     {
         checkValidValue(value);
 
-        if (sizeof(IndexType) > 4)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
-        }
-
         /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
         /// index through `make_unsigned` instead of sign-extending it to the storage width.
         const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
@@ -1866,7 +1860,7 @@ public:
     }
 
     /// return origin_vector(this)[index]
-    ValueType getValue(IndexType index) const
+    [[nodiscard]] ValueType getValue(IndexType index) const
     {
         /// `zero_indexes` is not consulted: an index with no bits set is zero anyway, and the set is
         /// not cleared when a later update makes the value non-zero. Deriving the value from the bit
@@ -1889,7 +1883,7 @@ public:
     }
 
     /// sum(origin_vector(this))
-    Float64 getAllValueSum() const
+    [[nodiscard]] Float64 getAllValueSum() const
     {
         const UInt32 total_bit_num = getTotalBitNum();
         if (total_bit_num == 0)
@@ -1952,7 +1946,7 @@ public:
     }
 
     /// return the number of unique indexes in the vector whose value is exist
-    UInt64 getCardinality() const
+    [[nodiscard]] UInt64 getCardinality() const
     {
         Roaring total_bm;
         const UInt32 total_bit_num = getTotalBitNum();

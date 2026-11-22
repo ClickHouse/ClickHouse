@@ -13,6 +13,20 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static std::optional<UInt64> getMostStrictAvailableMemory(MemoryTracker * memory_tracker)
+{
+    std::optional<UInt64> available;
+    for (; memory_tracker; memory_tracker = memory_tracker->getParent())
+    {
+        if (Int64 tracker_limit = memory_tracker->getHardLimit(); tracker_limit > 0)
+        {
+            UInt64 tracker_available = static_cast<UInt64>(std::max<Int64>(tracker_limit - memory_tracker->get(), 0));
+            available = available ? std::min(*available, tracker_available) : tracker_available;
+        }
+    }
+    return available;
+}
+
 std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
     MemoryTracker * query_memory_tracker = nullptr;
@@ -22,21 +36,7 @@ std::optional<UInt64> getMostStrictAvailableSystemMemory()
     if (query_memory_tracker = query_memory_tracker->getParent(); !query_memory_tracker)
         return {};
 
-    Int64 available = std::numeric_limits<Int64>::max();
-    MemoryTracker * system_memory_tracker = query_memory_tracker->getParent();
-    while (system_memory_tracker)
-    {
-        if (Int64 tracker_limit = system_memory_tracker->getHardLimit(); tracker_limit > 0)
-        {
-            Int64 tracker_used = system_memory_tracker->get();
-            Int64 tracker_available = std::clamp<Int64>(tracker_limit - tracker_used, 0, std::numeric_limits<Int64>::max());
-            available = std::min(available, tracker_available);
-        }
-        system_memory_tracker = system_memory_tracker->getParent();
-    }
-    if (available == std::numeric_limits<Int64>::max())
-        return {};
-    return available;
+    return getMostStrictAvailableMemory(query_memory_tracker->getParent());
 }
 
 size_t getMaxBytesBeforeExternalProcessing(size_t max_bytes, double max_bytes_ratio, std::string_view ratio_setting_name)
@@ -93,6 +93,11 @@ std::optional<UInt64> getCurrentQueryHardLimit()
     return hard_limit;
 }
 
+std::optional<UInt64> getCurrentQueryAvailableMemory()
+{
+    return getMostStrictAvailableMemory(DB::CurrentThread::getMemoryTracker());
+}
+
 
 Int64 getCurrentQueryMemoryUsage()
 {
@@ -112,6 +117,15 @@ void setCurrentQueryMemoryDriftExpected()
 {
     if (auto * tracker = DB::CurrentThread::getMemoryTracker())
         tracker->setDriftExpected();
+}
+
+
+void handOverCurrentQueryMemoryToServer(Int64 size)
+{
+    /// The trackers have to hold what the thread allocated so far before it is taken off them.
+    DB::CurrentThread::flushUntrackedMemory();
+    if (auto * tracker = DB::CurrentThread::getMemoryTracker())
+        tracker->handOverToServer(size);
 }
 
 
@@ -140,31 +154,33 @@ std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery(VariableC
 
 extern MemoryTracker total_memory_tracker;
 
-static size_t getMaxThreadsForAvailableMemoryImpl(size_t max_threads, UInt64 min_free_per_thread)
+std::optional<Int64> getServerFreeMemory()
 {
-    if (min_free_per_thread == 0 || max_threads <= 1)
-        return max_threads;
-
     Int64 hard_limit = total_memory_tracker.getHardLimit();
     if (hard_limit <= 0)
+        return std::nullopt;
+    return hard_limit - total_memory_tracker.get();
+}
+
+static size_t getMaxThreadsForFreeMemoryImpl(size_t max_threads, UInt64 min_free_per_thread, std::optional<Int64> free_memory)
+{
+    if (min_free_per_thread == 0 || max_threads <= 1 || !free_memory)
         return max_threads;
 
-    Int64 tracked = total_memory_tracker.get();
-    Int64 free_memory = hard_limit - tracked;
-
-    if (free_memory <= 0)
+    if (*free_memory <= 0)
         return 1;
 
-    auto allowed = static_cast<size_t>(static_cast<UInt64>(free_memory) / min_free_per_thread);
+    auto allowed = static_cast<size_t>(static_cast<UInt64>(*free_memory) / min_free_per_thread);
     if (allowed < 1)
         return 1;
     if (allowed < max_threads)
         return allowed;
     return max_threads;
 }
-size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_thread)
+
+size_t getMaxThreadsForFreeMemory(size_t max_threads, UInt64 min_free_per_thread, std::optional<Int64> free_memory)
 {
-    size_t effective_threads = getMaxThreadsForAvailableMemoryImpl(max_threads, min_free_per_thread);
+    size_t effective_threads = getMaxThreadsForFreeMemoryImpl(max_threads, min_free_per_thread, free_memory);
     if (effective_threads != max_threads)
         LOG_DEBUG(getLogger("MemoryTrackerUtils"), "Lower number of threads for query to {} ({} requested)", effective_threads, max_threads);
     return effective_threads;

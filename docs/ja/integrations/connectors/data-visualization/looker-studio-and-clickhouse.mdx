@@ -10,8 +10,8 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import MySQLCloudSetup from '/snippets/ja/_clickhouse_mysql_cloud_setup.mdx';
+
 import MySQLOnPremiseSetup from '/snippets/ja/_clickhouse_mysql_on_premise_setup.mdx';
 
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
@@ -38,38 +38,86 @@ Looker Studio は、Google 公式の MySQL データソースを使用して、M
 
 まず、Google アカウントで [Looker Studio](https://lookerstudio.google.com) にログインし、新しいデータソースを作成します。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="Looker Studio のインターフェイスで新しいデータソースを作成する" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Looker Studio のインターフェイスで新しいデータソースを作成する](/images/integrations/data-visualization/looker_studio_01.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Google が提供する公式の MySQL コネクタ (名前は **MySQL**) を検索します。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="Looker Studio のコネクタ一覧で MySQL コネクタを検索する" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Looker Studio のコネクタ一覧で MySQL コネクタを検索する](/images/integrations/data-visualization/looker_studio_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 接続情報を指定します。MySQL インターフェイスのポートはデフォルトで 9004 ですが、
 サーバー設定によって異なる場合があるので注意してください。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="Looker Studio で ClickHouse の MySQL 接続情報を指定する" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Looker Studio で ClickHouse の MySQL 接続情報を指定する](/images/integrations/data-visualization/looker_studio_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 ここからは、ClickHouse からデータを取得する方法が 2 つあります。1 つ目は、Table Browser 機能を使用する方法です。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_04.webp" alt="Looker Studio で Table Browser を使用して ClickHouse テーブルを選択する" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Looker Studio で Table Browser を使用して ClickHouse テーブルを選択する](/images/integrations/data-visualization/looker_studio_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 または、カスタムクエリを指定してデータを取得することもできます。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="Looker Studio でカスタム SQL クエリを使用して ClickHouse からデータを取得する" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Looker Studio でカスタム SQL クエリを使用して ClickHouse からデータを取得する](/images/integrations/data-visualization/looker_studio_05.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 最後に、自動認識されたテーブル構造を確認し、必要に応じてデータ型を調整できます。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="Looker Studio で自動認識された ClickHouse テーブルの構造を表示する" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![Looker Studio で自動認識された ClickHouse テーブルの構造を表示する](/images/integrations/data-visualization/looker_studio_06.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -81,13 +129,29 @@ Google が提供する公式の MySQL コネクタ (名前は **MySQL**) を検�
 
 ClickHouse Cloud を使用する場合は、まず MySQL インターフェイスを有効にする必要があります。これは接続ダイアログの「MySQL」タブで設定できます。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_enable_mysql.webp" alt="ClickHouse Cloud の設定で MySQL インターフェイスを有効にする" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud の設定で MySQL インターフェイスを有効にする](/images/integrations/data-visualization/looker_studio_enable_mysql.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
 Looker Studio の UI で、「Enable SSL」オプションを選択します。ClickHouse Cloud の SSL 証明書は [Let&#39;s Encrypt](https://letsencrypt.org/certificates/) によって署名されています。このルート証明書は [こちら](https://letsencrypt.org/certs/isrgrootx1.pem) からダウンロードできます。
 
-<Image size="md" img="/images/integrations/data-visualization/looker_studio_mysql_cloud.webp" alt="ClickHouse Cloud の SSL 設定を使用した Looker Studio の接続設定" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![ClickHouse Cloud の SSL 設定を使用した Looker Studio の接続設定](/images/integrations/data-visualization/looker_studio_mysql_cloud.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
