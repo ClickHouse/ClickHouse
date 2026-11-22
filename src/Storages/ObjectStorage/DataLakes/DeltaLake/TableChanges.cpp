@@ -26,6 +26,7 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
+    extern const SettingsBool delta_lake_enable_engine_predicate;
     extern const SettingsBool delta_lake_enable_expression_visitor_logging;
 }
 
@@ -305,6 +306,8 @@ DB::ObjectIterator TableChanges::iterate(
     /// (e.g. `c-t.c-t-x` for `t.x`) is found by its physical name in the type of the column that the transform outputs.
     KernelSharedSchema logical_schema(ffi::table_changes_schema(table_changes.get()));
     auto expression_schema = convertToClickHouseSchema(logical_schema.get(), engine.get());
+    /// The predicate refers to the columns by their logical names.
+    const auto predicate_schema = expression_schema;
     if (!physical_names_map.empty())
     {
         for (auto & [name, type] : expression_schema)
@@ -320,8 +323,8 @@ DB::ObjectIterator TableChanges::iterate(
     /// `table_changes_scan` consumes the table changes.
     std::exception_ptr predicate_exception;
     std::shared_ptr<EnginePredicate> predicate;
-    if (filter_dag)
-        predicate = getEnginePredicate(*filter_dag, predicate_exception, context);
+    if (filter_dag && context->getSettingsRef()[DB::Setting::delta_lake_enable_engine_predicate])
+        predicate = getEnginePredicate(*filter_dag, predicate_exception, context, predicate_schema);
     KernelTableChangesScan scan(KernelUtils::unwrapResult(
         ffi::table_changes_scan(table_changes.release(), engine.get(), predicate.get()), "table_changes_scan"));
     if (predicate_exception)
