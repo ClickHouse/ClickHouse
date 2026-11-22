@@ -511,3 +511,35 @@ def test_rfc3339_times_invalid(time):
         node.ip_address, 9093, "/api/v1/query", "rfc3339_metric", params={"time": time}, expect_error=True
     )
     assert "Cannot parse a timestamp" in error
+
+
+# Checks the exact text of the timestamps of a range query, including steps that the longest series (`late`) lacks,
+# one series per block, and a range selector in an instant query.
+def test_range_vector_timestamps_shared_between_series():
+    node.query(
+        "INSERT INTO prometheus (metric_name, tags, samples) VALUES"
+        " ('shared_timestamps', {'s': 'early'}, [(toDateTime64(2000, 3), 1), (toDateTime64(2000.5, 3), 2), (toDateTime64(2001, 3), 3)]),"
+        " ('shared_timestamps', {'s': 'late'}, [(toDateTime64(2000.5, 3), 10), (toDateTime64(2001, 3), 11), (toDateTime64(2001.5, 3), 12), (toDateTime64(2002, 3), 13)]),"
+        " ('shared_timestamps', {'s': 'raw'}, [(toDateTime64(2000.25, 3), 20), (toDateTime64(2001.125, 3), 21), (toDateTime64(2001.5, 3), 22), (toDateTime64(2002.5, 3), 23)])"
+    )
+
+    expected_range = (
+        '"result":[{"metric":{"__name__":"shared_timestamps","s":"early"},"values":[[2000,"1"],[2000.5,"2"],[2001,"3"]]},'
+        '{"metric":{"__name__":"shared_timestamps","s":"late"},"values":[[2000.5,"10"],[2001,"11"],[2001.5,"12"],[2002,"13"]]},'
+        '{"metric":{"__name__":"shared_timestamps","s":"raw"},"values":[[2001.5,"22"],[2002.5,"23"]]}]'
+    )
+    for params in [{"lookback_delta": "0.2"}, {"lookback_delta": "0.2", "max_block_size": 1}]:
+        response = get_response_to_http_api_range_query(
+            node.ip_address, 9093, "/api/v1/query_range", "shared_timestamps", 2000, 2002.5, "0.5", params
+        )
+        assert response.status_code == 200
+        assert expected_range in response.text
+
+    expected_range_selector = (
+        '"result":[{"metric":{"__name__":"shared_timestamps","s":"early"},"values":[[2000.5,"2"],[2001,"3"]]},'
+        '{"metric":{"__name__":"shared_timestamps","s":"late"},"values":[[2000.5,"10"],[2001,"11"],[2001.5,"12"],[2002,"13"]]},'
+        '{"metric":{"__name__":"shared_timestamps","s":"raw"},"values":[[2000.25,"20"],[2001.125,"21"],[2001.5,"22"]]}]'
+    )
+    response = get_response_to_http_api_query(node.ip_address, 9093, "/api/v1/query", "shared_timestamps[2s]", 2002)
+    assert response.status_code == 200
+    assert expected_range_selector in response.text
