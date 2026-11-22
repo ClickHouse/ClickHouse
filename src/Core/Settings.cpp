@@ -11217,7 +11217,7 @@ Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used i
     DECLARE(Bool, allow_experimental_distributed_bucket_map, false, R"(
 Allow creating `Distributed` tables with the `bucket_map_zookeeper_path` setting. Such a table routes rows to shards by a bucket map stored in ZooKeeper instead of the shard weights.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the experimental bucket map of `Distributed` tables."}) \
+        {"26.12", false, false, "New setting to enable the experimental bucket map of `Distributed` tables."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected
