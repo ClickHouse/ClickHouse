@@ -2141,7 +2141,20 @@ Chunk StorageFileSource::generate()
                 /// Special case for distributed format. Defaults are not needed here.
                 if (storage->format_name == "Distributed")
                 {
-                    pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    /// For the `_size` and `_time` virtual columns.
+                    struct stat file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    current_file_size = file_stat.st_size;
+                    current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+
+                    QueryPipelineBuilder builder;
+                    builder.init(Pipe(std::make_shared<DistributedAsyncInsertSource>(current_path)));
+                    /// The source returns every column of the file, so take the columns that the query reads, as for the
+                    /// other formats.
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                    });
+                    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                     pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
