@@ -49,7 +49,7 @@ function check_profile_is_preserved()
 # rows for the heuristic to profile it and revisit its decision. `ORDER BY n` pins the row order:
 # without it, the range depends on the read order, which is not deterministic with parallel replicas.
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE boundary (n UInt64, b0 UInt8, b1 UInt8, b2 UInt8) ENGINE = MergeTree ORDER BY n;
+    CREATE TABLE boundary (n UInt64, b0 UInt8, b1 UInt8, b2 UInt8) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
     INSERT INTO boundary SELECT number, number % 2, number > 400000, number % 5 != 0 FROM numbers(500000);"
 
 check_profile_is_preserved "limit_after" "

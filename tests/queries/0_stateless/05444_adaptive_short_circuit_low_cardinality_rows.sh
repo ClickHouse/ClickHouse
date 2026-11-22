@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SETTINGS="short_circuit_function_evaluation = 'force_enable', max_threads = 1, max_block_size = 8192, compile_expressions = 0, enable_parallel_replicas = 0"
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE lc (ok UInt8, s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE lc (ok UInt8, s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
     INSERT INTO lc SELECT number % 100 != 0, if(number % 2, 'a', 'b') FROM numbers(200000);"
 
 QUERY="SELECT sum(if(ok, compareSubstrings(s, 'z', 0, 0, 1), 0)) FROM lc"

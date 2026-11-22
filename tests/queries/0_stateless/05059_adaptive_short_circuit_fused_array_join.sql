@@ -9,7 +9,7 @@ SET short_circuit_function_evaluation = 'force_enable';
 SET max_threads = 8;
 
 DROP TABLE IF EXISTS t_fused_adaptive;
-CREATE TABLE t_fused_adaptive (id UInt64, arr Array(UInt64), payload String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_fused_adaptive (id UInt64, arr Array(UInt64), payload String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_fused_adaptive SELECT number, arrayMap(x -> x % 4, range(number % 7)), repeat('P', 64) FROM numbers(200000);
 
 -- An element predicate whose second argument throws for the elements the first one rejects:

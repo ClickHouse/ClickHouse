@@ -51,7 +51,7 @@ compare "serialized" "
 # `AdaptiveShortCircuitEagerExecutions` counts the actions which the static schedule would have executed
 # lazily and the heuristic executed eagerly, so it is only non-zero if the adaptive schedule was used.
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE lambda_probe (b UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE lambda_probe (b UInt8, arr Array(UInt8)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
     INSERT INTO lambda_probe SELECT number % 3 != 0, arrayMap(i -> toUInt8((number + i) % 5 != 0), range(10)) FROM numbers(500000);"
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_serialized_captured"

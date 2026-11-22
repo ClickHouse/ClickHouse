@@ -11,7 +11,8 @@ DROP TABLE IF EXISTS t_adaptive_key_copy;
 CREATE TABLE t_adaptive_key_copy (a UInt64, b UInt64)
 ENGINE = MergeTree
 ORDER BY (if(a % 3 = 0, intDiv(b, a % 5 + 1), b), a)
-PARTITION BY if(b % 2 = 0, intDiv(a, b + 1) % 2, 2);
+PARTITION BY if(b % 2 = 0, intDiv(a, b + 1) % 2, 2)
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO t_adaptive_key_copy SELECT number, number % 7 FROM numbers_mt(400000)
 SETTINGS max_insert_threads = 8, max_threads = 8, max_block_size = 5000, min_insert_block_size_rows = 5000, min_insert_block_size_bytes = 0;

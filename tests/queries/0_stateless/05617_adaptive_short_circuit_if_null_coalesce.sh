@@ -45,7 +45,7 @@ function check()
 }
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE t (n Nullable(UInt8), b1 UInt8, b2 UInt8) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE t (n Nullable(UInt8), b1 UInt8, b2 UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
     INSERT INTO t SELECT if(number % 100 = 0, toNullable(toUInt8(1)), NULL), number % 3 != 0, number % 5 != 0 FROM numbers(1000000);"
 
 check "ifNull" "SELECT sum(ifNull(n, and(b1, b2))) FROM t"
