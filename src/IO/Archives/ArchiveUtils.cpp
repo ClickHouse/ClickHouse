@@ -219,8 +219,8 @@ namespace
 {
 
 /// The path of `source` between its authority and `end`. Only a `://` before any other delimiter is a
-/// scheme: a relative path may carry one of its own - `data/http://a.zip::m` is a task path listed by an
-/// index page - and reading that as the scheme would leave the path empty and drop the member.
+/// scheme: a relative path may carry one of its own - `data/http://<host>/a.zip::m` is a task path listed by
+/// an index page - and reading that as the scheme would leave the path empty and drop the member.
 std::string_view urlPathBefore(std::string_view source, size_t end)
 {
     const size_t scheme_pos = source.find("://");
@@ -316,7 +316,8 @@ std::pair<std::string, std::optional<std::string>> getURLAndArchivePattern(std::
     }
 
     /// The same holds without a query: a host that happens to end with an archive suffix is not a path, so
-    /// `http://example.zip::m` is a URL whose host is `example.zip`, not an archive with an empty path.
+    /// `example.zip::m` - a host, then the separator, with no path between them - is a URL whose host is
+    /// `example.zip`, not an archive with an empty path.
     const size_t scheme_pos = source.find("://");
     if (scheme_pos != std::string_view::npos && scheme_pos < archive_separator
         && source.find_first_of("/?#") >= scheme_pos
