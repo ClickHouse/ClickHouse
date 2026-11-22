@@ -1,0 +1,6 @@
+--- every attempt reached the authentication
+10
+--- an ordinary login still works
+1
+--- and the server did not try to write into the canceled socket buffer
+0
