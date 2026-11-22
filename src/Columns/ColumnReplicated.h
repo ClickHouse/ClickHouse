@@ -216,6 +216,10 @@ public:
     /// Frees the insertion cache once no more inserts from other ColumnReplicated are expected.
     void dropInsertionCache();
 
+    /// Whether row `i` is row `i` of the nested column for every row, and the nested column has no other
+    /// rows: the column then equals its nested column.
+    bool hasIdentityIndexes() const;
+
     /// Returns the values of the nested column that rows `[offset, offset + limit)` refer to, each once, in the order of
     /// their first row. A function that ignores repeated values gets the same state from them as from every row.
     ColumnPtr getUsedValues(size_t offset, size_t limit) const;
@@ -272,4 +276,7 @@ void compactReplicatedColumns(Columns & columns);
 /// For a column a merge has finished filling: drops the insertion cache and, when the indexes are
 /// 0, 1, ..., size - 1 (nothing was deduplicated), replaces it with its nested column at no copy cost.
 void finishMergedReplicatedColumn(MutableColumnPtr & column);
+/// Returns the nested column of a `ColumnReplicated` that `hasIdentityIndexes`, and the column itself
+/// otherwise. Example: a `String` column with dictionary granules read from plain granules only.
+ColumnPtr removeIdentityReplication(const ColumnPtr & column);
 }

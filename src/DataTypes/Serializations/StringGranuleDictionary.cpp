@@ -1,15 +1,19 @@
 #include <DataTypes/Serializations/StringGranuleDictionary.h>
 
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <base/constexpr_helpers.h>
 #include <base/sort.h>
+#include <base/unaligned.h>
 
+#include <bit>
+#include <cstring>
 #include <limits>
 
 namespace DB
@@ -21,14 +25,34 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-UInt8 StringGranuleHeader::codeWidthFor(UInt64 dictionary_size)
+namespace
 {
-    const UInt64 max_code = dictionary_size - 1;
-    if (max_code <= std::numeric_limits<UInt8>::max())
-        return 1;
-    if (max_code <= std::numeric_limits<UInt16>::max())
-        return 2;
-    return 4;
+
+/// Returns the bytes that `count` values of `bits` bits take packed together.
+size_t bitPackedBytes(size_t count, UInt8 bits)
+{
+    return (count * bits + 7) / 8;
+}
+
+UInt8 bitWidth(UInt64 value)
+{
+    return static_cast<UInt8>(std::bit_width(value));
+}
+
+/// Packing and unpacking access the 8 bytes that hold a code, which the padding of `PaddedPODArray` covers
+/// after the last packed byte.
+static_assert(PADDING_FOR_SIMD > sizeof(UInt64));
+
+}
+
+UInt8 StringGranuleHeader::codeBitsFor(UInt64 dictionary_size)
+{
+    return bitWidth(dictionary_size - 1);
+}
+
+size_t StringGranuleHeader::codesByteSize() const
+{
+    return bitPackedBytes(rows, code_bits);
 }
 
 void StringGranuleHeader::write(WriteBuffer & out) const
@@ -38,7 +62,7 @@ void StringGranuleHeader::write(WriteBuffer & out) const
     if (kind == Kind::Dictionary)
     {
         writeVarUInt(dictionary_size, out);
-        writeBinary(code_width, out);
+        writeBinary(code_bits, out);
     }
 }
 
@@ -55,25 +79,48 @@ void StringGranuleHeader::read(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA, "A String granule has no rows");
 
     dictionary_size = 0;
-    code_width = 0;
+    code_bits = 0;
     if (kind == Kind::Plain)
         return;
 
     readVarUInt(dictionary_size, in);
-    readBinary(code_width, in);
+    readBinary(code_bits, in);
     if (dictionary_size == 0 || dictionary_size > rows || dictionary_size > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::INCORRECT_DATA, "A String granule of {} rows has a dictionary of {} values", rows, dictionary_size);
-    if (code_width != codeWidthFor(dictionary_size))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "A String granule with a dictionary of {} values has codes of {} bytes",
-            dictionary_size, static_cast<UInt32>(code_width));
+    if (code_bits != codeBitsFor(dictionary_size))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A String granule with a dictionary of {} values has codes of {} bits",
+            dictionary_size, static_cast<UInt32>(code_bits));
 }
 
-size_t StringGranuleHeader::byteSize() const
+namespace
 {
-    size_t size = 1 + getLengthOfVarUInt(rows);
-    if (kind == Kind::Dictionary)
-        size += getLengthOfVarUInt(dictionary_size) + 1;
-    return size;
+
+/// Adds the length of every row of `slice` to `bytes` and raises `longest` to the longest one.
+void measureSlice(const StringGranuleDictionaryBuilder::Slice & slice, size_t & bytes, size_t & longest)
+{
+    auto measure = [&](const IColumn::Offsets & offsets, auto && slot_of)
+    {
+        for (size_t i = slice.offset; i < slice.offset + slice.rows; ++i)
+        {
+            const size_t slot = slot_of(i);
+            const size_t length = offsets[slot] - offsets[static_cast<ssize_t>(slot) - 1];
+            bytes += length;
+            longest = std::max(longest, length);
+        }
+    };
+
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(slice.column.get()))
+    {
+        const auto & offsets = assert_cast<const ColumnString &>(*replicated->getNestedColumn()).getOffsets();
+        replicated->getIndexes().callForIndexesData(
+            [&](const auto & indexes) { measure(offsets, [&](size_t i) { return static_cast<size_t>(indexes[i]); }); });
+    }
+    else
+    {
+        measure(assert_cast<const ColumnString &>(*slice.column).getOffsets(), [](size_t i) { return i; });
+    }
+}
+
 }
 
 bool StringGranuleDictionaryBuilder::build(const std::vector<Slice> & slices, size_t rows, const Settings & settings)
@@ -83,44 +130,32 @@ bool StringGranuleDictionaryBuilder::build(const std::vector<Slice> & slices, si
     row_codes.resize(rows);
 
     size_t plain_bytes = 0;
-    size_t dictionary_bytes = 0;
+    size_t longest = 0;
+    for (const auto & slice : slices)
+        measureSlice(slice, plain_bytes, longest);
+
+    granule_rows = rows;
+    dictionary_bytes = 0;
+    length_bits = bitWidth(longest);
+    max_dictionary_size = static_cast<double>(plain_bytes + bitPackedBytes(rows, length_bits)) * (1.0 - settings.min_size_reduction);
+    max_distinct = static_cast<double>(rows) * settings.max_distinct_ratio;
+
     size_t row = 0;
     for (const auto & slice : slices)
     {
-        const auto & column = assert_cast<const ColumnString &>(*slice.column);
-        for (size_t i = slice.offset; i < slice.offset + slice.rows; ++i)
-        {
-            const std::string_view value = column.getDataAt(i);
-            plain_bytes += value.size();
-
-            Positions::LookupResult it = nullptr;
-            bool inserted = false;
-            positions.emplace(value, it, inserted);
-            if (inserted)
-            {
-                it->getMapped() = static_cast<UInt32>(values.size());
-                values.push_back(value);
-                dictionary_bytes += value.size();
-            }
-            row_codes[row++] = it->getMapped();
-        }
+        const auto * replicated = typeid_cast<const ColumnReplicated *>(slice.column.get());
+        const bool stays_dictionary = replicated
+            ? addReplicatedRows(*replicated, slice.offset, slice.rows, row)
+            : addPlainRows(assert_cast<const ColumnString &>(*slice.column), slice.offset, slice.rows, row);
+        if (!stays_dictionary)
+            return false;
     }
     chassert(row == rows);
 
+    /// Sort the distinct values and give each the code of its place in the sorted order. Values that come in
+    /// sorted order, as the slots of one sorted dictionary of a replicated slice do, sort in linear time.
     const size_t distinct = values.size();
-    code_width = StringGranuleHeader::codeWidthFor(distinct);
-
-    const StringGranuleHeader header{
-        .kind = StringGranuleHeader::Kind::Dictionary, .rows = rows, .dictionary_size = distinct, .code_width = code_width};
-    const double plain_size = static_cast<double>(plain_bytes + sizeof(UInt64) * rows);
-    const double dictionary_size
-        = static_cast<double>(dictionary_bytes + sizeof(UInt64) * distinct + code_width * rows + header.byteSize());
-
-    if (dictionary_size > plain_size * (1.0 - settings.min_size_reduction)
-        || static_cast<double>(distinct) > static_cast<double>(rows) * settings.max_distinct_ratio)
-        return false;
-
-    /// Sort the distinct values and give each the code of its place in the sorted order.
+    code_bits = StringGranuleHeader::codeBitsFor(distinct);
     sorted_positions.resize(distinct);
     for (size_t i = 0; i < distinct; ++i)
         sorted_positions[i] = static_cast<UInt32>(i);
@@ -143,35 +178,200 @@ bool StringGranuleDictionaryBuilder::build(const std::vector<Slice> & slices, si
     return true;
 }
 
+bool StringGranuleDictionaryBuilder::addValue(std::string_view value, UInt32 & position)
+{
+    Positions::LookupResult it = nullptr;
+    bool inserted = false;
+    positions.emplace(value, it, inserted);
+    if (inserted)
+    {
+        it->getMapped() = static_cast<UInt32>(values.size());
+        values.push_back(value);
+        dictionary_bytes += value.size();
+
+        /// The size the dictionary form takes with the distinct values so far, the least it can still take.
+        const size_t distinct = values.size();
+        const size_t dictionary_size = dictionary_bytes + bitPackedBytes(distinct, length_bits)
+            + bitPackedBytes(granule_rows, StringGranuleHeader::codeBitsFor(distinct));
+        if (static_cast<double>(distinct) > max_distinct || static_cast<double>(dictionary_size) > max_dictionary_size)
+            return false;
+    }
+    position = it->getMapped();
+    return true;
+}
+
+bool StringGranuleDictionaryBuilder::addPlainRows(const ColumnString & column, size_t offset, size_t rows, size_t & row)
+{
+    /// A row equal to the previous one takes its position without the hash table, which pays in sorted data.
+    std::string_view previous;
+    UInt32 previous_position = 0;
+    bool has_previous = false;
+    for (size_t i = offset; i < offset + rows; ++i)
+    {
+        const std::string_view value = column.getDataAt(i);
+        if (!has_previous || value != previous)
+        {
+            if (!addValue(value, previous_position))
+                return false;
+            previous = value;
+            has_previous = true;
+        }
+        row_codes[row++] = previous_position;
+    }
+    return true;
+}
+
+bool StringGranuleDictionaryBuilder::addReplicatedRows(const ColumnReplicated & column, size_t offset, size_t rows, size_t & row)
+{
+    const auto & nested = assert_cast<const ColumnString &>(*column.getNestedColumn());
+    if (slot_positions.size() < nested.size())
+    {
+        slot_positions.resize(nested.size());
+        slot_generations.resize_fill(nested.size(), 0);
+    }
+    if (++generation == 0)
+    {
+        std::fill(slot_generations.begin(), slot_generations.end(), 0);
+        generation = 1;
+    }
+
+    return column.getIndexes().callForIndexesData([&](const auto & indexes)
+    {
+        for (size_t i = offset; i < offset + rows; ++i)
+        {
+            const size_t slot = indexes[i];
+            if (slot_generations[slot] != generation)
+            {
+                if (!addValue(nested.getDataAt(slot), slot_positions[slot]))
+                    return false;
+                slot_generations[slot] = generation;
+            }
+            row_codes[row++] = slot_positions[slot];
+        }
+        return true;
+    });
+}
+
+void StringGranuleDictionaryBuilder::writeCodes(WriteBuffer & out)
+{
+    if (code_bits == 0)
+        return;
+
+    /// The codes are collected in `pending`, lowest bits first, and stored 4 bytes at a time: fewer than 32
+    /// bits wait there, and a code adds at most 32, so they fit in 64 bits. The last store writes into the
+    /// padding.
+    const size_t bytes = bitPackedBytes(row_codes.size(), code_bits);
+    packed_codes.resize(bytes);
+    UInt8 * data = packed_codes.data();
+    UInt64 pending = 0;
+    size_t pending_bits = 0;
+    size_t position = 0;
+    for (const UInt32 code : row_codes)
+    {
+        pending |= static_cast<UInt64>(code) << pending_bits;
+        pending_bits += code_bits;
+        if (pending_bits >= 32)
+        {
+            unalignedStoreLittleEndian<UInt32>(data + position, static_cast<UInt32>(pending));
+            position += sizeof(UInt32);
+            pending >>= 32;
+            pending_bits -= 32;
+        }
+    }
+    unalignedStoreLittleEndian<UInt64>(data + position, pending);
+    out.write(reinterpret_cast<const char *>(data), bytes);
+}
+
 namespace
 {
 
-template <typename T>
-void writeCodesOfWidth(const PaddedPODArray<UInt32> & codes, WriteBuffer & out)
+/// Decodes `count` codes of `bits` bits from `in`, which has 8 readable bytes after its last code.
+template <size_t bits, typename T>
+void unpackCodes(const UInt8 * in, T * out, size_t count)
 {
-    if constexpr (std::is_same_v<T, UInt32>)
+    static constexpr UInt64 mask = (UInt64{1} << bits) - 1;
+    for (size_t row = 0; row < count; ++row)
     {
-        SerializationNumber<UInt32>::serializeBinaryBulk(codes, out, 0, codes.size());
+        const size_t bit = row * bits;
+        out[row] = static_cast<T>((unalignedLoadLittleEndian<UInt64>(in + bit / 8) >> (bit % 8)) & mask);
     }
+}
+
+/// Reads the packed codes of all rows of the dictionary granule `granule` and decodes them into `codes`, a
+/// column of the unsigned type of the fewest bytes that hold `code_bits`, reused when it has that type.
+/// Rejects a code outside the dictionary.
+void readCodes(ReadBuffer & in, const StringGranuleHeader & granule, MutableColumnPtr & codes, PaddedPODArray<UInt8> & packed)
+{
+    auto decode = [&]<typename T>()
+    {
+        if (!codes || !typeid_cast<ColumnVector<T> *>(codes.get()))
+            codes = ColumnVector<T>::create();
+        auto & data = assert_cast<ColumnVector<T> &>(*codes).getData();
+        data.resize(granule.rows);
+
+        if (granule.code_bits == 0)
+        {
+            memset(data.data(), 0, data.size() * sizeof(T));
+            return;
+        }
+
+        const size_t bytes = granule.codesByteSize();
+        packed.resize(bytes);
+        const size_t read_bytes = in.read(reinterpret_cast<char *>(packed.data()), bytes);
+        if (read_bytes != bytes)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the codes of a String granule: read {} of {} bytes", read_bytes, bytes);
+
+        /// The width becomes a template argument, so that the shifts and the mask of the decoding loop are
+        /// constants.
+        static_for<size_t{1}, sizeof(T) * 8 + 1>([&](auto bits)
+        {
+            if (granule.code_bits != bits)
+                return false;
+            unpackCodes<bits, T>(packed.data(), data.data(), data.size());
+            return true;
+        });
+
+        T max_code = 0;
+        for (T code : data)
+            max_code = std::max(max_code, code);
+        if (max_code >= granule.dictionary_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "A String granule has code {} for a dictionary of {} values",
+                static_cast<UInt64>(max_code), granule.dictionary_size);
+    };
+
+    if (granule.code_bits <= 8)
+        decode.template operator()<UInt8>();
+    else if (granule.code_bits <= 16)
+        decode.template operator()<UInt16>();
     else
-    {
-        PaddedPODArray<T> narrow(codes.size());
-        for (size_t i = 0; i < codes.size(); ++i)
-            narrow[i] = static_cast<T>(codes[i]);
-        SerializationNumber<T>::serializeBinaryBulk(narrow, out, 0, narrow.size());
-    }
+        decode.template operator()<UInt32>();
 }
 
 }
 
-void StringGranuleDictionaryBuilder::writeCodes(WriteBuffer & out) const
+bool DeserializeBinaryBulkStateStringWithDictionaries::startGranule(ReadBuffer & indexes)
 {
-    switch (code_width)
+    if (indexes.eof())
+        return false;
+
+    granule.read(indexes);
+    rows_left_in_granule = granule.rows;
+    dictionary.reset();
+    if (granule.kind == StringGranuleHeader::Kind::Dictionary)
     {
-        case 1: writeCodesOfWidth<UInt8>(row_codes, out); break;
-        case 2: writeCodesOfWidth<UInt16>(row_codes, out); break;
-        default: writeCodesOfWidth<UInt32>(row_codes, out); break;
+        if (!granule_codes && !spare_codes.empty())
+        {
+            granule_codes = std::move(spare_codes.back());
+            spare_codes.pop_back();
+        }
+        readCodes(indexes, granule, granule_codes, packed_codes);
     }
+    return true;
+}
+
+void DeserializeBinaryBulkStateStringWithDictionaries::recycleCodes(MutableColumnPtr && codes)
+{
+    spare_codes.push_back(std::move(codes));
 }
 
 ISerialization::DeserializeBinaryBulkStatePtr DeserializeBinaryBulkStateStringWithDictionaries::cloneImpl(
@@ -195,40 +395,6 @@ ISerialization::DeserializeBinaryBulkStatePtr getStringGranulesDeserializeState(
     }
     settings.path.pop_back();
     return state;
-}
-
-namespace
-{
-
-template <typename T>
-MutableColumnPtr readCodesOfWidth(ReadBuffer & in, size_t rows, UInt64 dictionary_size)
-{
-    auto column = ColumnVector<T>::create();
-    auto & codes = column->getData();
-    SerializationNumber<T>::deserializeBinaryBulk(codes, in, rows);
-    if (codes.size() != rows)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the codes of a String granule: read {} of {}", codes.size(), rows);
-
-    T max_code = 0;
-    for (T code : codes)
-        max_code = std::max(max_code, code);
-    if (max_code >= dictionary_size)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "A String granule has code {} for a dictionary of {} values",
-            static_cast<UInt64>(max_code), dictionary_size);
-
-    return column;
-}
-
-}
-
-MutableColumnPtr readStringGranuleCodes(ReadBuffer & in, const StringGranuleHeader & granule, size_t rows)
-{
-    switch (granule.code_width)
-    {
-        case 1: return readCodesOfWidth<UInt8>(in, rows, granule.dictionary_size);
-        case 2: return readCodesOfWidth<UInt16>(in, rows, granule.dictionary_size);
-        default: return readCodesOfWidth<UInt32>(in, rows, granule.dictionary_size);
-    }
 }
 
 }

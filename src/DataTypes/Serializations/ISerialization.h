@@ -314,7 +314,7 @@ public:
         /// With `MergeTreeStringSerializationVersion::WITH_DICTIONARIES`, a `String` granule is stored as a dictionary
         /// only when that form is smaller than the plain form by this fraction of the plain size, and when its distinct
         /// values are at most `string_dictionary_max_distinct_ratio` of its rows.
-        double string_dictionary_min_size_reduction = 0.1;
+        double string_dictionary_min_size_reduction = 0;
         double string_dictionary_max_distinct_ratio = 0.75;
 
         bool position_independent_encoding = true;

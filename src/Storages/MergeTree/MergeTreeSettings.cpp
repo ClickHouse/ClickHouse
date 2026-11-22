@@ -373,12 +373,13 @@ column is stored as a sorted dictionary of its distinct values plus a code per r
         {"26.12", "with_size_stream", "with_dictionaries", "Change to the format with dictionary-encoded granules"}, \
         {"25.11", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"}, \
         {"25.10", "single_stream", "single_stream", "New setting"}) \
-    DECLARE(Float, string_dictionary_min_size_reduction, 0.1f, R"(
+    DECLARE(Float, string_dictionary_min_size_reduction, 0.0f, R"(
 With `string_serialization_version = 'with_dictionaries'`, a granule of a `String` column is stored as a dictionary
 of its distinct values plus a code per row only when that form is smaller than the plain form by at least this
-fraction of the plain size.
+fraction of the plain size. Both sizes count every length and code in the fewest bits that hold the largest one, as
+the codes are stored and as an integer codec stores the lengths. `0` takes the dictionary when it is not larger.
 )", EXPERIMENTAL, \
-        {"26.12", 0.1, 0.1, "New setting"}) \
+        {"26.12", 0.0, 0.0, "New setting"}) \
     DECLARE(Float, string_dictionary_max_distinct_ratio, 0.75f, R"(
 With `string_serialization_version = 'with_dictionaries'`, a granule of a `String` column is stored as a dictionary
 only when its distinct values are at most this fraction of its rows. A granule with more distinct values gains little

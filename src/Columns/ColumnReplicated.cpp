@@ -166,15 +166,7 @@ ColumnPtr ColumnReplicated::getUsedValues(size_t offset, size_t limit) const
         }
     };
 
-    const IColumn & index_column = *indexes.getIndexes();
-    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&index_column))
-        collect(indexes_uint8->getData());
-    else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&index_column))
-        collect(indexes_uint16->getData());
-    else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&index_column))
-        collect(indexes_uint32->getData());
-    else
-        collect(assert_cast<const ColumnUInt64 &>(index_column).getData());
+    indexes.callForIndexesData(collect);
 
     return nested_column->index(*positions, 0);
 }
@@ -350,7 +342,7 @@ namespace
 
 bool isIdentityIndexes(const IColumn & indexes)
 {
-    auto check = [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
+    return ColumnIndex::callForIndexesData(indexes, [&]<typename IndexType>(const PaddedPODArray<IndexType> & data)
     {
         for (size_t i = 0; i != data.size(); ++i)
         {
@@ -358,20 +350,14 @@ bool isIdentityIndexes(const IColumn & indexes)
                 return false;
         }
         return true;
-    };
-
-    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
-        return check(indexes_uint8->getData());
-    if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
-        return check(indexes_uint16->getData());
-    if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
-        return check(indexes_uint32->getData());
-    if (const auto * indexes_uint64 = typeid_cast<const ColumnUInt64 *>(&indexes))
-        return check(indexes_uint64->getData());
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected indexes column type {} in ColumnReplicated", indexes.getName());
+    });
 }
 
+}
+
+bool ColumnReplicated::hasIdentityIndexes() const
+{
+    return nested_column->size() == size() && isIdentityIndexes(*indexes.getIndexes());
 }
 
 /// The generic index path (nested_column->index()) builds a UInt64 index per nested element which is inefficient for nested ColumnArray.
@@ -381,7 +367,7 @@ ColumnPtr ColumnReplicated::convertToFullColumnIfReplicated() const
 {
     /// Indexes 0, 1, ..., size - 1 make the nested column the full column, as for a `String` column read from a part
     /// whose granules are all plain.
-    if (nested_column->size() == size() && isIdentityIndexes(*indexes.getIndexes()))
+    if (hasIdentityIndexes())
         return nested_column;
 
     if (const auto * src_array = typeid_cast<const ColumnArray *>(nested_column.get()))
@@ -1095,6 +1081,14 @@ void compactReplicatedColumns(Columns & columns)
     }
 }
 
+ColumnPtr removeIdentityReplication(const ColumnPtr & column)
+{
+    const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get());
+    if (!replicated || !replicated->hasIdentityIndexes())
+        return column;
+    return replicated->getNestedColumn();
+}
+
 void finishMergedReplicatedColumn(MutableColumnPtr & column)
 {
     auto * replicated = typeid_cast<ColumnReplicated *>(column.get());
@@ -1103,7 +1097,7 @@ void finishMergedReplicatedColumn(MutableColumnPtr & column)
 
     replicated->dropInsertionCache();
 
-    if (replicated->getNestedColumn()->size() == replicated->size() && isIdentityIndexes(*replicated->getIndexesColumn()))
+    if (replicated->hasIdentityIndexes())
         column = IColumn::mutate(std::move(replicated->getNestedColumn()).detach());
 }
 }

@@ -905,6 +905,20 @@ SerializationString::SerializationString(MergeTreeStringSerializationVersion ver
 namespace
 {
 
+/// Writes `count` lengths, `UInt64` each, little-endian, as the stream of substream `StringSizes` holds them.
+void writeStringSizes(const UInt64 * sizes, size_t count, WriteBuffer & ostr)
+{
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        for (size_t i = 0; i < count; ++i)
+            writeBinaryLittleEndian(sizes[i], ostr);
+    }
+    else
+    {
+        ostr.write(reinterpret_cast<const char *>(sizes), sizeof(UInt64) * count);
+    }
+}
+
 void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
 {
     const auto & column_string = typeid_cast<const ColumnString &>(column);
@@ -915,31 +929,19 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
         return;
 
     size_t end = limit && (offset + limit < size) ? offset + limit : size;
+    size_t count = end - offset;
+    PaddedPODArray<UInt64> sizes;
+    sizes.resize(count);
+
     UInt64 prev_offset = offset_values[offset - 1];
-    if constexpr (std::endian::native == std::endian::big)
+    for (size_t i = 0; i < count; ++i)
     {
-        for (size_t i = offset; i < end; ++i)
-        {
-            UInt64 current_offset = offset_values[i];
-            writeBinaryLittleEndian(current_offset - prev_offset, ostr);
-            prev_offset = current_offset;
-        }
+        UInt64 current_offset = offset_values[offset + i];
+        sizes[i] = current_offset - prev_offset;
+        prev_offset = current_offset;
     }
-    else
-    {
-        size_t count = end - offset;
-        PaddedPODArray<UInt64> sizes;
-        sizes.resize(count);
 
-        for (size_t i = 0; i < count; ++i)
-        {
-            UInt64 current_offset = offset_values[offset + i];
-            sizes[i] = current_offset - prev_offset;
-            prev_offset = current_offset;
-        }
-
-        ostr.write(reinterpret_cast<const char *>(sizes.data()), sizeof(UInt64) * count);
-    }
+    writeStringSizes(sizes.data(), count, ostr);
 }
 
 void serializeStringOffsets(const ColumnString::Offsets & offsets, WriteBuffer & ostr, size_t offset, size_t limit)
@@ -1304,6 +1306,33 @@ void writeChars(const ColumnString & column, size_t offset, size_t rows, WriteBu
     out.write(reinterpret_cast<const char *>(column.getChars().data() + begin), end - begin);
 }
 
+/// Writes the lengths and the bytes of the rows of `slice` as a plain granule stores them.
+void writePlainSlice(const StringGranuleDictionaryBuilder::Slice & slice, WriteBuffer & sizes_out, WriteBuffer & data_out)
+{
+    const auto * replicated = typeid_cast<const ColumnReplicated *>(slice.column.get());
+    if (!replicated)
+    {
+        const auto & column = assert_cast<const ColumnString &>(*slice.column);
+        serializeStringSizes(column, sizes_out, slice.offset, slice.rows);
+        writeChars(column, slice.offset, slice.rows, data_out);
+        return;
+    }
+
+    const auto & nested = assert_cast<const ColumnString &>(*replicated->getNestedColumn());
+    PaddedPODArray<UInt64> sizes(slice.rows);
+    replicated->getIndexes().callForIndexesData([&](const auto & indexes)
+    {
+        for (size_t i = 0; i < slice.rows; ++i)
+            sizes[i] = nested.getDataAt(indexes[slice.offset + i]).size();
+        writeStringSizes(sizes.data(), sizes.size(), sizes_out);
+        for (size_t i = 0; i < slice.rows; ++i)
+        {
+            const std::string_view value = nested.getDataAt(indexes[slice.offset + i]);
+            data_out.write(value.data(), value.size());
+        }
+    });
+}
+
 /// Writes the granule whose rows `state` holds, if any, as a dictionary or plain.
 void writeStringGranule(const StringGranuleOutputStreams & streams, SerializeBinaryBulkStateStringWithDictionaries & state)
 {
@@ -1317,7 +1346,7 @@ void writeStringGranule(const StringGranuleOutputStreams & streams, SerializeBin
         const auto & dictionary = builder.getDictionary();
         header.kind = StringGranuleHeader::Kind::Dictionary;
         header.dictionary_size = dictionary.size();
-        header.code_width = builder.getCodeWidth();
+        header.code_bits = builder.getCodeBits();
         header.write(*streams.indexes);
         builder.writeCodes(*streams.indexes);
         serializeStringSizes(dictionary, *streams.dictionary_sizes, 0, dictionary.size());
@@ -1327,11 +1356,7 @@ void writeStringGranule(const StringGranuleOutputStreams & streams, SerializeBin
     {
         header.write(*streams.indexes);
         for (const auto & slice : state.slices)
-        {
-            const auto & column = assert_cast<const ColumnString &>(*slice.column);
-            serializeStringSizes(column, *streams.sizes, slice.offset, slice.rows);
-            writeChars(column, slice.offset, slice.rows, *streams.data);
-        }
+            writePlainSlice(slice, *streams.sizes, *streams.data);
     }
 
     state.slices.clear();
@@ -1443,21 +1468,202 @@ size_t readStringsWithSizes(
     return sizes.size();
 }
 
-/// Appends the values of `dictionary` at `codes` to `column`.
-void insertDictionaryValues(ColumnString & column, const ColumnString & dictionary, const IColumn & codes)
+/// Appends the values of `dictionary` at the codes of rows `[start, start + length)` to `column`.
+void insertDictionaryValues(ColumnString & column, const ColumnString & dictionary, const IColumn & codes, size_t start, size_t length)
 {
-    auto insert = [&]<typename T>(const PaddedPODArray<T> & data)
+    ColumnIndex::callForIndexesData(codes, [&](const auto & data)
     {
-        for (T code : data)
-            column.insertFrom(dictionary, code);
+        for (size_t row = start; row < start + length; ++row)
+            column.insertFrom(dictionary, data[row]);
+    });
+}
+
+/// The streams of a column with dictionary granules, as the reader requests them.
+struct StringGranuleInputStreams
+{
+    ReadBuffer * indexes = nullptr;
+    ReadBuffer * sizes = nullptr;
+    ReadBuffer * data = nullptr;
+    ReadBuffer * dictionary_sizes = nullptr;
+    ReadBuffer * dictionary_data = nullptr;
+};
+
+/// Reads up to `limit` rows into `column`, a `ColumnReplicated` over a `ColumnString`.
+///
+/// The records and codes of the granules come first. Then the dictionaries of the granules that start in this
+/// call are read with one request to each of their streams, and so are the rows of the plain granules, so
+/// that whole compressed blocks decompress straight into the nested column instead of going through the
+/// buffer of the stream. The nested column gets the dictionaries first and the rows of plain granules after
+/// them, and the indexes of the rows come last, in the order of the rows. A granule that the call does not
+/// finish leaves its codes and a copy of its dictionary in the state for the next call.
+void readGranulesIntoReplicated(
+    ColumnReplicated & column,
+    size_t limit,
+    const StringGranuleInputStreams & streams,
+    DeserializeBinaryBulkStateStringWithDictionaries & state,
+    const StringValueFilter * filter)
+{
+    auto & nested = assert_cast<ColumnString &>(*column.getNestedColumn());
+
+    struct Dictionary
+    {
+        size_t size = 0;
+        MutableColumnPtr codes;
+        size_t position = 0;
     };
 
-    if (const auto * codes_uint8 = typeid_cast<const ColumnUInt8 *>(&codes))
-        insert(codes_uint8->getData());
-    else if (const auto * codes_uint16 = typeid_cast<const ColumnUInt16 *>(&codes))
-        insert(codes_uint16->getData());
-    else
-        insert(assert_cast<const ColumnUInt32 &>(codes).getData());
+    /// The rows of one granule that the call reads.
+    struct Piece
+    {
+        size_t rows = 0;
+        /// For a dictionary granule: its index in `dictionaries` and the row of the granule the piece starts
+        /// at.
+        std::optional<size_t> dictionary;
+        size_t first_row = 0;
+    };
+
+    std::vector<Dictionary> dictionaries;
+    std::vector<Piece> pieces;
+
+    /// A dictionary granule that an earlier call began: its values, kept in the state, come first. The state
+    /// forgets them when the next granule starts, so the call holds them itself.
+    const bool continues_dictionary = state.rows_left_in_granule != 0 && state.granule.kind == StringGranuleHeader::Kind::Dictionary;
+    const ColumnPtr kept_dictionary = continues_dictionary ? state.dictionary : nullptr;
+    if (continues_dictionary)
+        dictionaries.push_back({.size = state.granule.dictionary_size, .codes = std::move(state.granule_codes), .position = 0});
+
+    size_t new_dictionary_values = 0;
+    size_t plain_rows = 0;
+    size_t rows_read = 0;
+    while (rows_read < limit)
+    {
+        if (state.rows_left_in_granule == 0)
+        {
+            if (!state.startGranule(*streams.indexes))
+                break;
+            if (state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+            {
+                dictionaries.push_back({.size = state.granule.dictionary_size, .codes = std::move(state.granule_codes), .position = 0});
+                new_dictionary_values += state.granule.dictionary_size;
+            }
+        }
+
+        const size_t rows = std::min(limit - rows_read, state.rows_left_in_granule);
+        Piece piece{.rows = rows, .dictionary = std::nullopt, .first_row = 0};
+        if (state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+        {
+            piece.dictionary = dictionaries.size() - 1;
+            piece.first_row = state.firstUnreadRow();
+        }
+        else
+        {
+            plain_rows += rows;
+        }
+        pieces.push_back(piece);
+
+        state.rows_left_in_granule -= rows;
+        rows_read += rows;
+    }
+
+    PaddedPODArray<UInt64> sizes;
+    size_t position = nested.size();
+    if (continues_dictionary)
+    {
+        dictionaries[0].position = position;
+        nested.insertRangeFrom(*kept_dictionary, 0, dictionaries[0].size);
+        position += dictionaries[0].size;
+    }
+
+    if (new_dictionary_values != 0)
+    {
+        if (readStringsWithSizes(nested, new_dictionary_values, *streams.dictionary_sizes, *streams.dictionary_data, sizes, filter)
+            != new_dictionary_values)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the dictionaries of String granules");
+        for (size_t i = continues_dictionary ? 1 : 0; i < dictionaries.size(); ++i)
+        {
+            dictionaries[i].position = position;
+            position += dictionaries[i].size;
+        }
+    }
+
+    size_t plain_position = position;
+    if (plain_rows != 0 && readStringsWithSizes(nested, plain_rows, *streams.sizes, *streams.data, sizes, filter) != plain_rows)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read {} rows of plain String granules", plain_rows);
+
+    auto & indexes = column.getIndexes();
+    indexes.reserve(indexes.size() + rows_read);
+    for (const auto & piece : pieces)
+    {
+        if (!piece.dictionary)
+        {
+            indexes.insertIndexesRange(plain_position, piece.rows);
+            plain_position += piece.rows;
+            continue;
+        }
+
+        const auto & dictionary = dictionaries[*piece.dictionary];
+        indexes.insertIndexesRangeWithShift(
+            *dictionary.codes, piece.first_row, piece.rows, dictionary.position, dictionary.position + dictionary.size);
+    }
+
+    /// A call that ends inside a dictionary granule leaves its codes, and the values of a granule that began
+    /// in this call, in the state for the next call.
+    if (state.rows_left_in_granule != 0 && state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+    {
+        auto & last = dictionaries.back();
+        const bool last_began_in_this_call = !continues_dictionary || dictionaries.size() > 1;
+        if (last_began_in_this_call)
+            state.dictionary = nested.cut(last.position, last.size);
+        state.granule_codes = std::move(last.codes);
+    }
+
+    for (auto & dictionary : dictionaries)
+        if (dictionary.codes)
+            state.recycleCodes(std::move(dictionary.codes));
+}
+
+/// Reads up to `limit` rows into `column`, a `ColumnString`, with the rows of dictionary granules
+/// materialized.
+void readGranulesMaterialized(
+    ColumnString & column,
+    size_t limit,
+    const StringGranuleInputStreams & streams,
+    DeserializeBinaryBulkStateStringWithDictionaries & state,
+    const StringValueFilter * filter)
+{
+    PaddedPODArray<UInt64> sizes;
+    size_t rows_read = 0;
+    while (rows_read < limit)
+    {
+        if (state.rows_left_in_granule == 0)
+        {
+            if (!state.startGranule(*streams.indexes))
+                break;
+            if (state.granule.kind == StringGranuleHeader::Kind::Dictionary)
+            {
+                auto dictionary = ColumnString::create();
+                if (readStringsWithSizes(*dictionary, state.granule.dictionary_size, *streams.dictionary_sizes, *streams.dictionary_data, sizes, filter)
+                    != state.granule.dictionary_size)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the dictionary of a String granule");
+                state.dictionary = std::move(dictionary);
+            }
+        }
+
+        const size_t rows = std::min(limit - rows_read, state.rows_left_in_granule);
+        if (state.granule.kind == StringGranuleHeader::Kind::Plain)
+        {
+            if (readStringsWithSizes(column, rows, *streams.sizes, *streams.data, sizes, filter) != rows)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read {} rows of a plain String granule", rows);
+        }
+        else
+        {
+            insertDictionaryValues(
+                column, assert_cast<const ColumnString &>(*state.dictionary), *state.granule_codes, state.firstUnreadRow(), rows);
+        }
+
+        state.rows_left_in_granule -= rows;
+        rows_read += rows;
+    }
 }
 
 }
@@ -1478,19 +1684,20 @@ void SerializationString::deserializeBinaryBulkWithDictionaries(
 
     /// Each stream is requested once per call: in a read that does not continue the previous one, the getter seeks the
     /// stream to the mark on every request, and every stream has to be sought then, also those this call does not read.
-    ReadBuffer * data_stream = settings.getter(settings.path);
+    StringGranuleInputStreams streams;
+    streams.data = settings.getter(settings.path);
     settings.path.back() = Substream::StringDictionaryIndexes;
-    ReadBuffer * indexes_stream = settings.getter(settings.path);
+    streams.indexes = settings.getter(settings.path);
     settings.path.back() = Substream::StringSizes;
-    ReadBuffer * sizes_stream = settings.getter(settings.path);
+    streams.sizes = settings.getter(settings.path);
     settings.path.back() = Substream::StringDictionarySizes;
-    ReadBuffer * dictionary_sizes_stream = settings.getter(settings.path);
+    streams.dictionary_sizes = settings.getter(settings.path);
     settings.path.back() = Substream::StringDictionaryElements;
-    ReadBuffer * dictionary_data_stream = settings.getter(settings.path);
+    streams.dictionary_data = settings.getter(settings.path);
     settings.path.pop_back();
 
     /// The column is not in the part.
-    if (!indexes_stream)
+    if (!streams.indexes)
         return;
 
     auto & granules_state = *checkAndGetState<DeserializeBinaryBulkStateStringWithDictionaries>(state);
@@ -1498,103 +1705,15 @@ void SerializationString::deserializeBinaryBulkWithDictionaries(
     if (!settings.continuous_reading)
         granules_state.rows_left_in_granule = 0;
 
-    /// A caller that creates the column from the type instead of `createColumnForDeserialization` gets the rows of
-    /// dictionary granules materialized.
-    auto * column_replicated = typeid_cast<ColumnReplicated *>(&column);
-    auto & plain_column = column_replicated
-        ? assert_cast<ColumnString &>(*column_replicated->getNestedColumn())
-        : assert_cast<ColumnString &>(column);
-
     const StringValueFilter * filter = settings.string_value_filter.get();
-    const bool filter_enabled = filter && filter->isEnabled();
-    PaddedPODArray<UInt64> sizes;
     const size_t prev_size = column.size();
 
-    /// A `ColumnReplicated` gets the dictionary of a granule appended to its values once, read straight from the streams,
-    /// at `dictionary_position`. A granule that this call does not finish keeps a copy in the state for the next call.
-    std::optional<size_t> dictionary_position;
-    /// Whether no value of the current dictionary matches the filter: all rows of the granule are then empty strings,
-    /// which the filter guarantees the caller discards, so their codes are skipped.
-    bool dictionary_filtered_out = false;
-
-    auto read_dictionary = [&](ColumnString & into, const StringGranuleHeader & granule)
-    {
-        const size_t chars_before = into.getChars().size();
-        if (readStringsWithSizes(into, granule.dictionary_size, *dictionary_sizes_stream, *dictionary_data_stream, sizes, filter)
-            != granule.dictionary_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the dictionary of a String granule");
-        dictionary_filtered_out = filter_enabled && into.getChars().size() == chars_before;
-    };
-
-    size_t rows_read = 0;
-    while (rows_read < limit)
-    {
-        auto & granule = granules_state.granule;
-        if (granules_state.rows_left_in_granule == 0)
-        {
-            if (indexes_stream->eof())
-                break;
-
-            granule.read(*indexes_stream);
-            granules_state.rows_left_in_granule = granule.rows;
-            granules_state.dictionary.reset();
-            dictionary_position.reset();
-            if (granule.kind == StringGranuleHeader::Kind::Dictionary)
-            {
-                if (column_replicated)
-                {
-                    dictionary_position = plain_column.size();
-                    read_dictionary(plain_column, granule);
-                }
-                else
-                {
-                    auto dictionary = ColumnString::create();
-                    read_dictionary(*dictionary, granule);
-                    granules_state.dictionary = std::move(dictionary);
-                }
-            }
-        }
-        else if (granule.kind == StringGranuleHeader::Kind::Dictionary && column_replicated && !dictionary_position)
-        {
-            /// The granule began in an earlier call, which kept its dictionary.
-            dictionary_position = plain_column.size();
-            plain_column.insertRangeFrom(*granules_state.dictionary, 0, granules_state.dictionary->size());
-        }
-
-        const size_t rows = std::min(limit - rows_read, granules_state.rows_left_in_granule);
-        if (granule.kind == StringGranuleHeader::Kind::Plain)
-        {
-            const size_t values_before = plain_column.size();
-            if (readStringsWithSizes(plain_column, rows, *sizes_stream, *data_stream, sizes, filter) != rows)
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read {} rows of a plain String granule", rows);
-            if (column_replicated)
-                column_replicated->getIndexes().insertIndexesRange(values_before, rows);
-        }
-        else if (dictionary_filtered_out)
-        {
-            indexes_stream->ignore(rows * granule.code_width);
-            if (column_replicated)
-                column_replicated->getIndexes().insertManyIndexes(*dictionary_position, rows);
-            else
-                plain_column.insertManyDefaults(rows);
-        }
-        else
-        {
-            auto codes = readStringGranuleCodes(*indexes_stream, granule, rows);
-            if (column_replicated)
-                column_replicated->getIndexes().insertIndexesRangeWithShift(
-                    *codes, 0, rows, *dictionary_position, *dictionary_position + granule.dictionary_size);
-            else
-                insertDictionaryValues(plain_column, assert_cast<const ColumnString &>(*granules_state.dictionary), *codes);
-        }
-
-        granules_state.rows_left_in_granule -= rows;
-        rows_read += rows;
-    }
-
-    /// The next call continues the granule and needs its dictionary.
-    if (granules_state.rows_left_in_granule != 0 && dictionary_position)
-        granules_state.dictionary = plain_column.cut(*dictionary_position, granules_state.granule.dictionary_size);
+    /// A caller that creates the column from the type instead of `createColumnForDeserialization` gets the
+    /// rows of dictionary granules materialized.
+    if (auto * column_replicated = typeid_cast<ColumnReplicated *>(&column))
+        readGranulesIntoReplicated(*column_replicated, limit, streams, granules_state, filter);
+    else
+        readGranulesMaterialized(assert_cast<ColumnString &>(column), limit, streams, granules_state, filter);
 
     settings.path.push_back(Substream::Regular);
     addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);

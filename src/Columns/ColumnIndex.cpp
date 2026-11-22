@@ -338,6 +338,11 @@ void ColumnIndex::callForIndexes(std::function<void(size_t, size_t)> && callback
     callForType(std::move(callback_for_type), size_of_type);
 }
 
+void ColumnIndex::throwUnexpectedIndexesType(const IColumn & column)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of indexes column: {}", column.getName());
+}
+
 std::optional<IColumn::Filter> ColumnIndex::buildUsedRowsFilter(size_t indexed_data_size) const
 {
     size_t used_rows = 0;

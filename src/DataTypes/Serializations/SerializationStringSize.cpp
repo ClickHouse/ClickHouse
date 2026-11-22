@@ -284,23 +284,19 @@ void appendStringSizes(PaddedPODArray<UInt64> & sizes, const IColumn & column, s
         sizes.push_back(offsets[row] - offsets[row - 1]);
 }
 
-/// Appends `dictionary_sizes[code]` for every code.
-void appendDictionarySizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dictionary_sizes, const IColumn & codes)
+/// Appends `dictionary_sizes[code]` for the codes of rows `[start, start + length)`.
+void appendDictionarySizes(
+    PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dictionary_sizes, const IColumn & codes, size_t start, size_t length)
 {
-    auto append = [&]<typename T>(const PaddedPODArray<T> & data)
+    ColumnIndex::callForIndexesData(codes, [&](const auto & data)
     {
         const size_t prev_size = sizes.size();
-        sizes.resize(prev_size + data.size());
-        for (size_t i = 0; i < data.size(); ++i)
-            sizes[prev_size + i] = dictionary_sizes[data[i]];
-    };
-
-    if (const auto * codes_uint8 = typeid_cast<const ColumnUInt8 *>(&codes))
-        append(codes_uint8->getData());
-    else if (const auto * codes_uint16 = typeid_cast<const ColumnUInt16 *>(&codes))
-        append(codes_uint16->getData());
-    else
-        append(assert_cast<const ColumnUInt32 &>(codes).getData());
+        sizes.resize(prev_size + length);
+        UInt64 * out = sizes.data() + prev_size;
+        const auto * in = data.data() + start;
+        for (size_t i = 0; i < length; ++i)
+            out[i] = dictionary_sizes[in[i]];
+    });
 }
 
 }
@@ -357,17 +353,16 @@ void SerializationStringSize::deserializeBinaryBulkWithDictionaries(
     if (!settings.continuous_reading)
         granules_state.rows_left_in_granule = 0;
 
+    sizes.reserve(sizes.size() + limit);
     size_t rows_read = 0;
     while (rows_read < limit)
     {
-        auto & granule = granules_state.granule;
+        const auto & granule = granules_state.granule;
         if (granules_state.rows_left_in_granule == 0)
         {
-            if (indexes_stream->eof())
+            if (!granules_state.startGranule(*indexes_stream))
                 break;
 
-            granule.read(*indexes_stream);
-            granules_state.rows_left_in_granule = granule.rows;
             if (granule.kind == StringGranuleHeader::Kind::Dictionary)
             {
                 granules_state.dictionary_sizes.clear();
@@ -387,8 +382,7 @@ void SerializationStringSize::deserializeBinaryBulkWithDictionaries(
         }
         else
         {
-            auto codes = readStringGranuleCodes(*indexes_stream, granule, rows);
-            appendDictionarySizes(sizes, granules_state.dictionary_sizes, *codes);
+            appendDictionarySizes(sizes, granules_state.dictionary_sizes, *granules_state.granule_codes, granules_state.firstUnreadRow(), rows);
         }
 
         granules_state.rows_left_in_granule -= rows;
