@@ -16,6 +16,7 @@ namespace DB
     using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
     class ActionsDAG;
+    struct FormatSettings;
 
     struct ReadFromFormatInfo
     {
@@ -43,6 +44,10 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
+        /// `Map` columns of `format_header` whose every requested use is `keys` (resp. `values`) and that no default expression
+        /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
+        NameSet map_columns_read_by_keys;
+        NameSet map_columns_read_by_values;
 
         /// The serialization version of the enclosing step (`ctx.step_version`) since which `columns_added_after_format`
         /// is written. The step that serializes this structure (`ReadFromObjectStorage`) has to register this version in
@@ -64,6 +69,9 @@ namespace DB
         /// The filter without the conjuncts on hive partition, virtual columns and `columns_added_after_format`:
         /// they are added after the format, and a column of the data file with the same name holds other values.
         std::shared_ptr<const ActionsDAG> getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const;
+        /// Whether the format reads `column` as stored and its bounds cover every value: a default is computed after
+        /// skipping, float bounds omit NaN, `String` bounds of a fixed-length array keep padding, other types may lack bounds.
+        bool canSkipDataByStatisticsOf(const ColumnWithTypeAndName & column) const;
         /// A row-level filter (row policy) is not stored here and does not change the headers. The source
         /// applies it via `FormatFilterInfo` and keeps its input columns, because:
         /// - `DEFAULT` expressions are computed after the format applied the filter and can depend on these columns;
@@ -84,6 +92,8 @@ namespace DB
     /// storage must agree on this, otherwise the pushdown silently becomes a no-op on one
     /// entrypoint while working on another.
     bool formatNeedsEagerKeyConditionSets(const String & format_name);
+
+    bool formatSkipsDataByStatistics(const String & format_name, const FormatSettings & format_settings);
 
     /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
     void prepareEagerKeyConditionSets(

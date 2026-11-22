@@ -244,6 +244,7 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context
     auto snapshot_version = getSnapshotVersion(settings);
     try
     {
+        checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
         return getTableSnapshot(snapshot_version)->getTotalRows();
     }
     catch (...)
@@ -267,6 +268,7 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
     auto snapshot_version = getSnapshotVersion(settings);
     try
     {
+        checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
         return getTableSnapshot(snapshot_version)->getTotalBytes();
     }
     catch (...)
@@ -279,6 +281,9 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
 
 void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
+    /// The kernel takes the server's identity from the shared connection parameters, whose restriction flag concurrent
+    /// sessions overwrite, so every entrypoint checks the session itself.
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     if (!snapshot_version.has_value())
     {
@@ -307,6 +312,7 @@ DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(const D
 
 std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTableStateSnapshot(ContextPtr context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
 
@@ -318,6 +324,7 @@ std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTable
 std::unique_ptr<StorageInMemoryMetadata> DeltaLakeMetadataDeltaKernel::buildStorageMetadataFromState(
     const DataLakeTableStateSnapshot & state, ContextPtr context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     chassert(std::holds_alternative<DeltaLake::TableStateSnapshot>(state));
     const auto & delta_state = std::get<DeltaLake::TableStateSnapshot>(state);
     const auto snapshot_version = static_cast<SnapshotVersion>(delta_state.version);
@@ -344,6 +351,7 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     StorageMetadataPtr storage_metadata_snapshot,
     ContextPtr context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     logMetadataFiles(context);
 
     FailPointInjection::pauseFailPoint(FailPoints::delta_lake_metadata_iterate_pause);
@@ -376,6 +384,7 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, local_context);
     const auto & settings = local_context->getSettingsRef();
     if (auto version_range = getChangeDataFeedVersionRange(settings, /* snapshot_version */ std::nullopt))
         return getTableChanges(*version_range)->getSchema();
@@ -600,6 +609,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     bool supports_subset_of_columns,
     bool /*supports_tuple_elements*/)
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
+
     /// The below code is similar to what can be found in `prepareReadingFromFormat.cpp`,
     /// but is adjusted for delta-lake.
     ReadFromFormatInfo info;
@@ -776,6 +787,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage_, context);
     if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {
         throw Exception(
@@ -963,6 +975,8 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
+
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, local_context);
 
     /// Columnless CREATE is allowed only to register/attach an existing table (schema read from the
     /// `_delta_log`); a new table needs an explicit schema.
