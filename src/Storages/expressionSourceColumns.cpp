@@ -77,7 +77,8 @@ Names expressionSourceColumns(
     bool keep_alias_columns,
     const StorageSnapshotPtr & storage_snapshot,
     const std::optional<StorageID> & table_id,
-    const std::function<bool(const StorageID &)> & reads_from)
+    const std::function<bool(const StorageID &)> & reads_from,
+    Names * subquery_reads)
 {
     if (!ast)
         return {};
@@ -107,7 +108,12 @@ Names expressionSourceColumns(
         result = keep_alias_columns ? table_expression_data->getSelectedColumnsNames() : table_expression_data->getColumnNames();
 
     if (reads_from)
+    {
+        const auto outer_reads = result.size();
         collectReadsFrom(expression, table_node, reads_from, result);
+        if (subquery_reads)
+            subquery_reads->assign(result.begin() + outer_reads, result.end());
+    }
     return result;
 }
 

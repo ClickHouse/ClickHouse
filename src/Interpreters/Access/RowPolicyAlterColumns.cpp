@@ -68,7 +68,8 @@ Names columnsReadByFilter(
     const StorageID & table_id,
     const TableNames & tables,
     const ContextPtr & context,
-    std::string_view stage)
+    std::string_view stage,
+    Names * subquery_reads = nullptr)
 {
     try
     {
@@ -76,7 +77,7 @@ Names columnsReadByFilter(
         auto ast = wrapStandaloneSubqueryFilter(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         return expressionSourceColumns(
             ast, storage_snapshot->metadata->getColumns(), context, /*keep_alias_columns=*/ true, storage_snapshot, table_id,
-            [&](const StorageID & id) { return tables.contains(id); });
+            [&](const StorageID & id) { return tables.contains(id); }, subquery_reads);
     }
     catch (Exception & e)
     {
@@ -170,7 +171,9 @@ void checkRowPoliciesBeforeAlter(
                 if (filter.empty())
                     continue;
 
-                const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, tables, analysis_context, "before");
+                Names subquery_reads;
+                const auto used_columns = columnsReadByFilter(
+                    filter, policy_name, storage_snapshot, table_id, tables, analysis_context, "before", &subquery_reads);
                 for (const auto & command : commands)
                 {
                     if (removesColumn(command) && usesColumn(used_columns, old_columns, command.column_name))
@@ -186,7 +189,7 @@ void checkRowPoliciesBeforeAlter(
                 if (!modifies_used)
                     continue;
 
-                /// a subquery reads the table before the alter, so only the names tell if its subcolumns are kept
+                /// a subquery reads the table before the alter, so only the names and types tell if it still reads the same
                 const auto & new_columns = new_storage_snapshot->metadata->getColumns();
                 for (const auto & used : used_columns)
                 {
@@ -194,6 +197,16 @@ void checkRowPoliciesBeforeAlter(
                     if (old_column && !new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "Cannot modify column {}: row policy {} reads {}, which the new type does not have. Change or drop the policy first",
+                            backQuote(old_column->getNameInStorage()), policy_name, backQuote(used));
+                }
+                for (const auto & used : subquery_reads)
+                {
+                    const auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
+                    const auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
+                    if (old_column && new_column && !new_column->type->equals(*old_column->type))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot modify column {}: row policy {} reads {} in a subquery, which cannot be checked against the new type. "
+                            "Change or drop the policy first",
                             backQuote(old_column->getNameInStorage()), policy_name, backQuote(used));
                 }
                 columnsReadByFilter(filter, policy_name, new_storage_snapshot, table_id, tables, analysis_context, "against the columns after");
