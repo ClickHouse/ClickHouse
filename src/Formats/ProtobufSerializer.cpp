@@ -814,6 +814,7 @@ namespace
                     if (row_num != old_size - 1)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace a string in the middle of ColumnString");
                     column_string.popBack(1);
+                    data.insert(text_buffer.data(), text_buffer.data() + text_buffer.size());
                 }
                 try
                 {
