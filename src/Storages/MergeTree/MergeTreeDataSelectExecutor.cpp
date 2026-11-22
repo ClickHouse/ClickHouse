@@ -2689,7 +2689,6 @@ bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
 
     const auto & settings = context->getSettingsRef();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
     auto storage_settings = part->storage.getSettings();
     const bool skip_constant_folding = !settings[Setting::use_constant_folding_in_index_analysis];
 
@@ -2702,14 +2701,14 @@ bool MergeTreeDataSelectExecutor::canExcludePartByIndexAnalysis(
             return true;
     }
 
-    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, storage_settings); !minmax_columns.empty())
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(*metadata_snapshot, storage_settings); !minmax_columns.empty())
     {
         auto minmax_columns_types = minmax_columns.getTypes();
         bool skip_minmax_analysis = !settings[Setting::use_partition_pruning] || !settings[Setting::use_skip_indexes];
         auto minmax_factory = [context, metadata_snapshot, storage_settings, minmax_columns, skip_minmax_analysis]
             (const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
-            auto minmax_expression = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), storage_settings, ExpressionActionsSettings(context));
+            auto minmax_expression = MergeTreeData::getMinMaxExpr(*metadata_snapshot, storage_settings, ExpressionActionsSettings(context));
             ActionsDAGWithInversionPushDown wrapped(predicate, context, /*boolean_context=*/false);
             KeyCondition condition{wrapped, context, minmax_columns.getNames(), minmax_expression, /*single_point_=*/false, skip_minmax_analysis};
             /// The part minmax bound comes from `getExtremes`, which skips NaN, as in `ReadFromMergeTree::buildPartitionPruningIndexes`.
