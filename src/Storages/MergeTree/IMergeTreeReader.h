@@ -321,10 +321,11 @@ protected:
 
     /// Names of the result columns as the query requests them, position by position with
     /// `columns_to_read`, which holds the names in the part: for a column renamed after the part
-    /// was written, the part still knows it by its old name. Cache entries are identified by the
+    /// was written, the part still knows it by its old name. Cache entries are listed under the
     /// requested name, so `system.columns_cache` and its access checks see the column as the
-    /// current schema names it. The renames themselves invalidate the table's entries, so a
-    /// name never refers to two columns within one schema identity.
+    /// current schema names it, and are identified also by the name in the part: which column of
+    /// the part a requested name reads depends on the pending renames, and `KILL MUTATION` can
+    /// drop one without changing the schema.
     Names requested_column_names;
 
     /// Invalidation generation captured once when the reader was created, not per mark range.

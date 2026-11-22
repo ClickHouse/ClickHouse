@@ -589,7 +589,7 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
     }
 }
 
-std::unique_ptr<RestCatalog> makeRestCatalog(
+std::shared_ptr<RestCatalog> makeRestCatalog(
     const RestCatalogTestServer & server,
     const DB::ContextMutablePtr & context,
     DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO)
@@ -600,7 +600,7 @@ std::unique_ptr<RestCatalog> makeRestCatalog(
     context->setSetting("http_retry_initial_backoff_ms", 1u);
     context->setSetting("http_retry_max_backoff_ms", 2u);
 
-    return std::make_unique<RestCatalog>(
+    return std::make_shared<RestCatalog>(
         "warehouse",
         server.getUrl(),
         /* catalog_credential */"",
