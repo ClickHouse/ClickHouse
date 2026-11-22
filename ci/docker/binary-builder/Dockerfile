@@ -22,9 +22,10 @@ COPY --from=cctools \
 # Refresh the kitware GPG key inherited from fasttest base image, it may be stale
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg
 
+# clang-tidy and llvm come from the fasttest image. Upgrading them here (apt would also do it for the packages of
+# bolt's source package) stores a second copy of LLVM in this layer whenever apt.llvm.org has rebuilt them.
 RUN apt-get update \
-    && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
-    && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
+    && apt-get -o Dpkg::Options::="--force-overwrite" -o APT::Get::Upgrade-By-Source-Package=false install --yes \
         binutils-dev \
         build-essential \
         zlib1g-dev \
@@ -34,8 +35,6 @@ RUN apt-get update \
         yasm \
         zstd \
         zip \
-        clang-tidy-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION} \
         bolt-${LLVM_VERSION} \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \

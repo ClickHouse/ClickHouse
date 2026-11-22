@@ -6334,8 +6334,10 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
 
                     const_value = converted;
 
-                    /// Only an exact conversion preserves the candidate's precision.
-                    if (!key_expr_type_not_null->equals(*common_type))
+                    /// Only an exact conversion preserves the candidate's precision. An `Enum` is compared with
+                    /// a number by its value, which an integer supertype holds exactly.
+                    if (!key_expr_type_not_null->equals(*common_type)
+                        && !(isEnum(key_expr_type_not_null) && isNativeInteger(common_type)))
                         is_relaxed = true;
                 }
                 if (!key_expr_type_not_null->equals(*common_type))

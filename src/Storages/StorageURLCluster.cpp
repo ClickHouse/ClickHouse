@@ -181,7 +181,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     /// about the other tasks. The limit is on the addresses of both stages together, as for `url`, so the
     /// iterator counts the options of every task as it generates it, before the `_path` / `_file` filter:
     /// `{1,2}{1|2}` is four addresses, not two tasks of two addresses each.
-    auto next_callback = [iter = std::move(iterator), context](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator), context](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto url = iter->next();
         if (url.empty())

@@ -154,6 +154,9 @@ public:
     /// Use this instead of `getActualTableStructure` from outside `execute`.
     ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
 
+    /// The source whose READ/WRITE grants the function needs (e.g. S3, FILE), if any.
+    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
+
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
@@ -187,8 +190,6 @@ public:
     virtual ~ITableFunction() = default;
 
 protected:
-    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
-
     /// Appends to `result` the indexes of the named arguments, whose keys name parameters of the table function
     /// (e.g. the overrides of a named collection) and so must not resolve to a column or alias: the trailing run of
     /// `key = value` arguments, and the `wrapper_names` arguments, such as `headers(...)`, at any position. A
