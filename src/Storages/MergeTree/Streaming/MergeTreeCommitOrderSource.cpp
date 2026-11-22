@@ -120,6 +120,16 @@ IProcessor::Status MergeTreeCommitOrderSource::handleShutdown()
     auto & output = outputs.front();
     chassert(output.isFinished());
 
+    /// The query can stop reading before the read round is finished (e.g. `LIMIT BY` or `DISTINCT` with constant keys).
+    /// Its result is the result over the whole snapshot of a bounded read, so the cursor advances to the end of
+    /// the snapshot, the same as if the rest of it was read. Otherwise the next incremental refresh would read
+    /// the same rows again. A cancelled query does not get here with a successful result.
+    if (!stream_settings.subscribe_for_updates && current_round.has_value() && !isCancelled())
+    {
+        read_state.finishReadRound(current_round->partitions, current_round->safe_block_numbers);
+        surfaceFinalCursor();
+    }
+
     if (inputs.empty() || !inputs.front().isConnected())
         return Status::Finished;
 

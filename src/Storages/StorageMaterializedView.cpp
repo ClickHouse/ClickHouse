@@ -186,8 +186,8 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Incremental refresh requires exactly one source table, but the query references other tables (in a JOIN or a subquery)");
 
-        /// A `LIMIT` can close the source before the bounded read finishes, and then the read does not report
-        /// the cursor it advanced to: the refresh would succeed with the previous cursor and append the same rows again.
+        /// A read that the query stops early reports the end of its bounded read as the cursor, so the rows after
+        /// a `LIMIT` would be skipped by every refresh, while a user could expect the next refresh to read them.
         const auto & select = getSingleSelectQuery(select_with_union);
         if (select.limitLength() || select.limitOffset())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Incremental refresh does not support LIMIT");

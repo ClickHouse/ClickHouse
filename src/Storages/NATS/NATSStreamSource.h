@@ -55,6 +55,7 @@ public:
 
     String getName() const override { return "NATSStreamSource"; }
 
+    Status prepare() override;
     Chunk generate() override;
     std::optional<Chunk> tryGenerate() override;
 
@@ -62,6 +63,7 @@ private:
     void start();
     bool hasNothingPending();
     void reportFinalCursor() const;
+    void reportEndOfBoundedReadAsCursor();
     void finish();
 
     Params params;

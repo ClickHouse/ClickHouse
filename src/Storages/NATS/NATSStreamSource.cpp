@@ -233,6 +233,28 @@ void NATSStreamSource::reportFinalCursor() const
     streaming_cursor->merge(cursor);
 }
 
+void NATSStreamSource::reportEndOfBoundedReadAsCursor()
+{
+    /// Nothing was read if the read did not start, and a finished read has already reported its cursor.
+    if (!started || stream_finished || stream_settings.subscribe_for_updates)
+        return;
+
+    last_sequence = std::max(last_sequence, end_sequence);
+    finish();
+}
+
+IProcessor::Status NATSStreamSource::prepare()
+{
+    /// The query can stop reading before the bounded read is finished (e.g. `LIMIT BY` or `DISTINCT` with constant keys).
+    /// Its result is the result over all the messages of the bounded read, so the cursor advances to its end,
+    /// the same as if the rest of the messages were read. Otherwise the next incremental refresh would read
+    /// the same messages again. A cancelled query does not have a successful result.
+    if (getPort().isFinished() && !isCancelled())
+        reportEndOfBoundedReadAsCursor();
+
+    return ISource::prepare();
+}
+
 std::optional<Chunk> NATSStreamSource::tryGenerate()
 {
     /// An idle stream returns an empty chunk after a poll, so that the thread runs other processors in the meantime
