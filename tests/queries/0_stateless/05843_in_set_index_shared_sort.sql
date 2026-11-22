@@ -13,7 +13,8 @@ INSERT INTO t_in_shared_sort SELECT number, number % 100 FROM numbers(50000, 500
 INSERT INTO t_in_shared_sort SELECT number, number % 100 FROM numbers(100000, 50000);
 INSERT INTO t_in_shared_sort SELECT number, number % 100 FROM numbers(150000, 50000);
 
--- The keys 80000 .. 109999 in a scrambled order (7919 is prime).
+-- The keys 80000 .. 109999 in a scrambled order (7919 is prime). With parallel replicas, only the local plan shows
+-- the index analysis in `EXPLAIN`.
 SELECT 'shared', count() FROM t_in_shared_sort
 WHERE k IN (SELECT toUInt64(80000 + number * 7919 % 30000) FROM numbers(30000))
 SETTINGS use_query_condition_cache = 0, max_threads = 4;
@@ -22,7 +23,7 @@ WITH (
     SELECT groupArray(explain) FROM (
         EXPLAIN indexes = 1 SELECT count() FROM t_in_shared_sort
         WHERE k IN (SELECT toUInt64(80000 + number * 7919 % 30000) FROM numbers(30000))
-        SETTINGS use_query_condition_cache = 0, max_threads = 4)
+        SETTINGS use_query_condition_cache = 0, max_threads = 4, parallel_replicas_local_plan = 1)
 ) AS lines,
 arrayFirst(x -> x ILIKE '%Granules: %/%', arraySlice(lines, arrayFirstIndex(x -> x ILIKE '%PrimaryKey%', lines))) AS granules
 SELECT 'shared primary key prunes', toUInt64(extract(granules, 'Granules: (\\d+)/')) < toUInt64(extract(granules, 'Granules: \\d+/(\\d+)'));
@@ -47,7 +48,7 @@ WITH (
     SELECT groupArray(explain) FROM (
         EXPLAIN indexes = 1 SELECT count() FROM t_in_shared_sort_tuple
         WHERE (b, a) IN (SELECT toUInt64(x % 100), intDiv(x, 100) FROM (SELECT toUInt64(80000 + number * 7919 % 30000) AS x FROM numbers(30000)))
-        SETTINGS use_query_condition_cache = 0, max_threads = 4)
+        SETTINGS use_query_condition_cache = 0, max_threads = 4, parallel_replicas_local_plan = 1)
 ) AS lines,
 arrayFirst(x -> x ILIKE '%Granules: %/%', arraySlice(lines, arrayFirstIndex(x -> x ILIKE '%PrimaryKey%', lines))) AS granules
 SELECT 'reordered tuple primary key prunes', toUInt64(extract(granules, 'Granules: (\\d+)/')) < toUInt64(extract(granules, 'Granules: \\d+/(\\d+)'));
