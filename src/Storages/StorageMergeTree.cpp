@@ -4280,65 +4280,97 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
     if (parts_to_remove.empty())
         return 0;
 
-    if (with_pause_fail_point)
+    /// `grabOldParts` moved the whole batch to the `Deleting` state, and nothing selects a part in that state again.
+    /// So until `clearPartsFromFilesystemAndRollbackIfError` takes the batch over, an exception thrown below must
+    /// return to the `Outdated` state every part of the batch that is still `Deleting`, for a later round to retry.
+    /// This also runs in the query of a partition command, under its memory limit, so the lookups of the
+    /// directories and the allocations below can throw.
+    auto roll_back_parts_that_are_still_deleting = [&]
     {
-        // storage_merge_tree_background_clear_old_parts_pause is set after grabOldParts intentionally
-        // It allows the use case
-        // - firstly SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause
-        // - after do operation like merge / optimize final (operations like drop part / drop partition / truncate do not fit here, they remove old parts synchronously without timeout)
-        // All parts which are dropped in that operations are not removed until failpoint is released
-        // If we would set this failpoint before grabOldParts, it leads us to a case when
-        // background thread already passed the failpoint but did not reach grabOldParts yet
-        // if failpoint is enabled at that time, background thread could grab parts from those operations and remove them regardless enabled failpoint
-        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
-    }
-
-    /// Re-check lease freshness at the actual deletion point, not only at the entry into the
-    /// cleanup pass: selecting the parts above (and the pause point) can hold this thread past
-    /// `leader_election_session_timeout`, and deleting the selected parts as a stale leader
-    /// would destroy data the next leader still serves. Return the parts to the Outdated state
-    /// so a later pass (as the leader) can retry.
-    if (!canRunDestructiveCleanup() || (cleanup_epoch && currentLeadershipEpoch() != *cleanup_epoch))
-    {
-        LOG_WARNING(log, "Not removing {} old parts: the leader lease is no longer fresh, or the leadership epoch changed "
-            "since they were selected (leader_election)", parts_to_remove.size());
-        rollbackDeletingParts(parts_to_remove);
-        return 0;
-    }
-
-    if (cleanup_epoch)
-    {
-        /// A part may outlive the directory it was loaded from: a cleanup rejected by the epoch fence above returns
-        /// its parts to the `Outdated` state, possibly after the takeover scan of a later epoch, which reconciles
-        /// only the parts that are not being removed. If an intermediate leader removed the directory and then
-        /// reused its name for new data, removing the part would remove the new data. Its own directory is gone
-        /// already, so it is only forgotten in memory.
-        DataPartsVector parts_with_own_directory;
-        DataPartsVector parts_with_replaced_directory;
+        auto lock = lockParts();
         for (const auto & part : parts_to_remove)
         {
-            std::optional<String> current_incarnation;
-            if (part->shared_storage_incarnation)
-                current_incarnation = getPartSharedStorageIncarnation(*part);
+            /// A part that `removePartsFinally` has taken out of the set is not rolled back.
+            auto it = data_parts_by_info.find(part->info);
+            if (it == data_parts_by_info.end() || it->get() != part.get() || part->getState() != DataPartState::Deleting)
+                continue;
 
-            if (current_incarnation && *current_incarnation != *part->shared_storage_incarnation)
-                parts_with_replaced_directory.push_back(part);
-            else
-                parts_with_own_directory.push_back(part);
+            modifyPartState(it, DataPartState::Outdated, lock);
+            part->removal_state.store(DataPartRemovalState::REMOVE_ROLLED_BACK, std::memory_order_relaxed);
+        }
+    };
+
+    DataPartsVector parts_with_own_directory;
+    DataPartsVector parts_with_replaced_directory;
+    try
+    {
+        if (with_pause_fail_point)
+        {
+            // storage_merge_tree_background_clear_old_parts_pause is set after grabOldParts intentionally
+            // It allows the use case
+            // - firstly SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause
+            // - after do operation like merge / optimize final (operations like drop part / drop partition / truncate do not fit here, they remove old parts synchronously without timeout)
+            // All parts which are dropped in that operations are not removed until failpoint is released
+            // If we would set this failpoint before grabOldParts, it leads us to a case when
+            // background thread already passed the failpoint but did not reach grabOldParts yet
+            // if failpoint is enabled at that time, background thread could grab parts from those operations and remove them regardless enabled failpoint
+            FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
         }
 
-        if (!parts_with_replaced_directory.empty())
+        /// Re-check lease freshness at the actual deletion point, not only at the entry into the
+        /// cleanup pass: selecting the parts above (and the pause point) can hold this thread past
+        /// `leader_election_session_timeout`, and deleting the selected parts as a stale leader
+        /// would destroy data the next leader still serves. Return the parts to the Outdated state
+        /// so a later pass (as the leader) can retry.
+        if (!canRunDestructiveCleanup() || (cleanup_epoch && currentLeadershipEpoch() != *cleanup_epoch))
         {
-            Strings names;
-            for (const auto & part : parts_with_replaced_directory)
-                names.push_back(part->name);
-            LOG_WARNING(log, "Forgetting {} old parts without removing them from the shared storage: their directories were "
-                "replaced by other ones with the same names (leader_election). Parts: [{}]",
-                names.size(), fmt::join(names, ", "));
-            removePartsFinally(parts_with_replaced_directory);
-            parts_to_remove = std::move(parts_with_own_directory);
+            LOG_WARNING(log, "Not removing {} old parts: the leader lease is no longer fresh, or the leadership epoch changed "
+                "since they were selected (leader_election)", parts_to_remove.size());
+            rollbackDeletingParts(parts_to_remove);
+            return 0;
+        }
+
+        if (cleanup_epoch)
+        {
+            /// A part may outlive the directory it was loaded from: a cleanup rejected by the epoch fence above returns
+            /// its parts to the `Outdated` state, possibly after the takeover scan of a later epoch, which reconciles
+            /// only the parts that are not being removed. If an intermediate leader removed the directory and then
+            /// reused its name for new data, removing the part would remove the new data. Its own directory is gone
+            /// already, so it is only forgotten in memory.
+            for (const auto & part : parts_to_remove)
+            {
+                std::optional<String> current_incarnation;
+                if (part->shared_storage_incarnation)
+                    current_incarnation = getPartSharedStorageIncarnation(*part);
+
+                if (current_incarnation && *current_incarnation != *part->shared_storage_incarnation)
+                    parts_with_replaced_directory.push_back(part);
+                else
+                    parts_with_own_directory.push_back(part);
+            }
+
+            if (!parts_with_replaced_directory.empty())
+            {
+                Strings names;
+                for (const auto & part : parts_with_replaced_directory)
+                    names.push_back(part->name);
+                LOG_WARNING(log, "Forgetting {} old parts without removing them from the shared storage: their directories were "
+                    "replaced by other ones with the same names (leader_election). Parts: [{}]",
+                    names.size(), fmt::join(names, ", "));
+                removePartsFinally(parts_with_replaced_directory);
+            }
         }
     }
+    catch (...)
+    {
+        roll_back_parts_that_are_still_deleting();
+        throw;
+    }
+
+    /// With an epoch, every part of the batch went to one of the two lists above, and the parts whose directories
+    /// were replaced are forgotten already.
+    if (cleanup_epoch)
+        parts_to_remove = std::move(parts_with_own_directory);
 
     clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old", cleanup_epoch);
 
@@ -6239,13 +6271,15 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
                 auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
                 calculated_checksums.checkEqual(part->checksums, true, part->name);
 
-                /// Persisting the recomputed `checksums.txt` writes into the part's data
-                /// directory, which for `leader_election` tables lives on shared object
-                /// storage. Only the writable leader may write there; a follower would
-                /// otherwise race the node that holds the lease. Followers still validate
-                /// the part read-only above and report the missing file without repairing.
-                if (leader_election_ptr && !leader_election_ptr->isLeaderAndWritable())
-                    return CheckResult(part->name, true, "Checksums are missing; not rewritten because this node is not the writable leader (leader_election).");
+                /// Persisting the recomputed `checksums.txt` writes into the directory of the part by its name,
+                /// which for `leader_election` tables is on the shared storage. The part was checked without any
+                /// tie to the leadership: this node may have been a follower then, and by now another leader may
+                /// have removed the part and reused its name for other data, so the write would put the checksums
+                /// of the checked part into the directory of another one. A check of the lease here does not
+                /// tell that, so the part is only validated, on the leader as well, and the missing file is
+                /// reported without repairing. `checksums.txt` is optional for a part.
+                if (leader_election_ptr)
+                    return CheckResult(part->name, true, "Checksums are missing; not rewritten because the part is on shared storage (leader_election).");
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);
                 part_mutable.writeChecksums(part->checksums, local_context->getWriteSettings());
