@@ -1,0 +1,18 @@
+chain
+Selectivity: estimated (NDV) 1e-05
+Output rows: estimated 100.00 thousand
+Selectivity: estimated (NDV) 1e-05
+Output rows: estimated 100.00 thousand
+chain, greedy
+Selectivity: estimated (NDV) 1e-05
+Output rows: estimated 100.00 thousand
+Selectivity: estimated (NDV) 1e-05
+Output rows: estimated 100.00 thousand
+count above the row count
+Selectivity: estimated (NDV) 2.5e-05
+Output rows: estimated 40.00 thousand
+unique on both sides
+Selectivity: estimated (NDV) 1e-05
+Output rows: estimated 40.00 thousand
+not unique
+1

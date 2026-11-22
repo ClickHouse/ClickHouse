@@ -40,6 +40,18 @@ struct ColumnDistinctValues
     UInt64 upper_bound = 0;
 };
 
+/// `uniq_v2` statistics (`uniqCombined64` with 2^12 cells) have a standard error of 1.6%; this is three of them.
+constexpr double DISTINCT_COUNT_SKETCH_ERROR = 0.05;
+
+/// A measured key count that the sketch error cannot tell from the row count is the row count: the key is unique.
+inline UInt64 joinKeyDistinctValues(const ColumnStats & stats, std::optional<UInt64> rows)
+{
+    if (stats.ndv_provenance.origin == ColumnStatsOrigin::MeasuredStatistics && rows && *rows > 0
+        && static_cast<double>(stats.num_distinct_values) >= (1.0 - DISTINCT_COUNT_SKETCH_ERROR) * static_cast<double>(*rows))
+        return *rows;
+    return stats.num_distinct_values;
+}
+
 /// Number of distinct values of a join-key column.
 inline ColumnDistinctValues getColumnStats(
     const QueryGraph & query_graph,
@@ -56,7 +68,10 @@ inline ColumnDistinctValues getColumnStats(
         {
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
-                return {col_it->second.num_distinct_values, col_it->second.num_distinct_values};
+            {
+                const UInt64 ndv = joinKeyDistinctValues(col_it->second, it->second->estimated_rows);
+                return {ndv, ndv};
+            }
             return {{}, it->second->estimated_rows.value_or(0)};
         }
         return {};
@@ -64,7 +79,10 @@ inline ColumnDistinctValues getColumnStats(
 
     const auto & relation_stat = relation_stats.at(rel_id.value());
     if (auto it = relation_stat.column_stats.find(column_name); it != relation_stat.column_stats.end())
-        return {it->second.num_distinct_values, it->second.num_distinct_values};
+    {
+        const UInt64 ndv = joinKeyDistinctValues(it->second, relation_stat.estimated_rows);
+        return {ndv, ndv};
+    }
     return {{}, relation_stat.estimated_rows.value_or(0)};
 }
 
