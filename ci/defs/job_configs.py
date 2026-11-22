@@ -409,7 +409,7 @@ class JobConfigs:
             # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
+            "sudo rm -rf ./ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -969,7 +969,11 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
-    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
+    # The non-sanitizer (`amd_binary`) stateless flaky check. Runs only in the
+    # pull request workflow, alongside the sanitizer flaky checks above, so a
+    # test that is only too slow or only flaky without a sanitizer is caught in
+    # the PR. See `ci/workflows/pull_request.py`.
+    stateless_tests_flaky_amd_binary_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
@@ -1970,6 +1974,8 @@ class JobConfigs:
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/jobs/scripts/server_fuzzer/",
                 "./tests/casa_del_dolor/",
+                # The target of the `tests/casa_del_dolor/nats_certs.sh` symlink
+                "./tests/integration/test_storage_nats/nats_certs.sh",
                 # The whole tree, as Keeper Stress does: listing only the imported modules
                 # misses the configs `cluster.py` reads through `write_embedded_config`.
                 "./tests/integration/helpers/",
