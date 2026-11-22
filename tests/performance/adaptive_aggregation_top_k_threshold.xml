@@ -7,11 +7,17 @@
          converted groups have the smallest rank a group can have: one row for `count` (queries 3 and 4), and
          one distinct value for `uniqExact` of a non-`Nullable` argument (query 7). -->
 
-    <query>SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c DESC LIMIT 50000 FORMAT Null</query>
+    <query disabled="1">SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c DESC LIMIT 50000 FORMAT Null</query>
     <query>SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c DESC LIMIT 10000 FORMAT Null</query>
-    <query>SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c ASC LIMIT 10000 FORMAT Null</query>
-    <query>SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c ASC LIMIT 10 FORMAT Null</query>
+    <query disabled="1">SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c ASC LIMIT 10000 FORMAT Null</query>
+    <query disabled="1">SELECT URL, count() AS c FROM hits_100m_single GROUP BY URL ORDER BY c ASC LIMIT 10 FORMAT Null</query>
     <query>SELECT cityHash64(WatchID) % 4000037 AS k, count() AS c FROM hits_100m_single GROUP BY k ORDER BY c ASC LIMIT 10000 FORMAT Null</query>
     <query>SELECT SearchPhrase, uniqExact(UserID) AS u FROM hits_100m_single WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10000 FORMAT Null</query>
-    <query>SELECT URL, uniqExact(UserID) AS u FROM hits_100m_single GROUP BY URL ORDER BY u ASC LIMIT 10 FORMAT Null</query>
+    <query disabled="1">SELECT URL, uniqExact(UserID) AS u FROM hits_100m_single GROUP BY URL ORDER BY u ASC LIMIT 10 FORMAT Null</query>
+
+    <!-- The disabled queries above, on hits_10m_single. -->
+    <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c DESC LIMIT 50000 FORMAT Null</query>
+    <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c ASC LIMIT 10000 FORMAT Null</query>
+    <query>SELECT URL, count() AS c FROM hits_10m_single GROUP BY URL ORDER BY c ASC LIMIT 10 FORMAT Null</query>
+    <query>SELECT URL, uniqExact(UserID) AS u FROM hits_10m_single GROUP BY URL ORDER BY u ASC LIMIT 10 FORMAT Null</query>
 </test>
