@@ -20,6 +20,8 @@ SELECT * FROM format(JSONEachRow, '{"a":1}\n{"b":1,"b":"x"}') SETTINGS input_for
 
 SELECT * FROM format(JSONObjectEachRow, '{"r1":{"a":"x","a":"y","b":"z"}}') SETTINGS input_format_skip_duplicated_fields = 1;
 SELECT *, toTypeName(id) FROM format(JSONObjectEachRow, '{"row":{"id":"duplicate","b":"ok"}}') SETTINGS input_format_skip_duplicated_fields = 1, format_json_object_each_row_column_for_object_name = 'id';
+SELECT * FROM format(JSONObjectEachRow, '{"user1":{"id":"user1"}}') SETTINGS input_format_skip_duplicated_fields = 1, format_json_object_each_row_column_for_object_name = 'id';
+SELECT * FROM format(JSONObjectEachRow, '{"r1":{"id":[1],"b":"x"},"r2":{"id":1,"b":"y"}}') SETTINGS input_format_skip_duplicated_fields = 1, format_json_object_each_row_column_for_object_name = 'id';
 
 -- TSKV, BSONEachRow, Form: with a structure and with schema inference.
 SELECT * FROM format(TSKV, 'a String, b String', 'a=x\ta=y\tb=z\n'); -- { serverError INCORRECT_DATA }
@@ -36,6 +38,7 @@ SELECT * FROM format(Form, 'a=x&a=y&b=z') SETTINGS input_format_skip_duplicated_
 SELECT * FROM format(JSONEachRow, concat('{"a":1,"a":', repeat('[', 30), repeat(']', 30), '}')) SETTINGS input_format_skip_duplicated_fields = 1, max_parser_depth = 20;
 SELECT * FROM format(TSKV, concat('a=1\ta=', repeat('[', 30), repeat(']', 30), '\n')) SETTINGS input_format_skip_duplicated_fields = 1, max_parser_depth = 20;
 SELECT * FROM format(Form, concat('a=1&a=', repeat('[', 30), repeat(']', 30))) SETTINGS input_format_skip_duplicated_fields = 1, max_parser_depth = 20;
+SELECT * FROM format(JSONObjectEachRow, concat('{"r":{"id":', repeat('[', 30), repeat(']', 30), ',"b":"x"}}')) SETTINGS input_format_skip_duplicated_fields = 1, format_json_object_each_row_column_for_object_name = 'id', max_parser_depth = 20;
 SELECT * FROM format(BSONEachRow, x'13000000106100010000000b61007800690000') SETTINGS input_format_skip_duplicated_fields = 1;
 
 CREATE TABLE t (name String, url String) ENGINE = Memory;

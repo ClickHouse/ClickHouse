@@ -216,7 +216,8 @@ namespace JSONUtils
         skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
-    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(
+        ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info, const String & name_read_before)
     {
         skipWhitespaceIfAny(in);
         assertChar('{', in);
@@ -234,9 +235,18 @@ namespace JSONUtils
 
             auto name = readFieldName(in, settings.json);
             if (settings.skip_duplicated_fields && !row_field_names.insert(name).second)
+            {
                 skipJSONField(in, name, settings.json);
+            }
+            else if (settings.skip_duplicated_fields && !name_read_before.empty() && name == name_read_before)
+            {
+                skipJSONField(in, name, settings.json);
+                names_and_types.emplace_back(name, nullptr);
+            }
             else
+            {
                 names_and_types.emplace_back(name, tryInferDataTypeForSingleJSONField(in, settings, inference_info));
+            }
             skipWhitespaceIfAny(in);
 
             if (settings.json.max_row_size_for_json_each_row

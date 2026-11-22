@@ -10,6 +10,9 @@ a	x
 \N	1
 x	z
 row	ok	String
+user1
+r1	x
+r2	y
 x	z
 x	z
 x
@@ -19,5 +22,6 @@ x	z
 1
 1
 1
+r	x
 1
 x	a
