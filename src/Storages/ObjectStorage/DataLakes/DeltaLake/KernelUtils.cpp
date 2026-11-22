@@ -67,7 +67,7 @@ DB::Chunk castChunkToDeltaWriteSchema(const DB::Chunk & chunk, const DB::Block &
     return DB::Chunk(std::move(out_columns), chunk.getNumRows());
 }
 
-ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
+ffi::KernelStringSlice KernelUtils::toDeltaString(std::string_view string)
 {
     return ffi::KernelStringSlice{ .ptr = string.data(), .len = string.size() };
 }
@@ -86,7 +86,7 @@ namespace
 {
 
 std::mutex mutex;
-std::unordered_map<uintptr_t, std::string> allocated_errors;
+[[clang::no_destroy]] std::unordered_map<uintptr_t, std::string> allocated_errors;
 
 uintptr_t ptrToInt(void * error)
 {
