@@ -3,6 +3,8 @@
 #include <Core/Field.h>
 #include <Common/HiddenSecret.h>
 
+#include <optional>
+
 #include <Core/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
@@ -184,6 +186,10 @@ private:
     /// to cache it using hash to check for update
     mutable boost::intrusive_ptr<ASTLiteral> cached_ast;
     mutable Hash hash_ast;
+
+    /// `getTreeHash` of this node without its alias; reset whenever the value changes.
+    friend class IQueryTreeNode;
+    mutable std::optional<Hash> cached_tree_hash;
 };
 
 }

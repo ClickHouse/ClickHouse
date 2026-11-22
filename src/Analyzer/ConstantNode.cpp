@@ -342,6 +342,7 @@ void ConstantNode::convertToNullable()
         ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
         makeNullableOrLowCardinalityNullableSafe(value.getType())};
     constant_value = std::move(nullable_value);
+    cached_tree_hash.reset();
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
