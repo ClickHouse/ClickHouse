@@ -377,7 +377,6 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    /// `source_set` is the set whose explicit elements `set_elements` are, if any.
     MergeTreeSetIndex(
         const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set = nullptr);
 

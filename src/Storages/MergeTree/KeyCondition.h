@@ -908,7 +908,6 @@ private:
 
     /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.
     /// The caller finalizes the prepared atom's function kind for the membership predicate.
-    /// `source_set` is the set whose explicit elements are `set_columns`, if any.
     static std::optional<RPNElement> tryPrepareSetAtom(
         const Columns & set_columns,
         const DataTypes & set_types,

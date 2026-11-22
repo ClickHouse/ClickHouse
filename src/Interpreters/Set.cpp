@@ -1026,8 +1026,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
 
-    /// The elements sorted once for the set serve every index over all of the set's own columns in their order.
-    /// An index over only some of them sorts its own copy: sorting by more columns than it uses can cost more.
+    /// Reuse the set's sorted copy only for an index over all of its own columns, unconverted and in order.
     bool use_sorted_set_elements = false;
     if (source_set && tuple_size > 0 && source_set->isCreated())
     {
