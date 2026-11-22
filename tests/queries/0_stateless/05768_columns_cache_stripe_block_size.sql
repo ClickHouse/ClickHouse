@@ -8,7 +8,9 @@ CREATE TABLE t_columns_cache_wide_rows (s String) ENGINE = MergeTree ORDER BY tu
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 INSERT INTO t_columns_cache_wide_rows SELECT repeat('a', 500) FROM numbers(65536);
 
-SET use_columns_cache = 1, max_threads = 1, max_block_size = 65536, preferred_block_size_bytes = 1000000;
+-- `clickhouse-test` randomizes the reads from and writes to the columns cache: the repeat read hits only with both.
+SET use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1;
+SET max_threads = 1, max_block_size = 65536, preferred_block_size_bytes = 1000000;
 
 -- The first read fills the cache, the second one is served from it.
 SELECT max(blockSize()) <= 16384, sum(cityHash64(s)) FROM t_columns_cache_wide_rows SETTINGS log_comment = '05768_first';
