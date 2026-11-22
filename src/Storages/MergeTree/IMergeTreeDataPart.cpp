@@ -1411,11 +1411,17 @@ PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
     if (!disk_storage)
         return nullptr;
 
-    statistics_reader = std::make_unique<PackedFilesReader>(
+    auto reader = std::make_unique<PackedFilesReader>(
         disk_storage->getDisk(),
         packed_file,
         storage.getContext()->getReadSettings());
 
+    /// The archive is opened by its path, not through the part storage. Its index was read from the directory the
+    /// name of the part refers to now, and it is remembered for the lifetime of the part, so it is kept only if
+    /// that is still the directory of this part. See `IDataPartStorage::pinSharedStorageIdentity`.
+    getDataPartStorage().assertSharedStorageIdentityUnchanged();
+
+    statistics_reader = std::move(reader);
     return statistics_reader.get();
 }
 
@@ -1445,6 +1451,9 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
         const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
         file_buf = packed_reader->readFile(disk_storage->getDisk(), packed_file, filename, read_settings, packed_reader->getFileSize(filename));
+        /// The archive is opened by its path, not through the part storage, so the directory it was found in is
+        /// checked here, after the open. See `IDataPartStorage::pinSharedStorageIdentity`.
+        getDataPartStorage().assertSharedStorageIdentityUnchanged();
     }
     else
     {

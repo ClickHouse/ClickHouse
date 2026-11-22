@@ -1244,10 +1244,19 @@ void DataPartStorageOnDiskBase::SharedStorageIdentityCheck::operator()() const
     if (current_identity && *current_identity == identity)
         return;
 
+    /// A file may have been opened in the other directory, or the index of an archive read from it, before this check.
+    /// The caller does not use what it got.
+    if (current_identity)
+        throw Exception(ErrorCodes::DATA_PART_CHANGED_ON_SHARED_STORAGE,
+            "The directory {} of a data part on disk {} was replaced by another directory with the same name "
+            "on the shared storage by another server while the part was in use. "
+            "The data of the other directory was not used. Retry the query",
+            directory, disk->getName());
+
     throw Exception(ErrorCodes::DATA_PART_CHANGED_ON_SHARED_STORAGE,
-        "The directory {} of a data part on disk {} was {} on the shared storage by another server while the part was in use. "
-        "Nothing was read from the other directory. Retry the query",
-        directory, disk->getName(), current_identity ? "replaced by another directory with the same name" : "removed");
+        "The directory {} of a data part on disk {} was removed from the shared storage by another server "
+        "while the part was in use. Retry the query",
+        directory, disk->getName());
 }
 
 void DataPartStorageOnDiskBase::assertSharedStorageIdentityUnchanged() const
@@ -1362,6 +1371,9 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
     {
+        std::shared_ptr<const PackedFilesReader> found_reader;
+        bool found_unsupported = false;
+
         /// On shared storage another replica may delete or relocate skp_idx.packed between the
         /// existence check above and the open below, so the open fails with a "no such key" error.
         /// Expect404ResponseScope keeps that 404 from being logged or counted as a DiskS3NoSuchKeyError
@@ -1376,8 +1388,8 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         {
             auto buf = disk->readFile(packed_path, ReadSettings{}.adjustBufferSize(4096));
             auto index = readSkipIndicesPackedIndex(*buf, packed_path);
-            skip_indices_packed_unsupported = !index;
-            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index ? std::move(*index) : PackedFilesIO::Index{});
+            found_unsupported = !index;
+            found_reader = std::make_shared<PackedFilesReader>(index ? std::move(*index) : PackedFilesIO::Index{});
         }
         catch (const Exception &)
         {
@@ -1385,6 +1397,14 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
                 throw;
             return nullptr;
         }
+
+        /// The index was read from the directory the name of the part refers to now, and it is remembered for the
+        /// lifetime of this storage. So it is kept only if that is still the directory this storage is bound to.
+        /// See `pinSharedStorageIdentity`.
+        assertSharedStorageIdentityUnchanged();
+
+        skip_indices_packed_unsupported = found_unsupported;
+        skip_indices_packed_reader = std::move(found_reader);
     }
 
     skip_indices_packed_probed = true;

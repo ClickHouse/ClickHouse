@@ -787,6 +787,9 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
             auto inner_archive_buf = reader->readFile(
                 volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
             auto index = readSkipIndicesPackedIndex(*inner_archive_buf, data_path + "/" + String(SKIP_INDICES_PACKED_FILENAME));
+            /// The index was read from the directory the name of the part refers to now, and it is remembered for
+            /// the lifetime of this storage. See `pinSharedStorageIdentity`.
+            assertSharedStorageIdentityUnchanged();
             {
                 std::lock_guard lock(skip_indices_packed_mutex);
                 skip_indices_packed_unsupported = !index;

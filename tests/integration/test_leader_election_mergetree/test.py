@@ -5573,6 +5573,7 @@ def test_lease_expiry_respects_writer_session_timeout(started_cluster):
 SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS = "12345678-abcd-abcd-abcd-12345678ab67"
 SHARED_UUID_REUSED_PART_NAME = "12345678-abcd-abcd-abcd-12345678ab65"
 SHARED_UUID_REUSED_PART_NAME_WITHOUT_CHECKSUMS = "12345678-abcd-abcd-abcd-12345678ab66"
+SHARED_UUID_REUSED_PART_NAME_STATISTICS = "12345678-abcd-abcd-abcd-12345678ab68"
 
 # A longer heartbeat than in `TABLE_SETTINGS`: the tests below need the leader to stay the leader while a
 # query on the follower is paused, and a write is refused once the lease was not renewed for two heartbeats.
@@ -5732,8 +5733,8 @@ def test_follower_query_keeps_outdated_parts(started_cluster):
                 pass
 
 
-@pytest.mark.parametrize("without_checksums", [False, True])
-def test_follower_query_does_not_read_reused_part_name(started_cluster, without_checksums):
+@pytest.mark.parametrize("scenario", ["columns", "without_checksums", "statistics"])
+def test_follower_query_does_not_read_reused_part_name(started_cluster, scenario):
     """
     A node whose reader file expired (here its heartbeat is paused) is not waited for, so the leader may
     remove a part that a query of that node still holds. Block numbers restart when the table is empty
@@ -5748,19 +5749,47 @@ def test_follower_query_does_not_read_reused_part_name(started_cluster, without_
     The directory is identified by the key prefix of its files, not by a particular file. In the second
     variant the old part has no `checksums.txt` (it is optional for `MergeTree`), which used to leave it
     without an identity: neither bound, nor replaced on the follower.
+
+    In the third variant the query holds the old part while it is being planned, and has not loaded the
+    column statistics of the part yet: they are read from `statistics.packed` on first use. The query used
+    to load the statistics of the new part, which do not contain `y = 10`, and to drop the old part by them:
+    it returned no rows.
     """
     ensure_node_up(node1)
     ensure_node_up(node2)
     leader, follower = node1, node2
-    table = "test_reused_part_name" + ("_without_checksums" if without_checksums else "")
-    uuid = SHARED_UUID_REUSED_PART_NAME_WITHOUT_CHECKSUMS if without_checksums else SHARED_UUID_REUSED_PART_NAME
+    without_checksums = scenario == "without_checksums"
+    table = "test_reused_part_name" + ("" if scenario == "columns" else "_" + scenario)
+    keys_table = table + "_keys"
+    uuid = {
+        "columns": SHARED_UUID_REUSED_PART_NAME,
+        "without_checksums": SHARED_UUID_REUSED_PART_NAME_WITHOUT_CHECKSUMS,
+        "statistics": SHARED_UUID_REUSED_PART_NAME_STATISTICS,
+    }[scenario]
     pause_read = "merge_tree_readers_chain_pause_before_next_reader"
     pause_heartbeat = "merge_tree_leader_election_pause_heartbeat"
     definition = f"""
         TABLE {table} UUID '{uuid}' (x UInt64, y UInt64)
         ENGINE = MergeTree ORDER BY x
-        SETTINGS {READERS_TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}, min_bytes_for_wide_part = 0
+        SETTINGS {READERS_TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}, min_bytes_for_wide_part = 0,
+            auto_statistics_types = 'basic', prewarm_statistics_cache = 0
         """
+
+    if scenario == "statistics":
+        # The set of the keys is built while the query is being planned, after the query has taken the parts
+        # of the table and before it prunes them by their statistics. The subquery reads a local table and
+        # stops between its two readers, so the main query stops there as well. The statistics of every
+        # part are loaded for pruning, regardless of the size of the part.
+        query = f"SELECT x, y FROM {table} WHERE x IN (SELECT k FROM {keys_table} PREWHERE v >= 0) AND y = 10"
+        query_settings = {
+            "use_statistics_for_part_pruning": 1,
+            "min_marks_per_part_to_load_statistics": 0,
+            "use_index_for_in_with_subqueries": 1,
+        }
+    else:
+        # The query has read `x` and stops before it opens the files of `y`.
+        query = f"SELECT x, y FROM {table} PREWHERE x = 1"
+        query_settings = {}
 
     def insert_when_leader(values):
         """Without the probe insert of `wait_for_leader`: the first part must be the one with the data."""
@@ -5795,23 +5824,30 @@ def test_follower_query_does_not_read_reused_part_name(started_cluster, without_
         follower.query(f"ATTACH {definition}")
         assert _wait_until(lambda: follower.query(f"SELECT count() FROM {table}").strip() == "1")
 
+        if scenario == "statistics":
+            follower.query(
+                f"CREATE TABLE {keys_table} (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k "
+                "SETTINGS min_bytes_for_wide_part = 0"
+            )
+            follower.query(f"INSERT INTO {keys_table} VALUES (1, 1)")
+
         result = {}
 
         def run_query():
             try:
                 result["value"] = follower.query(
-                    f"SELECT x, y FROM {table} PREWHERE x = 1",
+                    query,
                     settings={
                         "max_threads": 1,
                         "remote_filesystem_read_prefetch": 0,
                         "allow_prefetched_read_pool_for_remote_filesystem": 0,
+                        **query_settings,
                     },
                     timeout=300,
                 )
             except Exception as e:
                 result["error"] = str(e)
 
-        # The query has read `x` and stops before it opens the files of `y`.
         follower.query(f"SYSTEM ENABLE FAILPOINT {pause_read}")
         thread = threading.Thread(target=run_query)
         thread.start()
@@ -5873,7 +5909,8 @@ def test_follower_query_does_not_read_reused_part_name(started_cluster, without_
                     node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
                 except Exception:
                     pass
-            try:
-                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-            except Exception:
-                pass
+            for table_to_drop in (table, keys_table):
+                try:
+                    node.query(f"DROP TABLE IF EXISTS {table_to_drop} SYNC")
+                except Exception:
+                    pass
