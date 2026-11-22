@@ -15675,7 +15675,7 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
         if (!new_hint)
             continue;
 
-        /// Structure may change after alter or differ because the part preserves older serialization settings.
+        /// Structure may change after alter or differ because the part and the hints use different serialization info versions.
         /// Do not add info for such items. Instead it will be updated on commit of a compatible part.
         if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name) || !new_hint->structureEquals(*info))
             continue;
@@ -15698,7 +15698,10 @@ SerializationInfoByName MergeTreeData::buildSerializationHints(const ColumnsDesc
         static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
-        (*getSettings())[MergeTreeSetting::serialization_info_version],
+        /// Input formats parse into these hints, and the JSON text parser fills dense typed paths only.
+        std::min(
+            (*getSettings())[MergeTreeSetting::serialization_info_version].value,
+            MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS),
         (*getSettings())[MergeTreeSetting::string_serialization_version],
         (*getSettings())[MergeTreeSetting::nullable_serialization_version],
         (*getSettings())[MergeTreeSetting::map_serialization_version],
