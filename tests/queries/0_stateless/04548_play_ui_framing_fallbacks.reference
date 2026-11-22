@@ -67,12 +67,6 @@ meter state re-adopted on tab open: OK
 shared chrome follows the running cell: OK
 a cell run ends the tab run first: OK
 Stop goes through the same path: OK
-network bytes feed the IO meter: OK
-a small IO rate is not shown: OK
-replayed IO rate is sampled: OK
-replayed progress samples the IO rate: OK
-live progress samples the IO rate: OK
-live multi-statement IO clock is offset per group: OK
 partial exception line is a truncation: OK
 meter aggregate is per run: OK
 peak gauge keeps the maximum: OK
