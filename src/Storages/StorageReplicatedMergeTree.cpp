@@ -12298,8 +12298,10 @@ LostMergeResultDrop StorageReplicatedMergeTree::tryDropFetchOfLostMergeResult(zk
     Strings replicas = zookeeper->getChildren(replicas_path, &replicas_stat);
 
     /// The `/log` version is read before everything else that is scanned below, and is checked when the entry is removed.
-    /// Anything that is added to the log after this point makes the removal fail, and everything that was added
-    /// before it is seen by the scans. Each scan reads in the order an entry moves: log, then queues, then parts.
+    /// Entries that can produce the lost part (merges, mutations, drops, replaces, part moves) bump the version, so adding
+    /// one after this point makes the removal fail. Inserts and metadata alters add log entries without bumping it,
+    /// but they cannot produce a merge result. Everything that was added before this point is seen by the scans.
+    /// Each scan reads in the order an entry moves: log, then queues, then parts.
     auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{lost_info.getPartitionId()});
 
     /// `removePartAndEnqueueFetch` on another replica moves the part from its `parts` to a `GET_PART` in its queue

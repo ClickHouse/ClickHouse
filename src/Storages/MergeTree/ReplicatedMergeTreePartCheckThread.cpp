@@ -247,12 +247,6 @@ bool ReplicatedMergeTreePartCheckThread::searchForMissingPartOnOtherReplicas(con
                 return true;
             }
 
-            /// Our own smaller parts are not a reason to hope: if they were going to be merged into the missing part,
-            /// the queue entry that does it would have been found by `onPartIsLostForever`. Counting them here
-            /// made a replica wait forever for a merge result that nobody could produce.
-            if (replica_path == storage.replica_path)
-                continue;
-
             if (part_info.contains(part_on_replica_info))
             {
                 if (part_on_replica_info.min_block == part_info.min_block)

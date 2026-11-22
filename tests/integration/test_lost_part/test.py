@@ -13,7 +13,7 @@ from helpers.test_tools import assert_eq_with_retry
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True)
+node2 = cluster.add_instance("node2", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")

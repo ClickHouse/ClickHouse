@@ -1460,6 +1460,17 @@ LostMergeResultDrop ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
         if ((*it)->currently_executing)
             return LostMergeResultDrop::RetryLater;
 
+        /// The lost part must cover its sources in `virtual_parts`, as it did when it was queued. If it does not,
+        /// the state is not what this function restores, and the sources cannot be put back safely.
+        for (const auto & source_part_info : source_parts)
+        {
+            if (virtual_parts.getContainingPart(source_part_info) != part_name)
+            {
+                LOG_WARNING(log, "Will not remove entry for {}: its source part {} is not covered by it in virtual parts", part_name, source_part_info.getPartNameForLogs());
+                return LostMergeResultDrop::NotDropped;
+            }
+        }
+
         znode_name = (*it)->znode_name;
         ops.emplace_back(zkutil::makeRemoveRequest(fs::path(replica_path) / "queue" / znode_name, -1));
 
@@ -1481,8 +1492,8 @@ LostMergeResultDrop ReplicatedMergeTreeQueue::removeGetPartOfLostMergeResult(
         queue_size = queue.size();
 
         /// `virtual_parts` = `current_parts` + `queue`. The lost part replaced its sources in both sets; put them back.
+        /// Removing the entry above already took the lost part out of `virtual_parts`.
         current_parts.remove(part_name);
-        virtual_parts.remove(part_name);
         for (const auto & source_part_info : source_parts)
         {
             /// After a restart `current_parts` is built from the replica's parts in Keeper, where the lost part
