@@ -293,7 +293,8 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 
     for (auto & [_, disk] : disks_map)
     {
-        if (disk->isReadOnly() || disk->isWriteOnce())
+        /// The same disks as in the first pass: a broken disk is skipped there, and it cannot be looked at here either.
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         if (disk->existsDirectory(backup_path))
