@@ -1,0 +1,10 @@
+two_encrypted
+enc1	1
+enc2	3
+4	10
+encrypted_beside_base
+base	3
+enc1	1
+4	10
+encrypted_without_path_beside_base
+1

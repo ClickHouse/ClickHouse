@@ -95,6 +95,9 @@ String normalizeDiskPath(const String & path, bool is_local, bool is_broken)
 /// their files in one place, although their `getPath` differ. The bucket or container is compared separately, as a part
 /// of the description and of the objects namespace, so the root prefix of the object storage is not added here: a
 /// `cache` layer does not forward it, and the root of a disk must not depend on whether it is cached.
+///
+/// It is asked of a disk below its `encrypted` layers (see `resolveEncryptedLayers`): an `encrypted` disk forwards the
+/// metadata type and the object storage of the disk it wraps, so its own `path` would be lost here.
 String getDiskRoot(const DiskPtr & disk)
 {
     const auto data_source = disk->getDataSourceDescription();
@@ -221,19 +224,15 @@ void checkDisksHaveDistinctStorageForPath(const Disks & disks, const String & re
 
 bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)
 {
+    /// The roots are compared below the `encrypted` layers, with the `path` of every layer kept as a part of the root.
+    /// An `encrypted` disk forwards the metadata type and the object storage of the disk it wraps, so asking the
+    /// wrapper itself for its root would give the common key prefix of the wrapped disk with `plain` or
+    /// `plain_rewritable` metadata, and two `encrypted` disks with different `path` over one such disk would be
+    /// taken for one storage, although they keep their files under different prefixes.
+    ///
     /// Two disks that list one local directory see the same parts, even when the objects behind them are in
-    /// different buckets.
-    if (const auto lhs_directory = getLocalListingDirectory(lhs))
-    {
-        if (lhs_directory == getLocalListingDirectory(rhs))
-            return true;
-    }
-
-    const auto lhs_namespace = getStorageNamespace(lhs);
-    if (!lhs_namespace)
-        return false;
-
-    return lhs_namespace == getStorageNamespace(rhs);
+    /// different buckets, which the comparison for a path checks first.
+    return haveSameStorageNamespaceForPath(lhs, rhs, {});
 }
 
 bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs)
