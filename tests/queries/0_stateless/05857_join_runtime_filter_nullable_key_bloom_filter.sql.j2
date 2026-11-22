@@ -135,8 +135,7 @@ SELECT count() FROM null_probe AS p INNER JOIN (SELECT * FROM build WHERE grp = 
 SETTINGS join_runtime_filter_exact_values_limit = 1, log_comment = '05857_null_probe_string';
 
 -- The NULL build rows hold nested values that are not keys (62, 217, ...), so the probe rows with these values do not
--- pass. An integer key drops its NULLs in the exact set, so they reach the Bloom filter only in the second part, read
--- after the switch.
+-- pass. An integer key drops its NULLs in the exact set, so they reach the Bloom filter only after the switch.
 SELECT count() FROM probe AS p INNER JOIN (SELECT * FROM build WHERE grp = 0) AS b ON p.ki = b.ki
 SETTINGS join_runtime_filter_exact_values_limit = 1, max_threads = 1, log_comment = '05857_null_build_int';
 SELECT count() FROM probe AS p INNER JOIN (SELECT * FROM build WHERE grp = 0) AS b ON p.ks = b.ks

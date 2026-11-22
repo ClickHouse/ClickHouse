@@ -17,7 +17,6 @@ SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, ena
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 -- The checks of serialized partials count one per build task: pin the eight read tasks.
 SET distributed_plan_default_reader_bucket_count = 8;
-SET log_processors_profiles = 1;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 -- Admission of transported filters depends on which relation ends up at each apply site, so pin
 -- the join order and the estimate source against test-level randomization.
@@ -40,7 +39,7 @@ SELECT count() FROM huge AS h INNER JOIN mid AS t1 ON h.hid = t1.tid INNER JOIN 
     SETTINGS log_comment = '04892_two_joins';
 
 SET make_distributed_plan = 0;
-SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
+SYSTEM FLUSH LOGS query_log;
 
 -- Tasks of a local distributed plan log under their own `query_id`, with the initiator's id as
 -- `initial_query_id`. Signs that a filter was sent:
