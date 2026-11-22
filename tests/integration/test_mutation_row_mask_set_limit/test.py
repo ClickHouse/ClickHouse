@@ -748,6 +748,54 @@ def test_ready_subquery_union_respects_background_byte_limit():
             instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
+def test_ready_subquery_union_original_actions_fit_nonconstant_limit():
+    # The same profile must admit a narrow union. This distinguishes the wide
+    # replacement check from the earlier check of the original actions.
+    table = "ready_union_nonconst_original_actions"
+    try:
+        nonconst_node.query(
+            f"CREATE TABLE {table} "
+            "(n UInt8, k0 UInt8, k1 UInt8, k2 UInt8, k3 UInt8, "
+            "payload AggregateFunction(sum, UInt64)) "
+            "ENGINE = AggregatingMergeTree ORDER BY n "
+            "SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, "
+            "min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0, "
+            "allow_dimensions_outside_sorting_key = 1, "
+            "enable_block_number_column = 0, enable_block_offset_column = 0, "
+            "enable_row_mask_update_coalescing = 0, enable_row_mask_action_batching = 0, "
+            "enable_row_mask_typed_set_union = 1"
+        )
+        nonconst_node.query(
+            f"INSERT INTO {table} SELECT toUInt8(number + 1) AS seed_n, "
+            "toUInt8(number = 0) AS k0, toUInt8(number = 1) * 2 AS k1, "
+            "toUInt8(number = 2) * 3 AS k2, toUInt8(number = 3) * 4 AS k3, "
+            "sumState(toUInt64(number + 1)) FROM numbers(5) GROUP BY seed_n, k0, k1, k2, k3"
+        )
+        start = nonconst_node.query("SELECT toUnixTimestamp64Micro(now64(6))").strip()
+        nonconst_node.query(
+            f"ALTER TABLE {table} "
+            "UPDATE _row_exists = 0 WHERE k0 IN (SELECT toUInt8(arrayJoin([1]))), "
+            "UPDATE _row_exists = 0 WHERE k0 IN (SELECT toUInt8(arrayJoin([1]))) "
+            "SETTINGS mutations_sync = 2"
+        )
+        assert nonconst_node.query(
+            f"SELECT n, _row_exists FROM {table} ORDER BY n "
+            "SETTINGS apply_deleted_mask = 0, apply_mutations_on_fly = 0"
+        ) == "1\t0\n2\t1\n3\t1\n4\t1\n5\t1\n"
+        assert_eq_with_retry(
+            nonconst_node,
+            "SYSTEM FLUSH LOGS part_log; SELECT count() = 1 AND countIf(error != 0) = 0 "
+            "AND sum(ProfileEvents['RowMaskReadySubquerySetUnionBatches']) = 1 "
+            + typed_union_part_log(table, start)
+            + " SETTINGS max_execution_time = 2",
+            "1",
+            retry_count=20,
+            timeout=3,
+        )
+    finally:
+        nonconst_node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 def test_ready_subquery_union_respects_background_temporary_column_limits():
     # Four groups make the replacement wider than each original action. Use
     # separate profiles for the total and non-constant temporary-column limits.
