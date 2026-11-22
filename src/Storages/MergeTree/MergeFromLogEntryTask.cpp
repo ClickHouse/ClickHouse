@@ -375,13 +375,14 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
-    /// Build the merge context up front - a copy of the background context with the merge query settings
-    /// applied - so the reservation below is estimated against the exact read/upload buffer sizes the merge
-    /// will actually run with. A non-default background_profile can raise max_read_buffer_size_* or the
-    /// object-storage multipart sizes above the storage/global settings, and the reservation must reflect it.
-    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    /// The merge context - a copy of the background context with the merge query settings applied - was
+    /// created by `createTaskContext` at the start of this very `executeStep` call, and the task's thread
+    /// group refers to it, so it must not be replaced by another copy here. Only apply the frozen MergeTree
+    /// settings to it, so that the merge workload matches the settings everything else below uses.
+    /// The reservation is then estimated against the exact read/upload buffer sizes the merge will actually
+    /// run with. A non-default background_profile can raise max_read_buffer_size_* or the object-storage
+    /// multipart sizes above the storage/global settings, and the reservation must reflect it.
     task_context->makeQueryContextForMerge(*merge_data_settings);
-    task_context->setCurrentQueryId(getQueryId());
 
     /// Reserve memory for the merge's input/output IO buffers up front (see MergeMemoryReservation).
     /// This replica is already committed to running this merge locally, so reserve unconditionally;
