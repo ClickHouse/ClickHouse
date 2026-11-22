@@ -537,7 +537,8 @@ public:
         if (!canBeSafelyCast(new_node->getResultType(), node->getResultType()))
             return;
 
-        if (!node->getResultType()->equals(*new_node->getResultType()))
+        /// `equals` ignores the time zone of `DateTime`, so compare names to keep the time zone of the replaced term.
+        if (node->getResultType()->getName() != new_node->getResultType()->getName())
         {
             node = buildCastFunction(new_node, node->getResultType(), context);
             return;
