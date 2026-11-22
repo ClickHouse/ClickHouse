@@ -334,6 +334,14 @@ expect ":) "
 expect_before -i $spawn_id
 expect_before -re {detached-row-[0-9]+-05227} { exit 1 }
 
+# Observe the running job first: the steps below can outlast the query on a slow build.
+wait_for_running_read_metrics $detached_job_id
+
+# Foregrounding a running detached query stays nonblocking, exactly like a job started with `\bg`.
+submit [format {\fg %s} $detached_job_id]
+expect -re [format {Background job[[:space:]]+%s[^\r\n]*(is still running|has not finished)} $detached_job_id]
+expect ":) "
+
 # The help command right after Ctrl+B must reconnect instead of reporting no connection.
 submit {help zzzzzzzzzzzznotanentity}
 expect {
@@ -346,13 +354,6 @@ expect ":) "
 # last row is several seconds away when Ctrl+B is pressed and must be retained for `\fg` instead.
 submit {SELECT concat('detached-main-', 'responsive-05227') FORMAT TabSeparatedRaw}
 expect -ex {detached-main-responsive-05227}
-expect ":) "
-
-wait_for_running_read_metrics $detached_job_id
-
-# Foregrounding a running detached query stays nonblocking, exactly like a job started with `\bg`.
-submit [format {\fg %s} $detached_job_id]
-expect -re [format {Background job[[:space:]]+%s[^\r\n]*(is still running|has not finished)} $detached_job_id]
 expect ":) "
 
 set detached_succeeded 0
