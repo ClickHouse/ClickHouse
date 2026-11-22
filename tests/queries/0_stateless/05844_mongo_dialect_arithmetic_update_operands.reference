@@ -1,0 +1,13 @@
+-- the operands that are not numbers
+Code: 36. Cannot apply '$inc' to the field 'x' with a non-numeric operand
+Code: 36. Cannot apply '$inc' to the field 'x' with a non-numeric operand
+Code: 36. Cannot apply '$inc' to the field 'x' with a non-numeric operand
+Code: 36. Cannot apply '$inc' to the field 'x' with a non-numeric operand
+Code: 36. Cannot apply '$mul' to the field 'x' with a non-numeric operand
+Code: 36. Cannot apply '$mul' to the field 'x' with a non-numeric operand
+Code: 36. Cannot apply '$mul' to the field 'x' with a non-numeric operand
+Code: 36. Cannot apply '$mul' to the field 'x' with a non-numeric operand
+-- the row is unchanged
+1	5
+-- a number and a numeric wrapper are applied
+1	21
