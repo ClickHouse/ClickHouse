@@ -1,0 +1,29 @@
+-- Tags: no-object-storage
+-- no-object-storage: the test checks how many bytes are read from a local file, remote reads are coalesced on their own.
+
+-- A stream of a compact part reads all columns, but seeks to the ones it needs and skips the others.
+-- Its read buffer must be sized by a single column of a stripe, not by the whole stripe:
+-- otherwise reading one of many separately compressed columns reads the whole stripe.
+
+DROP TABLE IF EXISTS t_compact_read_buffer;
+
+CREATE TABLE t_compact_read_buffer (c0 UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64, c15 UInt64, c16 UInt64, c17 UInt64, c18 UInt64, c19 UInt64, c20 UInt64, c21 UInt64, c22 UInt64, c23 UInt64, c24 UInt64, c25 UInt64, c26 UInt64, c27 UInt64, c28 UInt64, c29 UInt64, c30 UInt64, c31 UInt64, c32 UInt64, c33 UInt64, c34 UInt64, c35 UInt64, c36 UInt64, c37 UInt64, c38 UInt64, c39 UInt64, c40 UInt64, c41 UInt64, c42 UInt64, c43 UInt64, c44 UInt64, c45 UInt64, c46 UInt64, c47 UInt64, c48 UInt64, c49 UInt64, c50 UInt64, c51 UInt64, c52 UInt64, c53 UInt64, c54 UInt64, c55 UInt64, c56 UInt64, c57 UInt64, c58 UInt64, c59 UInt64, c60 UInt64, c61 UInt64, c62 UInt64, c63 UInt64, c64 UInt64, c65 UInt64, c66 UInt64, c67 UInt64, c68 UInt64, c69 UInt64, c70 UInt64, c71 UInt64, c72 UInt64, c73 UInt64, c74 UInt64, c75 UInt64, c76 UInt64, c77 UInt64, c78 UInt64, c79 UInt64, c80 UInt64, c81 UInt64, c82 UInt64, c83 UInt64, c84 UInt64, c85 UInt64, c86 UInt64, c87 UInt64, c88 UInt64, c89 UInt64, c90 UInt64, c91 UInt64, c92 UInt64, c93 UInt64, c94 UInt64, c95 UInt64, c96 UInt64, c97 UInt64, c98 UInt64, c99 UInt64)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, index_granularity = 1024, index_granularity_bytes = '10M';
+
+-- Random values do not compress: a column takes 8 KB in a granule, and a stripe of 100 columns takes 800 KB.
+INSERT INTO t_compact_read_buffer SELECT intHash64(number * 100 + 0), intHash64(number * 100 + 1), intHash64(number * 100 + 2), intHash64(number * 100 + 3), intHash64(number * 100 + 4), intHash64(number * 100 + 5), intHash64(number * 100 + 6), intHash64(number * 100 + 7), intHash64(number * 100 + 8), intHash64(number * 100 + 9), intHash64(number * 100 + 10), intHash64(number * 100 + 11), intHash64(number * 100 + 12), intHash64(number * 100 + 13), intHash64(number * 100 + 14), intHash64(number * 100 + 15), intHash64(number * 100 + 16), intHash64(number * 100 + 17), intHash64(number * 100 + 18), intHash64(number * 100 + 19), intHash64(number * 100 + 20), intHash64(number * 100 + 21), intHash64(number * 100 + 22), intHash64(number * 100 + 23), intHash64(number * 100 + 24), intHash64(number * 100 + 25), intHash64(number * 100 + 26), intHash64(number * 100 + 27), intHash64(number * 100 + 28), intHash64(number * 100 + 29), intHash64(number * 100 + 30), intHash64(number * 100 + 31), intHash64(number * 100 + 32), intHash64(number * 100 + 33), intHash64(number * 100 + 34), intHash64(number * 100 + 35), intHash64(number * 100 + 36), intHash64(number * 100 + 37), intHash64(number * 100 + 38), intHash64(number * 100 + 39), intHash64(number * 100 + 40), intHash64(number * 100 + 41), intHash64(number * 100 + 42), intHash64(number * 100 + 43), intHash64(number * 100 + 44), intHash64(number * 100 + 45), intHash64(number * 100 + 46), intHash64(number * 100 + 47), intHash64(number * 100 + 48), intHash64(number * 100 + 49), intHash64(number * 100 + 50), intHash64(number * 100 + 51), intHash64(number * 100 + 52), intHash64(number * 100 + 53), intHash64(number * 100 + 54), intHash64(number * 100 + 55), intHash64(number * 100 + 56), intHash64(number * 100 + 57), intHash64(number * 100 + 58), intHash64(number * 100 + 59), intHash64(number * 100 + 60), intHash64(number * 100 + 61), intHash64(number * 100 + 62), intHash64(number * 100 + 63), intHash64(number * 100 + 64), intHash64(number * 100 + 65), intHash64(number * 100 + 66), intHash64(number * 100 + 67), intHash64(number * 100 + 68), intHash64(number * 100 + 69), intHash64(number * 100 + 70), intHash64(number * 100 + 71), intHash64(number * 100 + 72), intHash64(number * 100 + 73), intHash64(number * 100 + 74), intHash64(number * 100 + 75), intHash64(number * 100 + 76), intHash64(number * 100 + 77), intHash64(number * 100 + 78), intHash64(number * 100 + 79), intHash64(number * 100 + 80), intHash64(number * 100 + 81), intHash64(number * 100 + 82), intHash64(number * 100 + 83), intHash64(number * 100 + 84), intHash64(number * 100 + 85), intHash64(number * 100 + 86), intHash64(number * 100 + 87), intHash64(number * 100 + 88), intHash64(number * 100 + 89), intHash64(number * 100 + 90), intHash64(number * 100 + 91), intHash64(number * 100 + 92), intHash64(number * 100 + 93), intHash64(number * 100 + 94), intHash64(number * 100 + 95), intHash64(number * 100 + 96), intHash64(number * 100 + 97), intHash64(number * 100 + 98), intHash64(number * 100 + 99) FROM numbers(8192) SETTINGS max_insert_block_size = 8192, min_insert_block_size_rows = 8192, min_insert_block_size_bytes = 0;
+
+SELECT part_type, marks FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_read_buffer' AND active;
+
+SELECT count(), sum(c0 = intHash64(0)) FROM t_compact_read_buffer
+SETTINGS max_threads = 1, use_uncompressed_cache = 0, use_page_cache_for_local_disks = 0, use_columns_cache = 0, enable_parallel_replicas = 0, log_comment = '05768_one_column';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The 8 stripes take 6.4 MB, the 8 granules of a single column take 64 KB.
+SELECT ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] < 1000000
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05768_one_column' AND type = 'QueryFinish' AND event_date >= yesterday();
+
+DROP TABLE t_compact_read_buffer;

@@ -34,12 +34,14 @@ public:
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
+    bool supportsStreaming() const override { return getNested()->supportsStreaming(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
     bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }
     bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getNested()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
+    bool isInsertOrderSensitive() const override { return getNested()->isInsertOrderSensitive(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }

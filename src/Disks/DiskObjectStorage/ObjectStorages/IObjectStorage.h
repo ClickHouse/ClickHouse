@@ -20,6 +20,7 @@
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SecretString.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <Disks/DirectoryIterator.h>
@@ -223,9 +224,7 @@ struct RelativePathWithMetadata
         /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
         /// extension-based format/compression detection, so strip them only for web paths, consistent
         /// with how direct `url` reads use the URL path component.
-        const auto pos = relative_path.find_first_of("?#");
-        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
-        return std::filesystem::path(path_without_query).filename();
+        return std::filesystem::path(stripQueryAndFragment(relative_path)).filename();
     }
     [[nodiscard]] std::string getPath() const { return relative_path; }
     [[nodiscard]] std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }

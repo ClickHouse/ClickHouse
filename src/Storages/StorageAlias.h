@@ -202,6 +202,11 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsParallelInsert();
     }
+    bool isInsertOrderSensitive() const override
+    {
+        auto target = tryGetTargetTable();
+        return !target || target->isInsertOrderSensitive();
+    }
     bool supportsDeduplication() const override
     {
         auto target = tryGetTargetTable();
