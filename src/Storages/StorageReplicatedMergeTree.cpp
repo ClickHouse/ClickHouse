@@ -968,6 +968,24 @@ std::vector<String> getAncestors(const String & path)
     return result;
 }
 
+/// Device and inode of every file under `dir` (recursively, projections included), by path relative to `dir`.
+using FileIds = std::map<String, std::pair<UInt64, UInt64>>;
+
+void collectFileIds(const IDisk & disk, const fs::path & dir, const fs::path & relative, FileIds & ids)
+{
+    for (auto it = disk.iterateDirectory(dir / relative); it->isValid(); it->next())
+    {
+        const fs::path file = relative / it->name();
+        if (disk.existsDirectory(dir / file))
+            collectFileIds(disk, dir, file, ids);
+        else
+        {
+            const auto st = disk.stat(dir / file);
+            ids.emplace(file.string(), std::pair<UInt64, UInt64>{st.st_dev, st.st_ino});
+        }
+    }
+}
+
 }
 
 void StorageReplicatedMergeTree::createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info)
@@ -2116,11 +2134,44 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     std::unordered_set<String> restorable_unexpected_parts;
     UInt64 uncovered_unexpected_parts_rows = 0;
 
+    /// `makeCloneInDetached` hard-links a part into detached/<reason>_<name>[_tryN] and outdates it in memory only, so a
+    /// restart before cleanup loads it again; such a part has exactly the files of its copy, each the same inode.
+    static constexpr std::array<std::string_view, 4> clone_reasons = {"broken", "covered-by-broken", "unexpected", "clone"};
+    std::map<std::pair<String, MergeTreePartInfo>, std::vector<String>> detached_copies;
+    if (!unexpected_data_parts.empty())
+        for (const auto & detached : getDetachedParts())
+            if (detached.valid_name && detached.disk->supportsStat()
+                && std::ranges::find(clone_reasons, detached.prefix) != clone_reasons.end())
+                detached_copies[{detached.disk->getName(), static_cast<const MergeTreePartInfo &>(detached)}].push_back(detached.dir_name);
+    std::unordered_set<const IMergeTreeDataPart *> parts_already_detached;
+
     for (const auto & load_state : unexpected_data_parts)
     {
         if (load_state.is_broken)
             continue;
         unexpected_parts_rows += load_state.part->rows_count;
+
+        const auto & disk = load_state.loading_info->disk;
+        if (auto copies = detached_copies.find({disk->getName(), load_state.part->info}); copies != detached_copies.end())
+        {
+            const fs::path data_path = relative_data_path;
+            FileIds part_files;
+            collectFileIds(*disk, data_path / load_state.part->name, "", part_files);
+            auto copy = std::ranges::find_if(copies->second, [&](const String & dir_name)
+            {
+                FileIds copy_files;
+                collectFileIds(*disk, data_path / DETACHED_DIR_NAME / dir_name, "", copy_files);
+                return !part_files.empty() && copy_files == part_files;
+            });
+            if (copy != copies->second.end())
+            {
+                LOG_INFO(log, "Unexpected part {} has the same files as detached part {}, assuming it was detached just before restart",
+                         load_state.part->name, *copy);
+                covered_unexpected_parts.push_back(load_state.part->name);
+                parts_already_detached.insert(load_state.part.get());
+                continue;
+            }
+        }
 
         /// This part may be covered by some expected part that is active and present locally
         /// Probably we just did not remove this part from disk before restart (but removed from ZooKeeper)
@@ -2236,7 +2287,21 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     /// detached all unexpected data parts after sanity check.
     for (auto & part_state : unexpected_data_parts)
-        part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
+    {
+        if (!parts_already_detached.contains(part_state.part.get()))
+        {
+            part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
+            continue;
+        }
+        try
+        {
+            part_state.part->remove();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while removing unexpected part {}", part_state.part->name));
+        }
+    }
     unexpected_data_parts.clear();
 
     return true;
