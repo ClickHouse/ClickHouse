@@ -70,7 +70,7 @@ struct ArrowArray
 
 
 /// The queue a task waits in.
-enum class FFI_VortexTaskQueue : int32_t
+enum class FFI_VortexTaskQueue
 {
     /// Decoding, filtering and exporting to Arrow: work that needs a core.
     CPU = 0,
