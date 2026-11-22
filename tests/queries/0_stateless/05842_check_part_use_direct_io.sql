@@ -1,6 +1,7 @@
--- Tags: zookeeper, no-object-storage, no-shared-merge-tree
+-- Tags: zookeeper, no-object-storage, no-shared-merge-tree, no-darwin
 -- no-object-storage: only parts on local disks are checked with O_DIRECT.
 -- no-shared-merge-tree: SharedMergeTree checks parts in its own way.
+-- no-darwin: O_DIRECT reads are implemented only on Linux and FreeBSD.
 
 DROP TABLE IF EXISTS t_mt;
 DROP TABLE IF EXISTS t_rmt;
