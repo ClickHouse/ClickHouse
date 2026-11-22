@@ -613,6 +613,10 @@ public:
         const std::function<void(size_t)> & load_part,
         const std::function<void(size_t)> & consume_part);
 
+    /// Adds the getColumnAndSubcolumnSizes of every part to `result`; the parts that read files are sized on up to `max_threads` threads.
+    static void addColumnSizesOfParts(
+        const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result);
+
     bool supportsFinal() const override;
 
     bool supportsParallelInsert() const override { return true; }
