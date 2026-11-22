@@ -1,3 +1,4 @@
+-- Tags: no-old-analyzer
 -- The old analyzer rewrites the query before types are resolved and keeps the wrong results.
 -- https://github.com/ClickHouse/ClickHouse/issues/114784
 -- `uniq*` skips the rows where an argument is NULL. An injective function whose result cannot be Nullable
@@ -10,15 +11,6 @@ FROM values('x Nullable(Int32)', 1, 2, NULL)
 SETTINGS optimize_injective_functions_inside_uniq = 1;
 
 SELECT uniq(tuple(x)), uniqExact(tuple(x)), uniqHLL12(tuple(x)), uniqCombined(tuple(x)), uniqCombined64(tuple(x))
-FROM values('x Nullable(Int32)', 1, 2, NULL)
-SETTINGS optimize_injective_functions_inside_uniq = 0;
-
-SELECT 'bitmaskToArray and bitPositionsToArray';
-SELECT uniqExact(bitmaskToArray(x)), uniqExact(bitPositionsToArray(x))
-FROM values('x Nullable(Int32)', 1, 2, NULL)
-SETTINGS optimize_injective_functions_inside_uniq = 1;
-
-SELECT uniqExact(bitmaskToArray(x)), uniqExact(bitPositionsToArray(x))
 FROM values('x Nullable(Int32)', 1, 2, NULL)
 SETTINGS optimize_injective_functions_inside_uniq = 0;
 

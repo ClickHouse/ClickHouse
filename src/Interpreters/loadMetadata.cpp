@@ -21,7 +21,6 @@
 
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -184,7 +183,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
             backQuote(actual_name));
     }
 }
-static void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
+void dropRestoringDatabasesForTableDropping(ContextMutablePtr context, const std::unordered_set<String> & restoring_database_names)
 {
     for (const auto & restoring_database_name : restoring_database_names)
     {
@@ -400,7 +399,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     }
 
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
-    chassert(tmp_database->getEngineName() == "Atomic");
+    assert(tmp_database->getEngineName() == "Atomic");
 
     size_t num_tables = 0;
     std::unordered_set<String> inner_mv_tables;
@@ -555,6 +554,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         executeTrivialBlockIO(res, context);
 
         /// Unlock UUID mapping, because it will be locked again on database reload.
+        /// It's safe to do during metadata loading, because cleanup task is not started yet.
         DatabaseCatalog::instance().removeUUIDMappingFinally(db_uuid);
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
@@ -614,11 +614,11 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     context->removeWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED);
 }
 
-LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database, bool persistent_system_database)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
 {
     auto component_guard = Coordination::setCurrentComponent("loadMetadataSystem");
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE,
-        context->getApplicationType() == Context::ApplicationType::SERVER || persistent_system_database ? "Atomic" : "Memory");
+        context->getApplicationType() == Context::ApplicationType::SERVER ? "Atomic" : "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
 

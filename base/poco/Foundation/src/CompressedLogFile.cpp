@@ -28,24 +28,16 @@ CompressedLogFile::CompressedLogFile(const std::string& path):
 	if (LZ4F_isError(ret))
 		throw IOException(LZ4F_getErrorName(ret));
 
-	try
-	{
-		/// That should be enough
-		_buffer.setCapacity(LZ4F_compressBound(16 * 1024, &_kPrefs));
+	/// That should be enough
+	_buffer.setCapacity(LZ4F_compressBound(16 * 1024, &_kPrefs));
 
-		/// Write frame header and check for errors
-		size_t header_size = LZ4F_compressBegin(_ctx, static_cast<void *>(_buffer.begin()), _buffer.capacity(), &_kPrefs);
+	/// Write frame header and check for errors
+	size_t header_size = LZ4F_compressBegin(_ctx, static_cast<void *>(_buffer.begin()), _buffer.capacity(), &_kPrefs);
 
-		if (LZ4F_isError(header_size))
-			throw IOException(LZ4F_getErrorName(header_size));
+	if (LZ4F_isError(header_size))
+		throw IOException(LZ4F_getErrorName(header_size));
 
-		writeBinary(_buffer.begin(), header_size, true);
-	}
-	catch (...)
-	{
-		LZ4F_freeCompressionContext(_ctx);
-		throw;
-	}
+	writeBinary(_buffer.begin(), header_size, true);
 }
 
 CompressedLogFile::~CompressedLogFile()
@@ -54,16 +46,7 @@ CompressedLogFile::~CompressedLogFile()
 	size_t end_size = LZ4F_compressEnd(_ctx, static_cast<void *>(_buffer.begin()), _buffer.capacity(), nullptr);
 
 	if (!LZ4F_isError(end_size))
-	{
-		try
-		{
-			writeBinary(_buffer.begin(), end_size, true);
-		}
-		catch (...)
-		{
-			/// The file cannot be written (e.g. the disk is full): it is left without the end mark, as after a crash.
-		}
-	}
+		writeBinary(_buffer.begin(), end_size, true);
 	
 	LZ4F_freeCompressionContext(_ctx);
 }

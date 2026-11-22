@@ -35,9 +35,9 @@ struct ColumnDependency
     String column_name;
     Kind kind;
 
-    [[nodiscard]] bool isReadOnly() const
+    bool isReadOnly() const
     {
-        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION || kind == STATISTICS;
+        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION;
     }
 
     bool operator==(const ColumnDependency & other) const

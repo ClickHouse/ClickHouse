@@ -35,19 +35,12 @@ public:
     String operator() (const Decimal256 & x, UInt32 scale) const;
     String operator() (const AggregateFunctionStateData & x) const;
     String operator() (const CustomType & x) const;
-    String operator() (const NumberLiteral & x) const;
     String operator() (const bool & x) const;
 };
 
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
-template <typename StringType = String>
-StringType convertFieldToString(const Field & field)
-{
-    if (field.getType() == Field::Types::Which::String)
-        return StringType(field.safeGet<String>());
-    return StringType(applyVisitor(FieldVisitorToString(), field));
-}
+String convertFieldToString(const Field & field);
 
 /// Convert Object to String without quotes.
 String convertObjectToString(const Object & object);

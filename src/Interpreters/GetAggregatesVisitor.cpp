@@ -63,13 +63,10 @@ struct WindowExpressionsCollectorMatcher
                 return { .window_function_in_subtree = true };
 
             WindowExpressionsCollectorChildInfo result;
-            if (func->arguments)
+            for (auto & arg : func->arguments->children)
             {
-                for (auto & arg : func->arguments->children)
-                {
-                    auto subtree_result = visitNode(arg, ast);
-                    result.update(subtree_result);
-                }
+                auto subtree_result = visitNode(arg, ast);
+                result.update(subtree_result);
             }
 
             // We mark functions if they should be computed after WindowStep

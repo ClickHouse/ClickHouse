@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class ASTSelectQuery;
-
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
@@ -27,7 +25,7 @@ public:
 
     SharedHeader getSampleBlock() { return result_header; }
 
-    [[nodiscard]] size_t getMaxStreams() const { return max_streams; }
+    size_t getMaxStreams() const { return max_streams; }
 
     /// Returns whether the query uses the view source from the Context
     /// The view source is a virtual storage that currently only materialized views use to replace the source table
@@ -36,12 +34,12 @@ public:
     /// then we can cache the scalars forever (for any query that doesn't use the virtual storage either), but if it does use the virtual
     /// storage then we can only keep the scalar result around while we are working with that source block
     /// You can find more details about this under ExecuteScalarSubqueriesMatcher::visit
-    [[nodiscard]] bool usesViewSource() const { return uses_view_source; }
+    bool usesViewSource() const { return uses_view_source; }
 
     /// Add limits from external query.
     void addStorageLimits(const StorageLimitsList & limits);
 
-    [[nodiscard]] ContextPtr getContext() const { return context; }
+    ContextPtr getContext() const { return context; }
 
 protected:
     ASTPtr query_ptr;

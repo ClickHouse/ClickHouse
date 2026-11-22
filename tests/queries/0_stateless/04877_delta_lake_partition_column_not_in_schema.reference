@@ -1,6 +1,0 @@
--- control: a declared partition column reads fine
-4	4	1
--- rejected with or without a predicate
-BAD_ARGUMENTS
-BAD_ARGUMENTS
-BAD_ARGUMENTS

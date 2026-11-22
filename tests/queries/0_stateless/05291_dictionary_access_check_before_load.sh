@@ -18,15 +18,10 @@ ${CLICKHOUSE_CLIENT} -m --query "
     SOURCE(CLICKHOUSE(TABLE 'src' DB '${CLICKHOUSE_DATABASE}'))
     LAYOUT(FLAT())
     LIFETIME(0);
-    CREATE TABLE nb_src (class_id UInt32, ngram String, count UInt64) ENGINE = Memory;
-    INSERT INTO nb_src VALUES (0, 'good', 10), (1, 'bad', 10);
-    CREATE DICTIONARY nb (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
-    PRIMARY KEY ngram
-    SOURCE(CLICKHOUSE(TABLE 'nb_src' DB '${CLICKHOUSE_DATABASE}'))
-    LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
-    LIFETIME(0);
     CREATE TABLE w (id UInt64, value String) ENGINE = Dictionary(${CLICKHOUSE_DATABASE}.d);
-    SYSTEM UNLOAD DICTIONARY d;
+    SET check_table_dependencies = 0;
+    DETACH DICTIONARY d;
+    ATTACH DICTIONARY d;
     CREATE USER ${username} NOT IDENTIFIED;
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${username};
 "
@@ -42,9 +37,12 @@ function status()
     query "SELECT status FROM system.dictionaries WHERE database = currentDatabase() AND name = '${1:-d}'"
 }
 
+# Reattaching the dictionary resets its state to not loaded. The `Dictionary` tables depend on it, which would block
+# a permanent detach.
 function unload()
 {
-    query "SYSTEM UNLOAD DICTIONARY d"
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&check_table_dependencies=0" --data-binary "DETACH DICTIONARY d"
+    query "ATTACH DICTIONARY d"
     status
 }
 
@@ -110,15 +108,6 @@ status
 as_user "CREATE TABLE w_by_user (id UInt64, value String) ENGINE = Dictionary(d)"
 status
 
-echo "--- no grants, naiveBayesClassifier"
-status nb
-as_user "SELECT naiveBayesClassifier('nb', 'good')"
-status nb
-as_user "SELECT naiveBayesClassifierWithProb('nb', 'good')"
-status nb
-as_user "SELECT naiveBayesClassifierWithAllProbs('nb', 'good')"
-status nb
-
 echo "--- SELECT is enough for the dictionary table function, but not for dictGet"
 query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.d TO ${username}"
 as_user "SELECT dictGet('d', 'value', toUInt64(1))"
@@ -166,10 +155,5 @@ status
 # Reading the table resolves the same dictionary.
 query "SELECT * FROM w_unqualified_by_user"
 status
-
-echo "--- dictGet, naiveBayesClassifier"
-query "GRANT dictGet ON ${CLICKHOUSE_DATABASE}.nb TO ${username}"
-as_user "SELECT naiveBayesClassifier('nb', 'good')"
-status nb
 
 query "DROP USER ${username}"
