@@ -273,10 +273,15 @@ bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr
 
 bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
 {
-    const auto left_type = removeLowCardinalityAndNullable(left->getResultType());
-    const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
-    return (isDateOrDate32(left_type) && isDateTimeOrDateTime64(right_type))
-        || (isDateTimeOrDateTime64(left_type) && isDateOrDate32(right_type));
+    auto has_date = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isDateOrDate32(type); });
+    };
+    auto has_date_time = [](const QueryTreeNodePtr & node)
+    {
+        return anyInTypeTree(*node->getResultType(), [](const IDataType & type) { return isDateTimeOrDateTime64(type); });
+    };
+    return (has_date(left) && has_date_time(right)) || (has_date_time(left) && has_date(right));
 }
 
 bool comparesDecimalWithFloat(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)

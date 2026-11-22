@@ -211,8 +211,9 @@ bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const Qu
 /// The comparison pads the shorter string with zero bytes, but the graph compares the bytes, and `CAST` to `String` drops the zero bytes.
 bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
 
-/// Returns true if one argument is a `Date` or `Date32` and the other is a `DateTime` or `DateTime64`, like `d < toDateTime(...)`.
-/// The comparison converts the date to a time, but the graph compares a count of days with a count of seconds.
+/// Returns true if one argument has a `Date` or `Date32` and the other has a `DateTime` or `DateTime64`, like `d < toDateTime(...)`.
+/// The comparison converts the date to a time in the time zone of the other side, but the graph compares a count of days with a count of seconds,
+/// and `d <= u AND u <= l` does not give `d <= l` for `Tuple(Date)` `d` when `u` and `l` have different time zones.
 bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
 
 /// Returns true if one argument has a `Decimal` or a `DateTime64` and the other has a float, like `d = f` for a `Decimal` `d`.
