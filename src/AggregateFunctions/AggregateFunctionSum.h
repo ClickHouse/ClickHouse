@@ -304,7 +304,7 @@ struct AggregateFunctionSumData
             AccumulateResult local_sum{};
             for (size_t i = 0; i < count; ++i)
             {
-                uint8_t flag = (condition_map[i] != add_if_zero);
+                uint8_t flag = (static_cast<bool>(condition_map[i]) != add_if_zero);
 
                 AccumulateResult mask{};
                 std::memset(&mask, static_cast<int>(masks[flag]), sizeof(AccumulateResult));

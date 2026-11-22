@@ -448,7 +448,15 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) Data;
-        nested_func->create(getNestedPlace(place));
+        try
+        {
+            nested_func->create(getNestedPlace(place));
+        }
+        catch (...)
+        {
+            this->data(place).~Data();
+            throw;
+        }
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -484,6 +492,8 @@ public:
     {
         return nested_func->canOptimizeEqualKeysRanges();
     }
+
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
 
     [[nodiscard]] bool isState() const override
     {
