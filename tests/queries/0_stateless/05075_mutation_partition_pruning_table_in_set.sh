@@ -68,7 +68,11 @@ CREATE TABLE t_prune_in_table_alias
     is_hit_stored UInt8 DEFAULT p IN t_prune_in_table_keys
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_in_table_alias', 'r1')
-PARTITION BY p ORDER BY x;
+PARTITION BY p ORDER BY x
+-- Without the implicit min-max indices: the index of the `ALIAS` column `is_hit` would evaluate the
+-- deferred set on every insert, which fails with "Not-ready Set",
+-- https://github.com/ClickHouse/ClickHouse/issues/118527
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 -- The stored column is written explicitly: evaluating a deferred set in a column default on insert
 -- is a separate problem, https://github.com/ClickHouse/ClickHouse/issues/117276
