@@ -202,8 +202,7 @@ void Prefetcher::finalizeRanges()
             chassert(s == RequestState::State::Cancelled);
     }
 
-    /// Remote reads also cover gaps shorter than `min_bytes_for_seek`. When everything the reads would cover with the
-    /// local threshold is in a local cache, they are local reads, so skip gaps as for a local file.
+    /// If everything the reads cover with the local seek threshold is in a local cache, skip gaps as for a local file.
     if (local_min_bytes_for_seek < min_bytes_for_seek && read_mode == ReadMode::RandomRead)
     {
         bool all_cached = true;

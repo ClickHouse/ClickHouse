@@ -119,8 +119,7 @@ public:
     /// (page_cache_block_size) rather than only the requested range. Wrappers forward it.
     [[nodiscard]] virtual bool readsThroughPageCache() const { return false; }
 
-    /// Whether [offset, offset + size) is in a local cache, so that reading it, also in several reads, sends no request to
-    /// the remote storage. Unlike isContentCached(), any range can be asked, and nothing is added to the cache.
+    /// Whether [offset, offset + size) is in a local cache, so reading it in any number of reads sends no remote request. Read-only.
     [[nodiscard]] virtual bool isRangeCachedLocally(size_t /*offset*/, size_t /*size*/) const { return false; }
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).

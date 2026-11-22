@@ -315,9 +315,7 @@ std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher
     if (file_size <= 8)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file too short: {} bytes", file_size);
 
-    /// A second read of a local file, or of a tail already in a local cache, is cheap. Elsewhere a tail sized to the file
-    /// (1%, clamped to [128 KiB, 2 MiB]) usually covers the whole footer in one round trip. A non-zero `footer_read_size`
-    /// is a fixed read size.
+    /// A second read of a local file or a locally cached tail is cheap; elsewhere one adaptive-size read usually covers the footer.
     if (footer_read_size == 0)
     {
         const size_t adaptive_read_size = std::min(file_size, std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20));
