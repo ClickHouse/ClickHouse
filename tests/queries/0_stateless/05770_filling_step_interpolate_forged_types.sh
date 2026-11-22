@@ -15,6 +15,8 @@
 # of the inputs of its body: a repeated name stands for the first column of that name.
 # The number of the arguments of a lambda and the number of the `INTERPOLATE` sources are known before the lists
 # are read (from the type of the lambda, and from the expression), so the plan cannot announce longer lists.
+# The name of a lambda is composed of its signature, and not taken from the plan: functions are told apart by name,
+# so a lambda with the name of another function would be cast to that function when the plan is optimized.
 # The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh; the last plan is
 # well-formed, so the refusals are specific.
 
@@ -94,11 +96,47 @@ def interpolate(nodes, outputs, pairs):
     # The `flags & 2` payload: an ActionsDAG, then (input header key, DAG input name) pairs.
     return bytes([2]) + dag(nodes, outputs) + vu(len(pairs)) + b"".join(sb(k) + sb(n) for k, n in pairs)
 
-def forge(label, payload, children=(), version=VERSION, out_columns=()):
+def read_nothing(columns):
+    # A `ReadNothing` step: no children, the step name, the per-step version, the description, the header, the settings.
+    return vu(0) + sb("ReadNothing") + vu(0) + sb("") + header(columns) + vu(0)
+
+def skip_block(f):
+    # A block from the server: the name of an external table, the block info, and the columns in the `Native` format.
+    f.read(rv(f))
+    while field := rv(f):   # the numbered fields of the block info: is_overflows, bucket_num, out_of_order_buckets
+        f.read(1 if field == 1 else 4 if field == 2 else 4 * rv(f))
+    columns, rows = rv(f), rv(f)
+    for _ in range(columns):
+        f.read(rv(f))                           # the name of the column
+        type_ = f.read(rv(f)).decode().split("(")[0]
+        f.read(1)                               # no custom serialization
+        if type_ == "String":
+            for _ in range(rows):
+                f.read(rv(f))
+        elif rows:
+            f.read(rows * {"UInt8": 1, "Int8": 1, "Enum8": 1, "UInt32": 4, "DateTime": 4, "UInt64": 8, "Int64": 8}[type_])
+
+def last_packet(f):
+    # Skip the packets of a running query up to the one that ends it: `Exception` or `EndOfStream`.
+    while True:
+        packet = rv(f)
+        if packet in (1, 10, 14):   # Data, Log, ProfileEvents
+            skip_block(f)
+        elif packet == 3:           # Progress: seven numbers at this revision
+            [rv(f) for _ in range(7)]
+        elif packet == 6:           # ProfileInfo
+            rv(f), rv(f), rv(f), f.read(1), rv(f), f.read(2), rv(f)
+        else:
+            return packet
+
+def forge(label, payload, children=(), version=VERSION, out_columns=(), step="Filling", run=False):
+    # The server refuses a plan while it reads it. After a plan that it has not refused, the server waits for the external
+    # tables of the query, and the answer is `accepted`. With `run`, the client also sends the empty block that ends the
+    # external tables, so the server optimizes and executes the plan, and the answer is `executed` if the query has finished.
     plan = vu(version) + vu(0) + NUL + vu(len(children))   # version, max_threads, concurrency
-    for columns in children:   # one `ReadNothing` child per header, read before its parent
-        plan += vu(0) + sb("ReadNothing") + vu(0) + sb("") + header(columns) + vu(0)
-    plan += sb("Filling") + (vu(0) if version >= 19 else b"")   # step name, per-step version
+    for child in children:   # a serialized step, or a header for a `ReadNothing` step; read before the parent
+        plan += child if isinstance(child, bytes) else read_nothing(child)
+    plan += sb(step) + (vu(0) if version >= 19 else b"")   # step name, per-step version
     plan += sb("") + header(out_columns) + vu(0) + payload   # description, header, settings
     qid = os.urandom(16).hex()
     info = (b"\x01" + sb(USER) + sb(qid) + sb("127.0.0.1:9000") + bytes(8) + b"\x01"
@@ -114,9 +152,11 @@ def forge(label, payload, children=(), version=VERSION, out_columns=()):
         s.sendall(sb("") + sb("notchunked") + sb("notchunked") + vu(0)   # addendum
                   + vu(1) + sb(qid) + info + sb("") + sb("") + sb("")
                   + vu(7) + NUL + sb("SELECT 1") + sb("")   # 7 == QueryProcessingStage::QueryPlan
-                  + vu(13) + plan)
-        if rv(f) != 2:   # 2 == Protocol::Server::Exception
-            print(label, "accepted")
+                  + vu(13) + plan
+                  + (vu(2) + sb("") + b"\x01\x00\x02\xff\xff\xff\xff\x00" + vu(0) + vu(0) if run else b""))   # Data, an empty block
+        packet = last_packet(f) if run else rv(f)
+        if packet != 2:   # 2 == Protocol::Server::Exception, 5 == Protocol::Server::EndOfStream
+            print(label, "executed" if run and packet == 5 else "accepted" if not run else f"unexpected packet {packet}")
             return
         code = int.from_bytes(f.read(4), "little")
         print(label, {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED"}.get(code, "other"))
@@ -138,12 +178,14 @@ forge("array join of not an array",
 forge("array join in interpolate",
       FILL + interpolate([(INPUT, "a", ARR8, ()), (ARRAY_JOIN, "z", U8, (0,))], [1], [("a", "a")]) + vu(0), [HA8], VERSION, HA8)
 X8Z = [("x", U8), ("z", U8)]
-def lambda_node(argument, input_, body_type, body_kind=ALIAS, returns=None, type_=None, captured=(), columns=None, folded=False, inputs=1):
+def lambda_node(argument, input_, body_type, body_kind=ALIAS, returns=None, type_=None, captured=(), columns=None, folded=False, inputs=1,
+                name="lambda"):
     # `argument -> body`: a lambda with one argument (name, type), whose body is a single node `r` of `body_type`
     # over the only input `input_` (name, type). By default it captures nothing and its declarations agree with
     # the body. `returns` is the declared (name, type) of the result, `type_` the (argument, return) types of the
     # lambda itself (0x24 is `Function`), `captured` the declared (name, type) of the captured columns, and `columns`
     # the number of the columns the lambda is created with, each one a `UInt8`. The body has `inputs` copies of its input.
+    # `name` is the name of the function of a `FunctionCapture` node.
     returns = returns or ("r", body_type)
     type_ = type_ or (argument[1], returns[1])
     captures = captured if isinstance(captured, list) else [captured] if captured else []
@@ -158,7 +200,7 @@ def lambda_node(argument, input_, body_type, body_kind=ALIAS, returns=None, type
         # A lambda folded into a constant (the flags 1 | 2), which holds the captured columns as constants.
         return bytes([COLUMN]) + head + vu(0) + b"\x03" + signature + body + vu(columns) + (U8 + b"\x07") * columns
     # A `FunctionCapture` node (the flag 4), whose arguments are the captured columns: the node 0, `x UInt8`.
-    return bytes([FUNCTION]) + head + vu(columns) + vu(0) * columns + b"\x04" + sb("lambda") + signature + body
+    return bytes([FUNCTION]) + head + vu(columns) + vu(0) * columns + b"\x04" + sb(name) + signature + body
 
 def with_lambda(label, node):
     forge(label, FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,)), node], [1], [("x", "x")]) + vu(0),
@@ -226,6 +268,18 @@ forge("well-formed two sources",
 with_lambda("well-formed lambda", lambda_node(("e", U8), ("e", U8), U8))
 with_lambda("well-formed lambda with a captured column", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8)))
 with_lambda("well-formed folded lambda", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8), folded=True))
+# A lambda has no name of its own: the planner composes it of the signature of the lambda, and so does the server
+# for a lambda from a plan, whatever name the plan gives it. Functions are told apart by name, so a lambda with the name
+# `indexHint` would be taken for that function, and cast to it, when a filter is pushed down. Here the filter
+# `arrayExists(e -> e, a)` is pushed down below `DISTINCT`, so the plan has to be optimized and executed to show it,
+# and the plan is as good as with any other name of the lambda.
+A = [("a", ARR8)]
+DISTINCT = vu(1) + read_nothing(A) + sb("Distinct") + vu(0) + sb("") + header(A) + vu(0) + vu(1) + sb("a")   # DISTINCT a
+EXISTS = bytes([FUNCTION]) + sb("f") + U8 + vu(2) + vu(1) + vu(0) + NUL + sb("arrayExists")   # of the nodes 1 and 0
+for name in ("lambda", "indexHint"):
+    FILTER = [(INPUT, "a", ARR8, ()), lambda_node(("e", U8), ("e", U8), U8, name=name), EXISTS]
+    forge(f"filter with a lambda with the name {name}",   # the filter column `f` is removed
+          b"\x01" + sb("f") + dag(FILTER, [2, 0]) + vu(0), [DISTINCT], VERSION, A, "Filter", run=True)
 forge("well-formed alias",
       FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,))], [1], [("x", "x")]) + vu(0), [X8Z], VERSION, X8Z)
 PYEOF

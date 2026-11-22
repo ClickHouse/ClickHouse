@@ -28,5 +28,7 @@ well-formed two sources accepted
 well-formed lambda accepted
 well-formed lambda with a captured column accepted
 well-formed folded lambda accepted
+filter with a lambda with the name lambda executed
+filter with a lambda with the name indexHint executed
 well-formed alias accepted
 3

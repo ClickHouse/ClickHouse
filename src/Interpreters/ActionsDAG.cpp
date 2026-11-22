@@ -5649,8 +5649,11 @@ ActionsDAG ActionsDAG::deserialize(
                 auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
                 auto expression_actions = createLambdaExpressionActions(
                     std::move(capture_dag), ExpressionActionsSettings(context, CompileExpressions::yes), *capture_ptr);
+                /// `function_name` is not used for a lambda: `FunctionCapture` composes its name of its signature,
+                /// as the planner does. Functions are told apart by name (a function with the name `indexHint` is
+                /// cast to `FunctionIndexHint`), so the serialized data must not give a lambda the name of another one.
                 node.function_base = std::make_shared<FunctionCapture>(
-                    std::move(expression_actions), std::move(capture_ptr), node.result_type, function_name);
+                    std::move(expression_actions), std::move(capture_ptr), node.result_type);
 
                 node.function = node.function_base->prepare(arguments);
                 node.is_function_compiled = false;
