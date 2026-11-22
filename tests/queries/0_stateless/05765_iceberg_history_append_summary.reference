@@ -1,0 +1,6 @@
+--- format version 1
+APPEND	{'operation':'append','added-data-files':'1','added-records':'3','changed-partition-count':'1','total-records':'3','total-data-files':'1','total-delete-files':'0','total-position-deletes':'0','total-equality-deletes':'0'}	1	1
+APPEND	{'operation':'append','added-data-files':'1','added-records':'2','changed-partition-count':'1','total-records':'5','total-data-files':'2','total-delete-files':'0','total-position-deletes':'0','total-equality-deletes':'0'}	1	1
+--- format version 2
+APPEND	{'operation':'append','added-data-files':'1','added-records':'3','changed-partition-count':'1','total-records':'3','total-data-files':'1','total-delete-files':'0','total-position-deletes':'0','total-equality-deletes':'0'}	1	1
+APPEND	{'operation':'append','added-data-files':'1','added-records':'2','changed-partition-count':'1','total-records':'5','total-data-files':'2','total-delete-files':'0','total-position-deletes':'0','total-equality-deletes':'0'}	1	1
