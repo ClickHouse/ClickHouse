@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
+<div id="max_avg_part_size_for_too_many_parts">
+  ## max_avg_part_size_for_too_many_parts
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -26,7 +28,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 دُمجت الأجزاء بنجاح في أجزاء أكبر. ولا يؤثر ذلك في
 عتبات الأجزاء غير النشطة أو إجمالي عدد الأجزاء.
 
-## max_buckets_in_map {#max_buckets_in_map}
+<div id="max_buckets_in_map">
+  ## max_buckets_in_map
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -36,13 +40,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يُحدَّد العدد الفعلي للحاويات بواسطة [map&#95;buckets&#95;strategy](/ar/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
 الحد الأقصى المسموح به هو 256.
 
-## max_cleanup_delay_period {#max_cleanup_delay_period}
+<div id="max_cleanup_delay_period">
+  ## max_cleanup_delay_period
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 المدة القصوى لتنظيف سجلات قائمة الانتظار القديمة، وقيم التجزئة الخاصة بالكتل، والأجزاء.
 
-## max_compress_block_size {#max_compress_block_size}
+<div id="max_compress_block_size">
+  ## max_compress_block_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -52,9 +60,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 ). تتجاوز القيمة المحددة عند إنشاء الجدول القيمة العامة
 لهذا الإعداد.
 
-بالنسبة إلى العمود الذي يحتوي على قيم ثابتة الحجم، يُقرَّب حجم الكتلة نزولًا إلى أقرب مضاعف لحجم القيمة بالبايت، على ألا يقل عن قيمة واحدة.
-
-## max_concurrent_queries {#max_concurrent_queries}
+<div id="max_concurrent_queries">
+  ## max_concurrent_queries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -74,7 +82,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-## max_digestion_size_per_segment {#max_digestion_size_per_segment}
+<div id="max_digestion_size_per_segment">
+  ## max_digestion_size_per_segment
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -82,7 +92,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إعداد متقادم، لا تأثير له.
 
-## max_file_name_length {#max_file_name_length}
+<div id="max_file_name_length">
+  ## max_file_name_length
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -92,7 +104,9 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يُوصى بضبطه على قيمة أقل من الحد الأقصى لطول اسم الملف (عادةً 255
 بايت) مع ترك هامشٍ ما لتجنّب أخطاء نظام الملفات.
 
-## max_partitions_to_read {#max_partitions_to_read}
+<div id="max_partitions_to_read">
+  ## max_partitions_to_read
+</div>
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -108,122 +122,17 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يمكنك أيضًا تحديد إعداد لتعقيد الاستعلام [max&#95;partitions&#95;to&#95;read](/ar/reference/settings/session-settings/max-partitions#max_partitions_to_read)
 على مستوى الاستعلام / الجلسة / ملف التعريف.
 
-## max_projections {#max_projections}
+<div id="max_projections">
+  ## max_projections
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 الحد الأقصى لعدد الإسقاطات في MergeTree.
 
-## max_row_mask_update_coalescing_ast_bytes {#max_row_mask_update_coalescing_ast_bytes}
-
-<SettingsInfoBlock type="UInt64" default_value="1048576" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1048576"},{"label": "New setting"}]}]} />
-
-الحد الأقصى لمجموع أحجام `ast_text` بالبايت للأوامر الأصلية التي يمكن دمجها ضمن عملية دمج تحديثات قناع الصفوف (row-mask
-update coalescing). فالحد المفروض على عدد الأوامر وحده لا يكفي لتقييد حجم هذه النسخة عندما
-تحتوي الأوامر على قيم حرفية كبيرة. اضبط القيمة على 0 لتعطيل الدمج.
-
-## max_row_mask_update_coalescing_commands {#max_row_mask_update_coalescing_commands}
-
-<SettingsInfoBlock type="UInt64" default_value="4096" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "4096"},{"label": "New setting"}]}]} />
-
-الحد الأقصى لعدد أوامر التعديل الخاصة بجزء بيانات واحد والمؤهلة لدمج تحديثات قناع الصفوف.
-يحدّ هذا الإعداد من حجم النسخة الإضافية من قائمة الأوامر التي يُنشئها هذا التحسين؛
-فالقيمة ضمانة لحماية الموارد، وليست حدًا دلاليًا. تؤدي القيم الأقل من 2 إلى تعطيل
-الدمج.
-
-## max_row_mask_update_coalescing_key_bytes {#max_row_mask_update_coalescing_key_bytes}
-
-<SettingsInfoBlock type="UInt64" default_value="65536" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "65536"},{"label": "New setting"}]}]} />
-
-الحد الأقصى لإجمالي عدد بايتات القيم الحرفية للمفاتيح في عملية تحديث مُدمجة واحدة لأقنعة الصفوف.
-يقيّد هذا الإعداد حجم المسند `IN` المُولَّد. اضبطه على 0 لتعطيل
-الدمج.
-
-## max_row_mask_update_coalescing_keys {#max_row_mask_update_coalescing_keys}
-
-<SettingsInfoBlock type="UInt64" default_value="256" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "256"},{"label": "New setting"}]}]} />
-
-الحد الأقصى لعدد المفاتيح في عملية تحديث مدمجة واحدة لأقنعة الصفوف. ويخضع الحد الفعلي
-أيضًا لقيمة `max_rows_in_set` المحددة في إعدادات استعلامات الخلفية. وتؤدي القيم الأقل من
-2 إلى تعطيل الدمج.
-
-## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد للحد من إجمالي عدد البايتات المضغوطة في جميع أجزاء البيانات النشطة وغير النشطة للجدول."}]}]} />
-
-إذا تجاوز إجمالي عدد البايتات المضغوطة (الحجم على القرص) في جميع
-أجزاء البيانات النشطة وغير النشطة للجدول هذه القيمة، تُوقَف عملية `INSERT`
-بالاستثناء `Table size limit exceeded`. وتُحتسب الأجزاء غير النشطة أيضًا،
-إذ إن الغرض من هذا الإعداد هو الحد من استخدام القرص. لاحظ أن الأجزاء غير النشطة
-تُزال في الخلفية (راجع الإعداد `old_parts_lifetime`)، لذا قد ينخفض الحجم
-المرصود بمرور الوقت. يُتحقق من الحد في بداية `INSERT` وعند اعتماد أجزاء بيانات
-جديدة بمجموعة العمل، بما في ذلك نتائج عمليات الدمج
-والطفرات في الخلفية. كما يُتحقق من عمليات الإدراج التي تنفذها العروض المتجسدة.
-لا يُتحقق من الحد في عمليات الجلب من النسخ المتماثلة، مما قد يؤدي إلى حالة سباق
-عندما تتجاوز عمليات الإدراج المتوازية في عدة نسخ متماثلة الحد. ويُسمح دائمًا بإلحاق
-أجزاء بيانات فارغة، لذا يمكن إزالة البيانات من جدول
-يتجاوز الحد، مثلًا باستخدام `TRUNCATE` أو `ALTER TABLE ... DROP
-PARTITION`.
-
-القيم الممكنة:
-
-* أي عدد صحيح موجب.
-* 0 — غير محدود.
-
-يفيد ذلك للخدمات متعددة المستأجرين والمؤقتة والتجريبية.
-
-## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد للحد من إجمالي عدد البايتات غير المضغوطة في جميع أجزاء البيانات النشطة وغير النشطة للجدول."}]}]} />
-
-يماثل `max_table_size_bytes_compressed`، لكن يُطبَّق الحد على
-إجمالي عدد البايتات غير المضغوطة في جميع أجزاء البيانات النشطة
-وغير النشطة للجدول.
-
-القيم الممكنة:
-
-* أي عدد صحيح موجب.
-* 0 — غير محدود.
-
-وهو مفيد للخدمات متعددة المستأجرين والمؤقتة والتجريبية.
-
-## max_table_size_rows {#max_table_size_rows}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتقييد العدد الإجمالي للصفوف في أجزاء البيانات النشطة للجدول."}]}]} />
-
-إذا تجاوز العدد الإجمالي للصفوف في أجزاء البيانات النشطة للجدول هذه
-القيمة، تُوقَف عملية `INSERT` ويُرجع الاستثناء `Table size limit exceeded`.
-يُتحقق من الحد في بداية `INSERT` وعند اعتماد أجزاء بيانات جديدة ضمن
-مجموعة العمل، بما في ذلك نتائج عمليات الدمج والطفـرات في الخلفية
-(لذلك ستُعاد محاولة تعديل يزيد حجم الجدول عن الحد دون أن يكتمل). كما
-يُتحقق من عمليات الإدراج التي تنفذها العروض المتجسدة. لا يُتحقق من الحد أثناء عمليات
-الجلب من النسخ المتماثلة، مما قد يؤدي إلى حالة سباق عندما تتجاوز عمليات الإدراج المتوازية في عدة
-نسخ متماثلة الحد. يُسمح دائمًا باعتماد أجزاء البيانات الفارغة،
-لذا يمكن إزالة البيانات من جدول يتجاوز الحد، على سبيل المثال باستخدام
-`TRUNCATE` أو `ALTER TABLE ... DROP PARTITION`.
-
-القيم الممكنة:
-
-* أي عدد صحيح موجب.
-* 0 — بلا حد.
-
-يفيد ذلك للخدمات متعددة المستأجرين والمؤقتة والتجريبية.
-
-## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
+<div id="max_uncompressed_bytes_in_patches">
+  ## max_uncompressed_bytes_in_patches
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

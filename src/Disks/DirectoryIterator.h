@@ -15,13 +15,13 @@ public:
     virtual void next() = 0;
 
     /// Return `true` if the iterator points to a valid element.
-    [[nodiscard]] virtual bool isValid() const = 0;
+    virtual bool isValid() const = 0;
 
     /// Path to the file that the iterator currently points to.
-    [[nodiscard]] virtual std::string path() const = 0;
+    virtual std::string path() const = 0;
 
     /// Name of the file that the iterator currently points to.
-    [[nodiscard]] virtual std::string name() const = 0;
+    virtual std::string name() const = 0;
 
     virtual ~IDirectoryIterator() = default;
 };

@@ -19,17 +19,17 @@ public:
         ActionsDAG actions_dag_,
         String filter_column_name_);
 
-    [[nodiscard]] String getName() const override { return "ObjectFilter"; }
+    String getName() const override { return "ObjectFilter"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    [[nodiscard]] bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
+    bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
 
-    [[nodiscard]] const ActionsDAG & getExpression() const { return actions_dag; }
+    const ActionsDAG & getExpression() const { return actions_dag; }
     ActionsDAG & getExpression() { return actions_dag; }
-    [[nodiscard]] const String & getFilterColumnName() const { return filter_column_name; }
+    const String & getFilterColumnName() const { return filter_column_name; }
 
     void serialize(Serialization & ctx) const override;
-    [[nodiscard]] bool isSerializable() const override { return true; }
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
