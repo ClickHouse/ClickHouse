@@ -886,24 +886,24 @@ std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
         return ColumnsWithTypeAndName{{std::move(column), lhs_type, ""}};
     }
 
-    /// Integer members of any literal width hold the same values as `UInt64` (or as `Int64` if one is negative and
-    /// all fit), so one accurate cast of all of them keeps exactly the members that the per-member conversion keeps,
+    /// Integer members of any literal width hold the same values as `UInt64` (or as `Int64` if one is stored as `Int64`
+    /// and all fit), so one accurate cast of all of them keeps exactly the members that the per-member conversion keeps,
     /// as in `tryConvertNativeNumberMembersBatch`.
-    bool has_negative = false;
+    bool has_int64 = false;
     for (const auto & element : rhs_elements)
     {
         if (element.getType() == Field::Types::Int64)
-            has_negative = true;
+            has_int64 = true;
         else if (element.getType() != Field::Types::UInt64)
             return std::nullopt;
     }
 
-    DataTypePtr source_type = has_negative ? DataTypePtr(std::make_shared<DataTypeInt64>()) : DataTypePtr(std::make_shared<DataTypeUInt64>());
+    DataTypePtr source_type = has_int64 ? DataTypePtr(std::make_shared<DataTypeInt64>()) : DataTypePtr(std::make_shared<DataTypeUInt64>());
     if (!nativeBatchApplicable(source_type, lhs_type))
         return std::nullopt;
 
     ColumnPtr gathered;
-    if (!has_negative)
+    if (!has_int64)
     {
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
