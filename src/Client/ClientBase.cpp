@@ -4318,12 +4318,7 @@ bool ClientBase::processQueryText(const String & text)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
     }
 
-    if (query_fuzzer_runs)
-    {
-        processWithASTFuzzer(text);
-        return true;
-    }
-
+    /// With the AST fuzzer `executeMultiQuery` fuzzes each statement and returns false when the server is gone.
     return executeMultiQuery(text);
 }
 
@@ -5621,16 +5616,8 @@ void ClientBase::runNonInteractive()
     {
         for (const auto & query : queries)
         {
-            if (query_fuzzer_runs)
-            {
-                if (!processWithASTFuzzer(query))
-                    return;
-            }
-            else
-            {
-                if (!processQueryText(query))
-                    return;
-            }
+            if (!processQueryText(query))
+                return;
         }
     }
     else
@@ -5640,10 +5627,7 @@ void ClientBase::runNonInteractive()
         ReadBufferFromFileDescriptor in(stdin_fd);
         String text;
         readStringUntilEOF(text, in);
-        if (query_fuzzer_runs)
-            processWithASTFuzzer(text);
-        else
-            processQueryText(text);
+        processQueryText(text);
     }
 }
 
