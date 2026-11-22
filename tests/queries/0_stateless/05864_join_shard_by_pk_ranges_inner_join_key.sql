@@ -1,6 +1,7 @@
 -- A join keyed on the right table of an inner join below it is sharded by primary-key ranges,
 -- because every row of an inner join has equal keys on both sides. A LEFT join's right key is not
 -- a shard key: its non-matched rows carry defaults.
+-- A RIGHT or FULL join stops the chain: its non-joined right rows carry default left keys.
 
 SET query_plan_join_shard_by_pk_ranges = 1;
 SET query_plan_optimize_join_order_limit = 0;
@@ -56,6 +57,22 @@ SELECT 'left', countIf(explain LIKE '%Sharding:%') FROM (EXPLAIN actions = 1
 SELECT count(), sum(t_a.v), sum(t_c.v) FROM t_a LEFT JOIN t_b ON t_a.id = t_b.id JOIN t_c ON t_b.id = t_c.id
 SETTINGS query_plan_join_shard_by_pk_ranges = 1;
 SELECT count(), sum(t_a.v), sum(t_c.v) FROM t_a LEFT JOIN t_b ON t_a.id = t_b.id JOIN t_c ON t_b.id = t_c.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 0;
+
+SELECT 'right', countIf(explain LIKE '%Sharding:%') FROM (EXPLAIN actions = 1
+    SELECT count() FROM t_a JOIN t_b ON t_a.id = t_b.id RIGHT JOIN t_c ON t_b.id = t_c.id JOIN t_d ON t_b.id = t_d.id);
+
+SELECT count(), sum(t_c.v), sum(t_d.v) FROM t_a JOIN t_b ON t_a.id = t_b.id RIGHT JOIN t_c ON t_b.id = t_c.id JOIN t_d ON t_b.id = t_d.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+SELECT count(), sum(t_c.v), sum(t_d.v) FROM t_a JOIN t_b ON t_a.id = t_b.id RIGHT JOIN t_c ON t_b.id = t_c.id JOIN t_d ON t_b.id = t_d.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 0;
+
+SELECT 'full', countIf(explain LIKE '%Sharding:%') FROM (EXPLAIN actions = 1
+    SELECT count() FROM t_a JOIN t_b ON t_a.id = t_b.id FULL JOIN t_c ON t_b.id + 0 = t_c.id JOIN t_d ON t_b.id = t_d.id);
+
+SELECT count(), sum(t_c.v), sum(t_d.v) FROM t_a JOIN t_b ON t_a.id = t_b.id FULL JOIN t_c ON t_b.id + 0 = t_c.id JOIN t_d ON t_b.id = t_d.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+SELECT count(), sum(t_c.v), sum(t_d.v) FROM t_a JOIN t_b ON t_a.id = t_b.id FULL JOIN t_c ON t_b.id + 0 = t_c.id JOIN t_d ON t_b.id = t_d.id
 SETTINGS query_plan_join_shard_by_pk_ranges = 0;
 
 DROP TABLE t_a;
