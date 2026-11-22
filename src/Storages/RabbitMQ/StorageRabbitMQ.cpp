@@ -1459,7 +1459,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log, cycle_epoch,
             /* drive_loop_on_worker */drive_loop_on_worker,
-            /* first_poll_timeout_ms */getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds());
+            /* first_poll_timeout_ms */static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds()));
 
         sources.emplace_back(source);
         pipes.emplace_back(source);

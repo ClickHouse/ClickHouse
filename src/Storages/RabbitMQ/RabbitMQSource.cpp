@@ -161,13 +161,13 @@ bool RabbitMQSource::driveLoopUntilMessage()
 
     auto is_cancelled = [this]{ return storage.isConsumeCancelRequested(cancel_epoch); };
     auto & handler = storage.getConnection().getHandler();
-    /// A finite flush interval caps the whole cycle from its entry (drive_stopwatch). An unlimited
-    /// cycle (flush=0) instead bounds only each wait for the next delivery by this per-call idle
-    /// window, so a live backlog drains in full while an empty queue still releases the permit.
+    /// A finite flush interval caps the whole cycle from its entry (drive_stopwatch, or total_stopwatch when
+    /// streaming). An unlimited cycle (flush=0) instead bounds only each wait for the next delivery by this
+    /// per-call idle window, so a live backlog drains in full while an empty queue still ends the cycle.
     Stopwatch idle_stopwatch{CLOCK_MONOTONIC_COARSE};
     while (!consumer->hasPendingMessages())
     {
-        /// SYSTEM PAUSE blocks only future cycles; an ordinary cycle must not keep consuming after it.
+        /// SYSTEM PAUSE blocks only future cycles; an idle streaming cycle must not start a block after it.
         if (consumer->isConsumerStopped() || is_cancelled() || (!drive_loop_on_worker && storage.isConsumeBlocked()))
             return false;
         const uint64_t elapsed_ms = max_execution_time_ms
