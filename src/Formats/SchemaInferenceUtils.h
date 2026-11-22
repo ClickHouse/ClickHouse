@@ -19,7 +19,7 @@ using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
 struct JSONInferenceInfo
 {
     /// Int64 inferred from a negative number and numbers parsed from JSON strings are marked by being one of
-    /// the instances below. They are owned here, so a freed type cannot pass its mark to a type at the same address.
+    /// the instances owned below.
     DataTypePtr getNegativeInt64();
     /// number_type is Int64, UInt64 or Float64.
     DataTypePtr getNumberParsedFromString(const DataTypePtr & number_type);
