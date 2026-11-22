@@ -32,7 +32,7 @@ public:
         STORED = 0,
         ENCODED = 1,
         /// Encoded with the boundaries of the values (see `IWriteBufferWithValueBoundaries`): no symbol crosses
-        /// a boundary, so every value that starts in the block is encoded exactly as `FSST::encodeValue` encodes it.
+        /// a boundary, so every value that starts in the block starts at a code and is encoded on its own.
         ENCODED_ALIGNED = 2,
     };
 

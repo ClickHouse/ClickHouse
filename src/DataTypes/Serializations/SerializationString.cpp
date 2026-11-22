@@ -665,11 +665,15 @@ private:
 
 /** The conditions of `StringValueFilter` that are checked exactly on the codes of a block encoded by `FSST` with the
   * boundaries of the values (`CompressionCodecFSST::Format::ENCODED_ALIGNED`). Every value that starts in such a block
-  * is encoded on its own, exactly as `FSST::encodeValue` encodes it, so:
-  * - `Equals`: the value is equal to the needle if and only if its codes are equal to the codes of the needle;
-  * - `Prefix`: the encoder chooses a symbol by the next 8 bytes, so the codes of the needle that start at least 8 bytes
-  *   before its end are the same in every value that starts with it. They are compared without decoding, and only the
-  *   few bytes after them are decoded and compared with the rest of the needle.
+  * starts at a code, so the needle is compared with the symbols of its first codes, one symbol at a time, without
+  * decoding the value, and the comparison stops at the first symbol that differs (usually the first one):
+  * - `Prefix`: the value starts with the needle if and only if the symbols of its first codes do;
+  * - `Equals`: the same, for a value of the size of the needle.
+  *
+  * The codes of the value are not compared with the codes of the needle encoded by the table of the block:
+  * the same bytes can be encoded by different sequences of codes (e.g. a table with the symbols `foo`, `f` and `o`),
+  * and the format does not require the sequence that the current encoder chooses, so such a comparison would drop
+  * the matching values of a block written by another encoder.
   */
 class FSSTBlockExactConditions
 {
@@ -679,7 +683,12 @@ public:
         for (const auto & condition : filter.getConditions())
         {
             if (condition.type == StringValueFilter::Condition::Type::Equals || condition.type == StringValueFilter::Condition::Type::Prefix)
-                conditions.push_back({&condition, {}, 0, 0});
+            {
+                /// The needle is compared 8 bytes at a time, so it is padded for the last load.
+                String padded_needle = condition.needle;
+                padded_needle.resize(condition.needle.size() + FSST::MAX_SYMBOL_LENGTH);
+                conditions.push_back({&condition, std::move(padded_needle)});
+            }
             else
                 all_conditions_are_exact = false;
         }
@@ -690,58 +699,17 @@ public:
     /// Whether checking these conditions decides the whole filter.
     [[nodiscard]] bool decideFilter() const { return all_conditions_are_exact; }
 
-    void build(const FSST::SymbolTable & table)
-    {
-        for (auto & condition : conditions)
-        {
-            const auto & needle = condition.condition->needle;
-            condition.codes.resize(FSST::maxEncodedSize(needle.size()));
-            condition.codes.resize(FSST::encodeValue(table, needle.data(), needle.size(), condition.codes.data()));
-
-            if (condition.condition->type == StringValueFilter::Condition::Type::Prefix)
-            {
-                /// The codes that start at least `MAX_SYMBOL_LENGTH` bytes before the end of the needle.
-                size_t num_codes = 0;
-                size_t num_bytes = 0;
-                while (num_codes < condition.codes.size() && num_bytes + FSST::MAX_SYMBOL_LENGTH <= needle.size())
-                {
-                    const UInt8 code = condition.codes[num_codes];
-                    num_bytes += code == FSST::ESCAPE_CODE ? 1 : table.lengths[code];
-                    num_codes += code == FSST::ESCAPE_CODE ? 2 : 1;
-                }
-                condition.num_prefix_codes = num_codes;
-                condition.num_prefix_bytes = num_bytes;
-            }
-        }
-    }
-
     /// Checks the value of `size` bytes, whose codes are `[begin, end)` (from the index of the values, within the codes).
-    /// The codes that are compared are not decoded, so they are not validated: a malformed block can only make
-    /// the comparison fail. The decoded part is validated by `FSST::decode`.
+    /// A malformed block (an unused code, or codes that end before the value) can only make the comparison fail:
+    /// a value that is rejected is not validated, and a value that is accepted is decoded and validated by `FSST::decode`.
     [[nodiscard]] bool match(const CompressionCodecFSST::EncodedBlock & block, size_t begin, size_t end, size_t size) const
     {
-        const UInt8 * codes = block.codes;
         for (const auto & condition : conditions)
         {
-            const auto & needle = condition.condition->needle;
-            if (condition.condition->type == StringValueFilter::Condition::Type::Equals)
-            {
-                if (size != needle.size() || end - begin != condition.codes.size()
-                    || memcmp(codes + begin, condition.codes.data(), condition.codes.size()) != 0)
-                    return false;
-                continue;
-            }
-
-            if (size < needle.size() || end - begin < condition.num_prefix_codes
-                || memcmp(codes + begin, condition.codes.data(), condition.num_prefix_codes) != 0)
+            const size_t needle_size = condition.condition->needle.size();
+            if (condition.condition->type == StringValueFilter::Condition::Type::Equals ? size != needle_size : size < needle_size)
                 return false;
-
-            /// The rest of the needle is shorter than `2 * MAX_SYMBOL_LENGTH`.
-            const size_t rest_size = needle.size() - condition.num_prefix_bytes;
-            char rest[2 * FSST::MAX_SYMBOL_LENGTH];
-            FSST::Cursor cursor{begin + condition.num_prefix_codes, 0};
-            FSST::decode(block.table, codes, block.codes_size, cursor, rest, rest_size, block.error_code);
-            if (memcmp(rest, needle.data() + condition.num_prefix_bytes, rest_size) != 0)
+            if (!startsWith(block, begin, end, condition.padded_needle.data(), needle_size))
                 return false;
         }
         return true;
@@ -751,12 +719,50 @@ private:
     struct Condition
     {
         const StringValueFilter::Condition * condition;
-        /// The codes of the needle in the current block.
-        std::vector<UInt8> codes;
-        /// For `Prefix`: the number of the codes of the needle that are compared, and of the bytes they encode.
-        size_t num_prefix_codes;
-        size_t num_prefix_bytes;
+        /// The needle followed by `FSST::MAX_SYMBOL_LENGTH` zero bytes.
+        String padded_needle;
     };
+
+    /// Whether the data encoded by the codes `[begin, end)` starts with the needle of `needle_size` bytes,
+    /// which is followed by at least `FSST::MAX_SYMBOL_LENGTH` readable bytes.
+    static bool startsWith(const CompressionCodecFSST::EncodedBlock & block, size_t begin, size_t end, const char * needle, size_t needle_size)
+    {
+        const UInt8 * codes = block.codes;
+        const auto & table = block.table;
+
+        size_t pos = begin;
+        size_t matched = 0;
+        while (matched < needle_size)
+        {
+            if (pos >= end)
+                return false;
+
+            const UInt8 code = codes[pos];
+            if (code == FSST::ESCAPE_CODE)
+            {
+                if (pos + 1 >= end || codes[pos + 1] != static_cast<UInt8>(needle[matched]))
+                    return false;
+                ++matched;
+                pos += 2;
+                continue;
+            }
+
+            /// An unused code has the length 0.
+            const size_t length = table.lengths[code];
+            if (length == 0)
+                return false;
+
+            /// The first byte of a symbol is the lowest byte of the value in the table. The symbol can be longer than
+            /// the rest of the needle: then only its first bytes are compared.
+            const size_t n = std::min(length, needle_size - matched);
+            const UInt64 difference = unalignedLoadLittleEndian<UInt64>(needle + matched) ^ table.symbols[code];
+            if (difference << (8 * (sizeof(UInt64) - n)))
+                return false;
+            matched += n;
+            ++pos;
+        }
+        return true;
+    }
 
     std::vector<Condition> conditions;
     bool all_conditions_are_exact = true;
@@ -840,8 +846,6 @@ static NO_INLINE void deserializeBinaryFilteredFromFSST(
 
             const auto & encoded = block->encoded;
             const auto & table = encoded.table;
-            if (!exact_conditions.empty())
-                exact_conditions.build(table);
 
             FSST::Cursor cursor = block->start_cursor;
             size_t available = block->decoded_size - block->start_offset;

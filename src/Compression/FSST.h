@@ -55,12 +55,8 @@ inline constexpr size_t maxEncodedSize(size_t size) { return size * 2; }
 
 /// Encodes the data into `dest`, which must have room for `maxEncodedSize(size)` bytes. Returns the size of the codes.
 /// If `value_boundaries` are given (see `SymbolTable::build`), the encoding is aligned with the values: no symbol
-/// crosses a boundary, so every value is encoded exactly as `encodeValue` encodes it alone.
+/// crosses a boundary, so every value starts at a code and is encoded on its own.
 size_t encode(const SymbolTable & table, const char * src, size_t size, UInt8 * dest, const std::span<const UInt32> * value_boundaries = nullptr);
-
-/// Encodes one value, the same as `encode` with value boundaries encodes a value in the data.
-/// It does not build the lookup tables of `encode`, so it is cheap for a short value.
-size_t encodeValue(const SymbolTable & table, const char * src, size_t size, UInt8 * dest);
 
 /// For the codes encoded by `encode` with `value_boundaries`, appends the position of the code at every boundary to `result`.
 void findBoundaryCodePositions(

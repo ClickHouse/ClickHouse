@@ -527,55 +527,6 @@ size_t encode(const SymbolTable & table, const char * src, size_t size, UInt8 * 
     return out - dest;
 }
 
-size_t encodeValue(const SymbolTable & table, const char * src, size_t size, UInt8 * dest)
-{
-    /// The encoder takes the longest symbol at every position: at most one symbol of at least 3 bytes can match
-    /// (one per slot, see `hashPrefix`), and otherwise the longest of the shorter ones. So it is the same
-    /// as the longest matching symbol, which is found among the symbols with the same first byte.
-    std::array<UInt8, 257> bucket_begins{};
-    std::array<UInt8, MAX_SYMBOLS> codes_by_first_byte{};
-    for (size_t code = 0; code < table.num_symbols; ++code)
-        ++bucket_begins[(table.symbols[code] & 0xFF) + 1];
-    for (size_t byte = 0; byte < 256; ++byte)
-        bucket_begins[byte + 1] = static_cast<UInt8>(bucket_begins[byte + 1] + bucket_begins[byte]);
-    std::array<UInt8, 256> next_in_bucket = {};
-    for (size_t byte = 0; byte < 256; ++byte)
-        next_in_bucket[byte] = bucket_begins[byte];
-    for (size_t code = 0; code < table.num_symbols; ++code)
-        codes_by_first_byte[next_in_bucket[table.symbols[code] & 0xFF]++] = static_cast<UInt8>(code);
-
-    UInt8 * out = dest;
-    size_t pos = 0;
-    while (pos < size)
-    {
-        const size_t remaining = size - pos;
-        const UInt64 word = loadWord(src + pos, remaining);
-        const size_t first_byte = word & 0xFF;
-
-        size_t best_length = 0;
-        UInt8 best_code = ESCAPE_CODE;
-        for (size_t i = bucket_begins[first_byte]; i < bucket_begins[first_byte + 1]; ++i)
-        {
-            const UInt8 code = codes_by_first_byte[i];
-            const size_t length = table.lengths[code];
-            if (length > best_length && length <= remaining && ((word ^ table.symbols[code]) & symbolMask(length)) == 0)
-            {
-                best_length = length;
-                best_code = code;
-            }
-        }
-
-        *out++ = best_code;
-        if (best_code == ESCAPE_CODE)
-        {
-            *out++ = static_cast<UInt8>(first_byte);
-            best_length = 1;
-        }
-        pos += best_length;
-    }
-    return out - dest;
-}
-
 void findBoundaryCodePositions(
     const SymbolTable & table, const UInt8 * codes, size_t codes_size, std::span<const UInt32> value_boundaries, VectorWithMemoryTracking<UInt32> & result)
 {
