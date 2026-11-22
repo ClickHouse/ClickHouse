@@ -1675,12 +1675,20 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
             return make_function_node("accurateCastOrNull", {make_unresolved_key(i), std::make_shared<ConstantNode>(right_key_type->getName())});
         };
 
-        if (which_right.isFloat())
+        const bool right_is_bool = isBool(right_key_type);
+        if (which_right.isFloat() || right_is_bool)
         {
             /// The set compares floats by their bits: `nan` is a member of a set with `nan`, `-0.` is not of one with `0.`.
-            const String reinterpret_function_name
-                = which_right.isBFloat16() ? "reinterpretAsUInt16" : (which_right.isFloat32() ? "reinterpretAsUInt32" : "reinterpretAsUInt64");
-            auto left_value = left_key_type->getName() == right_key_type->getName() ? make_unresolved_key(i) : make_converted_left_key();
+            /// It converts a key of a `Bool` column even of the same type, turning every byte but 0 into `true`, and
+            /// compares bytes.
+            String reinterpret_function_name = "reinterpretAsUInt64";
+            if (right_is_bool)
+                reinterpret_function_name = "reinterpretAsUInt8";
+            else if (which_right.isBFloat16())
+                reinterpret_function_name = "reinterpretAsUInt16";
+            else if (which_right.isFloat32())
+                reinterpret_function_name = "reinterpretAsUInt32";
+            auto left_value = left_key_type->getName() == right_key_type->getName() && !right_is_bool ? make_unresolved_key(i) : make_converted_left_key();
             comparisons.push_back(make_function_node("equals",
                 {make_function_node(reinterpret_function_name, {std::move(left_value)}),
                  make_function_node(reinterpret_function_name, {std::move(right_value)})}));

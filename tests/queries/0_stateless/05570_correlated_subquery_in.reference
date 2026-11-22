@@ -32,6 +32,12 @@ UInt8 / Bool	1	1	1	0	1	1	1
 UInt8 / Bool	1	2	1	0	1	1	1
 UInt8 / Bool	2	0	1	0	1	1	1
 UInt8 / Bool	3	1	0	1	1	1	1
+Bool / Bool	1	0	0	1	1	1	1	1
+Bool / Bool	1	1	1	0	1	1	1	1
+Bool / Bool	1	2	1	0	1	1	1	1
+Bool / Bool	2	1	0	1	1	1	1	1
+Bool / Bool	2	2	0	1	1	1	1	1
+Bool / Bool	3	2	0	1	1	1	1	1
 LowCardinality(Nullable(String)) / String	1	a	1	0	1	1	1
 LowCardinality(Nullable(String)) / String	1	b	0	1	1	1	1
 LowCardinality(Nullable(String)) / String	1	\N	\N	\N	1	1	1

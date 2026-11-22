@@ -121,6 +121,21 @@ FROM o ORDER BY k, x;
 DROP TABLE o;
 DROP TABLE i;
 
+CREATE TABLE o (k UInt8, x Bool, u UInt8) ENGINE = Memory;
+CREATE TABLE i (k UInt8, e Bool) ENGINE = Memory;
+INSERT INTO o SELECT k, reinterpret(v, 'Bool'), v FROM values('k UInt8, v UInt8', (1, 2), (1, 1), (1, 0), (2, 2), (2, 1), (3, 2));
+INSERT INTO i SELECT k, reinterpret(v, 'Bool') FROM values('k UInt8, v UInt8', (1, 1), (2, 2));
+SELECT 'Bool / Bool', k, u,
+    x IN (SELECT e FROM i WHERE i.k = o.k) AS got,
+    x NOT IN (SELECT e FROM i WHERE i.k = o.k) AS got_not,
+    isNotDistinctFrom(got, multiIf(k = 1, x IN (SELECT e FROM i WHERE k = 1), k = 2, x IN (SELECT e FROM i WHERE k = 2), x IN (SELECT e FROM i WHERE k = 3))),
+    isNotDistinctFrom(got_not, multiIf(k = 1, x NOT IN (SELECT e FROM i WHERE k = 1), k = 2, x NOT IN (SELECT e FROM i WHERE k = 2), x NOT IN (SELECT e FROM i WHERE k = 3))),
+    (x, k) IN (SELECT e, i.k FROM i WHERE i.k = o.k) = got,
+    u IN (SELECT e FROM i WHERE i.k = o.k) = multiIf(k = 1, u IN (SELECT e FROM i WHERE k = 1), k = 2, u IN (SELECT e FROM i WHERE k = 2), u IN (SELECT e FROM i WHERE k = 3))
+FROM o ORDER BY k, u;
+DROP TABLE o;
+DROP TABLE i;
+
 CREATE TABLE o (k UInt8, x LowCardinality(Nullable(String))) ENGINE = Memory;
 CREATE TABLE i (k UInt8, e String) ENGINE = Memory;
 INSERT INTO o VALUES (1, 'a'), (1, NULL), (1, 'b'), (2, 'b'), (3, 'a');
