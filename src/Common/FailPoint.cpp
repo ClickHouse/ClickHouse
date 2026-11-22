@@ -322,6 +322,7 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    PAUSEABLE(tcp_handler_pause_before_query_plan_deserialization) \
     REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
@@ -564,7 +565,8 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
-    REGULAR(http_connection_socket_inode_unavailable)
+    REGULAR(http_connection_socket_inode_unavailable) \
+    PAUSEABLE(silk_fiber_socket_send_timeout_expires_after_write)
 
 namespace FailPoints
 {
