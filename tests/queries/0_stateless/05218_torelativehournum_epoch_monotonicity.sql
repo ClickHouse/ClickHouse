@@ -138,7 +138,9 @@ SETTINGS session_timezone = 'America/New_York';
 
 DROP TABLE t_relative_hour_date32;
 
--- `Date` in a time zone east of UTC by more than 12 hours: `1970-01-01` is 0 and `1970-01-02` is 11 in `Pacific/Tongatapu` (same values as upstream 05615).
+-- `Date` in a time zone east of UTC by more than 12 hours. A fixed-offset zone is used because the
+-- historical offset of `Pacific/Tongatapu` at the epoch depends on the tzdata version of the runner.
+-- In `Etc/GMT-14` (UTC+14) `1970-01-01` is 14, `1970-01-02` is 38 and `1970-01-03` is 62.
 DROP TABLE IF EXISTS t_relative_hour_date;
 CREATE TABLE t_relative_hour_date (d Date)
 ENGINE = MergeTree ORDER BY d
@@ -147,10 +149,45 @@ SETTINGS index_granularity = 1;
 INSERT INTO t_relative_hour_date VALUES ('1970-01-01'), ('1970-01-02'), ('1970-01-03');
 
 SELECT 'Date primary key analysis after 1970-01-01';
-SELECT groupArray(toRelativeHourNum(d)) FROM t_relative_hour_date SETTINGS session_timezone = 'Pacific/Tongatapu';
+SELECT groupArray(toRelativeHourNum(d)) FROM t_relative_hour_date SETTINGS session_timezone = 'Etc/GMT-14';
 SELECT
-    (SELECT countIf(toRelativeHourNum(d) = 11) FROM t_relative_hour_date) AS full_scan_count,
-    (SELECT count() FROM t_relative_hour_date WHERE toRelativeHourNum(d) = 11 SETTINGS force_primary_key = 1) AS indexed_count
-SETTINGS session_timezone = 'Pacific/Tongatapu';
+    (SELECT countIf(toRelativeHourNum(d) = 38) FROM t_relative_hour_date) AS full_scan_count,
+    (SELECT count() FROM t_relative_hour_date WHERE toRelativeHourNum(d) = 38 SETTINGS force_primary_key = 1) AS indexed_count
+SETTINGS session_timezone = 'Etc/GMT-14';
 
 DROP TABLE t_relative_hour_date;
+
+-- The explicit time zone argument of the two-argument form must be honored by key-condition monotonicity
+-- (it is resolved by `extractTimeZoneFromFunctionArguments` at execution time, so the analysis must use it
+-- as well): `toRelativeHourNum(d, 'America/New_York')` on a `Date32` key is not monotonic across the epoch,
+-- so the key must not be used to prune a range on `d`.
+DROP TABLE IF EXISTS t_relative_hour_date32_tz;
+CREATE TABLE t_relative_hour_date32_tz (d Date32)
+ENGINE = MergeTree ORDER BY toRelativeHourNum(d, 'America/New_York')
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_relative_hour_date32_tz VALUES ('1969-12-30'), ('1969-12-31'), ('1970-01-01'), ('1970-01-02');
+
+SELECT 'Date32 two-argument form, values in America/New_York';
+SELECT groupArray(toRelativeHourNum(d, 'America/New_York')) FROM (SELECT d FROM t_relative_hour_date32_tz ORDER BY d);
+SELECT countIf(d >= toDate32('1969-12-31') AND d <= toDate32('1970-01-01')) FROM t_relative_hour_date32_tz;
+SELECT count() FROM t_relative_hour_date32_tz
+WHERE d >= toDate32('1969-12-31') AND d <= toDate32('1970-01-01')
+SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE t_relative_hour_date32_tz;
+
+-- The same for the sorting-key monotonicity path (read-in-order): `toRelativeHourNum(d, 'UTC')` on a
+-- `DateTime64` column is not monotonic across the epoch, so `ORDER BY toRelativeHourNum(d, 'UTC')` must
+-- not be satisfied by reading the table in its primary-key order.
+DROP TABLE IF EXISTS t_relative_hour_sort_tz;
+CREATE TABLE t_relative_hour_sort_tz (d DateTime64(0, 'UTC'))
+ENGINE = MergeTree ORDER BY d
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_relative_hour_sort_tz VALUES ('1969-12-31 23:00:00'), ('1970-01-01 00:00:00'), ('1970-01-01 01:00:00');
+
+SELECT 'sorting with an explicit time zone argument';
+SELECT d FROM t_relative_hour_sort_tz ORDER BY toRelativeHourNum(d, 'UTC'), d LIMIT 3;
+
+DROP TABLE t_relative_hour_sort_tz;

@@ -24,5 +24,12 @@ Date32 primary key analysis across the epoch
 [0,10,5,29]
 1	1
 Date primary key analysis after 1970-01-01
-[0,11,35]
+[14,38,62]
 1	1
+Date32 two-argument form, values in America/New_York
+[0,10,5,29]
+2
+sorting with an explicit time zone argument
+1970-01-01 00:00:00
+1970-01-01 01:00:00
+1969-12-31 23:00:00
