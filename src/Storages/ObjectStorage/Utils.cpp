@@ -22,8 +22,12 @@
 #include <Poco/UUIDGenerator.h>
 
 #include "config.h"
+#include <Databases/IDatabase.h>
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#endif
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #endif
 
 namespace DB
@@ -49,7 +53,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const StorageObjectStorageConfiguration & configuration,
     const StorageObjectStorageQuerySettings & settings,
     const String & key,
-    size_t sequence_number)
+    size_t sequence_number,
+    const std::function<void(const String & new_key)> & check_new_key)
 {
     if (settings.truncate_on_insert
         || !object_storage.exists(StoredObject(key)))
@@ -66,6 +71,8 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
         {
             new_key = key.substr(0, pos) + "." + std::to_string(sequence_number) + (pos == std::string::npos ? "" : key.substr(pos));
             ++sequence_number;
+            if (check_new_key)
+                check_new_key(new_key);
         }
         while (object_storage.exists(StoredObject(new_key)));
 
@@ -437,6 +444,20 @@ void checkSessionMayUseServerIdentity([[maybe_unused]] const IObjectStorage & ob
 #if USE_AZURE_BLOB_STORAGE
     if (object_storage.getType() == ObjectStorageType::Azure)
         object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentity(
+            context->shouldRestrictUserQueryS3Credentials());
+#endif
+#if USE_AWS_S3
+    if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
+        s3_object_storage->checkSessionMayUseServerCredentials(context);
+#endif
+}
+
+void checkSessionMayUseServerIdentityIgnoringSharedFlag(
+    [[maybe_unused]] const IObjectStorage & object_storage, [[maybe_unused]] const ContextPtr & context)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (object_storage.getType() == ObjectStorageType::Azure)
+        object_storage.getAzureBlobStorageConnectionParams()->checkSessionMayUseServerIdentityIgnoringSharedFlag(
             context->shouldRestrictUserQueryS3Credentials());
 #endif
 }

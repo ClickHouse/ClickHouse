@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'Entra ID를 사용한 JWT 인증'
+slug: /cloud/security/jwt-authentication-entra-id
+title: 'Microsoft Entra ID를 사용한 JWT 인증'
+description: 'Entra ID 앱 역할을 ClickHouse 역할에 매핑하여 ClickHouse Cloud 서비스용 JWT를 발급하도록 Microsoft Entra ID를 구성하는 방법'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'JWT', 'JWKS', 'Entra ID', 'Azure AD', 'Microsoft', 'OAuth', 'OIDC', '앱 역할', '인증', 'IdP(Identity Provider)']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.jsx";
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="사용자 지정 IdP(Identity Provider)를 사용한 JWT 인증" />
+
+이 가이드에서는 사용자와 애플리케이션이 데이터베이스 비밀번호 대신 Entra ID 액세스 토큰을 사용해 ClickHouse Cloud 서비스에 연결할 수 있도록 **Microsoft Entra ID**(구 Azure Active Directory)를 설정하는 방법을 설명합니다. Entra ID 앱 역할은 ClickHouse 역할(Roles)에 매핑되므로, Entra ID에서 사용자, 그룹, 애플리케이션을 앱 역할에 할당하는 방식으로 액세스를 제어할 수 있습니다.
+
+<Tip>
+  이 가이드에서는 Entra ID 측 설정과 ClickHouse Cloud에 입력할 설정값을 다룹니다. JWT provider에 대한 일반적인 내용은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을 참조하십시오. 토큰 클레임과 임시 사용자의 동작 방식은 [JWT 인증](/ko/concepts/features/security/external-authenticators/jwt) 참고 문서를 참조하십시오.
+</Tip>
+
+## 시작하기 전에 {#before-you-begin}
+
+다음 항목이 필요합니다.
+
+* **Enterprise** 플랜을 사용하는 조직과 **ClickHouse 버전 26.4 이상**을 실행 중인 서비스
+* JWT provider를 추가하기 위해 해당 서비스에 대한 `control-plane:service:manage` 권한(permission)이 있는 ClickHouse Cloud 역할(예: **관리자** 또는 **서비스 관리자**)
+* 최소 **Cloud Application Administrator** 역할이 있는 **Microsoft Entra admin center** 액세스 권한
+* 개별 사용자가 아닌 그룹을 앱 역할에 할당하려는 경우 Microsoft Entra ID P1 또는 P2
+* 설정 테스트용 [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)(`az`) 및 [`clickhouse-client`](/ko/concepts/features/interfaces/client)
+* Entra ID를 통해 부여할 ClickHouse 역할(Roles) 목록. 각 역할은 같은 이름의 Entra ID 앱 역할로 생성됩니다. 이 가이드에서는 다음 두 가지 역할을 사용합니다.
+
+  | 앱 역할 값        | ClickHouse 권한                         |
+  | ------------- | ------------------------------------- |
+  | `ch_analyst`  | `analytics.*`에 대한 `SELECT` 및 `INSERT` |
+  | `ch_readonly` | `*.*`에 대한 `SELECT`                    |
+
+## 작동 방식 {#how-it-works}
+
+1. Entra ID에 ClickHouse Cloud 서비스를 나타내는 애플리케이션을 등록하고, ClickHouse 역할마다 앱 역할(app role)을 하나씩 정의합니다.
+2. Entra ID 사용자, 그룹, 애플리케이션을 해당 앱 역할에 할당합니다.
+3. 사용자는 Azure CLI 또는 `clickhouse-client --login`으로 로그인하거나, 애플리케이션은 클라이언트 자격 증명 부여(client credentials grant) 방식을 사용합니다. 그러면 Entra ID는 v2.0 액세스 토큰을 발급합니다. 이 토큰의 `aud` 클레임에는 애플리케이션(클라이언트) ID가, `roles` 클레임에는 호출자에게 할당된 앱 역할 목록이 담깁니다.
+4. ClickHouse Cloud는 Entra ID 공개 키로 토큰 시그니처를 검증하고 `iss` 및 `aud` 클레임을 확인한 다음, `roles` 클레임에 지정된 ClickHouse 역할의 권한을 가진 임시 사용자를 생성합니다. 이때 권한은 `default` 사용자의 권한을 넘지 않도록 제한됩니다.
+
+## Entra ID에 ClickHouse 등록하기 {#register-in-entra-id}
+
+<Steps>
+  <Step title="앱 등록 만들기" id="create-app-registration">
+    Microsoft Entra 관리 센터에서 **App registrations**를 열고 **New registration**을 선택하세요.
+
+    * **Name**: 표시 이름을 입력합니다(예: `clickhouse-cloud-production`).
+    * **Supported account types**: 단일 테넌트를 선택합니다. 포털 버전에 따라 이 옵션은 **Single tenant only** 또는 **Accounts in this organizational directory only**로 표시됩니다.
+    * **Redirect URI**: 비워 둡니다. 사용자는 디바이스 코드 흐름(device code flow)으로 로그인하며, 이 방식은 리디렉션 URI를 사용하지 않습니다.
+
+    <Image img="/images/cloud/security/jwt/entra-register-application.webp" size="lg" alt="Microsoft Entra 관리 센터의 애플리케이션 등록 양식으로, 단일 테넌트 계정 유형이 선택되어 있고 리디렉션 URI가 비어 있음" />
+
+    **Register**를 선택하세요. **Overview** 페이지에서 다음 값을 복사하세요.
+
+    * **Application (client) ID**: 이후 `<CLIENT_ID>`로 표기합니다. 이 값은 토큰의 `aud` 클레임으로 사용됩니다.
+    * **Directory (tenant) ID**: 이후 `<TENANT_ID>`로 표기합니다. 이 값은 발급자와 JWKS URL에 포함됩니다.
+  </Step>
+
+  <Step title="v2.0 액세스 토큰 요청" id="request-v2-tokens">
+    기본적으로 Entra ID는 v1.0 액세스 토큰을 발급하며, 이 토큰의 발급자는 `https://sts.windows.net/<TENANT_ID>/`입니다. 이 대신 v2.0 토큰을 받도록 애플리케이션을 구성하십시오. v2.0 토큰의 발급자는 `https://login.microsoftonline.com/<TENANT_ID>/v2.0`이며, `aud` 클레임은 항상 클라이언트 ID입니다.
+
+    앱 등록에서 **Manifest**를 열고 액세스 토큰 버전을 `2`로 설정한 다음 **Save**를 선택하십시오. 속성 이름은 편집기에 표시되는 매니페스트 포맷에 따라 다릅니다.
+
+    * Microsoft Graph 포맷: `api` 섹션의 `requestedAccessTokenVersion`
+    * Azure AD Graph 포맷: 아래 스크린샷과 같이 최상위 수준의 `accessTokenAcceptedVersion`
+
+    <Image img="/images/cloud/security/jwt/entra-manifest-token-version.webp" size="lg" alt="accessTokenAcceptedVersion이 2로 설정된 애플리케이션 매니페스트 편집기" />
+  </Step>
+
+  <Step title="API 노출" id="expose-an-api">
+    **Expose an API**를 엽니다.
+
+    1. **Application ID URI** 옆의 **Add**를 선택하고 기본값 `api://<CLIENT_ID>`를 그대로 둔 채 저장합니다. 클라이언트는 이 URI를 사용하여 ClickHouse용 토큰을 요청합니다. 이 URI를 설정해도 v2.0 토큰의 `aud` 클레임은 변경되지 않으며, 클라이언트 ID로 유지됩니다.
+
+       <Image img="/images/cloud/security/jwt/entra-application-id-uri.webp" size="lg" alt="기본 api:// 값이 표시된 Application ID URI 패널이 있는 Expose an API 페이지" />
+
+    2. **Add a scope**를 선택하고 양식을 작성합니다. 사용자는 로그인할 때 이 범위를 요청합니다. 애플리케이션이 자체 자격으로 인증하는 경우에는 이 범위를 사용하지 않습니다.
+
+       | 필드                             | 값                                            |
+       | ------------------------------ | -------------------------------------------- |
+       | **Scope name**                 | `access_as_application`                      |
+       | **Who can consent?**           | **Admins only**                              |
+       | **Admin consent display name** | 예: `Access ClickHouse as the signed-in user` |
+       | **Admin consent description**  | 임의의 설명                                       |
+       | **State**                      | **Enabled**                                  |
+
+       <Image img="/images/cloud/security/jwt/entra-add-scope.webp" size="lg" alt="access_as_application 범위, 관리자로 제한된 동의, Enabled로 설정된 상태가 표시된 Add a scope 패널" />
+  </Step>
+
+  <Step title="사용자 로그인을 위해 클라이언트 애플리케이션에 권한 부여" id="authorize-client-application">
+    사용자는 퍼블릭 클라이언트 애플리케이션을 통해 토큰을 발급받습니다. 이 애플리케이션을 `access_as_application` 범위에 대해 사전 승인하면 사용자에게 동의를 요청하지 않습니다. 이 가이드에서는 `az`와 `clickhouse-client --login` 모두에 Azure CLI(클라이언트 ID: `04b07795-8ddb-461a-bbee-02f9e1bf7b46`)를 사용합니다.
+
+    **Expose an API**의 **Authorized client applications**에서 **Add a client application**을 선택하십시오. `04b07795-8ddb-461a-bbee-02f9e1bf7b46`을 입력하고 `api://<CLIENT_ID>/access_as_application` 범위를 선택한 다음 **Add application**을 선택하십시오.
+
+    <Image img="/images/cloud/security/jwt/entra-authorize-client-application.webp" size="lg" alt="Azure CLI 클라이언트 ID와 access_as_application 범위가 선택된 Add a client application 패널" />
+
+    <Note>
+      Azure CLI 대신 자체 클라이언트 애플리케이션을 사용하려면 별도의 애플리케이션을 등록하고 **Authentication**에서 **Allow public client flows**를 **Yes**로 설정한 다음, 여기에서 해당 클라이언트 ID를 사전 승인하십시오. 이후 [clickhouse-client로 로그인](#sign-in-with-clickhouse-client)할 때 이 클라이언트 ID를 `--oauth-client-id`로 전달하십시오. 테넌트에서 사용자 동의를 허용하지 않는다면 관리자가 해당 애플리케이션의 `openid`, `profile`, `offline_access` 권한에 대해서도 동의를 부여해야 합니다.
+    </Note>
+  </Step>
+
+  <Step title="앱 역할 생성" id="create-app-roles">
+    각 앱 역할은 하나의 ClickHouse 역할에 대응합니다. 앱 역할의 **Value**는 토큰의 `roles` 클레임에 표시되는 값이며, 대소문자까지 ClickHouse 역할 이름과 정확히 일치해야 합니다.
+
+    **App roles**를 열고 ClickHouse 역할마다 **Create app role**을 선택하세요.
+
+    | 필드                                       | 값                                                                                                                   |
+    | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+    | **Display name**                         | 알아보기 쉬운 이름(예: `ClickHouse analyst`)                                                                                 |
+    | **Allowed member types**                 | **Both (Users/Groups + Applications)**. 사람만 연결하는 경우에는 **Users/Groups**를, 애플리케이션만 연결하는 경우에는 **Applications**를 선택하세요. |
+    | **Value**                                | ClickHouse 역할 이름(예: `ch_analyst`)                                                                                   |
+    | **Description**                          | 원하는 설명                                                                                                              |
+    | **Do you want to enable this app role?** | 선택                                                                                                                  |
+
+    다음 예시에서는 ClickHouse 역할 이름을 값으로 사용하는 앱 역할 3개를 정의합니다.
+
+    <Image img="/images/cloud/security/jwt/entra-app-roles.webp" size="lg" alt="값이 각각 ch_admin, ch_analyst, ch_readonly인 ClickHouse Admin, ClickHouse Analyst DB, ClickHouse Read Only가 나열된 App roles 페이지" />
+  </Step>
+
+  <Step title="할당 필요" id="require-assignment">
+    기본적으로 테넌트의 모든 사용자는 해당 애플리케이션의 토큰을 발급받을 수 있습니다. 앱 역할에 할당한 사용자, 그룹, 애플리케이션만 토큰을 발급받도록 제한하려면 **Enterprise applications**를 열고 앱 등록과 이름이 같은 애플리케이션을 선택합니다. 그런 다음 **Properties**를 열어 **Assignment required?**&#xB97C; **Yes**로 설정하고 **Save**를 선택하십시오.
+
+    <Image img="/images/cloud/security/jwt/entra-assignment-required.webp" size="lg" alt="Assignment required가 Yes로 설정된 엔터프라이즈 애플리케이션 속성" />
+  </Step>
+
+  <Step title="앱 역할에 사용자 및 그룹 할당" id="assign-users-and-groups">
+    동일한 엔터프라이즈 애플리케이션에서 **Users and groups**를 열고 **Add user/group**을 선택하십시오. 사용자 또는 그룹을 선택하고 앱 역할을 선택한 다음 **Assign**을 선택하십시오. 각 사용자 또는 그룹마다 이 과정을 반복하십시오.
+
+    <Image img="/images/cloud/security/jwt/entra-assign-users-and-groups.webp" size="lg" alt="ClickHouse Read Only 앱 역할에 할당된 사용자를 보여 주는 엔터프라이즈 애플리케이션의 Users and groups 페이지" />
+
+    직접 또는 그룹을 통해 여러 앱 역할을 할당받은 사용자는 `roles` 클레임에 해당 역할이 모두 포함됩니다.
+
+    <Note>
+      그룹에 앱 역할을 할당하려면 Microsoft Entra ID P1 또는 P2가 필요합니다. 중첩된 그룹은 지원되지 않으며, 할당된 그룹의 직접 멤버만 해당 앱 역할을 받습니다.
+    </Note>
+  </Step>
+</Steps>
+
+## ClickHouse에서 대응하는 역할 생성 {#create-clickhouse-roles}
+
+SQL 콘솔 등에서 `default` 사용자로 서비스에 연결한 후, 각 앱 역할 값마다 대응하는 역할을 생성하십시오.
+
+```sql
+CREATE ROLE ch_analyst;
+GRANT SELECT, INSERT ON analytics.* TO ch_analyst;
+
+CREATE ROLE ch_readonly;
+GRANT SELECT ON *.* TO ch_readonly;
+```
+
+다음 사항에 유의하십시오:
+
+* 역할 이름은 case-sensitive(대소문자 구분)이며 앱 역할 값과 정확히 일치해야 합니다.
+* ClickHouse는 `roles` 클레임에 포함된 이름 중 서비스에 존재하는 역할과 일치하지 않는 이름을 무시합니다.
+* ClickHouse Cloud에서 JWT provider의 권한 상한은 `default` 사용자입니다. ClickHouse는 역할에 부여된 권한 중 `default` 사용자에게 없는 권한을 모두 제외합니다.
+
+## Entra ID를 JWT provider로 추가 {#add-jwt-provider}
+
+[JWT provider 추가](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup#add-a-jwt-provider)의 단계에 따라 다음 값을 입력하십시오.
+
+| 필드              | 값                                                                       |
+| --------------- | ----------------------------------------------------------------------- |
+| **Name**        | 임의의 이름(예: `entra-id`)                                                   |
+| **Issuer**      | `https://login.microsoftonline.com/<TENANT_ID>/v2.0`                    |
+| **Audience**    | 애플리케이션(클라이언트) ID인 `<CLIENT_ID>`를 입력합니다. `api://<CLIENT_ID>`는 사용하지 마십시오. |
+| **JWKS URL**    | `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys`     |
+| **Roles claim** | `roles`                                                                 |
+
+<Warning>
+  **Roles claim**은 반드시 `roles`로 설정하십시오. 비워 두면 ClickHouse는 `clickhouse:roles` 클레임에서 역할을 읽습니다. 그러나 Entra ID 토큰에는 이 클레임이 없으므로 사용자는 아무런 권한 없이 인증됩니다.
+</Warning>
+
+## 사용자로 연결하기 {#connect-as-a-user}
+
+앱 등록에서 얻은 값과 서비스 호스트 이름을 셸 변수로 설정하십시오:
+
+```bash
+TENANT_ID="<TENANT_ID>"
+CLIENT_ID="<CLIENT_ID>"
+CH_HOST="<your-service-hostname>"
+```
+
+### Azure CLI 토큰 전달 {#pass-an-azure-cli-token}
+
+Azure CLI로 로그인한 후 ClickHouse 애플리케이션용 액세스 토큰을 요청하고, `--jwt` 옵션을 사용하여 해당 토큰을 `clickhouse-client`에 전달하십시오:
+
+```bash
+az login --tenant "$TENANT_ID" --allow-no-subscriptions
+TOKEN=$(az account get-access-token --resource "api://$CLIENT_ID" --query accessToken --output tsv)
+
+clickhouse-client --host "$CH_HOST" --secure --jwt "$TOKEN"
+```
+
+동일한 토큰은 HTTP 인터페이스에서도 사용할 수 있습니다.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+Entra ID 액세스 토큰은 기본적으로 60~90분 동안 유효합니다. 토큰이 만료되면 새 토큰을 요청하거나, 장시간 세션에서는 `--login`을 사용하세요.
+
+### clickhouse-client로 로그인 {#sign-in-with-clickhouse-client}
+
+`clickhouse-client`는 OAuth 2.0 디바이스 코드 흐름(device code flow)을 직접 수행하고, 세션 중에 토큰을 갱신할 수 있습니다:
+
+```bash
+clickhouse-client --host "$CH_HOST" --secure --login \
+  --oauth-url "https://login.microsoftonline.com/$TENANT_ID/v2.0" \
+  --oauth-client-id 04b07795-8ddb-461a-bbee-02f9e1bf7b46 \
+  --oauth-scope "openid profile offline_access api://$CLIENT_ID/access_as_application"
+```
+
+클라이언트가 URL과 코드를 출력합니다. URL을 열고 코드를 입력한 다음 Entra ID 계정으로 로그인하십시오. 범위(scope)에서 `offline_access`를 제거하지 마십시오. 이 값이 있어야 Entra ID가 리프레시 토큰을 반환하며, 클라이언트는 이 토큰으로 액세스 토큰을 갱신합니다. 이 값이 없으면 액세스 토큰이 만료될 때마다 다시 로그인해야 합니다.
+
+## 애플리케이션으로 연결 {#connect-as-an-application}
+
+ETL 작업이나 백엔드 서비스와 같은 애플리케이션은 OAuth 2.0 클라이언트 자격 증명 부여(client credentials grant) 방식을 통해 자체 ID로 인증합니다. 애플리케이션에 부여하는 앱 역할은 **Applications** 멤버 유형을 허용해야 합니다.
+
+1. **App registrations**에서 워크로드용 애플리케이션을 별도로 등록하십시오. **Certificates &amp; secrets**에서 클라이언트 시크릿을 생성하거나 인증서를 업로드하십시오. 아래 명령어에서는 워크로드의 클라이언트 ID와 시크릿을 각각 `<WORKLOAD_CLIENT_ID>` 및 `<WORKLOAD_CLIENT_SECRET>`으로 표기합니다.
+2. 워크로드의 앱 등록에서 **API permissions**를 열고 **Add a permission**을 선택하십시오. **APIs my organization uses**에서 ClickHouse 애플리케이션을 찾아 **Application permissions**를 선택한 후, 워크로드에 필요한 앱 역할을 선택하고 **Add permissions**를 클릭하십시오.
+3. **Grant admin consent**를 선택하여 워크로드에 앱 역할을 할당하십시오.
+
+Entra ID 토큰 엔드포인트에서 토큰을 발급받아 ClickHouse로 전송하십시오.
+
+```bash
+TOKEN=$(curl -s "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+  -d grant_type=client_credentials \
+  -d client_id="<WORKLOAD_CLIENT_ID>" \
+  --data-urlencode client_secret="<WORKLOAD_CLIENT_SECRET>" \
+  --data-urlencode scope="api://$CLIENT_ID/.default" | jq -r .access_token)
+
+curl -H "Authorization: Bearer $TOKEN" "https://$CH_HOST:8443/?query=SELECT%20currentUser()"
+```
+
+운영 환경 코드에서는 사용하는 언어에 맞는 [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-overview) 또는 Azure Identity 라이브러리를 사용하십시오. 이러한 라이브러리는 토큰을 캐시하고, 기존 토큰이 만료되기 전에 새 토큰을 요청합니다.
+
+## 확인 {#verify}
+
+연결한 후 다음과 같이 세션의 아이덴티티와 권한을 확인하십시오:
+
+```sql
+SELECT currentUser();
+SHOW GRANTS;
+SHOW CURRENT ROLES;
+```
+
+| 쿼리                     | 예상 결과                                                                                        |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `SELECT currentUser()` | `JWT::<sub>::<hash>` 형식의 이름입니다. 여기서 `<sub>`는 토큰의 `sub` 클레임입니다                                |
+| `SHOW GRANTS`          | 토큰의 `roles` 클레임에 지정된 역할의 권한이 표시됩니다. 예를 들어 `ch_readonly`는 `GRANT SELECT ON *.* TO ...`로 표시됩니다 |
+| `SHOW CURRENT ROLES`   | 행 없음                                                                                         |
+
+ClickHouse는 역할 자체를 임시 사용자에게 부여하지 않습니다. 대신 토큰에 지정된 역할의 권한을 수집하고, 이를 `default` 사용자의 권한과 교집합한 뒤 그 결과를 사용자에게 직접 부여합니다. 따라서 `SHOW CURRENT ROLES`는 행을 반환하지 않습니다.
+
+사용자 토큰의 경우 Entra ID는 `sub`를 사용자와 애플리케이션 조합별로 고유한 불투명(opaque) 식별자로 설정합니다. 이 값은 사용자의 이메일 주소나 객체 ID와는 다릅니다.
+
+## 권장 사항 {#best-practices}
+
+### 개별 사용자 대신 그룹 할당 {#assign-groups}
+
+각 앱 역할에 Entra ID 그룹을 하나씩 할당한 다음, 그룹 멤버십을 변경하여 액세스 권한을 부여하거나 철회하십시오. 이렇게 하면 팀원이 합류하거나 떠나더라도 애플리케이션을 수정할 필요가 없습니다.
+
+### 환경별로 별도의 앱 등록 사용 {#separate-app-registrations}
+
+토큰의 `aud` 클레임에는 해당 앱 등록의 클라이언트 ID가 담겨 있습니다. 운영 환경과 스테이징 환경에 각각 별도의 앱 등록을 사용하면, 한 환경용으로 발급된 토큰으로는 다른 환경에 인증할 수 없습니다.
+
+### 역할 변경은 다음 토큰부터 적용됩니다 {#role-changes}
+
+Entra ID는 토큰을 발급할 때 `roles` 클레임을 기록합니다. 따라서 사용자의 앱 역할 할당을 변경하면 해당 사용자가 새 토큰을 받은 시점부터 변경 사항이 적용됩니다. 이미 발급된 토큰은 만료될 때까지 기존 역할을 그대로 유지합니다. Azure CLI에서는 `az logout`과 `az login`을 실행하면 새 토큰을 즉시 받을 수 있습니다.
+
+## 문제 해결 {#troubleshooting}
+
+<AccordionGroup>
+  <Accordion title="토큰이 거부되고 발급자가 https://sts.windows.net으로 시작하는 경우" id="v1-token">
+    Entra ID가 v1.0 토큰을 발급한 것입니다. [v2.0 액세스 토큰 요청](#request-v2-tokens)에 설명된 대로 애플리케이션 매니페스트에서 `requestedAccessTokenVersion`을 `2`로 설정한 후 새 토큰을 요청하십시오.
+  </Accordion>
+
+  <Accordion title="대상(audience) 불일치로 토큰이 거부되는 경우" id="audience-mismatch">
+    * ClickHouse Cloud에 구성한 provider의 **Audience**는 `api://<CLIENT_ID>`가 아니라 클라이언트 ID여야 합니다.
+    * ClickHouse 애플리케이션용 토큰을 요청했는지 확인하십시오. `--resource`를 지정하지 않으면 `az account get-access-token`은 Azure Resource Manager용 토큰을 반환합니다.
+  </Accordion>
+
+  <Accordion title="Entra ID가 AADSTS65001을 반환하거나 동의를 요청하는 경우" id="consent-required">
+    클라이언트 애플리케이션이 `access_as_application` 범위에 대해 사전 승인되지 않았습니다. [사용자 로그인을 위한 클라이언트 애플리케이션 승인](#authorize-client-application)에 설명된 대로 **Expose an API → Authorized client applications**에 해당 클라이언트 ID를 추가하십시오.
+  </Accordion>
+
+  <Accordion title="Entra ID가 AADSTS50105 또는 AADSTS501051을 반환하는 경우" id="not-assigned">
+    사용자 또는 애플리케이션이 ClickHouse 애플리케이션에 할당되지 않은 상태에서 **Assignment required?**&#xAC00; **Yes**로 설정되어 있습니다. 사용자, 사용자가 속한 그룹 중 하나 또는 애플리케이션을 앱 역할에 할당하십시오. 그룹을 할당한 경우 사용자가 해당 그룹의 직접 멤버인지 확인하십시오.
+  </Accordion>
+
+  <Accordion title="인증은 성공하지만 쿼리가 ACCESS_DENIED로 실패하는 경우" id="no-privileges">
+    임시 사용자에게 쿼리 실행에 필요한 권한이 없습니다. 다음 사항을 확인하십시오.
+
+    * provider의 **Roles claim**이 `roles`로 설정되어 있는지 확인합니다.
+    * 토큰에 `roles` 클레임이 포함되어 있는지 확인합니다. 호출자가 앱 역할 없이 애플리케이션에 할당되면 이 클레임이 누락됩니다.
+    * `roles` 클레임의 각 값이 서비스에 존재하는 ClickHouse 역할과 대소문자까지 정확히 일치하는지 확인합니다.
+    * 역할에 부여한 권한을 `default` 사용자가 가지고 있는지 확인합니다.
+
+    토큰의 클레임을 확인하려면 로컬에서 payload를 디코딩하십시오.
+
+    ```bash
+    python3 -c 'import sys, base64, json; p = sys.argv[1].split(".")[1]; print(json.dumps(json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))), indent=2))' "$TOKEN"
+    ```
+  </Accordion>
+
+  <Accordion title="클레임 매핑 정책을 구성한 후 토큰이 거부되는 경우" id="app-signing-key">
+    애플리케이션에 클레임 매핑 정책이나 사용자 정의 서명 키를 구성하면 Entra ID는 테넌트의 JWKS에 없는 키로 토큰에 서명합니다. provider의 **JWKS URL**을 `https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys?appid=<CLIENT_ID>`로 설정하십시오.
+  </Accordion>
+</AccordionGroup>
+
+## 관련 문서 {#related}
+
+* [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup): 클라우드 콘솔에서 JWT provider를 추가, 수정 및 삭제하는 방법을 설명합니다.
+* [JWT 인증](/ko/concepts/features/security/external-authenticators/jwt): 토큰 클레임, 임시 사용자, 클라이언트 사용 방법을 설명합니다.

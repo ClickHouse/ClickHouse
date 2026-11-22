@@ -25,7 +25,7 @@ public:
     void beginBlock(UInt32 source_size_) override;
     std::span<const CompressionCodecPtr> codecsToTry() override;
     void record(const CompressionCodecPtr & codec, UInt32 size) override;
-    CompressionCodecPtr codecToUse() const override;
+    [[nodiscard]] CompressionCodecPtr codecToUse() const override;
 
 private:
     /// The smallest output so far wins, among equals the raw block, then the earlier candidate.
@@ -35,8 +35,8 @@ private:
         UInt32 best_size;
         UInt32 runner_up_size;
     };
-    Ranking rank() const;
-    UInt32 rawSize() const { return ICompressionCodec::getHeaderSize() + source_size; }
+    [[nodiscard]] Ranking rank() const;
+    [[nodiscard]] UInt32 rawSize() const { return ICompressionCodec::getHeaderSize() + source_size; }
 
     /// `candidates` in pool order, [0] the default codec.
     const Codecs candidates;

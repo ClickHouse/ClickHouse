@@ -10,7 +10,6 @@ sidebarTitle: 'Sample logs, traces and metrics'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
 
 Explore ClickHouse Observability using sample logs, sessions, traces, and metrics from an e-commerce store. Both deployment modes use the same dataset and investigation workflow.
 
@@ -99,7 +98,15 @@ In the ClickHouse Cloud console, select your service and open ClickHouse Observa
 
 Return to [Search](/clickstack/observability/features/search) to view the loaded data. Select the **Logs** source and a time range that includes the sample events' timestamps. The screenshot below shows sample logs arriving in **Live Tail**:
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-search.png" alt="Search showing loaded sample logs from the e-commerce demo services" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Search showing loaded sample logs from the e-commerce demo services](/images/clickstack/getting-started/observability-sample-data-search.png)
+
+</Frame>
+
+</div>
 
 Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
 </Step>
@@ -109,7 +116,15 @@ Suppose we have reports that our users are experiencing issues paying for goods.
 
 Select **Client Sessions** from the left menu and set a time range that includes the loaded sample sessions.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-sessions.png" alt="Client Sessions showing sample sessions with an error count highlighted" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Client Sessions showing sample sessions with an error count highlighted](/images/clickstack/getting-started/observability-sample-data-sessions.png)
+
+</Frame>
+
+</div>
 
 This view lists sessions from the demo store, including anonymous sessions and sessions identified by an email address.
 
@@ -117,7 +132,15 @@ Some sessions have a nonzero error count. In this example, the highlighted sessi
 
 Select the highlighted session to open its replay. Use the play button at the bottom of the player to watch the session.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-replay.png" alt="Session replay showing the OpenTelemetry demo storefront and navigation events" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Session replay showing the OpenTelemetry demo storefront and navigation events](/images/clickstack/getting-started/observability-sample-data-replay.png)
+
+</Frame>
+
+</div>
 
 The replay shows the user navigating the site, adding items to their cart. Feel free to skip to later in the session where they attempt to complete a payment.
 
@@ -127,7 +150,15 @@ Error events are marked in red in the event list.
 
 Scroll to the bottom of the event list on the left. The highlighted `POST /api/checkout` request returned HTTP `500`, with a console error recorded at the same time.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-checkout-error.png" alt="Session replay highlighting the failed POST request to /api/checkout and associated console error" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Session replay highlighting the failed POST request to /api/checkout and associated console error](/images/clickstack/getting-started/observability-sample-data-checkout-error.png)
+
+</Frame>
+
+</div>
 
 Select the failed `POST /api/checkout` event to inspect the request and its trace.
 </Step>
@@ -135,19 +166,51 @@ Select the failed `POST /api/checkout` event to inspect the request and its trac
 
 Open the **Trace** tab to see the distributed trace, including related spans and correlated logs.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-trace.png" alt="Trace waterfall showing the checkout request with its spans, correlated logs, and errors" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Trace waterfall showing the checkout request with its spans, correlated logs, and errors](/images/clickstack/getting-started/observability-sample-data-trace.png)
+
+</Frame>
+
+</div>
 
 Scroll down the trace and select the `oteldemo.PaymentService/Charge` span in the `checkout` service.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-payment-span.png" alt="Selected payment request span showing an expired-card error in its attributes" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Selected payment request span showing an expired-card error in its attributes](/images/clickstack/getting-started/observability-sample-data-payment-span.png)
+
+</Frame>
+
+</div>
 
 In the **Overview** tab, inspect **Top Level Attributes**. The `StatusCode` is `Error`, and the `StatusMessage` indicates that the credit card has expired.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-span-attributes.png" alt="Overview attributes showing an Error status and a message that the credit card has expired" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Overview attributes showing an Error status and a message that the credit card has expired](/images/clickstack/getting-started/observability-sample-data-span-attributes.png)
+
+</Frame>
+
+</div>
 
 In the trace, select the `payment` error log beneath the payment service span. Its row has a log icon, distinguishing it from the error span event. In **Overview**, the log's **Body** confirms that the credit card has expired. The attributes identify the `payment` service and an `error` severity, providing context alongside the trace.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-correlated-log.png" alt="Correlated payment error log showing the expired-card message and log attributes" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Correlated payment error log showing the expired-card message and log attributes](/images/clickstack/getting-started/observability-sample-data-correlated-log.png)
+
+</Frame>
+
+</div>
 
 We've traced this failed checkout to a payment request rejected because the credit card had expired.
 </Step>
@@ -157,7 +220,15 @@ To investigate other payment failures, return to [Search](/clickstack/observabil
 
 Select **Logs** as the source and choose `payment` under the **ServiceName** filter. Use a time range that includes the session you investigated.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-payment-logs.png" alt="Search filtered to the payment service showing expired-card and Visa cache-full errors alongside successful transactions" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Search filtered to the payment service showing expired-card and Visa cache-full errors alongside successful transactions](/images/clickstack/getting-started/observability-sample-data-payment-logs.png)
+
+</Frame>
+
+</div>
 
 The results include the expired-card error from the session we investigated, as well as repeated `Visa cache full: cannot add new item.` errors. To see when errors occur across the payment service, chart these error logs over time.
 </Step>
@@ -173,7 +244,15 @@ SeverityText:"error" ServiceName:"payment"
 
 Set a time range covering the sample data and select **Run**.
 
-<Image img="/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png" alt="Chart Explorer counting payment service error logs over time using a Lucene filter" size="lg"/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Chart Explorer counting payment service error logs over time using a Lucene filter](/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png)
+
+</Frame>
+
+</div>
 
 The chart shows the number of matching error logs in each time interval. It includes all errors from the `payment` service, including expired-card and cache-full errors. These are log-event counts, not a count of unique failed payments.
 </Step>
