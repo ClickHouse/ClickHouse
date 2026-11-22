@@ -172,8 +172,8 @@ FROM dist_orders RIGHT ANTI JOIN dist_items ON dist_orders.order_id = dist_items
 SETTINGS make_distributed_plan = 0;
 
 
--- ANY INNER JOIN: broadcast (safe, right side small)
-SELECT '-- ANY INNER JOIN (broadcast)';
+-- ANY INNER JOIN: shuffle (broadcast blocked - each right row joins at most once)
+SELECT '-- ANY INNER JOIN (shuffle)';
 EXPLAIN PLAN SELECT count()
 FROM dist_orders ANY INNER JOIN dist_items ON dist_orders.order_id = dist_items.order_id;
 
