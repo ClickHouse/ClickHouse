@@ -15,6 +15,10 @@ lambda captures a column of another type INCORRECT_DATA
 lambda is created without its captured column INCORRECT_DATA
 folded lambda captures a column of another type INCORRECT_DATA
 folded lambda holds a column that it does not capture INCORRECT_DATA
+lambda captures a column named as its argument INCORRECT_DATA
+lambda captures two columns of the same name INCORRECT_DATA
+folded lambda captures a column named as its argument INCORRECT_DATA
+lambda body has two inputs of the same name INCORRECT_DATA
 well-formed lambda accepted
 well-formed lambda with a captured column accepted
 well-formed folded lambda accepted

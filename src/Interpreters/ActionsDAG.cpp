@@ -5177,32 +5177,43 @@ static void checkDeserializedLambda(const ActionsDAG & capture_dag, const Lambda
         throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized lambda body must not contain ARRAY JOIN");
 
     /// `deserializeCapture` has checked that there are as many captured types as captured names.
-    /// A name may repeat in the signature, so an input must match every column it could be bound to.
+    ///
+    /// The names must be distinct, as the planner makes them: it refuses a lambda with a repeated argument name,
+    /// the captured columns are the inputs of the body that are not lambda arguments, and the body has one input
+    /// per name. `FunctionExpression` puts the captured columns and then the lambda arguments into one block under
+    /// these names, where a repeated name stands for the first of its columns, so a captured column would silently
+    /// replace a lambda argument, or another captured column, of the same name.
+    std::unordered_map<std::string_view, const IDataType *> declared_types;
+    auto declare = [&](const String & name, const DataTypePtr & type)
+    {
+        if (!declared_types.emplace(name, type.get()).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized lambda declares more than one captured column or lambda argument with the name {}", name);
+    };
+
+    for (size_t i = 0; i < capture.captured_names.size(); ++i)
+        declare(capture.captured_names[i], capture.captured_types[i]);
+
+    for (const auto & lambda_argument : capture.lambda_arguments)
+        declare(lambda_argument.name, lambda_argument.type);
+
+    std::unordered_set<std::string_view> input_names;
     for (const auto * input : capture_dag.getInputs())
     {
-        bool found = false;
-        auto check_type = [&](const String & name, const DataTypePtr & type)
-        {
-            if (name != input->result_name)
-                return;
-
-            found = true;
-            if (!input->result_type->equals(*type))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Deserialized lambda body has input {} of type {}, but the lambda declares it with type {}",
-                    input->result_name, input->result_type->getName(), type->getName());
-        };
-
-        for (size_t i = 0; i < capture.captured_names.size(); ++i)
-            check_type(capture.captured_names[i], capture.captured_types[i]);
-
-        for (const auto & lambda_argument : capture.lambda_arguments)
-            check_type(lambda_argument.name, lambda_argument.type);
-
-        if (!found)
+        auto declared = declared_types.find(input->result_name);
+        if (declared == declared_types.end())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized lambda body has input {} of type {}, which is neither a captured column nor a lambda argument",
                 input->result_name, input->result_type->getName());
+
+        if (!input->result_type->equals(*declared->second))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized lambda body has input {} of type {}, but the lambda declares it with type {}",
+                input->result_name, input->result_type->getName(), declared->second->getName());
+
+        if (!input_names.emplace(input->result_name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Deserialized lambda body has more than one input with the name {}", input->result_name);
     }
 
     const auto & outputs = capture_dag.getOutputs();

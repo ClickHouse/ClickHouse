@@ -11,6 +11,8 @@
 # Its single output must have the declared name and type of the result, the type of the lambda itself must be
 # the one of its signature, and it must be created with exactly the captured columns it declares: a higher-order
 # function trusts all of these, both for a `FunctionCapture` node and for a lambda folded into a constant.
+# The names of the captured columns and of the arguments of a lambda must be distinct, and so must be the names
+# of the inputs of its body: a repeated name stands for the first column of that name.
 # The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh; the last plan is
 # well-formed, so the refusals are specific.
 
@@ -69,8 +71,8 @@ def skip_hello(f):
 def header(columns):
     return vu(len(columns)) + b"".join(sb(n) + t for n, t in columns)
 
-def dag(nodes, outputs):
-    # A serialized ActionsDAG with node 0 as its only input. A node is either a tuple or raw bytes.
+def dag(nodes, outputs, inputs=1):
+    # A serialized ActionsDAG with its first nodes (node 0 only by default) as its inputs. A node is either a tuple or raw bytes.
     out = vu(len(nodes))
     for node in nodes:
         if isinstance(node, bytes):
@@ -79,7 +81,8 @@ def dag(nodes, outputs):
         kind, name, type_, children = node
         out += bytes([kind]) + sb(name) + type_ + vu(len(children))
         out += b"".join(vu(c) for c in children) + NUL   # no constant column on the node
-    return out + vu(1) + vu(0) + vu(len(outputs)) + b"".join(vu(i) for i in outputs)   # inputs, outputs
+    return (out + vu(inputs) + b"".join(vu(i) for i in range(inputs))   # inputs
+            + vu(len(outputs)) + b"".join(vu(i) for i in outputs))
 
 def interpolate(nodes, outputs, pairs):
     # The `flags & 2` payload: an ActionsDAG, then (input header key, DAG input name) pairs.
@@ -129,22 +132,22 @@ forge("array join of not an array",
 forge("array join in interpolate",
       FILL + interpolate([(INPUT, "a", ARR8, ()), (ARRAY_JOIN, "z", U8, (0,))], [1], [("a", "a")]) + vu(0), [HA8], VERSION, HA8)
 X8Z = [("x", U8), ("z", U8)]
-def lambda_node(argument, input_, body_type, body_kind=ALIAS, returns=None, type_=None, captured=None, columns=None, folded=False):
+def lambda_node(argument, input_, body_type, body_kind=ALIAS, returns=None, type_=None, captured=(), columns=None, folded=False, inputs=1):
     # `argument -> body`: a lambda with one argument (name, type), whose body is a single node `r` of `body_type`
     # over the only input `input_` (name, type). By default it captures nothing and its declarations agree with
     # the body. `returns` is the declared (name, type) of the result, `type_` the (argument, return) types of the
-    # lambda itself (0x24 is `Function`), `captured` the declared (name, type) of a captured column, and `columns`
-    # the number of the columns the lambda is created with, each one a `UInt8`.
+    # lambda itself (0x24 is `Function`), `captured` the declared (name, type) of the captured columns, and `columns`
+    # the number of the columns the lambda is created with, each one a `UInt8`. The body has `inputs` copies of its input.
     returns = returns or ("r", body_type)
     type_ = type_ or (argument[1], returns[1])
-    captures = [captured] if captured else []
+    captures = captured if isinstance(captured, list) else [captured] if captured else []
     columns = len(captures) if columns is None else columns
     head = sb("lambda") + b"\x24" + vu(1) + type_[0] + type_[1]
     signature = (sb(returns[0]) + returns[1]
                  + vu(len(captures)) + b"".join(sb(name) for name, _ in captures)
                  + vu(len(captures)) + b"".join(type for _, type in captures)
                  + vu(1) + sb(argument[0]) + argument[1])
-    body = dag([(INPUT, input_[0], input_[1], ()), (body_kind, "r", body_type, (0,))], [1])
+    body = dag([(INPUT, input_[0], input_[1], ())] * inputs + [(body_kind, "r", body_type, (0,))], [inputs], inputs)
     if folded:
         # A lambda folded into a constant (the flags 1 | 2), which holds the captured columns as constants.
         return bytes([COLUMN]) + head + vu(0) + b"\x03" + signature + body + vu(columns) + (U8 + b"\x07") * columns
@@ -183,6 +186,14 @@ with_lambda("folded lambda captures a column of another type",
             lambda_node(("e", U8), ("x", U16), U16, captured=("x", U16), folded=True))
 with_lambda("folded lambda holds a column that it does not capture",
             lambda_node(("e", U8), ("e", U8), U8, columns=1, folded=True))
+# The types agree, but a name repeats: `x -> x` that also captures a column `x`, which would replace the argument,
+# a lambda capturing two columns `x`, and a body with two inputs of one name. The planner builds none of these.
+with_lambda("lambda captures a column named as its argument", lambda_node(("x", U8), ("x", U8), U8, captured=("x", U8)))
+with_lambda("lambda captures two columns of the same name",
+            lambda_node(("e", U8), ("x", U8), U8, captured=[("x", U8), ("x", U8)]))
+with_lambda("folded lambda captures a column named as its argument",
+            lambda_node(("x", U8), ("x", U8), U8, captured=("x", U8), folded=True))
+with_lambda("lambda body has two inputs of the same name", lambda_node(("e", U8), ("e", U8), U8, inputs=2))
 with_lambda("well-formed lambda", lambda_node(("e", U8), ("e", U8), U8))
 with_lambda("well-formed lambda with a captured column", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8)))
 with_lambda("well-formed folded lambda", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8), folded=True))
