@@ -37,7 +37,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
 }
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "url",
     "access_key_id",
     "secret_access_key",
@@ -114,7 +114,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
     {
         function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.secret_access_key.value()));
+        function->arguments->children.push_back(make_intrusive<ASTLiteral>(String(*config.secret_access_key)));
     }
     /// With `use_environment_credentials`, the positional `s3(url)` form uses the environment credentials by default.
 
@@ -214,13 +214,13 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
         result.use_environment_credentials = collection.getOrDefault<bool>("use_environment_credentials", false);
 
         auto key_id = collection.getOrDefault<String>("access_key_id", "");
-        auto secret_key = collection.getOrDefault<String>("secret_access_key", "");
+        auto secret_key = collection.getOrDefault<SecretString>("secret_access_key");
 
         if (!key_id.empty())
             result.access_key_id = key_id;
 
         if (!secret_key.empty())
-            result.secret_access_key = secret_key;
+            result.secret_access_key = std::move(secret_key);
 
         /// A URL-only collection is anonymous; record it as NOSIGN so `getTableImpl` does not flatten it to
         /// the positional `s3(url)` form, whose built-in `use_environment_credentials = 1` default would
@@ -293,7 +293,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
                 throw Exception::createRuntime(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
 
             result.access_key_id = key_id;
-            result.secret_access_key = secret_key;
+            result.secret_access_key.emplace(secret_key);
         }
     }
 

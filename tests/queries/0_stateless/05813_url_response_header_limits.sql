@@ -8,12 +8,12 @@ FROM url('http://127.0.0.1:8123/?query=SELECT+1&http_response_headers=' || encod
 
 SELECT s
 FROM url('http://127.0.0.1:8123/?query=SELECT+1&http_response_headers=' || encodeURLComponent('{\'X-Long\':\'' || repeat('a', 20000) || '\'}'), LineAsString, 's String')
-SETTINGS http_max_field_value_size = 8192, http_max_tries = 1; -- { serverError POCO_EXCEPTION }
+SETTINGS http_max_field_value_size = 8192, http_max_tries = 1; -- { serverError LIMIT_EXCEEDED }
 
 SELECT s
 FROM url('http://127.0.0.1:8123/?query=SELECT+1', LineAsString, 's String')
-SETTINGS http_max_field_name_size = 4, http_max_tries = 1; -- { serverError POCO_EXCEPTION }
+SETTINGS http_max_field_name_size = 4, http_max_tries = 1; -- { serverError LIMIT_EXCEEDED }
 
 SELECT s
 FROM url('http://127.0.0.1:8123/?query=SELECT+1', LineAsString, 's String')
-SETTINGS http_max_fields = 2, http_max_tries = 1; -- { serverError POCO_EXCEPTION }
+SETTINGS http_max_fields = 2, http_max_tries = 1; -- { serverError LIMIT_EXCEEDED }
