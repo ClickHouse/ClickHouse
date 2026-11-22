@@ -831,6 +831,12 @@ void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
 
     state.store(new_state);
 
+    /// The stamp says since when the part has been outdated, and stays while its removal is retried. A part that
+    /// becomes active again (the commit of the part that covered it was rolled back) can be taken by the queries of
+    /// the other servers again, so it gets a new stamp when it becomes outdated the next time.
+    if (new_state != MergeTreeDataPartState::Outdated && new_state != MergeTreeDataPartState::Deleting)
+        removal_lease_sequence.store(0, std::memory_order_release);
+
     incrementStateMetric(state);
     DimensionalMetrics::add(
         DimensionalMetrics::MergeTreeParts,

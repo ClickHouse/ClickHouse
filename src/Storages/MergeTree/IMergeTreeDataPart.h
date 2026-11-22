@@ -124,6 +124,7 @@ enum class DataPartRemovalState : uint8_t
     NOT_ATTEMPTED,
     VISIBLE_TO_TRANSACTIONS,
     NON_UNIQUE_OWNERSHIP,
+    MAY_BE_USED_BY_OTHER_SERVERS,
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
@@ -388,6 +389,13 @@ public:
     /// reconciled like any other duplicate or stale moving directory. Written under the parts lock
     /// before the part can reach its destructor.
     mutable std::optional<UInt64> move_leadership_epoch;
+
+    /// Under `leader_election`, set by the leader when its cleanup first sees the part outdated: the number of the
+    /// latest write of the lease that the leader had started by then (see `MergeTreeLeaderElection::currentLeaseSequence`),
+    /// zero until then. The part is removed only after every other server that reads the table has refreshed its
+    /// set of parts from the shared storage after a later write of the lease, so that the part is not active for
+    /// any of them (see `MergeTreeLeaderElection::ReadersSnapshot::allowsRemoval`).
+    mutable std::atomic<UInt64> removal_lease_sequence{0};
 
     /// Under `leader_election`, the identity of the part directory on shared storage at the time this
     /// replica loaded or committed the part (see `MergeTreeData::getPartSharedStorageIncarnation`).

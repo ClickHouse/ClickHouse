@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -278,6 +279,13 @@ public:
     {
         /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
     }
+
+    /// For a storage whose state in memory is built by listing an object storage that other servers write to
+    /// (see `refresh`): a moment of the steady clock of this server that is not later than the start of the listing
+    /// the current state was built from. Everything another server had committed to the object storage before that
+    /// moment is in the state; a `refresh` that was skipped or failed does not move it. `std::nullopt` if the state
+    /// was not built this way, so nothing is known about its age.
+    [[nodiscard]] virtual std::optional<std::chrono::steady_clock::time_point> getListedStateTime() const { return std::nullopt; }
 
     virtual ~IMetadataStorage() = default;
 

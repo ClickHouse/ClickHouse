@@ -47,6 +47,8 @@
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapSnapshot.h>
 
+#include <chrono>
+
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
@@ -973,7 +975,27 @@ public:
     /// leader never enables writes having detached a suspiciously large slice of the active set.
     /// The periodic follower refresh leaves `strict_takeover` false and stays best-effort
     /// read-only (a follower merely skips parts it cannot load).
-    size_t loadNewlyAppearedParts(bool strict_takeover = false);
+    ///
+    /// `stale_active_parts`, if not null, receives the names of the parts that stay active only because a part
+    /// that covers them is on the storage but was not loaded (it is broken, or could not be read): for the
+    /// leader they are outdated already, so it has to be told to keep them (see `collectPartsToKeepOnSharedStorage`).
+    size_t loadNewlyAppearedParts(bool strict_takeover = false, NameSet * stale_active_parts = nullptr);
+
+    /// Under `leader_election`, on a server that is not the leader: the parts that the leader must not remove from
+    /// the shared storage although the set of parts of this server, refreshed just before, does not show them as
+    /// needed. The leader removes an outdated part once every other server has refreshed its set of parts after the
+    /// part was replaced; these are the parts that are still needed here after such a refresh:
+    ///  - the outdated parts that queries still hold (a query started before the refresh keeps reading them);
+    ///  - `stale_active_parts` of `loadNewlyAppearedParts`, which any new query takes;
+    ///  - the patch parts that queries hold, or all of them if there are stale active parts: the leader outdates
+    ///    an unused patch part without a covering part, so it stays active here until it is removed, while the
+    ///    data parts that need it can still be read by a running query, or be stale active parts.
+    Names collectPartsToKeepOnSharedStorage(const NameSet & stale_active_parts);
+
+    /// Called after the set of parts was refreshed from a storage shared with other servers, if the age of the
+    /// listing it was built from is known: `view_time` is a moment of the steady clock that is not later than the
+    /// start of that listing. `parts_to_keep` is the result of `collectPartsToKeepOnSharedStorage` taken after the refresh.
+    virtual void onPartsRefreshedFromSharedStorage(std::chrono::steady_clock::time_point /*view_time*/, Names /*parts_to_keep*/) {}
 
     /// The part directories a refresh scan found, keyed by the disk holding them. A disk that was
     /// scanned but holds no part directory is present with an empty set; a broken disk, which is
@@ -1414,7 +1436,11 @@ public:
 
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts but not from the disk.
     /// If 'force' - don't wait for old_parts_lifetime.
-    DataPartsVector grabOldParts(bool force = false);
+    /// `may_be_used_by_other_servers`, if set, is called for every part that nothing else keeps, with the lock of the
+    /// parts held: under `leader_election` the queries of the other servers hold their parts where this server cannot
+    /// see them (see `MergeTreeLeaderElection`). Such a part is kept, also when `force` is set.
+    using OutdatedPartPredicate = std::function<bool(const DataPartPtr &)>;
+    DataPartsVector grabOldParts(bool force = false, const OutdatedPartPredicate & may_be_used_by_other_servers = {});
 
     /// Reverts the changes made by grabOldParts(), parts should be in Deleting state.
     void rollbackDeletingParts(const DataPartsVector & parts);

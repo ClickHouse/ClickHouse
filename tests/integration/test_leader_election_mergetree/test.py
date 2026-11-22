@@ -4141,10 +4141,16 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
     once it has loaded the parts, so that it provably keeps the pre-`DROP PARTITION` view while
     the leader publishes and then cleans up the tombstone. The takeover scan calls
     `loadNewlyAppearedParts` directly and is not affected by that failpoint.
+
+    The leader removes a part only after every other node has refreshed its parts past the
+    retirement, unless the reader file of that node has expired. So the follower is stalled as a
+    whole while the leader cleans up: its heartbeat is paused too, and it stops rewriting its
+    reader file. The heartbeat is resumed before the takeover, with the refresh still frozen.
     """
     ensure_node_up(node1)
     ensure_node_up(node2)
     failpoint = "merge_tree_refresh_parts_skip"
+    pause_heartbeat = "merge_tree_leader_election_pause_heartbeat"
     table = "test_vanished_parts"
     columns = "(x UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x"
 
@@ -4196,14 +4202,16 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
         ], "The follower did not load the parts written by the leader"
 
         follower.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        follower.query(f"SYSTEM ENABLE FAILPOINT {pause_heartbeat}")
 
         node1.query(f"ALTER TABLE {table} DROP PARTITION 1")
         assert node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").split() == ["2", "4"]
 
         # Wait until nothing of the dropped partition is left on the leader: neither the dropped
         # parts nor the covering empty part that retired them. From this moment on, the shared
-        # storage holds no record of the retirement at all.
-        deadline = time.monotonic() + 60
+        # storage holds no record of the retirement at all. The leader starts once the reader file
+        # of the stalled follower has expired.
+        deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             if parts_of_dropped_partition(node1) == 0:
                 break
@@ -4224,6 +4232,7 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
         # The follower takes over with that stale view. The takeover scan must retire the parts
         # that are no longer on the shared storage; before the fix the new leader resurrected the
         # dropped partition and served it as the authoritative data.
+        follower.query(f"SYSTEM DISABLE FAILPOINT {pause_heartbeat}")
         node1.stop_clickhouse(kill=True)
         wait_for_leader([follower], table_name=table)
         follower.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
@@ -4283,10 +4292,11 @@ def test_vanished_parts_retired_on_takeover(started_cluster):
                 ensure_node_up(node)
             except Exception:
                 pass
-            try:
-                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-            except Exception:
-                pass
+            for name in (failpoint, pause_heartbeat):
+                try:
+                    node.query(f"SYSTEM DISABLE FAILPOINT {name}")
+                except Exception:
+                    pass
             try:
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
@@ -5541,3 +5551,143 @@ def test_lease_expiry_respects_writer_session_timeout(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS = "12345678-abcd-abcd-abcd-12345678ab64"
+
+# The cleanup thread looks at the outdated parts every second and removes them at once, so a part that
+# stays is kept by something else than its lifetime.
+FAST_CLEANUP_SETTINGS = (
+    "old_parts_lifetime = 0, "
+    "cleanup_delay_period = 1, "
+    "cleanup_delay_period_random_add = 0, "
+    "max_cleanup_delay_period = 1, "
+    "cleanup_thread_preferred_points_per_iteration = 0"
+)
+
+
+def part_objects(uuid, part_name):
+    """The S3 objects of a part directory, empty if the directory is gone."""
+    prefix = find_part_object_key_prefix(uuid, part_name)
+    if prefix is None:
+        return []
+    return [
+        obj.object_name
+        for obj in cluster.minio_client.list_objects(
+            cluster.minio_bucket, prefix, recursive=True
+        )
+    ]
+
+
+def test_follower_query_keeps_outdated_parts(started_cluster):
+    """
+    The leader does not see the queries of the other nodes, so it used to remove the source parts of a
+    merge `old_parts_lifetime` after the merge, also from under a query on a follower that was still
+    reading them.
+
+    Every node that is not the leader now keeps a reader file next to the lease, which tells the leader
+    how recent its set of parts is and which outdated parts its queries still hold. A query on the
+    follower is paused in the middle of a read, the leader merges the parts it reads and has nothing
+    else to wait for (`old_parts_lifetime = 0`), and the parts must stay on the storage until the query
+    has finished, with its exact result. After that they must be removed.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_follower_query_keeps_parts"
+    uuid = SHARED_UUID_FOLLOWER_QUERY_KEEPS_PARTS
+    failpoint = "remote_fs_gather_pause_in_read"
+    try:
+        for statement, node in (("CREATE", node1), ("ATTACH", node2)):
+            node.query(
+                f"""
+                {statement} TABLE {table} UUID '{uuid}' (x UInt64, y UInt64)
+                ENGINE = MergeTree ORDER BY x
+                SETTINGS {TABLE_SETTINGS}, {FAST_CLEANUP_SETTINGS}
+                """
+            )
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        leader.query(f"SYSTEM STOP MERGES {table}")
+        leader.query(f"INSERT INTO {table} SELECT number + 1, number FROM numbers(1000)")
+        leader.query(f"INSERT INTO {table} SELECT number + 1001, number FROM numbers(1000)")
+        query = f"SELECT sum(x), sum(y), count() FROM {table} WHERE x > 0"
+        expected = leader.query(query)
+        source_parts = leader.query(
+            f"SELECT name FROM system.parts WHERE table = '{table}' AND active ORDER BY name"
+        ).split()
+        assert len(source_parts) >= 2, source_parts
+
+        def follower_active_parts():
+            return follower.query(
+                f"SELECT name FROM system.parts WHERE table = '{table}' AND active ORDER BY name"
+            ).split()
+
+        assert _wait_until(lambda: follower_active_parts() == source_parts), (
+            f"The follower never saw the parts of the leader: {follower_active_parts()}"
+        )
+
+        result = {}
+
+        def run_query():
+            try:
+                result["value"] = follower.query(query, settings={"max_threads": 1}, timeout=300)
+            except Exception as e:
+                result["error"] = str(e)
+
+        follower.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        thread = threading.Thread(target=run_query)
+        thread.start()
+        try:
+            follower.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+            leader.query(f"SYSTEM START MERGES {table}")
+            leader.query(f"OPTIMIZE TABLE {table} FINAL")
+            merged_parts = leader.query(
+                f"SELECT name FROM system.parts WHERE table = '{table}' AND active"
+            ).split()
+            assert len(merged_parts) == 1, merged_parts
+
+            # Once the follower has the merged part, the source parts are outdated for it as well, and only
+            # its paused query still holds them. The wait below is longer than the session timeout: the
+            # reader file of a live node does not expire.
+            assert _wait_until(lambda: follower_active_parts() == merged_parts), (
+                f"The follower never saw the merged part: {follower_active_parts()}"
+            )
+            time.sleep(8)
+
+            for part in source_parts:
+                assert part_objects(uuid, part), (
+                    f"Part {part} was removed from the storage while a query on the follower reads it"
+                )
+            kept = leader.query(
+                f"SELECT name, removal_state FROM system.parts WHERE table = '{table}' AND NOT active ORDER BY name"
+            )
+            assert [line.split("\t")[0] for line in kept.splitlines()] == source_parts, kept
+            assert all("other servers" in line for line in kept.splitlines()), kept
+        finally:
+            follower.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            thread.join(timeout=300)
+
+        assert "error" not in result, result["error"]
+        assert result["value"] == expected, (result, expected)
+
+        # Nothing holds the source parts anymore.
+        assert _wait_until(
+            lambda: leader.query(
+                f"SELECT count() FROM system.parts WHERE table = '{table}' AND NOT active"
+            ).strip()
+            == "0"
+        ), "The source parts were not removed after the query on the follower had finished"
+        for part in source_parts:
+            assert not part_objects(uuid, part), f"The objects of part {part} are left on the storage"
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass

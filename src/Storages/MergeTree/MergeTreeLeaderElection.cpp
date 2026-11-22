@@ -3,6 +3,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/UUID.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -14,11 +15,14 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
 #include <base/JSON.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
+
+#include <unordered_set>
 
 
 namespace ProfileEvents
@@ -57,6 +61,16 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_LEASE_FILE_SIZE = 4096;
 
+/// A reader file lists the parts that the queries of a node still hold, so it is not bounded like the lease.
+/// A larger file is not read: its node keeps everything.
+static constexpr size_t MAX_READER_FILE_SIZE = 64 * 1024 * 1024;
+
+/// How many writes of the lease a node remembers until it publishes a view of the parts that is newer than them.
+static constexpr size_t MAX_OBSERVED_LEASE_WRITES = 1024;
+
+/// A reader file whose node is gone is removed after it stayed expired for this many session timeouts.
+static constexpr UInt64 EXPIRED_READER_FILE_REMOVAL_FACTOR = 10;
+
 MergeTreeLeaderElection::MergeTreeLeaderElection(
     const StorageID & storage_id_,
     ObjectStoragePtr object_storage_,
@@ -72,6 +86,8 @@ MergeTreeLeaderElection::MergeTreeLeaderElection(
     , session_timeout_ms(session_timeout_ms_)
     , leader_id(generateLeaderId())
     , incarnation(toString(UUIDHelpers::generateV4()))
+    , readers_path_prefix(lease_path + "_readers/")
+    , reader_path(readers_path_prefix + escapeForFileName(leader_id))
     , log(getLogger("MergeTreeLeaderElection"))
 {
     /// Every participating table starts as a follower. `stop` always brings the
@@ -298,6 +314,11 @@ void MergeTreeLeaderElection::run()
                 observed_etag_since = steady_now;
             }
 
+            /// For the reader file of this node: a set of parts listed from the storage after this moment is not
+            /// older than this write of the lease (see `publishReaderView`).
+            if (parsed.status == LeaseParseStatus::Ok)
+                observeLeaseWrite(parsed, steady_now);
+
             /// A foreign lease is valid for as long as its writer may keep passing its own `isLeader`
             /// check, which is bounded by the writer's `session_timeout`, not ours: nodes may run the
             /// same table with different timing settings. So wait for the longer of the two. A lease
@@ -417,6 +438,11 @@ void MergeTreeLeaderElection::run()
             /// observes a different epoch at commit time and is rejected (see `leadershipEpoch`).
             leadership_epoch.fetch_add(1, std::memory_order_acq_rel);
 
+            /// What this node published as a reader describes the set of parts it had as a follower. If the
+            /// takeover fails, or when leadership is lost later, its reader file must keep everything until
+            /// the next refresh as a follower publishes a new view.
+            resetReaderView();
+
             LOG_INFO(log, "Acquired leadership for lease at '{}'", lease_path);
             ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionAcquired);
             CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionFollower);
@@ -440,6 +466,10 @@ void MergeTreeLeaderElection::run()
                 on_leadership_change(true);
             }
             leadership_state.store(LeadershipState::LeaderWritable, std::memory_order_release);
+
+            /// The leader holds its parts by itself: its queries are seen by its own cleanup. The reader file is
+            /// written again by the first heartbeat after leadership is lost.
+            removeReaderFileNoThrow();
         }
         else if (!became_leader && was_leader)
         {
@@ -499,6 +529,21 @@ void MergeTreeLeaderElection::run()
         }
 
         tryLogCurrentException(log, "Error in leader election heartbeat");
+    }
+
+    /// Every node that is not the leader keeps its reader file fresh, see the description of the class.
+    /// A failure is not fatal for the node: the leader ignores the file once it has expired, and then a query
+    /// of this node may find its parts removed.
+    if (!stopped.load(std::memory_order_acquire) && leadership_state.load(std::memory_order_acquire) == LeadershipState::Follower)
+    {
+        try
+        {
+            writeReaderFile();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Cannot write the reader file at '{}'", reader_path));
+        }
     }
 
     if (!stopped.load(std::memory_order_acquire))
@@ -579,9 +624,9 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
 
 String MergeTreeLeaderElection::buildLeaseContent()
 {
-    /// `sequence` and `incarnation` are not read back: they only make the content, and thus the
-    /// ETag, of every write unique (see `lease_write_sequence` and `incarnation`). Older binaries
-    /// ignore unknown fields of version 1.
+    /// `sequence` and `incarnation` make the content, and thus the ETag, of every write unique (see
+    /// `lease_write_sequence` and `incarnation`). The other nodes also read them back as the logical clock
+    /// of the leader, which they name in their reader files. Older binaries ignore unknown fields of version 1.
     WriteBufferFromOwnString out;
     writeString(R"({"version":1,"leader_id":")", out);
     writeString(leader_id, out);
@@ -627,6 +672,11 @@ MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(
         result.timestamp = json["timestamp"].getInt();
         if (json.has("session_timeout_ms"))
             result.writer_session_timeout_ms = json["session_timeout_ms"].getUInt();
+        if (json.has("sequence") && json.has("incarnation"))
+        {
+            result.sequence = json["sequence"].getUInt();
+            result.incarnation = json["incarnation"].getString();
+        }
         result.status = LeaseParseStatus::Ok;
         return result;
     }
@@ -644,6 +694,296 @@ MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(
 String MergeTreeLeaderElection::generateLeaderId()
 {
     return getFQDNOrHostName() + ":" + toString(ServerUUID::get());
+}
+
+void MergeTreeLeaderElection::observeLeaseWrite(const ParsedLease & lease, std::chrono::steady_clock::time_point observed_at)
+{
+    /// A lease that does not record the number of its write cannot be named in a reader file.
+    if (lease.incarnation.empty())
+        return;
+
+    std::lock_guard lock(reader_mutex);
+
+    /// One entry per write, with the time it was first seen: the earlier, the more views it applies to.
+    if (!observed_lease_writes.empty()
+        && observed_lease_writes.back().incarnation == lease.incarnation
+        && observed_lease_writes.back().sequence == lease.sequence)
+        return;
+
+    observed_lease_writes.push_back(ObservedLeaseWrite{lease.incarnation, lease.sequence, observed_at});
+
+    /// The entries are dropped once a newer view is published. If no view is published for long (the refresh of
+    /// the parts fails), dropping the oldest ones can only make the node name an older write than it could, or none.
+    if (observed_lease_writes.size() > MAX_OBSERVED_LEASE_WRITES)
+        observed_lease_writes.pop_front();
+}
+
+void MergeTreeLeaderElection::resetReaderView()
+{
+    std::lock_guard lock(reader_mutex);
+    reader_view_lease_incarnation.clear();
+    reader_view_lease_sequence = 0;
+    reader_pinned_parts.clear();
+}
+
+void MergeTreeLeaderElection::publishReaderView(std::chrono::steady_clock::time_point view_time, Names pinned_parts)
+{
+    std::lock_guard lock(reader_mutex);
+
+    /// Only a follower has a set of parts built from a listing. The state is read under the mutex: `run` publishes
+    /// the new state before it calls `resetReaderView`, so a refresh that was still running when this node acquired
+    /// leadership either is undone by that reset or sees the new state here.
+    if (leadership_state.load(std::memory_order_acquire) != LeadershipState::Follower)
+        return;
+
+    /// The newest write of the lease that this node had read before the listing started: the listing shows
+    /// everything that the leader had committed before it started that write. If there is none, the previous
+    /// value stays: a newer listing shows at least what an older one showed.
+    for (size_t i = observed_lease_writes.size(); i-- > 0;)
+    {
+        if (observed_lease_writes[i].observed_at <= view_time)
+        {
+            reader_view_lease_incarnation = observed_lease_writes[i].incarnation;
+            reader_view_lease_sequence = observed_lease_writes[i].sequence;
+            /// The older writes are not needed anymore. This one is kept for a later view that finds no newer one.
+            observed_lease_writes.erase(observed_lease_writes.begin(), observed_lease_writes.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
+
+    reader_pinned_parts = std::move(pinned_parts);
+}
+
+String MergeTreeLeaderElection::buildReaderFileContent()
+{
+    std::lock_guard lock(reader_mutex);
+
+    /// `sequence` and `incarnation` make the content, and thus the ETag, of every write unique, like in the lease:
+    /// the leader tells a live reader from a dead one by the ETag of its file.
+    const FormatSettings format_settings;
+    WriteBufferFromOwnString out;
+    writeString(R"({"version":1,"reader_id":)", out);
+    writeJSONString(leader_id, out, format_settings);
+    writeString(R"(,"incarnation":)", out);
+    writeJSONString(incarnation, out, format_settings);
+    writeString(R"(,"sequence":)", out);
+    writeIntText(++reader_write_sequence, out);
+    /// The leader must not consider this file expired sooner than this, even if its own `session_timeout` is shorter.
+    writeString(R"(,"session_timeout_ms":)", out);
+    writeIntText(session_timeout_ms, out);
+    /// Empty and zero until the first view is published: the file then keeps everything.
+    writeString(R"(,"lease_incarnation":)", out);
+    writeJSONString(reader_view_lease_incarnation, out, format_settings);
+    writeString(R"(,"lease_sequence":)", out);
+    writeIntText(reader_view_lease_sequence, out);
+    writeString(R"(,"pinned_parts":[)", out);
+    for (size_t i = 0; i < reader_pinned_parts.size(); ++i)
+    {
+        if (i)
+            writeChar(',', out);
+        writeJSONString(reader_pinned_parts[i], out, format_settings);
+    }
+    writeString("]}", out);
+    return out.str();
+}
+
+void MergeTreeLeaderElection::writeReaderFile()
+{
+    String content = buildReaderFileContent();
+
+    auto write_settings = context->getWriteSettings();
+    /// As for the lease: a tiny object that is rewritten all the time must not go through the filesystem cache.
+    write_settings.enable_filesystem_cache_on_write_operations = false;
+
+    auto buffer = object_storage->writeObject(
+        StoredObject(reader_path),
+        WriteMode::Rewrite,
+        /* attributes= */ std::nullopt,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        write_settings);
+
+    buffer->write(content.data(), content.size());
+    buffer->finalize();
+}
+
+void MergeTreeLeaderElection::registerReader()
+{
+    writeReaderFile();
+}
+
+void MergeTreeLeaderElection::removeReaderFileNoThrow()
+{
+    try
+    {
+        object_storage->removeObjectIfExists(StoredObject(reader_path));
+    }
+    catch (...)
+    {
+        /// The leader skips its own reader file, and the other nodes ignore it once it has expired.
+        tryLogCurrentException(log, fmt::format("Cannot remove the reader file at '{}'", reader_path));
+    }
+}
+
+MergeTreeLeaderElection::ObservedReaderFile MergeTreeLeaderElection::parseReaderFile(const String & reader_key, const String & content) const
+{
+    ObservedReaderFile observed;
+    observed.reader.id = reader_key;
+
+    try
+    {
+        JSON json(content);
+
+        /// A newer binary may keep parts in a way this one does not understand, so its file keeps everything.
+        Int64 version = json["version"].getInt();
+        if (version != 1)
+        {
+            LOG_WARNING(log, "Reader file '{}' has unknown version {}; no outdated part is removed while it is fresh", reader_key, version);
+            observed.reader.keeps_everything = true;
+            return observed;
+        }
+
+        if (json.has("session_timeout_ms"))
+            observed.session_timeout_ms = json["session_timeout_ms"].getUInt();
+
+        const String lease_incarnation = json["lease_incarnation"].getString();
+        observed.reader.names_own_lease = !lease_incarnation.empty() && lease_incarnation == incarnation;
+        observed.reader.lease_sequence = json["lease_sequence"].getUInt();
+
+        const JSON pinned_parts = json["pinned_parts"];
+        for (auto it = pinned_parts.begin(); it != pinned_parts.end(); ++it)
+            observed.reader.pinned_parts.insert((*it).getString());
+    }
+    catch (...)
+    {
+        /// The node keeps rewriting its file, so this is not permanent unless the node is broken; and the file
+        /// of a node that is gone expires.
+        tryLogCurrentException(log, fmt::format("Cannot parse the reader file '{}'; no outdated part is removed while it is fresh", reader_key));
+        observed.reader.keeps_everything = true;
+        observed.reader.pinned_parts.clear();
+    }
+
+    return observed;
+}
+
+MergeTreeLeaderElection::ReadersSnapshot MergeTreeLeaderElection::scanReaders()
+{
+    std::lock_guard lock(readers_scan_mutex);
+
+    RelativePathsWithMetadata files;
+    object_storage->listObjects(readers_path_prefix, files, /* max_keys= */ 0);
+
+    /// Sampled after the listing returned, like the observation time of the lease in `run`: a reader file is
+    /// considered expired only after its ETag stayed unchanged for the session timeout of our own steady time,
+    /// counted from when we first saw that ETag, which is after its writer anchored its own freshness.
+    const auto steady_now = std::chrono::steady_clock::now();
+
+    auto read_settings = context->getReadSettings();
+    read_settings.enable_filesystem_cache = false;
+
+    ReadersSnapshot snapshot;
+    std::unordered_set<String> listed_keys;
+    size_t expired_readers = 0;
+
+    for (const auto & file : files)
+    {
+        const String & key = file->relative_path;
+
+        /// A leftover of the time this node was a follower: the leader holds its parts by itself.
+        if (key == reader_path)
+            continue;
+
+        listed_keys.insert(key);
+
+        /// The token that changes with every write of the file. An object storage that does not report an ETag
+        /// in the listing gets the content itself, which is unique for every write.
+        String version_token = file->metadata ? file->metadata->etag : String();
+        std::optional<String> content;
+        const bool too_large = file->metadata && file->metadata->is_size_known && file->metadata->size_bytes > MAX_READER_FILE_SIZE;
+        if (version_token.empty() && !too_large)
+        {
+            content = object_storage->readSmallObjectAndGetObjectMetadata(StoredObject(key), read_settings, MAX_READER_FILE_SIZE).data;
+            version_token = *content;
+        }
+
+        auto it = observed_reader_files.find(key);
+        if (it == observed_reader_files.end() || it->second.etag != version_token)
+        {
+            ObservedReaderFile observed;
+            if (too_large)
+            {
+                LOG_WARNING(log, "Reader file '{}' is {} bytes, larger than the maximum of {} bytes; no outdated part is removed while it is fresh",
+                    key, file->metadata->size_bytes, MAX_READER_FILE_SIZE);
+                observed.reader.id = key;
+                observed.reader.keeps_everything = true;
+            }
+            else
+            {
+                if (!content)
+                    content = object_storage->readSmallObjectAndGetObjectMetadata(StoredObject(key), read_settings, MAX_READER_FILE_SIZE).data;
+                observed = parseReaderFile(key, *content);
+            }
+
+            /// The content may be of a later write than the listed ETag. The next scan then sees another ETag and
+            /// reads the file again; meanwhile a newer content only says more precisely what the reader keeps now.
+            observed.etag = std::move(version_token);
+            observed.etag_since = steady_now;
+            it = observed_reader_files.insert_or_assign(key, std::move(observed)).first;
+        }
+
+        const auto & reader_file = it->second;
+        const auto timeout = std::chrono::milliseconds(std::max(session_timeout_ms, reader_file.session_timeout_ms));
+        const auto unchanged_for = steady_now - reader_file.etag_since;
+        if (unchanged_for >= timeout)
+        {
+            /// Its node did not rewrite it for the whole session timeout: the node is gone or stalled, and, like a
+            /// leader in that state, it cannot rely on its registration anymore.
+            ++expired_readers;
+            if (unchanged_for >= timeout * EXPIRED_READER_FILE_REMOVAL_FACTOR)
+            {
+                LOG_INFO(log, "Removing the reader file '{}': it was not rewritten for {} ms", key,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(unchanged_for).count());
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(key));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Cannot remove the expired reader file '{}'", key));
+                }
+            }
+            continue;
+        }
+
+        snapshot.readers.push_back(reader_file.reader);
+    }
+
+    std::erase_if(observed_reader_files, [&](const auto & entry) { return !listed_keys.contains(entry.first); });
+
+    LOG_TRACE(log, "Found {} reader files at '{}': {} fresh, {} expired",
+        listed_keys.size(), readers_path_prefix, snapshot.readers.size(), expired_readers);
+
+    return snapshot;
+}
+
+bool MergeTreeLeaderElection::ReadersSnapshot::allowsRemoval(const String & part_name, UInt64 removal_sequence) const
+{
+    for (const auto & reader : readers)
+    {
+        if (reader.keeps_everything)
+            return false;
+
+        /// The reader has not listed the storage since this leader instance started to write the lease, or it
+        /// listed it before the write that followed `removal_sequence` started. The part may still be active for it,
+        /// and then any of its queries may take the part.
+        if (!reader.names_own_lease || reader.lease_sequence <= removal_sequence)
+            return false;
+
+        /// The part is not active for the reader, but its queries still hold it, or it could not load the replacement.
+        if (reader.pinned_parts.contains(part_name))
+            return false;
+    }
+
+    return true;
 }
 
 }

@@ -489,6 +489,15 @@ private:
     /// If 'force' - don't wait for old_parts_lifetime.
     size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_fail_point = false);
 
+    /// Under `leader_election`: stamps every part that is outdated by now with the number of the latest write of
+    /// the lease (`IMergeTreeDataPart::removal_lease_sequence`), unless it has a stamp already. Returns false if
+    /// there are no outdated parts. See `clearOldPartsFromFilesystem`.
+    bool stampOutdatedPartsForReaders();
+
+    /// Under `leader_election`: tells the leader, through the reader file of this server, how recent the set of
+    /// parts of this follower is and which parts its queries still hold. See `MergeTreeLeaderElection`.
+    void onPartsRefreshedFromSharedStorage(std::chrono::steady_clock::time_point view_time, Names parts_to_keep) override;
+
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;

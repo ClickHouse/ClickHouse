@@ -1066,6 +1066,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
     LOG_DEBUG(log, "Loading metadata");
 
+    /// See `getListedStateTime`: sampled before the object storage is looked at.
+    const auto load_started = std::chrono::steady_clock::now();
+
     if (snapshot_role != chooseSnapshotRole())
         LOG_WARNING(log, "The `readonly` setting of the disk was changed after the disk was created. The disk keeps working as a "
             "{} of the metadata snapshot until the server is restarted", isSnapshotWriter() ? "writer" : "reader");
@@ -1194,6 +1197,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
             PlainRewritableRemoteLayout remote_layout;
             remote_layout[""] = makeRootDirectoryInfo();
             fs.applyLayout(std::move(remote_layout));
+            listed_state_time.store(load_started, std::memory_order_release);
             return;
         }
     }
@@ -1207,6 +1211,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
 
     const bool empty = loadRemoteLayout(base ? &base.value() : nullptr, /*is_initial_load=*/ mode == LoadMode::Initial, log);
     state_loaded_from_snapshot = false;
+    listed_state_time.store(load_started, std::memory_order_release);
 
     if (isSnapshotReader())
         superseded_snapshot_etag = std::move(snapshot_etag_to_supersede);
@@ -1383,6 +1388,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_
         return;
 
     load(LoadMode::Incremental);
+}
+
+std::optional<std::chrono::steady_clock::time_point> MetadataStorageFromPlainRewritableObjectStorage::getListedStateTime() const
+{
+    const auto time = listed_state_time.load(std::memory_order_acquire);
+    if (time == std::chrono::steady_clock::time_point{})
+        return std::nullopt;
+    return time;
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::shutdown()

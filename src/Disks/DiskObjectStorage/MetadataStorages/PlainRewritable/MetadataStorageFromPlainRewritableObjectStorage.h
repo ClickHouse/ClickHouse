@@ -15,6 +15,7 @@
 #include <Common/Logger.h>
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -201,6 +202,7 @@ public:
     bool hasMissingBlobsQueue() const override { return false; }
     bool supportsHardLinks() const override { return hard_links_enabled; }
     bool writesMetadataSnapshot() const override { return isSnapshotWriter(); }
+    std::optional<std::chrono::steady_clock::time_point> getListedStateTime() const override;
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -265,6 +267,9 @@ private:
     /// is not applied until it changes. Protected by `load_mutex`.
     std::string superseded_snapshot_etag;
     AtomicStopwatch previous_refresh;
+
+    /// See `getListedStateTime`. The default value means that the state was never built by listing the object storage.
+    std::atomic<std::chrono::steady_clock::time_point> listed_state_time{std::chrono::steady_clock::time_point{}};
 
     /// The version of `fs` after the latest change that has to be written to the snapshot.
     std::atomic<UInt64> snapshot_dirty_generation = 0;

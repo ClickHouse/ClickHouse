@@ -3866,6 +3866,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     /// A read-only disk is written by another server, and the disk object outlives the tables that use it,
     /// so its metadata may be as old as its last refresh: reload it before listing the parts.
+    /// (The disks of a table with `leader_election`, which are written by the leader, are reloaded
+    /// by the constructor of `StorageMergeTree`, earlier than here.)
     for (const auto & disk_ptr : disks)
         if (!disk_ptr->isBroken() && disk_ptr->isReadOnly())
             disk_ptr->refresh(/*not_sooner_than_milliseconds=*/ 0);
@@ -4546,7 +4548,7 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
     return vanished_parts.size();
 }
 
-size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
+size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover, NameSet * stale_active_parts)
 {
     Stopwatch watch;
     LOG_DEBUG(log, "Refreshing data parts");
@@ -4634,6 +4636,9 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     UInt64 suspicious_broken_parts_bytes = 0;
     const auto settings = getSettings();
 
+    /// The listed parts that were not loaded, so the parts they cover stay in place. See `stale_active_parts`.
+    std::vector<MergeTreePartInfo> not_loaded_parts;
+
     /// The strict takeover scan runs on the heartbeat thread, which cannot renew the lease
     /// while it executes this scan — so scanning and loading the earlier parts can consume
     /// most of `leader_election_session_timeout`, after which another node may legitimately
@@ -4668,6 +4673,8 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
         /// A part loaded `Outdated` (e.g. rolled back) must not be committed: that would reset it to `PreActive`.
         if (res.is_broken || res.part->getState() == DataPartState::Outdated)
         {
+            not_loaded_parts.push_back(my_part->info);
+
             if (res.is_broken)
             {
                 if (strict_takeover)
@@ -4735,6 +4742,7 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
             {
                 tryLogCurrentException(log,
                     fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
+                not_loaded_parts.push_back(my_part->info);
                 if (res.part->getState() == DataPartState::PreActive)
                 {
                     removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
@@ -4773,6 +4781,22 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
         transactions_enabled.store(true);
 
     retired_parts += retirePartsVanishedFromStorage(part_directories_by_disk, strict_takeover);
+
+    if (stale_active_parts && !not_loaded_parts.empty())
+    {
+        auto parts_lock = lockParts();
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        {
+            for (const auto & not_loaded_part : not_loaded_parts)
+            {
+                if (not_loaded_part != part->info && not_loaded_part.contains(part->info))
+                {
+                    stale_active_parts->insert(part->name);
+                    break;
+                }
+            }
+        }
+    }
 
     /// Under `leader_election` the outdated parts are not grabbed here: nothing would remove the
     /// grabbed parts, so they would stay in the `Deleting` state forever, invisible to
@@ -4816,7 +4840,54 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
 
-    loadNewlyAppearedParts();
+    if (!hasLeaderElection())
+    {
+        loadNewlyAppearedParts();
+        return;
+    }
+
+    /// Under `leader_election` the leader has to know how recent the set of parts of this server is: it removes
+    /// an outdated part only after every other server has refreshed its parts past the replacement of that part
+    /// (see `MergeTreeLeaderElection`). The age of the set is the age of the oldest listing its disks were loaded
+    /// from. A `refresh` above may have been skipped, or the listing may be newer by the time the parts are read
+    /// from it below, so the time is taken from the disks, before the parts are read: it can only be too early.
+    std::optional<std::chrono::steady_clock::time_point> view_time;
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        const auto disk_time = disk->getMetadataStorage()->getListedStateTime();
+        if (!disk_time)
+        {
+            view_time.reset();
+            break;
+        }
+        view_time = view_time ? std::min(*view_time, *disk_time) : *disk_time;
+    }
+
+    NameSet stale_active_parts;
+    loadNewlyAppearedParts(/* strict_takeover = */ false, &stale_active_parts);
+
+    /// Without a known age the leader is told nothing new, and keeps what it was asked to keep before.
+    if (view_time)
+        onPartsRefreshedFromSharedStorage(*view_time, collectPartsToKeepOnSharedStorage(stale_active_parts));
+}
+
+Names MergeTreeData::collectPartsToKeepOnSharedStorage(const NameSet & stale_active_parts)
+{
+    Names parts_to_keep(stale_active_parts.begin(), stale_active_parts.end());
+
+    auto parts_lock = lockParts();
+
+    /// Under the lock of the parts no query can take a part, and a query never takes an outdated one, so an
+    /// outdated part that nothing holds now will not be held later either.
+    for (const auto & part : getDataPartsStateRange(DataPartState::Outdated))
+        if (!isSharedPtrUnique(part))
+            parts_to_keep.push_back(part->name);
+
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        if (part->info.isPatch() && !stale_active_parts.contains(part->name) && (!stale_active_parts.empty() || !isSharedPtrUnique(part)))
+            parts_to_keep.push_back(part->name);
+
+    return parts_to_keep;
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -5718,7 +5789,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::asMutableDeletingPart(const Dat
     return std::const_pointer_cast<IMergeTreeDataPart>(part);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
+MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force, const OutdatedPartPredicate & may_be_used_by_other_servers)
 {
     DataPartsVector res;
 
@@ -5803,6 +5874,15 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             if (!isSharedPtrUnique(part))
             {
                 part->removal_state.store(DataPartRemovalState::NON_UNIQUE_OWNERSHIP, std::memory_order_relaxed);
+                skipped_parts.push_back(part->info);
+                continue;
+            }
+
+            /// Above the `force` branch below: a forced round must not remove a part from under a query of another
+            /// server either.
+            if (may_be_used_by_other_servers && may_be_used_by_other_servers(part))
+            {
+                part->removal_state.store(DataPartRemovalState::MAY_BE_USED_BY_OTHER_SERVERS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
                 continue;
             }

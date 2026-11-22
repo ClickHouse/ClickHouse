@@ -179,6 +179,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool leader_election;
     extern const MergeTreeSettingsSeconds leader_election_heartbeat_interval;
@@ -284,7 +285,7 @@ StorageMergeTree::StorageMergeTree(
             "The `leader_election` setting cannot be used with a table that has a `UNIQUE KEY`");
     }
 
-    /// Every disk of the policy is validated to be shared at the end of the constructor; keep using
+    /// Every disk of the policy is validated to be shared below, before the parts are loaded; keep using
     /// exactly that policy, so that a configuration reload cannot add a non-shared disk to it.
     if ((*getSettings())[MergeTreeSetting::leader_election])
         pinned_storage_policy = getStoragePolicy();
@@ -294,27 +295,9 @@ StorageMergeTree::StorageMergeTree(
             "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
             getStorageID().getNameForLogs());
 
-    initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
-
-    loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
-
-    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Data directory for table already containing data parts - probably "
-                        "it was unclean DROP table or manual intervention. "
-                        "You must either clear directory by hand or use ATTACH TABLE instead "
-                        "of CREATE TABLE if you need to use those parts");
-
-    increment.set(getMaxBlockNumber());
-
-    /// Block numbers restart from the parts on disk, so new parts can get the names of removed ones,
-    /// which the query condition cache still holds verdicts for.
-    if (mode == LoadingStrictnessLevel::ATTACH && getStorageID().hasUUID())
-        getContext()->clearQueryConditionCache();
-
-    loadMutations();
-    loadDeduplicationLog();
-    prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
+    /// The path that `initializeDirectoriesAndFormatVersion` below makes the relative data path of the table.
+    /// Under `leader_election` the lease is needed before that, see the registration of the reader.
+    const String relative_data_path_for_lease = (*getSettings())[MergeTreeSetting::table_disk] ? String() : relative_data_path_;
 
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
@@ -422,6 +405,8 @@ StorageMergeTree::StorageMergeTree(
         /// Create the election state before the storage is exposed: `CREATE` / `ATTACH` publish the
         /// table before calling `startup`, and a concurrent `INSERT` must already see a follower then.
         /// Until `startup` starts the lease task, `isLeader` is false, so every write is rejected.
+        /// It is created before the directory of the table is initialized and the parts are loaded, after
+        /// the disks are validated above: see the registration of the reader below.
 
         /// The first disk should be the main data disk.
         ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
@@ -435,7 +420,7 @@ StorageMergeTree::StorageMergeTree(
         /// would keep its lease at the bucket root, outside the prefix its credentials may be
         /// restricted to, and disks with different prefixes would share one lease namespace.
         String lease_path = ObjectStorageKey::createAsRelative(
-            object_storage->getCommonKeyPrefix(), getRelativeDataPath() + "leader_election").serialize();
+            object_storage->getCommonKeyPrefix(), relative_data_path_for_lease + "leader_election").serialize();
 
         leader_election_ptr = std::make_unique<MergeTreeLeaderElection>(
             getStorageID(),
@@ -444,7 +429,51 @@ StorageMergeTree::StorageMergeTree(
             getContext(),
             heartbeat_ms,
             session_timeout_ms);
+
+        /// Tell the leader that this server reads the table before the parts are listed below: the leader removes
+        /// an outdated part only after every registered server has refreshed its parts past the replacement of
+        /// that part, and it looks for the registrations after the part became outdated. So a server that lists a
+        /// part as active must be registered already (see `MergeTreeLeaderElection`). The registration is an
+        /// object of this server next to the lease; it changes nothing in the data of the table.
+        leader_election_ptr->registerReader();
+
+        /// The disks are written by the leader, which may be another server, and a disk object outlives the tables
+        /// that use it, so its metadata may be as old as its last reload. Reload it now, after the registration
+        /// and before anything of the table is looked at:
+        ///  - `initializeDirectoriesAndFormatVersion` below creates the directory of the table and `format_version.txt`
+        ///    if they are missing. Judged on an old state, a server that attaches a table created by another server
+        ///    would create them again on the shared storage, without holding the lease.
+        ///  - The parts loaded below are then listed from a state that is not older than the registration. A set of
+        ///    parts built from an older state could contain parts that the leader removed before it could see the
+        ///    registration.
+        for (const auto & disk : getDisks())
+            if (!disk->isBroken())
+                disk->refresh(/*not_sooner_than_milliseconds=*/ 0);
     }
+
+    initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
+    chassert(!leader_election_ptr || getRelativeDataPath() == relative_data_path_for_lease);
+
+    loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
+
+    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Data directory for table already containing data parts - probably "
+                        "it was unclean DROP table or manual intervention. "
+                        "You must either clear directory by hand or use ATTACH TABLE instead "
+                        "of CREATE TABLE if you need to use those parts");
+
+    increment.set(getMaxBlockNumber());
+
+    /// Block numbers restart from the parts on disk, so new parts can get the names of removed ones,
+    /// which the query condition cache still holds verdicts for.
+    if (mode == LoadingStrictnessLevel::ATTACH && getStorageID().hasUUID())
+        getContext()->clearQueryConditionCache();
+
+    loadMutations();
+    loadDeduplicationLog();
+    prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
+
 }
 
 
@@ -4163,6 +4192,27 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     return mutations_to_delete.size();
 }
 
+bool StorageMergeTree::stampOutdatedPartsForReaders()
+{
+    auto parts_lock = lockParts();
+
+    /// Sampled with the lock held: every part found outdated below became outdated before this moment, so a write
+    /// of the lease with a greater number starts after the replacement of the part was committed to the storage.
+    const UInt64 lease_sequence = leader_election_ptr->currentLeaseSequence();
+
+    bool has_outdated_parts = false;
+    for (const auto & part : getDataPartsStateRange(DataPartState::Outdated))
+    {
+        has_outdated_parts = true;
+
+        /// The first stamp stays: it is still true later, and a greater one would only make the readers catch up again.
+        UInt64 not_stamped = 0;
+        part->removal_lease_sequence.compare_exchange_strong(not_stamped, lease_sequence, std::memory_order_acq_rel);
+    }
+
+    return has_outdated_parts;
+}
+
 size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
 {
     /// Under `leader_election` the parts are removed only in the leadership epoch sampled BEFORE they are selected:
@@ -4171,7 +4221,42 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
     if (hasLeaderElection())
         cleanup_epoch = currentLeadershipEpoch();
 
-    DataPartsVector parts_to_remove = grabOldParts(force);
+    /// Under `leader_election` the other servers read the same parts, and their queries hold the parts where this
+    /// server cannot see them. Every such server says in its reader file how recent its set of parts is and which
+    /// outdated parts its queries still hold (see `MergeTreeLeaderElection`), and a part is removed only if no
+    /// reader can still use it. The order of the three steps matters:
+    ///  1. Stamp the parts that are outdated by now with the number of the latest write of the lease. A reader
+    ///     that names a later write listed the storage after the part was replaced.
+    ///  2. Only then list the reader files. A server writes its reader file before it lists the storage, so a
+    ///     server that still considers a stamped part active is in this listing.
+    ///  3. Select the parts. A part that became outdated after the first step has no stamp and waits for the next round.
+    std::optional<MergeTreeLeaderElection::ReadersSnapshot> readers;
+    OutdatedPartPredicate may_be_used_by_other_servers;
+    if (leader_election_ptr)
+    {
+        if (!stampOutdatedPartsForReaders())
+            return 0;
+
+        try
+        {
+            readers = leader_election_ptr->scanReaders();
+        }
+        catch (...)
+        {
+            /// This runs inside partition DDL too, after its changes are committed, so it must not fail the query.
+            /// Nothing is removed without knowing the readers; the next cleanup round retries.
+            tryLogCurrentException(log, "Cannot read the reader files of the other servers, not removing old parts (leader_election)");
+            return 0;
+        }
+
+        may_be_used_by_other_servers = [&readers](const DataPartPtr & part)
+        {
+            const UInt64 removal_lease_sequence = part->removal_lease_sequence.load(std::memory_order_acquire);
+            return removal_lease_sequence == 0 || !readers->allowsRemoval(part->name, removal_lease_sequence);
+        };
+    }
+
+    DataPartsVector parts_to_remove = grabOldParts(force, may_be_used_by_other_servers);
     if (parts_to_remove.empty())
         return 0;
 
@@ -6580,6 +6665,12 @@ bool StorageMergeTree::hasLeaderElection() const
     return leader_election_ptr != nullptr;
 }
 
+void StorageMergeTree::onPartsRefreshedFromSharedStorage(std::chrono::steady_clock::time_point view_time, Names parts_to_keep)
+{
+    if (leader_election_ptr)
+        leader_election_ptr->publishReaderView(view_time, std::move(parts_to_keep));
+}
+
 void StorageMergeTree::clearDataAfterPartitionDDL(std::string_view ddl_kind, bool with_mutations)
 {
     /// See the comment in the header: under `leader_election` the lease freshness is re-checked
@@ -6675,9 +6766,8 @@ bool StorageMergeTree::mayMutateSharedStorage() const
     /// Otherwise only the lease-holding leader may write to shared storage. This is keyed on
     /// `isLeader()` (lease freshness), matching `canRunDestructiveCleanup`: during the
     /// post-failover takeover sync `writes_enabled` is still false but the lease is held, and
-    /// the callback must be able to reconcile shared state. `leader_election_ptr` is null until
-    /// the end of the constructor and is not a leader until `startup` starts it, so initial
-    /// part/mutation/dedup loading runs read-only.
+    /// the callback must be able to reconcile shared state. `leader_election_ptr` is not a leader
+    /// until `startup` starts it, so initial part/mutation/dedup loading runs read-only.
     return leader_election_ptr && leader_election_ptr->isLeader();
 }
 

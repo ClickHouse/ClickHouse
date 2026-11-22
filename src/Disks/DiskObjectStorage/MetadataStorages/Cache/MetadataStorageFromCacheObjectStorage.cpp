@@ -209,6 +209,11 @@ bool MetadataStorageFromCacheObjectStorage::writesMetadataSnapshot() const
     return underlying->writesMetadataSnapshot();
 }
 
+std::optional<std::chrono::steady_clock::time_point> MetadataStorageFromCacheObjectStorage::getListedStateTime() const
+{
+    return underlying->getListedStateTime();
+}
+
 bool MetadataStorageFromCacheObjectStorage::supportsHardLinks() const
 {
     return underlying->supportsHardLinks();
