@@ -461,6 +461,9 @@ protected:
                     if (it)
                         aggregator.add(it->getMapped(), bucketEnd(next_bucket));
                 }
+                /// Buckets wider than the aggregator's window bring samples that are already out of it.
+                if (derived().getAggregatorWindow() != window)
+                    removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
         }
@@ -480,6 +483,9 @@ protected:
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; pos < ordered_buckets.size() && ordered_buckets[pos].first < window_end; ++pos)
                     aggregator.add(*ordered_buckets[pos].second, bucketEnd(ordered_buckets[pos].first));
+                /// Buckets wider than the aggregator's window bring samples that are already out of it.
+                if (derived().getAggregatorWindow() != window)
+                    removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
         }
