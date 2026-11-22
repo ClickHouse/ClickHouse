@@ -198,7 +198,7 @@ def test_read_in_order_more_files_than_streams(started_cluster_iceberg_with_spar
 
     expected = list(range(1, 13))
 
-    # threshold=2 with 4 streams groups the 6 files into 3 merged groups; threshold=100 keeps one
+    # threshold=2 with 4 streams groups the 6 files into 4 groups, one per stream; threshold=100 keeps one
     # port per file. Both must be order-preserving and lose no rows.
     # threshold=0 means "always preliminary-merge" and must not divide by zero: with 6 files it
     # only reaches the grouping once the cap (threshold * num_streams) admits them, i.e. at
@@ -231,8 +231,8 @@ def test_read_in_order_more_files_than_streams(started_cluster_iceberg_with_spar
         instance, q, "MergingSortedTransform",
         "max_threads=4, read_in_order_two_level_merge_threshold=100")
     assert n_flat == 1, n_flat
-    assert n_grouped == 4, n_grouped
-    # 6 files / threshold 3 -> 2 groups, so one fewer preliminary merge than threshold 2.
+    assert n_grouped == 3, n_grouped
+    # The groups follow the 4 streams, not the threshold, so threshold 3 builds the same groups.
     assert count_in_pipeline(
         instance, q, "MergingSortedTransform",
         "max_threads=4, read_in_order_two_level_merge_threshold=3") == 3
