@@ -12,8 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLIENT="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=1 --iceberg_metadata_staleness_ms=600000"
 TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
-rm -rf "${TABLE_PATH}"
-trap 'rm -rf "${TABLE_PATH}"' EXIT
+GZ_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_gz/"
+rm -rf "${TABLE_PATH}" "${GZ_PATH}"
+trap 'rm -rf "${TABLE_PATH}" "${GZ_PATH}"' EXIT
 
 # Written by another process, so the server has cached nothing of it: v1 is empty, v2 holds 1 and is the newest
 # by `last-updated-ms`, v3 holds 1 and 2, and the version hint names v1.
@@ -47,6 +48,16 @@ ${CLIENT} -q "INSERT INTO t VALUES (4)"
 read_sum by-version-after-insert ""
 read_sum hint-after-insert "${HINT}"
 ${CLIENT} -q "DROP TABLE t"
+
+# Over gzip files v1 (empty) to v3, a hint `1` finds v1 only for a read with the codec; a read without it lists.
+${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 -m -q "
+    SET iceberg_metadata_compression_method = 'gzip';
+    CREATE TABLE t (c0 Int32) ENGINE = IcebergLocal('${GZ_PATH}');
+    INSERT INTO t VALUES (1);
+    INSERT INTO t VALUES (2);"
+echo -n '1' > "${GZ_PATH}metadata/version-hint.text"
+${CLIENT} -q "SELECT 'gz-hint-codec', sum(c0) FROM icebergLocal('${GZ_PATH}'${HINT}) SETTINGS iceberg_metadata_compression_method = 'gzip'"
+${CLIENT} --send_logs_level=error -q "SELECT 'gz-hint', sum(c0) FROM icebergLocal('${GZ_PATH}'${HINT})"
 
 # On S3, `iceberg_list_only_v_prefixed_metadata_files` keeps only the `v` files as candidates: v3 against a copy
 # of v2 named `00005-<uuid>.metadata.json`, which has the highest version.

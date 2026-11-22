@@ -78,7 +78,7 @@ using ManifestFileCacheKeys = std::vector<ManifestFileCacheKey>;
 struct IcebergMetadataFilesCacheCell : private boost::noncopyable
 {
     /// The cached entities can be:
-    /// - reference to the latest metadata version (metadata.json path) [storage + table path --> LatestMetadataVersionPtr]
+    /// - reference to the latest metadata version (metadata.json path) [storage + table path + selection --> LatestMetadataVersionPtr]
     /// - parsed metadata.json [file_path --> Poco::JSON::Object::Ptr]
     /// - manifest list consists of cache keys which will retrieve the manifest file from cache [file_path --> ManifestFileCacheKeys]
     /// - manifest file [file_path --> Iceberg::ManifestFileCacheableInfo]

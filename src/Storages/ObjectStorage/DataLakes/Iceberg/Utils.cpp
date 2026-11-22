@@ -291,6 +291,17 @@ MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
+static CompressionMethod getVersionHintCompressionMethod(CompressionMethod known_compression_method, const ContextPtr & local_context)
+{
+    auto compression_method = known_compression_method;
+    if (compression_method == CompressionMethod::None)
+    {
+        auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+        compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    }
+    return compression_method;
+}
+
 /// Resolve metadata filename from version hint content.
 /// Version hint may contain just a version number (e.g. "1") or a full filename (e.g. "v1.metadata.json").
 /// When only a version number is given, we try to find the actual file, which may have a compression suffix.
@@ -318,12 +329,7 @@ static std::optional<String> resolveMetadataFilenameFromVersionHint(
         return candidate;
 
     /// Try with known compression method.
-    auto compression_method = known_compression_method;
-    if (compression_method == CompressionMethod::None)
-    {
-        auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
-        compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
-    }
+    auto compression_method = getVersionHintCompressionMethod(known_compression_method, local_context);
     if (compression_method != CompressionMethod::None)
     {
         /// Try the Iceberg spec extension first (gzip -> "gz"), then the legacy
@@ -1823,8 +1829,12 @@ String getTableDirectoryKey(const IObjectStorage & object_storage, const String 
 }
 
 /// The part of the latest metadata cache key that says how the lookup chooses the file.
-static String
-getLatestMetadataSelection(bool follows_version_hint, bool by_last_updated_ms, bool v_prefixed_names_only, bool version_hint_scheme)
+static String getLatestMetadataSelection(
+    bool follows_version_hint,
+    bool by_last_updated_ms,
+    bool v_prefixed_names_only,
+    bool version_hint_scheme,
+    CompressionMethod version_hint_compression)
 {
     String selection = follows_version_hint ? "version-hint" : "listing";
     if (by_last_updated_ms)
@@ -1833,6 +1843,8 @@ getLatestMetadataSelection(bool follows_version_hint, bool by_last_updated_ms, b
         selection += ":v-prefixed";
     if (version_hint_scheme)
         selection += ":version-hint-scheme";
+    if (version_hint_compression != CompressionMethod::None)
+        selection += ":" + toContentEncodingName(version_hint_compression);
     return selection;
 }
 
@@ -2208,7 +2220,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             /* follows_version_hint = */ false,
             selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD,
             list_v_prefixed_names_only,
-            reads_version_hint_scheme),
+            reads_version_hint_scheme,
+            CompressionMethod::None),
         use_table_uuid_for_metadata_file_selection ? table_uuid : std::nullopt);
     return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
 }
@@ -2308,7 +2321,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                 /* follows_version_hint = */ true,
                 data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value,
                 /* v_prefixed_names_only = */ false,
-                /* version_hint_scheme = */ false));
+                /* version_hint_scheme = */ false,
+                getVersionHintCompressionMethod(known_compression_method, local_context)));
         return getOrLoadLatestMetadataFileAndVersion(metadata_cache, cache_key, local_context, force_fetch_latest_metadata, load_fn);
     }
 
