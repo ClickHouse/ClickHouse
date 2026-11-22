@@ -640,13 +640,13 @@ static CommandSelectorResult commandStatementIngest(const arrow::flight::protoco
     {
         if (!isValidIdentifier(command.schema()))
             return arrow::Status::Invalid("Invalid schema name: ", command.schema());
-        schema_string = backQuoteIfNeed(command.schema()) + ".";
+        schema_string = backQuote(command.schema()) + ".";
     }
 
     if (!isValidIdentifier(command.table()))
         return arrow::Status::Invalid("Invalid table name: ", command.table());
 
-    return SQLSet{"INSERT INTO " + schema_string + backQuoteIfNeed(command.table()) + " FORMAT Arrow", {}, {}};
+    return SQLSet{"INSERT INTO " + schema_string + backQuote(command.table()) + " FORMAT Arrow", {}, {}};
 }
 
 static std::optional<CommandSelectorResult> commandSelectorImpl(const google::protobuf::Any & any_msg, bool schema_only)

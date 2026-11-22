@@ -97,6 +97,23 @@ def test_doput():
     assert result == TSV([[1, 'Alice'], [2, 'Bob'], [3, 'Charlie']])
 
 
+@pytest.mark.parametrize("table_name", ["function", "copy.target`name"])
+def test_doput_quoted_target(table_name):
+    quoted_name = "`" + table_name.replace("`", "\\`") + "`"
+    client, options = get_client()
+    batch = pa.record_batch([pa.array([42], type=pa.int64())], names=["id"])
+    try:
+        node.query(f"CREATE TABLE {quoted_name} (id Int64) ENGINE = Memory")
+        descriptor = flight.FlightDescriptor.for_path(table_name)
+        writer, _ = client.do_put(descriptor, batch.schema, options)
+        writer.write_batch(batch)
+        writer.close()
+        assert node.query(f"SELECT id FROM {quoted_name}") == "42\n"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {quoted_name} SYNC")
+        client.close()
+
+
 def test_doput_nonexisting_table():
     client, options = get_client()
     schema = pa.schema(

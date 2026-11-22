@@ -101,7 +101,8 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 if (!rendered.empty())
                     rendered += '.';
-                rendered += backQuoteIfNeed(part);
+                /// The target is also used after `INSERT INTO`, where an unquoted `function` is a keyword.
+                rendered += backQuote(part);
             }
             copy_element->table_name = rendered;
         }

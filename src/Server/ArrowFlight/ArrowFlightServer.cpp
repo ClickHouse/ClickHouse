@@ -352,7 +352,7 @@ namespace
             return arrow::Status::Invalid("Flight descriptor's path should specify the name of a table");
         const String & table_name = path[0];
         if (for_put_operation)
-            return "INSERT INTO " + backQuoteIfNeed(table_name) + " FORMAT Arrow";
+            return "INSERT INTO " + backQuote(table_name) + " FORMAT Arrow";
         return "SELECT * FROM " + backQuoteIfNeed(table_name);
     }
 
