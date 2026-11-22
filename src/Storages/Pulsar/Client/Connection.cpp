@@ -191,7 +191,6 @@ void Connection::startNextAddress()
             throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot connect to the Pulsar broker {}: {}", broker_address.toString(), last_error);
 
         const auto & [name, port] = broker_address.hosts[host_index++];
-        /// Rejects by throwing.
         if (client.configuration.connection_validator)
             client.configuration.connection_validator(name, port);
         host = stripBrackets(name);
@@ -786,7 +785,6 @@ void Session::completeLookup(const RequestPtr & request_ptr, const PulsarProto::
         return;
     }
 
-    /// Redirect.
     if (++request.redirects > MAX_LOOKUP_REDIRECTS)
         throwUnexpected("too many lookup redirects");
     request.target = std::move(broker);
