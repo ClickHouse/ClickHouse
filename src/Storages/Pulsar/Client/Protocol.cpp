@@ -188,18 +188,18 @@ bool decompress(Int32 codec, std::string_view in, char * out, size_t size)
     }
 }
 
-UInt128 hashUuid(const String & uuid)
+UInt128 hashUuid(std::string_view uuid)
 {
     return sipHash128(uuid.data(), uuid.size());
 }
 
 /// A uuid is written by the producer and can be as big as a frame.
-String uuidForLog(const String & uuid)
+String uuidForLog(std::string_view uuid)
 {
     constexpr size_t max_size = 64;
     if (uuid.size() <= max_size)
-        return uuid;
-    return fmt::format("{}... ({} bytes)", std::string_view(uuid).substr(0, max_size), uuid.size());
+        return String(uuid);
+    return fmt::format("{}... ({} bytes)", uuid.substr(0, max_size), uuid.size());
 }
 
 }
@@ -446,17 +446,17 @@ ChunkAssembler::ChunkAssembler(Clock clock_)
 {
 }
 
-ChunkAssembler::Context * ChunkAssembler::find(const String & uuid)
+ChunkAssembler::Context * ChunkAssembler::find(std::string_view uuid)
 {
     for (auto & context : contexts)
-        if (context.uuid == uuid)
+        if (std::string_view(context.uuid) == uuid)
             return &context;
     return nullptr;
 }
 
-void ChunkAssembler::remove(const String & uuid)
+void ChunkAssembler::remove(std::string_view uuid)
 {
-    std::erase_if(contexts, [&](const Context & context) { return context.uuid == uuid; });
+    std::erase_if(contexts, [&](const Context & context) { return std::string_view(context.uuid) == uuid; });
 }
 
 void ChunkAssembler::rememberAbandoned(UInt128 uuid_hash, bool redeliver)
@@ -475,7 +475,7 @@ std::optional<bool> ChunkAssembler::abandonedDisposition(UInt128 uuid_hash) cons
     return std::nullopt;
 }
 
-void ChunkAssembler::discardMalformed(const String & uuid, ChunkId id, Result & result)
+void ChunkAssembler::discardMalformed(std::string_view uuid, ChunkId id, Result & result)
 {
     LOG_ERROR(getLogger("PulsarClient"), "Discarding a malformed chunked message (uuid: {}, chunk at {}:{})", uuidForLog(uuid), id.ledger_id, id.entry_id);
     if (Context * context = find(uuid))
@@ -538,7 +538,7 @@ void ChunkAssembler::add(
         const UInt128 uuid_hash = hashUuid(uuid);
         std::erase_if(abandoned, [&](const auto & entry) { return entry.first == uuid_hash; });
         Context & context = contexts.emplace_back();
-        context.uuid = uuid;
+        context.uuid.assign(uuid.data(), uuid.size());
         context.num_chunks = num_chunks;
         context.total_size = total;
         context.buffer.append(payload);

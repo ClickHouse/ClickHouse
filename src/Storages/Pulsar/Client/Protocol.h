@@ -183,7 +183,7 @@ public:
 private:
     struct Context
     {
-        String uuid;
+        StringWithMemoryTracking uuid;
         size_t num_chunks = 0;
         size_t total_size = 0;
         StringWithMemoryTracking buffer;
@@ -191,11 +191,11 @@ private:
         UInt64 last_received_ms = 0;
     };
 
-    Context * find(const String & uuid);
-    void remove(const String & uuid);
+    Context * find(std::string_view uuid);
+    void remove(std::string_view uuid);
     void rememberAbandoned(UInt128 uuid_hash, bool redeliver);
     std::optional<bool> abandonedDisposition(UInt128 uuid_hash) const;
-    void discardMalformed(const String & uuid, ChunkId id, Result & result);
+    void discardMalformed(std::string_view uuid, ChunkId id, Result & result);
 
     Clock clock;
     /// The oldest first.

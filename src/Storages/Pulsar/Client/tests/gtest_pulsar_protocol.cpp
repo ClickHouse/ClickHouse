@@ -842,6 +842,28 @@ TEST(PulsarChunks, LongUuid)
     EXPECT_TRUE(result.ack.empty());
 }
 
+TEST(PulsarChunks, LongUuidOfACompleteMessage)
+{
+    ChunkTest t;
+    const String uuid(1024 * 1024, 'u');
+    String other = uuid;
+    other.back() = 'v';
+    expectNothing(t.add(t.chunk(uuid, 0, 2, 4), 1, "ab"));
+    /// A uuid of the same length that differs in the last byte is another message.
+    expectNothing(t.add(t.chunk(other, 0, 2, 4), 2, "gh"));
+    EXPECT_EQ(t.assembler.pendingMessages(), 2);
+    auto result = t.add(t.chunk(uuid, 1, 2, 4), 3, "cd");
+    ASSERT_TRUE(result.message);
+    EXPECT_EQ(*result.message, "abcd");
+    EXPECT_EQ(result.message_chunks, ids({1, 3}));
+    EXPECT_EQ(t.assembler.pendingMessages(), 1);
+    result = t.add(t.chunk(other, 1, 2, 4), 4, "ij");
+    ASSERT_TRUE(result.message);
+    EXPECT_EQ(*result.message, "ghij");
+    EXPECT_EQ(result.message_chunks, ids({2, 4}));
+    EXPECT_EQ(t.assembler.pendingMessages(), 0);
+}
+
 TEST(PulsarChunks, Expiry)
 {
     ChunkTest t;
