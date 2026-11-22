@@ -656,6 +656,12 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     mpm.run(module, mam);
 }
 
+/// Not in the header: `llvm/IR/Constants.h` clashes with the `CR1` macro of `termios.h` on ppc64le.
+void setJITFunctionTag(llvm::Function & function, UInt32 tag)
+{
+    function.setPrefixData(llvm::ConstantInt::get(llvm::Type::getInt32Ty(function.getContext()), tag));
+}
+
 void initializeLLVMTargets()
 {
     static std::once_flag llvm_targets_initialized;
