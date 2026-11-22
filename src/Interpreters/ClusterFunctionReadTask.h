@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
@@ -21,6 +20,7 @@ struct ClusterFunctionReadTaskResponse
     /// Data path (object path, in case of object storage).
     String path;
     std::optional<size_t> read_source_index;
+    std::optional<size_t> archive_entry_index;
     FileBucketInfoPtr file_bucket_info;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
@@ -28,11 +28,11 @@ struct ClusterFunctionReadTaskResponse
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
 
     /// Convert received response into ObjectInfo.
-    ObjectInfoPtr getObjectInfo() const;
+    [[nodiscard]] ObjectInfoPtr getObjectInfo() const;
 
     /// Whether response is empty.
     /// It is used to identify an end of processing.
-    bool isEmpty() const { return path.empty(); }
+    [[nodiscard]] bool isEmpty() const { return path.empty(); }
 
     /// Serialize according to the protocol version.
     void serialize(WriteBuffer & out, size_t worker_protocol_version) const;

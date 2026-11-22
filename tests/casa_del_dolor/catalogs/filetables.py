@@ -25,7 +25,8 @@ from avro.datafile import DataFileReader, DataFileWriter
 from avro.errors import AvroException
 from avro.io import DatumReader, DatumWriter
 
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client
+from pyspark.sql.pandas.types import from_arrow_type, to_arrow_type
 from pyspark.sql.types import (
     ArrayType,
     BinaryType,
@@ -319,14 +320,15 @@ def _from_avro_value(value, dtype):
     return value
 
 
-def write_data_file(table: FileTable, arrow_table) -> None:
-    """Write the data file atomically, so a concurrent ClickHouse read never sees a
-    partial file. Format-level compression and batching options are randomized to also
-    exercise ClickHouse's compressed and multi-batch reading paths, and the whole file
-    is wrapped with the compression the `File` engine declares."""
+# The formats `serialize_data_file` writes, in lowercase
+DATA_FILE_FORMATS = ("arrow", "arrowstream", "parquet", "orc", "avro")
+
+
+def serialize_data_file(table: FileTable, arrow_table) -> bytes:
+    """The data file of `table` with the rows of `arrow_table`. Format-level compression and
+    batching options are randomized to also exercise ClickHouse's compressed and multi-batch
+    reading paths."""
     fmt = table.file_format.lower()
-    tmp_path = table.path + ".tmp"
-    os.makedirs(os.path.dirname(table.path), exist_ok=True)
     if fmt in ("arrow", "arrowstream"):
         options = pa.ipc.IpcWriteOptions(
             compression=random.choice([None, None, None, "lz4", "zstd"])
@@ -398,6 +400,15 @@ def write_data_file(table: FileTable, arrow_table) -> None:
             payload = sink.getvalue()
     else:
         raise ValueError(f"Unsupported file format {table.file_format}")
+    return payload
+
+
+def write_data_file(table: FileTable, arrow_table) -> None:
+    """Write the data file atomically, so a concurrent ClickHouse read never sees a
+    partial file, wrapped with the compression the `File` engine declares."""
+    tmp_path = table.path + ".tmp"
+    os.makedirs(os.path.dirname(table.path), exist_ok=True)
+    payload = serialize_data_file(table, arrow_table)
     with open(tmp_path, "wb") as out:
         out.write(_compress_bytes(payload, table.compression))
     os.replace(tmp_path, table.path)
@@ -438,11 +449,32 @@ _UNSIGNED_TO_SIGNED = {
     pa.uint64(): pa.decimal128(20, 0),
 }
 
+# Spark decimals hold at most 38 digits, the precision the type mapper already declares for a
+# ClickHouse `Decimal256` / wide `Decimal(P, S)` column, so narrowing the file's type matches
+# the view to it. A value needing more digits raises, and the caller regenerates the file.
+_SPARK_MAX_DECIMAL_PRECISION = 38
+
 
 def _spark_compatible_arrow_type(t):
     for unsigned, signed in _UNSIGNED_TO_SIGNED.items():
         if t.equals(unsigned):
             return signed
+    # `arrow.json` (written for JSON columns) stores its own text, so unwrapping it renders the
+    # same string on both sides. `arrow.uuid` stores the raw 16 bytes that ClickHouse prints as
+    # canonical text and no arrow cast bridges the two, so leave it wrapped: Spark rejects the
+    # column and the caller drops it from the comparison rather than comparing it as bytes.
+    if isinstance(t, pa.BaseExtensionType):
+        if pa.types.is_string(t.storage_type) or pa.types.is_large_string(t.storage_type):
+            return _spark_compatible_arrow_type(t.storage_type)
+        return t
+    if pa.types.is_decimal(t) and t.precision > _SPARK_MAX_DECIMAL_PRECISION:
+        return pa.decimal128(
+            _SPARK_MAX_DECIMAL_PRECISION, min(_SPARK_MAX_DECIMAL_PRECISION, t.scale)
+        )
+    # Spark's bridge has no time-of-day type, and the mapper declares `Time`/`Time64` as
+    # STRING; the arrow cast renders exactly the text ClickHouse prints for them
+    if pa.types.is_time(t):
+        return pa.string()
     if pa.types.is_large_list(t):
         return pa.large_list(_spark_compatible_field(t.value_field))
     if pa.types.is_list(t):
@@ -465,12 +497,50 @@ def _spark_compatible_field(f):
     return f.with_type(_spark_compatible_arrow_type(f.type))
 
 
+def _spark_can_ingest(t) -> bool:
+    """Whether Spark's Arrow bridge accepts the type. This is the same conversion
+    `createDataFrame` runs, so a type failing it takes the whole run down rather than the
+    single check; the exceptions it raises are pyspark's and pyarrow's, hence the broad catch.
+    """
+    try:
+        to_arrow_type(from_arrow_type(t))
+    except Exception:
+        return False
+    return True
+
+
 def _to_spark_compatible_arrow(arrow_table):
-    """Cast any unsigned integer types (nested included) to signed so Spark can ingest them."""
+    """Cast the types Spark's Arrow bridge rejects (unsigned integers, decimals wider than
+    38 digits, text-backed extension types, time-of-day), nested ones included. A column it
+    still cannot ingest - the union a ClickHouse-written `Variant` becomes, or an `arrow.uuid`
+    whose bytes have no textual cast - is replaced with NULLs and its name returned, so the
+    row count and every other column stay comparable."""
+    unsupported = [
+        f.name
+        for f in arrow_table.schema
+        if not _spark_can_ingest(_spark_compatible_arrow_type(f.type))
+    ]
+    for name in unsupported:
+        arrow_table = arrow_table.set_column(
+            arrow_table.schema.get_field_index(name),
+            pa.field(name, pa.string()),
+            pa.nulls(arrow_table.num_rows, pa.string()),
+        )
     new_schema = pa.schema([_spark_compatible_field(f) for f in arrow_table.schema])
-    if new_schema.equals(arrow_table.schema):
-        return arrow_table
-    return arrow_table.cast(new_schema)
+    if not new_schema.equals(arrow_table.schema):
+        arrow_table = arrow_table.cast(new_schema)
+    return arrow_table, unsupported
+
+
+def _to_spark_column(mapper: ClickHouseTypeMapper, val: dict, is_avro: bool):
+    """The Spark column of the ClickHouse column `val` from BuzzHouse, None when Avro cannot hold it."""
+    mapper.increment()
+    _, nullable, spark_type = mapper.clickhouse_to_spark(
+        val["type"], False, ClickHouseMapping.Spark
+    )
+    if is_avro and not avro_compatible(spark_type, val["name"]):
+        return None
+    return SparkColumn(val["name"], spark_type, nullable, False, val["type"])
 
 
 class FileHandler:
@@ -489,6 +559,26 @@ class FileHandler:
             next_session, table, random.randint(0, 100)
         )
         return df.toArrow()
+
+    def random_data_file(self, columns: list, file_format: str) -> bytes:
+        """A data file in `file_format` with random rows of the ClickHouse `columns`, e.g. the
+        payload of one message of a streaming table."""
+        mapper = ClickHouseTypeMapper()
+        mapper.reset()
+        is_avro = file_format.lower() == "avro"
+        spark_columns = {}
+        for val in columns:
+            column = _to_spark_column(mapper, val, is_avro)
+            if column is not None:
+                spark_columns[val["name"]] = column
+        if not spark_columns:
+            return b""
+        table = FileTable(
+            "", "", spark_columns, set(spark_columns), False, file_format, "", "none"
+        )
+        # No Spark session: one per message would be slow, and no check reads these files back
+        arrow_table = self.spark.data_generator.random_arrow_table(table, random.randint(0, 100))
+        return serialize_data_file(table, arrow_table)
 
     def create_table(self, cluster, data) -> bool:
         mapper = ClickHouseTypeMapper()
@@ -516,11 +606,8 @@ class FileHandler:
                 )
         first = True
         for val in file_columns:
-            mapper.increment()
-            _, nullable, spark_type = mapper.clickhouse_to_spark(
-                val["type"], False, ClickHouseMapping.Spark
-            )
-            if is_avro and not avro_compatible(spark_type, val["name"]):
+            column = _to_spark_column(mapper, val, is_avro)
+            if column is None:
                 continue
             # Sometimes skip columns: ClickHouse fills them with defaults on read. Not
             # for Avro, where `input_format_avro_allow_missing_fields` is 0 by default,
@@ -532,9 +619,7 @@ class FileHandler:
                 and random.randint(1, 11) == 1
             ):
                 continue
-            columns[val["name"]] = SparkColumn(
-                val["name"], spark_type, nullable, False, val["type"]
-            )
+            columns[val["name"]] = column
             first = False
         if not columns:
             raise ValueError(
@@ -639,12 +724,24 @@ class FileHandler:
                 for rec in data_read
             ]
             df = next_session.createDataFrame(rows, schema=struct)
+            unsupported = []
         else:
-            df = next_session.createDataFrame(_to_spark_compatible_arrow(data_read))
+            arrow_table, unsupported = _to_spark_compatible_arrow(data_read)
+            df = next_session.createDataFrame(arrow_table)
         df.createOrReplaceTempView(table.get_table_full_path())
         # Compare only the columns both sides share, under the same reader settings as the probe
+        for_check = table.for_check()
+        if unsupported:
+            # NULLed out above, so they carry no value to compare
+            self.logger.info(
+                f"Excluding column(s) {','.join(unsupported)} from the comparison for"
+                f" {table.get_clickhouse_path()}: Spark cannot read their type from the data file"
+            )
+            for_check.columns = {
+                k: v for k, v in for_check.columns.items() if k not in unsupported
+            }
         return self.spark.table_check.check_table(
-            cluster, next_session, table.for_check(), extra_ch_settings=decode_settings
+            cluster, next_session, for_check, extra_ch_settings=decode_settings
         )
 
     def update_or_check_table(self, cluster, next_session, data) -> bool:

@@ -18,7 +18,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
@@ -165,7 +164,7 @@ public:
     {
     }
 
-    std::string getName() const override { return "ReadFromSystemDatabaseReplicas"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemDatabaseReplicas"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
@@ -314,7 +313,10 @@ void StorageSystemDatabaseReplicas::readImpl(
     bool with_zk_fields = false;
     for (const auto & column_name : column_names)
     {
-        if (column_name == "max_log_ptr" || column_name == "log_ptr" || column_name == "total_replicas")
+        if (   column_name == "max_log_ptr"
+            || column_name == "log_ptr"
+            || column_name == "total_replicas"
+            || column_name == "zookeeper_exception")
         {
             with_zk_fields = true;
             break;

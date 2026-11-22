@@ -452,7 +452,7 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
 
 <Steps>
   <Step title="Insérer les données" id="insert-the-data">
-    Exécutez la requête suivante pour lire ces mêmes données au format Parquet, en utilisant à nouveau la fonction url pour accéder aux données distantes :
+    Exécutez la query suivante pour lire à nouveau les mêmes données au format Parquet à l’aide de la fonction `url` afin de lire les données distantes :
 
     ```sql
     DROP TABLE IF EXISTS hackernews;
@@ -462,26 +462,31 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     ORDER BY id
     SETTINGS allow_nullable_key = 1 EMPTY AS
     SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 
     INSERT INTO hackernews SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
     ```
 
     <Info>
-      **Clés `NULL` avec Parquet**
+      **Clés nulles avec Parquet**
 
-      En raison du format Parquet, nous devons accepter que les clés puissent être `NULL`,
-      même si ce n’est pas le cas dans les données.
+      Le schéma inféré rend les colonnes `Nullable` ; `allow_nullable_key` est donc obligatoire, même si ce jeu de données ne contient
+      aucun ID nul.
     </Info>
 
     Exécutez la commande suivante pour afficher le schéma inféré :
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews;
+    ```
 
     ```response title="Response"
     ┌─name────────┬─type───────────────────┬
     │ id          │ Nullable(Int64)        │
     │ deleted     │ Nullable(UInt8)        │
     │ type        │ Nullable(String)       │
+    │ by          │ Nullable(String)       │
     │ time        │ Nullable(Int64)        │
     │ text        │ Nullable(String)       │
     │ dead        │ Nullable(UInt8)        │
@@ -496,10 +501,12 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     └─────────────┴────────────────────────┴
     ```
 
-    Comme précédemment avec le fichier CSV, vous pouvez spécifier manuellement le schéma afin de mieux contrôler les types choisis et insérer les
-    données directement depuis S3 :
+    Les étapes suivantes utilisent des noms de colonnes plus explicites, tels que `author` et `comment`. Continuez donc avec un schéma spécifié manuellement.
+    Supprimez d’abord la table inférée, puis créez-la et insérez les données directement depuis le bucket S3 public :
 
     ```sql
+    DROP TABLE IF EXISTS hackernews;
+
     CREATE TABLE hackernews
     (
         `id` UInt64,
@@ -524,6 +531,7 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     INSERT INTO hackernews
     SELECT * FROM s3(
             'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            NOSIGN,
             'Parquet',
             'id UInt64,
              deleted UInt8,
@@ -543,103 +551,121 @@ L’inférence de type sur un fichier Parquet conduira invariablement à un sch�
     ```
   </Step>
 
-  <Step title="Ajouter un index de saut pour accélérer les requêtes" id="add-skipping-index">
+  <Step title="Ajoutez un index textuel pour accélérer les recherches" id="add-skipping-index">
     Pour savoir combien de commentaires mentionnent &quot;ClickHouse&quot;, exécutez la requête suivante :
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'ClickHouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
-    ┌─count()─┐
-    │     516 │
-    └─────────┘
-    ```
-
-    Ensuite, vous allez créer un [index](/fr/reference/engines/table-engines/mergetree-family/textindexes) inversé sur la colonne &quot;comment&quot;
-    afin d&#39;accélérer cette requête.
-    Notez que les commentaires seront indexés en minuscules afin de retrouver des termes indépendamment de la casse.
-
-    Exécutez les commandes suivantes pour créer l&#39;index :
-
-    ```sql
-    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
-    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
-    ```
-
-    La matérialisation de l’index prend un certain temps (pour vérifier si l’index a bien été créé, utilisez la table système `system.data_skipping_indices`).
-
-    Exécutez de nouveau la requête une fois l’index créé :
-
-    ```sql title="Query"
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse');
-    ```
-
-    Observez que la requête n’a désormais pris que 0,248 seconde avec l’index, contre 0,843 seconde auparavant sans celui-ci :
-
-    ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
     ┌─count()─┐
     │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
     ```
 
-    La clause [`EXPLAIN`](/fr/reference/statements/explain) peut être utilisée pour comprendre pourquoi l&#39;ajout de cet index
-    a rendu la requête environ 3,4 fois plus rapide.
+    Ensuite, créez un [index de texte](/fr/reference/engines/table-engines/mergetree-family/textindexes) sur la colonne `comment`
+    afin d’accélérer cette requête. Un index de texte utilise un index inversé qui associe les jetons aux lignes qui les contiennent.
+    Le tokeniseur `splitByNonAlpha` découpe le texte selon les caractères non alphanumériques. L’index et les requêtes utilisent `lower(comment)`
+    avec des termes de recherche en minuscules afin que la correspondance soit insensible à la casse. L’expression de la requête doit correspondre à l’expression indexée.
 
-    ```response text="Query"
-    EXPLAIN indexes = 1
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse')
+    Exécutez les commandes suivantes pour créer l’index :
+
+    ```sql
+    ALTER TABLE hackernews
+        ADD INDEX comment_idx lower(comment)
+        TYPE text(tokenizer = splitByNonAlpha);
+
+    ALTER TABLE hackernews
+        MATERIALIZE INDEX comment_idx
+        SETTINGS mutations_sync = 2;
     ```
 
-    ```response title="Response"
-    ┌─explain─────────────────────────────────────────┐
-    │ Expression ((Projection + Before ORDER BY))     │
-    │   Aggregating                                   │
-    │     Expression (Before GROUP BY)                │
-    │       Filter (WHERE)                            │
-    │         ReadFromMergeTree (default.hackernews)  │
-    │         Indexes:                                │
-    │           PrimaryKey                            │
-    │             Condition: true                     │
-    │             Parts: 4/4                          │
-    │             Granules: 3528/3528                 │
-    │           Skip                                  │
-    │             Name: comment_idx                   │
-    │             Description: inverted GRANULARITY 1 │
-    │             Parts: 4/4                          │
-    │             Granules: 554/3528                  │
-    └─────────────────────────────────────────────────┘
-    ```
+    La matérialisation construit l’index pour les données existantes. Le paramètre `mutations_sync` attend la fin de la matérialisation.
+    Vous pouvez consulter la définition de l’index dans la table `system.data_skipping_indices`.
 
-    Remarquez comment l’index a permis d’ignorer un grand nombre de granules
-    pour accélérer la requête.
-
-    Il est désormais également possible de rechercher efficacement un ou plusieurs termes :
+    Exécutez à nouveau la même requête une fois l’index matérialisé :
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+
+    1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
+    ```
+
+    Le résultat reste le même, car l’index modifie la façon dont ClickHouse trouve les lignes correspondantes, et non les lignes qui correspondent. La
+    requête indexée traite nettement moins de données et s’exécute beaucoup plus rapidement.
+    Utilisez [`EXPLAIN`](/fr/reference/statements/explain) pour confirmer que ClickHouse prévoit d’utiliser l’index :
+
+    ```sql title="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response"
+    Output: count()
+
+    Aggregating
+    │  Keys:
+    │  Aggregates: count()
+    │  Skip merging: 0
+    └──Filter
+       │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+       └──ReadFromMergeTree (default.hackernews)
+             Read type: Default
+             Parts: 4 | Granules: 547
+             Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+             Indexes:
+               PrimaryKey
+                 Condition: true
+                 Parts: 4/4
+                 Granules: 3527/3527
+               Skip
+                 Name: comment_idx
+                 Description: text GRANULARITY 100000000
+                 Condition: (mode: Any; tokens: ["clickhouse"])
+                 Parts: 4/4
+                 Granules: 547/3527
+               Ranges: 437
+    ```
+
+    L’entrée `comment_idx` indique que ClickHouse prévoit d’utiliser l’index de texte. Dans cet exemple, le plan sélectionne 547 granules sur 3 527,
+    réduisant considérablement la quantité de données examinées.
+
+    Vous pouvez également rechercher n’importe lequel ou l’ensemble de plusieurs tokens. Ces fonctions correspondent à des tokens complets produits par le tokenizer de l’index.
+    Utilisez `hasAnyTokens` lorsqu’au moins un token doit correspondre :
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'oltp olap');
     ```
 
     ```response title="Response"
     ┌─count()─┐
-    │    2177 │
+    │    2020 │
     └─────────┘
     ```
+
+    Utilisez `hasAllTokens` lorsque tous les tokens doivent correspondre, quel que soit leur ordre :
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    WHERE hasAllTokens(lower(comment), 'avx sve');
     ```
 
     ```response title="Response"

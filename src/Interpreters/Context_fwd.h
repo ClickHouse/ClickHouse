@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 
@@ -14,7 +15,12 @@ class Block;
 /// Scalar results of subqueries
 using Scalars = std::map<String, Block>;
 
+using QueryExecutionStartedCallback = std::function<void()>;
+
 class Context;
+
+class QueryPlanLogCapture;
+using QueryPlanLogCapturePtr = std::shared_ptr<QueryPlanLogCapture>;
 
 /// Most used types have shorter names
 using ContextPtr = std::shared_ptr<const Context>;
@@ -32,7 +38,7 @@ struct WithContextImpl
     WithContextImpl() = default;
     explicit WithContextImpl(Weak context_) : context(context_) {}
 
-    Shared getContext() const;
+    [[nodiscard]] Shared getContext() const;
 
 protected:
     Weak context;

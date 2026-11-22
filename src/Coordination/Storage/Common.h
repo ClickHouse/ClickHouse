@@ -16,6 +16,11 @@
 #include <string_view>
 #include <utility>
 
+namespace DB
+{
+    class Arena;
+}
+
 namespace Coordination::Storage
 {
 
@@ -92,6 +97,8 @@ inline int64_t nodeCountDelta(NodeAction action)
 /// Map NodePathHash -> V.
 /// Takes advantage of the key already being a hash, so it doesn't need to be hashed again
 /// (and no hash is stored in the slot, so a slot is just sizeof(NodePathHash) + sizeof(V)).
+/// Be careful: HashMap doesn't call destructor on keys or values, so either keep them POD or do
+/// cleanup manually when removing from the map.
 template <typename V>
 using NodeHashMap = HashMap<NodePathHash, V, UInt128TrivialHash>;
 
@@ -119,25 +126,27 @@ struct NodePath
     {
     }
 
-    std::string_view str() const { return std::string_view(ptr, len); }
+    [[nodiscard]] std::string_view str() const { return std::string_view(ptr, len); }
 
-    NodePathHash calculateHash() const;
-    NodePathWithHash withCalculatedHash() const;
+    [[nodiscard]] NodePathHash calculateHash() const;
+    [[nodiscard]] NodePathWithHash withCalculatedHash() const;
 
     /// Path of the parent znode: "/" for "/foo", "/a" for "/a/b".
     /// Must not be called on the root path (depth == 0).
-    NodePath parentPath() const;
+    [[nodiscard]] NodePath parentPath() const;
 
     /// Path to child znode: "/foo/bar" + "baz" = "/foo/bar/baz".
-    /// Puts the path string into `path_buf`, returns a reference into it.
+    [[nodiscard]] size_t childPathLen(size_t child_name_len) const;
+    [[nodiscard]] NodePath makeChildPath(std::string_view child_name, std::span<char> out) const;
     NodePath childPath(std::string_view child_name, std::string & path_buf) const;
+    NodePath childPath(std::string_view child_name, DB::Arena & arena) const;
 
     /// The last component of the path: "b" for "/a/b". Must not be called on the root path.
-    std::string_view baseName() const;
+    [[nodiscard]] std::string_view baseName() const;
 
     /// Order in which znodes are sorted in files: by (depth, path string).
     /// All children of a node are consecutive in this order.
-    int compare(const NodePath & rhs) const
+    [[nodiscard]] int compare(const NodePath & rhs) const
     {
         if (depth != rhs.depth)
             return depth < rhs.depth ? -1 : 1;
@@ -185,7 +194,7 @@ struct NodeRef
     void readPath(NodePath & out_path, std::string & out_path_buf, uint32_t & out_serialized_size, NodeAction & out_action) const;
 
     /// Only serialized size (how much to advance `offset` to get to the next node in the block).
-    uint32_t readSerializedSize() const;
+    [[nodiscard]] uint32_t readSerializedSize() const;
 };
 
 }

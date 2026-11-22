@@ -2,7 +2,7 @@
 slug: /integrations/integration-development/documenting-your-integration
 sidebarTitle: '为你的集成编写文档'
 title: '为你的 ClickHouse 集成编写文档'
-description: '如何为 clickhouse-docs 贡献集成页面，包括必需的章节和可直接复制粘贴的模板骨架。'
+description: '如何为此仓库贡献集成页面，包括必需的章节和可直接复制粘贴的模板骨架。'
 keywords: ['合作伙伴', '集成', '文档', '贡献', '拉取请求', '集成文档']
 doc_type: 'guide'
 ---
@@ -15,10 +15,10 @@ doc_type: 'guide'
   ## 文档位置
 </div>
 
-* **仓库：** [`ClickHouse/clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs)
-* **格式：** Markdown，使用 Docusaurus 构建
-* **位置：** `/docs/integrations/<category>/<your-integration>/`，其中 `<category>` 体现你的产品类别 (`data-visualization`、`data-ingestion`、`language-clients` 等)
-* **流程：** 向 `main` 分支提交拉取请求。ClickHouse 集成团队会进行审核。首次贡献者需要在机器人于 PR 中提示时签署贡献者许可协议 (Contributor License Agreement)
+* **仓库：** [`ClickHouse/ClickHouse`](https://github.com/ClickHouse/ClickHouse) (此树中的 `docs/`)
+* **格式：** MDX，使用 [Mintlify](https://www.mintlify.com/) 构建
+* **位置：** `docs/integrations/<category>/<your-integration>/`，其中 `<category>` 体现你的产品类别 (`data-visualization`、`data-ingestion`、`language-clients` 等)
+* **流程：** 向 `master` 分支提交拉取请求。ClickHouse 集成团队会进行审核。首次贡献者需要在机器人于 PR 中提示时签署贡献者许可协议 (Contributor License Agreement)。有关本地预览 (在 `docs/` 中运行 `mint dev`) ，请参阅[文档贡献指南](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme)
 
 此仓库中的集成页面是终端用户的主要参考资料。你可以在集成页面中添加指向你网站上补充文档的链接，以提供产品特有的详细信息。
 
@@ -49,7 +49,7 @@ doc_type: 'guide'
 </div>
 
 * **同时说明 Cloud 和 自托管。** Cloud 通常使用端口 `8443` 上的 HTTPS 和端口 `9440` 上的原生 TCP。自托管 默认使用 `8123` 和 `9000`
-* **使用 Docusaurus admonitions** (`:::note`、`:::warning`、`:::tip`) 来呈现提示信息，不要使用加粗段落
+* **使用 Mintlify 提示组件** (`<Note>`、`<Warning>`、`<Tip>`) 来呈现提示信息，不要使用加粗段落
 * **通过链接提供更深入的内容。** 对于 data types、formats、JDBC、ClickPipes 及类似主题，请链接到现有文档，而不是重复解释
 * **不要加入营销内容。** 此处的 集成 页面属于技术参考文档。宣传内容应放在你们自己的网站上；我们可以从合作伙伴目录链接过去
 
@@ -57,55 +57,62 @@ doc_type: 'guide'
   ## 复制粘贴模板
 </div>
 
-填写方括号中的内容，保存为 `/docs/integrations/<category>/<your-integration>/index.md`，然后提交一个 PR。
+填写方括号中的内容，保存为 `docs/integrations/<category>/<your-integration>/index.mdx`，然后提交一个 PR。
 
-```markdown
-# [您的产品] 与 ClickHouse
+```mdx
+---
+title: '[Your product] and ClickHouse'
+sidebarTitle: '[Your product]'
+slug: /integrations/[your-product]
+description: '[One sentence: what the integration does.]'
+doc_type: 'guide'
+keywords: ['[your product]', 'integration']
+---
 
 [One to three sentences: what the integration does and why a
 ClickHouse user would want it.]
 
-## 前置条件
+## Prerequisites
 
 - [Your product, version X.Y or later]
 - ClickHouse Cloud, or self-hosted ClickHouse version [X.Y] or later
 - [Anything else: driver, plugin, network access requirements]
 
-### 版本矩阵
+### Version matrix
 
 | [Your product] | ClickHouse Cloud | ClickHouse open source | Notes    |
 | -------------- | ---------------- | ---------------------- | -------- |
 | X.Y            | ✅               | ✅ 24.x+               | [if any] |
 
-## 设置
+## Setup
 
-### 连接到 ClickHouse Cloud
+### Connect to ClickHouse Cloud
 
 1. In the ClickHouse Cloud console, select your service and click **Connect**.
 2. Choose **HTTPS**. Copy the host, port (8443), username, and password.
 3. In [your product], [steps to configure the connection].
 
-### 连接到自托管 ClickHouse
+### Connect to self-hosted ClickHouse
 
 1. [How to point at a self-hosted instance — host, port 8123 or 9000, TLS notes.]
 2. In [your product], [steps to configure the connection].
 
-## 身份验证
+## Authentication
 
 [List supported auth modes — username/password over TLS, mTLS, etc. — and how
 to configure each.]
 
-## 示例：查询 [dataset] 数据集
+## Example: querying the [dataset] dataset
 
 [Walkthrough using one of the ClickHouse example datasets, end-to-end.]
 
-## 已知限制
+## Known limits
 
 - [Types not yet supported, e.g., deeply nested JSON]
 - [Result-set size thresholds or other performance notes]
 - [Feature gaps]
 
-## 故障排查
+## Troubleshooting
 
 ### [Common error message]
 

@@ -1,0 +1,44 @@
+-- The sum of a set of intervals is an interval of the same unit
+600	IntervalMillisecond
+-- Every interval kind
+10	IntervalNanosecond
+10	IntervalMicrosecond
+10	IntervalMillisecond
+10	IntervalSecond
+10	IntervalMinute
+10	IntervalHour
+10	IntervalDay
+10	IntervalWeek
+10	IntervalMonth
+10	IntervalQuarter
+10	IntervalYear
+-- The sum is exact above the range where Float64 holds every integer
+9007199254740995
+-- Negative intervals
+-10	IntervalSecond
+-- An empty input gives a zero-length interval
+0	IntervalDay
+-- A single row
+7
+-- Nullable
+60	Nullable(IntervalSecond)
+\N	Nullable(IntervalSecond)
+-- Combinators
+20	IntervalSecond
+21	IntervalMinute
+21	IntervalMinute
+3	IntervalSecond
+[20,25]	Array(IntervalDay)
+7	IntervalHour
+-- GROUP BY
+0	18
+1	12
+2	15
+-- The sum of intervals can be added to a date
+2026-01-01 00:00:55
+-- sumWithOverflow and sumKahan keep the interval type as well
+10	IntervalSecond
+10	IntervalSecond
+-- Values of different units are brought to their common unit before the aggregation
+61	IntervalSecond
+-- A month is not a fixed number of days, so months and days have no common unit

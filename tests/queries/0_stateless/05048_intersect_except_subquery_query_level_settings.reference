@@ -1,0 +1,7 @@
+setting reset covers every operand of EXCEPT
+1
+setting change covers every operand of INTERSECT
+1
+without the query-level SETTINGS the invalid session value still applies
+query parameter binding covers every operand
+1

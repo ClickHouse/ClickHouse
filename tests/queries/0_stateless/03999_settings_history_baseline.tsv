@@ -217,7 +217,6 @@ propagate_types_serialization_versions_to_nested_types	MergeTree	1
 ratio_of_defaults_for_sparse_serialization	MergeTree	0.9375
 reduce_blocking_parts_sleep_ms	MergeTree	5000
 refresh_parts_interval	MergeTree	0
-refresh_statistics_interval	MergeTree	300
 remote_fs_execute_merges_on_single_replica_time_threshold	MergeTree	10800
 remote_fs_zero_copy_path_compatible_mode	MergeTree	0
 remote_fs_zero_copy_zookeeper_path	MergeTree	/clickhouse/zero_copy
@@ -1493,7 +1492,6 @@ enable_streaming_queries	Session	0
 allow_statistics_optimize	Session	1
 use_statistics	Session	1
 allow_statistics	Session	1
-use_statistics_cache	Session	1
 enable_full_text_index	Session	1
 query_plan_direct_read_from_text_index	Session	1
 query_plan_text_index_add_hint	Session	1

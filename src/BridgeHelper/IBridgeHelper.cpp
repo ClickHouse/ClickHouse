@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -96,16 +95,6 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
     {
         cmd_args.push_back("--log-level");
         cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
-    }
-
-    if (auto libraries_sandbox_path = getLibrariesSandboxPath())
-    {
-        if (libraries_sandbox_path->contains(':'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The libraries path of {} cannot contain the colon (:) symbol: {}", serviceAlias(), *libraries_sandbox_path);
-
-        cmd_args.push_back("--libraries-path");
-        cmd_args.push_back(*libraries_sandbox_path);
     }
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());

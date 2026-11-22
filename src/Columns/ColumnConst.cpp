@@ -1,3 +1,5 @@
+#include <utility>
+
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnConst.h>
@@ -24,22 +26,41 @@ extern const int NOT_IMPLEMENTED;
 extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
+void ColumnConst::setValue(const ColumnPtr & value)
+{
+    ColumnPtr new_data = value;
+    /// Squash Const of Const.
+    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(new_data.get()))
+        new_data = const_data->getDataColumnPtr();
+
+    if (new_data->size() != 1)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                        "Incorrect size of nested column in ColumnConst::setValue: {}, must be 1.", new_data->size());
+
+    data = new_data;
+}
+
 ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
     : data(data_), s(s_)
 {
     /// Squash Const of Const.
-    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(data.get()))
+    /// Use const access: the data column is shared with the caller (use_count > 1),
+    /// so the non-const `WrappedPtr::get` would trip the `use_count == 1` assertion.
+    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(std::as_const(data).get()))
         data = const_data->getDataColumnPtr();
 
-    if (data->size() != 1)
+    /// `data` stays shared with the caller after the loop, so dereferences must
+    /// also use the const path to avoid the same assertion.
+    const auto & const_data = std::as_const(data);
+    if (const_data->size() != 1)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", data->size());
+                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", const_data->size());
 
     /// Check that the value is initialized. We do it earlier, before it will be used, to ease debugging.
 #if defined(MEMORY_SANITIZER)
-    if (data->isFixedAndContiguous())
+    if (const_data->isFixedAndContiguous())
     {
-        auto value = data->getDataAt(0);
+        auto value = const_data->getDataAt(0);
         __msan_check_mem_is_initialized(value.data(), value.size());
     }
 #endif
@@ -160,6 +181,11 @@ void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, Permuta
 void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
                                 size_t, int, Permutation &, EqualRanges &) const
 {
+}
+
+size_t ColumnConst::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    return begin < end ? end : begin;
 }
 
 void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const

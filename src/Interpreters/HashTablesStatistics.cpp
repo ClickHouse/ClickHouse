@@ -98,6 +98,18 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.hits += hash_join_stats->hits;
         res.misses += hash_join_stats->misses;
     }
+    if (auto hash_join_match_stats = getHashTablesStatistics<HashJoinMatchEntry>().getCacheStats())
+    {
+        res.entries += hash_join_match_stats->entries;
+        res.hits += hash_join_match_stats->hits;
+        res.misses += hash_join_match_stats->misses;
+    }
+    if (auto radix_uniq_exact_stats = getHashTablesStatistics<RadixUniqExactEntry>().getCacheStats())
+    {
+        res.entries += radix_uniq_exact_stats->entries;
+        res.hits += radix_uniq_exact_stats->hits;
+        res.misses += radix_uniq_exact_stats->misses;
+    }
     return res;
 }
 
@@ -125,7 +137,10 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
             /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
             else if ((tables_cnt > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
             {
-                return AggregationEntry{hint->sum_of_sizes, std::max(lower_limit, hint->median_size)};
+                return AggregationEntry{
+                    .sum_of_sizes = hint->sum_of_sizes,
+                    .median_size = std::max(lower_limit, hint->median_size),
+                    .sum_of_sizes_with_empty_string = hint->sum_of_sizes_with_empty_string};
             }
         }
     }
@@ -153,6 +168,15 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
     return std::nullopt;
 }
 
+std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params)
+{
+    if (stats_collecting_params.isCollectionAndUseEnabled())
+        return DB::getHashTablesStatistics<HashJoinMatchEntry>().getSizeHint(stats_collecting_params);
+    return std::nullopt;
+}
+
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
+template class HashTablesStatistics<HashJoinMatchEntry>;
+template class HashTablesStatistics<RadixUniqExactEntry>;
 }

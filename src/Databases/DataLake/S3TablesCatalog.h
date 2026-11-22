@@ -32,11 +32,14 @@ public:
         const String & region_,
         const DataLake::CatalogSettings & catalog_settings_,
         DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_);
+        bool allow_server_credentials_in_user_queries_,
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::S3_TABLES; }
 
     CatalogTables getTables() const override;
+
+    bool managesTableLocation() const override { return true; }
 
     bool tryGetTableMetadata(
         const std::string & namespace_name,
@@ -57,7 +60,7 @@ protected:
         const DB::HTTPHeaderEntries & headers,
         const std::optional<DB::HTTPHeaderEntries> & auth_headers) const override;
 
-    void sendRequest(
+    String sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,

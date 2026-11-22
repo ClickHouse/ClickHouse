@@ -129,15 +129,63 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
 
 def collect_generated_setting_anchors(page_path):
     """Expose client-side setting redirects as fragment aliases to lychee."""
-    manifest = os.path.splitext(page_path)[0] + "/manifest.json"
-    if not os.path.isfile(manifest):
-        return set()
-    try:
-        with open(manifest, encoding="utf-8") as f:
-            anchor_routes = json.load(f).get("anchorRoutes", {})
-    except (OSError, ValueError, TypeError):
-        return set()
-    return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
+    page_path = os.fspath(page_path)
+    normalized_path = page_path.replace(os.sep, "/")
+    settings_routes = {
+        "/reference/settings/session-settings.mdx": (
+            "session-settings",
+            "/reference/settings/session-settings",
+        ),
+        "/reference/settings/formats.mdx": (
+            "format-settings",
+            "/reference/settings/formats",
+        ),
+        "/reference/settings/server-settings/settings.mdx": (
+            "server-settings",
+            "/reference/settings/server-settings/settings",
+        ),
+        "/reference/settings/merge-tree-settings.mdx": (
+            "mergetree-settings",
+            "/reference/settings/merge-tree-settings",
+        ),
+    }
+    matched = next(
+        (
+            (suffix, route_info)
+            for suffix, route_info in settings_routes.items()
+            if normalized_path.endswith(suffix)
+        ),
+        None,
+    )
+    if matched:
+        suffix, route_info = matched
+        family_name, base_route = route_info
+        docs_root = normalized_path[:-len(suffix)].replace("/", os.sep)
+        routes_path = os.path.join(
+            docs_root,
+            "_site/customizations/settings-legacy-routes",
+            family_name + ".js",
+        )
+        assignment = (
+            'window.clickhouseSettingsLegacyRoutes['
+            + json.dumps(base_route)
+            + '] = '
+        )
+        try:
+            with open(routes_path, encoding="utf-8") as f:
+                route_line = next(
+                    (line for line in f if line.startswith(assignment)),
+                    None,
+                )
+            if route_line is None or not route_line.rstrip().endswith(";"):
+                return set()
+            anchor_routes = json.loads(
+                route_line[len(assignment):].rstrip()[:-1]
+            )
+        except (OSError, ValueError, TypeError):
+            return set()
+        return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
+    return set()
 
 
 def dump_inputs(docs_root):
@@ -267,6 +315,7 @@ def build_tree(docs_root, dest):
     # tests that the target file exists, not its contents. This also avoids
     # copying the hundreds of MB of images and generated translations.
     checked = set(dump_inputs(docs_root))
+    index_pages = []
     for root, _dirs, files in os.walk(docs_root):
         rel_dir = os.path.relpath(root, docs_root)
         out_dir = dest if rel_dir == "." else os.path.join(dest, rel_dir)
@@ -283,8 +332,8 @@ def build_tree(docs_root, dest):
                 # Mintlify renders inline but lychee cannot see across the import.
                 anchors = collect_snippet_anchors(raw, docs_root, root, set())
                 # Split settings overview pages redirect their historical
-                # fragments client-side. Their generated manifest is the
-                # canonical alias registry; append its keys only in this
+                # fragments client-side. Their generated routing metadata is
+                # the canonical alias registry; append its keys only in this
                 # throwaway tree so static fragment validation matches runtime.
                 anchors |= collect_generated_setting_anchors(
                     os.path.join(root, name))
@@ -318,6 +367,29 @@ def build_tree(docs_root, dest):
             else:
                 # Empty placeholder: only its existence matters to lychee.
                 open(dst, "w").close()
+            if (
+                name in ("index.md", "index.mdx")
+                and rel_dir != "."
+                and rel.split(os.sep)[0] not in LOCALE_DIRS
+            ):
+                index_pages.append((rel_dir, dst))
+    # Mintlify publishes a nested `index.mdx` at its directory route. Lychee
+    # only sees its on-disk `.../index.mdx` path, so materialize a matching
+    # anchor-only alias from the actual page route rather than frontmatter.
+    for rel_dir, page in index_pages:
+        alias = os.path.join(dest, rel_dir + ".mdx")
+        if os.path.normpath(alias) == os.path.normpath(page) or os.path.exists(alias):
+            continue
+        with open(page, encoding="utf-8", errors="replace") as f:
+            anchors = {
+                match.group(1) or match.group(2)
+                for match in ANCHOR_ID_RE.finditer(f.read())
+            }
+        os.makedirs(os.path.dirname(alias) or ".", exist_ok=True)
+        with open(alias, "w", encoding="utf-8") as f:
+            f.write(
+                "".join(f'<a id="{anchor}"></a>\n' for anchor in sorted(anchors))
+            )
     # Placeholders for redirect sources so links to redirected paths resolve.
     materialize_redirects(docs_root, dest)
     # lychee reads its configuration from the working directory.

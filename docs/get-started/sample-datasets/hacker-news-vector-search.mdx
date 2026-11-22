@@ -60,7 +60,7 @@ vector similarity search combined with post-filtering/pre-filtering as explained
 To load the dataset from the `Parquet` file, run the following SQL statement:
 
 ```sql
-INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
 ```
 
 Inserting 28.74 million rows into the table will take a few minutes.
@@ -101,7 +101,7 @@ The first time load of the vector index into memory could take a few seconds/min
 [Sentence Transformers](https://www.sbert.net/) provide local, easy to use embedding
 models for capturing the semantic meaning of sentences and paragraphs.
 
-The dataset in this HackerNews dataset contains vector emebeddings generated from the 
+The dataset in this HackerNews dataset contains vector embeddings generated from the 
 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) model.
 
 An example Python script is provided below to demonstrate how to programmatically generate

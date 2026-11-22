@@ -37,7 +37,7 @@ struct FullNode
 
     uint32_t serialized_size = 0; // assigned only when deserializing node
 
-    std::string_view getData() const { return std::string_view(data_ptr, stats.data_size); }
+    [[nodiscard]] std::string_view getData() const { return std::string_view(data_ptr, stats.data_size); }
     void setData(std::string_view data) { data_ptr = data.data(); stats.data_size = static_cast<uint32_t>(data.size()); }
 
     /// Assigns `path_hash` if it's 0.
@@ -102,10 +102,10 @@ struct BlockData
 
     /// The data buffer is in memory immediately after the BlockData struct.
     char * data() { return reinterpret_cast<char *>(this + 1); }
-    const char * data() const { return reinterpret_cast<const char *>(this + 1); }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this + 1); }
 
     /// Estimate how many bytes serialized node would take. Never underestimates.
-    size_t nodeSerializedSizeUpperBound(const FullNode & node) const;
+    [[nodiscard]] size_t nodeSerializedSizeUpperBound(const FullNode & node) const;
 
     /// Initializes the block, taking base values for delta encoding from `node`.
     /// `node` itself is not written.
@@ -117,6 +117,7 @@ struct BlockData
 
     /// The caller must ensure that there's enough space (nodeSerializedSizeUpperBound) and that
     /// writeHeader was called.
+    /// Assigns node.path_hash (if missing), and updates node.data_ptr to point into the block.
     static NodeRef appendNodeNoResize(BlockPtr block, FullNode & node);
 
     /// If the node fits in this block's capacity, append it here, and return false.
@@ -127,10 +128,10 @@ struct BlockData
     /// Deserializes the block header and assigns fields. Call after writing the block data
     /// (that presumably comes from file) to `data()` and assigning `size` and
     /// `serialization_version` (which is not stored per block, only in file header).
-    void readHeader();
+    void parseHeader();
 
     /// Make a copy with capacity = size.
-    BlockPtr copyAndShrinkToFit() const;
+    [[nodiscard]] BlockPtr copyAndShrinkToFit() const;
 
 private:
     /// Constructed only via create()/reserve(), which allocate the object together with its trailing

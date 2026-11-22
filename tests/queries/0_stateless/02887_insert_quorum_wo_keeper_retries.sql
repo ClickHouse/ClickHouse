@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-fasttest
 
 # no-shared-merge-tree: quorum logic is specifit to replicated tables
 
@@ -15,6 +15,8 @@ SET insert_quorum = 2;
 system enable failpoint replicated_merge_tree_insert_quorum_fail_0;
 
 INSERT INTO quorum1 VALUES (1), (2), (3), (4), (5); -- {serverError UNKNOWN_STATUS_OF_INSERT}
+
+system disable failpoint replicated_merge_tree_insert_quorum_fail_0;
 
 INSERT INTO quorum1 VALUES (6), (7), (8), (9), (10);
 

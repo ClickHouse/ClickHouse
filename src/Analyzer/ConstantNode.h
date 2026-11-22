@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Common/HiddenSecret.h>
+
+#include <optional>
 
 #include <Core/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -120,7 +123,7 @@ public:
     {
         chassert(isMasked());
         if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            return "[HIDDEN]";
+            return String(HIDDEN_SECRET);
         return "[HIDDEN id: " + std::to_string(mask_id) + "]";
     }
 
@@ -160,6 +163,10 @@ private:
     /// to cache it using hash to check for update
     mutable boost::intrusive_ptr<ASTLiteral> cached_ast;
     mutable Hash hash_ast;
+
+    /// `getTreeHash` of this node without its alias; reset whenever the value changes.
+    friend class IQueryTreeNode;
+    mutable std::optional<Hash> cached_tree_hash;
 };
 
 }

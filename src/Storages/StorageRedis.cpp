@@ -123,8 +123,13 @@ public:
         MutableColumns columns = sample_block.cloneEmptyColumns();
 
         RedisArray values = storage.multiGet(scan_keys);
-        for (size_t i = 0; i < scan_keys.size() && !values.get<RedisBulkString>(i).isNull(); i++)
+        for (size_t i = 0; i < scan_keys.size(); ++i)
         {
+            /// MGET answers by position, and a scanned key can hold another Redis type or expire
+            /// before the MGET runs, so a nil marks one absent value, not the end of the batch.
+            if (values.get<RedisBulkString>(i).isNull())
+                continue;
+
             fillColumns(scan_keys.get<RedisBulkString>(i).value(),
                         values.get<RedisBulkString>(i).value(),
                         primary_key_pos, sample_block, columns
@@ -235,7 +240,7 @@ VirtualColumnsDescription StorageRedis::createVirtuals()
 class ReadFromRedis : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromRedis"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromRedis"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void describeActions(FormatSettings & format_settings) const override;
@@ -380,7 +385,7 @@ namespace
 
             configuration.host = named_collection->getAny<String>({"host", "hostname"});
             configuration.port = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("port", 6379));
-            configuration.password = named_collection->getOrDefault<String>("password", DEFAULT_REDIS_PASSWORD);
+            configuration.password = named_collection->getOrDefault<SecretString>("password", SecretString());
             configuration.db_index = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("db_index", DEFAULT_REDIS_DB_INDEX));
             configuration.pool_size = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("pool_size", DEFAULT_REDIS_POOL_SIZE));
         }
@@ -401,7 +406,7 @@ namespace
             if (engine_args.size() > 2)
                 configuration.password = checkAndGetLiteralArgument<String>(engine_args[2], "password");
             else
-                configuration.password = DEFAULT_REDIS_PASSWORD;
+                configuration.password.clear();
             if (engine_args.size() > 3)
                 configuration.pool_size = static_cast<uint32_t>(checkAndGetLiteralArgument<UInt64>(engine_args[3], "pool_size"));
             else
@@ -461,7 +466,7 @@ Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<
             "StorageRedis::getBySerializedKeys: null_map size {} does not match keys size {}",
             null_map->size(), keys.size());
 
-    for (size_t i = 0; i < values.size(); ++i)
+    for (size_t i = 0; i < keys.size(); ++i)
     {
         if (null_map && !(*null_map)[i])
         {
@@ -517,7 +522,18 @@ RedisArray StorageRedis::multiGet(const RedisArray & keys) const
     for (size_t i = 0; i < keys.size(); ++i)
         cmd_mget.add(keys.get<RedisBulkString>(i));
 
-    return connection->client->execute<RedisArray>(cmd_mget);
+    RedisArray values = connection->client->execute<RedisArray>(cmd_mget);
+
+    /// Callers pair the reply with the request by position, into arrays sized from `keys`.
+    if (values.isNull() || values.size() != keys.size())
+        throw Exception(
+            ErrorCodes::INTERNAL_REDIS_ERROR,
+            "Redis table {} returned {} values for MGET of {} keys",
+            getStorageID().getFullNameNotQuoted(),
+            values.isNull() ? 0 : values.size(),
+            keys.size());
+
+    return values;
 }
 
 void StorageRedis::multiSet(const RedisArray & data) const
@@ -700,7 +716,8 @@ void registerStorageRedis(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::REDIS,
     };
 
-    factory.registerStorage("Redis", createStorageRedis, features, Documentation{
+    /// Redis('host:port', 'db_index', 'password', 'pool_size')
+    factory.registerStorage("Redis", createStorageRedis, SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"password"}}, features, Documentation{
         .description = R"DOCS_MD(
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 
@@ -724,16 +741,17 @@ PRIMARY KEY(primary_key_name);
 - `pool_size` — Redis max connection pool size, default is 16.
 - `primary_key_name` - any column name in the column list.
 
-:::note Serialization
+<Note title="Serialization">
 `PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
 Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
-:::
+Full scans with `SELECT * FROM redis_table` can fail with binary deserialization errors if the selected Redis database contains keys or values that were not written by ClickHouse.
+</Note>
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
 
-:::note Filtering
+<Note title="Filtering">
 Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
-:::
+</Note>
 
 ## Usage example {#usage-example}
 

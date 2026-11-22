@@ -15,7 +15,6 @@
 -- those queries only cover the empty-sparse fallback and legacy/lightweight parity. primary_key_lazy_load = 0 keeps
 -- primary_key_bytes_in_memory populated.
 
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_sparse_pk_trunc_isnull;

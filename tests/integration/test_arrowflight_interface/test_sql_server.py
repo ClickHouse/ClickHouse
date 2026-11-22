@@ -1,11 +1,13 @@
 # coding: utf-8
 
+import base64
 import os
 import pytest
 import pyarrow as pa
 import pyarrow.flight as flight
 import random
 import string
+from google.protobuf import any_pb2
 from .flight_sql_client import (
     FlightSQLClient,
     flight_descriptor,
@@ -16,6 +18,7 @@ from .flight_sql_client import (
     SetSessionOptionsResult,
     CommandStatementQuery,
     CommandStatementIngest,
+    CommandGetSqlInfo,
 )
 
 
@@ -30,18 +33,19 @@ node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/flight_port.xml",
+        "configs/display_secrets.xml",
     ],
 )
 
 session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
 
-def get_client():
+def get_client(session_id_override=None):
     return FlightSQLClient(
         host=node.ip_address,
         port=8888,
         insecure=True,
         disable_server_verification=True,
-        metadata={'x-clickhouse-session-id': session_id},
+        metadata={'x-clickhouse-session-id': session_id_override or session_id},
         features={'metadata-reflection': 'true'}, # makes the client emit metadata retrieval commands upon connection
     )
 
@@ -402,6 +406,21 @@ def test_set_session_options_persistence():
     assert _query_setting(client, "max_threads") == default_value
 
 
+def test_reset_session_option_respects_settings_constraints():
+    constraint_session_id = 'settings_constraints_' + ''.join(
+        random.choices(string.ascii_letters + string.digits, k=16)
+    )
+    client = get_client(constraint_session_id)
+
+    result = client.set_session_options({"readonly": "2"})
+    assert len(result.errors) == 0
+
+    result = client.set_session_options({"readonly": None})
+    assert "readonly" in result.errors
+
+    assert _query_setting(client, "readonly") == "2"
+
+
 def test_cancel_flight_info():
     client = get_client()
 
@@ -701,6 +720,68 @@ def test_bearer_token_reuse():
     reader = client.do_get(ticket, options)
     table = reader.read_all()
     assert table.column(0)[0].as_py() == 1
+
+
+def test_basic_auth_without_padding():
+    """Some clients (e.g. the Go Flight client used by the ADBC Flight SQL driver)
+    send the Base64-encoded Basic credentials without the '=' padding."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+
+    credentials = base64.b64encode(b"default:").decode().rstrip("=")
+    options = flight.FlightCallOptions(
+        headers=[(b"authorization", f"Basic {credentials}".encode())]
+    )
+
+    reader = client.do_get(flight.Ticket(b"SELECT 1"), options)
+    table = reader.read_all()
+    assert table.column(0)[0].as_py() == 1
+
+
+def test_basic_auth_malformed_base64():
+    """A malformed 'authorization' header must produce a clean authentication error,
+    not a generic 'Unexpected error in RPC handling' from an exception escaping into gRPC."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+
+    options = flight.FlightCallOptions(
+        headers=[(b"authorization", b"Basic !!!not-base64!!!")]
+    )
+
+    with pytest.raises(
+        flight.FlightUnauthenticatedError,
+        match="Cannot decode the Base64-encoded credentials",
+    ):
+        client.do_get(flight.Ticket(b"SELECT 1"), options)
+
+
+def test_basic_auth_without_credentials_separator():
+    """Basic credentials without a username/password separator must not authenticate."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+
+    credentials = base64.b64encode(b"default").decode().rstrip("=")
+    options = flight.FlightCallOptions(
+        headers=[(b"authorization", f"Basic {credentials}".encode())]
+    )
+
+    with pytest.raises(
+        flight.FlightUnauthenticatedError,
+        match="Malformed credentials in the 'authorization' header",
+    ):
+        client.do_get(flight.Ticket(b"SELECT 1"), options)
+
+
+def test_unsupported_authorization_header():
+    """An unsupported 'authorization' header must not fall through to default authentication."""
+    client = flight.FlightClient(f"grpc://{node.ip_address}:8888")
+
+    options = flight.FlightCallOptions(
+        headers=[(b"authorization", b"Digest credentials")]
+    )
+
+    with pytest.raises(
+        flight.FlightUnauthenticatedError,
+        match="Unsupported 'authorization' header",
+    ):
+        client.do_get(flight.Ticket(b"SELECT 1"), options)
 
 
 #
@@ -1095,3 +1176,85 @@ def test_transaction_id_rejected_for_create_prepared_statement():
     action = flight.Action("CreatePreparedStatement", req.SerializeToString())
     with pytest.raises(pa.lib.ArrowNotImplementedError, match="transaction_id is not supported"):
         list(client.client.do_action(action, client._flight_call_options()))
+
+
+def test_query_text_is_not_logged():
+    secret = "".join(random.choices(string.ascii_letters + string.digits, k=32))
+    select = f"SELECT hex(encrypt('aes-256-ofb', 'plaintext', '{secret}'))"
+    ddl = f"CREATE USER OR REPLACE u_arrowflight_log IDENTIFIED BY '{secret}'"
+    shown = f"{select} SETTINGS format_display_secrets_in_show_and_select = 1"
+    select_size = len(select.encode())
+    ddl_size = len(ddl.encode())
+    ticket_lookalike = "~TICKET-" + "".join(random.choices(string.ascii_letters + string.digits, k=36))
+    poll_lookalike = "~POLL-" + "".join(random.choices(string.ascii_letters + string.digits, k=36))
+    unknown_command = any_pb2.Any(type_url="type.googleapis.com/arrow.flight.protocol.sql.CommandDoesNotExist").SerializeToString()
+    crafted_info = flight.FlightInfo(
+        pa.schema([]),
+        flight.FlightDescriptor.for_path("t_arrowflight_log"),
+        [flight.FlightEndpoint(select.encode(), [f"grpc://localhost:1/{secret}"])],
+    ).serialize()
+    lines = [
+        "GetFlightInfo is called for descriptor <FlightDescriptor cmd=arrow.flight.protocol.sql.CommandStatementQuery>",
+        f"GetFlightInfo returns flight info <FlightInfo descriptor=<FlightDescriptor cmd=({select_size} bytes)>",
+        f"GetSchema is called for descriptor <FlightDescriptor cmd=({select_size} bytes)>",
+        "PollFlightInfo is called for descriptor <FlightDescriptor cmd=~POLL-",
+        "PollFlightInfo returns <PollInfo info=<FlightInfo descriptor=<FlightDescriptor cmd=arrow.flight.protocol.sql.CommandGetSqlInfo>",
+        f"PollFlightInfo returns <PollInfo info=<FlightInfo descriptor=<FlightDescriptor cmd=({select_size} bytes)>",
+        "DoGet is called for ticket ~TICKET-",
+        f"DoPut is called for descriptor <FlightDescriptor cmd=({ddl_size} bytes)>",
+        f"CancelFlightInfo request <FlightInfo descriptor=<FlightDescriptor cmd=({select_size} bytes)>",
+        f"DoGet is called for ticket ({len(ticket_lookalike)} bytes)",
+        f"GetFlightInfo is called for descriptor <FlightDescriptor cmd=({len(poll_lookalike)} bytes)>",
+        f"GetFlightInfo is called for descriptor <FlightDescriptor cmd=({len(unknown_command)} bytes)>",
+        f"CancelFlightInfo request <FlightInfo descriptor=<FlightDescriptor path='t_arrowflight_log'> tickets=\\[({select_size} bytes)]",
+        "GetSchema returns a schema with 1 fields",
+    ]
+    before = {line: int(node.count_in_log(line)) for line in lines}
+
+    client = get_client()
+    options = client._flight_call_options()
+    descriptor = flight.FlightDescriptor.for_command(select)
+    try:
+        info = client.client.get_flight_info(descriptor, options)
+        tickets = [endpoint.ticket.ticket.decode() for endpoint in info.endpoints]
+        for endpoint in info.endpoints:
+            client.do_get(endpoint.ticket).read_all()
+        client.do_get(flight.Ticket(select.encode())).read_all()
+        client.client.get_schema(descriptor, options)
+        poll = client.poll_flight_info(descriptor)
+        poll_ids = []
+        while poll.flight_descriptor is not None:
+            poll_ids.append(poll.flight_descriptor.command.decode())
+            poll = client.poll_flight_info(poll.flight_descriptor)
+        client.cancel_flight_info(poll.info_bytes)
+        client.poll_flight_info(flight_descriptor(CommandGetSqlInfo()))
+        writer, _ = client.client.do_put(flight.FlightDescriptor.for_command(ddl), pa.schema([]), options)
+        writer.close()
+        client.execute(select)
+        client.get_schema(select)
+        assert secret in client.get_schema(shown).schema.names[0]
+        client.execute_update(ddl)
+        with pytest.raises(pa.lib.ArrowKeyError, match="not found"):
+            client.do_get(flight.Ticket(ticket_lookalike.encode())).read_all()
+        with pytest.raises(pa.lib.ArrowInvalid, match="cannot be called with a flight descriptor returned by method PollFlightInfo"):
+            client.client.get_flight_info(flight.FlightDescriptor.for_command(poll_lookalike), options)
+        with pytest.raises(pa.lib.ArrowNotImplementedError, match="Command is not implemented"):
+            client.client.get_flight_info(flight.FlightDescriptor.for_command(unknown_command), options)
+        client.cancel_flight_info(crafted_info)
+    finally:
+        node.query("DROP USER IF EXISTS u_arrowflight_log")
+
+    marker = "".join(random.choices(string.ascii_letters + string.digits, k=32))
+    node.query(f"SELECT '{marker}'")
+    node.wait_for_log_line(marker)
+    for line in lines:
+        assert int(node.count_in_log(line)) > before[line], line
+    assert tickets and poll_ids
+    ticket_list = ", ".join(tickets)
+    generated = [f"GetFlightInfo returns flight info <FlightInfo descriptor=<FlightDescriptor cmd=({select_size} bytes)> tickets=\\[{ticket_list}]"]
+    generated += [f"DoGet is called for ticket {ticket}" for ticket in tickets]
+    generated += [f"PollFlightInfo is called for descriptor <FlightDescriptor cmd={poll_id}>" for poll_id in poll_ids]
+    generated += [f"PollFlightInfo returns <PollInfo info=<FlightInfo descriptor=<FlightDescriptor cmd=({select_size} bytes)> tickets=.*> descriptor=<FlightDescriptor cmd={poll_id}>>" for poll_id in poll_ids]
+    for line in generated:
+        assert int(node.count_in_log(line)) > 0, line
+    assert not node.contains_in_log(secret)

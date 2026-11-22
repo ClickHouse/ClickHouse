@@ -1,3 +1,4 @@
+#include <span>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -12,6 +13,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
+
+#include <type_traits>
 
 
 namespace DB
@@ -64,9 +67,23 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
+/// `NullOutput` discards everything and holds no state, so one shared instance is enough and is safe
+/// to share. A local one escapes into the readers, which puts a `-fstack-protector-strong` canary on
+/// this per-field function.
+static_assert(std::is_empty_v<NullOutput>);
+static NullOutput shared_null_output;
+
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
-    NullOutput out;
+    /// The most common case, separately: a tail call that needs no stack frame, so with pointer authentication
+    /// there's no return address to sign and authenticate for every skipped field.
+    if (escaping_rule == FormatSettings::EscapingRule::Escaped)
+    {
+        readEscapedStringInto<NullOutput, false>(shared_null_output, buf);
+        return;
+    }
+
+    NullOutput & out = shared_null_output;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
     switch (escaping_rule)
@@ -121,31 +138,31 @@ bool deserializeFieldByEscapingRule(
     {
         case FormatSettings::EscapingRule::Escaped:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextEscaped(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextEscaped(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Quoted:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextQuoted(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::CSV:
             if (parse_as_nullable && !isCSVSeparateColumnsTuple(type, format_settings))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextCSV(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::JSON:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextJSON(column, buf, format_settings);
             break;
         case FormatSettings::EscapingRule::Raw:
             if (parse_as_nullable)
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization);
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextRaw(column, buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextRaw(column, buf, format_settings);
             break;
@@ -394,9 +411,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);
 
-            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
-            /// ReadHelpers.h) reads the leading '0' as the whole value.
-            /// allow_number_leading_zeros (hive partitioning) opts out.
+            /// A leading zero carries information in these formats (zip codes, phone numbers), so a field
+            /// that starts with one and infers an integer stays a `String`. `allow_number_leading_zeros`
+            /// (hive) opts out.
             if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
                 && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
@@ -411,7 +428,7 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
     }
 }
 
-DataTypes tryInferDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
+DataTypes tryInferDataTypesByEscapingRule(std::span<const String> fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info)
 {
     DataTypes data_types;
     data_types.reserve(fields.size());

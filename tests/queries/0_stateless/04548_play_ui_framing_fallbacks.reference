@@ -53,10 +53,20 @@ dropped multi failures keep an error text: OK
 log queue bounded: OK
 log budget shared with the DOM: OK
 metric history bounded: OK
-view is tab-owned: OK
+view is cell-owned: OK
+toggles act on the chrome cell: OK
+logo follows the chrome cell: OK
+color scope is the owning cell: OK
+color modes persist onto the owning cell: OK
+pins persist onto the owning cell: OK
+markdown schemes restricted: OK
+protocol-relative markdown URLs rejected: OK
 toggles replayed per tab: OK
 background meter batches accumulate: OK
 meter state re-adopted on tab open: OK
+shared chrome follows the running cell: OK
+a cell run ends the tab run first: OK
+Stop goes through the same path: OK
 partial exception line is a truncation: OK
 meter aggregate is per run: OK
 peak gauge keeps the maximum: OK
@@ -71,7 +81,7 @@ every restore path expands a single value: OK
 replay clock comes from the packets: OK
 replay time reaches the metrics model: OK
 replay rebuilds the resource state: OK
-every replay site passes its tab: OK
+every replay site passes its cell: OK
 replay honors the saved truncation state: OK
 live truncation state is captured: OK
 both single-query saves persist it: OK

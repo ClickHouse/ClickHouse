@@ -24,18 +24,18 @@
 ["b", 1]
 ["c", 1]
 5
-["first", 1, 2, 0]
-["second", 2, 0, 6]
+["first", 1, 2, 3]
+["second", 2, 4, 6]
 6
 ["first", 1, 2, 8]
 ["second", 2, 32, 6]
 7
 [16, [15,16,0], ["first","second","third"]]
 8
-["first", 1, 2, 0]
-["second", 2, 0, 6]
-["first", 1, 2, 0]
-["second", 2, 0, 6]
+["first", 1, 2, 3]
+["second", 2, 4, 6]
+["first", 1, 2, 3]
+["second", 2, 4, 6]
 9
 ["first", 1, 2, 8]
 ["second", 2, 32, 6]
