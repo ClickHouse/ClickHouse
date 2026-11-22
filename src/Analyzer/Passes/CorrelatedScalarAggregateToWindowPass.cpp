@@ -15,15 +15,18 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/WindowNode.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
 
+#include <array>
 #include <string_view>
 #include <unordered_set>
 
@@ -48,6 +51,27 @@ struct TableExpressionInfo
 };
 
 using TableExpressions = std::unordered_map<const IQueryTreeNode *, TableExpressionInfo>;
+
+/// Whether the function cannot throw on any row, for the types and constants of its arguments. The logical functions
+/// cannot. For the others, the function itself has to say so (e.g. `equals` of `Decimal(18, 0)` and `UInt64` throws for
+/// a value that does not fit), and a function that does not say is assumed to throw.
+bool cannotThrow(const FunctionNode & function)
+{
+    static constexpr std::array<std::string_view, 5> logical_functions = {"and", "or", "not", "isNull", "isNotNull"};
+    if (std::ranges::contains(logical_functions, function.getFunctionName()))
+        return true;
+
+    if (!function.isOrdinaryFunction() || !function.isResolved())
+        return false;
+
+    DataTypesWithConstInfo arguments;
+    for (const auto & argument : function.getArgumentColumns())
+    {
+        const auto * constant = typeid_cast<const ColumnConst *>(argument.column.get());
+        arguments.push_back({argument.type, constant != nullptr, constant});
+    }
+    return !function.getFunction()->canThrow(arguments);
+}
 
 void collectTableExpressions(QueryTreeNodePtr & node, bool excluded, TableExpressions & result)
 {
@@ -486,14 +510,10 @@ private:
     /// the windows, where a condition on the keys removes whole partitions only: the filter push-down does not pass a
     /// window. A non-deterministic condition is not taken, because it would also remove rows inside the partitions it
     /// keeps, and neither is one with a correlated subquery. Below the window a condition runs on every row of the
-    /// table, also on rows the enclosing query never evaluates it on, so only comparisons and logical functions, which
-    /// do not throw, are taken.
+    /// table, also on rows the enclosing query never evaluates it on, so only a condition of functions that cannot throw
+    /// for its argument types is taken (see `cannotThrow`).
     static QueryTreeNodes collectKeyConditions(const IQueryTreeNode * target, const QueryTreeNodes & enforced, const Names & keys)
     {
-        static const std::unordered_set<std::string_view> functions_that_do_not_throw = {
-            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not", "isNull", "isNotNull",
-            "in", "notIn"};
-
         QueryTreeNodes result;
         for (const auto & conjunct : enforced)
         {
@@ -506,7 +526,7 @@ private:
                 {
                     if (const auto * function = current->as<FunctionNode>())
                     {
-                        if (!functions_that_do_not_throw.contains(function->getFunctionName()))
+                        if (!cannotThrow(*function))
                             only_keys = false;
                         return;
                     }

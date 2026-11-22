@@ -8509,7 +8509,7 @@ Serialize query plan for distributed processing
     DECLARE(Bool, optimize_correlated_scalar_aggregate_to_window, false, R"(
 Rewrite a correlated scalar aggregate subquery over a table that the enclosing query also reads into a window function over that table, instead of reading the table a second time. The subquery is rewritten only when the enclosing query has a deterministic condition on the correlation keys, which then also restricts the rows the window reads.
 )", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to rewrite a correlated scalar aggregate subquery into a window function over a table the enclosing query also reads."}) \
+        {"26.12", false, false, "New setting to rewrite a correlated scalar aggregate subquery into a window function over a table the enclosing query also reads."}) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0, \
