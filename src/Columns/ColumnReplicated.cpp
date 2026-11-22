@@ -786,20 +786,14 @@ void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size
 
 UInt64 ColumnReplicated::getNumberOfDefaultRows() const
 {
-    UnorderedSetWithMemoryTracking<size_t> indexes_of_default_values;
-    for (size_t i = 0; i != nested_column->size(); ++i)
-    {
-        if (nested_column->isDefaultAt(i))
-            indexes_of_default_values.insert(i);
-    }
+    /// The rows of each position counted once, then the positions that hold the default value added up.
+    ColumnUInt64::Container counts(nested_column->size(), 0);
+    indexes.countRowsInIndexedData(counts);
 
-    size_t result = 0;
-    auto add = [&](size_t, size_t index)
-    {
-        result += indexes_of_default_values.contains(index);
-    };
-
-    indexes.callForIndexes(std::move(add), 0, size());
+    UInt64 result = 0;
+    for (size_t position = 0; position < counts.size(); ++position)
+        if (counts[position] != 0 && nested_column->isDefaultAt(position))
+            result += counts[position];
     return result;
 }
 

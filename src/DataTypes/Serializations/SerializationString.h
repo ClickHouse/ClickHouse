@@ -64,6 +64,10 @@ public:
     /// once and a code per row, a plain granule appends its rows with indexes to themselves.
     MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
+    /// `WITH_DICTIONARIES` builds the dictionary of a granule from the positions of a `ColumnReplicated` over
+    /// a `ColumnString`, hashing each used value once instead of each row.
+    bool supportsReplicatedColumns() const override { return version == MergeTreeStringSerializationVersion::WITH_DICTIONARIES; }
+
     /// A column whose part has no dictionary granule for it holds exactly the streams of `WITH_SIZE_STREAM`.
     SerializationPtr resolveForEmptySubstreams(const SubstreamIsEmptyCallback & substream_is_empty) const override;
 

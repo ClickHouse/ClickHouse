@@ -163,6 +163,10 @@ public:
     /// custom layout (e.g. a per-part value broadcast as a `ColumnConst`). Default: `type.createColumn()`.
     virtual MutableColumnPtr createColumnForDeserialization(const IDataType & type) const;
 
+    /// Returns whether `serializeBinaryBulkWithMultipleStreams` writes a `ColumnReplicated` as it is, so that
+    /// the caller need not materialize its rows. Default: false.
+    [[nodiscard]] virtual bool supportsReplicatedColumns() const { return false; }
+
     /// Tells whether the file of a substream of a column in a data part holds no data or does not exist.
     using SubstreamIsEmptyCallback = std::function<bool(const SerializationSubstreamPath &)>;
 

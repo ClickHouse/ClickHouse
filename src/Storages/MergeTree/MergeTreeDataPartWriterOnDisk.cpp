@@ -668,7 +668,16 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
     for (auto & column : block)
+    {
         column.column = column.column->convertToFullColumnIfConst();
+
+        /// A `String` column with dictionary granules is read as a `ColumnReplicated`. A serialization that
+        /// writes dictionary granules takes it as it is and builds them from its positions; the others write
+        /// plain columns.
+        auto serialization = serializations.find(column.name);
+        if (serialization == serializations.end() || !serialization->second->supportsReplicatedColumns())
+            column.column = column.column->convertToFullColumnIfReplicated();
+    }
 
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())

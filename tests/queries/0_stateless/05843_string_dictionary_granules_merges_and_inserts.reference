@@ -1,0 +1,10 @@
+horizontal merge	1
+vertical merge	1
+one part into one	1
+t_horizontal	Horizontal
+t_vertical	Vertical
+insert into MergeTree	1
+insert into Memory	1
+insert with optimize_on_insert	1
+vertical merge into a sparse column	1	Sparse
+insert of lazily replicated arrays	500	1000

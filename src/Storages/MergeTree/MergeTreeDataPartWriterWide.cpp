@@ -469,10 +469,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     {
         auto & column = block_to_write.getByName(it->name);
 
-        /// The serializations write plain columns, and a `String` column with dictionary granules is read as a
-        /// `ColumnReplicated`.
-        column.column = column.column->convertToFullColumnIfReplicated();
-
         if (!ISerialization::hasKind(getSerialization(it->name)->getKindStack(), ISerialization::Kind::SPARSE))
             column.column = recursiveRemoveSparse(column.column);
 

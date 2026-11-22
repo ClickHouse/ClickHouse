@@ -2295,7 +2295,8 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             ctx->read_with_direct_io,
             allow_remote_fs_prefetch,
             global_ctx->context,
-            getLogger("VerticalMergeStage"));
+            getLogger("VerticalMergeStage"),
+            /*keep_replicated_columns=*/ global_ctx->new_data_part->getSerialization(column_name)->supportsReplicatedColumns());
 
 
         /// Add step for building missed text indexes and statistics for single parts.
@@ -3755,7 +3756,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             ctx->read_with_direct_io,
             allow_remote_fs_prefetch,
             global_ctx->context,
-            ctx->log);
+            ctx->log,
+            /*keep_replicated_columns=*/ global_ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary);
 
         /// Add step for building missed text indexes and statistics for single parts.
         /// If merge may reduce rows, we will rebuild index and statistics

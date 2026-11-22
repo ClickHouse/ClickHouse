@@ -32,7 +32,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool allow_remote_fs_prefetch);
+    bool allow_remote_fs_prefetch,
+    bool keep_replicated_columns = false);
 
 class QueryPlan;
 class QueryPipeline;
@@ -52,7 +53,8 @@ void createReadFromPartStep(
     bool read_with_direct_io,
     bool allow_remote_fs_prefetch,
     ContextPtr context,
-    LoggerPtr log);
+    LoggerPtr log,
+    bool keep_replicated_columns = false);
 
 /// Starts reading the first range of every `MergeTreeSequentialSource` of the pipeline in the background.
 void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline);

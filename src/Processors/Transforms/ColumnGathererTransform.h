@@ -79,6 +79,9 @@ public:
 private:
     void updateStats(const IColumn & column);
 
+    /// Brings the column of a source chunk into the form of the result.
+    void prepareSourceChunk(Chunk & chunk) const;
+
     /// Cache required fields
     struct Source
     {
@@ -98,6 +101,9 @@ private:
     const size_t block_preferred_size_bytes;
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
+    /// Whether the result keeps the replicated form of its sources, decided by the first chunks (see
+    /// `initialize`).
+    bool is_result_replicated = false;
 
     Source * source_to_fully_copy = nullptr;
 
