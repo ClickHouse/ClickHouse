@@ -40,10 +40,10 @@ struct ColumnDistinctValues
     UInt64 upper_bound = 0;
 };
 
-/// `uniq_v2` statistics (`uniqCombined64` with 2^12 cells) have a standard error of 1.6%; this is three of them.
+/// About three standard errors of `uniq_v2` statistics (`uniqCombined64` with 2^12 cells, 1.6% each).
 constexpr double DISTINCT_COUNT_SKETCH_ERROR = 0.05;
 
-/// A measured key count that the sketch error cannot tell from the row count is the row count: the key is unique.
+/// A measured key count within the sketch error of the row count, or above it, is the row count: the key is unique.
 inline UInt64 joinKeyDistinctValues(const ColumnStats & stats, std::optional<UInt64> rows)
 {
     if (stats.ndv_provenance.origin == ColumnStatsOrigin::MeasuredStatistics && rows && *rows > 0
