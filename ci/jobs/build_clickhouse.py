@@ -98,6 +98,29 @@ BUILD_TYPE_TO_DEB_PACKAGE_TYPE = {
     BuildTypes.ARM_RELEASE: "release",
 }
 
+# Outputs that nothing reads after a CI build: the artifacts of these builds are
+# `programs/self-extracting/clickhouse`, the packages and the AMD `unit_tests_dbms` (see `ci/defs/`),
+# and their post hooks read the plain binaries of the release builds only.
+PLAIN_BINARIES = (
+    "programs/clickhouse",
+    "programs/clickhouse-stripped",
+    "programs/self-extracting/clickhouse-stripped",
+)
+UNUSED_BUILD_OUTPUTS = {
+    BuildTypes.AMD_DEBUG: PLAIN_BINARIES,
+    BuildTypes.AMD_ASAN_UBSAN: PLAIN_BINARIES,
+    BuildTypes.AMD_TSAN: PLAIN_BINARIES,
+    BuildTypes.AMD_MSAN: PLAIN_BINARIES,
+    BuildTypes.AMD_BINARY: PLAIN_BINARIES,
+    BuildTypes.ARM_BINARY: PLAIN_BINARIES,
+    BuildTypes.ARM_DEBUG: PLAIN_BINARIES,
+    BuildTypes.ARM_ASAN_UBSAN: PLAIN_BINARIES,
+    BuildTypes.ARM_TSAN: PLAIN_BINARIES,
+    BuildTypes.ARM_MSAN: PLAIN_BINARIES,
+    BuildTypes.AMD_RELEASE: ("root", "programs/stripped"),
+    BuildTypes.ARM_RELEASE: ("root", "programs/stripped"),
+}
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     CHECKOUT_SUBMODULES = "checkout"
@@ -188,6 +211,16 @@ def build_tidy_shard(index, count):
     for line in process.stdout:
         print(line, end="", flush=True)
     return process.wait() == 0
+
+
+def remove_unused_build_outputs(build_type):
+    for output in UNUSED_BUILD_OUTPUTS[build_type]:
+        path = f"{build_dir}/{output}"
+        print(f"Remove [{path}]")
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
 
 
 def run_shell_with_output(name, command, **kwargs):
@@ -553,6 +586,15 @@ def main():
         elif build_type == BuildTypes.ARM_BINARY:
             targets = "clickhouse-bundle"
         elif build_type in (
+            BuildTypes.ARM_DEBUG,
+            BuildTypes.ARM_ASAN_UBSAN,
+            BuildTypes.ARM_TSAN,
+            BuildTypes.ARM_MSAN,
+        ):
+            # `clickhouse-bundle` without `clickhouse-tests`: no job runs the aarch64 unit tests,
+            # and `arm_tidy` still checks their sources.
+            targets = "self-extracting"
+        elif build_type in (
             BuildTypes.AMD_TIDY,
             BuildTypes.ARM_TIDY,
         ):
@@ -838,6 +880,15 @@ def main():
                     info="host architecture does not match the target - cannot execute the wrapper",
                 )
             )
+
+    if res and not info.is_local_run and build_type in UNUSED_BUILD_OUTPUTS:
+        results.append(
+            Result.from_commands_run(
+                name="Remove unused build outputs",
+                command=lambda: remove_unused_build_outputs(build_type),
+            )
+        )
+        res = results[-1].is_ok()
 
     # A failed relocation headroom check fails the job without dropping the jobs that use its artifacts.
     headroom_only = any(r.name == relocation_headroom.NAME and not r.is_ok() for r in results) and all(
