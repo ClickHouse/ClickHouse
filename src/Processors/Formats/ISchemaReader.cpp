@@ -278,7 +278,10 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     for (const auto & [name, type] : names_and_types)
     {
         if (names_to_types.contains(name))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Duplicate column name found while schema inference: \"{}\". You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                name);
 
         auto hint_it = hints.find(name);
         if (hint_it != hints.end())
@@ -299,7 +302,10 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         for (auto & [name, new_type] : new_names_and_types)
         {
             if (names_set.contains(name))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Duplicate column name found while schema inference: \"{}\". You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                    name);
             names_set.insert(name);
 
             auto it = names_to_types.find(name);

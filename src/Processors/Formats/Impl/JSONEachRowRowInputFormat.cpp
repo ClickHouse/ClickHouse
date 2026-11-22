@@ -133,7 +133,10 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     if (seen_columns[index])
     {
         if (!format_settings.skip_duplicated_fields)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing JSONEachRow format: {}", columnName(index));
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Duplicate field found while parsing JSONEachRow format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                columnName(index));
 
         skipJSONField(*in, columnName(index), format_settings.json);
         return;

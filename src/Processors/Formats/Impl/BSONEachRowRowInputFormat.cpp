@@ -842,7 +842,10 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         else if (seen_columns[index])
         {
             if (!format_settings.skip_duplicated_fields)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Duplicate field found while parsing BSONEachRow format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                    name);
 
             skipBSONField(*in, BSONType(type));
         }

@@ -140,7 +140,10 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 else if (seen_columns[it->getMapped()])
                 {
                     if (!format_settings.skip_duplicated_fields)
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing TSKV format: {}", name_ref);
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Duplicate field found while parsing TSKV format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+                            name_ref);
 
                     NullOutput sink;
                     readEscapedStringInto<NullOutput, false>(sink, *in);

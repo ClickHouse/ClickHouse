@@ -61,7 +61,10 @@ const String & FormRowInputFormat::columnName(size_t i) const
 void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     if (seen_columns[index] && !format_settings.skip_duplicated_fields)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing Form format: {}", columnName(index));
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Duplicate field found while parsing Form format: {}. You can enable setting input_format_skip_duplicated_fields to keep the first value of a repeated field",
+            columnName(index));
 
     const auto & serialization = serializations[index];
 
