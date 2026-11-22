@@ -64,9 +64,31 @@ const std::unordered_map<String, size_t> timezone_less_parsers = {
     {"parseDateTime", 2},
 };
 
+/// Returns `type` with `timezone` set if it is a `DateTime` or `DateTime64` without an explicit timezone,
+/// possibly wrapped in `Nullable` or `LowCardinality`. Returns nullptr otherwise.
+DataTypePtr addTimezoneToType(const DataTypePtr & type, const String & timezone)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = addTimezoneToType(nullable->getNestedType(), timezone);
+        return nested ? std::make_shared<DataTypeNullable>(nested) : nullptr;
+    }
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        auto dictionary = addTimezoneToType(low_cardinality->getDictionaryType(), timezone);
+        return dictionary ? std::make_shared<DataTypeLowCardinality>(dictionary) : nullptr;
+    }
+    if (const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get()); dt && !dt->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime>(timezone);
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get()); dt64 && !dt64->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime64>(dt64->getScale(), timezone);
+    return nullptr;
+}
+
 /// A string literal inside a function call is parsed by the background mutation thread in the server timezone.
-/// Makes the session timezone explicit, `toDateTime('..')` becomes `toDateTime('..', 'tz')`, the same goes
-/// for `CAST('..' AS DateTime)`. Replaces the node in place and returns true if it was rewritten.
+/// Makes the session timezone explicit, `toDateTime('..')` becomes `toDateTime('..', 'tz')`, and
+/// `CAST('..' AS DateTime)` becomes `CAST('..' AS DateTime('tz'))`. The node is changed in place, so its alias is kept.
+/// Returns true if it was rewritten.
 bool tryAddTimezoneToLiteralParser(ASTPtr & ast, const String & timezone)
 {
     const auto * function = ast->as<ASTFunction>();
@@ -87,18 +109,30 @@ bool tryAddTimezoneToLiteralParser(ASTPtr & ast, const String & timezone)
         if (!type)
             return false;
 
-        const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get());
-        const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get());
-        if (!(dt && !dt->hasExplicitTimeZone()) && !(dt64 && !dt64->hasExplicitTimeZone()))
+        auto type_with_timezone = addTimezoneToType(type, timezone);
+        if (!type_with_timezone)
             return false;
 
-        ast = wrapWithTimezone(arguments[0], type, timezone);
+        arguments[1] = make_intrusive<ASTLiteral>(Field(type_with_timezone->getName()));
         return true;
     }
 
     auto parser = timezone_less_parsers.find(function->name);
-    if (parser == timezone_less_parsers.end() || arguments.size() != parser->second)
+    if (parser == timezone_less_parsers.end())
         return false;
+
+    /// The overloads without a timezone that have another number of arguments: `parseDateTime` with its default
+    /// format, and `toDateTime` with a scale (`toDateTime('..', 3)` is a `DateTime64`).
+    const bool is_parse_with_default_format = function->name == "parseDateTime" && arguments.size() == 1;
+    const auto * second_literal = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
+    const bool is_to_datetime_with_scale
+        = function->name == "toDateTime" && second_literal && second_literal->value.getType() != Field::Types::String;
+
+    if (arguments.size() != parser->second && !is_parse_with_default_format && !is_to_datetime_with_scale)
+        return false;
+
+    if (is_parse_with_default_format)
+        arguments.push_back(make_intrusive<ASTLiteral>(Field(String("%Y-%m-%d %H:%i:%s"))));
 
     arguments.push_back(make_intrusive<ASTLiteral>(Field(timezone)));
     return true;

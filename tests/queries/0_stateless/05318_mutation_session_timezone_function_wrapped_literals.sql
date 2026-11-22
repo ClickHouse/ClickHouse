@@ -31,3 +31,25 @@ ALTER TABLE t_mut_fn_tz DELETE WHERE time = toDateTime('2000-01-02 04:00:00', 'U
 SELECT id, v FROM t_mut_fn_tz ORDER BY id;
 
 DROP TABLE t_mut_fn_tz;
+
+-- The overloads without a timezone that have another number of arguments, and the casts that keep their alias or wrap the target type.
+-- Pair `k` is two rows with the same wall-clock string: id `2k - 1` is read in UTC, id `2k` in `America/Denver`. `cutoff` is the same as `time`.
+DROP TABLE IF EXISTS t_mut_fn_tz2;
+CREATE TABLE t_mut_fn_tz2 (id UInt32, time DateTime64(3), cutoff DateTime64(3)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_mut_fn_tz2
+WITH concat('2000-01-01 0', toString(number + 1), ':00:00') AS wall_clock
+SELECT 2 * (number + 1) - 1, toDateTime64(wall_clock, 3, 'UTC'), toDateTime64(wall_clock, 3, 'UTC') FROM numbers(6);
+INSERT INTO t_mut_fn_tz2
+WITH concat('2000-01-01 0', toString(number + 1), ':00:00') AS wall_clock
+SELECT 2 * (number + 1), toDateTime64(wall_clock, 3, 'America/Denver'), toDateTime64(wall_clock, 3, 'America/Denver') FROM numbers(6);
+
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = parseDateTime('2000-01-01 02:00:00');
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = toDateTime('2000-01-01 03:00:00', 3);
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = CAST('2000-01-01 04:00:00' AS Nullable(DateTime));
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = CAST('2000-01-01 05:00:00' AS Nullable(DateTime64(3)));
+-- The alias of the cast is kept: `cutoff` in the second operand is the cast, not the column, so only the Denver row (id 2) goes.
+ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = (CAST('2000-01-01 01:00:00' AS DateTime) AS cutoff) OR time = cutoff;
+
+SELECT id FROM t_mut_fn_tz2 ORDER BY id;
+
+DROP TABLE t_mut_fn_tz2;
