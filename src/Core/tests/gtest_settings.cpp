@@ -15,6 +15,7 @@
 
 #include <functional>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -22,6 +23,9 @@ namespace DB::ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int UNKNOWN_LOAD_BALANCING;
 }
 
 namespace
@@ -336,4 +340,67 @@ GTEST_TEST(Settings, CustomFlaggedDecimalWithOutOfRangeScaleRejected)
     {
         ASSERT_EQ(e.code(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
+}
+
+GTEST_TEST(Settings, SkipInvalidValuesKeepsTheDefaultsAndReadsTheRest)
+{
+    /// The settings a server of an older version sends in `Hello` may hold values this version rejects.
+    using Entry = std::tuple<std::string_view, BaseSettingsHelpers::Flags, std::string_view>;
+    auto wire = [](std::initializer_list<Entry> entries)
+    {
+        WriteBufferFromOwnString out;
+        for (const auto & [name, flags, value] : entries)
+        {
+            BaseSettingsHelpers::writeString(name, out);
+            BaseSettingsHelpers::writeFlags(flags, out);
+            BaseSettingsHelpers::writeString(value, out);
+        }
+        BaseSettingsHelpers::writeString("", out); /// end of settings
+        return out.str();
+    };
+
+    auto read_error_code = [](const String & bytes, bool skip_invalid_values)
+    {
+        ReadBufferFromString in(bytes);
+        Settings settings;
+        try
+        {
+            settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS, skip_invalid_values);
+        }
+        catch (const Exception & e)
+        {
+            return e.code();
+        }
+        return 0;
+    };
+
+    const String bytes = wire({
+        /// In this version a negative value of a `Seconds` setting is rejected when it is assigned from a `Field`,
+        /// but not when it is parsed from a string.
+        {"max_execution_time", {}, "-1"},
+        {"max_block_size", {}, "0"}, /// `NonZeroUInt64` assigns the value before it rejects it.
+        {"log_queries", {}, "maybe"},
+        {"max_threads", {}, "4"},
+    });
+    ReadBufferFromString in(bytes);
+    Settings settings;
+    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS, /* skip_invalid_values= */ true);
+    const SettingsChanges changes = settings.changes();
+    ASSERT_EQ(changes.size(), 1u);
+    ASSERT_EQ(changes[0].name, "max_threads");
+    ASSERT_EQ(changes[0].value, Field(UInt64(4)));
+    ASSERT_FALSE(settings.isChanged("max_execution_time"));
+    ASSERT_FALSE(settings.isChanged("max_block_size"));
+    ASSERT_EQ(settings.get("max_block_size"), Settings().get("max_block_size"));
+    ASSERT_FALSE(settings.isChanged("log_queries"));
+
+    /// Every change that was read can be applied as a `Field`, which is what the client does with them.
+    Settings applied;
+    applied.applyChanges(changes);
+
+    /// The default read stays strict; an important setting and other error codes are not skipped.
+    ASSERT_EQ(read_error_code(bytes, false), ErrorCodes::BAD_ARGUMENTS);
+    ASSERT_EQ(read_error_code(wire({{"log_queries", {}, "maybe"}}), false), ErrorCodes::CANNOT_PARSE_BOOL);
+    ASSERT_EQ(read_error_code(wire({{"max_execution_time", BaseSettingsHelpers::Flags::IMPORTANT, "-1"}}), true), ErrorCodes::BAD_ARGUMENTS);
+    ASSERT_EQ(read_error_code(wire({{"load_balancing", {}, "nonsense"}}), true), ErrorCodes::UNKNOWN_LOAD_BALANCING);
 }

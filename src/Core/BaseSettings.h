@@ -53,6 +53,8 @@ struct BaseSettingsHelpers
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     [[noreturn]] static void throwTooManySettings(std::string_view what);
     static void warningSettingNotFound(std::string_view name);
+    /// Returns true (and logs a warning) if `e` is `BAD_ARGUMENTS` or a parse error (`isParseError`); other errors are not skipped.
+    static bool skipInvalidSettingValue(std::string_view name, const Exception & e);
     static void flushWarnings();
 
     /// Serialization helpers
@@ -253,8 +255,9 @@ public:
     /// Write all settings (or only changed ones depending on format)
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
 
-    /// Read settings from a buffer
-    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    /// Read settings from a buffer.
+    /// With `skip_invalid_values`, a non-important setting whose value is rejected keeps its default instead of failing the read.
+    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT, bool skip_invalid_values = false);
 
     /// Write only changed settings in binary format
     void writeChangedBinary(WriteBuffer & out) const;
@@ -662,7 +665,7 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
+void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format, bool skip_invalid_values)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
@@ -695,7 +698,26 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
                 accessor.setValue(*this, index, static_cast<Field>(temp));
             }
             else if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
-                accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
+            {
+                String value = BaseSettingsHelpers::readString(in);
+                try
+                {
+                    accessor.setValueString(*this, index, value);
+                    /// In this version some values are rejected only when a setting is assigned from a `Field`,
+                    /// not when it is parsed from a string (e.g. a negative value of a `Seconds` setting).
+                    /// The caller applies the settings it has read as `SettingsChanges`, that is, as `Field`s,
+                    /// so a value that cannot be assigned this way is rejected here as well.
+                    if (skip_invalid_values)
+                        accessor.setValue(*this, index, accessor.getValue(*this, index));
+                }
+                catch (const Exception & e)
+                {
+                    if (!skip_invalid_values || is_important || !BaseSettingsHelpers::skipInvalidSettingValue(name, e))
+                        throw;
+                    /// A failed parse may have assigned the field already.
+                    accessor.resetValueToDefault(*this, index);
+                }
+            }
             else
                 accessor.readBinary(*this, index, in);
         }
