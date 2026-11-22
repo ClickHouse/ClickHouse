@@ -29,3 +29,8 @@ MATERIALIZE INDEX that records the missing subcolumn keeps the shared offsets
 1
 1
 1
+A recomputed stored column reads its other inputs in a vertical merge
+1	['x']	100	301	301
+2	['x']	200	601	601
+1	['','']	100	302	302
+2	['x']	200	601	601

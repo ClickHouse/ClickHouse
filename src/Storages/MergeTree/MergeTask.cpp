@@ -525,15 +525,32 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
                 return *recomputed_where_stored;
             };
 
-            for (const auto & dependency : collectDefaultStorageDependencies(column_default->expression, columns_desc, storage_columns))
+            const auto dependencies = collectDefaultStorageDependencies(column_default->expression, columns_desc, storage_columns);
+
+            bool recomputed_from_stored_values = false;
+            for (const auto & dependency : dependencies)
             {
-                if (dependency != storage_column.name && has_shared_offsets(dependency)
-                    && (missing_together_in_some_part(storage_column.name, dependency)
-                        || (reconciled_in_some_part.contains(dependency) && is_recomputed_where_stored())))
+                if (dependency == storage_column.name || !has_shared_offsets(dependency))
+                    continue;
+
+                const bool recomputed = reconciled_in_some_part.contains(dependency) && is_recomputed_where_stored();
+                if (recomputed || missing_together_in_some_part(storage_column.name, dependency))
                 {
                     key_columns.insert(storage_column.name);
                     key_columns.insert(dependency);
                 }
+                recomputed_from_stored_values |= recomputed;
+            }
+
+            /// Recomputing a stored column evaluates its whole expression again, so every column the
+            /// expression reads has to be in the same step, not only the reconciled one: the reader
+            /// does not inject the inputs of a column the part stores. The closure is transitive
+            /// through the defaults of the intermediate columns.
+            if (recomputed_from_stored_values)
+            {
+                for (const auto & dependency : dependencies)
+                    if (storage_columns.contains(dependency))
+                        key_columns.insert(dependency);
             }
         }
     }

@@ -104,3 +104,19 @@ SELECT count() FROM t_nested_reconcile_materialize_index WHERE has(`n.b`, '') SE
 SELECT count() FROM t_nested_reconcile_materialize_index WHERE has(`n.b`, '') SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'i';
 CHECK TABLE t_nested_reconcile_materialize_index SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_nested_reconcile_materialize_index;
+
+SELECT 'A recomputed stored column reads its other inputs in a vertical merge';
+DROP TABLE IF EXISTS t_nested_reconcile_other_inputs;
+CREATE TABLE t_nested_reconcile_other_inputs (id UInt32, other UInt64, `n.a` Array(UInt32))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
+    enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0;
+INSERT INTO t_nested_reconcile_other_inputs VALUES (1, 100, [10, 20]), (2, 200, [30]);
+ALTER TABLE t_nested_reconcile_other_inputs ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
+ALTER TABLE t_nested_reconcile_other_inputs ADD COLUMN other_alias UInt64 ALIAS other * 2;
+ALTER TABLE t_nested_reconcile_other_inputs ADD COLUMN b_length UInt64 MATERIALIZED length(`n.b`) + other + other_alias;
+ALTER TABLE t_nested_reconcile_other_inputs MATERIALIZE COLUMN b_length SETTINGS mutations_sync = 2;
+SELECT id, `n.b`, other, b_length, length(`n.b`) + other + other_alias FROM t_nested_reconcile_other_inputs ORDER BY id;
+OPTIMIZE TABLE t_nested_reconcile_other_inputs FINAL;
+SELECT id, `n.b`, other, b_length, length(`n.b`) + other + other_alias FROM t_nested_reconcile_other_inputs ORDER BY id;
+DROP TABLE t_nested_reconcile_other_inputs;

@@ -558,8 +558,37 @@ void IMergeTreeReader::evaluateMissingDefaults(
             {
                 auto [cached, inserted] = recomputable_stored_columns.emplace(column_name, false);
                 if (inserted && current_step_columns.contains(column_name))
+                {
+                    const auto & storage_columns_description = storage_snapshot->metadata->getColumns();
                     cached->second = isStoredMaterializedColumnRecomputable(
-                        column_name, storage_snapshot->metadata->getColumns(), *storage_snapshot->metadata, context_copy);
+                        column_name, storage_columns_description, *storage_snapshot->metadata, context_copy);
+
+                    /// The expression is evaluated again as a whole, so every column it reads that the
+                    /// part stores must be in the block: an input that this step did not read would
+                    /// be replaced by its default and the stored value would be lost. A merge requests
+                    /// them together (see `MergeTask`); otherwise the stored value is kept.
+                    if (cached->second)
+                    {
+                        const auto all_storage_columns = storage_columns_description.getAllPhysical().getNameSet();
+                        auto column_default = storage_columns_description.getDefault(column_name);
+                        for (const auto & dependency : collectDefaultStorageDependencies(
+                                 column_default->expression, storage_columns_description, all_storage_columns))
+                        {
+                            if (dependency == column_name || additional_columns.has(dependency))
+                                continue;
+
+                            String name_in_part = dependency;
+                            if (alter_conversions && alter_conversions->isColumnRenamed(dependency))
+                                name_in_part = alter_conversions->getColumnOldName(dependency);
+
+                            if (part_columns.has(name_in_part))
+                            {
+                                cached->second = false;
+                                break;
+                            }
+                        }
+                    }
+                }
                 return cached->second;
             };
 
