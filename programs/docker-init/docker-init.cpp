@@ -1274,6 +1274,16 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// --- Server mode ---
     std::string config_file = getEnv("CLICKHOUSE_CONFIG", "/etc/clickhouse-server/config.xml");
 
+    /// The server arguments can select another configuration file, e.g. `-- --config-file=/etc/clickhouse-server/other.xml`:
+    /// the server parses its whole command line with `argsToConfig`, where the last `config-file` wins over the one
+    /// passed below. Everything here (the paths, the users, the listeners of the temporary server) must be read
+    /// from the file the server is going to load, so it is resolved the same way.
+    {
+        std::vector<std::string> server_args = {"--config-file=" + config_file};
+        server_args.insert(server_args.end(), extra_args.begin(), extra_args.end());
+        config_file = getOverriddenConfigValue(server_args, "config-file");
+    }
+
     /// Extract all relevant paths from the config.
     std::string data_dir = extractConfigValue(config_file, "path");
     std::string tmp_dir = extractConfigValue(config_file, "tmp_path");
