@@ -28,7 +28,8 @@ ${CLICKHOUSE_LOCAL} --output_format_orc_string_as_string=0 -q "
     INSERT INTO FUNCTION file('${DIR}/required.orc', ORC) SELECT id, (unhex(m), unhex(v))::Tuple(metadata String, value String) AS v FROM raw WHERE id != 6;
     INSERT INTO FUNCTION file('${DIR}/swapped.orc', ORC) SELECT id, (unhex(v), unhex(m))::Tuple(value String, metadata String) AS v FROM raw WHERE id IN (1, 3);
     INSERT INTO FUNCTION file('${DIR}/nested.orc', ORC)
-        SELECT [x, x] AS arr, map('k', x) AS m, (1, x)::Tuple(a Int32, v Tuple(metadata String, value String)) AS t
+        SELECT [x, x] AS arr, map('k', x) AS m, (1, x)::Tuple(a Int32, v Tuple(metadata String, value String)) AS t,
+            tuple(x)::Tuple(\`v.w\` Tuple(metadata String, value String)) AS d
         FROM (SELECT (unhex(m), unhex(v))::Tuple(metadata String, value String) AS x FROM raw WHERE id = 3);
     INSERT INTO FUNCTION file('${DIR}/outer.orc', ORC)
         SELECT id, if(id = 1, NULL, (id, (unhex(m), unhex(v))::Tuple(metadata String, value String)))::Nullable(Tuple(a Int32, v Tuple(metadata String, value String))) AS s
@@ -55,6 +56,11 @@ ${CLICKHOUSE_LOCAL} -q "
     SELECT id, v FROM file('${DIR}/objects.orc', ORC, 'id Int32, v Nullable(JSON)') ORDER BY id;
     SELECT '-- nested';
     SELECT * FROM file('${DIR}/nested.orc', ORC, 'arr Array(Dynamic), m Map(String, Dynamic), t Tuple(a Int32, v Dynamic)');
+    SELECT '-- a dotted subcolumn';
+    SELECT *, dynamicType(\`t.v\`) FROM file('${DIR}/nested.orc', ORC, '\`t.a\` Int32, \`t.v\` Dynamic');
+    SELECT * FROM file('${DIR}/nested.orc', ORC, '\`t.v\` JSON, \`d.v.w\` Dynamic');
+    SELECT (SELECT toJSONString(t.v) FROM file('${DIR}/nested.orc', ORC, 't Tuple(v Dynamic)'))
+        = (SELECT toJSONString(\`t.v\`) FROM file('${DIR}/nested.orc', ORC, '\`t.v\` Dynamic'));
     SELECT '-- in a nullable struct';
     SELECT * FROM file('${DIR}/outer.orc', ORC, 'id Int32, s Tuple(a Nullable(Int32), v Dynamic)') ORDER BY id;
     SELECT '-- as a Tuple';
