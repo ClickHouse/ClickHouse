@@ -48,7 +48,8 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_,
-    HTTPHeaderEntries headers_)
+    HTTPHeaderEntries headers_,
+    String expected_etag_)
     : ReadBufferFromWebServer(
         std::vector<String>{url_},
         context_,
@@ -56,7 +57,8 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
         settings_,
         use_external_buffer_,
         read_until_position_,
-        std::move(headers_))
+        std::move(headers_),
+        std::move(expected_etag_))
 {
 }
 
@@ -67,7 +69,8 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_,
-    HTTPHeaderEntries headers_)
+    HTTPHeaderEntries headers_,
+    String expected_etag_)
     : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, getKnownFileSize(file_size_))
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
@@ -76,6 +79,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     , buf_size(settings_.remote_fs_settings.buffer_size)
     , read_settings(settings_)
     , headers(std::move(headers_))
+    , expected_etag(std::move(expected_etag_))
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
 {
@@ -137,6 +141,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                     .withEnableUrlEncoding(enable_url_encoding)
                     .withHostFilter(&context->getRemoteHostFilter())
                     .withHeaders(headers)
+                    .withExpectedETag(expected_etag)
                     .withExternalBuf(false)
                     .withDelayInit(false)
                     .create(credentials);
@@ -151,6 +156,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                            .withEnableUrlEncoding(enable_url_encoding)
                            .withHostFilter(&context->getRemoteHostFilter())
                            .withHeaders(headers)
+                           .withExpectedETag(expected_etag)
                            .withExternalBuf(use_external_buffer)
                            .withDelayInit(true)
                            .create(credentials);
