@@ -273,7 +273,7 @@ public:
 
     /// The number of threads that may read the projection parts of one part. Set once, while the pipeline is built.
     void setMaxThreadsPerPart(size_t value) { max_threads_per_part = value; }
-    size_t maxThreadsPerPart() const { return max_threads_per_part; }
+    [[nodiscard]] size_t maxThreadsPerPart() const { return max_threads_per_part; }
 
     ProjectionIndexBitmapPtr read(const RangesInDataParts & projection_parts, ProjectionIndexReadSharing & sharing);
 
@@ -281,7 +281,7 @@ public:
 
 private:
     ProjectionIndexBitmapPtr readProjectionPart(
-        SingleProjectionIndexReader & reader, const RangesInDataPart & ranges, ProjectionIndexReadSharing & sharing);
+        SingleProjectionIndexReader & reader, const RangesInDataPart & ranges, ProjectionIndexReadSharing & sharing) const;
 
     ProjectionIndexReaderByName projection_index_readers;
     const size_t min_rows_for_concurrent_read;

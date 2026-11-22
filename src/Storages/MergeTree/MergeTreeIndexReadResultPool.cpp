@@ -867,7 +867,7 @@ MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(
 }
 
 ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::readProjectionPart(
-    SingleProjectionIndexReader & reader, const RangesInDataPart & ranges, ProjectionIndexReadSharing & sharing)
+    SingleProjectionIndexReader & reader, const RangesInDataPart & ranges, ProjectionIndexReadSharing & sharing) const
 {
     size_t total_marks = ranges.getMarksCount();
     if (max_threads_per_part > 1 && total_marks >= 2)
