@@ -2,6 +2,7 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/FilesystemIsolation.h>
 #include <Common/SeccompFilter.h>
 #include <Core/FileCachePolicy.h>
 #include <Core/Joins.h>
@@ -487,6 +488,8 @@ DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
 
 DECLARE_SETTING_ENUM(SeccompMode)
 
+DECLARE_SETTING_ENUM(FilesystemIsolationMode)
+
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -681,6 +684,14 @@ enum class S3UriStyle : uint8_t
 };
 
 DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class S3RequestPayer : uint8_t
+{
+    NONE,
+    REQUESTER,
+};
+
+DECLARE_SETTING_ENUM(S3RequestPayer)
 
 enum class ExplainQueryPlanDefault : uint8_t
 {

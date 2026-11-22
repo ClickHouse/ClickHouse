@@ -7,8 +7,6 @@ title: 'Scheduled Escalonamento'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Os serviços do ClickHouse Cloud escalam automaticamente com base na utilização de CPU e memória, mas muitas cargas de trabalho seguem padrões previsíveis — picos diários de ingestão, jobs em lote executados durante a noite ou tráfego que cai acentuadamente nos fins de semana. Para esses casos de uso, o Scheduled Escalonamento permite definir exatamente quando seu serviço deve aumentar ou reduzir a escala, independentemente das métricas em tempo real.
 
 Com o Scheduled Escalonamento, você configura um conjunto de regras baseadas em tempo diretamente no console do ClickHouse Cloud. Cada regra especifica os dias em que está ativa, uma hora de início e uma hora de término em UTC e as configurações a serem aplicadas durante essa janela — o número de réplicas (horizontal), a memória mínima e máxima por réplica (vertical) e se o serviço pode ficar ocioso. Enquanto a janela estiver ativa, o ClickHouse Cloud aplica essas configurações e, quando ela termina, reverte para sua configuração de escalonamento padrão, para que seu serviço esteja dimensionado corretamente antes da chegada da demanda, em vez de reagir depois.
@@ -19,9 +17,25 @@ Isso é diferente do autoscaling baseado em métricas, que responde dinamicament
 
 Para configurar um agendamento, acesse seu serviço no console do ClickHouse Cloud e vá até as configurações. Em seguida, selecione **Schedule Override** e adicione uma nova regra.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="A interface de agendamentos de escalonamento no console do ClickHouse Cloud, mostrando regras de escalonamento baseadas em horário" border />
+<div className="ch-image-md">
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configurando uma regra de Scheduled Scaling no console do ClickHouse Cloud" border />
+<Frame>
+
+![A interface de agendamentos de escalonamento no console do ClickHouse Cloud, mostrando regras de escalonamento baseadas em horário](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-md">
+
+<Frame>
+
+![Configurando uma regra de Scheduled Scaling no console do ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
+
+</Frame>
+
+</div>
 
 Cada regra exige:
 
