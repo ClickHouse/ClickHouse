@@ -186,8 +186,6 @@ std::optional<ColumnPtr> tryConvertNativeNumberMembersBatch(const SetMembers & m
         for (const auto & member : members)
             gathered->insertRangeFrom(*member.column, 0, 1);
     }
-    /// `UInt64` holds every unsigned member and `Int64` every signed or narrower unsigned one exactly, so the
-    /// accurate cast keeps or drops each value as the per-member conversion does.
     else if (all_unsigned)
     {
         auto column = ColumnUInt64::create();
