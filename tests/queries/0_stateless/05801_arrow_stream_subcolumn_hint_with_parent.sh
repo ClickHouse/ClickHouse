@@ -269,6 +269,35 @@ SELECT 'case-insensitive names of structs with different field names';
 SELECT CAST(tuple(toDate32('2024-01-01')) AS Tuple(x Date32)) AS t, CAST(tuple(d) AS Tuple(d Date32)) AS T FROM format(RowBinary, 'd Date32', unhex('c0c62d00')) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
 SELECT * FROM file('data.arrows', 'ArrowStream', 'T Tuple(d String), t Tuple(Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
 SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(Int32), T Tuple(d String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+
+SELECT 'a top-level field with a dotted name next to a struct with the same path';
+-- The columns are taken from the top-level field `t.s`, so its field `x` is the one a positional `Tuple(Int32)` names.
+SELECT CAST(tuple(d) AS Tuple(x Date32)) AS `t.s`, CAST(tuple(tuple(toDate32('2024-01-01'))) AS Tuple(s Tuple(d Date32))) AS t FROM format(RowBinary, 'd Date32', unhex('c0c62d00')) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`T.S` Tuple(x String), `t.s` Tuple(Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.s` Tuple(Int32), `T.S` Tuple(x String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`T.S` Tuple(x String), `t.s` Tuple(Int32), t Tuple(s Tuple(d Date32))') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+-- The struct `t` is decoded as well, and its field `s` gets the requested type of `t.s` too.
+SELECT CAST(tuple(tuple(d)) AS Tuple(s Tuple(d Date32))) AS t, CAST(tuple(toDate32('2024-01-01')) AS Tuple(x Date32)) AS `t.s` FROM format(RowBinary, 'd Date32', unhex('c0c62d00')) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`T.S` Tuple(x String), `t.s` Tuple(Int32)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.s` Tuple(Int32), `T.S` Tuple(x String)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1;
+
+SELECT 'null struct row with string and raw-byte siblings';
+-- The null map the struct keeps for the conversion of `t.u` does not make the other subcolumns nullable.
+SELECT CAST(if(number = 1, NULL, tuple(if(number = 2, NULL, 'label'), 'abcdefghijklmnop')) AS Nullable(Tuple(s Nullable(String), u String))) AS t FROM numbers(3) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String, `t.s` Nullable(String), `t.u` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String, `t.s` Nullable(String)') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+SELECT CAST(if(number = 1, NULL, tuple('label', 'abcdefghijklmnop')) AS Nullable(Tuple(s String, u String))) AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String, `t.s` String, `t.u` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String, `t.s` Nullable(String), `t.u` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't String, `t.s` String') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+-- A requested `Tuple` asks for the nulls of the struct, and the subcolumns then have them.
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(s String, u String), `t.s` Nullable(String), `t.u` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+
+SELECT 'null struct row in an array with string and raw-byte siblings';
+SELECT [CAST(if(number = 1, NULL, tuple('label', 'abcdefghijklmnop')) AS Nullable(Tuple(s String, u String)))] AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Array(String), `t.s` Array(String), `t.u` Array(Nullable(IPv6))') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Array(String), `t.s` Array(Nullable(String)), `t.u` Array(Nullable(IPv6))') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
 EOF
 
 cd "$CLICKHOUSE_TMP" || exit 1

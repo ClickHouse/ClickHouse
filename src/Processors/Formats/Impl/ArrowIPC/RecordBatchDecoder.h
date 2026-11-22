@@ -243,6 +243,13 @@ public:
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field,
         const DictionaryUse & use, const RequestedTypes * target_types_);
 
+    /// Makes the decoder record in `paths` the dotted path of each nullable struct that keeps its null map only
+    /// to tell the hidden rows to the post-decode raw-byte conversion (see `wrapsInNullable`): the struct is
+    /// decoded for several requested columns, and none of them asks for its nulls. The reader drops such a null
+    /// map from the subcolumns it takes from the struct once they are converted, so that it does not change
+    /// their nulls (see `ArrowIPCBlockInputFormat::buildChunk`).
+    void recordVisibilityOnlyStructs(UnorderedSetWithMemoryTracking<String> * paths) { visibility_only_structs = paths; }
+
     /// Returns a 0/1 mask of the buffers referenced by the requested top-level fields. The `advanceField`
     /// traversal follows decoding's layout so subset reads can load, validate and decompress only the
     /// needed ranges. Returns an all-ones mask when `keep_top_level_fields` is null or the layout cannot
@@ -451,6 +458,8 @@ private:
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const RequestedTypes * target_types = nullptr;
+    /// See `recordVisibilityOnlyStructs`. Null when the caller does not need the paths.
+    UnorderedSetWithMemoryTracking<String> * visibility_only_structs = nullptr;
     /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used
     /// below one: `target_types` is not consulted there.
     bool decoding_below_union = false;

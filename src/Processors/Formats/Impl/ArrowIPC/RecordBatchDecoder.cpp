@@ -2341,7 +2341,13 @@ bool RecordBatchDecoder::wrapsInNullable(
     /// request (`t Tuple(u String), t.u Tuple(s IPv6)`), a map entry (`t.values`, `t.key_1`), or a name
     /// requested several times with different types.
     const RequestedTypes * types = decoding_below_union ? nullptr : target_types;
-    return carriesNestedRequests(path, types) || isSharedWithRawByteRequest(path, types);
+    if (!carriesNestedRequests(path, types) && !isSharedWithRawByteRequest(path, types))
+        return false;
+    /// This null map only tells the hidden rows to the post-decode conversion. It must not change the nulls of
+    /// the subcolumns taken from the struct, so the reader is told to drop it afterwards.
+    if (visibility_only_structs)
+        visibility_only_structs->insert(path);
+    return true;
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)

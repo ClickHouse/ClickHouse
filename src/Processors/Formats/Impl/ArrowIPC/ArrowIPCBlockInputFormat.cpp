@@ -495,20 +495,27 @@ DataTypePtr mergeDecodingRequirements(const DataTypePtr & kept, const DataTypePt
     return decodingRequirementRank(other) > decodingRequirementRank(kept) ? other : kept;
 }
 
-/// The field the decoder decodes at the dotted `path` (see `RecordBatchDecoder::structFieldPath`), and the
-/// number of lists above it, searched below `field` decoded at `field_path`. Null if there is none.
-const ArrowIPC::ArrowField * findDecodedField(
+/// A field the decoder decodes at a dotted path (see `RecordBatchDecoder::structFieldPath`), and the number of
+/// lists above it.
+struct DecodedFieldAtPath
+{
+    const ArrowIPC::ArrowField * field = nullptr;
+    size_t list_depth = 0;
+};
+
+/// Collects the fields decoded at the dotted `path`, searched at and below `field` decoded at `field_path`.
+void collectDecodedFields(
     const ArrowIPC::ArrowField & field, const String & field_path, size_t list_depth, const String & path,
-    bool case_insensitive, size_t & found_list_depth)
+    bool case_insensitive, VectorWithMemoryTracking<DecodedFieldAtPath> & found)
 {
     using ArrowIPC::TypeKind;
     if (field_path == path)
     {
-        found_list_depth = list_depth;
-        return &field;
+        found.push_back({&field, list_depth});
+        return;
     }
     if (!path.starts_with(field_path))
-        return nullptr;
+        return;
     const ArrowIPC::ArrowType & type = field.type;
     switch (type.kind)
     {
@@ -518,9 +525,11 @@ const ArrowIPC::ArrowField * findDecodedField(
         case TypeKind::ListView:
         case TypeKind::LargeListView:
         case TypeKind::Map:
-            return findDecodedField(type.children.at(0), field_path, list_depth + 1, path, case_insensitive, found_list_depth);
+            collectDecodedFields(type.children.at(0), field_path, list_depth + 1, path, case_insensitive, found);
+            break;
         case TypeKind::RunEndEncoded:
-            return findDecodedField(type.children.at(1), field_path, list_depth, path, case_insensitive, found_list_depth);
+            collectDecodedFields(type.children.at(1), field_path, list_depth, path, case_insensitive, found);
+            break;
         case TypeKind::Struct:
             for (size_t i = 0; i < type.children.size(); ++i)
             {
@@ -528,13 +537,11 @@ const ArrowIPC::ArrowField * findDecodedField(
                     : (type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
                 if (case_insensitive)
                     boost::to_lower(child_name);
-                if (const auto * found = findDecodedField(
-                        type.children[i], field_path + "." + child_name, list_depth, path, case_insensitive, found_list_depth))
-                    return found;
+                collectDecodedFields(type.children[i], field_path + "." + child_name, list_depth, path, case_insensitive, found);
             }
-            return nullptr;
+            break;
         default:
-            return nullptr;
+            break;
     }
 }
 
@@ -615,50 +622,76 @@ DataTypePtr nameTuplesAsDecoded(const DataTypePtr & hint, const ArrowIPC::ArrowF
 
 void ArrowIPCBlockInputFormat::resolveSharedRequestedTypes()
 {
+    if (shared_requested_header_types.empty())
+        return;
+
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    /// The top-level fields the reader decodes, by normalized name: of the fields with the same normalized name
+    /// only the last (see `RecordBatchDecoder::shadowedTopLevelFields`), and only the requested ones.
+    UnorderedMapWithMemoryTracking<String, const ArrowIPC::ArrowField *> decoded_top_level;
+    Strings decoded_top_level_names;
+    for (const auto & top_level : arrow_schema->fields | std::views::reverse)
+    {
+        String top_level_name = top_level.name;
+        if (case_insensitive)
+            boost::to_lower(top_level_name);
+        if (requested_top_level_fields.contains(top_level_name) && decoded_top_level.emplace(top_level_name, &top_level).second)
+            decoded_top_level_names.push_back(top_level_name);
+    }
+
     for (const auto & [name, header_types] : shared_requested_header_types)
     {
-        const ArrowIPC::ArrowField * field = nullptr;
-        size_t list_depth = 0;
-        /// Of the top-level fields with the same normalized name, the reader decodes and takes only the last
-        /// (see `RecordBatchDecoder::shadowedTopLevelFields`), so the requested types are resolved against it.
-        for (const auto & top_level : arrow_schema->fields | std::views::reverse)
-        {
-            String top_level_name = top_level.name;
-            if (case_insensitive)
-                boost::to_lower(top_level_name);
-            field = findDecodedField(top_level, top_level_name, 0, name, case_insensitive, list_depth);
-            if (field)
-                break;
-        }
-        if (!field)
+        /// The requested types are resolved against the field that supplies the columns, chosen as `buildChunk`
+        /// chooses it: the top-level field with exactly this name, or else a subcolumn of the top-level field
+        /// named by the part before the first dot. The decoder looks the requested type up by the dotted path
+        /// alone, so every other decoded field with this path (the field `s` of a struct `t` next to a top-level
+        /// field named `t.s`) is decoded with it as well: the requirements resolved against each of these
+        /// fields are merged in too, so that none of them loses what it needs (a positional `Tuple(Int32)`
+        /// names a different field in each of them).
+        VectorWithMemoryTracking<DecodedFieldAtPath> fields;
+        if (auto it = decoded_top_level.find(name); it != decoded_top_level.end())
+            fields.push_back({it->second, 0});
+        const String table_name = Nested::extractTableName(name);
+        if (table_name != name)
+            if (auto it = decoded_top_level.find(table_name); it != decoded_top_level.end())
+                collectDecodedFields(*it->second, table_name, 0, name, case_insensitive, fields);
+        for (const auto & other_name : decoded_top_level_names)
+            if (other_name != name && other_name != table_name)
+                collectDecodedFields(*decoded_top_level.at(other_name), other_name, 0, name, case_insensitive, fields);
+        if (fields.empty())
             continue;
 
         /// The requested type of a field below lists has an `Array` per list (see `ArrowIPC::resolveHint`).
-        auto name_tuples = [&](const DataTypePtr & type) -> DataTypePtr
+        auto name_tuples = [&](const DataTypePtr & type, const DecodedFieldAtPath & at) -> DataTypePtr
         {
-            if (list_depth == 0)
-                return nameTuplesAsDecoded(type, *field, case_insensitive);
+            if (at.list_depth == 0)
+                return nameTuplesAsDecoded(type, *at.field, case_insensitive);
             const auto * array = typeid_cast<const DataTypeArray *>(type.get());
             if (!array)
                 return type;
             DataTypePtr element = array->getNestedType();
-            for (size_t i = 1; i < list_depth; ++i)
+            for (size_t i = 1; i < at.list_depth; ++i)
             {
                 const auto * nested_array = typeid_cast<const DataTypeArray *>(element.get());
                 if (!nested_array)
                     return type;
                 element = nested_array->getNestedType();
             }
-            DataTypePtr named = nameTuplesAsDecoded(element, *field, case_insensitive);
-            for (size_t i = 0; i < list_depth; ++i)
+            DataTypePtr named = nameTuplesAsDecoded(element, *at.field, case_insensitive);
+            for (size_t i = 0; i < at.list_depth; ++i)
                 named = std::make_shared<DataTypeArray>(named);
             return named;
         };
 
-        DataTypePtr merged = name_tuples(header_types.front());
-        for (size_t i = 1; i < header_types.size(); ++i)
-            merged = mergeDecodingRequirements(merged, name_tuples(header_types[i]), case_insensitive);
+        DataTypePtr merged;
+        for (const auto & at : fields)
+        {
+            for (const auto & header_type : header_types)
+            {
+                DataTypePtr named = name_tuples(header_type, at);
+                merged = merged ? mergeDecodingRequirements(merged, named, case_insensitive) : named;
+            }
+        }
         requested_field_target_types.at(name).type = merged;
     }
 }
@@ -676,6 +709,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     requested_top_level_fields.clear();
     requested_field_target_types.clear();
     shared_requested_header_types.clear();
+    visibility_only_structs.clear();
     for (const auto & header_column : getPort().getHeader())
     {
         requested_top_level_fields.insert(normalize(header_column.name));
@@ -727,6 +761,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// Repeated column names were made unique by `parseSchema`.
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+    decoder->recordVisibilityOnlyStructs(&visibility_only_structs);
 
     /// Collect the dictionaries the requested columns reference and the field positions each one's values
     /// are decoded for; the stream reader skips the DictionaryBatch bodies of dictionaries used only by
@@ -819,6 +854,7 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+        temp_decoder->recordVisibilityOnlyStructs(&visibility_only_structs);
         dictionary_uses = temp_decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
         UnorderedSetWithMemoryTracking<Int64> base_dictionary_ids;
         for (const auto & block : footer.dictionary_blocks)
@@ -1275,6 +1311,162 @@ DataTypePtr requestedTypeOrSubcolumns(
     return nullptr;
 }
 
+/// `column` of type `type`, decoded at the dotted `path`, without the null maps of the structs at the paths in
+/// `visibility_only`: the decoder keeps such a null map only to tell the hidden rows to the post-decode raw-byte
+/// conversion (see `RecordBatchDecoder::recordVisibilityOnlyStructs`), and no requested column asks for it. The
+/// paths are built as the decoder builds them (see `RecordBatchDecoder::structFieldPath`).
+std::pair<ColumnPtr, DataTypePtr> dropVisibilityOnlyNulls(
+    const ColumnPtr & column, const DataTypePtr & type, const String & path,
+    const UnorderedSetWithMemoryTracking<String> & visibility_only, bool case_insensitive)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto * nullable = typeid_cast<const ColumnNullable *>(column.get());
+        if (!nullable)
+            return {column, type};
+        auto [nested, nested_type] = dropVisibilityOnlyNulls(
+            nullable->getNestedColumnPtr(), nullable_type->getNestedType(), path, visibility_only, case_insensitive);
+        if (isTuple(nested_type) && visibility_only.contains(path))
+            return {std::move(nested), std::move(nested_type)};
+        if (nested.get() == nullable->getNestedColumnPtr().get())
+            return {column, type};
+        return {ColumnNullable::create(nested, nullable->getNullMapColumnPtr()), std::make_shared<DataTypeNullable>(nested_type)};
+    }
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto * array = typeid_cast<const ColumnArray *>(column.get());
+        if (!array)
+            return {column, type};
+        auto [data, data_type] = dropVisibilityOnlyNulls(
+            array->getDataPtr(), array_type->getNestedType(), path, visibility_only, case_insensitive);
+        if (data.get() == array->getDataPtr().get())
+            return {column, type};
+        return {ColumnArray::create(data, array->getOffsetsPtr()), std::make_shared<DataTypeArray>(data_type)};
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto * tuple = typeid_cast<const ColumnTuple *>(column.get());
+        if (!tuple || tuple->tupleSize() != tuple_type->getElements().size())
+            return {column, type};
+        Columns columns(tuple->tupleSize());
+        DataTypes types(tuple->tupleSize());
+        bool changed = false;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            std::tie(columns[i], types[i]) = dropVisibilityOnlyNulls(
+                tuple->getColumnPtr(i), tuple_type->getElement(i),
+                childRequestPath(path, tuple_type->getNameByPosition(i + 1), case_insensitive), visibility_only, case_insensitive);
+            changed |= columns[i].get() != tuple->getColumnPtr(i).get();
+        }
+        if (!changed)
+            return {column, type};
+        return {ColumnTuple::create(columns),
+                tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(types, tuple_type->getElementNames())
+                                               : std::make_shared<DataTypeTuple>(types)};
+    }
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto * map = typeid_cast<const ColumnMap *>(column.get());
+        if (!map)
+            return {column, type};
+        const auto & entries = map->getNestedData();
+        auto [keys, keys_type] = dropVisibilityOnlyNulls(
+            entries.getColumnPtr(0), map_type->getKeyType(), childRequestPath(path, "keys", case_insensitive),
+            visibility_only, case_insensitive);
+        auto [values, values_type] = dropVisibilityOnlyNulls(
+            entries.getColumnPtr(1), map_type->getValueType(), childRequestPath(path, "values", case_insensitive),
+            visibility_only, case_insensitive);
+        if (keys.get() == entries.getColumnPtr(0).get() && values.get() == entries.getColumnPtr(1).get())
+            return {column, type};
+        return {ColumnMap::create(ColumnArray::create(ColumnTuple::create(Columns{keys, values}), map->getNestedColumn().getOffsetsPtr())),
+                std::make_shared<DataTypeMap>(keys_type, values_type)};
+    }
+    return {column, type};
+}
+
+/// `column` of type `type` with only the nulls of `own_column` of type `own_type`. Both are the same subcolumn:
+/// `column` is taken from a decoded column whose structs keep the null maps the decoder added for the
+/// post-decode conversion, and is already converted, while `own_column` is taken from the decoded column without
+/// these null maps (see `dropVisibilityOnlyNulls`), and is not converted. A subcolumn inherits the nulls of the
+/// structs above it, so `column` has a `Nullable` wherever `own_column` has one, with at least the same nulls;
+/// a `Nullable` only `column` has is dropped, and the rows it hides keep the values decoded for them (the
+/// defaults, for the converted ones).
+std::pair<ColumnPtr, DataTypePtr> restoreOwnNulls(
+    const ColumnPtr & column, const DataTypePtr & type, const ColumnPtr & own_column, const DataTypePtr & own_type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        const auto * nullable = typeid_cast<const ColumnNullable *>(column.get());
+        if (!nullable)
+            return {column, type};
+        const auto * own_nullable_type = typeid_cast<const DataTypeNullable *>(own_type.get());
+        const auto * own_nullable = typeid_cast<const ColumnNullable *>(own_column.get());
+        if (!own_nullable_type || !own_nullable)
+            return restoreOwnNulls(nullable->getNestedColumnPtr(), nullable_type->getNestedType(), own_column, own_type);
+        auto [nested, nested_type] = restoreOwnNulls(
+            nullable->getNestedColumnPtr(), nullable_type->getNestedType(),
+            own_nullable->getNestedColumnPtr(), own_nullable_type->getNestedType());
+        if (!nested->canBeInsideNullable())
+            return {std::move(nested), std::move(nested_type)};
+        return {ColumnNullable::create(nested, own_nullable->getNullMapColumnPtr()), std::make_shared<DataTypeNullable>(nested_type)};
+    }
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto * array = typeid_cast<const ColumnArray *>(column.get());
+        const auto * own_array_type = typeid_cast<const DataTypeArray *>(own_type.get());
+        const auto * own_array = typeid_cast<const ColumnArray *>(own_column.get());
+        if (!array || !own_array_type || !own_array)
+            return {column, type};
+        auto [data, data_type] = restoreOwnNulls(
+            array->getDataPtr(), array_type->getNestedType(), own_array->getDataPtr(), own_array_type->getNestedType());
+        if (data.get() == array->getDataPtr().get())
+            return {column, type};
+        return {ColumnArray::create(data, array->getOffsetsPtr()), std::make_shared<DataTypeArray>(data_type)};
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto * tuple = typeid_cast<const ColumnTuple *>(column.get());
+        const auto * own_tuple_type = typeid_cast<const DataTypeTuple *>(own_type.get());
+        const auto * own_tuple = typeid_cast<const ColumnTuple *>(own_column.get());
+        if (!tuple || !own_tuple_type || !own_tuple || tuple->tupleSize() != own_tuple->tupleSize()
+            || tuple->tupleSize() != tuple_type->getElements().size() || tuple->tupleSize() != own_tuple_type->getElements().size())
+            return {column, type};
+        Columns columns(tuple->tupleSize());
+        DataTypes types(tuple->tupleSize());
+        bool changed = false;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            std::tie(columns[i], types[i]) = restoreOwnNulls(
+                tuple->getColumnPtr(i), tuple_type->getElement(i), own_tuple->getColumnPtr(i), own_tuple_type->getElement(i));
+            changed |= columns[i].get() != tuple->getColumnPtr(i).get();
+        }
+        if (!changed)
+            return {column, type};
+        return {ColumnTuple::create(columns),
+                tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(types, tuple_type->getElementNames())
+                                               : std::make_shared<DataTypeTuple>(types)};
+    }
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto * map = typeid_cast<const ColumnMap *>(column.get());
+        const auto * own_map_type = typeid_cast<const DataTypeMap *>(own_type.get());
+        const auto * own_map = typeid_cast<const ColumnMap *>(own_column.get());
+        if (!map || !own_map_type || !own_map)
+            return {column, type};
+        const auto & entries = map->getNestedData();
+        const auto & own_entries = own_map->getNestedData();
+        auto [keys, keys_type] = restoreOwnNulls(
+            entries.getColumnPtr(0), map_type->getKeyType(), own_entries.getColumnPtr(0), own_map_type->getKeyType());
+        auto [values, values_type] = restoreOwnNulls(
+            entries.getColumnPtr(1), map_type->getValueType(), own_entries.getColumnPtr(1), own_map_type->getValueType());
+        if (keys.get() == entries.getColumnPtr(0).get() && values.get() == entries.getColumnPtr(1).get())
+            return {column, type};
+        return {ColumnMap::create(ColumnArray::create(ColumnTuple::create(Columns{keys, values}), map->getNestedColumn().getOffsetsPtr())),
+                std::make_shared<DataTypeMap>(keys_type, values_type)};
+    }
+    return {column, type};
+}
+
 /// The requested type of the whole decoded column of type `type` implied by a requested subcolumn of it:
 /// `subcolumn` is the dotted name below the column (`key_1`, `u.key_1`, `values.key_1`) and `subcolumn_type`
 /// is its requested type. Returns null unless the path goes through a dynamic key lookup of a map (`key_1`).
@@ -1465,6 +1657,9 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
     /// Cache of `Nested`/struct table extractors keyed by the (possibly lower-cased) nested table name.
     /// The backing block must outlive the extractor (it holds a reference into it), so keep both.
     UnorderedMapWithMemoryTracking<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> nested_extractors;
+    /// The same for the decoded columns without the null maps the decoder keeps only for the post-decode
+    /// conversion (see `dropVisibilityOnlyNulls`). No extractor for a column that has none of them.
+    UnorderedMapWithMemoryTracking<String, std::pair<std::shared_ptr<Block>, std::shared_ptr<NestedColumnExtractHelper>>> own_nulls_extractors;
 
     Columns columns;
     columns.reserve(header.columns());
@@ -1512,6 +1707,10 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 const auto & source = decoded[nested_it->second];
                 ColumnWithTypeAndName source_column(source.column, source.type, nested_table_name);
                 reinterpretRawByteColumns(source_column, key_lookup_hint, /*field=*/nullptr);
+                /// The values are converted, so the null maps kept only for that are not needed anymore.
+                if (!visibility_only_structs.empty())
+                    std::tie(source_column.column, source_column.type) = dropVisibilityOnlyNulls(
+                        source_column.column, source_column.type, search_nested, visibility_only_structs, case_insensitive);
                 const Block block({std::move(source_column)});
                 NestedColumnExtractHelper helper(block, case_insensitive);
                 if (auto nested_column = helper.extractColumn(header_column.name))
@@ -1542,6 +1741,37 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                     if (case_insensitive)
                         column.name = header_column.name;
                     read_from_nested = true;
+                }
+
+                /// A struct can keep its null map only for the conversion below, which must skip the rows it
+                /// hides (see `RecordBatchDecoder::recordVisibilityOnlyStructs`). No requested column asks for
+                /// these nulls, so they must not reach the subcolumn: it is converted with them, and then gets
+                /// the nulls it has in the decoded column without these null maps.
+                if (read_from_nested && !visibility_only_structs.empty())
+                {
+                    auto own_nulls_it = own_nulls_extractors.find(search_nested);
+                    if (own_nulls_it == own_nulls_extractors.end())
+                    {
+                        const auto & src = decoded[nested_it->second];
+                        auto [own_column, own_type] = dropVisibilityOnlyNulls(
+                            src.column, src.type, search_nested, visibility_only_structs, case_insensitive);
+                        std::shared_ptr<Block> block;
+                        std::shared_ptr<NestedColumnExtractHelper> helper;
+                        if (own_column.get() != src.column.get())
+                        {
+                            block = std::make_shared<Block>(Block({ColumnWithTypeAndName(own_column, own_type, nested_table_name)}));
+                            helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
+                        }
+                        own_nulls_it = own_nulls_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
+                    }
+                    if (const auto & helper = own_nulls_it->second.second)
+                    {
+                        if (auto own = helper->extractColumn(header_column.name))
+                        {
+                            reinterpretRawByteColumns(column, header_column.type, /*field=*/nullptr);
+                            std::tie(column.column, column.type) = restoreOwnNulls(column.column, column.type, own->column, own->type);
+                        }
+                    }
                 }
             }
 

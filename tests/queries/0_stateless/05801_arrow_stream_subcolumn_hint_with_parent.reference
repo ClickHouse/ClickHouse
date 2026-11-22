@@ -165,3 +165,32 @@ map lookup of a raw-byte key requested through a subcolumn of the keys
 case-insensitive names of structs with different field names
 ('9999-12-31')	(3000000)
 (3000000)	('9999-12-31')
+a top-level field with a dotted name next to a struct with the same path
+('9999-12-31')	(3000000)
+(3000000)	('9999-12-31')
+('9999-12-31')	(3000000)	(('2024-01-01'))
+('2024-01-01')	(19723)
+(19723)	('2024-01-01')
+null struct row with string and raw-byte siblings
+(\'label\',\'abcdefghijklmnop\')	label	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\',\'\')		::
+(NULL,\'abcdefghijklmnop\')	\N	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'label\',\'abcdefghijklmnop\')	label
+(\'\',\'\')	
+(NULL,\'abcdefghijklmnop\')	\N
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+::
+6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'label\',\'abcdefghijklmnop\')	label	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\',\'\')		::
+(\'label\',\'abcdefghijklmnop\')	label	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+(\'\',\'\')		::
+(\'label\',\'abcdefghijklmnop\')	label
+(\'\',\'\')	
+('label','abcdefghijklmnop')	label	6162:6364:6566:6768:696a:6b6c:6d6e:6f70
+('','')	\N	\N
+null struct row in an array with string and raw-byte siblings
+['(\'label\',\'abcdefghijklmnop\')']	['label']	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+['(\'\',\'\')']	['']	['::']
+['(\'label\',\'abcdefghijklmnop\')']	['label']	['6162:6364:6566:6768:696a:6b6c:6d6e:6f70']
+['(\'\',\'\')']	['']	['::']
