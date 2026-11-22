@@ -23,7 +23,7 @@ Do not send HTTP headers X-ClickHouse-Progress more frequently than at each spec
 
 <SettingsInfoBlock type="Seconds" default_value="30" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "30"},{"label": "The change was backported to 26.1 and is recorded there."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "30"},{"label": "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."}]}]}/>
 
 Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
 
