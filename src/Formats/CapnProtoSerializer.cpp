@@ -96,15 +96,46 @@ namespace
         std::vector<std::unique_ptr<FieldBuilder>> field_builders;
     };
 
+    /// A group (`g :group { ... }`, and a named union `u :union { ... }` as well) is not a separate object:
+    /// its fields are stored inline in the data and pointer sections of the struct that contains it,
+    /// and the offsets of its fields are relative to that struct. So a group field doesn't have its own slot
+    /// and must never be accessed as a pointer field of the parent struct.
+    bool isGroup(const capnp::StructSchema & struct_schema)
+    {
+        return struct_schema.getProto().getStruct().getIsGroup();
+    }
+
+    /// Offset of the field inside its struct. A group doesn't have a slot (see above),
+    /// the offset is not used for it and we must not read it from the wrong union member of the field proto.
+    UInt32 getFieldSlotOffset(const capnp::StructSchema::Field & field)
+    {
+        auto proto = field.getProto();
+        return proto.isSlot() ? proto.getSlot().getOffset() : 0;
+    }
+
     template <typename ParentBuilder>
     std::unique_ptr<StructBuilder> initStructBuilder(ParentBuilder & parent_builder, UInt32 offset_or_index, const capnp::_::StructSize & struct_size, size_t elements, const capnp::StructSchema & schema)
     {
         capnp::DynamicStruct::Builder builder_impl;
         if constexpr (std::is_same_v<ParentBuilder, capnp::DynamicStruct::Builder>)
-            builder_impl = capnp::DynamicStruct::Builder(schema, parent_builder.getBuilderImpl().getPointerField(offset_or_index).initStruct(struct_size));
+        {
+            /// A group shares the storage with its parent struct.
+            if (isGroup(schema))
+                builder_impl = capnp::DynamicStruct::Builder(schema, parent_builder.getBuilderImpl());
+            else
+                builder_impl = capnp::DynamicStruct::Builder(schema, parent_builder.getBuilderImpl().getPointerField(offset_or_index).initStruct(struct_size));
+        }
         else
             builder_impl = capnp::DynamicStruct::Builder(schema, parent_builder.getBuilderImpl().getStructElement(offset_or_index));
         return std::make_unique<StructBuilder>(std::move(builder_impl), elements);
+    }
+
+    capnp::DynamicStruct::Reader getStructReader(const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset, const capnp::StructSchema & schema)
+    {
+        /// A group shares the storage with its parent struct.
+        if (isGroup(schema))
+            return capnp::DynamicStruct::Reader(schema, parent_struct_reader.getReaderImpl());
+        return capnp::DynamicStruct::Reader(schema, parent_struct_reader.getReaderImpl().getPointerField(slot_offset).getStruct(nullptr));
     }
 
     class ICapnProtoSerializer
@@ -927,7 +958,7 @@ namespace
             auto first = union_fields[0];
             auto second = union_fields[1];
             auto nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
-            nested_slot_offset = first.getProto().getSlot().getOffset(); /// Both fields have the same offset.
+            nested_slot_offset = getFieldSlotOffset(first); /// Both fields have the same offset.
             if (first.getType().isVoid())
             {
                 nested_serializer = createSerializer(nested_type, column_name, second.getType(), settings);
@@ -961,7 +992,7 @@ namespace
 
         void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
-            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, parent_struct_reader.getReaderImpl().getPointerField(slot_offset).getStruct(nullptr));
+            auto struct_reader = getStructReader(parent_struct_reader, slot_offset, struct_schema);
             readRowImpl(column, struct_reader);
         }
 
@@ -1198,7 +1229,7 @@ namespace
             Names names = {"key", "value"};
             auto entries_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(types, names));
             nested_serializer = createSerializer(entries_type, column_name, field_type, settings);
-            entries_slot_offset = struct_schema.getFields()[0].getProto().getSlot().getOffset();
+            entries_slot_offset = getFieldSlotOffset(struct_schema.getFields()[0]);
         }
 
         void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> & field_builder, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
@@ -1213,7 +1244,7 @@ namespace
 
         void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
-            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, parent_struct_reader.getReaderImpl().getPointerField(slot_offset).getStruct(nullptr));
+            auto struct_reader = getStructReader(parent_struct_reader, slot_offset, struct_schema);
             readRowImpl(column, struct_reader);
         }
 
@@ -1328,7 +1359,7 @@ namespace
 
         void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
         {
-            auto struct_reader = capnp::DynamicStruct::Reader(struct_schema, parent_struct_reader.getReaderImpl().getPointerField(slot_offset).getStruct(nullptr));
+            auto struct_reader = getStructReader(parent_struct_reader, slot_offset, struct_schema);
             readRowImpl(column, struct_reader);
         }
 
@@ -1363,7 +1394,7 @@ namespace
 
                 auto capnp_type = field->getType();
                 fields_serializers.push_back(createSerializer(data_types[i], names[i], capnp_type, settings));
-                fields_offsets.push_back(field->getProto().getSlot().getOffset());
+                fields_offsets.push_back(getFieldSlotOffset(*field));
                 fields_indexes.push_back(field->getIndex());
             }
         }
