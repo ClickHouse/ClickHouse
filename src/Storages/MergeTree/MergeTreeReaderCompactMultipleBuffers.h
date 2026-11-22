@@ -23,6 +23,7 @@ public:
         : MergeTreeReaderCompact{std::forward<Args>(args)...}
     {
         fillColumnPositions();
+        fillReadOrder();
     }
 
     /// Returns the number of rows has been read or zero if there is no columns to read.
@@ -44,6 +45,7 @@ private:
     /// Whether to read all columns with one buffer for the current `all_mark_ranges`.
     bool shouldUseSharedStream();
     void updateStreamsReadRequestMap();
+    void fillReadOrder();
 
     struct Stream
     {
@@ -51,6 +53,11 @@ private:
         /// Position of the first mark of the stream's column in a granule, where reading of a granule starts.
         size_t first_position = 0;
     };
+
+    /// Indexes in `columns_to_read` in the order of the columns in the data file.
+    /// A granule is read in this order, since a backward seek out of the shared buffer is a new request
+    /// that reads the data after it again (i.e. mutation reads columns in the order of `NameSet`).
+    std::vector<size_t> read_order;
 
     bool initialized = false;
     /// Streams by the position of the column in the part. Subcolumns share the stream of their column.

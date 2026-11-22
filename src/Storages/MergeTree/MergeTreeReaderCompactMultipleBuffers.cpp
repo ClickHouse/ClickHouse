@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/checkDataPart.h>
 
 #include <algorithm>
+#include <limits>
+#include <numeric>
 #include <ranges>
 #include <unordered_set>
 
@@ -49,7 +51,6 @@ catch (...)
 void MergeTreeReaderCompactMultipleBuffers::readGranule(
     size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask)
 {
-    const size_t num_columns = columns_to_read.size();
     auto is_selected = [&](size_t pos) { return res_columns[pos] && (!columns_mask || (*columns_mask)[pos]); };
 
     deserialize_binary_bulk_state_map.clear();
@@ -66,7 +67,7 @@ void MergeTreeReaderCompactMultipleBuffers::readGranule(
     /// and it might be not empty inside res_columns (and SubstreamsCache contains the whole columns).
     std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
 
-    for (size_t pos = 0; pos < num_columns; ++pos)
+    for (size_t pos : read_order)
     {
         if (!is_selected(pos))
             continue;
@@ -227,6 +228,18 @@ bool MergeTreeReaderCompactMultipleBuffers::shouldUseSharedStream()
                 return false;
 
     return true;
+}
+
+void MergeTreeReaderCompactMultipleBuffers::fillReadOrder()
+{
+    read_order.resize(columns_to_read.size());
+    std::iota(read_order.begin(), read_order.end(), 0);
+
+    /// Stable, since the columns with the same position share the caches of a granule.
+    std::ranges::stable_sort(read_order, {}, [&](size_t pos)
+    {
+        return column_positions[pos].value_or(std::numeric_limits<size_t>::max());
+    });
 }
 
 void MergeTreeReaderCompactMultipleBuffers::updateAllMarkRanges(const MarkRanges & ranges)
