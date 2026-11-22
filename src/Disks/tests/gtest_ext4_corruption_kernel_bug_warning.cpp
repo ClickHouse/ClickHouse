@@ -37,7 +37,7 @@ protected:
         getContext().context->setConfig(config);
     }
 
-    String stored() const
+    [[nodiscard]] String stored() const
     {
         auto message = context->getWarningMessage(warning_type);
         return message ? message->text : "";
