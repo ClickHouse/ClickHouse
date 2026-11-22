@@ -2268,6 +2268,7 @@ If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 When checking a data part on a local disk (`CHECK TABLE`, the check of a part that failed to be read,
 recalculation of missing checksums, `OPTIMIZE ... DRY RUN`), read its files with direct I/O (`O_DIRECT` option),
 bypassing the OS page cache, so that wrong data in the page cache does not make a healthy part look broken.
+Parts in packed storage (see `min_bytes_for_full_part_storage`) are still read through the page cache.
 If the filesystem does not support direct I/O, the files are read through the page cache.
 )", 0, \
         {"26.12", false, true, "New setting. Check data parts on local disks with direct I/O, bypassing the OS page cache."}) \
