@@ -100,9 +100,10 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
-    /// The engine of a table created from the table function, when its `TABLE ENGINE` grant is required, i.e. when the
-    /// engine has a source. A definition that cannot be a table is refused.
-    static std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
+    /// The grant needed to create a table from the table function, besides `CREATE TABLE`: `TABLE ENGINE` on its engine
+    /// when the engine has a source, or `READ` and `WRITE` on the source of a function that has no engine.
+    /// A definition that cannot be a table is refused.
+    static std::optional<AccessRightsElement> getRequiredAccessOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 

@@ -2910,7 +2910,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         if (sparse_keys_size == 0 && key_condition_useful)
         {
             const BoolMask mask = key_condition.checkInRange(
-                used_key_indices, sparse_key_left.data(), sparse_key_right.data(), sparse_key_types,
+                used_key_indices, sparse_key_left.data(), sparse_key_right.data(), sparse_key_types, primary_key.data_types,
                 /*equal_boundaries_mask=*/ {}, /*initial_mask=*/ {}, /*key_bounds=*/ nullptr);
             sparse_condition_can_be_true = mask.can_be_true;
         }
@@ -3102,6 +3102,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_left.data(),
                     sparse_key_right.data(),
                     sparse_key_types,
+                    primary_key.data_types,
                     equal_boundaries_mask,
                     initial_mask,
                     &index_bounds);
