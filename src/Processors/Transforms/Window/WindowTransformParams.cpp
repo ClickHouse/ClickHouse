@@ -16,7 +16,6 @@
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
-#include <optional>
 #include <ranges>
 
 namespace DB
@@ -31,22 +30,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// The value moved by the offset, empty when it leaves the type's range.
-template <typename T>
-std::optional<T> shift(T value, T offset, bool preceding)
-{
-    if constexpr (std::is_floating_point_v<T>)
-    {
-        return preceding ? value - offset : value + offset;
-    }
-    else
-    {
-        T result{};
-        const bool overflow = preceding ? common::subOverflow(value, offset, result) : common::addOverflow(value, offset, result);
-        return overflow ? std::nullopt : std::optional(result);
-    }
-}
-
 template <typename T>
 int compareRangeOffset(
     const IColumn * lhs_column, size_t lhs_row,
@@ -55,15 +38,22 @@ int compareRangeOffset(
 {
     const T lhs_value = assert_cast<const ColumnVector<T> &>(*lhs_column).getData()[lhs_row];
     const T rhs_value = assert_cast<const ColumnVector<T> &>(*rhs_column).getData()[rhs_row];
-    const std::optional<T> shifted_rhs = shift(rhs_value, static_cast<T>(offset.safeGet<T>()), offset_is_preceding);
-    if (!shifted_rhs)
-        return offset_is_preceding ? 1 : -1;
-    else if (lhs_value < *shifted_rhs)
-        return -1;
-    else if (lhs_value == *shifted_rhs)
-        return 0;
+    const T offset_value = static_cast<T>(offset.safeGet<T>());
+
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        const T shifted_rhs = offset_is_preceding ? rhs_value - offset_value : rhs_value + offset_value;
+        return lhs_value < shifted_rhs ? -1 : (lhs_value == shifted_rhs ? 0 : 1);
+    }
     else
-        return 1;
+    {
+        T shifted_rhs{};
+        const bool overflow = offset_is_preceding ? common::subOverflow(rhs_value, offset_value, shifted_rhs) : common::addOverflow(rhs_value, offset_value, shifted_rhs);
+        if (overflow)
+            return offset_is_preceding ? 1 : -1;
+
+        return lhs_value < shifted_rhs ? -1 : (lhs_value == shifted_rhs ? 0 : 1);
+    }
 }
 
 /// The comparator specialised for the value type of `column`, which is the nested column for a Nullable key.
