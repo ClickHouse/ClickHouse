@@ -17,7 +17,7 @@ data="data_05829"
 dist="dist_05829"
 user_a="host_a_${CLICKHOUSE_DATABASE}"
 user_b="host_b_${CLICKHOUSE_DATABASE}"
-failpoint="distributed_async_insert_queue_pause_before_pool_cluster_lookup"
+failpoint="distributed_async_insert_queue_pause_in_create_pool"
 insert_log="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.insert.log"
 insert_pid=""
 

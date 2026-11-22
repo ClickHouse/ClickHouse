@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cluster="test_sql_cluster_05837"
 data="data_05837"
 dist="dist_05837"
-failpoint="distributed_async_insert_queue_pause_before_pool_cluster_lookup"
+failpoint="distributed_async_insert_queue_pause_in_create_pool"
 insert_log="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.insert.log"
 insert_pid=""
 

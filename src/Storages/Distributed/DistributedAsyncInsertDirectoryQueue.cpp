@@ -73,7 +73,7 @@ namespace DistributedSetting
 
 namespace FailPoints
 {
-    extern const char distributed_async_insert_queue_pause_before_pool_cluster_lookup[];
+    extern const char distributed_async_insert_queue_pause_in_create_pool[];
 }
 
 namespace ErrorCodes
@@ -314,7 +314,7 @@ ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::createPool(
     {
         /// The cluster snapshot is already fixed. An `ALTER CLUSTER` while this is paused must not
         /// make the queue store that snapshot's addresses and another generation's pool.
-        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_before_pool_cluster_lookup);
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_queue_pause_in_create_pool);
 
         /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
