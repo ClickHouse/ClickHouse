@@ -1685,7 +1685,9 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
             auto storage_ptr = it->table;
-            if (it->table_id.uuid == table_id.uuid)
+            if (it->table_id.uuid == table_id.uuid &&
+                it->table_id.database_name == table_id.database_name &&
+                it->table_id.table_name == table_id.table_name)
             {
                 it_dropped_table = it;
                 dropped_table = *it;
@@ -1707,11 +1709,6 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        /// A lookup by `UUID` ignores the database name, so the table may have been dropped from another database.
-        if (it_dropped_table->table_id.database_name != table_id.database_name)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Table {} was dropped from database {}, UNDROP into a different database is not supported",
-                table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.database_name));
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
@@ -1970,7 +1967,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
     auto is_disk_eligible_for_search = [](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
     {
-        bool is_disk_eligible = !disk->isReadOnly();
+        bool is_disk_eligible = !disk->isBroken() && !disk->isReadOnly();
 
         /// Disk is not actually used by MergeTree table
         if (is_disk_eligible && storage && !storage->getStoragePolicy()->tryGetVolumeIndexByDiskName(disk->getName()).has_value())

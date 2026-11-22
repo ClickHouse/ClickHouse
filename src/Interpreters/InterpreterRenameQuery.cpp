@@ -146,7 +146,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(ddl_guards[from]));
+            return database->tryEnqueueReplicatedDDL(query_ptr->clone(), getContext(), {}, std::move(ddl_guards[from]));
         }
 
         /// Whether the tables are identified by UUIDs, taken before the rename: see `NamedCollectionFactory::renameDependencies`.
