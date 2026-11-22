@@ -135,15 +135,8 @@ void checkRowPoliciesBeforeAlter(
     const auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, context);
     const auto & old_columns = metadata_snapshot->getColumns();
 
+    /// built only when a policy reads a modified column
     StorageSnapshotPtr new_storage_snapshot;
-    if (std::any_of(commands.begin(), commands.end(), modifiesColumn))
-    {
-        auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*metadata_snapshot);
-        /// as the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one
-        removeImplicitStatistics(new_metadata->columns);
-        commands.apply(*new_metadata, context, share_nested_offsets);
-        new_storage_snapshot = table->getStorageSnapshotWithoutData(new_metadata, context);
-    }
 
     /// binding the lookup tables of a policy needs no grant of the user who alters the table: a copy of the global context has full access
     auto analysis_context = Context::createCopy(context->getGlobalContext());
@@ -191,6 +184,15 @@ void checkRowPoliciesBeforeAlter(
                 });
                 if (!modifies_used)
                     continue;
+
+                if (!new_storage_snapshot)
+                {
+                    auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*metadata_snapshot);
+                    /// as the storages do before `apply`: an explicit `ADD STATISTICS` replaces an implicit one
+                    removeImplicitStatistics(new_metadata->columns);
+                    commands.apply(*new_metadata, context, share_nested_offsets);
+                    new_storage_snapshot = table->getStorageSnapshotWithoutData(new_metadata, context);
+                }
 
                 /// a subquery reads the table before the alter, so only the names and types tell if it still reads the same
                 const auto & new_columns = new_storage_snapshot->metadata->getColumns();
