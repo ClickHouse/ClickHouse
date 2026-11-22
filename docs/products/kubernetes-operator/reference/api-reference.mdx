@@ -89,7 +89,8 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false | \{  \} |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
-| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job. | false |  |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job.<br />Deprecated: replaced by imageVersionCatalog in v1alpha2; still used by the v1alpha1 controller. | false |  |
+| `imageVersionCatalog` | [ImageVersionEntry](#imageversionentry) array | ImageVersionCatalog maps ClickHouse server container images to the ClickHouse version they contain.<br />The v1alpha1 controller ignores this field and keeps detecting the version with the version probe Job.<br />It exists as a migration preparation step: fill it in before migrating the cluster to v1alpha2,<br />where it replaces the version probe and is required for every custom ClickHouse image. | false |  |
 | `externalSecret` | [ExternalSecret](#externalsecret) | ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.<br />The secret must reside in the same namespace as the cluster. | false |  |
 | `additionalPorts` | [AdditionalPort](#additionalport) array | AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the public headless Service.<br />The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them. | false |  |
 
@@ -110,7 +111,7 @@ ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
 | `updateRevision` | string | UpdateRevision indicates latest requested ClickHouseCluster spec revision. | true |  |
 | `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
 | `version` | string | Version indicates the version reported by the container image. | false |  |
-| `versionProbeRevision` | string | VersionProbeRevision is the image hash of the last successful version probe.<br />When this matches the current image hash, the cached Version is used directly. | false |  |
+| `versionProbeRevision` | string | VersionProbeRevision is the image hash of the last successful version probe.<br />When this matches the current image hash, the cached Version is used directly.<br />Deprecated: the version probe is replaced by spec.imageVersionCatalog in v1alpha2; still used by the v1alpha1 controller. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -218,7 +219,7 @@ DefaultPasswordSelector selects the source for the default user's password.
 |-------|------|-------------|----------|---------|
 | `passwordType` | string | Type of the provided password. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword | true | password |
 | `secret` | [SecretKeySelector](#secretkeyselector) | Select password value from a Secret key | false |  |
-| `configMap` | [ConfigMapKeySelector](#configmapkeyselector) | Select password value from a ConfigMap key | false |  |
+| `configMap` | [ConfigMapKeySelector](#configmapkeyselector) | Select password value from a ConfigMap key.<br />Deprecated: ConfigMaps are not suitable for credentials; use secret instead. Removed in v1alpha2. | false |  |
 
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
@@ -295,6 +296,18 @@ ExternalSecretPolicy controls how the operator treats the external secret's cont
 
 Appears in:
 - [ExternalSecret](#externalsecret)
+
+## ImageVersionEntry {#imageversionentry}
+
+ImageVersionEntry maps a ClickHouse server container image to the ClickHouse version it contains.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `image` | string | Image is the full image reference, compared by exact string match with the ClickHouse server container image<br />(e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29").<br />Must be pinned by a digest or by a tag other than `latest`; a tag starting with a digit must start with<br />major.minor (e.g. "25.8", "25.8.2.29", "25.8-alpine"), so major-only tags like "25" are rejected.<br />Tags are checked by naming heuristics only and can still be moved by the registry:<br />a digest ("repo@sha256:...") is the only reference that is guaranteed to be immutable. | true |  |
+| `version` | string | Version is the ClickHouse version contained in the image (e.g. "25.8.2.29"). | true |  |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
 
 ## KeeperCluster {#keepercluster}
 
