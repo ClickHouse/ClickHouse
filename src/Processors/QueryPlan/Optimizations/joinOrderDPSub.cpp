@@ -532,7 +532,6 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
             {
                 if (prefixes[relation].from_join)
                 {
-                    /// As `isInterestingOrder` within a group: the order of a join result counts only if a later sort uses it.
                     if (!query_graph.reuse_join_output_order)
                         continue;
                     dpsub_data.join_result_relations |= static_cast<UInt32>(1) << relation;

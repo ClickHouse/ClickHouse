@@ -232,8 +232,7 @@ public:
     [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
-    /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded by
-    /// primary key ranges. Read by the join order optimization of the group of tables above.
+    /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded.
     struct PlannedMergeOrder
     {
         String column;

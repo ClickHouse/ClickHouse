@@ -186,7 +186,6 @@ struct QueryGraph
     {
         Names prefix;
         size_t primary_key_prefix = 0;
-        /// The input is a sort-merge join planned in a group of its own, not a read.
         bool from_join = false;
     };
     /// Per relation. Called by DPsub only when it uses interesting orders, since it probes the storage order of every input.

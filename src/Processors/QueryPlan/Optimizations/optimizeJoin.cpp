@@ -1063,8 +1063,7 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-/// The first node below `node` that is not an expression or a filter, if the column `name` of `node` is only renamed on the
-/// way there; `name` becomes the column's name at that node. Nullptr if the column is computed on the way.
+/// The first node at or below `node` that is not an expression or filter, renaming `name` along; nullptr if the column is computed.
 static const QueryPlan::Node * findColumnThroughRenames(const QueryPlan::Node & node, String & name)
 {
     const auto * current = &node;
@@ -1119,7 +1118,6 @@ static VectorWithMemoryTracking<QueryGraph::ReadInOrder> findReadInOrderPrefixes
         auto * reading_node = findReadingStepForReadInOrder(*inputs[i], /*read_in_order_through_join=*/ false);
         if (!reading_node)
         {
-            /// A sort-merge join planned in a group of its own is sorted by its merge key.
             std::ranges::sort(columns);
             for (const auto & column : columns)
             {
