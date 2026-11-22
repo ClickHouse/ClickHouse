@@ -426,7 +426,6 @@ test_rmv_access_denied_on_rename_race/test.py	79682
 test_jbod_ha/test.py	79681
 test_remote_blobs_naming/test_backward_compatibility.py	79599
 test_replicated_merge_tree_compatibility/test.py	79514
-test_store_cleanup/test.py	79320
 test_paimon_incremental_read/test.py	79095
 test_storage_iceberg_with_spark/test_metadata_file_format_with_uuid.py	78918
 test_system_flush_logs/test.py	78482
