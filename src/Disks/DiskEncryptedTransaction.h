@@ -9,6 +9,7 @@
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/SecretString.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -20,13 +21,13 @@ struct DiskEncryptedSettings
 {
     DiskPtr wrapped_disk;
     String disk_path;
-    String current_key;
+    SecretString current_key;
     UInt128 current_key_fingerprint{};
     FileEncryption::Algorithm current_algorithm{};
-    std::unordered_map<UInt128 /* fingerprint */, String /* key */> all_keys;
+    std::unordered_map<UInt128 /* fingerprint */, SecretString /* key */> all_keys;
 
     /// Returns an encryption key found by its fingerprint.
-    String findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
+    [[nodiscard]] SecretString findKeyByFingerprint(UInt128 key_fingerprint, const String & path_for_logs) const;
 };
 
 
@@ -239,7 +240,7 @@ public:
         delegate_transaction->writeFileUsingBlobWritingFunction(wrapped_path, mode, std::move(write_blob_function));
     }
 
-    std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
+    [[nodiscard]] std::unique_ptr<WriteBufferFromFileBase> writeEncryptedFile(
         const String & path,
         size_t buf_size,
         WriteMode mode,
@@ -260,7 +261,7 @@ private:
         WriteMode mode,
         const WriteSettings & settings);
 
-    String wrappedPath(const String & path) const
+    [[nodiscard]] String wrappedPath(const String & path) const
     {
         return wrappedPath(disk_path, path);
     }

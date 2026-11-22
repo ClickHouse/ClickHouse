@@ -1,0 +1,28 @@
+data files	10
+position delete files	10	715
+10	10	10
+expected: 4285	10710715
+4285	10710715
+pairs	90	10
+4285	10710715
+--- a failed UPDATE removes the delete files it wrote
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+10	10	10
+4285	10710715	0
+--- UPDATE writes a delete file per data file for the old rows, and one data file for the new ones
+DATA	11	5857
+POSITION_DELETE	20	1572
+20	20	20
+expected: 4285	10710715	857
+4285	10710715	857
+pairs	190	20
+4285	10710715	857
+--- partitioned: 2 data files per partition
+{0}	DATA	2	1000
+{0}	POSITION_DELETE	2	143
+{1}	DATA	2	1000
+{1}	POSITION_DELETE	2	143
+4	4	4
+expected: 1714	1713715
+1714	1713715
+pairs	4	4

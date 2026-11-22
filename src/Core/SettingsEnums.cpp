@@ -392,6 +392,13 @@ IMPLEMENT_SETTING_ENUM(
      {"kill", SeccompMode::Kill}})
 
 IMPLEMENT_SETTING_ENUM(
+    FilesystemIsolationMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"disabled", FilesystemIsolationMode::Disabled},
+     {"best_effort", FilesystemIsolationMode::BestEffort},
+     {"enforce", FilesystemIsolationMode::Enforce}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -471,7 +478,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
      {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES},
-     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS}})
+     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS},
+     {"with_subcolumns", MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,
@@ -610,6 +618,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(S3RequestPayer, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", S3RequestPayer::NONE},
+     {"requester", S3RequestPayer::REQUESTER}})
 
 IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
     {{"legacy", ExplainQueryPlanDefault::LEGACY},
