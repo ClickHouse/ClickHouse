@@ -1,10 +1,10 @@
 -- A `GLOBAL IN` is replaced by a temporary ("external") table only for a query that may run on
 -- more than one server; a non-distributed query keeps the subquery as it is. See the section
 -- "Distributed subqueries" of docs/reference/statements/in.mdx.
--- The `WHERE` of a `PROJECTION` is analysed when the table is created, which is the remaining
--- place where that replacement is done, so these `CREATE TABLE` statements exercise it: with
--- parallel replicas enabled the table is considered remote, and the right hand side of the
--- `GLOBAL IN` - a subquery, a table name, or a joined table expression - is rewritten.
+-- The `WHERE` of a `PROJECTION` is analysed when the table is created. A projection is always
+-- calculated locally, so even with parallel replicas enabled the right hand side of the
+-- `GLOBAL IN` - a subquery, a table name, or a joined table expression - must be kept as is:
+-- a temporary table in the stored projection query would break every later `INSERT`.
 
 DROP TABLE IF EXISTS gs_src;
 DROP TABLE IF EXISTS gs_join;
@@ -29,7 +29,7 @@ CREATE TABLE gs_not_distributed
 )
 ENGINE = MergeTree ORDER BY a;
 
--- From here on the table counts as remote, so every `GLOBAL IN` gets a temporary table.
+-- From here on parallel replicas are enabled, which must not affect the projections.
 SET enable_parallel_replicas = 1,
     max_parallel_replicas = 2,
     automatic_parallel_replicas_mode = 0,
@@ -47,7 +47,7 @@ CREATE TABLE gs_table_name
 ENGINE = MergeTree ORDER BY a;
 
 -- A `GLOBAL JOIN` inside the `GLOBAL IN` subquery: there the right hand side is a joined table
--- expression, which is rewritten in place and keeps its alias as the temporary table name.
+-- expression.
 CREATE TABLE gs_nested_join
 (
     a UInt32,
@@ -58,7 +58,7 @@ CREATE TABLE gs_nested_join
 )
 ENGINE = MergeTree ORDER BY a;
 
--- Two identical `GLOBAL IN` subqueries share one temporary table.
+-- Two identical `GLOBAL IN` subqueries.
 CREATE TABLE gs_shared_subquery
 (
     a UInt32,
@@ -69,8 +69,8 @@ CREATE TABLE gs_shared_subquery
 )
 ENGINE = MergeTree ORDER BY a;
 
--- The replacement above is part of reading from several servers, so it must not change what a
--- local query returns: the tables keep all their rows and the projections are materialised.
+-- The projections must not depend on the settings they were created with: the tables keep all
+-- their rows and the projections are materialised.
 SET enable_parallel_replicas = 0;
 
 INSERT INTO gs_not_distributed VALUES (1, 1), (7, 7);

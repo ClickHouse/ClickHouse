@@ -26,7 +26,7 @@ INSERT INTO t_stream_distinct_in_order SELECT toString(number % 100), number FRO
 
 -- DISTINCT in order over a streaming read. LIMIT is below the number of distinct values so the
 -- query completes from storage. Must not crash; returns the requested number of rows.
-SELECT count() FROM (SELECT DISTINCT a FROM t_stream_distinct_in_order STREAM LIMIT 50);
-SELECT count() FROM (SELECT DISTINCT * FROM t_stream_distinct_in_order STREAM LIMIT 50);
+SELECT count() FROM (SELECT DISTINCT a FROM t_stream_distinct_in_order STREAM BOUNDED LIMIT 50);
+SELECT count() FROM (SELECT DISTINCT * FROM t_stream_distinct_in_order STREAM BOUNDED LIMIT 50);
 
 DROP TABLE t_stream_distinct_in_order;

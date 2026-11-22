@@ -126,11 +126,16 @@ def get_node(query_node, table="dist", *args, **kwargs):
     return rows.strip()
 
 
-# TODO: right now random distribution looks bad, but works
 def test_load_balancing_default():
+    # With `random` load balancing, a fixed number of queries can miss a replica
+    # by pure chance: for 30 queries the probability is 3 * (2/3)^30 ~= 1.6e-5,
+    # which does happen in CI. Query until every replica is seen, with a cap that
+    # makes a false failure practically impossible (3 * (2/3)^100 ~= 7e-18).
     unique_nodes = set()
-    for _ in range(0, queries):
+    for _ in range(0, 100):
         unique_nodes.add(get_node(n1, settings={"load_balancing": "random"}))
+        if len(unique_nodes) == nodes:
+            break
     assert len(unique_nodes) == nodes, unique_nodes
 
 

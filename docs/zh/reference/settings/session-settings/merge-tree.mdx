@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="merge_tree_coarse_index_granularity">
-  ## merge_tree_coarse_index_granularity
-</div>
+## merge_tree_coarse_index_granularity {#merge_tree_coarse_index_granularity}
 
 <SettingsInfoBlock type="UInt64" default_value="8" />
 
@@ -26,27 +24,21 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 任意正偶整数。
 
-<div id="merge_tree_compact_parts_min_granules_to_multibuffer_read">
-  ## merge_tree_compact_parts_min_granules_to_multibuffer_read
-</div>
+## merge_tree_compact_parts_min_granules_to_multibuffer_read {#merge_tree_compact_parts_min_granules_to_multibuffer_read}
 
 <CloudOnlyBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="16" />
 
-仅在 ClickHouse Cloud 中生效。此设置指定 MergeTree 表的 compact part 中单个 stripe 的粒度数达到多少时使用 multibuffer reader；该读取器支持并行读取和预取。从远程文件系统读取时，使用 multibuffer reader 会增加读取请求的数量。当某个分片包含的粒度数既小于此阈值，又小于正在读取的列数时，会使用 single buffer reader 读取该分片，因为在这种情况下，single buffer reader 发出的读取请求少于 multibuffer reader。
+仅在 ClickHouse Cloud 中生效。此设置指定 MergeTree 表的 compact part 中单个 stripe 的粒度数达到多少时使用 multibuffer reader；该读取器支持并行读取和预取。从远程文件系统读取时，使用 multibuffer reader 会增加读取请求的数量。
 
-<div id="merge_tree_determine_task_size_by_prewhere_columns">
-  ## merge_tree_determine_task_size_by_prewhere_columns
-</div>
+## merge_tree_determine_task_size_by_prewhere_columns {#merge_tree_determine_task_size_by_prewhere_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 是否仅根据 prewhere 列的大小来确定读取任务的大小。
 
-<div id="merge_tree_generic_exclusion_search_max_steps">
-  ## merge_tree_generic_exclusion_search_max_steps
-</div>
+## merge_tree_generic_exclusion_search_max_steps {#merge_tree_generic_exclusion_search_max_steps}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -64,9 +56,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 0 表示步数不受限制，或任意正整数。
 
-<div id="merge_tree_max_bytes_to_use_cache">
-  ## merge_tree_max_bytes_to_use_cache
-</div>
+## merge_tree_max_bytes_to_use_cache {#merge_tree_max_bytes_to_use_cache}
 
 <SettingsInfoBlock type="UInt64" default_value="2013265920" />
 
@@ -78,9 +68,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 任意正整数。
 
-<div id="merge_tree_max_rows_to_use_cache">
-  ## merge_tree_max_rows_to_use_cache
-</div>
+## merge_tree_max_rows_to_use_cache {#merge_tree_max_rows_to_use_cache}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -92,9 +80,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 任意正整数。
 
-<div id="merge_tree_min_bytes_for_concurrent_read">
-  ## merge_tree_min_bytes_for_concurrent_read
-</div>
+## merge_tree_min_bytes_for_concurrent_read {#merge_tree_min_bytes_for_concurrent_read}
 
 <SettingsInfoBlock type="UInt64" default_value="251658240" />
 
@@ -104,9 +90,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 正整数。
 
-<div id="merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem">
-  ## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem
-</div>
+## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -118,9 +102,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 正整数。
 
-<div id="merge_tree_min_bytes_for_seek">
-  ## merge_tree_min_bytes_for_seek
-</div>
+## merge_tree_min_bytes_for_seek {#merge_tree_min_bytes_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -130,9 +112,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 任意正整数。
 
-<div id="merge_tree_min_bytes_per_read_stream">
-  ## merge_tree_min_bytes_per_read_stream
-</div>
+## merge_tree_min_bytes_per_read_stream {#merge_tree_min_bytes_per_read_stream}
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
@@ -150,9 +130,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 非负整数。
 
-<div id="merge_tree_min_bytes_per_task_for_remote_reading">
-  ## merge_tree_min_bytes_per_task_for_remote_reading
-</div>
+## merge_tree_min_bytes_per_task_for_remote_reading {#merge_tree_min_bytes_per_task_for_remote_reading}
 
 **别名**：`filesystem_prefetch_min_bytes_for_single_read_task`
 
@@ -162,9 +140,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 每个任务的最小读取字节数。
 
-<div id="merge_tree_min_read_task_size">
-  ## merge_tree_min_read_task_size
-</div>
+## merge_tree_min_read_task_size {#merge_tree_min_read_task_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -172,9 +148,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 任务大小的硬性下限 (即使粒度数量较少且可用线程数较多，我们也不会分配更小的任务
 
-<div id="merge_tree_min_rows_for_concurrent_read">
-  ## merge_tree_min_rows_for_concurrent_read
-</div>
+## merge_tree_min_rows_for_concurrent_read {#merge_tree_min_rows_for_concurrent_read}
 
 <SettingsInfoBlock type="UInt64" default_value="163840" />
 
@@ -184,9 +158,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 正整数。
 
-<div id="merge_tree_min_rows_for_concurrent_read_for_remote_filesystem">
-  ## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem
-</div>
+## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -198,9 +170,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 正整数。
 
-<div id="merge_tree_min_rows_for_seek">
-  ## merge_tree_min_rows_for_seek
-</div>
+## merge_tree_min_rows_for_seek {#merge_tree_min_rows_for_seek}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -210,9 +180,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 任意正整数。
 
-<div id="merge_tree_prefetch_json_shared_data_substreams">
-  ## merge_tree_prefetch_json_shared_data_substreams
-</div>
+## merge_tree_prefetch_json_shared_data_substreams {#merge_tree_prefetch_json_shared_data_substreams}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -220,9 +188,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 启用预取在 Wide parts 中通过寻道至标记读取的 JSON shared data 子流。此类预取会从粒度开头读取，而这通常不是读取子流的位置，因此可能造成浪费。禁用此设置可跳过这些预取操作。
 
-<div id="merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability">
-  ## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability
-</div>
+## merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability {#merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -230,9 +196,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 用于测试 `PartsSplitter`——每次从 MergeTree 读取时，都会以指定概率将读取范围拆分为相交和不相交两部分。
 
-<div id="merge_tree_storage_snapshot_sleep_ms">
-  ## merge_tree_storage_snapshot_sleep_ms
-</div>
+## merge_tree_storage_snapshot_sleep_ms {#merge_tree_storage_snapshot_sleep_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -246,17 +210,13 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 * 0 - 无延迟 (默认)
 * N - 延迟的毫秒数
 
-<div id="merge_tree_use_const_size_tasks_for_remote_reading">
-  ## merge_tree_use_const_size_tasks_for_remote_reading
-</div>
+## merge_tree_use_const_size_tasks_for_remote_reading {#merge_tree_use_const_size_tasks_for_remote_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 是否在从远程表读取时使用固定大小的任务。
 
-<div id="merge_tree_use_deserialization_prefixes_cache">
-  ## merge_tree_use_deserialization_prefixes_cache
-</div>
+## merge_tree_use_deserialization_prefixes_cache {#merge_tree_use_deserialization_prefixes_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -264,9 +224,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 启用在 MergeTree 从远程磁盘读取时，对文件前缀中的列元数据进行缓存。
 
-<div id="merge_tree_use_prefixes_deserialization_thread_pool">
-  ## merge_tree_use_prefixes_deserialization_thread_pool
-</div>
+## merge_tree_use_prefixes_deserialization_thread_pool {#merge_tree_use_prefixes_deserialization_thread_pool}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -274,9 +232,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 启用在线程池中对 MergeTree 的 Wide parts 进行前缀并行读取。该线程池的大小由服务器设置 `max_prefixes_deserialization_thread_pool_size` 控制。
 
-<div id="merge_tree_use_v1_object_and_dynamic_serialization">
-  ## merge_tree_use_v1_object_and_dynamic_serialization
-</div>
+## merge_tree_use_v1_object_and_dynamic_serialization {#merge_tree_use_v1_object_and_dynamic_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
