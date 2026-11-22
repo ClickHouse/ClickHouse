@@ -119,6 +119,9 @@ public:
         size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
+    /// Every sink sends its blocks to the shard in a separate insert, and the engine of the table
+    /// on the shard is not known here, so parallel sinks can change the order in which that table gets the blocks.
+    bool isInsertOrderSensitive() const override { return true; }
     std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
