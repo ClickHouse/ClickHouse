@@ -7,6 +7,7 @@
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
@@ -58,6 +59,38 @@ std::optional<GPUElementType> filterElementTypeOf(const IDataType & type)
     }
 }
 
+std::vector<GPUElementType> filterElementTypesOrThrow(const DataTypes & types)
+{
+    std::vector<GPUElementType> element_types;
+    element_types.reserve(types.size());
+    for (const auto & type : types)
+    {
+        const auto element_type = filterElementTypeOf(*type);
+        if (!element_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} in a `WHERE` on the GPU", type->getName());
+        element_types.push_back(*element_type);
+    }
+    return element_types;
+}
+
+std::vector<GPUElementType> elementTypesOrThrow(const DataTypes & types)
+{
+    std::vector<GPUElementType> element_types;
+    element_types.reserve(types.size());
+    for (const auto & type : types)
+        element_types.push_back(elementTypeOrThrow(*type));
+    return element_types;
+}
+
+std::vector<size_t> elementSizesOf(const std::vector<GPUElementType> & element_types)
+{
+    std::vector<size_t> sizes;
+    sizes.reserve(element_types.size());
+    for (const GPUElementType element_type : element_types)
+        sizes.push_back(sizeOf(element_type));
+    return sizes;
+}
+
 std::optional<GPUCodec> codecOf(UInt8 method_byte)
 {
     switch (method_byte)
@@ -66,6 +99,11 @@ std::optional<GPUCodec> codecOf(UInt8 method_byte)
         case static_cast<UInt8>(CompressionMethodByte::ZSTD): return GPUCodec::ZSTD;
     }
     return {};
+}
+
+std::optional<GPUCodec> deviceCodecOf(const ICompressionCodec & codec)
+{
+    return codecOf(codec.getMethodByte());
 }
 
 std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size)
@@ -208,13 +246,27 @@ std::optional<GPUElementType> keyElementTypeOf(const IDataType & type)
     return elementTypeOf(type);
 }
 
+bool isStringKey(const IDataType & type)
+{
+    return isString(type);
+}
+
+std::optional<GPUElementType> collectElementTypeOf(const IDataType & type)
+{
+    if (isStringKey(type))
+        return GPUElementType::String;
+    if (typeid_cast<const DataTypeFixedString *>(&type))
+        return keyElementTypeOf(type);
+    return filterElementTypeOf(type);
+}
+
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)
 {
     std::vector<GPUElementType> keys;
     keys.reserve(key_types.size());
     for (const auto & key_type : key_types)
     {
-        if (isString(*key_type))
+        if (isStringKey(*key_type))
         {
             keys.push_back(GPUElementType::String);
             continue;
@@ -276,7 +328,7 @@ bool canAggregateOnDevice(
 
     for (const auto & key_type : key_types)
     {
-        if (isString(*key_type))
+        if (isStringKey(*key_type))
             continue;
         const auto key_element_type = keyElementTypeOf(*key_type);
         if (!key_element_type || !isInteger(*key_element_type))

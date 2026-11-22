@@ -13,6 +13,11 @@
 #include <string_view>
 #include <vector>
 
+namespace DB
+{
+class ICompressionCodec;
+}
+
 namespace DB::GPU
 {
 
@@ -24,7 +29,16 @@ GPUElementType elementTypeOrThrow(const IDataType & type);
 /// `Date`, `Date32` and `DateTime` are stored as, which compare in the order of their values.
 std::optional<GPUElementType> filterElementTypeOf(const IDataType & type);
 
+std::vector<GPUElementType> filterElementTypesOrThrow(const DataTypes & types);
+
+std::vector<GPUElementType> elementTypesOrThrow(const DataTypes & types);
+
+std::vector<size_t> elementSizesOf(const std::vector<GPUElementType> & element_types);
+
 std::optional<GPUCodec> codecOf(UInt8 method_byte);
+
+/// The codec the device expands the blocks of `codec` with, of those of `GPUCodec`. Nothing for any other.
+std::optional<GPUCodec> deviceCodecOf(const ICompressionCodec & codec);
 
 GPUElementType sumResultTypeFor(GPUElementType element_type);
 
@@ -32,10 +46,17 @@ std::optional<GPUAggregationKind> aggregationOf(const String & aggregate_functio
 
 String aggregationName(GPUAggregationKind aggregation);
 
+/// Whether a key of `type` is grouped by as a `String`, of varying width.
+bool isStringKey(const IDataType & type);
+
 /// Also a `FixedString` of 1, 2, 4 or 8 bytes, grouped by its bytes as an integer as wide.
 std::optional<GPUElementType> keyElementTypeOf(const IDataType & type);
 
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types);
+
+/// What the rows of a column that the device collects, rather than groups, are carried as: a `String` as one, a
+/// `FixedString` as `keyElementTypeOf`, and any other as `filterElementTypeOf`, the bytes of its values as they are.
+std::optional<GPUElementType> collectElementTypeOf(const IDataType & type);
 
 bool canAggregateOnDevice(
     const DataTypes & key_types,
