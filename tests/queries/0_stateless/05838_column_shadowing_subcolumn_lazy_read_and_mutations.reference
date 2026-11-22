@@ -1,0 +1,20 @@
+-- a lazily read column is not served by a projection that stores only the other column
+995	7
+994	7
+995	[0,1]	7
+994	[0]	7
+995	7
+994	7
+995	[0,1]
+994	[0]
+-- mutations of a column that the part does not hold
+1	{"x":11}	7	1
+2	{"x":22}	7	2
+1	{"x":11}	7	UInt32	1
+2	{"x":22}	7	UInt32	2
+1	{"x":11}	7	1
+2	{"x":22}	7	2
+1	{"x":11}	9	1
+2	{"x":22}	7	2
+1	{"x":11}	7	1
+2	{"x":22}	7	2

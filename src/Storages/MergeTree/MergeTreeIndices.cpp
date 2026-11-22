@@ -313,8 +313,15 @@ bool isSerializationDefinedSubcolumn(
     if (metadata_columns.tryGet(column))
         return false;
 
+    /// When the metadata resolves the name as a subcolumn, only the split through that parent counts: `a.x.y`
+    /// next to a column `a.x` is a subcolumn of `a.x`, and a serialization of `a` that also defines `x.y`
+    /// must not answer for it.
+    auto column_in_table = metadata_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column);
+    const bool resolved_in_table = column_in_table && column_in_table->isSubcolumn();
+
     for (const auto & [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column))
-        if (hasSerializationDefinedSubcolumns(
+        if ((!resolved_in_table || name_in_storage == column_in_table->getNameInStorage())
+            && hasSerializationDefinedSubcolumns(
                 metadata_columns, part_columns, String(name_in_storage), String(subcolumn_name)))
             return true;
 

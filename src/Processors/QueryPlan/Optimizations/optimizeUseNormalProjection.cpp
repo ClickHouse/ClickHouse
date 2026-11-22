@@ -525,8 +525,11 @@ UseProjectionsResult optimizeUseNormalProjections(
         if (!reading->hasLazilyReadColumns() || (need_parent_part_offset && projection->with_parent_part_offset))
             return true;
 
+        /// The lazy read reads the columns from the projection part, so the projection has to provide them with the
+        /// same identity as the columns read eagerly: a projection that stores only an `Array` column `a` does not
+        /// provide a column `a.size0` of the table.
         return std::ranges::all_of(
-            reading->getColumnsReadLazily(), [&](const auto & column) { return projection->sample_block.findColumnOrSubcolumnByName(column).has_value(); });
+            reading->getColumnsReadLazily(), [&](const auto & column) { return projection->providesColumn(column, table_columns); });
     };
 
     auto projection_sort_order_useful = [&](const ProjectionDescription * projection)

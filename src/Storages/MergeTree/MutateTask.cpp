@@ -465,13 +465,17 @@ static MutationCommands coalesceSingletonRowMaskUpdates(
 /// column whose name collides with this sentinel).
 static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
 
-static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
+/// The names are names of columns of the table, so they are looked up in the part with the identity that the
+/// table gives them (see `IMergeTreeDataPart::tryGetColumnForTable`): a column `a.x` that the part does not
+/// hold is not the path `x` of a `JSON` column `a`.
+static bool haveMutationsOfDynamicColumns(
+    const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands, const ColumnsDescription & table_columns)
 {
     for (const auto & command : commands)
     {
         if (!command.column_name.empty())
         {
-            auto column = data_part->tryGetColumn(command.column_name);
+            auto column = data_part->tryGetColumnForTable(command.column_name, table_columns);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
@@ -482,7 +486,7 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
         for (const auto & child : alter->update_assignments->children)
         {
             const auto & column_name = child->as<ASTAssignment &>().column_name;
-            auto column = data_part->tryGetColumn(column_name);
+            auto column = data_part->tryGetColumnForTable(column_name, table_columns);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
@@ -530,10 +534,11 @@ static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::Data
 static bool rewritesAllPartColumns(
     const MergeTreeData::DataPartPtr & source_part,
     const MutationCommands & commands_for_part,
+    const ColumnsDescription & table_columns,
     const MutationsInterpreter * interpreter,
     MergeTreeDataPartStorageType future_storage_type)
 {
-    return haveMutationsOfDynamicColumns(source_part, commands_for_part)
+    return haveMutationsOfDynamicColumns(source_part, commands_for_part, table_columns)
         || hasDynamicColumnsWithoutRecordedSubstreams(source_part)
         || !isWidePart(source_part)
         || !isPerFilePartStorage(source_part->getDataPartStorage())
@@ -897,7 +902,7 @@ static void splitAndModifyMutationCommands(
         return std::nullopt;
     };
 
-    if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
+    if (haveMutationsOfDynamicColumns(part, commands, table_columns) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isPerFilePartStorage(part->getDataPartStorage())
         || part->getDataPartStorage().getType() != future_storage_type)
     {
@@ -5262,7 +5267,7 @@ bool MutateTask::prepare()
         && isWidePart(ctx->source_part)
         && isFullPartStorage(ctx->source_part->getDataPartStorage())
         && !MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
-        && !MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        && !MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part, ctx->metadata_snapshot->getColumns())
         && !context_for_reading->getSettingsRef()[Setting::max_bytes_in_set];
     if (can_coalesce_row_mask_updates)
     {
@@ -5546,7 +5551,7 @@ bool MutateTask::prepare()
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
     const bool rewrites_all_columns = !ctx->recalculate_ttl_only && MutationHelpers::rewritesAllPartColumns(
-        ctx->source_part, ctx->commands_for_part, ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
+        ctx->source_part, ctx->commands_for_part, ctx->metadata_snapshot->getColumns(), ctx->interpreter.get(), ctx->future_part->part_format.storage_type);
 
     auto [new_columns, new_infos, new_columns_substreams] = ctx->recalculate_ttl_only
         ? std::make_tuple(ctx->source_part->getColumns(), ctx->source_part->getSerializationInfos(), ctx->source_part->getColumnsSubstreams())

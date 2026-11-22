@@ -1594,7 +1594,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
                 /// that depend on it. We should rebuild such projections and indices
                 DataTypePtr old_type;
-                if (const auto column = merge_tree_data_part->tryGetColumn(command.column_name))
+                /// The column is looked up with the identity that the table gives it: a column `a.size0` that the part
+                /// does not hold is not the sizes of an `Array` column `a`, and its type is the one recorded below.
+                if (const auto column = merge_tree_data_part->tryGetColumnForTable(command.column_name, metadata_snapshot->getColumns()))
                     old_type = column->type;
                 else
                 {
