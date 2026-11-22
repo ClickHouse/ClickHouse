@@ -474,8 +474,10 @@ void ColumnReplicated::doInsertRangeFrom(const IColumn & src, size_t start, size
 
     if (const auto * src_replicated = typeid_cast<const ColumnReplicated *>(&src))
     {
-        /// Optimization for case when we insert the whole column (may happen in squashing).
-        if (start == 0 && length == src_replicated->size())
+        /// Optimization for case when we insert the whole column (may happen in squashing). It copies every
+        /// nested value, so it is taken only when the source has no more values than rows: otherwise some
+        /// values are unused for sure.
+        if (start == 0 && length == src_replicated->size() && src_replicated->getNestedColumn()->size() <= length)
         {
             indexes.insertIndexesRangeWithShift(*src_replicated->getIndexesColumn(), start, length, nested_column->size(), nested_column->size() + src_replicated->getNestedColumn()->size());
             nested_column->insertRangeFrom(*src_replicated->getNestedColumn(), 0, src_replicated->getNestedColumn()->size());
