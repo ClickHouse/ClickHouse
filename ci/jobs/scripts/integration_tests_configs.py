@@ -465,7 +465,6 @@ test_keeper_opentelemetry_tracing/test.py	81676
 test_refreshable_mv_watch_fault/test.py	81602
 test_system_flush_logs/test.py	81261
 test_paimon_incremental_read/test.py	81207
-test_store_cleanup/test.py	80336
 test_rmv_access_denied_on_rename_race/test.py	80216
 test_always_fetch_merged/test.py	80176
 test_hedged_requests_parallel/test.py	80085
