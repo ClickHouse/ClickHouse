@@ -225,10 +225,11 @@ public:
     /// Required for distinguish different copies of the same part on remote FS.
     [[nodiscard]] virtual String getUniqueId() const = 0;
 
-    /// The identity of the directory of the part on a shared object storage: the key of the object that holds a file
-    /// every part directory has. Another directory created later under the same name has another identity, even if
-    /// its part has the same name (see `MergeTreeData::getPartSharedStorageIncarnation`). `std::nullopt` if the part
-    /// is not stored on a remote disk or the directory has no such file.
+    /// The identity of the directory of the part on a shared object storage: the key prefix under which the object
+    /// storage keeps the files of the directory, taken from the key of any of its files. Another directory created
+    /// later under the same name has another identity, even if its part has the same name (see
+    /// `MergeTreeData::getPartSharedStorageIncarnation`). `std::nullopt` if the part is not stored on a remote disk
+    /// or the directory has no files.
     [[nodiscard]] virtual std::optional<String> getSharedStorageIdentity() const { return std::nullopt; }
 
     /// Binds this storage to the directory with the given identity (see `getSharedStorageIdentity`), which must be

@@ -456,6 +456,7 @@ namespace FailPoints
 namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
+    extern const int DATA_PART_CHANGED_ON_SHARED_STORAGE;
     extern const int NOT_IMPLEMENTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
@@ -3544,6 +3545,14 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         /// and the storages of the projections were bound to the directories found under its name. Checking the
         /// directory once more, after all of that, proves that the projections belong to it.
         res.part->getDataPartStorage().assertSharedStorageIdentityUnchanged();
+
+        /// Every directory that has a file has an identity. A part that was loaded without one found no files
+        /// when it was opened and found them afterwards, so the directory appeared under its name in between.
+        /// Such a part must not be used unbound: the load is retried, and then it sees the files from the start.
+        if ((*getSettings())[MergeTreeSetting::leader_election]
+            && res.part->getDataPartStorage().isStoredOnRemoteDisk() && !res.part->shared_storage_incarnation)
+            throw Exception(ErrorCodes::DATA_PART_CHANGED_ON_SHARED_STORAGE,
+                "The directory of part {} on the shared storage had no files when the part was opened, and has them now", part_name);
     }
     catch (...)
     {

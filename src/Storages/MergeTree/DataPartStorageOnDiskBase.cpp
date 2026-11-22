@@ -1171,16 +1171,37 @@ std::optional<String> DataPartStorageOnDiskBase::getSharedStorageIdentity(const 
     if (!disk.isRemote())
         return std::nullopt;
 
-    /// A `Packed` part keeps `checksums.txt` inside its archive, so the archive itself identifies the directory.
-    /// Both names are probed regardless of the storage format of the part: the directory may have been replaced by
-    /// a part of the other format (e.g. a one-row `Packed` part by a two-row `Full` part with the same name),
-    /// and probing only the file of the cached format would find nothing and keep the stale part.
-    for (const auto & identity_file : {String("checksums.txt"), DataPartStorageOnDiskPacked::DATA_FILE_NAME})
+    /// The identity is the key prefix under which the object storage keeps the files of the directory. On
+    /// `plain_rewritable` every directory has its own prefix, random and unique, and the key of a file is that
+    /// prefix followed by the name of the file. So the key of any file of the directory gives the identity, and it
+    /// does not depend on which files the part has: `checksums.txt` is optional for a `MergeTree` part, a `Packed`
+    /// part keeps it inside its archive, and the directory may have been replaced by a part of another format.
+    /// A part that can be read has at least one file, so it always has an identity.
+    auto identity_by_file = [&](const String & file_name) -> std::optional<String>
     {
-        auto objects = disk.getStorageObjectsIfExist(fs::path(directory) / identity_file);
-        if (objects && !objects->empty())
-            return objects->front().remote_path;
-    }
+        auto objects = disk.getStorageObjectsIfExist(fs::path(directory) / file_name);
+        if (!objects || objects->empty())
+            return std::nullopt;
+
+        const fs::path key(objects->front().remote_path);
+        /// A storage that does not keep the files of a directory under a common prefix: the key of the file itself
+        /// still tells the directory from another one created later under the same name.
+        if (key.filename() != file_name)
+            return key.string();
+        return key.parent_path().string();
+    };
+
+    /// The files that almost every part has are probed first, which takes no listing of the directory.
+    for (const auto & file_name : {String("checksums.txt"), DataPartStorageOnDiskPacked::DATA_FILE_NAME, String("columns.txt")})
+        if (auto identity = identity_by_file(file_name))
+            return identity;
+
+    if (!disk.existsDirectory(directory))
+        return std::nullopt;
+
+    for (auto it = disk.iterateDirectory(directory); it->isValid(); it->next())
+        if (auto identity = identity_by_file(it->name()))
+            return identity;
 
     return std::nullopt;
 }

@@ -1033,9 +1033,10 @@ public:
     size_t retirePartsReplacedOnStorage(
         const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
 
-    /// The identity of the directory of a part on shared storage under `leader_election`: the object
-    /// storage key of its `checksums.txt`, or of `data.packed` for a directory of a `Packed` part, whichever
-    /// the directory has now. Empty when it cannot be determined (not a remote disk, or neither file exists).
+    /// The identity of the directory of a part on shared storage under `leader_election`: the key prefix
+    /// under which the object storage keeps the files of the directory, taken from the key of any file the
+    /// directory has now (see `DataPartStorageOnDiskBase::getSharedStorageIdentity`). Empty when it cannot be
+    /// determined (not a remote disk, or the directory has no files).
     std::optional<String> getPartSharedStorageIncarnation(const IMergeTreeDataPart & part) const;
 
     /// The same for the directory `directory` (relative to the disk) on the disk named `disk_name` of the
