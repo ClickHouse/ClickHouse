@@ -1,14 +1,14 @@
 #pragma once
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Compression/CompressedReadBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <base/defines.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
-#include <map>
 #include <mutex>
-#include <unordered_map>
 
 
 namespace DB
@@ -26,18 +26,25 @@ class CachedCompressedReadBuffer;
 class CountedCompressedBlocks
 {
 public:
-    /// The counted ranges of a file, merged, by their begin.
-    using CountedRanges = std::map<size_t, size_t>;
+    /// The counted ranges of a file. The readers of several threads count the same file.
+    class CountedRanges
+    {
+    public:
+        /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
+        size_t take(CompressedBlockRanges & ranges);
+
+    private:
+        std::mutex mutex;
+        /// Merged, by their begin.
+        MapWithMemoryTracking<size_t, size_t> counted TSA_GUARDED_BY(mutex);
+    };
 
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
     CountedRanges & getCountedRanges(const String & path);
 
-    /// The bytes of the ranges in the file not counted yet, which become counted. Clears the ranges.
-    size_t take(CountedRanges & counted_ranges, CompressedBlockRanges & ranges);
-
 private:
     std::mutex mutex;
-    std::unordered_map<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
 };
 
 using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;

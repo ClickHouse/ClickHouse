@@ -338,7 +338,7 @@ CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRang
     return counted[path];
 }
 
-size_t CountedCompressedBlocks::take(CountedRanges & counted_ranges, CompressedBlockRanges & ranges)
+size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & ranges)
 {
     std::lock_guard lock(mutex);
     size_t bytes = 0;
@@ -346,13 +346,13 @@ size_t CountedCompressedBlocks::take(CountedRanges & counted_ranges, CompressedB
     {
         chassert(begin <= end);
         /// The first counted range that overlaps or touches the range.
-        auto it = counted_ranges.upper_bound(begin);
-        if (it != counted_ranges.begin() && std::prev(it)->second >= begin)
+        auto it = counted.upper_bound(begin);
+        if (it != counted.begin() && std::prev(it)->second >= begin)
             --it;
-        if (it == counted_ranges.end() || it->first > end)
+        if (it == counted.end() || it->first > end)
         {
             bytes += end - begin;
-            counted_ranges.emplace_hint(it, begin, end);
+            counted.emplace_hint(it, begin, end);
             continue;
         }
 
@@ -361,7 +361,7 @@ size_t CountedCompressedBlocks::take(CountedRanges & counted_ranges, CompressedB
         const auto first = it;
         size_t covered = 0;
         size_t merged_end = end;
-        for (; it != counted_ranges.end() && it->first <= end; ++it)
+        for (; it != counted.end() && it->first <= end; ++it)
         {
             if (it->second > begin && it->first < end)
                 covered += std::min(end, it->second) - std::max(begin, it->first);
@@ -369,12 +369,12 @@ size_t CountedCompressedBlocks::take(CountedRanges & counted_ranges, CompressedB
         }
         bytes += end - begin - covered;
         first->second = merged_end;
-        counted_ranges.erase(std::next(first), it);
+        counted.erase(std::next(first), it);
         if (begin < first->first)
         {
-            auto node = counted_ranges.extract(first);
+            auto node = counted.extract(first);
             node.key() = begin;
-            counted_ranges.insert(std::move(node));
+            counted.insert(std::move(node));
         }
     }
     ranges.clear();
