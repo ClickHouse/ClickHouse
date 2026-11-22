@@ -52,16 +52,42 @@ run_case()
         SETTINGS mutations_sync = 2;
     "
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log"
-    $CLICKHOUSE_CLIENT --multiquery --query "
-        SELECT '${label}_dispatch', count() = 1 AND max(length(mutation_ids)) = 1
-            AND sum(ProfileEvents['RowMaskReadySubquerySetUnionBatches']) = ${enabled}
+    local log_filter="
         FROM system.part_log
         WHERE event_date >= yesterday()
             AND toUnixTimestamp64Micro(event_time_microseconds) >= ${mutation_start}
             AND database = currentDatabase() AND table = '${table}'
             AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = '${table}')
-            AND event_type = 'MutatePart' AND error = 0;
+            AND event_type = 'MutatePart' AND error = 0
+    "
+
+    # `mutations_sync` can return before the `MutatePart` entry reaches `part_log`.
+    local deadline=$((SECONDS + 60))
+    local poll_seconds
+    local logged=0
+    while (( SECONDS < deadline ))
+    do
+        poll_seconds=$((deadline - SECONDS))
+        (( poll_seconds > 0 )) || break
+        timeout --foreground -k 1 "$poll_seconds" $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log" >/dev/null
+        poll_seconds=$((deadline - SECONDS))
+        (( poll_seconds > 0 )) || break
+        logged=$(timeout --foreground -k 1 "$poll_seconds" $CLICKHOUSE_CLIENT --max_execution_time 10 --query "
+            SELECT count() > 0 ${log_filter}
+        ")
+        [[ "$logged" == 1 ]] && break
+        sleep 0.1
+    done
+    if [[ "$logged" != 1 ]]
+    then
+        echo "Timed out waiting for mutation part log of ${table}" >&2
+        return 1
+    fi
+
+    $CLICKHOUSE_CLIENT --multiquery --query "
+        SELECT '${label}_dispatch', count() = 1 AND max(length(mutation_ids)) = 1
+            AND sum(ProfileEvents['RowMaskReadySubquerySetUnionBatches']) = ${enabled}
+        ${log_filter};
 
         SELECT '${label}_physical', item_key, _row_exists, finalizeAggregation(s)
         FROM ${table} ORDER BY item_key

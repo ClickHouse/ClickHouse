@@ -122,10 +122,13 @@ run_case()
           AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = '${table}')
           AND event_type = 'MutatePart' AND error = 0 AND hasAny(mutation_ids, ${queued_ids})
     "
+    deadline=$((SECONDS + 60))
     local logged=0
     while (( SECONDS < deadline ))
     do
-        logged=$(timeout --foreground -k 1 "$((deadline - SECONDS))" $CLICKHOUSE_CLIENT --max_execution_time 10 --multiquery --query "
+        local remaining=$((deadline - SECONDS))
+        (( remaining > 0 )) || break
+        logged=$(timeout --foreground -k 1 "$remaining" $CLICKHOUSE_CLIENT --max_execution_time 10 --multiquery --query "
             SYSTEM FLUSH LOGS part_log;
             SELECT count() > 0 ${log_filter}
         ")
