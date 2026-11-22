@@ -484,9 +484,24 @@ void ConsumerImpl::onMessage(Connection & connection, SubConsumer & sub, Frame &
     ++sub.received_entries;
 
     decodeEntry(frame.tail, entry);
+    if (entry.checksum_mismatch)
+    {
+        /// The broker took a permit for each message counted in the metadata, which cannot be trusted now,
+        /// so a new subscription restores the permits. Closing the old one makes the broker redeliver its messages.
+        LOG_ERROR(log, "Discarding the message {}:{} from the Pulsar topic {}: checksum mismatch", id.ledger_id, id.entry_id, *sub.topic);
+        sendAck(sub, {id}, PulsarProto::CommandAck::ChecksumMismatch);
+        PulsarProto::BaseCommand command;
+        command.set_type(PulsarProto::BaseCommand::CLOSE_CONSUMER);
+        command.mutable_close_consumer()->set_consumer_id(sub.consumer_id);
+        command.mutable_close_consumer()->set_request_id(session.nextRequestId());
+        connection.send(command);
+        resetSubConsumer(sub, "a message has a wrong checksum");
+        return;
+    }
+
     const auto & metadata = entry.metadata;
-    const size_t num_messages = entry.checksum_mismatch || !metadata.has_num_messages_in_batch()
-        ? 1 : static_cast<size_t>(std::max<Int32>(1, metadata.num_messages_in_batch()));
+    const size_t num_messages = metadata.has_num_messages_in_batch()
+        ? static_cast<size_t>(std::max<Int32>(1, metadata.num_messages_in_batch())) : 1;
     sub.received_messages += num_messages;
 
     auto discard = [&](ValidationError error, const char * reason)
@@ -495,12 +510,6 @@ void ConsumerImpl::onMessage(Connection & connection, SubConsumer & sub, Frame &
         sendAck(sub, {id}, error);
         sub.pending_flow += num_messages;
     };
-
-    if (entry.checksum_mismatch)
-    {
-        discard(PulsarProto::CommandAck::ChecksumMismatch, "checksum mismatch");
-        return;
-    }
 
     if (metadata.has_encryption_keys())
     {

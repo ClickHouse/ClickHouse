@@ -382,6 +382,10 @@ private:
                 response.set_type(Type::SUCCESS);
                 response.mutable_success()->set_request_id(command.subscribe().request_id());
                 break;
+            case Type::CLOSE_CONSUMER:
+                response.set_type(Type::SUCCESS);
+                response.mutable_success()->set_request_id(command.close_consumer().request_id());
+                break;
             case Type::PRODUCER:
                 response.set_type(Type::PRODUCER_SUCCESS);
                 response.mutable_producer_success()->set_request_id(command.producer().request_id());
@@ -643,28 +647,58 @@ TEST(PulsarClient, ChecksumMismatchIsDiscarded)
     FakeBroker broker;
     Client client(broker.url(), configuration());
     ConsumerConfiguration consumer_configuration;
-    consumer_configuration.receiver_queue_size = 1;
+    consumer_configuration.receiver_queue_size = 4;
     auto consumer = client.subscribe({"t"}, "s", consumer_configuration);
-    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+    const auto [connection, first_consumer_id] = subscriptions(broker).begin()->second;
+    const UInt64 old_consumer_id = first_consumer_id;
     ASSERT_TRUE(broker.waitForCount(Type::FLOW, 1));
+    ASSERT_EQ(broker.eventsOf(Type::FLOW)[0].command.flow().messagepermits(), 4);
 
-    auto frame = FakeBroker::messageFrame(consumer_id, 1, metadataOf(), "payload");
+    /// Like a broker, which takes a permit for each message of a batch: the batch below takes all permits of the old consumer.
+    auto permits = [&](UInt64 id)
+    {
+        Int64 res = id == old_consumer_id ? -4 : 0;
+        for (const auto & flow : broker.eventsOf(Type::FLOW))
+            if (flow.command.flow().consumer_id() == id)
+                res += flow.command.flow().messagepermits();
+        return res;
+    };
+
+    auto metadata = metadataOf();
+    metadata.set_num_messages_in_batch(4);
+    auto frame = FakeBroker::messageFrame(old_consumer_id, 1, metadata, batchEntry("a") + batchEntry("b") + batchEntry("c") + batchEntry("d"));
     frame.back() ^= 1;
     broker.sendRaw(connection, frame);
 
-    /// Not delivered, acknowledged with the error, and the permit is returned.
+    /// Not delivered, acknowledged with the error, and the client has permits at the broker again.
     Messages received;
+    std::optional<std::pair<size_t, UInt64>> with_permits;
     const auto start = std::chrono::steady_clock::now();
-    while (broker.count(Type::FLOW) < 2 && std::chrono::steady_clock::now() - start < HANG_GUARD)
+    while (!with_permits && std::chrono::steady_clock::now() - start < HANG_GUARD)
+    {
         for (auto & message : consumer->batchReceive(1, 100ms))
             received.push_back(std::move(message));
+        auto latest = subscriptions(broker).begin()->second;
+        if (permits(latest.second) > 0)
+            with_permits = latest;
+    }
+    ASSERT_TRUE(with_permits);
     EXPECT_TRUE(received.empty());
     auto acks = broker.eventsOf(Type::ACK);
     ASSERT_EQ(acks.size(), 1);
+    EXPECT_EQ(acks[0].command.ack().consumer_id(), old_consumer_id);
     EXPECT_EQ(acks[0].command.ack().validation_error(), PulsarProto::CommandAck::ChecksumMismatch);
-    EXPECT_EQ(broker.count(Type::FLOW), 2);
 
-    broker.sendMessage(connection, consumer_id, 2, metadataOf(), "good");
+    /// A new consumer. The old one is closed after the acknowledgement, so the broker redelivers its other messages but not this one.
+    EXPECT_NE(with_permits->second, old_consumer_id);
+    auto all = broker.allEvents();
+    auto ack_position = std::ranges::find_if(all, [](const FakeBroker::Event & e) { return e.command.type() == Type::ACK; }) - all.begin();
+    auto close_position = std::ranges::find_if(all, [&](const FakeBroker::Event & e)
+        { return e.command.type() == Type::CLOSE_CONSUMER && e.command.close_consumer().consumer_id() == old_consumer_id; }) - all.begin();
+    ASSERT_LT(close_position, std::ssize(all));
+    EXPECT_LT(ack_position, close_position);
+
+    broker.sendMessage(with_permits->first, with_permits->second, 2, metadataOf(), "good");
     auto messages = receiveAtLeast(*consumer, 1);
     ASSERT_EQ(messages.size(), 1);
     EXPECT_EQ(messages[0].payload(), "good");
