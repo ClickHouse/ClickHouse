@@ -15,6 +15,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 
 namespace CurrentMetrics
@@ -451,6 +452,15 @@ void ProjectionIndexBitmap::intersectWith(const ProjectionIndexBitmap & other) /
         roaring64_bitmap_and_inplace(data.bitmap64, other.data.bitmap64);
 }
 
+void ProjectionIndexBitmap::unionWith(const ProjectionIndexBitmap & other) // NOLINT
+{
+    chassert(type == other.type);
+    if (type == BitmapType::Bitmap32)
+        roaring_bitmap_or_inplace(data.bitmap32, other.data.bitmap32);
+    else
+        roaring64_bitmap_or_inplace(data.bitmap64, other.data.bitmap64);
+}
+
 size_t ProjectionIndexBitmap::cardinality() const
 {
     if (type == BitmapType::Bitmap32)
@@ -643,9 +653,9 @@ SingleProjectionIndexReader::SingleProjectionIndexReader(
 {
 }
 
-ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPart & ranges)
+ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPart & ranges, const PartOffsetRanges & parent_ranges)
 {
-    bool can_use_32bit_part_offset = ranges.parent_ranges.max_part_offset <= std::numeric_limits<UInt32>::max();
+    bool can_use_32bit_part_offset = parent_ranges.max_part_offset <= std::numeric_limits<UInt32>::max();
 
     auto task = projection_index_read_pool->getTask(ranges);
     MergeTreeProjectionIndexSelectAlgorithm algorithm;
@@ -668,7 +678,7 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 
                     auto add_offsets = [&]<typename Offset>(Offset)
                     {
-                        if (ranges.parent_ranges.isContiguousFullRange())
+                        if (parent_ranges.isContiguousFullRange())
                         {
                             for (auto offset : offsets.getData())
                                 res->add<Offset>(static_cast<Offset>(offset));
@@ -677,7 +687,7 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
                         {
                             for (auto offset : offsets.getData())
                             {
-                                if (ranges.parent_ranges.contains(offset))
+                                if (parent_ranges.contains(offset))
                                     res->add<Offset>(static_cast<Offset>(offset));
                             }
                         }
@@ -710,19 +720,188 @@ void SingleProjectionIndexReader::cancel() noexcept
     processor->cancel();
 }
 
-MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_readers_)
+namespace
+{
+
+/// Cuts `ranges` into `num_tasks` consecutive pieces, the first `marks % num_tasks` of them one mark longer.
+std::vector<MarkRanges> splitMarkRanges(const MarkRanges & ranges, size_t num_tasks)
+{
+    size_t marks = ranges.getNumberOfMarks();
+    auto marks_in_piece = [&](size_t piece) { return marks / num_tasks + (piece < marks % num_tasks ? 1 : 0); };
+
+    std::vector<MarkRanges> pieces(num_tasks);
+    size_t piece = 0;
+    size_t marks_left_in_piece = marks_in_piece(0);
+    for (auto range : ranges)
+    {
+        while (range.begin < range.end)
+        {
+            size_t take = std::min(range.end - range.begin, marks_left_in_piece);
+            pieces[piece].push_back(MarkRange(range.begin, range.begin + take));
+            range.begin += take;
+            marks_left_in_piece -= take;
+            if (marks_left_in_piece == 0 && piece + 1 < num_tasks)
+            {
+                ++piece;
+                marks_left_in_piece = marks_in_piece(piece);
+            }
+        }
+    }
+    return pieces;
+}
+
+}
+
+ProjectionIndexReadTasks::ProjectionIndexReadTasks(
+    SingleProjectionIndexReader & reader_, const RangesInDataPart & ranges, size_t num_tasks)
+    : reader(reader_)
+    , parent_ranges(ranges.parent_ranges)
+{
+    for (const auto & piece : splitMarkRanges(ranges.ranges, num_tasks))
+        tasks.emplace_back(
+            ranges.data_part, ranges.parent_part, ranges.part_index_in_query, ranges.part_starting_offset_in_query, piece, ranges.read_hints);
+    bitmaps.resize(tasks.size());
+}
+
+void ProjectionIndexReadTasks::run() noexcept
+{
+    while (!failed.load(std::memory_order_relaxed))
+    {
+        size_t task_index = next_task.fetch_add(1, std::memory_order_relaxed);
+        if (task_index >= tasks.size())
+            break;
+
+        try
+        {
+            bitmaps[task_index] = reader.read(tasks[task_index], parent_ranges);
+            if (!bitmaps[task_index])
+                failed = true;
+        }
+        catch (...)
+        {
+            std::lock_guard lock(exception_mutex);
+            if (!exception)
+                exception = std::current_exception();
+            failed = true;
+        }
+    }
+}
+
+ProjectionIndexBitmapPtr ProjectionIndexReadTasks::finish()
+{
+    if (exception)
+        std::rethrow_exception(exception);
+
+    if (failed)
+        return nullptr;
+
+    ProjectionIndexBitmapPtr result = std::move(bitmaps[0]);
+    for (size_t i = 1; i < bitmaps.size(); ++i)
+        result->unionWith(*bitmaps[i]);
+    return result;
+}
+
+void ProjectionIndexReadSharing::run(ProjectionIndexReadTasks & tasks)
+{
+    {
+        std::lock_guard lock(mutex);
+        current = &tasks;
+        ++generation;
+    }
+    helpers_cv.notify_all();
+
+    tasks.run();
+
+    /// `tasks` must outlive every helper that runs them.
+    std::unique_lock lock(mutex);
+    current = nullptr;
+    builder_cv.wait(lock, [&] { return running == 0; });
+}
+
+void ProjectionIndexReadSharing::finish()
+{
+    {
+        std::lock_guard lock(mutex);
+        finished = true;
+    }
+    helpers_cv.notify_all();
+}
+
+void ProjectionIndexReadSharing::help()
+{
+    std::unique_lock lock(mutex);
+    if (finished || helpers >= max_helpers)
+        return;
+
+    ++helpers;
+    size_t seen_generation = 0;
+    while (true)
+    {
+        helpers_cv.wait(lock, [&] { return finished || (current && generation != seen_generation); });
+        if (finished)
+            break;
+
+        seen_generation = generation;
+        auto * tasks = current;
+        ++running;
+        lock.unlock();
+        tasks->run();
+        lock.lock();
+        --running;
+        if (running == 0)
+            builder_cv.notify_one();
+    }
+    --helpers;
+}
+
+MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(
+    ProjectionIndexReaderByName projection_index_readers_,
+    size_t min_rows_for_concurrent_read_,
+    size_t min_bytes_for_concurrent_read_,
+    size_t min_read_task_size_)
     : projection_index_readers(std::move(projection_index_readers_))
+    , min_rows_for_concurrent_read(min_rows_for_concurrent_read_)
+    , min_bytes_for_concurrent_read(min_bytes_for_concurrent_read_)
+    , min_read_task_size(min_read_task_size_)
 {
 }
 
-ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInDataParts & projection_parts)
+ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::readProjectionPart(
+    SingleProjectionIndexReader & reader, const RangesInDataPart & ranges, ProjectionIndexReadSharing & sharing)
+{
+    size_t total_marks = ranges.getMarksCount();
+    if (max_threads_per_part > 1 && total_marks >= 2)
+    {
+        const auto & granularity_info = ranges.data_part->index_granularity_info;
+        size_t min_marks_per_task = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
+            min_rows_for_concurrent_read,
+            min_bytes_for_concurrent_read,
+            granularity_info.fixed_index_granularity,
+            granularity_info.mark_type.adaptive ? granularity_info.index_granularity_bytes : 0,
+            min_read_task_size,
+            total_marks);
+
+        size_t max_tasks = total_marks / min_marks_per_task;
+        if (max_tasks >= 2)
+        {
+            /// A few tasks per thread balance threads of different speed.
+            ProjectionIndexReadTasks tasks(reader, ranges, std::min(max_tasks, 4 * max_threads_per_part));
+            sharing.run(tasks);
+            return tasks.finish();
+        }
+    }
+
+    return reader.read(ranges, ranges.parent_ranges);
+}
+
+ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInDataParts & projection_parts, ProjectionIndexReadSharing & sharing)
 {
     ProjectionIndexBitmaps bitmaps;
     for (const auto & ranges : projection_parts)
     {
         const auto & proj_name = ranges.data_part->name;
         auto & reader = projection_index_readers.at(proj_name);
-        auto res = reader.read(ranges);
+        auto res = readProjectionPart(reader, ranges, sharing);
 
         /// If any bitmap is missing (cancellation, or a filter the projection cannot evaluate), the projection index becomes invalid.
         if (!res)
@@ -819,7 +998,17 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
 
     if (it == index_read_result_registry.end())
     {
-        auto promise = index_read_result_registry.emplace(part_index, IndexReadResultEntry{}).first->second.promise;
+        auto new_sharing = projection_index_reader
+            ? std::make_shared<ProjectionIndexReadSharing>(projection_index_reader->maxThreadsPerPart() - 1)
+            : nullptr;
+        const auto & entry = index_read_result_registry.emplace(part_index, IndexReadResultEntry(std::move(new_sharing))).first->second;
+        auto promise = entry.promise;
+        auto sharing = entry.sharing;
+        /// Waiters may be inside `help` from now on, so it is released on every exit.
+        SCOPE_EXIT({
+            if (sharing)
+                sharing->finish();
+        });
         lock.unlock();
         try
         {
@@ -836,7 +1025,7 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
 
             if (projection_index_reader)
             {
-                auto projection_index_res = projection_index_reader->read(projection_parts);
+                auto projection_index_res = projection_index_reader->read(projection_parts, *sharing);
                 if (projection_index_res)
                 {
                     if (!res)
@@ -857,7 +1046,10 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
     else
     {
         auto future = it->second.future;
+        auto sharing = it->second.sharing;
         lock.unlock();
+        if (sharing)
+            sharing->help();
         return future.get();
     }
 }

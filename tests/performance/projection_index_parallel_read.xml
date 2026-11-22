@@ -1,0 +1,28 @@
+<test>
+    <create_query>
+        CREATE TABLE t_projection_index_parallel_read
+        (
+            k1 UInt32,
+            k2 UInt32,
+            k3 UInt32,
+            v UInt64,
+            PROJECTION p1 INDEX k1 TYPE basic,
+            PROJECTION p2 INDEX k2 TYPE basic,
+            PROJECTION p3 INDEX k3 TYPE basic
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_projection_index_parallel_read
+        SELECT number % 53, number % 59, number % 61, number
+        FROM numbers(50000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_projection_index_parallel_read FINAL</fill_query>
+
+    <!-- Each projection selects fewer rows than `max_projection_rows_to_use_projection_index`, so all three are used. -->
+    <query>SELECT count(), sum(v) FROM t_projection_index_parallel_read WHERE k1 = 1 AND k2 = 2 AND k3 = 3 SETTINGS use_query_condition_cache = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_projection_index_parallel_read</drop_query>
+</test>
