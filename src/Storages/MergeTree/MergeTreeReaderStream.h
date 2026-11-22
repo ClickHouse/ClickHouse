@@ -23,12 +23,9 @@ class CachedCompressedReadBuffer;
 
 struct RuntimeDataflowStatisticsBlock;
 
-/// Counts the compressed blocks the readers of a read load into the input bytes of its statistics. A compressed block may
-/// hold the data of several columns, and may be loaded more than once, by one reader or by several, each reading other
-/// granules of it: it is counted once.
-/// The counted ranges and files of all the reads of a query are at most `automatic_parallel_replicas_max_counted_ranges`,
-/// reserved before the maps grow. Past it, the reads stop counting, free what they counted, and the statistics record
-/// that the input was not measured.
+/// Counts the compressed blocks the readers of a read load into its statistics, each block once however many readers
+/// load it. The ranges kept for that are reserved from `automatic_parallel_replicas_max_counted_ranges` before the maps
+/// grow; past it, the counting stops and the statistics record that the input was not measured.
 class CountedCompressedBlocks
 {
 public:

@@ -184,7 +184,6 @@ public:
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
         void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
-        void countCompressedBytesRead(const CountedCompressedBlocksPtr & counted);
     };
 
     struct BlockSizeParams

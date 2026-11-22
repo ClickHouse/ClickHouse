@@ -9,10 +9,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
-#include <Compression/ICompressionCodec.h>
-#include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <cstddef>
 #include <functional>
@@ -202,8 +199,7 @@ public:
     /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
     void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
 
-    /// Counts the compressed blocks the readers of the updater's reads load, which is what a replica reading the same
-    /// granules loads, see `IMergeTreeReader::countCompressedBytesRead`.
+    /// See `IMergeTreeReader::countCompressedBytesRead`.
     [[nodiscard]] const CountedCompressedBlocksPtr & getCountedCompressedBlocks() const { return counted_compressed_blocks; }
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
