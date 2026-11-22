@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, no-parallel
+-- Random settings limits: output_format_parquet_bloom_filter_bits_per_value=(10.5, 10.5)
 
 set engine_file_truncate_on_insert=1;
 set output_format_parquet_row_group_size = 100;

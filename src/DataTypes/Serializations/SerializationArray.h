@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
 namespace DB
@@ -11,15 +12,21 @@ class SerializationArray final : public SimpleTextSerialization
 {
 private:
     SerializationPtr nested;
+    /// Used only for the defaults of null elements. Not part of the pool key: the key of the nested serialization already
+    /// determines the default of its type.
+    DataTypePtr nested_type;
     /// Cached `nested->supportsPooling`, so that the check is O(1) instead of a walk over the whole nested
     /// chain: `create` asks it of every level, which is quadratic in the depth for a deeply nested `Array`.
     bool nested_supports_pooling;
 
-    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_), nested_supports_pooling(nested->supportsPooling()) {}
+    SerializationArray(const SerializationPtr & nested_, const DataTypePtr & nested_type_)
+        : nested(nested_), nested_type(nested_type_), nested_supports_pooling(nested->supportsPooling())
+    {
+    }
 
 public:
     static UInt128 getHash(const SerializationPtr & nested_);
-    static SerializationPtr create(const SerializationPtr & nested_);
+    static SerializationPtr create(const SerializationPtr & nested_, const DataTypePtr & nested_type_);
     bool supportsPooling() const override { return nested_supports_pooling; }
 
     /// Whether a resolved subcolumn is really the array sizes, which its name alone cannot tell.
