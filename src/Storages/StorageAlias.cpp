@@ -23,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Databases/IDatabase.h>
 
 
 namespace DB
