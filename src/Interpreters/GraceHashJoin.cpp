@@ -1024,7 +1024,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
         const bool pre_own_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
         /// While the query is over its join spill budget, the bucket is also held to this join's share of it.
-        const size_t share = shareForSplit();
+        size_t share = shareForSplit();
         const bool pre_threshold_overflow = pre_own_overflow || (share && pre_total_bytes * 2 >= share);
         bool split_by_share_only = pre_threshold_overflow && !pre_own_overflow;
 
@@ -1033,6 +1033,9 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         {
             hash_join->addBlockToJoin(current_block, current_block.rows(), context.callerChecksLimits());
             block_added = true;
+            /// The insert can take the query over its budget, or the bucket past its mark.
+            if (!share)
+                share = shareForSplit();
             size_t hash_join_total_keys = hash_join->getTotalRowCount();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             const bool own_overflow = hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes);
@@ -1050,7 +1053,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
             current_block = {};
         /// else: we did not add the block, so we must include it when re-scattering after rehash.
 
-        repartitionCurrentBucket(prev_keys_num, std::move(current_block), context);
+        /// A share-only split can follow the insert: reserve for the rows the bucket holds now.
+        repartitionCurrentBucket(split_by_share_only ? hash_join->getTotalRowCount() : prev_keys_num, std::move(current_block), context);
 
         if (split_by_share_only)
             min_bytes_for_share_split = 2 * hash_join->getTotalByteCount();

@@ -41,7 +41,7 @@ SIX_JOINS="SELECT count(), sum(t1.v + t2.v + t3.v + t4.v + t5.v + t6.v) FROM t0
 function run()
 {
     local query=$1 algorithm=$2 comment=$3
-    $CLICKHOUSE_CLIENT --user "${USER}" -q "$query SETTINGS join_algorithm = '$algorithm', log_comment = '05857_${comment}_${CLICKHOUSE_DATABASE}', $SETTINGS"
+    $CLICKHOUSE_CLIENT --user "${USER}" -q "$query SETTINGS join_algorithm = '$algorithm', log_comment = '05857_${comment}_${CLICKHOUSE_DATABASE}', $SETTINGS${4:+, $4}"
 }
 
 run "$ONE_JOIN" hash one_hash
@@ -50,6 +50,8 @@ run "$SIX_JOINS" hash six_hash_cold
 run "$SIX_JOINS" hash six_hash_warm
 run "$ONE_JOIN" grace_hash one_grace
 run "$SIX_JOINS" grace_hash six_grace
+# Each right table arrives as one block, so only the check after the insert can hold it to its share.
+run "$SIX_JOINS" grace_hash six_one_block_grace "max_threads = 1, max_block_size = 2000000, preferred_block_size_bytes = 0"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
