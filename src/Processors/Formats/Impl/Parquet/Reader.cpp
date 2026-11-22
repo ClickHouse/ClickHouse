@@ -3480,10 +3480,12 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 
     /// Some columns are formed in `formOutputColumn` without a primitive column that bounds them: the columns and the
     /// elements of tuples that are missing in the file are filled with default values, and a variant is assembled
-    /// into `Dynamic` or `JSON`, whose size is not bounded by the size of its binary columns (e.g. each row may
-    /// add a path). A default-filled column with a `JSON` or `Dynamic` in it is of unknown size as well, see
-    /// `OutputColumnInfo::missing_size_unknown`. `max_values` bounds the number of values of the column, at the top level. The values of the arrays
-    /// are bounded by the totals of the row group. Adds the size to `bytes`, or sets `size_unknown`.
+    /// into `Dynamic`, `JSON` or `Variant`, whose size is not bounded by the size of its binary columns (e.g. each
+    /// row may add a path, and a member of the requested `Variant` may be much wider than the value it is converted
+    /// from, such as a `FixedString`). A default-filled column with a `JSON` or `Dynamic` in it is of unknown size as
+    /// well, see `OutputColumnInfo::missing_size_unknown`. `max_values` bounds the number of values of the column, at
+    /// the top level. The values of the arrays are bounded by the totals of the row group. Adds the size to `bytes`,
+    /// or sets `size_unknown`.
     std::function<void(size_t, double, double &, bool &)> count_assembled_column
         = [&](size_t output_idx, double max_values, double & bytes, bool & size_unknown)
     {
@@ -3495,7 +3497,8 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             return;
         }
         const TypeIndex kind = removeNullable(info.input_type)->getColumnType();
-        if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+        /// The types that `formOutputColumn` assembles from the binary columns of a variant, see `decodeVariantColumn`.
+        if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object || kind == TypeIndex::Variant)
         {
             size_unknown = true;
             return;
