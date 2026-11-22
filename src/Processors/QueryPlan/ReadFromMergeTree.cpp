@@ -3552,7 +3552,7 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
 namespace
 {
 
-void collectConjuncts(const ActionsDAG::Node * node, std::unordered_set<const ActionsDAG::Node *> & conjuncts)
+void collectConjuncts(const ActionsDAG::Node * node, UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & conjuncts)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
@@ -3577,8 +3577,8 @@ void collectConjuncts(const ActionsDAG::Node * node, std::unordered_set<const Ac
 /// do, so this is the state the data was written with. The settings salt is a coarse check of the same, kept first.
 bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const MatchedTrees::Matches & matches)
 {
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::vector<const ActionsDAG::Node *> stack{query_node};
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{query_node};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -3652,10 +3652,10 @@ bool filterImpliesIndexCondition(
     if (!index.where_is_session_independent && DateLUT::instance().getTimeZone() != index.where_timezone)
         return false;
 
-    std::unordered_set<const ActionsDAG::Node *> index_conjuncts;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> index_conjuncts;
     collectConjuncts(&index.where_expression->getActionsDAG().findInOutputs(index.where_column_name), index_conjuncts);
 
-    std::unordered_set<const ActionsDAG::Node *> filter_conjuncts;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> filter_conjuncts;
     collectConjuncts(filter_dag.getOutputs().front(), filter_conjuncts);
 
     const auto matches = matchTrees(
@@ -3674,7 +3674,7 @@ bool filterImpliesIndexCondition(
     const auto indexed_matches = matchTrees(
         index.selected_rows_expression->getActionsDAG().getOutputs(), index_analysis_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
     NameSet index_subexpressions;
-    std::unordered_map<std::string_view, ActionsDAG::ActionType> index_subexpression_types;
+    UnorderedMapWithMemoryTracking<std::string_view, ActionsDAG::ActionType> index_subexpression_types;
     for (const auto & action : index.expression->getActions())
     {
         index_subexpressions.insert(action.node->result_name);
