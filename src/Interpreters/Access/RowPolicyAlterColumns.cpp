@@ -114,8 +114,8 @@ bool readsScalarSubquery(const QueryTreeNodePtr & node)
 }
 
 /// a read also evaluates the filter actions on the empty header of the table, which fails for some types that analysis accepts,
-/// e.g. `n = 1` for a String n, or a String filter; a filter that reads a scalar subquery is only analyzed
-void checkFilterAfterAlter(
+/// e.g. `n = 1` for a String n, or a String filter; returns false for a filter that reads a scalar subquery, which is only analyzed
+bool checkFilterAfterAlter(
     const String & filter,
     const String & policy_name,
     const StorageSnapshotPtr & storage_snapshot,
@@ -130,7 +130,7 @@ void checkFilterAfterAlter(
         auto table_node = std::make_shared<TableNode>(storage, query_context);
         QueryAnalyzer(/*only_analyze=*/ true).resolve(expression, table_node, query_context);
         if (readsScalarSubquery(expression))
-            return;
+            return false;
 
         auto planner_context = std::make_shared<PlannerContext>(
             query_context, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}), SelectQueryOptions{});
@@ -142,6 +142,7 @@ void checkFilterAfterAlter(
         for (const auto * input : filter_info.actions.getInputs())
             header.insert({input->result_type->createColumn(), input->result_type, input->result_name});
         FilterTransform::transformHeader(header, &filter_info.actions, filter_info.column_name, filter_info.do_remove_column);
+        return true;
     }
     catch (Exception & e)
     {
@@ -267,17 +268,23 @@ void checkRowPoliciesBeforeAlter(
                             "Cannot modify column {}: row policy {} reads {}, which the new type does not have. Change or drop the policy first",
                             backQuote(old_column->getNameInStorage()), policy_name, backQuote(used));
                 }
-                for (const auto & used : subquery_reads)
+                auto refuse_new_types = [&](const Names & reads, std::string_view how)
                 {
-                    const auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
-                    const auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
-                    if (old_column && new_column && !new_column->type->equals(*old_column->type))
-                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "Cannot modify column {}: row policy {} reads {} in a subquery, which cannot be checked against the new type. "
-                            "Change or drop the policy first",
-                            backQuote(old_column->getNameInStorage()), policy_name, backQuote(used));
-                }
-                checkFilterAfterAlter(filter, policy_name, new_storage_snapshot, table_id, analysis_context);
+                    for (const auto & used : reads)
+                    {
+                        const auto old_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
+                        const auto new_column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used);
+                        if (old_column && new_column && !new_column->type->equals(*old_column->type))
+                            throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "Cannot modify column {}: row policy {} reads {} {}, so the check cannot evaluate the policy with the new type. "
+                                "Change or drop the policy first",
+                                backQuote(old_column->getNameInStorage()), policy_name, backQuote(used), how);
+                    }
+                };
+                refuse_new_types(subquery_reads, "in a subquery");
+                /// with the same types the filter evaluates as before the alter
+                if (!checkFilterAfterAlter(filter, policy_name, new_storage_snapshot, table_id, analysis_context))
+                    refuse_new_types(used_columns, "and a scalar subquery");
             }
         }
     }
