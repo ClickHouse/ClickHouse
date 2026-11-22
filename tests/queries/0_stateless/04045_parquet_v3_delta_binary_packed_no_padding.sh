@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 # Test that the Parquet v3 reader correctly handles DELTA_BINARY_PACKED encoding
 # where the last miniblock is not zero-padded to the full miniblock size.

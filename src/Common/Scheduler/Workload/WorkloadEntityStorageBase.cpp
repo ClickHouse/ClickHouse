@@ -201,7 +201,7 @@ struct EntityChange
     ASTPtr before; /// Entity before change (CREATE if not set)
     ASTPtr after; /// Entity after change (DROP if not set)
 
-    [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
+    std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
             return {{getEntityType(before), name, {}}};
@@ -562,7 +562,7 @@ bool WorkloadEntityStorageBase::removeEntity(
     {
         std::unique_lock lock(mutex);
         auto it = entities.find(entity_name);
-        if (it == entities.end())
+        if (it == entities.end() || getEntityType(it->second) != entity_type)
         {
             if (throw_if_not_exists)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' doesn't exist", entity_name);

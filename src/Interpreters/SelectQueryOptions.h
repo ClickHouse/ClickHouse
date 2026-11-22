@@ -79,12 +79,6 @@ struct SelectQueryOptions
 
     bool force_materialize_cte = false;
 
-    /// The query is printed from a resolved query tree, so its integer constants are not positions.
-    bool positional_arguments_already_resolved = false;
-
-    /// The query as received from the initiator of a distributed read, not a subquery of it.
-    bool is_secondary_query_root = false;
-
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -97,15 +91,14 @@ struct SelectQueryOptions
     {
     }
 
-    [[nodiscard]] SelectQueryOptions copy() const { return *this; }
+    SelectQueryOptions copy() const { return *this; }
 
-    [[nodiscard]] SelectQueryOptions subquery() const
+    SelectQueryOptions subquery() const
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
         out.is_local_shard_plan = false;
         out.is_local_plan_for_distributed_query = false;
-        out.is_secondary_query_root = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
@@ -117,7 +110,7 @@ struct SelectQueryOptions
         return *this;
     }
 
-    [[nodiscard]] SelectQueryOptions createParameterizedView() const
+    SelectQueryOptions createParameterizedView() const
     {
         SelectQueryOptions out = *this;
         out.is_create_parameterized_view = true;
@@ -214,18 +207,6 @@ struct SelectQueryOptions
     SelectQueryOptions & forceMaterializeCTE(bool value = true)
     {
         force_materialize_cte = value;
-        return *this;
-    }
-
-    SelectQueryOptions & positionalArgumentsAlreadyResolved(bool value = true)
-    {
-        positional_arguments_already_resolved = value;
-        return *this;
-    }
-
-    SelectQueryOptions & secondaryQueryRoot(bool value = true)
-    {
-        is_secondary_query_root = value;
         return *this;
     }
 };

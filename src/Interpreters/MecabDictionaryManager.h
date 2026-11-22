@@ -24,7 +24,7 @@ class MecabDictionary
 public:
     MecabDictionary(std::unique_ptr<MeCab::Model> model_, String dictionary_path_);
 
-    [[nodiscard]] const MeCab::Model & getModel() const { return *model; }
+    const MeCab::Model & getModel() const { return *model; }
 
 private:
     const std::unique_ptr<MeCab::Model> model;

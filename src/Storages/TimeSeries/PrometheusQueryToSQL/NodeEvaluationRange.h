@@ -36,7 +36,7 @@ struct NodeEvaluationRange
     Decimal64 step;
     Decimal64 window;
 
-    [[nodiscard]] bool empty() const { return start_time > end_time; }  /// If `start_time == end_time` it's one point
+    bool empty() const { return start_time > end_time; }  /// If `start_time == end_time` it's one point
 };
 
 }

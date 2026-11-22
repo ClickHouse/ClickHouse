@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Formats/FormatSettings.h>
 
 #include <algorithm>
 #include <array>
@@ -789,7 +788,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
             if (physical_column_names.contains(mc.name))
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Column '{}' is both physical and missing in serialization infos", mc.name);
-            (void)DataTypeFactory::instance().get(mc.type_name);
+            DataTypeFactory::instance().get(mc.type_name);
             missing_columns.push_back(std::move(mc));
         }
         infos.setMissingColumns(std::move(missing_columns));

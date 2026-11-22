@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
@@ -13,7 +14,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <absl/strings/str_split.h>
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
@@ -70,6 +70,11 @@ SerializationPtr ISerialization::pooled(UInt128 hash, absl::FunctionRef<ISeriali
         obj->cached_hash = hash;
         return obj;
     });
+}
+
+MutableColumnPtr ISerialization::createColumnForDeserialization(const IDataType & type) const
+{
+    return type.createColumn();
 }
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
@@ -607,16 +612,11 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
 {
     for (const auto & elem : path)
     {
-        /// `DictionaryKeysPrefix` and `VariantDiscriminatorsPrefix` exist only with `use_specialized_prefixes_and_suffixes_substreams`
-        /// (compact parts). They hold only the serialization version or mode, have no data type, and are structural,
-        /// like the other streams here.
         if (elem.type == Substream::NullMap
             || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
-            || elem.type == Substream::DictionaryKeysPrefix
-            || elem.type == Substream::VariantDiscriminatorsPrefix
             || elem.type == Substream::SparseOffsets
             || elem.type == Substream::MapBucketsInfo)
             return false;

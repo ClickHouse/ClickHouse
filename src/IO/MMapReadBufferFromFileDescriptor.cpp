@@ -25,12 +25,10 @@ namespace ErrorCodes
 void MMapReadBufferFromFileDescriptor::init()
 {
     size_t length = mapped.getLength();
+    BufferBase::set(mapped.getData(), length, 0);
+
     size_t page_size = static_cast<size_t>(::getPageSize());
-    bool has_padding = (length % page_size) > 0 && (length % page_size) <= (page_size - (PADDING_FOR_SIMD - 1));
-    if (has_padding)
-        setAssumePadded(mapped.getData(), length, 0);
-    else
-        BufferBase::set(mapped.getData(), length, 0);
+    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - (PADDING_FOR_SIMD - 1));
 }
 
 
@@ -79,7 +77,7 @@ off_t MMapReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     else
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "MMapReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence");
 
-    setWorkingBufferFromInternal();
+    working_buffer = internal_buffer;
     if (new_pos < 0 || new_pos > off_t(working_buffer.size()))
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
             "Cannot seek through file {} because seek position ({}) is out of bounds [0, {}]",
