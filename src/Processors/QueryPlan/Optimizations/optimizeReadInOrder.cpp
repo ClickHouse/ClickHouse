@@ -145,8 +145,18 @@ struct FindReadingStepContext
     /// Every join the traversal descended through, filled or not. The join-specific guards (the
     /// parallel-replica bailouts and the no-virtual-row INNER check) must see all of them: a
     /// filled INNER join filters rows exactly like a plain one, so judging "went through a join"
-    /// by `joins_to_keep_in_order` alone would let filled joins bypass the guards.
+    /// by `joins_to_keep_in_order` alone would let filled joins bypass the guards. A non-empty list
+    /// also makes callers keep the per-stream reading pipeline parallel: each join runs one
+    /// `JoiningTransform` per probe-side stream (see `passed_residual_cpu_step`).
     VectorWithMemoryTracking<const IJoin *> traversed_joins = {};
+
+    /// Set to true when the traversal descends through an order-preserving step that performs
+    /// per-row CPU work above the reading step (a residual `FilterStep`, i.e. a `WHERE` not pushed
+    /// into `PREWHERE`, an `ArrayJoinStep`, a non-trivial `ExpressionStep`, or a preliminary
+    /// `DistinctStep`). Callers use this
+    /// to keep the per-stream reading pipeline parallel so that `PrefetchingConcatProcessor` does
+    /// not collapse it into a single stream and serialize that residual work.
+    bool passed_residual_cpu_step = false;
 };
 
 /// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
@@ -184,8 +194,24 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (node.children.empty())
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    if (const auto * expression = typeid_cast<ExpressionStep *>(step))
+    {
+        /// A non-trivial expression (one that computes functions, e.g. materializing a monotonic
+        /// sort key such as `toDate(d)`) performs per-row CPU work above the reading step, just
+        /// like a residual filter. A trivial projection (inputs and aliases only) does not.
+        if (!expression->getExpression().trivial())
+            data.passed_residual_cpu_step = true;
         return findReadingStep(*node.children.front(), data);
+    }
+
+    /// A residual `FilterStep` (a `WHERE` not pushed into `PREWHERE`) or an `ArrayJoinStep`
+    /// performs per-row CPU work above the reading step. Record it so the caller can keep the
+    /// per-stream pipeline parallel (see `passed_residual_cpu_step`).
+    if (typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+    {
+        data.passed_residual_cpu_step = true;
+        return findReadingStep(*node.children.front(), data);
+    }
 
     /// An exchange hands each partition its rows in arrival order, so the read may read in order only if
     /// the scatter/gather pair fuses into an identity shuffle and is dropped, leaving read and sorting together.
@@ -207,8 +233,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
         && checkSupportedReadingStep(node.children.front()->step.get(), data.allow_existing_order) != nullptr)
         return findReadingStep(*node.children.front(), data);
 
+    /// A preliminary `DistinctStep` deduplicates every input stream separately (a hash-based
+    /// `DistinctTransform`, or `DistinctSortedStreamTransform` with distinct-in-order), which is
+    /// per-stream CPU work above the reading step, like a residual filter. Record it regardless of
+    /// `optimize_distinct_in_order`, so the read stays parallel (see `passed_residual_cpu_step`).
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
+    {
+        data.passed_residual_cpu_step = true;
         return findReadingStep(*node.children.front(), data);
+    }
 
     if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
         return findReadingStep(*node.children.front(), data);
@@ -1503,8 +1536,9 @@ InputOrderInfoPtr buildInputOrderInfo(
                 virtual_row_reader = reading;
             }
 
-            /// Joins that can discard left rows need virtual rows from every selected part to avoid
-            /// excessive reading by the merge after the join. `LEFT ALL` and `LEFT ANY` preserve left rows.
+            /// Joins that can discard left rows (`INNER`, including a `FilledJoinStep` over `StorageJoin` / Dictionary)
+            /// need virtual rows from every selected part to avoid excessive reading by the merge after the join.
+            /// `LEFT ALL` and `LEFT ANY` preserve left rows.
             /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
             /// This holds for filled joins (`FilledJoinStep`) just the same - an INNER Join-engine
             /// table filters the ordered streams exactly like a plain INNER join - so the check
@@ -1539,10 +1573,30 @@ InputOrderInfoPtr buildInputOrderInfo(
                 return nullptr;
             }
 
-            /// `ReadFromMergeTree::requestReadingInOrder` records whether the query has an
-            /// outer LIMIT that was zeroed for in-order reading (so per-part prefetching is
-            /// disabled). The `Merge` table branch below relies on the same logic for its
-            /// child readers.
+            /// If there is residual per-row CPU work (a `WHERE` not pushed into `PREWHERE`, or an
+            /// `ArrayJoin`) between the reading step and this sort, keep the per-stream pipeline
+            /// parallel: `PrefetchingConcatProcessor` would otherwise collapse the streams into a
+            /// single output and serialize that work, regressing mixed `PREWHERE` + `WHERE` reads.
+            /// The streams are merged later, in the `SortingStep` itself.
+            if (find_reading_ctx.passed_residual_cpu_step)
+                reading->setPreferMultipleStreams();
+
+            /// An `ORDER BY ... LIMIT BY ...` whose `BY` columns are a prefix of the sorting key
+            /// gets a per-stream `LimitBySortedStreamTransform` pre-filter attached to this sort by
+            /// `pushLimitByIntoSort`, which also opts that read out of `PrefetchingConcatProcessor`.
+            /// It cannot be done here: `pushLimitByIntoSort` runs after this pass, so the hint is
+            /// not set yet.
+
+            /// When the order is preserved through a `JOIN`, the join keeps exactly the
+            /// probe-side streams it receives and runs one `JoiningTransform` per stream: a
+            /// `JoinStep` with `keepLeftPipelineInOrder` skips the resize in
+            /// `QueryPipelineBuilder::joinPipelinesRightLeft`, and a `FilledJoinStep`
+            /// (`StorageJoin` / Dictionary) is a simple per-stream transform to begin with. If
+            /// `PrefetchingConcatProcessor` collapsed a single-part filtered read into one stream,
+            /// all that per-stream join work would be serialized. Keep the streams parallel; they
+            /// are merged later, in the `SortingStep` above the join.
+            if (!find_reading_ctx.traversed_joins.empty())
+                reading->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1563,6 +1617,11 @@ InputOrderInfoPtr buildInputOrderInfo(
             bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
             if (!can_read)
                 return nullptr;
+
+            /// Same as for the direct `ReadFromMergeTree` path above, forwarded to the child reads.
+            /// The `LIMIT BY` opt-out is handled by `pushLimitByIntoSort`, see above.
+            if (find_reading_ctx.passed_residual_cpu_step || !find_reading_ctx.traversed_joins.empty())
+                merge->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1648,8 +1707,8 @@ InputOrder buildInputOrderInfo(
             if (!can_read)
                 return {};
 
-            /// Aggregation-in-order benefits from multiple input streams
-            /// for parallel aggregation and memory-bound merging.
+            /// Aggregation-in-order needs multiple parallel streams for parallel aggregation.
+            /// Prevent PrefetchingConcatProcessor from collapsing them into one.
             reading->setPreferMultipleStreams();
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1676,9 +1735,8 @@ InputOrder buildInputOrderInfo(
             if (!can_read)
                 return {};
 
-            /// Same as the direct `ReadFromMergeTree` branch above: aggregation-in-order
-            /// benefits from multiple input streams, so keep them instead of collapsing
-            /// per-part with `PrefetchingConcat`.
+            /// Aggregation-in-order needs multiple parallel streams, same as the direct
+            /// `ReadFromMergeTree` path above; forward the opt-out to the child reads.
             merge->setPreferMultipleStreams();
         }
 
@@ -1844,9 +1902,9 @@ InputOrder buildInputOrderInfo(
             order_info.input_order->limit))
             return {};
 
-        /// Distinct-in-order's pre-distinct stage runs `DistinctSortedStreamTransform`
-        /// per stream, so it benefits from multiple parallel input streams.
-        /// Disable per-part `PrefetchingConcat`, which would collapse them into one per part.
+        /// Distinct-in-order runs a parallel pre-distinct transform per stream
+        /// before a final merge. Prevent PrefetchingConcatProcessor from
+        /// collapsing the streams into one and serializing the deduplication.
         reading->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1877,8 +1935,8 @@ InputOrder buildInputOrderInfo(
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
 
-        /// Distinct-in-order's pre-distinct stage runs per stream, so keep multiple
-        /// parallel input streams instead of collapsing them with `PrefetchingConcat`.
+        /// Distinct-in-order runs a parallel pre-distinct transform per stream, same as the direct
+        /// `ReadFromMergeTree` path above; forward the opt-out to the child reads.
         merge->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1966,12 +2024,11 @@ InputOrder buildInputOrderInfo(
                 query_limit))
             return {};
 
-        /// This overload only fires without an upstream ORDER BY (otherwise the SortingStep
-        /// branch handles the in-order read). In that case `LimitByStep` runs
-        /// `LimitBySortedStreamTransform` per stream as a prefilter and merges the streams
-        /// with a final `resize(1)` + `LimitByTransform`, so it benefits from multiple
-        /// parallel input streams. Disable per-part `PrefetchingConcat`, which would collapse
-        /// them into one stream per part and serialize the per-key limiting.
+        /// `LimitByStep` runs the optimized per-stream `LimitBySortedStreamTransform` pre-filter on
+        /// each input stream before the final resize/dedup. Keep the per-stream pipeline parallel:
+        /// `PrefetchingConcatProcessor` would otherwise collapse a single-part filtered read into one
+        /// stream and serialize that pre-filter (the same reason aggregation-in-order and
+        /// distinct-in-order opt out above).
         reading->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1994,9 +2051,8 @@ InputOrder buildInputOrderInfo(
         if (!merge->requestReadingInOrder(order_info.input_order, query_limit))
             return {};
 
-        /// Same as the direct `ReadFromMergeTree` branch: LIMIT BY in streaming mode runs
-        /// per stream, so keep multiple parallel input streams instead of collapsing them
-        /// with `PrefetchingConcat`.
+        /// `LimitByStep` runs a per-stream pre-filter, same as the direct `ReadFromMergeTree` path
+        /// above; forward the opt-out to the child reads.
         merge->setPreferMultipleStreams();
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -2088,157 +2144,6 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     return order_info.input_order;
 }
 
-/// `pushLimitByIntoSort` runs on the parent `LimitByStep`, which the pre-order traversal in
-/// `optimizeTree` visits before this `SortingStep`, so the `LIMIT BY` hint is attached by the time
-/// read-in-order is applied by the pass that shares that traversal with it. When the read-in-order
-/// prefix covers the whole `ORDER BY`, `SortingStep::transformPipeline` runs
-/// `LimitBySortedStreamTransform` on every input stream before merging them, exactly like the bare
-/// `LIMIT BY` (no `ORDER BY`) shape handled in `optimizeLimitByInOrder`. That prefilter scales with
-/// the number of streams, so ask the reader to keep them: per-part `PrefetchingConcat` would
-/// otherwise collapse a multi-stream part read into a single stream per part and serialize the
-/// prefilter.
-static void preferMultipleStreamsForPushedDownLimitBy(
-    const SortingStep & sorting,
-    QueryPlan::Node & node,
-    const SortDescription & sort_description_for_merging,
-    const QueryPlanOptimizationSettings & optimization_settings)
-{
-    if (!sorting.hasLimitByHint())
-        return;
-
-    /// This is `need_finish_sorting` in `SortingStep::transformPipeline`: while a suffix sort still
-    /// has to run, the prefilter is not applied per stream at all, because the suffix keys can
-    /// change which rows come first inside a `LIMIT BY` group.
-    if (sort_description_for_merging.size() < sorting.getSortDescription().size())
-        return;
-
-    FindReadingStepContext find_reading_ctx{
-        .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
-        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
-    };
-    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
-    if (!reading_node)
-        return;
-
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
-    {
-        if (reading->getInputOrder())
-            reading->setPreferMultipleStreams();
-    }
-    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
-    {
-        if (merge->getInputOrder())
-            merge->setPreferMultipleStreams();
-    }
-}
-
-/// `findReadingStep` stops at a `UnionStep`, so fan out over its branches, matching the union branch
-/// of `optimizeReadInOrder` which builds an input order for every branch separately.
-static void preferMultipleStreamsForPushedDownLimitByBelowSorting(
-    const SortingStep & sorting,
-    QueryPlan::Node & node,
-    const SortDescription & sort_description_for_merging,
-    const QueryPlanOptimizationSettings & optimization_settings)
-{
-    if (typeid_cast<UnionStep *>(node.step.get()))
-    {
-        for (auto * child : node.children)
-            preferMultipleStreamsForPushedDownLimitBy(sorting, *child, sort_description_for_merging, optimization_settings);
-        return;
-    }
-
-    preferMultipleStreamsForPushedDownLimitBy(sorting, node, sort_description_for_merging, optimization_settings);
-}
-
-/// Whether evaluating the actions does more than pass columns through: renames, constants, inputs
-/// and `materialize` (a no-op for a column read from a table; the child plans of a `Merge` table
-/// wrap their columns in it) are free, anything else (a function, an `arrayJoin`) is work done
-/// for every row.
-static bool actionsComputeSomething(const ActionsDAG & dag)
-{
-    for (const auto & dag_node : dag.getNodes())
-    {
-        if (dag_node.type == ActionsDAG::ActionType::INPUT
-            || dag_node.type == ActionsDAG::ActionType::ALIAS
-            || dag_node.type == ActionsDAG::ActionType::COLUMN)
-            continue;
-        if (dag_node.type == ActionsDAG::ActionType::FUNCTION && dag_node.function_base
-            && dag_node.function_base->getName() == "materialize")
-            continue;
-        return true;
-    }
-    return false;
-}
-
-bool stepComputesPerStream(const IQueryPlanStep & step)
-{
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        return actionsComputeSomething(expression->getExpression());
-    /// Building sets runs once for the query, not per stream.
-    if (typeid_cast<const CreatingSetsStep *>(&step) || typeid_cast<const DelayedCreatingSetsStep *>(&step))
-        return false;
-    /// `FilterStep`, `ArrayJoinStep`, a preliminary `DistinctStep`, a join kept in order, an exchange.
-    return true;
-}
-
-/// Per-part `PrefetchingConcat` concatenates the streams of a part right at the read, so every step
-/// between the read and the sorting runs on one stream per part instead of one per split. When one
-/// of those steps computes something - a filter that was not moved to `PREWHERE`, an expression,
-/// an `ARRAY JOIN` - that computation would lose its parallelism, so ask the reader to keep its
-/// streams. Pure renames between the read and the sorting (the projection of `SELECT *`) cost
-/// nothing and keep the narrower merge.
-static void preferMultipleStreamsForComputationAboveRead(
-    QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
-{
-    FindReadingStepContext find_reading_ctx{
-        .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
-        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
-    };
-    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
-    if (!reading_node)
-        return;
-
-    /// `findReadingStep` always descends into the first child, so this walks the same path.
-    bool computes = false;
-    for (QueryPlan::Node * current = &node; current != reading_node && !current->children.empty(); current = current->children.front())
-    {
-        if (stepComputesPerStream(*current->step))
-        {
-            computes = true;
-            break;
-        }
-    }
-    if (!computes)
-        return;
-
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
-    {
-        if (reading->getInputOrder())
-            reading->setPreferMultipleStreams();
-    }
-    else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
-    {
-        if (merge->getInputOrder())
-            merge->setPreferMultipleStreams();
-    }
-}
-
-/// `findReadingStep` stops at a `UnionStep`, so fan out over its branches.
-static void preferMultipleStreamsForComputationAboveReadBelowSorting(
-    QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
-{
-    if (typeid_cast<UnionStep *>(node.step.get()))
-    {
-        for (auto * child : node.children)
-            preferMultipleStreamsForComputationAboveRead(*child, optimization_settings);
-        return;
-    }
-
-    preferMultipleStreamsForComputationAboveRead(node, optimization_settings);
-}
-
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
@@ -2251,20 +2156,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
     if (sorting->getType() != SortingStep::Type::Full)
-    {
-        /// `optimizeTree` runs this pass on two traversals: an early one that does not contain
-        /// `pushLimitByIntoSort`, and a later one that does. Only one of them converts the sorting, and
-        /// it is the other one that sees both the applied input order and the `LIMIT BY` hint, so the
-        /// pushed-down `LIMIT BY` request has to be reachable through an already converted sorting too.
-        /// Its `prefix_description` is exactly the read-in-order prefix it was converted with.
-        if (sorting->getType() == SortingStep::Type::FinishSorting)
-        {
-            preferMultipleStreamsForPushedDownLimitByBelowSorting(
-                *sorting, *node.children.front(), sorting->getPrefixDescription(), optimization_settings);
-            preferMultipleStreamsForComputationAboveReadBelowSorting(*node.children.front(), optimization_settings);
-        }
         return;
-    }
 
     if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
@@ -2371,19 +2263,12 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
-
-        preferMultipleStreamsForPushedDownLimitByBelowSorting(*sorting, *union_node, *max_sort_descr, optimization_settings);
-        preferMultipleStreamsForComputationAboveReadBelowSorting(*union_node, optimization_settings);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
-
-        preferMultipleStreamsForPushedDownLimitByBelowSorting(
-            *sorting, *node.children.front(), order_info->sort_description_for_merging, optimization_settings);
-        preferMultipleStreamsForComputationAboveReadBelowSorting(*node.children.front(), optimization_settings);
     }
 }
 

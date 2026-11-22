@@ -112,10 +112,6 @@ public:
 
     [[nodiscard]] const SortDescription & getSortDescription() const override { return result_description; }
 
-    /// The order the input streams already come in, so that only the remaining suffix has to be
-    /// sorted. Non-empty only for the `FinishSorting` flavours.
-    [[nodiscard]] const SortDescription & getPrefixDescription() const { return prefix_description; }
-
     [[nodiscard]] bool hasPartitions() const { return !partition_by_description.empty(); }
     [[nodiscard]] const SortDescription & getPartitionByDescription() const { return partition_by_description; }
     [[nodiscard]] Names getPartitionByColumnNames() const;
@@ -193,6 +189,19 @@ public:
     [[nodiscard]] bool hasTopKThresholdTracker() const { return threshold_tracker != nullptr; }
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
+
+    /// True when `transformPipeline` will attach the per-stream `LIMIT BY` pre-filter for the
+    /// order this step currently has. A `FinishSorting` that still has to sort a suffix skips the
+    /// pre-filter, because applying `LIMIT BY` before the final order is known could drop the
+    /// wrong rows. See `addPerStreamLimitByIfNeeded` and `transformPipeline`.
+    [[nodiscard]] bool willAddPerStreamLimitBy() const
+    {
+        if (limit_by_columns.empty())
+            return false;
+        if (type == Type::FinishSorting)
+            return prefix_description.size() >= result_description.size();
+        return true;
+    }
 
     [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
     [[nodiscard]] String getStepGroupName(size_t group) const override;

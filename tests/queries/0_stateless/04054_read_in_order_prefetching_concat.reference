@@ -1,42 +1,34 @@
-no_prefetching_single_part
+has_prefetching_concat
 1
 correctness
+1000000	0
+no_prefetching_distinct_in_order
+0
+distinct_correctness
+1	100000
+no_prefetching_distinct_in_order_with_set
+0	1	1
+distinct_in_order_with_set_correctness
+1	500
+no_prefetching_residual_filter
+0
+residual_filter_correctness
+1	1
+no_prefetching_limit_by_in_order
+0
+limit_by_in_order_multi_stream
+1	1
+limit_by_in_order_correctness
 1
-no_prefetching_with_limit
-1
-prefetching_multi_part
-1
-multi_part_streams_within_cap
-1
-multi_part_correctness
-1
-reverse_prefetching_multi_part
-1
-reverse_multi_part_correctness
-1
-reverse_no_prefetching_single_part
-1
-reverse_correctness
-1
-no_prefetching_with_more_parts_than_streams
-1
-no_prefetching_with_max_streams_setting
-1
-limit_by_reads_in_order
-1
-limit_by_multi_part_no_prefetching
-1
-limit_by_correctness
-1
-limit_by_per_group_count
-1
-order_by_limit_by_reads_in_order
-1
-order_by_limit_by_multi_part_no_prefetching
-1
-order_by_limit_by_prefetching_without_hint
-1
-order_by_limit_by_with_sort_suffix_keeps_prefetching
-1
+no_prefetching_order_by_limit_by
+0
+order_by_limit_by_multi_stream
+1	1
 order_by_limit_by_correctness
+1	1
+no_prefetching_order_by_limit
+0
+order_by_limit_correctness
 1
+no_prefetching_multi_part
+0

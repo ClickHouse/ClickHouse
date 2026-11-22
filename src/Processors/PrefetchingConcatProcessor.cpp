@@ -1,16 +1,14 @@
 #include <Processors/PrefetchingConcatProcessor.h>
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Port.h>
 
 namespace DB
 {
 
 PrefetchingConcatProcessor::PrefetchingConcatProcessor(
-    SharedHeader header, size_t num_inputs, size_t max_rows_to_buffer_, size_t max_bytes_to_buffer_, size_t max_prefetch_inputs_)
+    SharedHeader header, size_t num_inputs, size_t max_buffered_bytes_, size_t min_buffered_chunks_)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts{header})
-    , max_rows_to_buffer(max_rows_to_buffer_)
-    , max_bytes_to_buffer(max_bytes_to_buffer_)
-    , max_prefetch_inputs(max_prefetch_inputs_)
+    , max_buffered_bytes(max_buffered_bytes_)
+    , min_buffered_chunks(min_buffered_chunks_)
     , buffers(num_inputs)
 {
 }
@@ -27,125 +25,116 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         return Status::Finished;
     }
 
-    /// After a virtual row was forwarded, the downstream merge may defer this stream until it
-    /// reaches the key from the virtual row. Until it demands data again, keep every input
-    /// stopped: neither the current input nor the prefetch window may read past the announced
-    /// boundary, otherwise each deferred stream would read speculatively (the same contract as
-    /// in `BufferChunksTransform`).
-    if (wait_for_demand_after_virtual_row)
+    /// Output is not needed downstream — propagate backpressure to inputs so
+    /// upstream sources stop producing while we wait. Without this, inputs
+    /// remain in their previous `needed` state and buffers grow indefinitely.
+    if (!output.isNeeded())
     {
-        if (!output.canPush())
-        {
-            stopAllInputs();
-            return Status::PortFull;
-        }
-
-        wait_for_demand_after_virtual_row = false;
-        demanded = true;
-    }
-
-    if (!output.canPush())
+        for (auto & input : inputs)
+            input.setNotNeeded();
         return Status::PortFull;
-
-    /// Pull available data from inputs into their buffers.
-    /// This lets their upstream sources continue producing data in parallel.
-    ///
-    /// A non-current input is only drained while its own buffer is below the budget. Once the
-    /// budget is spent we stop pulling, so the buffer honors it even for a chunk still in
-    /// flight on the port after a previous `setNotNeeded` (ports hold one chunk, which would
-    /// otherwise push the buffer one past the limit). The current input is always drained
-    /// because its chunks are emitted immediately and never accumulate.
-    ///
-    /// A chunk can be in flight on a port that was made not needed since (the budget was spent
-    /// or the inputs were stopped after a virtual row), so pull with `set_not_needed`: it is
-    /// allowed for a port that is not needed and leaves it not needed. Whether the input is
-    /// needed is decided below on every call.
-    ///
-    /// Only the first input keeps its virtual row: it announces the boundary of the whole
-    /// concatenated stream. Every other input starts where the previous one ends, so its own
-    /// leading virtual row tells downstream nothing it could defer on. If it were buffered, it
-    /// would park the input on its boundary for as long as it is in the prefetch window, and
-    /// since every stream starts with one, nothing would ever be prefetched. Drop it instead.
-    {
-        size_t idx = 0;
-        for (auto & input : inputs)
-        {
-            if (input.hasData()
-                && (idx == current_input_idx || buffers[idx].hasRoom(max_rows_to_buffer, max_bytes_to_buffer)))
-            {
-                auto chunk = input.pull(/* set_not_needed = */ true);
-                if (idx == 0 || !isVirtualRow(chunk))
-                    buffers[idx].push(std::move(chunk));
-            }
-            ++idx;
-        }
     }
 
-    /// Mark a limited number of upcoming inputs as needed for prefetching.
-    /// Only prefetch the next few inputs (not all) to limit overhead:
-    /// running too many sources in parallel wastes CPU on decompression and
-    /// filtering for data that won't be consumed until much later.
+    /// Pull available data from inputs into their buffers and toggle each input's `needed`
+    /// state based on whether its buffer has room. Setting `needed` on inputs with room is
+    /// what drives parallel prefetching: the pipeline executor schedules the upstream sources
+    /// for all "needed" inputs simultaneously. Clearing `needed` on full buffers is what stops
+    /// upstream from over-producing. The current input is included so its upstream keeps
+    /// producing into the buffer rather than stalling between consecutive `pull` calls.
+    ///
+    /// The inputs share the budget of `max_buffered_bytes`: an input has room while all buffers
+    /// together hold less than it. The buffers of later inputs stay resident until the current
+    /// input is drained, so all of them must be counted, otherwise the total would grow with
+    /// the number of inputs. The inputs are visited in order starting from the current one,
+    /// so the nearest inputs, which are needed first, get the freed budget first. The current
+    /// input (or every input if `max_buffered_bytes` is 0) also has room while it buffers fewer
+    /// than `min_buffered_chunks` chunks. The inputs before `current_input_idx` are finished
+    /// and drained.
+    ///
+    /// `pull(set_not_needed=true)` is required because the input may legitimately
+    /// have `IS_NEEDED == 0` here: an upstream chunk can race with our previous
+    /// `setNotNeeded` (e.g. set when the output became not-needed, or when the
+    /// buffer hit capacity), arriving after the flag was cleared.
+    auto pull_inputs = [&]
     {
-        size_t idx = 0;
-        for (auto & input : inputs)
-        {
-            if (idx != current_input_idx && !input.isFinished())
-            {
-                bool should_prefetch = demanded
-                    && idx > current_input_idx
-                    && idx <= current_input_idx + max_prefetch_inputs
-                    && buffers[idx].hasRoom(max_rows_to_buffer, max_bytes_to_buffer);
+        size_t total_buffered_bytes = 0;
+        for (const auto & buffer : buffers)
+            total_buffered_bytes += buffer.bytes;
 
-                if (should_prefetch)
+        auto it = inputs.begin();
+        std::advance(it, current_input_idx);
+        for (size_t idx = current_input_idx; idx < buffers.size(); ++idx, ++it)
+        {
+            auto & input = *it;
+            auto & buffer = buffers[idx];
+            /// The head start of `min_buffered_chunks` is not counted in the budget only for the
+            /// current input, which must make progress, or for every input when there is no budget.
+            /// Otherwise the buffered bytes would grow with the number of inputs regardless of it.
+            const bool head_start = idx == current_input_idx || max_buffered_bytes == 0;
+            auto has_room = [&]
+            {
+                return (head_start && buffer.chunks.size() < min_buffered_chunks)
+                    || total_buffered_bytes < max_buffered_bytes;
+            };
+
+            if (has_room() && input.hasData())
+            {
+                auto chunk = input.pull(true);
+                const size_t chunk_bytes = chunk.allocatedBytes();
+                buffer.bytes += chunk_bytes;
+                total_buffered_bytes += chunk_bytes;
+                buffer.chunks.push_back(std::move(chunk));
+            }
+
+            if (!input.isFinished())
+            {
+                if (has_room())
                     input.setNeeded();
                 else
                     input.setNotNeeded();
             }
-            ++idx;
         }
-    }
+    };
 
-    /// Skip finished inputs with empty buffers.
+    auto current_input_is_drained = [&]
     {
         auto it = inputs.begin();
         std::advance(it, current_input_idx);
-        while (it != inputs.end() && it->isFinished() && buffers[current_input_idx].chunks.empty())
-        {
-            ++it;
-            ++current_input_idx;
-        }
-    }
+        return it->isFinished() && buffers[current_input_idx].chunks.empty();
+    };
 
-    if (current_input_idx >= buffers.size())
+    /// Skip finished inputs with empty buffers. The inputs must be pulled again after the current input
+    /// changes: the new current input has the head start, and its data may already wait in the port
+    /// while it had no room before. Returning `NeedData` without pulling it would hang the pipeline,
+    /// because no new data would arrive to wake this processor up.
+    while (true)
     {
-        output.finish();
-        return Status::Finished;
+        while (current_input_idx < buffers.size() && current_input_is_drained())
+            ++current_input_idx;
+
+        if (current_input_idx >= buffers.size())
+        {
+            output.finish();
+            return Status::Finished;
+        }
+
+        pull_inputs();
+
+        if (!current_input_is_drained())
+            break;
     }
 
     /// Try to output from the current input's buffer.
+    if (!output.canPush())
+        return Status::PortFull;
+
     if (!buffers[current_input_idx].chunks.empty())
     {
-        auto chunk = buffers[current_input_idx].pop();
-        const bool virtual_row = isVirtualRow(chunk);
+        auto & buffer = buffers[current_input_idx];
+        auto chunk = std::move(buffer.chunks.front());
+        buffer.chunks.pop_front();
+        buffer.bytes -= std::min<size_t>(buffer.bytes, chunk.allocatedBytes());
         output.push(std::move(chunk));
-
-        if (virtual_row)
-        {
-            wait_for_demand_after_virtual_row = true;
-            stopAllInputs();
-        }
-        else
-        {
-            demanded = true;
-
-            /// Keep the current input reading while downstream consumes this chunk, unless a
-            /// virtual row is still buffered: nothing may be read behind it before it is forwarded.
-            auto it = inputs.begin();
-            std::advance(it, current_input_idx);
-            if (!it->isFinished() && buffers[current_input_idx].num_virtual_rows == 0)
-                it->setNeeded();
-        }
-
         return Status::PortFull;
     }
 
@@ -157,33 +146,6 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     }
 
     return Status::NeedData;
-}
-
-void PrefetchingConcatProcessor::Buffer::push(Chunk && chunk)
-{
-    num_rows += chunk.getNumRows();
-    num_bytes += chunk.bytes();
-    if (isVirtualRow(chunk))
-        ++num_virtual_rows;
-    chunks.push_back(std::move(chunk));
-}
-
-Chunk PrefetchingConcatProcessor::Buffer::pop()
-{
-    auto chunk = std::move(chunks.front());
-    chunks.pop_front();
-    num_rows -= chunk.getNumRows();
-    num_bytes -= chunk.bytes();
-    if (isVirtualRow(chunk))
-        --num_virtual_rows;
-    return chunk;
-}
-
-void PrefetchingConcatProcessor::stopAllInputs()
-{
-    for (auto & input : inputs)
-        if (!input.isFinished())
-            input.setNotNeeded();
 }
 
 }

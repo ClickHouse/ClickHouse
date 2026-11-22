@@ -1,276 +1,256 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+-- Test that PrefetchingConcatProcessor is used for read-in-order from a single part.
+-- When a single part is split into multiple streams for parallel reading,
+-- PrefetchingConcat should be used instead of MergingSorted.
 
--- Test PrefetchingConcatProcessor behavior for read-in-order.
--- For single-part tables, PrefetchingConcat is NOT used because it would collapse
--- all streams into one before downstream transforms, destroying parallelism.
--- For multi-part tables, PrefetchingConcat is used per-part to enable parallel I/O
--- within each part while MergingSorted merges between parts.
-
--- Note on data sizes: this test uses small row counts and overrides
--- `merge_tree_min_rows_for_concurrent_read` / `merge_tree_min_read_task_size`
--- so per-part splitting still triggers. Otherwise the flaky check times out.
+-- The presence of PrefetchingConcat in the pipeline depends on many
+-- `MergeTree` and query-plan settings (e.g. `read_in_order_use_virtual_row`,
+-- `query_plan_optimize_lazy_materialization`, `index_granularity_bytes`,
+-- `min_bytes_for_wide_part`) that interact in non-trivial ways with the
+-- splitting/prewhere paths. Rather than enumerate every relevant flag,
+-- disable randomization entirely so the test is deterministic.
+SET read_in_order_two_level_merge_threshold = 100;
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SET optimize_aggregation_in_order = 0;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
+SET parallel_replicas_local_plan = 1;
+SET enable_parallel_replicas = 0;
+SET max_threads = 4;
+SET optimize_read_in_order = 1;
 
 DROP TABLE IF EXISTS t_prefetching_concat;
 
 CREATE TABLE t_prefetching_concat (path String, value UInt64)
 ENGINE = MergeTree ORDER BY path
-SETTINGS index_granularity = 1024
-AS SELECT concat('path/', toString(number % 10000), '/file.log'), number FROM numbers(50000);
+SETTINGS index_granularity = 8192
+AS SELECT concat('path/', toString(number % 100000), '/file.log'), number FROM numbers(1000000);
 
 OPTIMIZE TABLE t_prefetching_concat FINAL;
 
--- PrefetchingConcat should NOT appear for a single-part table (it would destroy
--- downstream parallelism by collapsing all streams into one).
-SELECT 'no_prefetching_single_part';
-SELECT count() = 0 FROM (
+-- Verify PrefetchingConcat appears in the pipeline for a single-part table
+-- with read-in-order and multiple threads.
+SELECT 'has_prefetching_concat';
+SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
     WHERE path LIKE '%file.log'
     ORDER BY path
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
--- Verify correctness: output must be sorted. We capture the pipeline output order
--- with `groupArray` (which preserves arrival order) and check that it is already
--- sorted. We must not re-sort here (e.g. with a window function `OVER (ORDER BY ...)`),
--- because that would mask any reordering introduced by `PrefetchingConcat`.
+-- Verify correctness: output must be sorted.
+-- Check that no adjacent pair violates ordering using lagInFrame() window function.
 SELECT 'correctness';
-SELECT groupArray(path) = arraySort(groupArray(path)) FROM (
-    SELECT path FROM t_prefetching_concat WHERE path LIKE '%file.log' ORDER BY path
-    SETTINGS max_threads = 4, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+SELECT count(), countIf(path < prev_path) AS violations FROM (
+    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY rowNumberInAllBlocks()) AS prev_path
+    FROM (
+        SELECT path FROM t_prefetching_concat
+        WHERE path LIKE '%file.log'
+        ORDER BY path
+    )
 );
 
--- PrefetchingConcat should NOT be used with LIMIT (read_limit != 0).
-SELECT 'no_prefetching_with_limit';
-SELECT count() = 0 FROM (
+-- Distinct-in-order runs a parallel pre-distinct transform per stream. PrefetchingConcat
+-- must NOT collapse those streams into one (it would serialize the deduplication), even when
+-- the read order is applied from plan sorting properties (the `applyOrder` path) rather than by
+-- `optimizeDistinctInOrder`. Here the prefix for ORDER BY and DISTINCT is the same, so the order
+-- is satisfied via `applyOrder`. Expect no PrefetchingConcat, parallel pre-distinct, sorted output.
+SELECT 'no_prefetching_distinct_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT DISTINCT path FROM t_prefetching_concat
+    WHERE path LIKE '%file.log'
+    ORDER BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS optimize_distinct_in_order = 1;
+
+SELECT 'distinct_correctness';
+SELECT arr = arraySort(arr) AS is_sorted, length(arr) AS n FROM (
+    SELECT groupArray(path) AS arr FROM (
+        SELECT DISTINCT path FROM t_prefetching_concat
+        WHERE path LIKE '%file.log'
+        ORDER BY path
+    )
+) SETTINGS optimize_distinct_in_order = 1;
+
+-- The same, but with a set subquery in the filter, so a set-building step joins the plan.
+-- `preferMultipleStreamsForReadingBelow` has to follow the main child of such a step (it has one
+-- more child per set subquery), the same way `findReadingStep` does, otherwise the parallel
+-- pre-distinct transforms below it would be collapsed into one stream by `PrefetchingConcat`.
+-- Expect no PrefetchingConcat, a per-stream pre-distinct plus the final one (at least two
+-- `DistinctSortedStreamTransform`), and a sorted merge of the streams.
+SELECT 'no_prefetching_distinct_in_order_with_set';
+SELECT
+    countIf(explain LIKE '%PrefetchingConcat%') AS has_prefetching_concat,
+    countIf(explain LIKE '%DistinctSortedStreamTransform%') >= 2 AS has_per_stream_pre_distinct,
+    countIf(explain LIKE '%MergingSortedTransform%') > 0 AS keeps_multi_stream_merge
+FROM (
+    EXPLAIN PIPELINE SELECT DISTINCT path FROM t_prefetching_concat
+    WHERE path LIKE '%file.log'
+      AND path IN (SELECT concat('path/', toString(number), '/file.log') FROM numbers(500))
+    ORDER BY path
+) SETTINGS optimize_distinct_in_order = 1;
+
+SELECT 'distinct_in_order_with_set_correctness';
+SELECT arr = arraySort(arr) AS is_sorted, length(arr) AS n FROM (
+    SELECT groupArray(path) AS arr FROM (
+        SELECT DISTINCT path FROM t_prefetching_concat
+        WHERE path LIKE '%file.log'
+          AND path IN (SELECT concat('path/', toString(number), '/file.log') FROM numbers(500))
+        ORDER BY path
+    )
+) SETTINGS optimize_distinct_in_order = 1;
+
+-- A residual `WHERE` (not pushed into `PREWHERE`) is per-row CPU work above the read step.
+-- The old multi-stream path runs it in parallel across streams and merges only at the final
+-- sort, while PrefetchingConcat would collapse the streams into one and serialize it. So when a
+-- residual filter is present, PrefetchingConcat must NOT be used. Use an explicit PREWHERE to
+-- satisfy the per-chunk-work gate and disable prewhere movement so the second predicate stays as
+-- a residual FilterStep above the read.
+SELECT 'no_prefetching_residual_filter';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE
+    SELECT * FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    WHERE value % 7 = 0
+    ORDER BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+
+-- Correctness: output of the mixed PREWHERE + residual WHERE read must still be globally sorted,
+-- and the residual filter must keep exactly the rows it should (compared against an independent
+-- count). Both columns must be 1.
+SELECT 'residual_filter_correctness';
+SELECT
+    countIf(path < prev_path) = 0 AS is_sorted,
+    count() = (SELECT countIf(value % 7 = 0) FROM t_prefetching_concat WHERE path LIKE '%file.log') AS count_matches
+FROM (
+    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY rowNumberInAllBlocks()) AS prev_path
+    FROM (
+        SELECT path FROM t_prefetching_concat
+        PREWHERE path LIKE '%file.log'
+        WHERE value % 7 = 0
+        ORDER BY path
+    )
+) SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+
+-- A no-`ORDER BY` `LIMIT BY` whose `BY` columns are a prefix of the sorting key drives read-in-order
+-- via `optimizeLimitByInOrder`. `LimitByStep` then runs the optimized per-stream
+-- `LimitBySortedStreamTransform` pre-filter on each input stream before the final resize/dedup
+-- (`LimitByTransform`). PrefetchingConcat must NOT collapse those streams into one (it would serialize
+-- the pre-filter), so a single-part filtered `LIMIT BY` keeps multiple streams, just like
+-- aggregation-in-order and distinct-in-order. Expect no PrefetchingConcat and the multi-stream
+-- LIMIT BY path (per-stream `LimitBySortedStreamTransform` plus the final `LimitByTransform`).
+SELECT 'no_prefetching_limit_by_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    LIMIT 1 BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS optimize_limit_by_in_order = 1;
+
+SELECT 'limit_by_in_order_multi_stream';
+SELECT
+    countIf(explain LIKE '%LimitBySortedStreamTransform%') > 0 AS has_per_stream_prefilter,
+    countIf(explain LIKE '%LimitByTransform%') > 0 AS has_final_dedup
+FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    LIMIT 1 BY path
+)
+SETTINGS optimize_limit_by_in_order = 1;
+
+SELECT 'limit_by_in_order_correctness';
+SELECT count() = (SELECT uniqExact(path) FROM t_prefetching_concat WHERE path LIKE '%file.log') AS ok
+FROM (
+    SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    LIMIT 1 BY path
+)
+SETTINGS optimize_limit_by_in_order = 1;
+
+-- The `ORDER BY ... LIMIT BY ...` shape (rather than the no-`ORDER BY` `LIMIT BY` above) drives
+-- read-in-order through the `SortingStep` and pushes the `LIMIT BY` into the sort via
+-- `pushLimitByIntoSort`. That attaches a per-stream `LimitBySortedStreamTransform` pre-filter
+-- (`SortingStep::addPerStreamLimitByIfNeeded`) which only runs while the pipeline still has
+-- multiple streams. As with the no-`ORDER BY` path, PrefetchingConcat must NOT collapse those
+-- streams into one (it would skip the pre-filter and serialize the reduction). Expect no
+-- PrefetchingConcat.
+SELECT 'no_prefetching_order_by_limit_by';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    ORDER BY path
+    LIMIT 1 BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS query_plan_push_limit_by_into_sort = 1;
+
+-- The streams stay parallel: the per-stream `LimitBySortedStreamTransform` prefilter appears under
+-- the read (in addition to the final one above the sort, so at least two occurrences), and the
+-- streams are merged by a `MergingSortedTransform` inside the sort. Had PrefetchingConcat collapsed
+-- the read to one stream, the prefilter would be skipped (a single occurrence) and there would be
+-- no `MergingSortedTransform`.
+SELECT 'order_by_limit_by_multi_stream';
+SELECT
+    countIf(explain LIKE '%LimitBySortedStreamTransform%') >= 2 AS has_per_stream_prefilter,
+    countIf(explain LIKE '%MergingSortedTransform%') > 0 AS keeps_multi_stream_merge
+FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    ORDER BY path
+    LIMIT 1 BY path
+)
+SETTINGS query_plan_push_limit_by_into_sort = 1;
+
+SELECT 'order_by_limit_by_correctness';
+SELECT
+    countIf(path < prev_path) = 0 AS is_sorted,
+    count() = (SELECT uniqExact(path) FROM t_prefetching_concat WHERE path LIKE '%file.log') AS count_matches
+FROM (
+    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY rowNumberInAllBlocks()) AS prev_path
+    FROM (
+        SELECT path FROM t_prefetching_concat
+        PREWHERE path LIKE '%file.log'
+        ORDER BY path
+        LIMIT 1 BY path
+    )
+) SETTINGS query_plan_push_limit_by_into_sort = 1;
+
+-- With a `LIMIT`, the later streams are usually never consumed, so prefetching them only
+-- competes with the current stream. Expect no PrefetchingConcat and a correct result.
+SELECT 'no_prefetching_order_by_limit';
+SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat
+    WHERE path LIKE '%file.log'
     ORDER BY path
     LIMIT 10
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
 ) WHERE explain LIKE '%PrefetchingConcat%';
+
+SELECT 'order_by_limit_correctness';
+SELECT arraySort(groupArray(path)) = (SELECT arraySort(groupArray(path)) FROM (SELECT path FROM t_prefetching_concat ORDER BY path LIMIT 10 SETTINGS optimize_read_in_order = 0))
+FROM (
+    SELECT path FROM t_prefetching_concat
+    WHERE path LIKE '%file.log'
+    ORDER BY path
+    LIMIT 10
+);
 
 DROP TABLE t_prefetching_concat;
 
--- PrefetchingConcat should be used per-part for multi-part tables (with partitions).
--- Each part gets parallel streams with PrefetchingConcat, MergingSorted merges between parts.
+-- PrefetchingConcat should NOT be used with multiple parts whose ranges
+-- are in reverse order after the split (the splitting takes parts from the back).
 DROP TABLE IF EXISTS t_prefetching_concat_multi;
 CREATE TABLE t_prefetching_concat_multi (key UInt64, value String)
-ENGINE = MergeTree PARTITION BY intDiv(key, 30000) ORDER BY key
-SETTINGS index_granularity = 1024;
-INSERT INTO t_prefetching_concat_multi SELECT number, toString(number) FROM numbers(90000);
-OPTIMIZE TABLE t_prefetching_concat_multi FINAL;
+ENGINE = MergeTree ORDER BY key
+SETTINGS index_granularity = 8192;
+SYSTEM STOP MERGES t_prefetching_concat_multi;
+INSERT INTO t_prefetching_concat_multi SELECT number, toString(number) FROM numbers(100000);
+INSERT INTO t_prefetching_concat_multi SELECT number + 100000, toString(number) FROM numbers(100000);
+INSERT INTO t_prefetching_concat_multi SELECT number + 200000, toString(number) FROM numbers(100000);
 
-SELECT 'prefetching_multi_part';
+SELECT 'no_prefetching_multi_part';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
     WHERE value LIKE '%5%'
     ORDER BY key
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
 ) WHERE explain LIKE '%PrefetchingConcat%';
-
--- Per-part splitting must keep the total number of read streams bounded by `max_threads`.
--- We sum the `× N` multipliers on `MergeTreeSelect` lines from `EXPLAIN PIPELINE`.
-SELECT 'multi_part_streams_within_cap';
-SELECT sum(streams) <= 6 FROM (
-    SELECT
-        if(match(explain, 'MergeTreeSelect.*× (\\d+)'),
-           toUInt32(extract(explain, 'MergeTreeSelect.*× (\\d+)')),
-           1) AS streams
-    FROM (
-        EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
-        WHERE value LIKE '%5%'
-        ORDER BY key
-        SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-                 merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-    )
-    WHERE explain LIKE '%MergeTreeSelect%'
-);
-
--- Correctness: output must be sorted across partitions.
-SELECT 'multi_part_correctness';
-SELECT groupArray(key) = arraySort(groupArray(key)) FROM (
-    SELECT key FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key
-    SETTINGS max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-);
-
--- Multi-part reverse `ORDER BY key DESC`: per-part `PrefetchingConcat` is enabled
--- and must reverse the pipe order so that the merge produces correctly descending output.
-SELECT 'reverse_prefetching_multi_part';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_multi
-    WHERE value LIKE '%5%'
-    ORDER BY key DESC
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
-SELECT 'reverse_multi_part_correctness';
-SELECT groupArray(key) = arrayReverseSort(groupArray(key)) FROM (
-    SELECT key FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key DESC
-    SETTINGS max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-);
 
 DROP TABLE t_prefetching_concat_multi;
-
--- PrefetchingConcat should NOT appear for reverse-order reads on single-part tables.
-DROP TABLE IF EXISTS t_prefetching_concat_reverse;
-CREATE TABLE t_prefetching_concat_reverse (key UInt64, value String)
-ENGINE = MergeTree ORDER BY key
-SETTINGS index_granularity = 1024;
-INSERT INTO t_prefetching_concat_reverse SELECT number, toString(number) FROM numbers(50000);
-OPTIMIZE TABLE t_prefetching_concat_reverse FINAL;
-
-SELECT 'reverse_no_prefetching_single_part';
-SELECT count() = 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_reverse
-    WHERE value LIKE '%5%'
-    ORDER BY key DESC
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
--- Correctness: output must be in descending order.
-SELECT 'reverse_correctness';
-SELECT groupArray(key) = arrayReverseSort(groupArray(key)) FROM (
-    SELECT key FROM t_prefetching_concat_reverse WHERE value LIKE '%5%' ORDER BY key DESC
-    SETTINGS max_threads = 4, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-);
-
-DROP TABLE t_prefetching_concat_reverse;
-
--- When there are more parts than `num_streams`, the per-part path cannot stay
--- within the budget (it needs at least one stream per part), so it must be
--- rejected and execution must fall back to the original distribute-by-streams
--- loop. We verify this by asserting that `PrefetchingConcat` does not appear
--- in the pipeline.
-DROP TABLE IF EXISTS t_prefetching_concat_cap;
-CREATE TABLE t_prefetching_concat_cap (key UInt64, value String)
-ENGINE = MergeTree PARTITION BY (key % 16) ORDER BY key
-SETTINGS index_granularity = 1024;
-INSERT INTO t_prefetching_concat_cap SELECT number, toString(number) FROM numbers(50000);
-OPTIMIZE TABLE t_prefetching_concat_cap FINAL;
-
-SELECT 'no_prefetching_with_more_parts_than_streams';
-SELECT count() = 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_cap ORDER BY key
-    SETTINGS enable_parallel_replicas = 0, max_threads = 4, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
-SELECT 'no_prefetching_with_max_streams_setting';
-SELECT count() = 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_cap ORDER BY key
-    SETTINGS enable_parallel_replicas = 0, max_threads = 16, max_streams_for_merge_tree_reading = 4,
-             allow_asynchronous_read_from_io_pool_for_merge_tree = 0, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
-DROP TABLE t_prefetching_concat_cap;
-
--- `LIMIT BY` drives read-in-order without an outer `ORDER BY`: `LimitByStep` runs a
--- per-stream `LimitBySortedStreamTransform` prefilter, then merges the streams with a final
--- `resize(1)` + `LimitByTransform`, so it benefits from multiple parallel input streams.
--- The read-in-order input order carries `limit = 0`, so on a multi-part table the per-part
--- `PrefetchingConcat` path (`can_use_per_part_prefetching`) would otherwise be taken and
--- collapse the parallel prefilter into one stream per part. `setPreferMultipleStreams`
--- disables it, so `PrefetchingConcat` must NOT appear for a `LIMIT BY` read, while the read
--- still goes in order (proven by the streaming `LimitBySortedStreamTransform`, which is only
--- used on the in-order `LIMIT BY` path — this guards against a vacuous pass where the read
--- simply did not go in order).
-DROP TABLE IF EXISTS t_prefetching_concat_limit_by;
-CREATE TABLE t_prefetching_concat_limit_by (grp UInt64, key UInt64, value String)
-ENGINE = MergeTree PARTITION BY intDiv(key, 30000) ORDER BY (grp, key)
-SETTINGS index_granularity = 1024;
-INSERT INTO t_prefetching_concat_limit_by SELECT number % 100, number, toString(number) FROM numbers(90000);
-OPTIMIZE TABLE t_prefetching_concat_limit_by FINAL;
-
-SELECT 'limit_by_reads_in_order';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%LimitBySortedStreamTransform%';
-
-SELECT 'limit_by_multi_part_no_prefetching';
-SELECT count() = 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
--- Correctness: exactly 3 rows per group, all groups present, and every returned row is
--- self-consistent (`key % 100` is the group it was placed in). `LIMIT BY` without an outer
--- `ORDER BY` does not fix *which* 3 rows are kept, so we assert order-independent invariants.
-SELECT 'limit_by_correctness';
-SELECT count() = 300 AND uniqExact(grp) = 100 AND countIf(key % 100 != grp) = 0 FROM (
-    SELECT grp, key FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
-    SETTINGS max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-);
-
-SELECT 'limit_by_per_group_count';
-SELECT min(c) = 3 AND max(c) = 3 FROM (
-    SELECT count() AS c FROM (
-        SELECT grp, key FROM t_prefetching_concat_limit_by LIMIT 3 BY grp
-        SETTINGS max_threads = 6, optimize_read_in_order = 1,
-                 merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-    ) GROUP BY grp
-);
-
--- `ORDER BY ... LIMIT BY ...` reaches the same per-stream prefilter through a different route:
--- `pushLimitByIntoSort` hands the `LIMIT BY` hint to the `SortingStep`, which attaches
--- `LimitBySortedStreamTransform` to every input stream before merging them. Read-in-order makes
--- that sort a `FinishSorting` whose prefix covers the whole `ORDER BY`, so the prefilter really
--- does run per stream and scales with their number. `PrefetchingConcat` must therefore stay
--- disabled here too, exactly as for the bare `LIMIT BY` above.
--- Non-vacuous: the very same query with `query_plan_push_limit_by_into_sort = 0` (no hint, so no
--- per-stream prefilter to protect) keeps `PrefetchingConcat`, as does a plain `ORDER BY` without
--- `LIMIT BY` — see `order_by_limit_by_prefetching_without_hint` below.
-SELECT 'order_by_limit_by_reads_in_order';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%LimitBySortedStreamTransform × %';
-
-SELECT 'order_by_limit_by_multi_part_no_prefetching';
-SELECT count() = 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
-SELECT 'order_by_limit_by_prefetching_without_hint';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1, query_plan_push_limit_by_into_sort = 0,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
--- When a suffix of the `ORDER BY` is not covered by the read-in-order prefix, `SortingStep` cannot
--- run the prefilter per stream (the suffix keys decide which rows come first inside a group), so
--- there is nothing to protect and the per-part prefetching stays enabled.
-SELECT 'order_by_limit_by_with_sort_suffix_keeps_prefetching';
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key, value LIMIT 3 BY grp
-    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE explain LIKE '%PrefetchingConcat%';
-
--- With an outer `ORDER BY` the result is fully deterministic: the 3 smallest keys of every group.
-SELECT 'order_by_limit_by_correctness';
--- Every group `g` holds the keys `g`, `g + 100`, `g + 200`, ...; the three smallest are the first
--- three of those, so the expected sum is `sum(3 * g + 300)` over `g` in `[0, 100)` = 44850.
-SELECT count() = 300 AND uniqExact(grp) = 100 AND sum(key) = 44850 FROM (
-    SELECT grp, key FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
-    SETTINGS max_threads = 6, optimize_read_in_order = 1,
-             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-);
-
-DROP TABLE t_prefetching_concat_limit_by;

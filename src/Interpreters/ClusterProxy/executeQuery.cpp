@@ -122,6 +122,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsUInt64 distributed_group_by_top_k;
 }
 
 namespace DistributedSetting
@@ -172,6 +173,15 @@ void stripDatabaseSetting(Settings & settings)
 
 void stripInitiatorOnlySettings(Settings & settings)
 {
+    /// Not propagated to the next layer of distribution: it applies only to the servers the initiator queries directly,
+    /// which have the initiator's sort above them. The initiator sets it for those reads (`enableGroupByTopK`) after
+    /// this strip.
+    if (settings[Setting::distributed_group_by_top_k].changed || settings[Setting::distributed_group_by_top_k] != 0)
+    {
+        settings[Setting::distributed_group_by_top_k] = 0;
+        settings[Setting::distributed_group_by_top_k].changed = false;
+    }
+
     /// All of the settings below are interpreted only at the initiator: they either shape the
     /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
     /// `additional_result_filter`) or shape how the result is serialised to the user
@@ -327,6 +337,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "async_insert_select_as_async_insert",
     "parallel_replicas_for_object_storage_tables",
     "database",
+    "distributed_group_by_top_k",
 };
 
 bool isInitiatorOnlySettingName(std::string_view name)
@@ -970,7 +981,9 @@ std::vector<bool> getReplicasLiveness(const String & cluster_name, const Cluster
     return is_active;
 }
 
-static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+/// Liveness of the replicas in cluster order, local replica forced active; empty when unknown.
+static std::vector<bool>
+getParallelReplicasLiveness(const ContextPtr & context, const ClusterPtr & cluster, std::optional<size_t> & local_replica_index)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -988,7 +1001,6 @@ static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareCon
     {
         /// Identify the local replica the same way `findLocalReplicaIndexAndUpdatePools` does (host name + port).
         const auto & addresses = cluster->getShardsAddresses().at(0);
-        std::optional<size_t> local_replica_index;
         for (size_t i = 0; i < is_active.size() && i < addresses.size(); ++i)
         {
             const auto & address = addresses[i];
@@ -1014,11 +1026,25 @@ static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareCon
                 is_active[*local_replica_index] = false;
         });
 
-        /// The local replica is the initiator - it is running this query, so it is online by definition even
+        /// The local replica is running this query, so it is online by definition even
         /// if its `active` znode is transiently missing. Force it active so liveness never filters it out.
         if (local_replica_index)
             is_active[*local_replica_index] = true;
+    }
 
+    return is_active;
+}
+
+static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
+{
+    const auto & settings = context->getSettingsRef();
+
+    const auto & shard = cluster->getShardsInfo().at(0);
+
+    std::optional<size_t> local_replica_index;
+    std::vector<bool> is_active = getParallelReplicasLiveness(context, cluster, local_replica_index);
+    if (!is_active.empty())
+    {
         /// Test-only: simulate liveness drifting between the two passes of an INSERT SELECT - drop one active
         /// non-local replica from this (first) snapshot so the coordinator is sized smaller than the cluster's
         /// current active set. The remote-pool pass must reuse this snapshot's pools; if it recomputed liveness
@@ -1094,6 +1120,16 @@ static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareCon
     }
 
     return {pools_to_use, max_replicas_to_use};
+}
+
+size_t getReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
+{
+    std::optional<size_t> local_replica_index;
+    const std::vector<bool> is_active = getParallelReplicasLiveness(context, cluster, local_replica_index);
+    size_t available_replicas = std::count(is_active.begin(), is_active.end(), true);
+    if (available_replicas == 0)
+        available_replicas = cluster->getShardsInfo().at(0).getAllNodeCount();
+    return std::min<size_t>(available_replicas, context->getSettingsRef()[Setting::max_parallel_replicas]);
 }
 
 static size_t findLocalReplicaIndexAndUpdatePools(VectorWithMemoryTracking<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)

@@ -55,7 +55,7 @@ run_and_report()
     shift
     local log
     log=$(${CLICKHOUSE_CLIENT_TRACE_LOGS} ${SETTINGS} "$@" -q "${QUERY}" 2>&1)
-    echo "$label $(echo "$log" | grep -o "Using PrefetchingConcatProcessor for [0-9]* streams from part [^,]*, read-ahead budget [0-9]* rows / [0-9]* bytes" | sed 's/.*read-ahead budget //' | sort -u | paste -sd'|')"
+    echo "$label $(echo "$log" | grep -o "Using WindowedPrefetchingConcatProcessor for [0-9]* streams from part [^,]*, read-ahead budget [0-9]* rows / [0-9]* bytes" | sed 's/.*read-ahead budget //' | sort -u | paste -sd'|')"
 }
 
 # Buffering on: the rows half is the block size the step was built with, the bytes half is

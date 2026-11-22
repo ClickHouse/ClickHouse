@@ -235,9 +235,9 @@ public:
 
     [[nodiscard]] const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
-    /// Propagate `setPreferMultipleStreams` to child `ReadFromMergeTree` steps, so a
-    /// downstream aggregation/distinct-in-order over a `Merge` table keeps multiple
-    /// parallel input streams instead of collapsing them with per-part `PrefetchingConcat`.
+    /// Forwards `ReadFromMergeTree::setPreferMultipleStreams` to the child reading steps of the ordered
+    /// pipeline (not to the build side of a join or the source of a set), so that
+    /// per-stream work installed above a `Merge` table is not serialized by the child reads.
     void setPreferMultipleStreams();
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
@@ -279,10 +279,6 @@ public:
     void addFilter(FilterDAGInfo filter);
 
 private:
-    /// Calls `setPreferMultipleStreams` on every reader below `node` that has a step computing
-    /// something per row between it and the root of the child plan.
-    static void preferMultipleStreamsForComputationAboveReads(QueryPlan::Node & node, bool computes_above);
-
     const size_t required_max_block_size;
     const size_t requested_num_streams;
     SharedHeader common_header;
