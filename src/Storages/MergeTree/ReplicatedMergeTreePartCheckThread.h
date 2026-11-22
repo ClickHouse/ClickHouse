@@ -59,6 +59,10 @@ public:
     /// delay_to_check_seconds - check no sooner than the specified number of seconds.
     void enqueuePart(const String & name, time_t delay_to_check_seconds = 0);
 
+    /// Drop every queued check, for when block numbers were reissued and the names denote nothing.
+    /// Does not affect a check already running - pause the task for that.
+    void clearQueue();
+
     /// Get the number of parts in the queue for check.
     size_t size() const;
 
