@@ -125,6 +125,11 @@ public:
 
     [[nodiscard]] bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
 
+    /// The sorting before a `WindowStep`. `partition_by_description` does not tell it: the planners leave it empty
+    /// for a window without `PARTITION BY` and for keys that cannot be hash-scattered.
+    [[nodiscard]] bool isWindowSorting() const { return is_window_sorting; }
+    void setWindowSorting() { is_window_sorting = true; }
+
     [[nodiscard]] bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
 
@@ -185,6 +190,19 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
+    /// True when `transformPipeline` will attach the per-stream `LIMIT BY` pre-filter for the
+    /// order this step currently has. A `FinishSorting` that still has to sort a suffix skips the
+    /// pre-filter, because applying `LIMIT BY` before the final order is known could drop the
+    /// wrong rows. See `addPerStreamLimitByIfNeeded` and `transformPipeline`.
+    [[nodiscard]] bool willAddPerStreamLimitBy() const
+    {
+        if (limit_by_columns.empty())
+            return false;
+        if (type == Type::FinishSorting)
+            return prefix_description.size() >= result_description.size();
+        return true;
+    }
+
     [[nodiscard]] VectorWithMemoryTracking<size_t> getStepGroups() const override;
     [[nodiscard]] String getStepGroupName(size_t group) const override;
 
@@ -235,6 +253,10 @@ private:
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
+
+    /// See `isWindowSorting`. It only tells the optimizer what the sort is for, but it is serialized: a worker
+    /// optimizes its deserialized fragment again and must restrict reading in order the same way.
+    bool is_window_sorting = false;
 
     /// A distributed plan can split a top-N sort in two stages: each node keeps its local
     /// top `limit` rows, and a limit above keeps the global top `limit` of the merged result.
