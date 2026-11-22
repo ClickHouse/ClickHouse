@@ -9,6 +9,8 @@
 
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/quoteString.h>
@@ -152,6 +154,21 @@ namespace
         return result;
     }
 
+    /// The bytes of a binary parameter as the client sent them. The reader decodes a 16-byte binary field with
+    /// the UUID logical type as `UUID`, whose internal representation has each half of the value reversed; the
+    /// other types it reads from binary fields keep the bytes of Arrow.
+    String binaryParameterBytes(const ColumnWithTypeAndName & column)
+    {
+        String bytes{column.column->getDataAt(0)};
+        if (isUUID(removeNullable(removeLowCardinality(column.type))))
+        {
+            chassert(bytes.size() == sizeof(UUID));
+            std::reverse(bytes.begin(), bytes.begin() + sizeof(UUID) / 2);
+            std::reverse(bytes.begin() + sizeof(UUID) / 2, bytes.end());
+        }
+        return bytes;
+    }
+
     /// Converts the value of a bound parameter to a ClickHouse SQL literal, by the Arrow type of the parameter.
     String parameterToSQLLiteral(const ArrowIPC::ArrowField & field, const ColumnWithTypeAndName & column)
     {
@@ -183,7 +200,7 @@ namespace
             case TypeKind::LargeBinary:
             case TypeKind::BinaryView:
             case TypeKind::FixedSizeBinary:
-                return binaryToSQLExpression(column.column->getDataAt(0));
+                return binaryToSQLExpression(binaryParameterBytes(column));
             /// Date/time types: the text is a human-readable string like "2021-01-01" that must be quoted - otherwise
             /// ClickHouse parses "2021-01-01" as 2021 - 1 - 1 = 2019. Other types (lists, structs, maps, ...) are
             /// quoted as a best-effort fallback.
@@ -370,35 +387,52 @@ namespace
 
     /// The values of the parameters a client binds to a prepared statement with `DoPut`, as SQL literals: the
     /// messages of an Arrow IPC stream of at most one row. None when no row is bound.
-    Result<std::optional<Strings>> readParameterLiterals(VectorWithMemoryTracking<ArrowIPC::IPCMessage> messages, const ContextPtr & context)
+    /// The messages are decoded as `next_message` returns them, and nothing is read after the first excess row:
+    /// the upload is not attributed to a query, so it must not be collected first.
+    Result<std::optional<Strings>> readParameterLiterals(const ArrowIPC::IPCMessagesReadBuffer::NextMessage & next_message, const ContextPtr & context)
     {
-        if (messages.empty())
+        ArrowIPC::IPCMessage schema_message;
+        if (!next_message(schema_message))
             return std::optional<Strings>{};
 
-        const auto schema = ArrowIPC::parseSchemaMessage(messages.front().header);
-        auto format_settings = getFormatSettings(context);
+        const auto schema = ArrowIPC::parseSchemaMessage(schema_message.header);
 
-        auto make_buffer = [&messages]
+        /// The value of a parameter must not depend on the preferences of the session for importing data. A field
+        /// is `Nullable` if Arrow declares it nullable: with `schema_inference_make_columns_nullable = 0` a bound
+        /// `NULL` would be read into a type that cannot hold it, and replaced by a default value or rejected.
+        auto format_settings = getFormatSettings(context);
+        format_settings.schema_inference_make_columns_nullable = 2;
+        format_settings.null_as_default = true;
+
+        Block header;
         {
-            return std::make_unique<ArrowIPC::IPCMessagesReadBuffer>(
-                [&messages, i = size_t(0)](ArrowIPC::IPCMessage & message) mutable
+            ArrowIPC::IPCMessagesReadBuffer schema_buffer(
+                [&schema_message, given = false](ArrowIPC::IPCMessage & message) mutable
                 {
-                    if (i >= messages.size())
+                    if (given)
                         return false;
-                    message = messages[i++];
+                    message = schema_message;
+                    given = true;
                     return true;
                 });
-        };
-
-        auto schema_buffer = make_buffer();
-        ArrowIPCSchemaReader schema_reader(*schema_buffer, /* stream_ */ true, format_settings);
-        Block header;
-        for (const auto & [name, type] : schema_reader.readSchema())
-            header.insert({type->createColumn(), type, name});
+            ArrowIPCSchemaReader schema_reader(schema_buffer, /* stream_ */ true, format_settings);
+            for (const auto & [name, type] : schema_reader.readSchema())
+                header.insert({type->createColumn(), type, name});
+        }
         if (header.columns() != schema.fields.size())
             return Status::NotImplemented("The types of some of the bound parameters are not supported");
 
-        auto data_buffer = make_buffer();
+        auto data_buffer = std::make_unique<ArrowIPC::IPCMessagesReadBuffer>(
+            [&schema_message, &next_message, schema_given = false](ArrowIPC::IPCMessage & message) mutable
+            {
+                if (!schema_given)
+                {
+                    message = std::move(schema_message);
+                    schema_given = true;
+                    return true;
+                }
+                return next_message(message);
+            });
         auto input = std::make_shared<ArrowIPCBlockInputFormat>(
             *data_buffer, std::make_shared<const Block>(header), /* stream_ */ true, DEFAULT_BLOCK_SIZE, format_settings);
         QueryPipeline pipeline(Pipe(std::move(input)));
@@ -1248,13 +1282,11 @@ Status ArrowFlightServer::doPut(
             const auto & handle = command.prepared_statement_handle();
             LOG_DEBUG(log, "DoPut: binding parameters for prepared statement {}", handle);
 
-            VectorWithMemoryTracking<ArrowIPC::IPCMessage> messages;
-            ArrowIPC::IPCMessage message;
-            while (next_message(message))
-                messages.push_back(std::move(message));
+            /// Before the parameters are read: there is nothing to bind them to if the handle is unknown.
+            FLIGHT_RETURN_NOT_OK(calls_data->getPreparedStatement(handle, auth.getUsername()).status());
 
             auto query_context = session->makeQueryContext();
-            FLIGHT_ASSIGN_OR_RAISE(auto params, readParameterLiterals(std::move(messages), query_context))
+            FLIGHT_ASSIGN_OR_RAISE(auto params, readParameterLiterals(next_message, query_context))
             FLIGHT_RETURN_NOT_OK(calls_data->bindParameters(handle, auth.getUsername(), std::move(params)));
 
             /// Return DoPutPreparedStatementResult with the same handle.

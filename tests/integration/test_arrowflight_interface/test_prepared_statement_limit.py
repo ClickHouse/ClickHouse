@@ -8,7 +8,7 @@ import string
 import decimal
 import datetime
 
-from .flight_sql_client import FlightSQLClient
+from .flight_sql_client import CommandPreparedStatementQuery, FlightSQLClient, flight_descriptor
 
 from helpers.cluster import ClickHouseCluster
 
@@ -434,3 +434,55 @@ def test_session_close_does_not_affect_other_user_same_session_id():
     result = client2.execute(stmt2)
     assert result.column(0).to_pylist() == [2]
     stmt2.close()
+
+
+def test_prepared_statement_binary_uuid_parameter_keeps_byte_order():
+    """A binary parameter is bound with the bytes the client sent, also when the field is tagged as a UUID."""
+    client = get_client()
+
+    value = bytes.fromhex("00112233445566778899aabbccddeeff")
+    field = pa.field("0", pa.binary(16), metadata={b"PARQUET:logical_type": b"UUID"})
+    params = pa.record_batch([pa.array([value], type=pa.binary(16))], schema=pa.schema([field]))
+
+    stmt = client.prepare("SELECT hex(?) AS result")
+    stmt.bind_parameters(params)
+    result = stmt.execute()
+    assert result.column("result").to_pylist() == ["00112233445566778899AABBCCDDEEFF"]
+
+    stmt.close()
+
+
+def test_prepared_statement_null_parameter_with_non_nullable_schema_inference():
+    """A bound NULL stays NULL whatever the session prefers for the schema inference of imported data."""
+    client = get_client()
+    client.set_session_options({"schema_inference_make_columns_nullable": "0"})
+
+    stmt = client.prepare("SELECT isNull(?) AS x")
+    stmt.bind_parameters(pa.record_batch([pa.array([None], type=pa.int32())], names=["0"]))
+    result = stmt.execute()
+    assert result.column("x").to_pylist() == [1]
+
+    stmt.close()
+
+
+def test_prepared_statement_multiple_parameter_sets_are_rejected():
+    """Only one row of parameters can be bound; the following rows are rejected."""
+    client = get_client()
+
+    stmt = client.prepare("SELECT ? AS result")
+    params = pa.record_batch([pa.array([1], type=pa.int32())], names=["0"])
+
+    cmd = CommandPreparedStatementQuery(prepared_statement_handle=stmt.handle)
+    with pytest.raises((pa.lib.ArrowException, flight.FlightError)):
+        writer, reader = client.client.do_put(flight_descriptor(cmd), params.schema, client._flight_call_options())
+        for _ in range(3):
+            writer.write_batch(params)
+        writer.done_writing()
+        reader.read()
+        writer.close()
+
+    # Nothing was bound.
+    with pytest.raises(pa.lib.ArrowInvalid, match="Parameters were not bound"):
+        stmt.execute()
+
+    stmt.close()
