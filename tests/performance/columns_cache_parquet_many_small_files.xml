@@ -1,5 +1,5 @@
 <test>
-    <!-- Hot reads of many small Parquet files of an Iceberg table whose footers and columns are all in the caches. -->
+    <!-- Hot reads of many small Parquet files of an Iceberg table: footers and columns all cached, or footers cached and a column not. -->
     <settings>
         <use_columns_cache>1</use_columns_cache>
         <use_parquet_metadata_cache>1</use_parquet_metadata_cache>
@@ -215,12 +215,13 @@
     </substitutions>
 
     <create_query>DROP TABLE IF EXISTS perf_columns_cache_parquet_many_small_files</create_query>
-    <create_query>CREATE TABLE perf_columns_cache_parquet_many_small_files (id Int64, data String) ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/perf_columns_cache_parquet_many_small_files/'))</create_query>
-    <create_query>INSERT INTO perf_columns_cache_parquet_many_small_files SELECT number + {n} * 500, toString(number) FROM numbers(500) SETTINGS allow_insert_into_iceberg = 1, max_threads = 1, max_insert_threads = 1</create_query>
-    <fill_query>SELECT * FROM perf_columns_cache_parquet_many_small_files FORMAT Null</fill_query>
+    <create_query>CREATE TABLE perf_columns_cache_parquet_many_small_files (id Int64, data String, x Int64) ENGINE = IcebergLocal(concat(getServerSetting('user_files_path'), '/perf_columns_cache_parquet_many_small_files/'))</create_query>
+    <create_query>INSERT INTO perf_columns_cache_parquet_many_small_files SELECT number + {n} * 500, toString(number), number * 2 AS x FROM numbers(500) SETTINGS allow_insert_into_iceberg = 1, max_threads = 1, max_insert_threads = 1</create_query>
+    <fill_query>SELECT id, data FROM perf_columns_cache_parquet_many_small_files FORMAT Null</fill_query>
 
     <query>SELECT sum(id), sum(length(data)) FROM perf_columns_cache_parquet_many_small_files</query>
     <query>SELECT count(), sum(id) FROM perf_columns_cache_parquet_many_small_files WHERE id % 10 = 1</query>
+    <query>SELECT sum(x) FROM perf_columns_cache_parquet_many_small_files SETTINGS enable_writes_to_columns_cache = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS perf_columns_cache_parquet_many_small_files</drop_query>
 </test>

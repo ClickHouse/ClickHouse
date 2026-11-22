@@ -691,13 +691,21 @@ std::shared_ptr<ParquetFullyCachedInputFormat> ParquetFullyCachedInputFormat::tr
 
     auto format = std::make_shared<ParquetFullyCachedInputFormat>(std::move(header));
     const Block & sample = format->getPort().getHeader();
-    format_filter_info->initKeyConditionOnce(sample);
     Parquet::Reader & reader = format->reader;
-    reader.setFileFooter(cell->footer, cell->column_chunks);
-    reader.init(read_options, sample, format_filter_info);
-    reader.prefilterAndInitRowGroups(rowGroupSelectionOf(parquet_buckets), /*only_by_statistics=*/ true);
-    if (!reader.serveFromColumnsCacheOnly())
-        return nullptr;
+    try
+    {
+        format_filter_info->initKeyConditionOnce(sample);
+        reader.setFileFooter(cell->footer, cell->column_chunks);
+        reader.init(read_options, sample, format_filter_info);
+        reader.prefilterAndInitRowGroups(rowGroupSelectionOf(parquet_buckets), /*only_by_statistics=*/ true);
+        if (!reader.serveFromColumnsCacheOnly())
+            return nullptr;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("(in file/uri {})", object_with_metadata->getPath());
+        throw;
+    }
 
     metadata_cache->addColumnChunks(*cache_key, cell, reader.getColumnChunks());
     ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
