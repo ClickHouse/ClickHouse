@@ -18,7 +18,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <base/getPageSize.h>
+#include <base/scope_guard.h>
+
 #include <gtest/gtest.h>
+
+#include <sys/mman.h>
 
 
 using namespace DB;
@@ -552,6 +557,40 @@ TEST(HashTable, StringHashMapMoveConstructorDoesNotAllocate)
     ALLOW_ALLOCATIONS_IN_SCOPE;
 
     check_map(dst2);
+}
+
+TEST(HashTable, StringHashMapShortKeyBeforeUnreadablePage)
+{
+    /// `dispatchOnKeyClass` reads a 1..8-byte key from its start, or from its end when the key starts
+    /// in the last 7 bytes of a 4 KiB page. Both reads must give the same key wherever it sits in memory.
+    /// The page after the keys is unreadable, so neither read may cross its page end.
+    /// Pages may be up to 64 KiB on some AArch64 systems, but they still end at a 4 KiB boundary — what `dispatchOnKeyClass` checks.
+    const size_t page_size = getPageSize();
+    char * mem = static_cast<char *>(mmap(nullptr, 2 * page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    ASSERT_NE(mem, MAP_FAILED);
+    SCOPE_EXIT({ munmap(mem, 2 * page_size); });
+    ASSERT_EQ(mprotect(mem + page_size, page_size, PROT_NONE), 0);
+    memset(mem, 'X', page_size);
+
+    for (size_t sz = 1; sz <= 8; ++sz)
+    {
+        StringHashMap<UInt64> map;
+        /// The key ends at or before the unreadable page.
+        for (size_t offset = page_size - 16; offset + sz <= page_size; ++offset)
+        {
+            memcpy(mem + offset, "abcdefgh", sz);
+            ++map[std::string_view(mem + offset, sz)];
+        }
+        ASSERT_EQ(map.size(), 1) << "sz=" << sz;
+
+        /// Both reads could agree on a wrong key, so check the stored key itself.
+        map.forEachValue(
+            [&](std::string_view key, UInt64 & count)
+            {
+                EXPECT_EQ(key, std::string_view("abcdefgh", sz)) << "sz=" << sz;
+                EXPECT_EQ(count, 17 - sz) << "sz=" << sz;
+            });
+    }
 }
 
 namespace
