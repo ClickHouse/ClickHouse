@@ -3095,7 +3095,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getColumn();
+            /// The right side of `IN` becomes a set (see below), so a long literal list does not need its column here.
+            if (!(is_special_function_in && function_argument_index == 1 && constant_node->tryGetDeferredField()))
+                argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;

@@ -24,8 +24,125 @@
 
 #include <Interpreters/convertFieldToType.h>
 
+#include <DataTypes/DataTypeTuple.h>
+
+#include <limits>
+#include <mutex>
+#include <optional>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// A literal tuple with at least this many elements keeps its `Field` until its column is needed.
+constexpr size_t min_deferred_tuple_size = 32;
+
+template <typename T>
+bool holdsInteger(const Field & value)
+{
+    if constexpr (std::is_unsigned_v<T>)
+        return value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() <= std::numeric_limits<T>::max();
+    else
+        return value.getType() == Field::Types::Int64 && value.safeGet<Int64>() >= std::numeric_limits<T>::min()
+            && value.safeGet<Int64>() <= std::numeric_limits<T>::max();
+}
+
+/// Whether the size-1 column of `type` built from `value` holds exactly `value`: a `UInt64`/`Int64` `Field` and a
+/// native integer type of the same signedness that holds it (without a custom name, so not `Bool`), or a `String`.
+/// These are the types `FieldToDataType` gives such values; `convertFieldToType` leaves them unchanged.
+bool isPlainElement(const Field & value, const IDataType & type)
+{
+    if (type.hasCustomName())
+        return false;
+
+    switch (type.getTypeId())
+    {
+        case TypeIndex::UInt8: return holdsInteger<UInt8>(value);
+        case TypeIndex::UInt16: return holdsInteger<UInt16>(value);
+        case TypeIndex::UInt32: return holdsInteger<UInt32>(value);
+        case TypeIndex::UInt64: return value.getType() == Field::Types::UInt64;
+        case TypeIndex::Int8: return holdsInteger<Int8>(value);
+        case TypeIndex::Int16: return holdsInteger<Int16>(value);
+        case TypeIndex::Int32: return holdsInteger<Int32>(value);
+        case TypeIndex::Int64: return value.getType() == Field::Types::Int64;
+        case TypeIndex::String: return value.getType() == Field::Types::String;
+        default: return false;
+    }
+}
+
+/// A long tuple of plain elements, such as the right side of `x IN (1, 2, ...)`, does not need its column (one
+/// size-1 column per element) for building the set, naming, hashing or converting it to AST.
+bool canDeferColumn(const Field & value, const IDataType & type)
+{
+    if (value.getType() != Field::Types::Tuple)
+        return false;
+
+    const auto & elements = value.safeGet<Tuple>();
+    if (elements.size() < min_deferred_tuple_size)
+        return false;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type);
+    if (!tuple_type || tuple_type->hasCustomName() || tuple_type->getElements().size() != elements.size())
+        return false;
+
+    const auto & element_types = tuple_type->getElements();
+    for (size_t i = 0; i < elements.size(); ++i)
+        if (!isPlainElement(elements[i], *element_types[i]))
+            return false;
+
+    return true;
+}
+
+template <typename T>
+void updateHashWithBytes(SipHash & hash, T value)
+{
+    hash.update(reinterpret_cast<const char *>(&value), sizeof(value));
+}
+
+/// Feeds `hash` exactly what `updateHashFast` of the size-1 column of `type` holding the plain element `value`
+/// feeds: the value bytes for `ColumnVector`, the offset and the characters for `ColumnString`.
+void updateHashAsColumn(SipHash & hash, const Field & value, const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::UInt8: updateHashWithBytes(hash, static_cast<UInt8>(value.safeGet<UInt64>())); return;
+        case TypeIndex::UInt16: updateHashWithBytes(hash, static_cast<UInt16>(value.safeGet<UInt64>())); return;
+        case TypeIndex::UInt32: updateHashWithBytes(hash, static_cast<UInt32>(value.safeGet<UInt64>())); return;
+        case TypeIndex::UInt64: updateHashWithBytes(hash, value.safeGet<UInt64>()); return;
+        case TypeIndex::Int8: updateHashWithBytes(hash, static_cast<Int8>(value.safeGet<Int64>())); return;
+        case TypeIndex::Int16: updateHashWithBytes(hash, static_cast<Int16>(value.safeGet<Int64>())); return;
+        case TypeIndex::Int32: updateHashWithBytes(hash, static_cast<Int32>(value.safeGet<Int64>())); return;
+        case TypeIndex::Int64: updateHashWithBytes(hash, value.safeGet<Int64>()); return;
+        case TypeIndex::String:
+        {
+            const auto & string = value.safeGet<String>();
+            updateHashWithBytes(hash, static_cast<IColumn::Offset>(string.size()));
+            hash.update(string.data(), string.size());
+            return;
+        }
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected element type {} of a deferred constant", type.getName());
+    }
+}
+
+}
+
+struct ConstantNode::DeferredValue
+{
+    DeferredValue(Field && value_, DataTypePtr type_) : value(std::move(value_)), type(std::move(type_)) {}
+
+    const Field value;
+    const DataTypePtr type;
+    std::once_flag built;
+    std::optional<ConstantValue> materialized;
+};
 
     ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
     : IQueryTreeNode(children_size)
@@ -48,15 +165,61 @@ ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
 {}
 
 ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
-    : ConstantNode(ConstantValue{convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_})
+    : IQueryTreeNode(children_size)
+    , constant_value(makeConstantValue(std::move(value_), std::move(value_data_type_)))
 {}
 
 ConstantNode::ConstantNode(Field value_)
-    : ConstantNode(value_, applyVisitor(FieldToDataType(), value_))
+    : IQueryTreeNode(children_size)
+    , constant_value(makeConstantValue(std::move(value_)))
 {}
+
+ConstantNode::ConstantNode(std::shared_ptr<DeferredValue> deferred_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
+    : IQueryTreeNode(children_size)
+    , constant_value(std::move(deferred_value_))
+    , source_expression(std::move(source_expression_))
+    , is_deterministic(is_deterministic_)
+{}
+
+ConstantNode::ValueOrDeferred ConstantNode::makeConstantValue(Field && value, DataTypePtr value_data_type)
+{
+    if (canDeferColumn(value, *value_data_type))
+        return std::make_shared<DeferredValue>(std::move(value), std::move(value_data_type));
+    return ConstantValue{convertFieldToTypeOrThrow(value, *value_data_type), std::move(value_data_type)};
+}
+
+ConstantNode::ValueOrDeferred ConstantNode::makeConstantValue(Field && value)
+{
+    DataTypePtr value_data_type = applyVisitor(FieldToDataType(), value);
+    return makeConstantValue(std::move(value), std::move(value_data_type));
+}
+
+const Field * ConstantNode::tryGetDeferredField() const
+{
+    if (const auto * deferred = std::get_if<std::shared_ptr<DeferredValue>>(&constant_value))
+        return &(*deferred)->value;
+    return nullptr;
+}
+
+const ConstantValue & ConstantNode::materializeDeferred() const
+{
+    auto & deferred = *std::get<std::shared_ptr<DeferredValue>>(constant_value);
+    std::call_once(deferred.built, [&deferred] { deferred.materialized.emplace(deferred.value, deferred.type); });
+    return *deferred.materialized;
+}
+
+DataTypePtr ConstantNode::getResultType() const
+{
+    if (const auto * deferred = std::get_if<std::shared_ptr<DeferredValue>>(&constant_value))
+        return (*deferred)->type;
+    return std::get<ConstantValue>(constant_value).getType();
+}
 
 String ConstantNode::getValueStringRepresentation() const
 {
+    if (const auto * deferred_field = tryGetDeferredField())
+        return applyVisitor(FieldVisitorToString(), *deferred_field);
+
     // Special handling for Bool literals that are stored as UInt64 internally
     // Check if this is a Bool constant based on the data type
     if (isBool(getResultType()) && isInt64OrUInt64FieldType(getValue().getType()))
@@ -140,7 +303,7 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     else
         buffer << getValue().dump();
 
-    buffer << ", constant_value_type: " << constant_value.getType()->getName();
+    buffer << ", constant_value_type: " << getResultType()->getName();
 
     if (!isMasked() && getSourceExpression())
     {
@@ -157,32 +320,65 @@ void ConstantNode::convertToNullable()
     /// `FunctionNode` and the planner, which all use `makeNullableOrLowCardinalityNullableSafe`
     /// when `group_by_use_nulls` is enabled. Otherwise the declared key type would stay
     /// non-Nullable while the runtime produces a Nullable column, leading to a logical error.
-    const auto & column = constant_value.getColumn();
-    constant_value
-        = {ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
-           makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
+    const auto & value = getConstantValue();
+    const auto & column = value.getColumn();
+    ConstantValue nullable_value{
+        ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
+        makeNullableOrLowCardinalityNullableSafe(value.getType())};
+    constant_value = std::move(nullable_value);
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
-    const auto & column = constant_value.getColumn();
-    const auto & rhs_column = rhs_typed.constant_value.getColumn();
+    if (!getResultType()->equals(*rhs_typed.getResultType()))
+        return false;
 
-    return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
-           && column->compareAt(0, 0, *rhs_column, 1) == 0;
+    /// With equal types, the elements of two deferred values are `Field`s of the same types.
+    const auto * field = tryGetDeferredField();
+    const auto * rhs_field = rhs_typed.tryGetDeferredField();
+    if (field && rhs_field)
+        return field == rhs_field || *field == *rhs_field;
+
+    return getColumn()->compareAt(0, 0, *rhs_typed.getColumn(), 1) == 0;
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
 {
-    constant_value.getColumn()->updateHashFast(hash_state);
-    constant_value.getType()->updateHash(hash_state);
+    const DataTypePtr type = getResultType();
+
+    if (const auto * deferred_field = tryGetDeferredField())
+    {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        HashState column_hash_state = hash_state;
+        getColumn()->updateHashFast(column_hash_state);
+#endif
+        /// The same bytes as `updateHashFast` of the column would give: the `ColumnTuple` of a `ColumnConst` hashes
+        /// its size-1 element columns in order.
+        const auto & elements = deferred_field->safeGet<Tuple>();
+        const auto & element_types = assert_cast<const DataTypeTuple &>(*type).getElements();
+        for (size_t i = 0; i < elements.size(); ++i)
+            updateHashAsColumn(hash_state, elements[i], *element_types[i]);
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        HashState field_hash_state = hash_state;
+        if (getSipHash128AsPair(field_hash_state) != getSipHash128AsPair(column_hash_state))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash of a deferred constant differs from the hash of its column");
+#endif
+    }
+    else
+        getColumn()->updateHashFast(hash_state);
+
+    type->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    std::shared_ptr<ConstantNode> result;
+    if (const auto * deferred = std::get_if<std::shared_ptr<DeferredValue>>(&constant_value))
+        result = std::shared_ptr<ConstantNode>(new ConstantNode(*deferred, source_expression, is_deterministic));
+    else
+        result = std::make_shared<ConstantNode>(std::get<ConstantValue>(constant_value), source_expression, is_deterministic);
     result->mask_id = mask_id;
     return result;
 }
@@ -207,14 +403,25 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType(), /*date_time_as_numbers=*/true)); };
-    static const auto from_column_date_time_as_text = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType(), /*date_time_as_numbers=*/false)); };
+    /// A deferred value has plain elements only, which the column would give back as the same `Field`.
+    static const auto from_column = [](const ConstantNode &node)
+    {
+        if (const auto * deferred_field = node.tryGetDeferredField())
+            return make_intrusive<ASTLiteral>(*deferred_field);
+        return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.getColumn(), 0, node.getResultType(), /*date_time_as_numbers=*/true));
+    };
+    static const auto from_column_date_time_as_text = [](const ConstantNode &node)
+    {
+        if (const auto * deferred_field = node.tryGetDeferredField())
+            return make_intrusive<ASTLiteral>(*deferred_field);
+        return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.getColumn(), 0, node.getResultType(), /*date_time_as_numbers=*/false));
+    };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
 
     if (options.use_source_expression_for_constants && source_expression)
         return source_expression->toAST(options);
 
-    const auto & constant_value_type = constant_value.getType();
+    const DataTypePtr constant_value_type = getResultType();
 
     /// `Decimal` constants (including decimals nested in `Array`/`Tuple`/`Map`/`Variant`/`Dynamic`) have no
     /// exact literal syntax: a bare numeric literal is re-parsed as `Float64` on the receiving side and
@@ -228,7 +435,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     if (typeNeedsExactLiteralSerialization(*constant_value_type))
     {
         auto exact_ast = columnConstantToExactLiteralAST(
-            constant_value.getColumn(), 0, constant_value_type, options.date_time_constants_as_numbers);
+            getColumn(), 0, constant_value_type, options.date_time_constants_as_numbers);
         if (!options.add_cast_for_constants)
             return exact_ast;
         /// columnConstantToExactLiteralAST already casts a scalar Decimal/DateTime64/Time64 value to its

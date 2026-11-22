@@ -4,8 +4,10 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -21,6 +23,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -843,6 +846,91 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         "Unsupported types for IN. First argument type {}. Second argument type {}",
         lhs_expression_type->getName(),
         rhs_type->getName());
+}
+
+std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
+    const DataTypePtr & lhs_expression_type, const Tuple & rhs_elements, GetSetElementParams params)
+{
+    /// A scalar key reads a right-hand tuple as a set of members (`build_from_tuple`), converted to the key type
+    /// without `LowCardinality`.
+    DataTypePtr lhs_type = lhs_expression_type;
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(lhs_type.get()))
+        lhs_type = low_cardinality_type->getDictionaryType();
+
+    if (rhs_elements.empty())
+        return std::nullopt;
+
+    if (rhs_elements.front().getType() == Field::Types::String)
+    {
+        /// A `String` member converts to a `String` key unchanged.
+        if (!isString(lhs_type) || lhs_type->hasCustomName())
+            return std::nullopt;
+
+        size_t total_size = 0;
+        for (const auto & element : rhs_elements)
+        {
+            if (element.getType() != Field::Types::String)
+                return std::nullopt;
+            total_size += element.safeGet<String>().size();
+        }
+
+        auto column = ColumnString::create();
+        column->getOffsets().reserve(rhs_elements.size());
+        column->getChars().reserve(total_size);
+        for (const auto & element : rhs_elements)
+        {
+            const auto & value = element.safeGet<String>();
+            column->insertData(value.data(), value.size());
+        }
+
+        return ColumnsWithTypeAndName{{std::move(column), lhs_type, ""}};
+    }
+
+    /// Integer members of any literal width hold the same values as `UInt64` (or as `Int64` if one is negative and
+    /// all fit), so one accurate cast of all of them keeps exactly the members that the per-member conversion keeps,
+    /// as in `tryConvertNativeNumberMembersBatch`.
+    bool has_negative = false;
+    for (const auto & element : rhs_elements)
+    {
+        if (element.getType() == Field::Types::Int64)
+            has_negative = true;
+        else if (element.getType() != Field::Types::UInt64)
+            return std::nullopt;
+    }
+
+    DataTypePtr source_type = has_negative ? DataTypePtr(std::make_shared<DataTypeInt64>()) : DataTypePtr(std::make_shared<DataTypeUInt64>());
+    if (!nativeBatchApplicable(source_type, lhs_type))
+        return std::nullopt;
+
+    ColumnPtr gathered;
+    if (!has_negative)
+    {
+        auto column = ColumnUInt64::create();
+        auto & data = column->getData();
+        data.reserve(rhs_elements.size());
+        for (const auto & element : rhs_elements)
+            data.push_back(element.safeGet<UInt64>());
+        gathered = std::move(column);
+    }
+    else
+    {
+        auto column = ColumnInt64::create();
+        auto & data = column->getData();
+        data.reserve(rhs_elements.size());
+        for (const auto & element : rhs_elements)
+        {
+            if (element.getType() == Field::Types::Int64)
+                data.push_back(element.safeGet<Int64>());
+            else if (element.safeGet<UInt64>() <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                data.push_back(static_cast<Int64>(element.safeGet<UInt64>()));
+            else
+                return std::nullopt;
+        }
+        gathered = std::move(column);
+    }
+
+    return ColumnsWithTypeAndName{
+        {buildSingleNativeKey(gathered, source_type, lhs_type, /*element_null=*/nullptr, params.transform_null_in), lhs_type, ""}};
 }
 
 }
