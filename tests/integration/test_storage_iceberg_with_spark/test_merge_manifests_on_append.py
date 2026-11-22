@@ -9,6 +9,8 @@ import json
 import os
 import re
 
+from decimal import Decimal
+
 import avro.datafile
 import avro.io
 import pytest
@@ -156,3 +158,62 @@ def test_merge_manifests_unsupported_historical_transform(started_cluster_iceber
     update_version_hint(local_dir)
     rows = spark.read.format("iceberg").load(local_dir).collect()
     assert sorted(row["v"] for row in rows) == [1, 2, 3]
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_merge_manifests_keeps_decimal_partition_type(started_cluster_iceberg_with_spark, storage_type):
+    """`truncate` of a `decimal(5, 2)` is a `decimal(5, 2)`: a 3-byte Avro `fixed`, not the 4 bytes of `Decimal(9, 2)`,
+    which `icebergTruncate` returns."""
+    cluster = started_cluster_iceberg_with_spark
+    instance = cluster.instances["node1"]
+    spark = cluster.spark_session
+    table_name = f"test_merge_manifests_keeps_decimal_partition_type_{get_uuid_str()}"
+
+    def spark_query(query):
+        execute_spark_query_general(spark, cluster, storage_type, table_name, query)
+
+    spark_query(
+        f"""
+        CREATE TABLE {table_name} (d DECIMAL(5, 2), v INT)
+        USING iceberg
+        PARTITIONED BY (truncate(10, d))
+        OPTIONS('format-version'='2')
+        """
+    )
+    spark_query(f"INSERT INTO {table_name} VALUES (1.57, 1)")
+    spark_query(f"INSERT INTO {table_name} VALUES (-25.03, 2)")
+    spark_query(f"ALTER TABLE {table_name} DROP PARTITION FIELD truncate(10, d)")
+
+    create_iceberg_table(storage_type, instance, table_name, cluster)
+    instance.query(f"INSERT INTO {table_name} VALUES (3.25, 3)", settings=MERGE_SETTINGS)
+
+    local_dir = download_table(cluster, storage_type, table_name)
+    manifests = current_manifests(local_dir)
+    # The two manifests of the dropped partition spec are merged into one.
+    assert len(manifests) == 2
+
+    merged = [m for m in manifests if m["existing_files_count"] == 2]
+    assert len(merged) == 1
+    manifest_path = os.path.join(local_dir, "metadata", os.path.basename(merged[0]["manifest_path"]))
+    with open(manifest_path, "rb") as f:
+        reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
+        schema = json.loads(reader.get_meta("avro.schema").decode())
+        entries = list(reader)
+
+    data_file = next(field for field in schema["fields"] if field["name"] == "data_file")["type"]
+    partition = next(field for field in data_file["fields"] if field["name"] == "partition")["type"]
+    assert len(partition["fields"]) == 1
+    partition_type = partition["fields"][0]["type"]
+    partition_type = next(t for t in partition_type if t != "null") if isinstance(partition_type, list) else partition_type
+    assert partition_type["type"] == "fixed"
+    assert partition_type["logicalType"] == "decimal"
+    assert (partition_type["precision"], partition_type["scale"], partition_type["size"]) == (5, 2, 3)
+
+    # `truncate(10, 1.57) = 1.50` and `truncate(10, -25.03) = -25.10`, decoded from the three bytes by the logical type.
+    values = sorted(next(iter(entry["data_file"]["partition"].values())) for entry in entries)
+    assert values == [Decimal("-25.10"), Decimal("1.50")]
+
+    update_version_hint(local_dir)
+    rows = spark.read.format("iceberg").load(local_dir).collect()
+    assert sorted(row["v"] for row in rows) == [1, 2, 3]
+    assert spark.read.format("iceberg").load(local_dir).filter("d < 0").count() == 1

@@ -5,8 +5,11 @@
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -102,6 +105,31 @@ bool canInstantiatePartitionTransform(const String & transform_name, const Strin
     return false;
 }
 
+/// The precision and scale of the Iceberg type `decimal(P, S)`, if `source_type` is a valid one.
+std::optional<std::pair<UInt32, UInt32>> tryParseIcebergDecimal(const String & source_type)
+{
+    static constexpr std::string_view decimal_prefix = "decimal(";
+    if (!source_type.starts_with(decimal_prefix) || !source_type.ends_with(')'))
+        return {};
+
+    ReadBufferFromString buf(std::string_view(source_type).substr(decimal_prefix.size(), source_type.size() - decimal_prefix.size() - 1));
+    UInt32 precision = 0;
+    UInt32 scale = 0;
+    skipWhitespaceIfAny(buf);
+    if (!tryReadIntText(precision, buf))
+        return {};
+    skipWhitespaceIfAny(buf);
+    if (!checkChar(',', buf))
+        return {};
+    skipWhitespaceIfAny(buf);
+    if (!tryReadIntText(scale, buf))
+        return {};
+    skipWhitespaceIfAny(buf);
+    if (!buf.eof() || precision == 0 || precision > DataTypeDecimal<Decimal256>::maxPrecision() || scale > precision)
+        return {};
+    return std::make_pair(precision, scale);
+}
+
 /// The Avro primitive type `getAvroType` declares for `type`.
 String getDeclaredAvroPartitionType(const DataTypePtr & type)
 {
@@ -119,6 +147,22 @@ DataTypePtr getManifestPartitionType(const DataTypePtr & partitioner_type, const
     String required = getRequiredAvroPartitionType(transform, source_type);
     if (required.empty() || !canGetAvroType(partitioner_type))
         return nullptr;
+
+    /// The Avro `fixed` of a decimal takes its width from the precision, and the transform functions do not keep it:
+    /// `icebergTruncate` of a `decimal(5, 2)` returns `Decimal(9, 2)`, the widest precision of the same carrier. The
+    /// partition type of `identity` and `truncate` is the source type, so write the values with exactly its precision
+    /// and scale, which `getAvroType` then declares as the Iceberg spec requires.
+    if (auto precision_and_scale = tryParseIcebergDecimal(source_type))
+    {
+        auto nested = removeNullable(partitioner_type);
+        if (!isDecimal(nested) || getDecimalScale(*nested) != precision_and_scale->second)
+            return nullptr;
+        DataTypePtr result = createDecimal<DataTypeDecimal>(precision_and_scale->first, precision_and_scale->second);
+        /// The values are written by the carrier of the type, so it must stay the one the transform returns.
+        if (result->getTypeId() != nested->getTypeId())
+            return nullptr;
+        return partitioner_type->isNullable() ? makeNullable(result) : result;
+    }
 
     String declared = getDeclaredAvroPartitionType(partitioner_type);
     if (declared == required)
