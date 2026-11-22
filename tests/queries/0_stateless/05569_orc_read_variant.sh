@@ -37,6 +37,7 @@ ${CLICKHOUSE_LOCAL} --output_format_orc_string_as_string=0 -q "
     INSERT INTO FUNCTION file('${DIR}/one_sided.orc', ORC) SELECT (NULL, unhex('142A000000'))::Tuple(metadata Nullable(String), value Nullable(String)) AS v;
     INSERT INTO FUNCTION file('${DIR}/strings.orc', ORC) SELECT * FROM optional SETTINGS output_format_orc_string_as_string = 1;
     INSERT INTO FUNCTION file('${DIR}/other.orc', ORC) SELECT (unhex(m), unhex(v))::Tuple(metadata String, other String) AS v FROM raw WHERE id = 1;
+    INSERT INTO FUNCTION file('${DIR}/plain.orc', ORC) SELECT (1, 'x')::Tuple(a Int32, b String) AS v;
 "
 
 ${CLICKHOUSE_LOCAL} -q "
@@ -58,6 +59,12 @@ ${CLICKHOUSE_LOCAL} -q "
     SELECT * FROM file('${DIR}/outer.orc', ORC, 'id Int32, s Tuple(a Nullable(Int32), v Dynamic)') ORDER BY id;
     SELECT '-- as a Tuple';
     SELECT id, hex(v.metadata), hex(v.value) FROM file('${DIR}/required.orc', ORC, 'id Int32, v Tuple(metadata String, value String)') WHERE id = 1;
+    SELECT '-- any other struct is cast';
+    SELECT v, dynamicType(v) FROM file('${DIR}/plain.orc', ORC, 'v Dynamic');
+    SELECT v FROM file('${DIR}/plain.orc', ORC, 'v JSON');
+    SELECT dynamicType(v) FROM file('${DIR}/other.orc', ORC, 'v Dynamic');
+    SELECT JSONAllPaths(v) FROM file('${DIR}/other.orc', ORC, 'v JSON');
+    SELECT dynamicType(v) FROM file('${DIR}/strings.orc', ORC, 'id Int32, v Dynamic') WHERE id = 1;
 "
 
 echo '-- errors'
@@ -65,11 +72,7 @@ ${CLICKHOUSE_LOCAL} --ignore-error -q "
     SELECT * FROM file('${DIR}/optional.orc', ORC, 'id Int32, v JSON');
     SELECT * FROM file('${DIR}/empty.orc', ORC, 'v Dynamic');
     SELECT * FROM file('${DIR}/one_sided.orc', ORC, 'v Dynamic');
-    SELECT * FROM file('${DIR}/strings.orc', ORC, 'id Int32, v Dynamic');
-    SELECT * FROM file('${DIR}/other.orc', ORC, 'v Dynamic');
-    SELECT * FROM file('${DIR}/other.orc', ORC, 'v JSON');
 " 2>&1 | grep -o \
     -e "Cannot read Parquet variant column 'v' as JSON: it contains a value of type Int32" \
     -e "Malformed ORC variant column 'v': a row has an empty \`metadata\`" \
-    -e "Malformed Parquet variant column 'v': a row has \`value\` but no \`metadata\`" \
-    -e "Cannot read ORC column 'v' of type [^ ]* as [A-Za-z]*"
+    -e "Malformed Parquet variant column 'v': a row has \`value\` but no \`metadata\`"

@@ -187,7 +187,7 @@ private:
         DataTypePtr type_hint = nullptr,
         const String & mapper_path = {}) const;
 
-    /// Reads an unshredded variant, a struct of binary `metadata` and `value`, as `Dynamic` or `JSON`. Throws for any other struct.
+    /// Reads an unshredded variant, a struct of binary `metadata` and `value`, as `Dynamic` or `JSON`.
     ColumnWithTypeAndName readVariantFromORCStruct(
         const ORC::ColumnVectorBatch * orc_column,
         const ORC::Type * orc_type,

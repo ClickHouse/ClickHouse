@@ -36,10 +36,13 @@
 3	(3,'{"age":30,"name":"Alice"}')
 -- as a Tuple
 1	010000	142A000000
+-- any other struct is cast
+(1,'x')	Tuple(a Int32, b String)
+{"a":1,"b":"x"}
+Tuple(metadata String, other String)
+['metadata','other']
+Tuple(metadata Nullable(String), value Nullable(String))
 -- errors
 Cannot read Parquet variant column 'v' as JSON: it contains a value of type Int32
 Malformed ORC variant column 'v': a row has an empty `metadata`
 Malformed Parquet variant column 'v': a row has `value` but no `metadata`
-Cannot read ORC column 'v' of type struct<metadata:string,value:string> as Dynamic
-Cannot read ORC column 'v' of type struct<metadata:binary,other:binary> as Dynamic
-Cannot read ORC column 'v' of type struct<metadata:binary,other:binary> as JSON
