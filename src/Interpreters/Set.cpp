@@ -104,7 +104,7 @@ public:
 
     static constexpr size_t minSlots(size_t num_keys) { return 2 * num_keys + num_keys / 4; }
 
-    size_t allocatedBytes() const
+    [[nodiscard]] size_t allocatedBytes() const
     {
         return slots32.allocated_bytes() + slots64.allocated_bytes() + slots128.allocated_bytes();
     }
@@ -232,13 +232,13 @@ private:
     }
 
     template <typename Key>
-    const PODArray<Key> & getSlots() const
+    [[nodiscard]] const PODArray<Key> & getSlots() const
     {
         return const_cast<CuckooLookup *>(this)->getSlots<Key>();
     }
 
     template <bool mixed, typename Key>
-    std::pair<size_t, size_t> places(const Key & key) const
+    [[nodiscard]] std::pair<size_t, size_t> places(const Key & key) const
     {
         static constexpr size_t num_words = sizeof(Key) <= sizeof(UInt64) ? 1 : sizeof(Key) / sizeof(UInt64);
         auto word = [&](size_t i) -> UInt64
@@ -275,7 +275,7 @@ private:
     }
 
     template <bool mixed, typename Key>
-    UInt8 contains(const Key & key) const
+    [[nodiscard]] UInt8 contains(const Key & key) const
     {
         const Key * slots = getSlots<Key>().data();
         const auto [place1, place2] = places<mixed>(key);
