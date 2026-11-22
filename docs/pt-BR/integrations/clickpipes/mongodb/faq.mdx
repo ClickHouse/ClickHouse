@@ -50,7 +50,7 @@ Para ver exemplos detalhados, consulte nosso [guia Working with JSON](/pt-BR/int
   ### Posso me conectar a bancos de dados MongoDB que não têm IP público ou estão em redes privadas?
 </div>
 
-Oferecemos suporte ao AWS PrivateLink para conectar bancos de dados MongoDB que não têm IP público ou estão em redes privadas. No momento, Azure Private Link e GCP Private Service Connect não são compatíveis.
+Sim. Consulte [rede do ClickPipes](/pt-BR/integrations/clickpipes/networking) para saber como o ClickPipes pode acessar uma fonte de dados que não está exposta à internet pública.
 
 <div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
   ### O que acontece se eu excluir um banco de dados/uma tabela do meu banco de dados MongoDB?
@@ -108,4 +108,4 @@ Se você preferir se conectar a um único nó do cluster, poderá ignorar a desc
 
 Para conexão com conjunto de réplicas, você pode configurar o PrivateLink para MongoDB com VPC Resource ou VPC Endpoint Service. Se optar por VPC Resource, será necessário criar uma configuração de recurso `GROUP`, além de uma configuração de recurso `CHILD` para cada nó do cluster. Se optar por VPC Endpoint Service, será necessário criar um Endpoint Service separado (e um NLB separado) para cada nó do cluster.
 
-Consulte a documentação de [AWS PrivateLink para ClickPipes](/pt-BR/integrations/clickpipes/aws-privatelink) para mais detalhes. Entre em contato com o suporte do ClickHouse para obter ajuda.
+Consulte a documentação de [AWS PrivateLink](/pt-BR/integrations/clickpipes/networking/aws-privatelink) para mais detalhes. Entre em contato com o suporte do ClickHouse para obter ajuda.

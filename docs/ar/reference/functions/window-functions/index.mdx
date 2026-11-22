@@ -1,6 +1,6 @@
 ---
 description: 'صفحة لمحة عامة عن دوال النافذة'
-sidebarTitle: 'دوال النافذة'
+sidebarTitle: 'لمحة عامة'
 slug: /sql-reference/window-functions/
 title: 'دوال النافذة'
 doc_type: 'reference'
@@ -24,7 +24,7 @@ doc_type: 'reference'
 | إطار `ROWS`                                                             | ✅       |                                                                                                                                                                                                                                                                                                                                                                                           |
 | إطار `RANGE`                                                            | ✅       | يُستخدم افتراضيًا عندما لا يُحدَّد إطار بشكل صريح (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                                  |
 | صياغة `INTERVAL` لإطار `DateTime` `RANGE OFFSET`                        | ❌       | حدِّد عدد الثواني بدلًا من ذلك (`RANGE` يعمل مع أي نوع رقمي).                                                                                                                                                                                                                                                                                                                             |
-| إطار `GROUPS`                                                           | ❌       |                                                                                                                                                                                                                                                                                                                                                                                           |
+| إطار `GROUPS`                                                           | ✅       | تحسب حدود الإطار مجموعات الصفوف المتكافئة كاملةً (الصفوف المتساوية في مفتاح `ORDER BY`)؛ ويحسب `N PRECEDING` و`N FOLLOWING` عدد `N` من مجموعات الصفوف المتكافئة قبل وبعد مجموعة الصفوف المتكافئة للصف الحالي.                                                                                                                                                                             |
 | حساب الدوال التجميعية على إطار (`sum(value) OVER (ORDER BY time)`)      | ✅       | جميع الدوال التجميعية مدعومة.                                                                                                                                                                                                                                                                                                                                                             |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                  | ✅       |                                                                                                                                                                                                                                                                                                                                                                                           |
 | `percent_rank()`/`percentRank()`                                        | ✅       | يحسب بكفاءة الترتيب النسبي لقيمة داخل قسم. ويستبدل بذلك حساب SQL يدويًا أطول وأكثر كلفةً من ناحية المعالجة، والمعبَّر عنه كما يلي: `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                                                            |
@@ -39,18 +39,18 @@ doc_type: 'reference'
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - يحدّد كيفية تقسيم مجموعة النتائج إلى مجموعات.
 * `ORDER BY` - يحدّد كيفية ترتيب الصفوف داخل المجموعة أثناء حساب aggregate&#95;function.
-* `ROWS or RANGE` - يحدّد حدود الإطار، ويُحسَب aggregate&#95;function ضمن هذا الإطار.
+* `ROWS` و`RANGE` و`GROUPS` - يحدّد حدود الإطار، ويُحسَب aggregate&#95;function ضمن هذا الإطار. يحسب `ROWS` الصفوف الفعلية، ويحسب `RANGE` قيم `ORDER BY`، ويحسب `GROUPS` مجموعات الأقران (الصفوف المتساوية في مفتاح `ORDER BY`).
 * `WINDOW` - يتيح لعدة تعبيرات استخدام تعريف النافذة نفسه.
 
 ```text
@@ -526,6 +526,44 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
+
+<div id="groups-frame">
+  ### إطار GROUPS
+</div>
+
+يحسب إطار `GROUPS` *مجموعات الأقران* كاملةً — وهي مجموعات من الصفوف المتساوية في مفتاح `ORDER BY` — بدلًا من الصفوف الفعلية (`ROWS`) أو قيم `ORDER BY` (`RANGE`). يحسب `N PRECEDING` و`N FOLLOWING` عدد `N` من مجموعات الأقران قبل مجموعة أقران الصف الحالي وبعدها، وتُحتسب جميع صفوف أي مجموعة أقران مُضمَّنة دائمًا.
+
+يطبّق الاستعلام أدناه الحدود نفسها، `1 PRECEDING AND 1 FOLLOWING`، كما في إطارات `ROWS` و`RANGE` و`GROUPS`. يحتوي العمود `order` على قيم مكررة وغير متتالية، لذا تشمل الأوضاع الثلاثة صفوفًا مختلفة:
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+يفسّر كل وضع الحدود بصورة مختلفة:
+
+* يحسب `ROWS` الصفوف الفعلية، لذا يقتصر الإطار على ثلاثة صفوف متجاورة كحد أقصى: الصف الحالي وصف واحد على كل جانب.
+* يحسب `RANGE` قيم `order`، لذا يشمل `1 PRECEDING` و`1 FOLLOWING` الصفوف التي تقع قيمة `order` فيها ضمن مسافة 1 من قيمة الصف الحالي. وعند وجود فجوات بمقدار 10، لا يستوفي أي صف مجاور الشرط، لذلك لا يضم الإطار إلا الصفوف التي تشترك في قيمة `order` للصف الحالي.
+* يحسب `GROUPS` مجموعات النظائر، لذا يشمل `1 PRECEDING` و`1 FOLLOWING` دائمًا المجموعات المتجاورة كاملةً، بغض النظر عن الفجوات بين قيم `order`.
 
 <div id="real-world-examples">
   ## أمثلة واقعية

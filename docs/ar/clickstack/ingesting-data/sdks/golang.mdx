@@ -6,29 +6,17 @@ doc_type: 'guide'
 keywords: ['حزمة SDK لـ Golang وClickStack', 'تكامل Go مع OpenTelemetry', 'Observability في Golang', 'instrumentation للتتبّع في Go', 'حزمة SDK لـ ClickStack وGo']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 يستخدم ClickStack معيار OpenTelemetry لجمع بيانات القياس عن بُعد (السجلات و
 التتبعات). وتُنشأ التتبعات تلقائيًا باستخدام automatic instrumentation، لذلك لا
 يلزم إجراء instrumentation يدوي للاستفادة من tracing.
 
-**يدمج هذا الدليل:**
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ السجلات</td>
-      <td className="pe-2">✅ المقاييس</td>
-      <td className="pe-2">✅ التتبعات</td>
-    </tr>
-  </tbody>
-</table>
+## البدء {#getting-started}
 
-<div id="getting-started">
-  ## البدء
-</div>
-
-<div id="install-opentelemetry">
-  ### ثبّت حزم Instrumentation الخاصة بـ OpenTelemetry
-</div>
+### ثبّت حزم Instrumentation الخاصة بـ OpenTelemetry {#install-opentelemetry}
 
 لتثبيت حزم Go الخاصة بـ OpenTelemetry وHyperDX، استخدم الأمر أدناه. يُنصح بالاطلاع على [حزم Instrumentation الحالية](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages) وتثبيت الحزم اللازمة لضمان إرفاق معلومات التتبّع بشكل صحيح.
 
@@ -39,9 +27,7 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-<div id="native-http-server-example">
-  ### مثال على خادم HTTP المدمج (net/http)
-</div>
+### مثال على خادم HTTP المدمج (net/http) {#native-http-server-example}
 
 في هذا المثال، سنستخدم `net/http/otelhttp`.
 
@@ -149,9 +135,7 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-<div id="gin-application-example">
-  ### مثال لتطبيق Gin
-</div>
+### مثال لتطبيق Gin {#gin-application-example}
 
 في هذا المثال، سنستخدم `gin-gonic/gin`.
 
@@ -235,26 +219,24 @@ func main() {
 }
 ```
 
-<div id="configure-environment-variables">
-  ### إعداد متغيرات البيئة
-</div>
+### إعداد متغيرات البيئة {#configure-environment-variables}
 
-بعد ذلك، ستحتاج إلى إعداد متغيرات البيئة التالية في الصدفة لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
+بعد ذلك، ستحتاج إلى إعداد متغيرات البيئة التالية في shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
-    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
     OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
     ```
   </Tab>

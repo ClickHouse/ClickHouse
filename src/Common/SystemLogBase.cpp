@@ -4,6 +4,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Interpreters/TransposedMetricLog.h>
+#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
@@ -295,6 +296,35 @@ void SystemLogQueue<LogElement>::shutdown()
     is_shutdown = true;
     /// Tell thread to shutdown.
     flush_event.notify_all();
+}
+
+template <typename LogElement>
+void SystemLogQueue<LogElement>::restart()
+{
+    std::unique_lock lock(mutex);
+
+    /// Only a queue that a previous owner shut down needs resetting. A queue that was merely
+    /// created early is still collecting for its first owner: the logging channel is attached in
+    /// buildLoggers, long before the SystemLog that drains it exists, and everything logged in
+    /// between must survive.
+    if (!is_shutdown)
+        return;
+
+    /// Everything below describes the previous owner: its table (prepared_tables), how far its
+    /// saving thread got (flushed_index) and whatever it never drained (pop() returns early on
+    /// shutdown without emptying the queue). The new owner has a different table -- system log
+    /// metadata does not survive an engine teardown -- so leaving prepared_tables above the new
+    /// front index would make its first SYSTEM FLUSH LOGS report success without creating
+    /// anything. Hand back a queue in exactly its constructed state. Nothing is lost: while the
+    /// latch was set every push was dropped anyway.
+    queue.clear();
+    queue_front_index = 0;
+    requested_flush_index = std::numeric_limits<Index>::min();
+    flushed_index = 0;
+    requested_prepare_tables = std::numeric_limits<Index>::min();
+    prepared_tables = -1;
+    ignored_logs = 0;
+    is_shutdown = false;
 }
 
 template <typename LogElement>

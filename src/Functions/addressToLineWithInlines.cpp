@@ -8,7 +8,7 @@
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
+#include <Functions/FunctionAccessCheck.h>
 #include <Access/Common/AccessFlags.h>
 
 #include <Functions/addressToLine.h>
@@ -26,11 +26,13 @@ class FunctionAddressToLineWithInlines final : public FunctionAddressToLineBase<
 public:
     static constexpr auto name = "addressToLineWithInlines";
     String getName() const override { return name; }
+    String getSignatureString() const override { return "(UInt64) -> Array(String)"; }
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::addressToLineWithInlines);
-        return std::make_shared<FunctionAddressToLineWithInlines>();
+        return std::make_shared<FunctionAddressToLineWithInlines>(context);
     }
+    explicit FunctionAddressToLineWithInlines(const ContextPtr & context) : access_check(context) {}
+    void checkAccessOnBuild() const override { access_check.check(AccessType::addressToLineWithInlines); }
 
 protected:
     DataTypePtr getDataType() const override
@@ -40,9 +42,10 @@ protected:
 
     ColumnPtr getResultColumn(const typename ColumnVector<UInt64>::Container & data, size_t input_rows_count) const override
     {
-        auto result_column = ColumnArray::create(ColumnString::create());
-        ColumnString & result_strings = typeid_cast<ColumnString &>(result_column->getData());
-        ColumnArray::Offsets & result_offsets = result_column->getOffsets();
+        auto result_strings_column = ColumnString::create();
+        auto result_offsets_column = ColumnArray::ColumnOffsets::create();
+        ColumnString & result_strings = *result_strings_column;
+        ColumnArray::Offsets & result_offsets = result_offsets_column->getData();
 
         ColumnArray::Offset current_offset = 0;
 
@@ -55,7 +58,7 @@ protected:
             result_offsets.push_back(current_offset);
         }
 
-        return result_column;
+        return ColumnArray::create(std::move(result_strings_column), std::move(result_offsets_column));
     }
 
     void setResult(StringViews & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> & inline_frames) const override
@@ -86,6 +89,7 @@ private:
         out.finalize();
     }
 
+    FunctionAccessCheck access_check;
 };
 
 }
@@ -96,6 +100,10 @@ REGISTER_FUNCTION(AddressToLineWithInlines)
 Similar to `addressToLine`, but returns an Array with all inline functions.
 As a result of this, it is slower than `addressToLine`.
 
+The address must be an offset inside the main ClickHouse executable, the form in which addresses are stored in the `trace` columns of `system.trace_log`, `system.stack_trace`, and `system.crash_log`, and the `last_error_trace` column of `system.error_log`.
+Runtime (virtual memory) addresses are not accepted, so that the function cannot be used to learn the memory layout of the server process.
+Frames outside the main executable are stored as `0`, and the function returns an empty result for them.
+
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
@@ -103,9 +111,9 @@ To enable this introspection function:
     )";
     FunctionDocumentation::Syntax syntax = "addressToLineWithInlines(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {
-        {"address_of_binary_instruction", "The address of an instruction in a running process.", {"UInt64"}}
+        {"address_of_binary_instruction", "Offset of an instruction inside the main ClickHouse executable, as stored in the `trace` column of `system.trace_log` and similar tables.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array whose first element is the source code filename and line number delimited by a colon. The second, third, etc. element list inline functions' source code filenames, line numbers and function names. If no debug information could be found, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid.", {"Array(String)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array whose first element is the source code filename and line number delimited by a colon. The second, third, etc. element list inline functions' source code filenames, line numbers and function names. If no debug information could be found, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned for `0`.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
     {
         "Applying the function to an address",

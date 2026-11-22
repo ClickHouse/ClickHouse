@@ -1,0 +1,22 @@
+1
+-01:00:00
+-27:46:40
+-83:20:00
+-99:00:00
+2021-11-07 01:59:59	2021-11-07 01:00:00
+5
+2021-11-07 01:00:00
+2021-11-07 01:00:01
+2021-11-07 01:00:02
+2021-11-07 01:00:03
+2021-11-07 01:00:04
+2021-11-07 01:59:55
+2021-11-07 01:59:56
+2021-11-07 01:59:57
+2021-11-07 01:59:58
+2021-11-07 01:59:59
+12
+│  Prefix sort description: toString(x) ASC, y ASC
+│  Result sort description: toString(x) ASC, y ASC
+│  Prefix sort description: toString(d) ASC, y ASC
+│  Result sort description: toString(d) ASC, y ASC

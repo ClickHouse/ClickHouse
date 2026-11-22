@@ -50,7 +50,7 @@ ColumnLazy::Ptr ColumnLazy::create(size_t s)
 MutableColumnPtr ColumnLazy::cloneResized(size_t new_size) const
 {
     if (captured_columns.empty())
-        return ColumnLazy::create(new_size)->assumeMutable();
+        return IColumn::mutate(ColumnLazy::create(new_size));
 
     const size_t column_size = captured_columns.size();
     MutableColumns new_columns(column_size);
@@ -154,11 +154,6 @@ void ColumnLazy::popBack(size_t)
 void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
-}
-
-void ColumnLazy::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }
 
 void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
@@ -286,6 +281,11 @@ int ColumnLazy::doCompareAt(size_t, size_t, const IColumn &, int) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method doCompareAt is not supported for {}", getName());
 }
 #endif
+
+Int64 ColumnLazy::compareTrackAt(size_t, size_t, const IColumn &, int) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareTrackAt is not supported for {}", getName());
+}
 
 void ColumnLazy::compareColumn(const IColumn &, size_t,
                                PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &,
@@ -416,6 +416,11 @@ double ColumnLazy::getRatioOfDefaultRows(double) const
 UInt64 ColumnLazy::getNumberOfDefaultRows() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
+}
+
+bool ColumnLazy::hasOnlyTypeDefaults() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasOnlyTypeDefaults is not supported for {}", getName());
 }
 
 void ColumnLazy::getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const

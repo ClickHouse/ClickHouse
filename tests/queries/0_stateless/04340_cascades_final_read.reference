@@ -1,0 +1,10 @@
+-- sum over shuffle join on FINAL
+200000
+-- deferred prewhere survives the Cascades clone
+1
+0
+0
+-- deferred row policy survives the Cascades clone
+1
+0
+0

@@ -1,0 +1,62 @@
+test 1: delete with exact partition match
+3	c	2024-01-02
+4	d	2024-01-02
+5	e	2024-01-03
+6	f	2024-01-03
+test 1: affected partitions
+['20240101']
+test 2: update with exact partition match
+1	a	2024-01-01
+2	b	2024-01-01
+3	updated	2024-01-02
+4	updated	2024-01-02
+5	e	2024-01-03
+6	f	2024-01-03
+test 2: affected partitions
+['20240102']
+test 3: delete with IN on partition key
+5	e	2024-01-03
+6	f	2024-01-03
+test 3: affected partitions
+['20240101','20240102']
+test 4: mixed condition
+1	a	2024-01-01
+3	c	2024-01-02
+4	d	2024-01-02
+5	e	2024-01-03
+6	f	2024-01-03
+test 4: affected partitions
+['20240101']
+test 5: non-partition condition (all partitions)
+1	all	2024-01-01
+2	all	2024-01-01
+3	all	2024-01-02
+4	all	2024-01-02
+5	all	2024-01-03
+6	all	2024-01-03
+test 5: affected partitions
+['20240101','20240102','20240103']
+test 6: range condition
+1	a	2024-01-01
+2	b	2024-01-01
+test 6: affected partitions
+['20240102','20240103']
+test 7: optimization disabled
+1	a	2024-01-01
+2	b	2024-01-01
+test 7: affected partitions (should be all)
+['20240101','20240102']
+test 8: multi-partition delete
+1	a	2024-01-01
+5	e	2024-01-03
+6	f	2024-01-03
+test 9: multi-partition update
+1	upd	2024-01-01
+2	upd	2024-01-01
+3	c	2024-01-02
+4	d	2024-01-02
+5	upd	2024-01-03
+6	upd	2024-01-03
+test 10: multi-partition ID delete
+3	c	2024-01-02
+4	d	2024-01-02

@@ -21,11 +21,11 @@ namespace
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Null"; }
+    [[nodiscard]] String getName() const override { return "Null"; }
 
-    bool isForInternalUsageOnly() const override { return true; }
+    [[nodiscard]] bool isForInternalUsageOnly() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         size_t size = arguments.size();
         DataTypes res(size);
@@ -41,20 +41,13 @@ public:
     }
 
     template <typename T>
-    std::optional<AggregateFunctionPtr> tryTransformStateFunctionImpl(const AggregateFunctionPtr & nested_function,
+    [[nodiscard]] std::optional<AggregateFunctionPtr> tryTransformStateFunctionImpl(const AggregateFunctionPtr & nested_function,
                                                        const AggregateFunctionProperties & properties,
                                                        const DataTypes & arguments,
                                                        const Array & params) const
     {
         if (const T * function_state = typeid_cast<const T *>(nested_function.get()))
         {
-            const auto & current_arguments = function_state->getArgumentTypes();
-            const bool already_transformed = current_arguments.size() == arguments.size()
-                && std::equal(current_arguments.begin(), current_arguments.end(), arguments.begin(),
-                    [](const auto & lhs, const auto & rhs) { return lhs->equals(*rhs); });
-            if (already_transformed)
-                return nested_function;
-
             auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
 
             return std::make_shared<T>(
@@ -65,7 +58,7 @@ public:
         return {};
     }
 
-    AggregateFunctionPtr tryTransformStateFunction(const AggregateFunctionPtr & nested_function,
+    [[nodiscard]] AggregateFunctionPtr tryTransformStateFunction(const AggregateFunctionPtr & nested_function,
                                                    const AggregateFunctionProperties & properties,
                                                    const DataTypes & arguments,
                                                    const Array & params) const
@@ -75,7 +68,7 @@ public:
             .value_or(nullptr);
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties & properties,
         const DataTypes & arguments,

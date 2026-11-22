@@ -4,12 +4,15 @@
 #if USE_AWS_S3 && USE_AVRO
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/glue/model/Column.h>
+#include <aws/glue/model/Table.h>
+#include <aws/glue/model/TableInput.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/LRUCache.h>
 
-#include <Common/CacheBase.h>
+#include <Common/SecretString.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
@@ -33,18 +36,18 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_,
+        const DB::SecretString & table_engine_definition_,
         bool allow_server_credentials_in_user_queries_);
 
     ~GlueCatalog() override;
 
-    bool empty() const override;
+    [[nodiscard]] bool empty() const override;
 
-    CatalogTables getTables() const override;
+    [[nodiscard]] CatalogTables getTables() const override;
 
-    Namespaces getNamespaces() const override;
+    [[nodiscard]] Namespaces getNamespaces() const override;
 
-    bool existsTable(const std::string & database_name, const std::string & table_name) const override;
+    [[nodiscard]] bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
     void getTableMetadata(
         const std::string & database_name,
@@ -56,65 +59,84 @@ public:
         const std::string & table_name,
         TableMetadata & result) const override;
 
-    std::optional<StorageType> getStorageType() const override
+    [[nodiscard]] std::optional<StorageType> getStorageType() const override
     {
         /// Glue catalog is AWS service, so it supports only data in S3
         return StorageType::S3;
     }
 
-    DB::DatabaseDataLakeCatalogType getCatalogType() const override
+    [[nodiscard]] DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
+    [[nodiscard]] DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+
+    [[nodiscard]] std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    bool updateSchema(
+    [[nodiscard]] bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
+
+    [[nodiscard]] bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name) const override;
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
     /// fails with `ExpiredToken`, so that a long-running read can recover without
     /// the user having to restart the query.
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
-    /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
-    /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
-    /// `"timestamp_nano"`, or `"timestamp"` otherwise, when the column is not found in the metadata.
-    static String resolveTimestampTypeFromMetadata(
-        const Poco::JSON::Object::Ptr & metadata_object,
-        const String & column_name,
-        const String & glue_column_type);
+    /// Converts top-level Iceberg fields to Glue columns with Hive types and `iceberg.field.*` parameters.
+    static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
+
+    /// Selects the `schemas` entry referenced by `current-schema-id`, or the top-level v1 `schema` when there is no `schemas`.
+    static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
 
 private:
-    void createNamespaceIfNotExists(const String & namespace_name) const;
+    /// Updates `metadata_location` and columns while preserving the rest of the Glue table `existing`.
+    /// Columns are rebuilt from `new_schema` if given, otherwise from the current schema of `new_metadata`.
+    static Aws::Glue::Model::TableInput buildUpdatedTableInput(
+        const Aws::Glue::Model::Table & existing,
+        const String & new_metadata_path,
+        const Poco::JSON::Object::Ptr & new_schema,
+        const Poco::JSON::Object::Ptr & new_metadata);
+
+    /// Moves `metadata_location` to `new_metadata_path` with `UpdateTable` guarded by `VersionId`.
+    /// Returns `false` if the pointer no longer names `base_catalog_metadata_location`.
+    [[nodiscard]] bool commitTableUpdate(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
+        const Poco::JSON::Object::Ptr & new_schema,
+        const Poco::JSON::Object::Ptr & new_metadata) const;
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     std::string region;
     CatalogSettings settings;
-    DB::ASTPtr table_engine_definition;
+    DB::SecretString table_engine_definition;
 
-    DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
-    CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
-    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    [[nodiscard]] DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
+    [[nodiscard]] CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
+    [[nodiscard]] CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
 
-    /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
-    /// This method allows to clarify the actual type of the timestamp column.
-    /// `glue_column_type` is the raw Glue type (`"timestamp"` or `"timestamp_nano"`) used as a fallback when the column is not found in Iceberg metadata.
-    String getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const;
-
-    String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
+    [[nodiscard]] String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 
     struct ObjectStorageWithPath
     {
@@ -123,9 +145,7 @@ private:
         String table_path;  /// Path within bucket
     };
 
-    ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
-
-    mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
+    [[nodiscard]] ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 };
 
 }

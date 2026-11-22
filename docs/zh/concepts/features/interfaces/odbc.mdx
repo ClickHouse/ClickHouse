@@ -145,7 +145,7 @@ ODBC 驱动程序提供了一个额外的配置参数 `SqlCompatibilitySettings`
 
 本节说明 ODBC 驱动程序会修改哪些设置，以及这样做的原因。
 
-**[cast&#95;keep&#95;nullable](/zh/reference/settings/session-settings#cast_keep_nullable)**
+**[cast&#95;keep&#95;nullable](/zh/reference/settings/session-settings/cast#cast_keep_nullable)**
 
 默认情况下，ClickHouse 不允许将 Nullable 类型转换为非 Nullable 类型。不过，许多 BI 工具在执行类型转换时并不区分 Nullable 类型和非 Nullable 类型。因此，BI 工具生成如下查询的情况并不少见：
 
@@ -164,7 +164,7 @@ DB::Exception: Cannot convert NULL value to non-Nullable type: while executing '
 启用 `cast_keep_nullable` 后，`CAST` 会保留其参数的可空性。这
 会让 ClickHouse 的行为更接近其他数据库，以及 SQL 标准对这类转换的规定。
 
-**[prefer&#95;column&#95;name&#95;to&#95;alias](/zh/reference/settings/session-settings#prefer_column_name_to_alias)**
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/zh/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
 
 ClickHouse 允许在同一个 `SELECT` 列表中通过别名引用表达式。例如，这个查询避免了
 重复，写起来也更简洁：

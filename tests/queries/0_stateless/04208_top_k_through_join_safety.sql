@@ -5,7 +5,6 @@
 --   * `LIMIT WITH TOTALS` - the upper LimitStep has `alwaysReadTillEnd` set, and
 --     truncating the preserved input would understate the totals.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS t_l;

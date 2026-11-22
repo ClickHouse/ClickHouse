@@ -77,6 +77,7 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, RelativeF
     , type_name(generateName(this->getValues()))
     , is_add(is_add_)
     , relative_flags(is_add_ ? std::move(relative_flags_) : std::vector<UInt8>{})
+    , serialization_hash(SerializationEnum<Type>::getHash(this->getValues()))
 {
     if (is_add && relative_flags.size() != this->getValues().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -166,7 +167,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        this->getValue(value_or_name.safeGet<String>()); /// Check correctness
+        (void)this->getValue(value_or_name.safeGet<String>()); /// Check correctness
         return value_or_name.safeGet<String>();
     }
     if (value_or_name.getType() == Field::Types::Int64)
@@ -189,7 +190,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
     {
         Int64 value = value_or_name.safeGet<Int64>();
         checkOverflow<Type>(value);
-        this->getNameForValue(static_cast<Type>(value)); /// Check correctness
+        (void)this->getNameForValue(static_cast<Type>(value)); /// Check correctness
         return value;
     }
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
@@ -216,6 +217,25 @@ SerializationPtr DataTypeEnum<Type>::doGetSerialization(const SerializationInfoS
 /// Explicit instantiations.
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;
+
+bool isUnknownEnumElement(const IDataType & type, const Field & value)
+{
+    if (value.getType() != Field::Types::String)
+        return false;
+
+    const auto & name = value.safeGet<String>();
+    if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(&type))
+    {
+        Int8 res = 0;
+        return !enum8->tryGetValue(res, name);
+    }
+    if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&type))
+    {
+        Int16 res = 0;
+        return !enum16->tryGetValue(res, name);
+    }
+    return false;
+}
 
 static void checkASTStructure(const ASTPtr & child)
 {
@@ -309,8 +329,8 @@ static std::vector<UInt8> autoAssignNumberForEnum(const ASTPtr & arguments, bool
 
     if (assign_count != 0 && assign_count != arguments->children.size() - 1)
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
-                        "All elements of Enum data type must be of form: "
-                        "'name' = number or 'name', where name is string literal and number is an integer");
+                        "All elements of Enum data type after the first one must be of the same form: "
+                        "either all 'name' = number, or all 'name'");
 
     arguments->children = assign_number_child;
     return relative_flags;
@@ -643,7 +663,7 @@ Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just 
 
 ## ADD ENUM VALUES {#add-enum-values}
 
-There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/sql-reference/statements/alter/column#modify-column-add-enum-values)
+There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](/reference/statements/alter/column#modify-column-add-enum-values)
 
 ```sql
 CREATE TABLE enum

@@ -50,7 +50,9 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 <Note>
   타임아웃은 데이터 처리 중 지정된 지점에서만 확인되므로, 쿼리도 해당 지점에서만 중지될 수 있습니다.
-  현재는 집계 상태의 병합 중이나 쿼리 분석 중에는 중지할 수 없으므로, 실제 실행 시간은 이 설정값보다 길어질 수 있습니다.
+  현재는 집계 상태의 병합 중이나 대부분의 쿼리 분석 중에는 중지할 수 없습니다
+  (원격 레플리카에 연결하는 작업은 중지할 수 있는 한 지점입니다). 따라서 실제 실행 시간은
+  이 설정값보다 길어질 수 있습니다.
 </Note>
 
 <div id="max_execution_time_leaf">

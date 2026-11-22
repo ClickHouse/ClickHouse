@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="are-transaction-rollbacks-replicated">
   ### Реплицируются ли в ClickHouse откаты транзакций?
 </div>
@@ -86,20 +84,7 @@ REPLICA IDENTITY FULL также позволяет реплицировать �
   ### Можно ли подключать базы данных Postgres без публичного IP-адреса или в частных сетях?
 </div>
 
-Да! ClickPipes для Postgres предлагает два способа подключения к базам данных в частных сетях:
-
-1. **SSH-туннелирование**
-   * Подходит для большинства сценариев
-   * Инструкции по настройке смотрите [здесь](/ru/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
-   * Работает во всех регионах
-
-2. **AWS PrivateLink**
-   * Доступно в трёх регионах AWS:
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * Подробные инструкции по настройке см. в нашей [документации по PrivateLink](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   * В регионах, где PrivateLink недоступен, используйте SSH-туннелирование
+Да. О способах, которыми ClickPipes может подключаться к источнику данных, недоступному из публичного интернета, см. в разделе [Сетевое взаимодействие ClickPipes](/ru/integrations/clickpipes/networking).
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### Как обрабатываются UPDATE и DELETE?
@@ -446,7 +431,15 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
 
 Да. Для ClickPipe Postgres с режимом репликации CDC или Snapshot + CDC можно включить создание слота репликации с включённым failover, переведя переключатель ниже в разделе `Advanced Settings` при создании ClickPipe. Обратите внимание: для использования этой возможности требуется Postgres версии 17 или выше.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
+
+</Frame>
+
+</div>
 
 Если источник настроен соответствующим образом, слот сохраняется после переключения на read replica Postgres, обеспечивая непрерывную репликацию данных. Подробнее [здесь](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 

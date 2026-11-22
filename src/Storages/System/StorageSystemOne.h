@@ -48,15 +48,24 @@ public:
         const StorageSnapshotPtr & storage_snapshot_
     );
 
+    explicit ReadFromSystemOneStep(SharedHeader header_);
+
     ReadFromSystemOneStep(const ReadFromSystemOneStep &) = default;
     ReadFromSystemOneStep(ReadFromSystemOneStep &&) = default;
 
-    String getName() const override { return "ReadFromSystemOne"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemOne"; }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromSystemOneStep>(*this);
     }
+
+    /// The step has no state beyond its header: it produces the single dummy row, so a replica can
+    /// rebuild it from the header alone. Being serializable is what lets a plan fragment reading
+    /// `system.one` - the broadcast side of a shipped join, for instance - be sent to the replicas.
+    void serialize(Serialization & ctx) const override;
+    [[nodiscard]] bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 };

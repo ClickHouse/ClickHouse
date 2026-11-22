@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- The IEJoin operator materializes both inputs entirely, so `max_rows_in_join` /
 -- `max_bytes_in_join` apply to the total accumulated input.
 

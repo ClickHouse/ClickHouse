@@ -27,7 +27,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded> class HashedDictionary;
+template <DictionaryKeyType dictionary_key_type, bool sparse> class HashedDictionary;
 
 namespace ErrorCodes
 {

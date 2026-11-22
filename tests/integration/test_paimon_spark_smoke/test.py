@@ -12,6 +12,9 @@ import shutil
 import pyspark
 import pytest
 
+# Imported for its fork-safe gateway launch: pyspark's own preexec_fn runs
+# Python in the forked child, which can deadlock in a threaded worker.
+from helpers import spark_tools  # noqa: F401
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import LocalUploader
 

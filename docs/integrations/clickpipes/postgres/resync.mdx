@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ### What does Resync do? {#what-postgres-resync-do}
 
 Resync involves the following operations in order:
@@ -27,7 +25,7 @@ All the settings of the original ClickPipe are retained in the resync ClickPipe.
 Here are a few scenarios:
 
 1. You may need to perform major schema changes on the source tables which would break the existing ClickPipe and you would need to restart. You can just click Resync after performing the changes.
-2. Specifically for Clickhouse, maybe you needed to update the values in ORDER BY columns on the target tables. You can Resync to re-populate data into the new table with the right sorting key.
+2. Specifically for ClickHouse, maybe you needed to update the values in ORDER BY columns on the target tables. You can Resync to re-populate data into the new table with the right sorting key.
 3. The replication slot of the ClickPipe is invalidated: Resync creates a new ClickPipe and a new slot on the source database.
 
 <Note>
@@ -41,7 +39,15 @@ since initial load with parallel threads is involved each time.
 2. Head over to the **Settings** tab.
 3. Click on the **Resync** button.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![](/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp)
+
+</Frame>
+
+</div>
 
 4. A dialog box should appear for confirmation. Click on Resync again.
 5. Head over to the **Metrics** tab.

@@ -46,27 +46,36 @@ public:
     explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
     {}
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override
+    [[nodiscard]] bool isVariadic() const override
     {
         return true;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Documentation-only — the result type is the aggregate function's
+    /// "return type to predict", which depends on the specific machine-learning
+    /// aggregate stored in the first argument and is not derivable from the
+    /// argument types alone.
+    [[nodiscard]] String getSignatureString() const override
+    {
+        return "(AggregateFunction, Number, ...) -> Number";
+    }
+
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"model", &isAggregateFunctionState, nullptr, "AggregateFunctionState"}
@@ -81,7 +90,7 @@ public:
         return agg_function->getReturnTypeToPredict();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires at least one argument", getName());
@@ -121,21 +130,38 @@ Applies a trained machine learning model to input features to generate predictio
     {
         "Example usage",
         R"(
+CREATE TABLE trips (pickup_datetime DateTime('UTC'), trip_distance Float64, total_amount Float64) ENGINE = Memory;
+
+-- A fare of 3, plus 2.5 for every unit of distance.
+INSERT INTO trips
+SELECT toDateTime('2020-01-01 00:00:00', 'UTC') + number * 60, number % 10 + 1, 2.5 * (number % 10 + 1) + 3
+FROM numbers(1000);
+
+-- One model per year of the data.
+CREATE TABLE models ENGINE = Memory AS
 SELECT
-evalMLMethod(model, trip_distance),
-total_amount
+    toYear(pickup_datetime) AS year,
+    stochasticLinearRegressionState(0.01, 0.0, 10, 'SGD')(total_amount, trip_distance) AS model
+FROM trips
+GROUP BY year;
+
+SELECT
+    trip_distance,
+    round(evalMLMethod(model, trip_distance), 2) AS predicted,
+    total_amount
 FROM trips
 LEFT JOIN models ON year = toYear(pickup_datetime)
+ORDER BY pickup_datetime
 LIMIT 5
         )",
         R"(
-┌─evalMLMethod(model, trip_distance)─┬─total_amount─┐
-│ 8.087692004204174                  │ 5.4          │
-│ 7.861181608305352                  │ 4.6          │
-│ 26.661544467907536                 │ 23.4         │
-│ 8.767223191900637                  │ 5.8          │
-│ 10.80581675499003                  │ 9            │
-└────────────────────────────────────┴──────────────┘
+┌─trip_distance─┬─predicted─┬─total_amount─┐
+│             1 │      4.05 │          5.5 │
+│             2 │      6.79 │            8 │
+│             3 │      9.53 │         10.5 │
+│             4 │     12.28 │           13 │
+│             5 │     15.02 │         15.5 │
+└───────────────┴───────────┴──────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};

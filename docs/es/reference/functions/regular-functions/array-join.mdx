@@ -20,6 +20,8 @@ Todos los valores de las columnas se copian sin más, excepto los de la columna 
   Para devolver una sola fila que contenga el valor predeterminado del tipo de array, puede envolverlo con [emptyArrayToSingle](/es/reference/functions/regular-functions/array-functions#emptyArrayToSingle), por ejemplo: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (desde la versión 26.5) es un alias de `arrayJoin` que no distingue entre mayúsculas y minúsculas y se usa como llamada a función (`SELECT unnest(arr)`). La sintaxis de PostgreSQL como fuente de tabla no es compatible (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` y `LATERAL`). Use la cláusula [`ARRAY JOIN`](/es/reference/statements/select/array-join) para esas consultas.
+
 Por ejemplo:
 
 ```sql title="Query"
@@ -51,6 +53,8 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 └─────────────┘
 ```
 
+Hay una excepción: `arrayJoin`, incluido a través de su alias `unnest`, no se permite en una condición `JOIN ON` que se evalúa durante el JOIN, porque dicha condición debe conservar el número de filas y se evalúa por separado para cada lote de filas del JOIN. Una condición que se aplica solo a uno de los lados, así como una clave de igualdad basada en `arrayJoin`, se extraen antes del JOIN y no se ven afectadas. Una condición no disyuntiva de `ALL INNER JOIN` tampoco se ve afectada, ya que en ese caso la condición se aplica después del JOIN. Cuando la expansión depende solo de un lado, muévala a un `ARRAY JOIN` en una subconsulta antes del JOIN; una condición cuyo argumento de `arrayJoin` lee columnas de ambos lados debe reestructurarse.
+
 Una consulta puede usar varias funciones `arrayJoin`. En este caso, la transformación se realiza varias veces y las filas se multiplican.
 Por ejemplo:
 
@@ -81,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### Buena práctica
-</div>
+### Orden de las filas {#row-order}
+
+Para cada fila de origen, `arrayJoin` devuelve los elementos en el mismo orden en que aparecen en el array.
+
+Si una consulta contiene más de una llamada a `arrayJoin` con argumentos distintos, el resultado incluye una fila por cada combinación de los elementos. El orden de estas filas no está garantizado, ya que depende del plan de consulta. Por ejemplo, si la cláusula `WHERE` utiliza una de las llamadas, la consulta puede expandir esa llamada en primer lugar. Para obtener un orden predecible, utilice `ORDER BY`:
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+Sin `ORDER BY`, esta consulta puede devolver las filas en el orden `('a', 1)`, `('b', 1)`, `('a', 2)`, `('b', 2)`.
+
+Sin `ORDER BY`, no se garantiza el orden de las filas de origen. Para obtener un orden estable y para paginar con `LIMIT` y `OFFSET`, consulte la sección &quot;Orden de filas y paginación&quot; de la cláusula [`ARRAY JOIN`](/es/reference/statements/select/array-join). Las reglas de `ORDER BY` descritas en esa sección también se aplican a `arrayJoin`.
+
+### Buena práctica {#important-note}
 
 Usar varios `arrayJoin` con la misma expresión puede no producir los resultados esperados debido a la eliminación de subexpresiones comunes.
 En esos casos, considere modificar las expresiones de array que se repiten con operaciones adicionales que no afecten al resultado del JOIN. Por ejemplo, `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`

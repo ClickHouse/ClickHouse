@@ -108,7 +108,7 @@ bitmapAndnot(bitmap1, bitmap2)
 
 **戻り値**
 
-1 番目のビットマップにはあり、2 番目のビットマップにはない set bits を含むビットマップを返します。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
+1 番目のビットマップにはあり、2 番目のビットマップにはない セットビット を含むビットマップを返します。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
@@ -119,9 +119,9 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])
 ```
 
 ```response title=Response
-┌─res────┐
-│ [1, 2] │
-└────────┘
+┌─res───┐
+│ [1,2] │
+└───────┘
 ```
 
 <div id="bitmapAndnotCardinality">
@@ -166,7 +166,7 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS re
 
 導入バージョン: v20.1.0
 
-符号なし整数配列から bitmap を生成します。これは関数 [`bitmapToArray`](/ja/reference/functions/regular-functions/bitmap-functions#bitmapToArray) とは逆の処理です。
+整数配列から ビットマップ を生成します。サポートされる要素型は、8、16、32、64 bit の符号付き整数および符号なし整数です。これは関数 [`bitmapToArray`](/ja/reference/functions/regular-functions/bitmap-functions#bitmapToArray) とは逆の処理です。
 
 **構文**
 
@@ -176,24 +176,38 @@ bitmapBuild(array)
 
 **引数**
 
-* `array` — 符号なし整数の配列。[`Array(UInt*)`](/ja/reference/data-types/array)
+* `array` — 整数配列。[`Array((U)Int*)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-指定された配列から生成されたbitmapを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
+指定された配列から生成されたビットマップを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
+-- A bitmap is a binary value, so it is shown with `hex`.
+SELECT hex(bitmapBuild([1, 2, 3, 4, 5])) AS res, toTypeName(bitmapBuild([1, 2, 3, 4, 5])) AS type;
 ```
 
 ```response title=Response
-┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
-│     │ AggregateFunction(groupBitmap, UInt8)        │
-└─────┴──────────────────────────────────────────────┘
+┌─res────────────┬─type──────────────────────────────────┐
+│ 00050102030405 │ AggregateFunction(groupBitmap, UInt8) │
+└────────────────┴───────────────────────────────────────┘
+```
+
+**符号付き ビットマップ**
+
+```sql title=Query
+-- A bitmap is a binary value, so it is shown with `hex`.
+SELECT hex(bitmapBuild([-128, -1]::Array(Int8))) AS res, toTypeName(bitmapBuild([-128, -1]::Array(Int8))) AS type;
+```
+
+```response title=Response
+┌─res──────┬─type─────────────────────────────────┐
+│ 000280FF │ AggregateFunction(groupBitmap, Int8) │
+└──────────┴──────────────────────────────────────┘
 ```
 
 <div id="bitmapCardinality">
@@ -238,7 +252,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res
 
 導入バージョン: v20.1.0
 
-bitmap に特定の要素が含まれているかどうかを判定します。
+ビットマップ に特定の要素が含まれているかどうかを判定します。値は ビットマップ の要素型の符号なし整数として比較されます。符号付き ビットマップ では、負の要素は対応する符号なしの値と一致します (例: `Int8` の値 `-1` は `255` と一致します) 。
 
 **構文**
 
@@ -264,7 +278,19 @@ SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;
 
 ```response title=Response
 ┌─res─┐
-│  1  │
+│   1 │
+└─────┘
+```
+
+**符号付きビットマップ**
+
+```sql title=Query
+SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│   1 │
 └─────┘
 ```
 
@@ -274,7 +300,7 @@ SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;
 
 導入バージョン: v20.1.0
 
-1番目のbitmapに、2番目のbitmapで1に設定されているすべてのビットが含まれているかどうかを確認します。
+1番目のビットマップに、2番目のビットマップで1に設定されているすべてのセットビットが含まれているかどうかを確認します。
 
 **構文**
 
@@ -288,7 +314,7 @@ bitmapHasAll(bitmap1, bitmap2)
 
 **戻り値**
 
-2 つ目のビットマップでセットされているすべてのビットが 1 つ目のビットマップに含まれている場合は `1`、そうでない場合は `0` を返します [`UInt8`](/ja/reference/data-types/int-uint)
+2 つ目のビットマップでセットされているすべてのセットビットが 1 つ目のビットマップに含まれている場合は `1`、そうでない場合は `0` を返します [`UInt8`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -300,7 +326,7 @@ SELECT bitmapHasAll(bitmapBuild([1, 2, 3]), bitmapBuild([2, 3])) AS res;
 
 ```response title=Response
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
 ```
 
@@ -310,7 +336,7 @@ SELECT bitmapHasAll(bitmapBuild([1, 2, 3]), bitmapBuild([2, 3])) AS res;
 
 導入バージョン: v20.1.0
 
-1つ目のbitmapに、2つ目のbitmapでセットされているビットが1つでも含まれているかどうかを確認します。
+1つ目のビットマップに、2つ目のビットマップでセットされているセットビットが1つでも含まれているかどうかを確認します。
 
 **構文**
 
@@ -336,7 +362,7 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 ```response title=Response
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
 ```
 
@@ -346,7 +372,7 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 導入バージョン: v20.1.0
 
-bitmap 内でセットされている最大のビット位置を返します。bitmap が空の場合は `0` を返します。
+ビットマップ 内の最大要素を、ビットマップ の要素型の符号なし整数として解釈して返します。符号付き ビットマップ の場合、負の値は対応する符号なしの値として扱われます (たとえば、`Int8` の値 `-1` は `255` です) 。ビットマップ が空の場合は `0` を返します。
 
 **構文**
 
@@ -360,7 +386,7 @@ bitmapMax(bitmap)
 
 **戻り値**
 
-ビットマップで設定されている最上位ビットの位置を返します。ビットが設定されていない場合は `0` を返します。[`UInt64`](/ja/reference/data-types/int-uint)
+ビットマップ要素型の符号なし値として最大の要素を返します。ビットマップ が空の場合は `0` を返します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -376,13 +402,25 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────┘
 ```
 
+**符号付きビットマップ**
+
+```sql title=Query
+SELECT bitmapMax(bitmapBuild([-128, -1]::Array(Int8))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│ 255 │
+└─────┘
+```
+
 <div id="bitmapMin">
   ## bitmapMin
 </div>
 
 導入バージョン: v20.1.0
 
-bitmap 内でセットされている最小のビット位置を返します。すべてのビットが未設定の場合は `UINT32_MAX` を返します (bitmap に `2^64` を超えるビットが含まれる場合は `UINT64_MAX`) 。
+ビットマップ 内の最小要素を、ビットマップ の要素型に対応する符号なし整数として解釈して返します。符号付き ビットマップ の場合、負の値は対応する符号なし値として扱われます (例: `Int8` 型の値 `-128` は `128` として扱われます) 。ビットマップ が空の場合は `UINT32_MAX` を返します (ビットマップ の要素型が 32 ビットより広い場合は `UINT64_MAX`) 。
 
 **構文**
 
@@ -396,7 +434,7 @@ bitmapMin(bitmap)
 
 **戻り値**
 
-ビットマップでセットされている最小のビットの位置、または `UINT32_MAX`/`UINT64_MAX` [`UInt64`](/ja/reference/data-types/int-uint) を返します。
+ビットマップの要素型における最小要素を符号なし値として返します。ビットマップが空の場合は `UINT32_MAX`/`UINT64_MAX` を返します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -409,6 +447,18 @@ SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;
 ```response title=Response
 ┌─res─┐
 │   2 │
+└─────┘
+```
+
+**符号付きビットマップ**
+
+```sql title=Query
+SELECT bitmapMin(bitmapBuild([-128, -1]::Array(Int8))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│ 128 │
 └─────┘
 ```
 
@@ -432,7 +482,7 @@ bitmapOr(bitmap1, bitmap2)
 
 **戻り値**
 
-いずれかの入力ビットマップに含まれる、1 に設定されたビットを持つビットマップを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
+いずれかの入力ビットマップに含まれる、セットビットを持つビットマップを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
@@ -443,9 +493,9 @@ SELECT bitmapToArray(bitmapOr(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) A
 ```
 
 ```response title=Response
-┌─res─────────────┐
-│ [1, 2, 3, 4, 5] │
-└─────────────────┘
+┌─res─────────┐
+│ [1,2,3,4,5] │
+└─────────────┘
 ```
 
 <div id="bitmapOrCardinality">
@@ -490,7 +540,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 導入バージョン: v20.1.0
 
-指定した範囲 [start, end) 内の set bits のみを含む bitmap の部分集合を返します。インデックスは 1 から始まります。
+値の範囲 `[start, end)` 内の 要素 を含む ビットマップ の部分集合を返します。要素 の値は ビットマップ の要素型 の符号なし整数として比較されます。
 
 **構文**
 
@@ -500,11 +550,11 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **引数**
 
-* `bitmap` — subset を抽出する対象のビットマップ。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `start` — 範囲の開始 (含む) 。[`UInt*`](/ja/reference/data-types/int-uint) - `end` — 範囲の終了 (含まない) 。[`UInt*`](/ja/reference/data-types/int-uint)
+* `bitmap` — 部分集合 を抽出する対象のビットマップ。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `start` — 範囲の開始 (含む) 。[`UInt*`](/ja/reference/data-types/int-uint) - `end` — 範囲の終了 (含まない) 。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-指定した範囲内でセットされているビットのみを含むビットマップを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
+指定した値の範囲内の要素のみを含むビットマップを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
@@ -515,9 +565,9 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 ```
 
 ```response title=Response
-┌─res───────┐
-│ [2, 3, 4] │
-└───────────┘
+┌─res─────┐
+│ [2,3,4] │
+└─────────┘
 ```
 
 <div id="bitmapSubsetLimit">
@@ -526,7 +576,7 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 
 導入バージョン: v20.1.0
 
-位置 `range_start` から始まる bitmap の subset を返します。含まれる set bits の数は最大 `cardinality_limit` 個です。インデックスは 1 始まりです。
+値が `range_start` 以上の要素のうち、符号なし順序で最小の値から最大 `cardinality_limit` 個を選択した部分集合を返します。
 
 **構文**
 
@@ -536,24 +586,24 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **引数**
 
-* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `range_start` — 範囲の開始位置 (この値を含む) 。[`UInt32`](/ja/reference/data-types/int-uint) - `cardinality_limit` — 部分集合の最大カーディナリティ。[`UInt32`](/ja/reference/data-types/int-uint)
+* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。 - `range_start` — 範囲の開始 (この値を含む) 。[`UInt32`](/ja/reference/data-types/int-uint) - `cardinality_limit` — 部分集合の最大カーディナリティ。[`UInt32`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-`range_start` から始まる、セットされたビットを最大 `cardinality_limit` 個まで含むビットマップを返します。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
+符号なしの値が `range_start` 以上の要素を最大 `cardinality_limit` 個含むビットマップを返します。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
 **使用例**
 
 ```sql title=Query
-SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;
+SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;
 ```
 
 ```response title=Response
-┌─res────┐
-│ [5, 3] │
-└────────┘
+┌─res───┐
+│ [3,5] │
+└───────┘
 ```
 
 <div id="bitmapToArray">
@@ -562,7 +612,7 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS r
 
 導入バージョン: v20.1.0
 
-bitmap を符号なし整数の配列に変換します。関数 [`bitmapBuild`](/ja/reference/functions/regular-functions/bitmap-functions#bitmapBuild) の逆の操作です。
+ビットマップ をその要素の配列に変換します。配列要素の型は ビットマップ の要素型 `T` (符号付きまたは符号なし整数) と一致します。関数 [`bitmapBuild`](/ja/reference/functions/regular-functions/bitmap-functions#bitmapBuild) の逆の操作です。
 
 **構文**
 
@@ -572,11 +622,11 @@ bitmapToArray(bitmap)
 
 **引数**
 
-* `bitmap` — 変換対象の bitmap。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。
+* `bitmap` — 変換対象の ビットマップ。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)。
 
 **戻り値**
 
-bitmap に含まれる符号なし整数の配列を返します。[`Array(UInt*)`](/ja/reference/data-types/array)
+ビットマップ に含まれる要素の配列を返します。[`Array(T)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -587,9 +637,21 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 ```
 
 ```response title=Response
-┌─res─────────────┐
-│ [1, 2, 3, 4, 5] │
-└─────────────────┘
+┌─res─────────┐
+│ [1,2,3,4,5] │
+└─────────────┘
+```
+
+**符号付き ビットマップ**
+
+```sql title=Query
+SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;
+```
+
+```response title=Response
+┌─res───────┐
+│ [-128,-1] │
+└───────────┘
 ```
 
 <div id="bitmapTransform">
@@ -598,7 +660,11 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 
 導入バージョン: v20.1.0
 
-`from_array` 内の特定のビット値を `to_array` 内の対応する値に置き換えることで、bitmap 内の最大 N ビットを変更します。
+`from_array` から `to_array` へのマッピングに従って、ビットマップ 内の要素を置き換えます。
+値は ビットマップ 要素型の符号なし整数として解釈されます ([`bitmapContains`](/ja/reference/functions/regular-functions/bitmap-functions#bitmapContains) と同じドメイン) 。
+符号付き ビットマップ では、負の要素は対応する符号なしの要素と一致します (たとえば、`Int8` 値の `-1` は `255` と一致します) 。
+`to_array` 内の値が ビットマップ 要素型に収まらない場合は、`BAD_ARGUMENTS` が送出されます。`from_array` 内の値が
+収まらない場合は単に見つからないため、対応する置換は適用されません。
 
 **構文**
 
@@ -608,7 +674,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **引数**
 
-* `bitmap` — ビットマップオブジェクト。 [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `from_array` — 置き換える元の set bits の Array。 [`Array(T)`](/ja/reference/data-types/array). - `to_array` — 置き換え先の新しい set bits の Array。 [`Array(T)`](/ja/reference/data-types/array).
+* `bitmap` — ビットマップオブジェクト。 [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `from_array` — 置き換える元のセットビットの Array。 [`Array(T)`](/ja/reference/data-types/array). - `to_array` — 置き換え先となる新しいセットビットの Array。 [`Array(T)`](/ja/reference/data-types/array).
 
 **戻り値**
 
@@ -623,9 +689,21 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 
 ```
 
 ```response title=Response
-┌─res───────────────┐
-│ [1, 3, 5, 20, 40] │
-└───────────────────┘
+┌─res───────────┐
+│ [1,3,5,20,40] │
+└───────────────┘
+```
+
+**符号付きビットマップ**
+
+```sql title=Query
+SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10]))) AS res;
+```
+
+```response title=Response
+┌─res────┐
+│ [0,10] │
+└────────┘
 ```
 
 <div id="bitmapXor">
@@ -634,7 +712,7 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 
 
 導入バージョン: v20.1.0
 
-2 つの bitmap の対称差 (XOR) を返します。
+2 つの ビットマップ の対称差 (XOR) を返します。
 
 **構文**
 
@@ -659,9 +737,9 @@ SELECT bitmapToArray(bitmapXor(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) 
 ```
 
 ```response title=Response
-┌─res──────────┐
-│ [1, 2, 4, 5] │
-└──────────────┘
+┌─res───────┐
+│ [1,2,4,5] │
+└───────────┘
 ```
 
 <div id="bitmapXorCardinality">
@@ -706,7 +784,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 導入バージョン: v21.9.0
 
-`offset` の位置から始まるビットマップのサブセットを返します。返されるビットマップの最大カーディナリティは `cardinality_limit` です。
+符号なし値の昇順で `offset` 個の要素をスキップした後のビットマップの部分集合を返します。返されるビットマップの最大カーディナリティは `cardinality_limit` です。
 
 **構文**
 
@@ -716,11 +794,11 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **引数**
 
-* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `offset` — 先頭からスキップするセットされているビット数 (0ベース) 。[`UInt32`](/ja/reference/data-types/int-uint) - `cardinality_limit` — subset に含めるセットされているビットの最大数。[`UInt32`](/ja/reference/data-types/int-uint)
+* `bitmap` — ビットマップオブジェクト。[`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction). - `offset` — 先頭からスキップするセットビット数 (0ベース) 。[`UInt32`](/ja/reference/data-types/int-uint) - `cardinality_limit` — 部分集合に含めるセットビットの最大数。[`UInt32`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-昇順で `offset` 個のセットされているビットをスキップした後から、最大 `limit` 個のセットされているビットを含むビットマップを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
+符号なし値の昇順で `offset` 個の要素をスキップした後、最大 `cardinality_limit` 個の要素を含むビットマップを返します [`AggregateFunction(groupBitmap, T)`](/ja/reference/data-types/aggregatefunction)
 
 **例**
 
@@ -731,9 +809,9 @@ SELECT bitmapToArray(subBitmap(bitmapBuild([1, 2, 3, 4, 5]), 2, 2)) AS res;
 ```
 
 ```response title=Response
-┌─res────┐
-│ [3, 4] │
-└────────┘
+┌─res───┐
+│ [3,4] │
+└───────┘
 ```
 
 {/*AUTOGENERATED_END*/}

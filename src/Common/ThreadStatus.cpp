@@ -3,9 +3,11 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <base/getPageSize.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/FiberLocal.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SignalUnsafeMutationGuard.h>
@@ -19,6 +21,7 @@
 
 #include <csignal>
 #include <sys/mman.h>
+#include <unordered_map>
 
 
 namespace DB
@@ -81,6 +84,26 @@ struct ThreadStack
     }
     ~ThreadStack()
     {
+        /// The deadly signal handlers request SA_ONSTACK, so a signal delivered after this point would
+        /// run on freed memory. The thread keeps executing thread_local destructors after this one.
+        stack_t disable{};
+        disable.ss_flags = SS_DISABLE;
+        /// Darwin rejects a zero size even when disabling.
+        disable.ss_size = getSize();
+        if (sigaltstack(&disable, nullptr) != 0)
+        {
+            const auto saved_errno = errno;
+            /// Leak rather than free a stack signals may still be delivered onto.
+            try
+            {
+                LOG_FATAL(getLogger("ThreadStatus"), "Cannot disable the alternative signal stack, leaking it, {}", errnoToString(saved_errno));
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: a destructor must not throw, and logging is best-effort
+            {
+            }
+            return;
+        }
+
         if constexpr (guardPagesEnabled())
             memoryGuardRemove(data, getPageSize());
 
@@ -101,7 +124,7 @@ struct ThreadStack
 
         return size;
     }
-    void * getData() const { return data; }
+    [[nodiscard]] void * getData() const { return data; }
 
 private:
     void * data = nullptr;
@@ -115,7 +138,33 @@ static thread_local bool has_alt_stack = false;
 
 
 ThreadStatus::ThreadStatus()
-    : thread_id(getThreadId())
+    : ThreadStatus(getThreadId())
+{
+}
+
+ThreadStatus::ThreadStatus(NoOSThreadTag)
+    : ThreadStatus(NO_OS_THREAD)
+{
+}
+
+#if defined(OS_DARWIN)
+namespace
+{
+    std::mutex thread_statuses_mutex;
+    std::unordered_map<UInt64, ThreadStatus *> thread_statuses TSA_GUARDED_BY(thread_statuses_mutex);
+}
+
+/// The analysis does not see the lock through the returned unique_lock.
+std::pair<std::unique_lock<std::mutex>, ThreadStatus *> ThreadStatus::findByThreadId(UInt64 thread_id) TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    std::unique_lock lock(thread_statuses_mutex);
+    auto it = thread_statuses.find(thread_id);
+    return {std::move(lock), it == thread_statuses.end() ? nullptr : it->second};
+}
+#endif
+
+ThreadStatus::ThreadStatus(UInt64 thread_id_)
+    : thread_id(thread_id_)
 {
     chassert(!current_thread);
 
@@ -125,9 +174,39 @@ ThreadStatus::ThreadStatus()
     /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
     /// to a group still honors total_memory_tracker_sample_probability.
     resolveMemorySampleConfig();
-    log = getLogger("ThreadStatus");
+    /// A `ThreadStatus` is created for every job of a thread pool, and `getLogger` locks the global mutex of the
+    /// registry of loggers, so all threads of the pools would contend on it.
+    static const LoggerPtr thread_status_log = getLogger("ThreadStatus");
+    log = thread_status_log;
 
+#if defined(OS_DARWIN)
+    /// A failed constructor runs no destructor, so the entry is taken back out on any later throw
+    /// (the alternative stack below is allocated on a thread's first ThreadStatus and can throw).
+    if (boundToOSThread())
+    {
+        std::lock_guard lock(thread_statuses_mutex);
+        thread_statuses[thread_id] = this;
+    }
+    scope_guard unregister_on_failure = [this]
+    {
+        if (boundToOSThread())
+        {
+            std::lock_guard lock(thread_statuses_mutex);
+            thread_statuses.erase(thread_id);
+        }
+    };
+#endif
+
+    ThreadStatus * const previous_thread = current_thread;
     current_thread = this;
+    /// A failed constructor runs no destructor, so `current_thread` would keep pointing at the destroyed members
+    /// (the alternative stack below can throw) and the code that handles the exception would use them.
+    /// The allocations made since then are deferred in `untracked_memory`, so they are flushed first, as the destructor does.
+    scope_guard restore_current_thread_on_failure = [this, previous_thread]
+    {
+        flushUntrackedMemory();
+        current_thread = previous_thread;
+    };
 
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
@@ -142,35 +221,21 @@ ThreadStatus::ThreadStatus()
         /// Don't repeat tries even if not installed successfully.
         has_alt_stack = true;
 
-        /// We have to call 'sigaltstack' before first 'sigaction'. (It does not work other way, for unknown reason).
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
         altstack_description.ss_size = ThreadStack::getSize();
 
+        /// `SA_ONSTACK` is requested once for all deadly signals in `setupCommonDeadlySignalHandlers`;
+        /// the kernel selects this stack at delivery time, so it may be installed afterwards.
         if (0 != sigaltstack(&altstack_description, nullptr))
-        {
             LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
-        }
-        else
-        {
-            /// Obtain existing sigaction and modify it by adding a flag.
-            struct sigaction action{};
-            if (0 != sigaction(SIGSEGV, nullptr, &action))
-            {
-                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
-            }
-            else if (!(action.sa_flags & SA_ONSTACK))
-            {
-                action.sa_flags |= SA_ONSTACK;
-
-                if (0 != sigaction(SIGSEGV, &action, nullptr))
-                {
-                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
-                }
-            }
-        }
     }
+#endif
+
+    restore_current_thread_on_failure.release();
+#if defined(OS_DARWIN)
+    unregister_on_failure.release();
 #endif
 }
 
@@ -178,6 +243,12 @@ ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
     chassert(current_thread == this);
     return thread_group;
+}
+
+bool ThreadStatus::hasThreadGroup() const
+{
+    chassert(current_thread == this);
+    return thread_group != nullptr;
 }
 
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
@@ -260,12 +331,42 @@ void ThreadStatus::flushUntrackedMemory()
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     untracked_memory.store(0);
+    untracked_memory_flushed_unchecked = std::max<Int64>(0, untracked_memory_flushed_unchecked + current_untracked_memory);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
+}
+
+void ThreadStatus::publishUntrackedMemory()
+{
+    if (!per_cpu_memory.publish(untracked_memory.load(), per_cpu_untracked_memory))
+        flushUntrackedMemory();
+}
+
+namespace
+{
+/// Per fiber: a fiber that suspends inside a blocker must neither block the cancellation of the other fibers on its
+/// thread nor lose its own blocker when it resumes on another thread.
+constinit FiberLocal<bool, FiberLocalSlot::QUERY_CANCELLATION_BLOCKED> query_cancellation_blocked;
+}
+
+ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
+    : previous(query_cancellation_blocked)
+{
+    query_cancellation_blocked = true;
+}
+
+ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
+{
+    query_cancellation_blocked = previous;
+}
+
+bool ThreadStatus::QueryCancellationBlocker::isActive()
+{
+    return query_cancellation_blocked;
 }
 
 bool ThreadStatus::isQueryCanceled() const
 {
-    if (!thread_group)
+    if (!thread_group || query_cancellation_blocked)
         return false;
 
     if (local_data.query_is_canceled_predicate)
@@ -275,7 +376,7 @@ bool ThreadStatus::isQueryCanceled() const
 
 void ThreadStatus::throwIfQueryCanceled() const
 {
-    if (!thread_group)
+    if (!thread_group || query_cancellation_blocked)
         return;
 
     if (local_data.throw_if_query_canceled_predicate)
@@ -294,6 +395,13 @@ size_t ThreadStatus::getNextPipelineProcessorIndex() const
 
 ThreadStatus::~ThreadStatus()
 {
+#if defined(OS_DARWIN)
+    if (boundToOSThread())
+    {
+        std::lock_guard lock(thread_statuses_mutex);
+        thread_statuses.erase(thread_id);
+    }
+#endif
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     chassert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));

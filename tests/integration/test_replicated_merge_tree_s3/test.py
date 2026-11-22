@@ -1,6 +1,7 @@
 import logging
 import random
 import string
+import time
 
 import pytest
 
@@ -83,6 +84,9 @@ def generate_values(date_str, count, sign=1):
 def create_table(cluster, additional_settings=None):
     settings = {
         "storage_policy": "s3",
+        # Otherwise the new materialize_statistics_on_insert default writes an extra
+        # statistics.packed file per part, breaking the exact S3 object count this test asserts.
+        "auto_statistics_types": "",
     }
     settings.update(additional_settings)
 
@@ -184,3 +188,126 @@ def test_drop_cache_on_cluster(cluster):
     assert int(node1.query("select count() from system.filesystem_cache")) == 0
     assert int(node2.query("select count() from system.filesystem_cache")) == 0
     assert int(node3.query("select count() from system.filesystem_cache")) == 0
+
+
+def list_object_names(cluster):
+    minio = cluster.minio_client
+    return {
+        obj.object_name
+        for obj in minio.list_objects(cluster.minio_bucket, "data/", recursive=True)
+    }
+
+
+def cancel_paused_task(node, query):
+    """Run `query` (DROP or DETACH) while the table's background task is paused after handing off
+    its part, so the task is flagged for deletion and cancelled when it resumes."""
+    node.query("SYSTEM WAIT FAILPOINT merge_mutate_task_pause_after_part_handoff PAUSE")
+    assert node.query(f"SELECT count() FROM system.merges WHERE table = '{TABLE_NAME}'") == "1\n"
+    node.query("SYSTEM ENABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+    request = node.get_query_request(query)
+    node.query("SYSTEM WAIT FAILPOINT merge_tree_background_task_marked_for_deletion PAUSE")
+    node.query("SYSTEM DISABLE FAILPOINT merge_mutate_task_pause_after_part_handoff")
+    node.query("SYSTEM DISABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+    request.get_answer()
+
+
+def check_objects_restored(cluster, objects_before):
+    for _ in range(30):
+        if list_object_names(cluster) == objects_before:
+            break
+        time.sleep(1)
+    assert list_object_names(cluster) == objects_before
+
+
+@pytest.mark.parametrize("policy", ["s3", "s3_cache"])
+@pytest.mark.parametrize("kind", ["merge", "mutation"])
+def test_task_canceled_after_part_handoff(cluster, kind, policy):
+    node = cluster.instances["node1"]
+    objects_before = list_object_names(cluster)
+    node.query(
+        f"CREATE TABLE {TABLE_NAME} (id UInt64, data String)"
+        f" ENGINE=ReplicatedMergeTree('/clickhouse/tables/{TABLE_NAME}_{random_string(10)}', '1')"
+        f" ORDER BY id SETTINGS storage_policy='{policy}'"
+    )
+    node.query(f"SYSTEM STOP MERGES {TABLE_NAME}")
+    for i in range(2 if kind == "merge" else 1):
+        node.query(
+            f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({i * 10000}, 10000)"
+        )
+    try:
+        # Only this table's task may reach the pause.
+        node.query("SYSTEM STOP MERGES")
+        node.query("SYSTEM ENABLE FAILPOINT merge_mutate_task_pause_after_part_handoff")
+        node.query(f"SYSTEM START MERGES {TABLE_NAME}")
+        if kind == "merge":
+            optimize = node.get_query_request(f"OPTIMIZE TABLE {TABLE_NAME} FINAL")
+            cancel_paused_task(node, f"DROP TABLE {TABLE_NAME} SYNC")
+            optimize.get_answer_and_error()
+        else:
+            node.query(
+                f"ALTER TABLE {TABLE_NAME} UPDATE data = 'x' WHERE 1 SETTINGS mutations_sync = 0"
+            )
+            cancel_paused_task(node, f"DETACH TABLE {TABLE_NAME}")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT merge_mutate_task_pause_after_part_handoff")
+        node.query("SYSTEM DISABLE FAILPOINT merge_tree_background_task_marked_for_deletion")
+        node.query("SYSTEM START MERGES")
+
+    if kind == "mutation":
+        node.query(f"ATTACH TABLE {TABLE_NAME}")
+        assert node.query(f"SELECT count(), sum(id) FROM {TABLE_NAME}") == "10000\t49995000\n"
+        node.query_with_retry(
+            f"SELECT count() FROM system.mutations WHERE table = '{TABLE_NAME}' AND NOT is_done",
+            retry_count=60,
+            check_callback=lambda x: x == "0\n",
+        )
+        node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+    check_objects_restored(cluster, objects_before)
+
+
+@pytest.mark.parametrize("policy", ["s3", "s3_cache"])
+@pytest.mark.parametrize("kind", ["merge", "mutation"])
+def test_retry_rejected_after_failed_commit(cluster, kind, policy):
+    """The first attempt fails to commit to Keeper, and its rolled back part stays while the cleanup is stopped,
+    so every retry builds the part again and fails to add it after the task has handed the part over."""
+    node = cluster.instances["node1"]
+    objects_before = list_object_names(cluster)
+    node.query(
+        f"CREATE TABLE {TABLE_NAME} (id UInt64, data String)"
+        f" ENGINE=ReplicatedMergeTree('/clickhouse/tables/{TABLE_NAME}_{random_string(10)}', '1')"
+        f" ORDER BY id SETTINGS storage_policy='{policy}',"
+        " max_postpone_time_for_failed_replicated_merges_ms = 0, max_postpone_time_for_failed_mutations_ms = 0"
+    )
+    node.query(f"SYSTEM STOP MERGES {TABLE_NAME}")
+    for i in range(2 if kind == "merge" else 1):
+        node.query(
+            f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers({i * 10000}, 10000)"
+        )
+
+    rejected = "SELECT sum(value) FROM system.errors WHERE name = 'PART_IS_TEMPORARILY_LOCKED'"
+    rejected_before = int(node.query(rejected))
+    node.query(f"SYSTEM STOP CLEANUP {TABLE_NAME}")
+    node.query(f"ALTER TABLE {TABLE_NAME} MODIFY SETTING fault_probability_before_part_commit = 1")
+    try:
+        node.query(f"SYSTEM START MERGES {TABLE_NAME}")
+        if kind == "merge":
+            node.query(f"OPTIMIZE TABLE {TABLE_NAME} FINAL SETTINGS alter_sync = 0")
+        else:
+            node.query(
+                f"ALTER TABLE {TABLE_NAME} UPDATE data = 'x' WHERE 1 SETTINGS mutations_sync = 0"
+            )
+        node.query_with_retry(
+            rejected, retry_count=120, check_callback=lambda x: int(x) > rejected_before
+        )
+        assert int(node.query(rejected)) > rejected_before
+    finally:
+        node.query(f"ALTER TABLE {TABLE_NAME} MODIFY SETTING fault_probability_before_part_commit = 0")
+        node.query(f"SYSTEM START CLEANUP {TABLE_NAME}")
+
+    node.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
+    expected = "20000\t199990000\t0\n" if kind == "merge" else "10000\t49995000\t10000\n"
+    assert node.query(f"SELECT count(), sum(id), countIf(data = 'x') FROM {TABLE_NAME}") == expected
+    assert node.query(f"SELECT count() FROM system.parts WHERE table = '{TABLE_NAME}' AND active") == "1\n"
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    check_objects_restored(cluster, objects_before)

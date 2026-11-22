@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'gestion des collecteurs']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -16,10 +14,10 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 <Info>
   **En bref**
 
-  Ce guide vous montre comment router la télémétrie vers ClickStack à l’aide de la destination ClickStack native de Bindplane. Vous apprendrez à :
+  Ce guide vous montre comment acheminer la télémétrie vers ClickStack à l’aide de la destination ClickStack native de Bindplane. Vous apprendrez à :
 
   * Configurer ClickStack comme destination dans Bindplane
-  * Créer une configuration pour traiter et router la télémétrie
+  * Créer une configuration pour traiter et acheminer la télémétrie
   * Déployer à distance des configurations sur des OTel collecteurs et commencer à collecter des données
   * Consulter la télémétrie dans ClickStack
 
@@ -146,7 +144,15 @@ Bindplane répond à ce besoin en offrant :
       Bindplane propose des déploiements progressifs sécurisés en un clic avec validation. Vous pouvez surveiller en temps réel l’état de santé des collecteurs, le débit et les éventuelles erreurs via l’interface Bindplane.
     </Tip>
 
-    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Signaux de télémétrie dans ClickStack via Bindplane" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Signaux de télémétrie dans ClickStack via Bindplane](/images/clickstack/bindplane/bindplane-configuration.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="Vérifier la télémétrie dans ClickStack" id="verify-telemetry">
@@ -157,7 +163,15 @@ Bindplane répond à ce besoin en offrant :
     3. Vous devriez voir apparaître les données de télémétrie provenant de vos collecteurs gérés par Bindplane
     4. Les données qui arrivent dans ClickStack sont déjà enrichies et structurées par les processeurs Bindplane
 
-    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Signaux de télémétrie dans ClickStack via Bindplane" size="lg" />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![Signaux de télémétrie dans ClickStack via Bindplane](/images/clickstack/bindplane/bindplane-hyperdx.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
 

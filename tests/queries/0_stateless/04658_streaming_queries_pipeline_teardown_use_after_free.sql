@@ -1,16 +1,14 @@
--- Tags: no-parallel-replicas, no-darwin
--- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: streaming reads are always local.
 
 -- Regression test for a heap-use-after-free in `ExecutingGraph::updateNode` found by the AST fuzzer.
--- A streaming query runs one `MergeTreeCommitOrderSequentialSource` per stream, all feeding a single
+-- A streaming query runs one `MergeTreeCommitOrderSource` per stream, all feeding a single
 -- `LimitTransform`, and every source repeatedly attaches and removes its snapshot-reading sub-pipeline
 -- at run time. Removing the sub-pipeline freed graph edges whose pointers were still queued in
 -- `updateNode`'s local work-list, and a later pop dereferenced freed memory.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100535&sha=0fb86507fb4817cb2418012cce69069f92e74972&name_0=PR&name_1=AST%20fuzzer%20%28arm_asan_ubsan%29
 
 SET enable_streaming_queries = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_stream_pipeline_teardown;
 

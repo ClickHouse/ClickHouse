@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- This test checks that the global memory tracker is an exact counter of allocations,
+         so the correction of its value from a measurement (enabled by default) has to be disabled. -->
+    <memory_worker_correct_memory_tracker>0</memory_worker_correct_memory_tracker>
+</clickhouse>

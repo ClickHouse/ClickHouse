@@ -18,11 +18,8 @@ class CompressedSizeCalculator : public BufferWithOwnMemory<WriteBuffer>
 public:
     explicit CompressedSizeCalculator(CompressionCodecPtr codec_ = nullptr, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    /// Compressed size of a single block as `compress` would produce it: framework header + codec payload.
-    static UInt32 getCompressedBlockSize(const ICompressionCodec & codec, const char * src, UInt32 src_size, PODArray<char> & scratch);
-
     /// Total on-disk size of the streamed input (not a single block). Call `finalize` first.
-    /// Per block it adds the 16-byte checksum on top of `getCompressedBlockSize` (per block: checksum + header + payload).
+    /// Per block: 16-byte checksum + block header + compressed payload.
     UInt64 getCompressedBytes() const
     {
         chassert(isFinalized());

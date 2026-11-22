@@ -84,7 +84,7 @@ keywords: ['выбор конфигурации', 'оборудование', '�
   ## Память
 </div>
 
-Как и при выборе CPU, выбор соотношения памяти к хранилищу и памяти к CPU зависит от вашего сценария использования.
+Как и при выборе CPU, выбор соотношения памяти и хранилища и памяти к CPU зависит от вашего сценария использования.
 
 Требуемый объём оперативной памяти обычно зависит от:
 
@@ -92,7 +92,7 @@ keywords: ['выбор конфигурации', 'оборудование', '�
 * Объёма данных, обрабатываемых в запросах.
 
 В целом чем больше памяти, тем быстрее будут выполняться запросы.
-Если для вашего сценария использования важна стоимость, подойдут и меньшие объёмы памяти, поскольку можно включить настройки ([`max_bytes_before_external_group_by`](/ru/reference/settings/session-settings#max_bytes_before_external_group_by) и [`max_bytes_before_external_sort`](/ru/reference/settings/session-settings#max_bytes_before_external_sort)), чтобы разрешить выгрузку данных на диск, но учтите, что это может существенно сказаться на производительности запросов.
+Если для вашего сценария использования важна стоимость, подойдут и меньшие объёмы памяти, поскольку можно включить настройки ([`max_bytes_before_external_group_by`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) и [`max_bytes_before_external_sort`](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)), чтобы разрешить выгрузку данных на диск, но учтите, что это может существенно сказаться на производительности запросов.
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### Каким должно быть соотношение памяти и хранилища?

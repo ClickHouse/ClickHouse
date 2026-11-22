@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## Regras e controle de TTL
 </div>
 
-O TTL será aplicado ***em algum momento***. O que isso significa? A configuração da tabela `MergeTree` [`merge_with_ttl_timeout`](/pt-BR/reference/settings/merge-tree-settings#merge_with_ttl_timeout) define o atraso mínimo, em segundos, antes de repetir um merge com TTL de exclusão. O valor padrão é de 14400 segundos (4 horas). Mas esse é apenas o atraso mínimo; pode levar mais tempo até que um merge para TTL de exclusão seja acionado.
+O TTL será aplicado ***em algum momento***. O que isso significa? A configuração da tabela `MergeTree` [`merge_with_ttl_timeout`](/pt-BR/reference/settings/merge-tree-settings/merge-with#merge_with_ttl_timeout) define o atraso mínimo, em segundos, antes de repetir um merge com TTL de exclusão. O valor padrão é de 14400 segundos (4 horas). Mas esse é apenas o atraso mínimo; pode levar mais tempo até que um merge para TTL de exclusão seja acionado.
 
 Você pode ver todas as configurações atuais de TTL (como `merge_with_ttl_timeout`) com esta consulta:
 
@@ -69,11 +69,11 @@ A resposta será semelhante a:
 
 ```response
 ┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
-│ background_pool_size │ 16    │       0 │ Configuração obsoleta, não faz nada. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+│ background_pool_size │ 16    │       0 │ Obsolete setting, does nothing. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
 └──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
 ```
 
-Consulte a documentação para saber como modificar a configuração [`background_pool_size`](/pt-BR/reference/settings/server-settings/settings#background_pool_size), que é definida da seguinte forma:
+Consulte a documentação para saber como modificar a configuração [`background_pool_size`](/pt-BR/reference/settings/server-settings/settings/background#background_pool_size), que é definida da seguinte forma:
 
 ```xml
 <background_pool_size>16</background_pool_size>
