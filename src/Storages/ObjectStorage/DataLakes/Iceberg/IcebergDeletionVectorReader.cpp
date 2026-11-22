@@ -4,7 +4,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/Impl/PuffinBlockInputFormat.h>
+#include <Processors/Formats/Impl/Puffin/PuffinBlockInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
@@ -23,11 +23,6 @@ extern const int INCORRECT_DATA;
 
 namespace DB::Iceberg
 {
-
-namespace
-{
-constexpr std::string_view DELETION_VECTOR_BLOB_TYPE = "deletion-vector-v1";
-}
 
 std::unique_ptr<roaring::Roaring64Map> readIcebergDeletionVector(
     const String & file_path,
@@ -71,15 +66,14 @@ std::shared_ptr<const PuffinBlobDescriptors> readPuffinBlobDescriptors(
     read_settings.remote_fs_settings.random_access = true;
     auto read_buffer = createReadBuffer(object_info, object_storage, context, log, read_settings);
     /// The Puffin spec does not bound the footer, and Iceberg writers put all vectors of one write into one file.
-    auto footer = readPuffinFooter(
-        *read_buffer, /*seekable_read=*/ true, /*other_blob_types_allowed=*/ true, /*limit_footer_size=*/ false);
+    auto footer = readPuffinFooter(*read_buffer, /*seekable_read=*/ true, /*limit_footer_size=*/ false);
 
     auto descriptors = std::make_shared<PuffinBlobDescriptors>();
     for (auto & blob : footer.blobs)
     {
         PuffinBlobDescriptors::Blob descriptor;
         descriptor.type = std::move(blob.type);
-        if (descriptor.type == DELETION_VECTOR_BLOB_TYPE)
+        if (descriptor.type == PUFFIN_DELETION_VECTOR_BLOB_TYPE)
             descriptor.referenced_data_file = blob.properties.at("referenced-data-file");
         if (!descriptors->blobs.emplace(std::pair{blob.offset, blob.length}, std::move(descriptor)).second)
             throw Exception(
@@ -101,7 +95,7 @@ void checkIcebergDeletionVectorBlob(
     const String & table_location)
 {
     auto it = descriptors.blobs.find({content_offset, content_size_in_bytes});
-    if (it == descriptors.blobs.end() || it->second.type != DELETION_VECTOR_BLOB_TYPE)
+    if (it == descriptors.blobs.end() || it->second.type != PUFFIN_DELETION_VECTOR_BLOB_TYPE)
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "Iceberg deletion vector of data file '{}' points at offset {} and size {} of Puffin file '{}', "

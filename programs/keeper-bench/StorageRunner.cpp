@@ -375,7 +375,9 @@ void StorageRunner::commitThread()
         std::vector<QueueItem> batch_items;
 
         QueueItem read_item;
-        while (read_queue->tryPop(read_item))
+        /// Cap the batch at the queue capacity: generators refill each freed slot while we pop, and nothing
+        /// is processed until the loop exits, so popping until empty can grow the batch without bound.
+        while (batch.size() < input_queue_size && read_queue->tryPop(read_item))
         {
             DB::KeeperRequestForSession rfs;
             rfs.session_id = read_item.session_id;
