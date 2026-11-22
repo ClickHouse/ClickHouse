@@ -235,19 +235,9 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
     -- { serverError ACCESS_DENIED }
 "
 
-echo "-- CREATE AS ON CLUSTER with the legacy entry format, without WRITE on S3"
+echo "-- CREATE AS ON CLUSTER, without WRITE on S3"
 
-# This format ships the query as written and the workers resolve `AS` with no user.
 $CLICKHOUSE_CLIENT -q "GRANT CLUSTER ON *.* TO ${user_create}"
-$CLICKHOUSE_CLIENT --user "${user_create}" --distributed_ddl_entry_format_version 2 -q "
-    CREATE TABLE ${db}.t_as_cluster ON CLUSTER test_shard_localhost AS ${db}.t
-    SETTINGS keeper_path = '${keeper_path}_as_cluster', after_processing = 'move', after_processing_move_uri = '${dst}', ${keys}
-    -- { serverError ACCESS_DENIED }
-"
-
-echo "-- CREATE AS ON CLUSTER with the default entry format, without WRITE on S3"
-
-# This format builds the definition on the initiator.
 $CLICKHOUSE_CLIENT --user "${user_create}" -q "
     CREATE TABLE ${db}.t_as_cluster_new ON CLUSTER test_shard_localhost AS ${db}.t
     SETTINGS keeper_path = '${keeper_path}_as_cluster_new', after_processing = 'move', after_processing_move_uri = '${dst}', ${keys}
