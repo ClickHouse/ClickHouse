@@ -495,19 +495,19 @@ struct PartColumnsIndex
     /// combination of the file name settings, computed on first use.
     std::map<std::pair<bool, bool>, std::unordered_set<std::string>> static_files;
 
-    const NameAndTypePair * tryGetColumn(const String & name) const
+    [[nodiscard]] const NameAndTypePair * tryGetColumn(const String & name) const
     {
         const auto it = columns.find(name);
         return it == columns.end() ? nullptr : it->second;
     }
 
-    const std::vector<String> * tryGetRecordedSubstreams(const String & name) const
+    [[nodiscard]] const std::vector<String> * tryGetRecordedSubstreams(const String & name) const
     {
         const auto it = recorded_substreams.find(name);
         return it == recorded_substreams.end() ? nullptr : it->second;
     }
 
-    const std::vector<DataFile> & getColumnDataFiles(const String & name) const
+    [[nodiscard]] const std::vector<DataFile> & getColumnDataFiles(const String & name) const
     {
         static const std::vector<DataFile> no_files;
         const auto it = column_data_files.find(name);

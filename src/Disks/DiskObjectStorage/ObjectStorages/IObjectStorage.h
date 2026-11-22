@@ -466,7 +466,7 @@ public:
     /// `write_settings` are the settings the writer will be created with: unlike the multipart sizes, whether
     /// part uploads may run in parallel comes from them (see `writeObject`), and a writer without a parallel
     /// upload scheduler cannot keep several detached buffers alive at once (getEffectiveMaxInflightParts).
-    virtual MultipartUploadMemory getWriteBufferMemory(const WriteSettings & /*write_settings*/) const { return {}; }
+    [[nodiscard]] virtual MultipartUploadMemory getWriteBufferMemory(const WriteSettings & /*write_settings*/) const { return {}; }
 
     /// Whether `writeObject` with `WriteSettings::object_storage_write_atomically` replaces an existing object atomically:
     /// a concurrent reader sees either the previous complete object or the new complete one, and a failed write leaves

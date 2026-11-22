@@ -508,7 +508,7 @@ public:
     /// and reject a merge that fits the corrected reservation.
     static MergeMemoryReservation replace(MergeMemoryReservation && old, UInt64 bytes);
 
-    Int64 getBytes() const { return bytes; }
+    [[nodiscard]] Int64 getBytes() const { return bytes; }
 
     /// Give the reserved bytes back now, before the owner is destroyed. The owners of a merge reservation
     /// (the selected entry's tagger, MergeFromLogEntryTask) outlive the merge's IO buffers: the background
