@@ -1,0 +1,15 @@
+rows read below the table size	1
+exact count	70000
+exact count, one replica	70000
+minmax	0	299999	300000
+projection beside parts without it	0	449850000
+projection beside parts without it	1	449853000
+projection beside parts without it	2	449856000
+normal projection beside parts without it	3000	449871000
+parallel replicas used	05401_agg_proj	1
+parallel replicas used	05401_exact_count	1
+parallel replicas used	05401_exact_count_one	1
+parallel replicas used	05401_minmax	1
+parallel replicas used	05401_normal_proj	1
+parallel replicas used	05401_rows	1
+exact count with a local plan	1

@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <IO/Progress.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <set>
@@ -57,8 +58,12 @@ IsStorageTouched isStorageTouchedByMutations(
 /// Build the WHERE-style filter for a mutation command. The parsed
 /// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
 /// other accesses; the function does not call `MutationCommand::ast` itself.
+/// `resolved_partition_ids` is `MutationCommand::partition_ids` - the partitions of a scoped command as
+/// they were resolved when the mutation entry was created or loaded. When it is set, it is the source of
+/// truth for the `IN PARTITION` part of the filter and the partition expression is not evaluated at all.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const ASTAlterCommand * alter,
+    const std::optional<NameSet> & resolved_partition_ids,
     const StoragePtr & storage,
     ContextPtr context
 );
@@ -99,6 +104,9 @@ public:
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
+        /// Snapshotted MergeTree settings from the mutation task. When set, TTL-related
+        /// settings are read from here instead of the live table settings.
+        MergeTreeSettingsPtr merge_tree_settings;
         /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
         /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
         bool apply_on_fly_for_read = false;
@@ -160,15 +168,15 @@ public:
     QueryPipelineBuilder execute();
 
     /// Only changed columns.
-    Block getUpdatedHeader() const;
+    [[nodiscard]] Block getUpdatedHeader() const;
 
     /// Size checks for the `Nested` members among `written` that have none of their own; `header` is the writer's input.
     VectorWithMemoryTracking<NestedSizesCheck> getNestedSizesChecks(const Names & written, const Block & header) const;
 
-    const ColumnDependencies & getColumnDependencies() const;
+    [[nodiscard]] const ColumnDependencies & getColumnDependencies() const;
 
     /// Latest mutation stage affects all columns in storage
-    bool isAffectingAllColumns() const;
+    [[nodiscard]] bool isAffectingAllColumns() const;
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
@@ -190,11 +198,11 @@ public:
         void set(const MutationKindEnum & kind);
     };
 
-    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
+    [[nodiscard]] MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands.
-    std::vector<MutationActions> getMutationActions() const;
+    [[nodiscard]] std::vector<MutationActions> getMutationActions() const;
 
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
@@ -202,21 +210,21 @@ public:
     /// Additionally we propagate some storage properties.
     struct Source
     {
-        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
+        [[nodiscard]] StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
 
-        StoragePtr getStorage() const;
-        const MergeTreeData * getMergeTreeData() const;
-        AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
-        MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
-        bool isMutatingDataPart() const;
+        [[nodiscard]] StoragePtr getStorage() const;
+        [[nodiscard]] const MergeTreeData * getMergeTreeData() const;
+        [[nodiscard]] AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
+        [[nodiscard]] MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
+        [[nodiscard]] bool isMutatingDataPart() const;
 
-        bool supportsLightweightDelete() const;
-        bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
-        bool hasProjection(const String & name) const;
-        bool hasBrokenProjection(const String & name) const;
-        bool hasUnloadedProjection(const String & name) const;
-        bool isCompactPart() const;
+        [[nodiscard]] bool supportsLightweightDelete() const;
+        [[nodiscard]] bool materializeTTLRecalculateOnly() const;
+        [[nodiscard]] bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
+        [[nodiscard]] bool hasProjection(const String & name) const;
+        [[nodiscard]] bool hasBrokenProjection(const String & name) const;
+        [[nodiscard]] bool hasUnloadedProjection(const String & name) const;
+        [[nodiscard]] bool isCompactPart() const;
 
         void read(
             Stage & first_stage,
@@ -252,10 +260,11 @@ private:
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-    std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    [[nodiscard]] std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
     static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
+        const ASTAlterCommand * alter, const std::optional<NameSet> & resolved_partition_ids) const;
 
     /// Whether the source part stores the column as an array, as its reader decides: only then are the column's array
     /// sizes the stored ones (converting an array to another array type keeps them).
@@ -327,7 +336,7 @@ private:
         bool is_readonly = false;
 
         /// Check that stage affects all storage columns
-        bool isAffectingAllColumns(const Names & storage_columns) const;
+        [[nodiscard]] bool isAffectingAllColumns(const Names & storage_columns) const;
     };
 
     /// The columns this mutation writes into the new part. Assigned at the end of `execute` and
