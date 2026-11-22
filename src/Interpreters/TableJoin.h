@@ -171,6 +171,8 @@ private:
     /// Old behaviour of `max_rows_in_join` / `max_bytes_in_join`: they spill instead of capping the right side.
     const bool legacy_join_size_limits_trigger_spilling = false;
     const size_t max_bytes_before_external_join = 0;
+    /// The ratio part alone: the spill budget of the whole query, shared by its hash joins.
+    const size_t max_bytes_in_query_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
     const bool enable_robin_hood_hash_for_joins = false;
@@ -356,6 +358,7 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     bool legacyJoinSizeLimitsTriggerSpilling() const { return legacy_join_size_limits_trigger_spilling; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
+    size_t maxBytesInQueryBeforeExternalJoin() const { return max_bytes_in_query_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
     bool enableRobinHoodHashForJoins() const { return enable_robin_hood_hash_for_joins; }

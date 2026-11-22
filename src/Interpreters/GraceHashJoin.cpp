@@ -5,6 +5,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
+#include <Interpreters/QueryJoinSpillBudget.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
@@ -298,7 +299,8 @@ GraceHashJoin::GraceHashJoin(
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_,
     size_t external_join_threshold_,
-    size_t max_threads_)
+    size_t max_threads_,
+    std::shared_ptr<QueryJoinSpillBudget> spill_budget_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -319,6 +321,7 @@ GraceHashJoin::GraceHashJoin(
         }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec()))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
+    , spill_budget(std::move(spill_budget_))
 {
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
@@ -332,6 +335,10 @@ GraceHashJoin::GraceHashJoin(
             "max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has memory limits "
             "configured (the ratio is ignored without them). Leaving join_algorithm at its default lets ClickHouse "
             "pick an algorithm that fits the settings you have");
+
+    if (!spill_budget && external_join_threshold > 0)
+        if (const size_t query_budget = table_join->maxBytesInQueryBeforeExternalJoin())
+            spill_budget = std::make_shared<QueryJoinSpillBudget>(query_budget, external_join_threshold);
 }
 
 void GraceHashJoin::initBuckets()
@@ -873,6 +880,18 @@ bool GraceHashJoin::canForceRepartition() const
         && getNumBuckets() * 2 <= max_num_buckets;
 }
 
+size_t GraceHashJoin::shareForSplit()
+{
+    if (!spill_budget)
+        return 0;
+
+    /// Bounded like a forced split: a split for the share must not fail the query either.
+    const size_t share = spill_budget->getShareWhenOverBudget();
+    if (!share || !canForceRepartition() || hash_join->getTotalByteCount() < min_bytes_for_share_split)
+        return 0;
+    return share;
+}
+
 /// Split the bucket held in memory: `rehashBuckets` doubles the bucket count, so about half of its rows
 /// move to the new bucket on disk. Caller holds `hash_join_mutex`; `leftover` is not in the table yet.
 void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context)
@@ -999,7 +1018,11 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
         /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
         /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
-        const bool pre_threshold_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
+        const bool pre_own_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
+        /// While the query is over its join spill budget, the bucket is also held to this join's share of it.
+        const size_t share = shareForSplit();
+        const bool pre_threshold_overflow = pre_own_overflow || (share && pre_total_bytes * 2 >= share);
+        bool split_by_share_only = pre_threshold_overflow && !pre_own_overflow;
 
         bool block_added = false;
         if (!pre_threshold_overflow)
@@ -1008,15 +1031,25 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
             block_added = true;
             size_t hash_join_total_keys = hash_join->getTotalRowCount();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
-            if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+            const bool own_overflow = hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes);
+            const bool share_overflow = share && hash_join_total_keys >= 2 && hash_join_total_bytes * 2 >= share;
+            if (!own_overflow && !share_overflow)
                 return;
+            split_by_share_only = !own_overflow;
         }
+
+        if (split_by_share_only)
+            LOG_TRACE(log, "Bucket of {} reached half of its share {} of the query's join spill budget ({})",
+                ReadableSize(hash_join->getTotalByteCount()), ReadableSize(share), spill_budget->describe());
 
         if (block_added)
             current_block = {};
         /// else: we did not add the block, so we must include it when re-scattering after rehash.
 
         repartitionCurrentBucket(prev_keys_num, std::move(current_block), context);
+
+        if (split_by_share_only)
+            min_bytes_for_share_split = 2 * hash_join->getTotalByteCount();
 
         /// One split per block, so a bucket can end the build phase above the threshold - a single huge block,
         /// or one whose rows nearly all belong here. The threshold says when to start spilling, it is not a

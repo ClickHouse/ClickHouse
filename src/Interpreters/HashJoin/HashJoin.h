@@ -182,7 +182,9 @@ public:
         size_t reserve_num_,
         const String & instance_id_,
         HashJoinBuildLayout build_layout_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        /// Caps the reserve from the cached statistics instead of `maxBytesBeforeExternalJoin`; 0 reserves nothing.
+        std::optional<size_t> max_reserve_bytes_ = {});
 
     /// A join without a reserve or an instance id.
     static std::shared_ptr<HashJoin> create(
@@ -190,7 +192,8 @@ public:
         SharedHeader right_sample_block,
         HashJoinBuildLayout build_layout_,
         bool any_take_last_row_ = false,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {})
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        std::optional<size_t> max_reserve_bytes_ = {})
     {
         return std::make_shared<HashJoin>(
             std::move(table_join_),
@@ -199,7 +202,8 @@ public:
             /*reserve_num_=*/0,
             /*instance_id_=*/"",
             build_layout_,
-            stats_collecting_params_);
+            stats_collecting_params_,
+            max_reserve_bytes_);
     }
 
     ~HashJoin() override;

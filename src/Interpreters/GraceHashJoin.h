@@ -19,6 +19,7 @@ namespace DB
 {
 class TableJoin;
 class HashJoin;
+class QueryJoinSpillBudget;
 
 /**
  * Efficient and highly parallel implementation of external memory JOIN based on HashJoin.
@@ -74,6 +75,7 @@ public:
 
     /// `external_join_threshold_` comes from `max_bytes_before_external_join` (or the ratio): we rehash the
     /// buckets once the in-memory table reaches half of it. Only legacy mode passes 0.
+    /// `spill_budget_` is the budget of the `SpillingHashJoin` this join replaces; without it the join makes its own.
     GraceHashJoin(
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
@@ -82,7 +84,8 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_,
         size_t external_join_threshold_,
-        size_t max_threads_);
+        size_t max_threads_,
+        std::shared_ptr<QueryJoinSpillBudget> spill_budget_ = nullptr);
 
     ~GraceHashJoin() override;
 
@@ -138,6 +141,9 @@ private:
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
+    /// The share of the query's spill budget the bucket in memory may keep, or 0 when it does not apply now.
+    /// Caller holds `hash_join_mutex`.
+    size_t shareForSplit();
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
@@ -197,6 +203,11 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
+
+    std::shared_ptr<QueryJoinSpillBudget> spill_budget;
+    /// A split decided by the share alone waits until the bucket has doubled since the previous one, so a bucket
+    /// that a split cannot divide (one key) is not split again at every block. Guarded by `hash_join_mutex`.
+    size_t min_bytes_for_share_split = 0;
 
     /// What the buckets built and already released held, for the `max_rows_in_join` /
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.

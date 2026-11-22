@@ -10944,7 +10944,9 @@ The ratio of available memory that is allowed for `JOIN`. Once reached, a hash j
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
-If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
+The same amount is also the budget of the whole query: once the memory of the query reaches it, the budget is divided equally among the hash joins of the query that can spill, and a join holding more than its share spills. With one such join nothing changes.
+
+If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used, and a join whose `max_bytes_before_external_join` is below its share of the query budget is held to that setting alone. If the ratio is `0`, only the absolute setting applies.
 
 Has effect for every hash-based `join_algorithm`, including `grace_hash`, provided a temporary data path is configured.
 )", 0, \

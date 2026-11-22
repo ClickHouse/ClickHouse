@@ -4,14 +4,17 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
+#include <Interpreters/QueryJoinSpillBudget.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Common/FailPoint.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <atomic>
+#include <optional>
 
 namespace ProfileEvents
 {
@@ -53,7 +56,17 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    hash_join = HashJoin::create(table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_);
+    std::optional<size_t> max_reserve_bytes;
+    if (const size_t query_budget = table_join->maxBytesInQueryBeforeExternalJoin())
+    {
+        spill_budget = std::make_shared<QueryJoinSpillBudget>(query_budget, max_bytes_before_external_join);
+        /// The joins of a query are created one after another, so each reserves from what the others left of the budget.
+        const size_t query_memory = static_cast<size_t>(std::max<Int64>(0, getCurrentQueryMemoryUsage()));
+        max_reserve_bytes = std::min(max_bytes_before_external_join, query_budget - std::min(query_budget, query_memory));
+    }
+
+    hash_join = HashJoin::create(
+        table_join, right_sample_block_, build_layout_, any_take_last_row, stats_collecting_params_, max_reserve_bytes);
     /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
     hash_join->keepRightBlocksForAnotherAlgorithm();
     supports_parallel_non_joined_blocks_processing = hash_join->supportParallelNonJoinedBlocksProcessing();
@@ -133,6 +146,21 @@ std::string SpillingHashJoin::getAlgorithm() const
 
 bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context)
 {
+    if (spill_budget && state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        if (const size_t share = spill_budget->getShareWhenOverBudget(); share && hash_join->getTotalByteCount() * 2 >= share)
+        {
+            LOG_DEBUG(
+                log,
+                "The query reached its join spill budget ({}), {} holds {} bytes of its share of {}",
+                spill_budget->describe(),
+                hash_join->getName(),
+                hash_join->getTotalByteCount(),
+                share);
+            switchToExternalJoin(context);
+        }
+    }
+
     /// Fast path: already switched to the external join (no switch lock needed).
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
@@ -259,7 +287,8 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
             tmp_data,
             any_take_last_row,
             max_bytes_before_external_join,
-            getMaxBuildThreads());
+            getMaxBuildThreads(),
+            spill_budget);
         grace_join->initialize(*left_sample_block);
         return grace_join;
     };
@@ -303,12 +332,18 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
                 switch_error_code = getCurrentExceptionCode();
                 switch_error_message = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
                 state.store(State::FAILED, std::memory_order_release);
+                if (spill_budget)
+                    spill_budget->leave();
                 throw;
             }
         }
 
         state.store(target_state, std::memory_order_release);
         QueryExecutionCounters::addUsedJoinAlgorithm(target_algorithm);
+
+        /// `MergeJoin` writes the right side through to disk, so it no longer takes a share of the budget.
+        if (target_state == State::MERGE_JOIN && spill_budget)
+            spill_budget->leave();
     }
 
     if (spill_immediately)
@@ -342,7 +377,12 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
         const size_t total_bytes = hash_join->getTotalByteCount();
-        if (total_bytes >= max_bytes_before_external_join)
+        size_t threshold = max_bytes_before_external_join;
+        if (spill_budget)
+            if (const size_t share = spill_budget->getShareWhenOverBudget())
+                threshold = std::min(threshold, share);
+
+        if (total_bytes >= threshold)
         {
             switchToExternalJoin(JoinBuildContext::serial());
         }
