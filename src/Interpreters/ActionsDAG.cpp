@@ -5161,9 +5161,17 @@ static void serializeConstant(
 /// every input of the body must be a captured column or a lambda argument with exactly the declared type.
 /// Otherwise the body (which may be JIT-compiled for the types of its inputs) would read a column of another type.
 ///
+/// The body has a single output, the expression of the lambda. `FunctionExpression` finds its result by
+/// `return_name` and declares it with `return_type`, and the type of the lambda itself, from which a higher-order
+/// function derives its own result type, is `Function(types of the lambda arguments) -> return_type`.
+/// So the output of the body must have the declared name and type, and `function_type` (the type of the
+/// `FunctionCapture` node, or of the constant holding the lambda) must be the one of the signature. Otherwise
+/// a higher-order function would return a column of another type than it declares, which the checks of the
+/// result column catch only as far as the columns of the two types differ, and with a `LOGICAL_ERROR`.
+///
 /// A deserialized lambda is built directly as `FunctionCapture` or `FunctionExpression`, so check the same here,
 /// before the body is compiled. Lambdas nested in the body are checked when they are deserialized themselves.
-static void checkDeserializedLambdaBody(const ActionsDAG & capture_dag, const LambdaCapture & capture)
+static void checkDeserializedLambda(const ActionsDAG & capture_dag, const LambdaCapture & capture, const IDataType & function_type)
 {
     if (capture_dag.hasArrayJoin())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized lambda body must not contain ARRAY JOIN");
@@ -5196,6 +5204,47 @@ static void checkDeserializedLambdaBody(const ActionsDAG & capture_dag, const La
                 "Deserialized lambda body has input {} of type {}, which is neither a captured column nor a lambda argument",
                 input->result_name, input->result_type->getName());
     }
+
+    const auto & outputs = capture_dag.getOutputs();
+    if (outputs.size() != 1 || outputs.front()->result_name != capture.return_name)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Deserialized lambda body must have the single output {}, which the lambda returns", capture.return_name);
+
+    const auto & body_type = outputs.front()->result_type;
+    if (!body_type->equals(*capture.return_type))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Deserialized lambda body has output {} of type {}, but the lambda declares the return type {}",
+            capture.return_name, body_type->getName(), capture.return_type->getName());
+
+    DataTypes argument_types;
+    argument_types.reserve(capture.lambda_arguments.size());
+    for (const auto & lambda_argument : capture.lambda_arguments)
+        argument_types.push_back(lambda_argument.type);
+
+    const DataTypeFunction signature_type(argument_types, capture.return_type);
+    if (!function_type.equals(signature_type))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Deserialized lambda has type {}, but its signature is {}", function_type.getName(), signature_type.getName());
+}
+
+/// `FunctionCapture` is called with the captured columns, and a lambda folded into a constant holds them:
+/// they are the first arguments of `FunctionExpression`, which declares them with `captured_types`. The planner
+/// passes exactly the columns named in `captured_names`, so there must be as many of them, with the same types.
+/// `ColumnFunction` would refuse other columns only with a `LOGICAL_ERROR`, when the lambda is created or called.
+static void checkDeserializedLambdaCapturedColumnsCount(const LambdaCapture & capture, size_t num_columns)
+{
+    if (num_columns != capture.captured_types.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Deserialized lambda declares {} captured columns, but it is created with {}",
+            capture.captured_types.size(), num_columns);
+}
+
+static void checkDeserializedLambdaCapturedColumnType(const LambdaCapture & capture, size_t index, const IDataType & type)
+{
+    if (!type.equals(*capture.captured_types[index]))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Deserialized lambda declares the captured column {} with type {}, but it is created with a column of type {}",
+            capture.captured_names[index], capture.captured_types[index]->getName(), type.getName());
 }
 
 /// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
@@ -5248,15 +5297,19 @@ static ColumnConst::Ptr deserializeConstant(
         LambdaCapture capture;
         deserializeCapture(capture, in, max_type_complexity);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
-        checkDeserializedLambdaBody(capture_dag, capture);
+        checkDeserializedLambda(capture_dag, capture, type);
 
         UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
+        /// This also bounds the allocation below: the count comes from the serialized data.
+        checkDeserializedLambdaCapturedColumnsCount(capture, num_captured_columns);
         ColumnsWithTypeAndName captured_columns(num_captured_columns);
 
-        for (auto & captured_column : captured_columns)
+        for (size_t i = 0; i < num_captured_columns; ++i)
         {
+            auto & captured_column = captured_columns[i];
             captured_column.type = decodeDataType(in, max_type_complexity);
+            checkDeserializedLambdaCapturedColumnType(capture, i, *captured_column.type);
             captured_column.column = deserializeConstant(*captured_column.type, in, registry, context, max_type_complexity, nesting_depth + 1);
             /// `deserializeConstant` returns size-0 ColumnConsts to match the DAG node invariant,
             /// but a `ColumnFunction` requires its captured columns to share its `elements_size`
@@ -5561,7 +5614,11 @@ ActionsDAG ActionsDAG::deserialize(
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
                 auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
-                checkDeserializedLambdaBody(capture_dag, capture);
+                checkDeserializedLambda(capture_dag, capture, *node.result_type);
+
+                checkDeserializedLambdaCapturedColumnsCount(capture, arguments.size());
+                for (size_t argument_index = 0; argument_index < arguments.size(); ++argument_index)
+                    checkDeserializedLambdaCapturedColumnType(capture, argument_index, *arguments[argument_index].type);
 
                 auto capture_ptr = std::make_shared<LambdaCapture>(std::move(capture));
                 auto expression_actions = createLambdaExpressionActions(

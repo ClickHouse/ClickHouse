@@ -5,6 +5,18 @@ array join in interpolate INCORRECT_DATA
 array join in a lambda body INCORRECT_DATA
 lambda body input type differs from the argument INCORRECT_DATA
 lambda body input is not an argument INCORRECT_DATA
+lambda return type differs from its body INCORRECT_DATA
+lambda returns not the output of its body INCORRECT_DATA
+lambda type differs from its argument INCORRECT_DATA
+lambda type differs from its return type INCORRECT_DATA
+folded lambda return type differs from its body INCORRECT_DATA
+folded lambda type differs from its return type INCORRECT_DATA
+lambda captures a column of another type INCORRECT_DATA
+lambda is created without its captured column INCORRECT_DATA
+folded lambda captures a column of another type INCORRECT_DATA
+folded lambda holds a column that it does not capture INCORRECT_DATA
 well-formed lambda accepted
+well-formed lambda with a captured column accepted
+well-formed folded lambda accepted
 well-formed alias accepted
 3

@@ -8,6 +8,9 @@
 # rows of the single-row interpolation block (and the analyzer does not allow it anyway). A deserialized
 # lambda body must not contain `ARRAY_JOIN` either, as the planner refuses to capture it, and its inputs must
 # be the captured columns and the arguments of the lambda with the declared types: they are bound by name.
+# Its single output must have the declared name and type of the result, the type of the lambda itself must be
+# the one of its signature, and it must be created with exactly the captured columns it declares: a higher-order
+# function trusts all of these, both for a `FunctionCapture` node and for a lambda folded into a constant.
 # The raw protocol client is the one of 05575_filling_step_plan_deserialization.sh; the last plan is
 # well-formed, so the refusals are specific.
 
@@ -28,7 +31,7 @@ VERSION = 21       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte l
 OLD = 17           # one below DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP
 U8, U16 = b"\x01", b"\x02"            # BinaryTypeIndex
 ARR8 = b"\x1e" + U8                   # Array(UInt8)
-NUL, INPUT, ALIAS, ARRAY_JOIN, FUNCTION = b"\x00", 0, 2, 3, 4   # a Null Field or a zero flags byte, ActionsDAG::ActionType
+NUL, INPUT, COLUMN, ALIAS, ARRAY_JOIN, FUNCTION = b"\x00", 0, 1, 2, 3, 4   # a Null Field or a zero flags byte, ActionsDAG::ActionType
 
 
 def vu(x):
@@ -126,13 +129,27 @@ forge("array join of not an array",
 forge("array join in interpolate",
       FILL + interpolate([(INPUT, "a", ARR8, ()), (ARRAY_JOIN, "z", U8, (0,))], [1], [("a", "a")]) + vu(0), [HA8], VERSION, HA8)
 X8Z = [("x", U8), ("z", U8)]
-def lambda_node(argument, input_, body_type, body_kind=ALIAS):
-    # `argument -> body`: a lambda that captures nothing, with one argument (name, type), whose body is
-    # a single node over the only input `input_` (name, type). 0x24 is `Function`, the flag 4 is a lambda capture.
-    return (bytes([FUNCTION]) + sb("lambda") + b"\x24" + vu(1) + argument[1] + body_type + vu(0)
-            + b"\x04" + sb("lambda")
-            + sb("r") + body_type + vu(0) + vu(0) + vu(1) + sb(argument[0]) + argument[1]   # return, no captures, argument
-            + dag([(INPUT, input_[0], input_[1], ()), (body_kind, "r", body_type, (0,))], [1]))
+def lambda_node(argument, input_, body_type, body_kind=ALIAS, returns=None, type_=None, captured=None, columns=None, folded=False):
+    # `argument -> body`: a lambda with one argument (name, type), whose body is a single node `r` of `body_type`
+    # over the only input `input_` (name, type). By default it captures nothing and its declarations agree with
+    # the body. `returns` is the declared (name, type) of the result, `type_` the (argument, return) types of the
+    # lambda itself (0x24 is `Function`), `captured` the declared (name, type) of a captured column, and `columns`
+    # the number of the columns the lambda is created with, each one a `UInt8`.
+    returns = returns or ("r", body_type)
+    type_ = type_ or (argument[1], returns[1])
+    captures = [captured] if captured else []
+    columns = len(captures) if columns is None else columns
+    head = sb("lambda") + b"\x24" + vu(1) + type_[0] + type_[1]
+    signature = (sb(returns[0]) + returns[1]
+                 + vu(len(captures)) + b"".join(sb(name) for name, _ in captures)
+                 + vu(len(captures)) + b"".join(type for _, type in captures)
+                 + vu(1) + sb(argument[0]) + argument[1])
+    body = dag([(INPUT, input_[0], input_[1], ()), (body_kind, "r", body_type, (0,))], [1])
+    if folded:
+        # A lambda folded into a constant (the flags 1 | 2), which holds the captured columns as constants.
+        return bytes([COLUMN]) + head + vu(0) + b"\x03" + signature + body + vu(columns) + (U8 + b"\x07") * columns
+    # A `FunctionCapture` node (the flag 4), whose arguments are the captured columns: the node 0, `x UInt8`.
+    return bytes([FUNCTION]) + head + vu(columns) + vu(0) * columns + b"\x04" + sb("lambda") + signature + body
 
 def with_lambda(label, node):
     forge(label, FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,)), node], [1], [("x", "x")]) + vu(0),
@@ -145,7 +162,30 @@ with_lambda("array join in a lambda body", lambda_node(("e", ARR8), ("e", ARR8),
 # its input `e` as `UInt16`: the columns are passed to the body by name, without a check of the type.
 with_lambda("lambda body input type differs from the argument", lambda_node(("e", U8), ("e", U16), U16))
 with_lambda("lambda body input is not an argument", lambda_node(("e", U8), ("q", U8), U8))
+# The body returns `r UInt8`, but the lambda declares another type or name of its result: `FunctionExpression`
+# takes the result by the declared name and passes it on with the declared type.
+with_lambda("lambda return type differs from its body", lambda_node(("e", U8), ("e", U8), U8, returns=("r", U16)))
+with_lambda("lambda returns not the output of its body", lambda_node(("e", U8), ("e", U8), U8, returns=("q", U8)))
+# The lambda is `UInt8 -> UInt8`, but its node declares another `Function` type, and a higher-order function
+# derives its own result type from that one.
+with_lambda("lambda type differs from its argument", lambda_node(("e", U8), ("e", U8), U8, type_=(U16, U8)))
+with_lambda("lambda type differs from its return type", lambda_node(("e", U8), ("e", U8), U8, type_=(U8, U16)))
+with_lambda("folded lambda return type differs from its body",
+            lambda_node(("e", U8), ("e", U8), U8, returns=("r", U16), folded=True))
+with_lambda("folded lambda type differs from its return type",
+            lambda_node(("e", U8), ("e", U8), U8, type_=(U8, U16), folded=True))
+# `e -> x` captures `x`, declared as `UInt16` in the lambda and in its body, but it is created with a `UInt8`
+# column, or without the column, or with a column that it does not capture.
+with_lambda("lambda captures a column of another type", lambda_node(("e", U8), ("x", U16), U16, captured=("x", U16)))
+with_lambda("lambda is created without its captured column",
+            lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8), columns=0))
+with_lambda("folded lambda captures a column of another type",
+            lambda_node(("e", U8), ("x", U16), U16, captured=("x", U16), folded=True))
+with_lambda("folded lambda holds a column that it does not capture",
+            lambda_node(("e", U8), ("e", U8), U8, columns=1, folded=True))
 with_lambda("well-formed lambda", lambda_node(("e", U8), ("e", U8), U8))
+with_lambda("well-formed lambda with a captured column", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8)))
+with_lambda("well-formed folded lambda", lambda_node(("e", U8), ("x", U8), U8, captured=("x", U8), folded=True))
 forge("well-formed alias",
       FILL + interpolate([(INPUT, "x", U8, ()), (ALIAS, "z", U8, (0,))], [1], [("x", "x")]) + vu(0), [X8Z], VERSION, X8Z)
 PYEOF
