@@ -106,12 +106,8 @@ public:
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
     /// Counts the compressed blocks loaded since the previous call (from the uncompressed cache too) by the
-    /// `CountedCompressedBlocks` of `countCompressedBytesRead`. A reader that cannot tell what it loaded drops the statistics.
-    virtual void flushCompressedBlocksRead()
-    {
-        if (counted_compressed_blocks)
-            counted_compressed_blocks->markUnsupported();
-    }
+    /// `CountedCompressedBlocks` of `countCompressedBytesRead`.
+    virtual void flushCompressedBlocksRead() = 0;
 
     /// Enables `flushCompressedBlocksRead`. The readers of a read share `counted`, so a block several of them load is counted
     /// once. A reader is reused only for the tasks of its read, so `counted` doesn't change.

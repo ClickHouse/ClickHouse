@@ -50,9 +50,6 @@ public:
     /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
     void count(CountedRanges & file_ranges, CompressedBlockRanges & ranges);
 
-    /// For a reader that cannot tell what it loaded. Drops the statistics, see `RuntimeDataflowStatisticsCacheUpdater::markUnsupportedCase`.
-    void markUnsupported();
-
 private:
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;

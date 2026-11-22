@@ -406,12 +406,6 @@ void CountedCompressedBlocks::count(CountedRanges & file_ranges, CompressedBlock
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
 }
 
-void CountedCompressedBlocks::markUnsupported()
-{
-    if (!duplicated)
-        block->unsupported_case.store(true, std::memory_order_relaxed);
-}
-
 void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
 {
     if (!settings.is_compressed)
