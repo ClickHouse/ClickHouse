@@ -6,6 +6,7 @@
 #include <string_view>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -46,6 +47,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
@@ -148,6 +150,7 @@ namespace FailPoints
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
+extern const char tcp_handler_pause_before_query_plan_deserialization[];
 }
 }
 
@@ -193,6 +196,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -235,7 +239,8 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
     // shard_1 receives a message with 'ClickHouse client' client_name
     // shard_1 initiates TCP connection with shard_2 with 'ClickHouse server' client_name.
     // shard_1 sends 'ClickHouse client' client_name in Protocol::Client::Query message to shard_2.
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || session_client_info.interface == ClientInfo::Interface::TCP_INTERSERVER)
         return;
 
     if (session_client_info.interface != client_info.interface)
@@ -331,6 +336,23 @@ Block convertColumnsToBLOBs(
         res.insert(std::move(column));
     }
     return res;
+}
+
+/// For a query that fails with the exception being handled, `cancel` rethrows the exception of the cancelled execution.
+/// `QUERY_WAS_CANCELLED` can be caused by this cancellation itself, so it must not replace the one being handled.
+template <typename Executor>
+void cancelExecutorOnException(Executor & executor, const LoggerPtr & log)
+{
+    try
+    {
+        executor.cancel();
+    }
+    catch (...)
+    {
+        if (getCurrentExceptionCode() != ErrorCodes::QUERY_WAS_CANCELLED)
+            throw;
+        LOG_DEBUG(log, "Exception of the cancelled query execution: {}", getCurrentExceptionMessage(/* with_stacktrace */ false));
+    }
 }
 }
 
@@ -593,9 +615,7 @@ void TCPHandler::runImpl()
             /// If we need to shut down, or client disconnects.
             if (!tcp_server.isOpen() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {}, eof: {})",
-                    tcp_server.isOpen(), in->isCanceled(),
-                    !in->isCanceled() && in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {})", tcp_server.isOpen(), in->isCanceled());
                 return;
             }
         }
@@ -708,8 +728,7 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
             }
 
-            const auto send_profile_events = query_state->query_context->getSettingsRef()[Setting::send_profile_events];
-            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && send_profile_events)
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && shouldSendProfileEvents(*query_state))
             {
                 query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
@@ -1031,11 +1050,20 @@ void TCPHandler::runImpl()
                 query_state->need_receive_data_for_insert = true;
                 processInsertQuery(*query_state);
                 query_state->io.onFinish();
+
+                /// `onFinish` increments some profile events yet (e.g. `QueryTimeMicroseconds`), so send what is
+                /// left of them, for the initiator of a distributed query to charge them to its quotas over profile events.
+                std::lock_guard lock(*callback_mutex);
+                sendInsertProfileEvents(*query_state, /* final_report = */ true);
             }
             else if (query_state->io.pipeline.pulling())
             {
                 processOrdinaryQuery(*query_state);
                 query_state->io.onFinish();
+
+                /// See the comment above.
+                std::lock_guard lock(*callback_mutex);
+                sendSelectProfileEvents(*query_state);
             }
             else if (query_state->io.pipeline.completed())
             {
@@ -1047,6 +1075,9 @@ void TCPHandler::runImpl()
                         !query_state->need_receive_data_for_input && callback)
                     {
                         executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
+                        /// The callback sends `ProfileEvents` packets periodically, so the client accepts them
+                        /// at any moment, including right before an `Exception`.
+                        query_state->sending_interactive_updates = true;
                     }
 
                     executor.execute();
@@ -1228,6 +1259,21 @@ void TCPHandler::runImpl()
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
                 sendLogs(*query_state);
+
+                /// Flush the tail of the profile events accumulated since the last periodic report,
+                /// so that the initiator of a distributed query charges them to the quotas over
+                /// profile events even when this query fails. Only do it while streaming the result
+                /// of a `SELECT` or executing a completed pipeline (e.g. a secondary `INSERT SELECT` of
+                /// `parallel_distributed_insert_select`), where `ProfileEvents` packets are already sent
+                /// periodically, or for a secondary `INSERT` that has received all its data: its initiator (`RemoteInserter`)
+                /// is then waiting for the end of the query and accepts the final report, the same as
+                /// on the success path (`sendInsertProfileEvents` checks the query kind and the protocol
+                /// version). In other states the clients do not expect them before the `Exception`.
+                if (query_scope && (query_state->streaming_select_result || query_state->sending_interactive_updates))
+                    sendSelectProfileEvents(*query_state);
+                else if (query_scope && query_state->need_receive_data_for_insert && query_state->read_all_data
+                    && query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+                    sendInsertProfileEvents(*query_state, /* final_report = */ true);
             }
             catch (const Exception & e)
             {
@@ -1642,7 +1688,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
     };
@@ -1658,7 +1704,8 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query.table_id, state.query_context))
             async_insert_enabled |= table->areAsynchronousInsertsEnabled();
 
-    if (insert_queue && async_insert_enabled && !insert_query.select)
+    if (insert_queue && async_insert_enabled && !insert_query.select
+        && !AsynchronousInsertQueue::checkInsideTransaction(state.query_context))
     {
         auto result = processAsyncInsertQuery(state, *insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1692,7 +1739,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 std::lock_guard lock(*callback_mutex);
                 if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
                     sendProgress(state);
-                sendInsertProfileEvents(state);
+                sendInsertProfileEvents(state, /* final_report = */ true);
             }
             return;
         }
@@ -1715,7 +1762,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
-    sendInsertProfileEvents(state);
+    sendInsertProfileEvents(state, /* final_report = */ true);
 }
 
 
@@ -1736,6 +1783,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             out->sync();
         }
     }
+
+    state.streaming_select_result = true;
 
     /// INSERT ... RETURNING with the data sent by the client: the pipeline reads the data with `input` callbacks,
     /// and the result is sent while the client is still sending the data - the client reads it between sending the blocks.
@@ -1799,7 +1848,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         catch (...)
         {
             killQueryIfStoppedByClient(state);
-            executor.cancel();
+            cancelExecutorOnException(executor, log);
             throw;
         }
 
@@ -1859,7 +1908,7 @@ void TCPHandler::processTablesStatusRequest()
             /// the hash validates below.
             request.read(*in, client_tcp_protocol_version);
 
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -1878,8 +1927,7 @@ void TCPHandler::processTablesStatusRequest()
             /// `StringWithMemoryTracking` (as in `processQuery`) routes the digest/hash duplicate of
             /// the potentially large request through the throwing memory-tracker path.
             StringWithMemoryTracking data(salt);
-            if (nonce.has_value())
-                data += std::to_string(nonce.value());
+            data += std::to_string(nonce.value());
             data += cluster_secret;
             data += "TablesStatusRequest";
             data += request.getAuthDigest();
@@ -2037,9 +2085,21 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 }
 
 
+bool TCPHandler::shouldSendProfileEvents(const QueryState & state) const
+{
+    /// The initiator of a distributed query charges the profile events reported by the remote servers to
+    /// the quotas over profile events of the initiating user, so a secondary query reports them regardless
+    /// of `send_profile_events`: the setting could be turned off by the `SETTINGS` clause of the query
+    /// (applied after the settings of the query packet), or by a constraint of the user on this server
+    /// (to which the settings of a secondary query are clamped), and bypass the limits.
+    return query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || state.query_context->getSettingsRef()[Setting::send_profile_events];
+}
+
+
 void TCPHandler::sendProfileEvents(QueryState & state)
 {
-    if (!state.query_context->getSettingsRef()[Setting::send_profile_events])
+    if (!shouldSendProfileEvents(state))
         return;
 
     Stopwatch stopwatch;
@@ -2074,11 +2134,17 @@ void TCPHandler::sendSelectProfileEvents(QueryState & state)
 }
 
 
-void TCPHandler::sendInsertProfileEvents(QueryState & state)
+void TCPHandler::sendInsertProfileEvents(QueryState & state, bool final_report)
 {
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT)
         return;
-    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+    /// The initiator of a distributed `INSERT` (`RemoteInserter`) does not read the packets of the remote
+    /// server while it sends the data, so the periodic reports could fill the socket buffers on both sides
+    /// and deadlock. But it waits for the end of the query after sending all the data, and charges the
+    /// final report to the quotas over profile events of the initiating user.
+    /// Older initiators do not expect even the final report and fail on it.
+    if (query_kind != ClientInfo::QueryKind::INITIAL_QUERY
+        && (!final_report || client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT))
         return;
 
     sendProfileEvents(state);
@@ -2337,8 +2403,15 @@ void TCPHandler::receiveHello()
         }
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
-            LOG_WARNING(LogFrequencyLimiter(log, 10),
-                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Interserver mode is not supported for client protocol revision {}, the minimum is {}",
+                client_tcp_protocol_version, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
+            session = makeSession();
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
+            throw exception; /// NOLINT
+        }
+
         processClusterNameAndSalt();
 
         /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
@@ -2349,7 +2422,7 @@ void TCPHandler::receiveHello()
         /// the exception back to the unauthenticated peer (see the handshake catch block).
         try
         {
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2564,7 +2637,7 @@ void TCPHandler::sendHello()
             !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server])
             Settings::writeEmpty(*out); // send empty list of setting changes
         else
-            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+            session->sessionContext()->getSettingsRef().write(*out);
     }
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
@@ -2726,12 +2799,26 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
-        ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-        : SettingsWriteFormat::BINARY;
-
     Settings passed_settings;
-    passed_settings.read(*in, settings_format);
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
+    {
+        passed_settings.read(*in);
+    }
+    else
+    {
+        /// Older clients serialize settings in a binary format, which is no longer supported.
+        /// They can still send queries without settings: an empty list is the same in both formats,
+        /// a single empty name (its length is 0) that marks the end of settings.
+        UInt64 first_setting_name_size = 0;
+        readVarUInt(first_setting_name_size, *in);
+        if (first_setting_name_size != 0)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Client with protocol revision {} sent settings in the binary format, which is no longer supported "
+                "(the minimum revision to pass settings is {}). Update the client",
+                client_tcp_protocol_version,
+                DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS);
+    }
 
     std::string received_extra_roles;
     // TODO: check if having `is_interserver_mode` doesn't break interoperability with the CH-client.
@@ -2779,7 +2866,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
 
-        String cluster_secret;
+        SecretString cluster_secret;
         try
         {
             cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2798,7 +2885,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 && !nonce.has_value())
+        if (!nonce.has_value())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no nonce)");
             session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
@@ -2811,9 +2898,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         /// would allocate through `allocNoThrow` and could push the server
         /// past `max_server_memory_usage` without throwing.
         StringWithMemoryTracking data(salt);
-        // For backward compatibility
-        if (nonce.has_value())
-            data += std::to_string(nonce.value());
+        data += std::to_string(nonce.value());
         data += cluster_secret;
         data += state->query;
         data += state->query_id;
@@ -2960,6 +3045,23 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     }
     state->query_context->applySettingsChanges(settings_changes);
 
+    /// The clamp above may drop or change a value that the initiator passed for a setting that chooses the
+    /// method of an aggregation key (see `markAggregationMethodSettingsChanged`). This server would then
+    /// number two-level buckets differently from the initiator, which merges the buckets of all servers by
+    /// their numbers. So it disables two-level aggregation, as for an initiator of an older revision (see
+    /// `DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD`): it sends single-level blocks,
+    /// and the initiator splits them into buckets with its own method. It keeps the value that its
+    /// constraints allow rather than the initiator's: any client may mark its query as secondary, so taking
+    /// the passed value would let a user get around its own constraints.
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && aggregationMethodSettingsDifferFromInitiator(passed_settings, state->query_context->getSettingsRef()))
+    {
+        LOG_DEBUG(
+            log, "The settings constraints changed an aggregation method setting of the initiator, so two-level aggregation is disabled");
+        state->query_context->setSetting("group_by_two_level_threshold", Field(0));
+        state->query_context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+    }
+
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins
     /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
@@ -3011,6 +3113,8 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
         throwUnexpectedPacket(Protocol::Client::QueryPlan);
 
     const auto & context = state.query_context;
+
+    FailPointInjection::pauseFailPoint(FailPoints::tcp_handler_pause_before_query_plan_deserialization);
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
@@ -3114,7 +3218,12 @@ bool TCPHandler::skipDataPacket(QueryState & state)
     else
         maybe_compressed_in = in;
 
-    NativeReader skip_block_in(*maybe_compressed_in, client_tcp_protocol_version, getNativeWireFormatSettings(state.query_context));
+    /// Skipped data is held to the same serialization kinds as data that `initBlockInput` reads.
+    NativeReader skip_block_in(
+        *maybe_compressed_in,
+        client_tcp_protocol_version,
+        getNativeWireFormatSettings(state.query_context),
+        ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     bool has_rows = !skip_block_in.read().empty();
 
     state.at_packet_boundary = true;
@@ -3140,11 +3249,16 @@ void TCPHandler::initBlockInput(QueryState & state)
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
+        /// Only the default kind: senders materialize, and the consumers `assert_cast` columns to the declared type.
+        /// No peer is exempt: `query_kind` is declared by the client, and an initiator forwards client data to shards.
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getNativeWireFormatSettings(state.query_context));
+            getNativeWireFormatSettings(state.query_context),
+            /*block_missing_values_=*/ nullptr,
+            /*type_cache_=*/ nullptr,
+            ISerialization::KindSet{ISerialization::Kind::DEFAULT});
     }
 }
 

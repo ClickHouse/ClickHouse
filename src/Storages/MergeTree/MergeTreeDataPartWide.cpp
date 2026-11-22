@@ -82,7 +82,7 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
 
 Strings MergeTreeDataPartWide::getPreferredFileOrder() const
 {
-    Strings preferred_order = COMMON_METADATA_FILES;
+    Strings preferred_order = getCommonMetadataFiles();
 
     /// Files for partition key columns MinMax indices
     preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
@@ -284,6 +284,54 @@ std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const Nam
     }
 
     return sizes;
+}
+
+ColumnSize MergeTreeDataPartWide::calculateTotalColumnsReadSize() const
+{
+    ColumnSize size;
+    for (const auto & column : getColumns())
+        size.add(getColumnReadSize(column));
+    return size;
+}
+
+ColumnSize MergeTreeDataPartWide::getColumnReadSize(const NameAndTypePair & column) const
+{
+    {
+        std::lock_guard lock(columns_read_sizes_mutex);
+        if (auto it = columns_read_sizes.find(column.name); it != columns_read_sizes.end())
+            return it->second;
+    }
+
+    /// Calculated outside the lock, since it may read the part's prefixes.
+    auto size = calculateColumnReadSize(column);
+
+    std::lock_guard lock(columns_read_sizes_mutex);
+    return columns_read_sizes.emplace(column.name, size).first->second;
+}
+
+ColumnSize MergeTreeDataPartWide::calculateColumnReadSize(const NameAndTypePair & column) const
+{
+    /// Only a column with dynamic subcolumns (`JSON`/`Dynamic`) can keep a second on-disk representation of its data
+    /// that a read does not touch, so only such a column needs the reader to tell its read streams from the rest. Any
+    /// other column's read size is its size on disk, without deserializing a prefix that would load a whole
+    /// `LowCardinality` dictionary, say. The reader of getListOfStreamsForColumns is built on the table's metadata,
+    /// which a projection part does not match; a part without rows has no prefixes to read.
+    if (checksums.empty() || getParentPart() || rows_count == 0 || !column.type->hasDynamicSubcolumns())
+        return getColumnSize(column.name);
+
+    ColumnSize size;
+    /// A file shared by streams of several subcolumns, such as the sizes of a Nested, counts once.
+    std::unordered_set<String> processed_streams;
+    for (const auto & [_, streams] : getListOfStreamsForColumns({column}))
+    {
+        for (const auto & stream : streams)
+        {
+            if (stream.size_hint || processed_streams.insert(stream.name).second)
+                addStreamWithSizeHintToColumnSize(stream, size);
+        }
+    }
+
+    return size;
 }
 
 void MergeTreeDataPartWide::addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const
@@ -776,17 +824,26 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
         return false;
     auto marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
+    auto has_stream = [&](const ISerialization::SubstreamPath & substream_path)
+    {
+        auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+        return stream_name && checksums.files.contains(*stream_name + marks_file_extension);
+    };
+
+    /// Lets the serialization skip streams the part lacks by design, e.g. a variant appended to the type.
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.check_stream_exists_callback = has_stream;
+
     bool res = true;
-    serialization->enumerateStreams([&](const auto & substream_path)
+    serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
     {
         /// Don't check streams for ephemeral subcolumns that don't store any real data.
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-        if (!stream_name || !checksums.files.contains(*stream_name + marks_file_extension))
+        if (!has_stream(substream_path))
             res = false;
-    });
+    }, ISerialization::SubstreamData(serialization));
 
     return res;
 }

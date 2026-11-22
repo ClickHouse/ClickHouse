@@ -29,6 +29,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool distributed_aggregation_memory_efficient;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
+    extern const QueryPlanSerializationSettingsBool enable_fixed_and_packed_string_keys_in_aggregation;
 }
 
 namespace Setting
@@ -302,6 +303,15 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
         && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING
             || aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params)))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
+
+    /// The same for `enable_fixed_and_packed_string_keys_in_aggregation`, whose plan default `false` is the
+    /// method of a peer that predates it (see `AggregatingStep::serializeSettings`). The value is written
+    /// whenever this step can choose the method, so a peer that predates the name rejects the plan, even one
+    /// that skips unknown names, as the setting is `IMPORTANT`. For the reason above, no two-level condition
+    /// can show that its serialized method would merge the producers' input correctly.
+    if (params.enable_fixed_and_packed_string_keys
+        && aggregationCanUseFixedAndPackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
+        settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation] = true;
 }
 
 void MergingAggregatedStep::serialize(Serialization & ctx) const
@@ -344,6 +354,73 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+}
+
+/// With grouping sets, `MergingAggregatedTransform` removes `__grouping_set` from the input and, for every set,
+/// moves its keys to the front (see `makeReorderingActions`) and drops the other keys. Check the layout it merges.
+static void checkMergedAggregatesLayout(
+    const Names & keys, const GroupingSetsParamsList & grouping_sets_params, const AggregateDescriptions & aggregates, const Block & header)
+{
+    if (grouping_sets_params.empty())
+    {
+        /// `appendGroupingIfNeeded` would copy a `__grouping_set` column of the input into the output header,
+        /// but the merge without grouping sets does not produce it.
+        if (header.has("__grouping_set"))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The input of a deserialized `MergingAggregated` step without grouping sets has a `__grouping_set` column");
+        checkDeserializedMergedAggregatesLayout(keys, aggregates, header.getColumnsWithTypeAndName());
+        return;
+    }
+
+    /// The transform splits the rows by the values of `__grouping_set` read as `ColumnUInt64`, and the output header
+    /// takes its type from the input.
+    size_t num_grouping_set_columns = 0;
+    for (const auto & column : header)
+    {
+        if (column.name != "__grouping_set")
+            continue;
+        ++num_grouping_set_columns;
+        if (column.type->getTypeId() != TypeIndex::UInt64)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The `__grouping_set` column in the input of a deserialized `MergingAggregated` step has type {} instead of UInt64",
+                column.type->getName());
+    }
+    if (num_grouping_set_columns != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The input of a deserialized `MergingAggregated` step with grouping sets has {} `__grouping_set` columns instead of one",
+            num_grouping_set_columns);
+
+    /// The per-set layouts below skip the keys of a set after its used keys, but the output header and the
+    /// reconstruction of the missing keys (`makeCreatingMissingKeysForGroupingSetDAG`) take every key from the
+    /// original input by name, i.e. from its first occurrence. So every key must occur at most once there.
+    NameSet seen_keys;
+    const NameSet all_keys(keys.begin(), keys.end());
+    for (const auto & column : header)
+        if (all_keys.contains(column.name) && !seen_keys.insert(column.name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Key {} occurs more than once in the input of a deserialized `MergingAggregated` step with grouping sets",
+                column.name);
+
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        NameSet keys_of_set(grouping_set.used_keys.begin(), grouping_set.used_keys.end());
+        keys_of_set.insert(grouping_set.missing_keys.begin(), grouping_set.missing_keys.end());
+
+        ColumnsWithTypeAndName layout;
+        for (const auto & key : grouping_set.used_keys)
+        {
+            const auto * column = header.findByName(key);
+            if (!column || key == "__grouping_set")
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Key {} of a grouping set is not in the input of a deserialized `MergingAggregated` step", key);
+            layout.push_back(*column);
+        }
+        for (const auto & column : header)
+            if (column.name != "__grouping_set" && !keys_of_set.contains(column.name))
+                layout.push_back(column);
+
+        checkDeserializedMergedAggregatesLayout(grouping_set.used_keys, aggregates, layout);
+    }
 }
 
 QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
@@ -394,9 +471,15 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    checkMergedAggregatesLayout(keys, grouping_sets_params, aggregates, *ctx.input_headers.front());
 
     SortDescription group_by_sort_description;
     deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
+
+    /// The memory-bound merge is used with a non-empty sort description, and it does not support grouping sets.
+    if (memory_bound_merging_of_aggregation_results_enabled && !group_by_sort_description.empty() && !grouping_sets_params.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The memory-bound merging of aggregated results with grouping sets in a serialized query plan");
 
     UInt64 stats_key = 0;
     if (has_stats_key)
@@ -408,6 +491,12 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    /// The planners never enable the memory-efficient merge with grouping sets, and it does not support them.
+    const bool memory_efficient_aggregation = ctx.settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient];
+    if (memory_efficient_aggregation && !grouping_sets_params.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The memory-efficient merging of aggregated results with grouping sets in a serialized query plan");
+
     const auto & settings = ctx.context->getSettingsRef();
 
     Aggregator::Params params(
@@ -418,14 +507,15 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
-        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]);
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
+        ctx.settings[QueryPlanSerializationSetting::enable_fixed_and_packed_string_keys_in_aggregation]);
 
     auto merging_aggregated_step = std::make_unique<MergingAggregatedStep>(
         ctx.input_headers.front(),
         std::move(params),
         std::move(grouping_sets_params),
         final,
-        ctx.settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient],
+        memory_efficient_aggregation,
         settings[Setting::aggregation_memory_efficient_merge_threads],
         should_produce_results_in_order_of_bucket_number,
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
