@@ -993,6 +993,14 @@ def get_binary_commit_sha(binary):
     return sha
 
 
+def get_binary_link_flags(binary):
+    # A downloaded binary may lack the executable bit.
+    os.chmod(binary, 0o755)
+    return Shell.get_output_or_raise(
+        f"{local_command(binary)} -q \"SELECT value FROM system.build_options WHERE name='LINK_FLAGS'\""
+    )
+
+
 def write_ci_logs_sender_user(config_dir, binary):
     """Write the `ci_logs_sender` user, which the export views run as, into a
     server's users.d - without the settings that build does not know.
@@ -3395,26 +3403,31 @@ def main():
             Result.from_commands_run(name="Install ClickHouse", command=commands)
         )
         res = results[-1].is_ok()
-        # A PR run builds a release build without ThinLTO, PGO and BOLT when none of its
-        # performance comparisons needs it (`BUILDS_WITHOUT_THINLTO_KV` in `filter_job.py`).
-        # CI does not run this job on such a build, but a local run (`praktika run ... --pr N
-        # --sha SHA`) downloads the variant that the run at that commit built. Comparing a
-        # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
-        # refuse it, unless the run compares with its own `--reference-path` binary or opts
-        # out explicitly.
-        if res and not args.reference_path and not args.allow_non_thinlto:
-            link_flags = Shell.get_output_or_raise(
-                f"{local_command(f'{ch_path}/clickhouse')} --query \"SELECT value FROM system.build_options WHERE name = 'LINK_FLAGS'\""
+
+    # A PR run builds a release build without ThinLTO, PGO and BOLT when none of its
+    # performance comparisons needs it (`BUILDS_WITHOUT_THINLTO_KV` in `filter_job.py`).
+    # CI does not run this job on such a build, but a local run (`praktika run ... --pr N
+    # --sha SHA`) downloads the variant that the run at that commit built. Comparing a
+    # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
+    # refuse it, unless the run compares with its own `--reference-path` binary or opts
+    # out explicitly. This is not a part of the install stage: a run resumed at a later
+    # stage (`--param restart`) measures the binary that was downloaded for it as well.
+    if (
+        res
+        and JobStages.TEST in stages
+        and not args.reference_path
+        and not args.allow_non_thinlto
+    ):
+        link_flags = get_binary_link_flags(f"{ch_path}/clickhouse")
+        results.append(
+            Result(
+                name="Tested binary is a ThinLTO build",
+                status=Result.Status.OK if "-flto=thin" in link_flags else Result.Status.FAIL,
+                info=f"LINK_FLAGS: {link_flags}"
+                + ("" if "-flto=thin" in link_flags else "; pass --allow-non-thinlto to compare it anyway"),
             )
-            results.append(
-                Result(
-                    name="Tested binary is a ThinLTO build",
-                    status=Result.Status.OK if "-flto=thin" in link_flags else Result.Status.FAIL,
-                    info=f"LINK_FLAGS: {link_flags}"
-                    + ("" if "-flto=thin" in link_flags else "; pass --allow-non-thinlto to compare it anyway"),
-                )
-            )
-            res = results[-1].is_ok()
+        )
+        res = results[-1].is_ok()
 
     if not nightly:
         reference_sha = ""
