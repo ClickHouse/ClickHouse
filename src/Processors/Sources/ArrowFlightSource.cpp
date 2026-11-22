@@ -191,95 +191,100 @@ void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
 
 bool ArrowFlightSource::nextEndpoint()
 {
-    if (current_endpoint >= tickets.size())
-        return false;
-
-    arrow::flight::protocol::Ticket ticket;
-    ticket.set_ticket(tickets[current_endpoint]);
-
-    auto stub = connection->getStub(request_timeout_sec);
-    auto new_call_context = std::make_shared<grpc::ClientContext>();
-    connection->prepareCall(*new_call_context, request_timeout_sec);
+    /// A loop, not recursion: the server decides how many endpoints there are, and each of them may be empty.
+    /// Everything that belongs to a finished call is destroyed before the next one is opened.
+    while (current_endpoint < tickets.size())
     {
-        std::lock_guard lock{call_mutex};
-        call_context = new_call_context;
-    }
+        arrow::flight::protocol::Ticket ticket;
+        ticket.set_ticket(tickets[current_endpoint]);
 
-    /// ISource::cancel sets is_cancelled before calling onCancel, so a cancellation raised before the call was
-    /// published found nothing to abort.
-    if (isCancelled())
-        new_call_context->TryCancel();
-
-    auto reader = stub->DoGet(new_call_context.get(), ticket);
-
-    /// The first message, the schema, is read here, so that a stream that cannot start is reported as such.
-    auto first = std::make_shared<arrow::flight::protocol::FlightData>();
-    bool has_first = false;
-    while (reader->Read(first.get()))
-    {
-        if (!first->data_header().empty())
-        {
-            has_first = true;
-            break;
-        }
-    }
-    if (!has_first)
-    {
-        auto status = reader->Finish();
-        if (!status.ok() && !isCancelled())
-            throw Exception(
-                ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE,
-                "Failed to initialize Arrow Flight stream: {}",
-                ArrowFlightConnection::formatError(status, *new_call_context));
-        if (!status.ok())
-            return false;
-        /// An empty stream: there is nothing to read from this endpoint.
+        auto stub = connection->getStub(request_timeout_sec);
+        auto new_call_context = std::make_shared<grpc::ClientContext>();
+        connection->prepareCall(*new_call_context, request_timeout_sec);
         {
             std::lock_guard lock{call_mutex};
-            call_context = nullptr;
+            call_context = new_call_context;
         }
+
+        /// ISource::cancel sets is_cancelled before calling onCancel, so a cancellation raised before the call was
+        /// published found nothing to abort.
+        if (isCancelled())
+            new_call_context->TryCancel();
+
+        auto reader = stub->DoGet(new_call_context.get(), ticket);
+
+        /// The first message, the schema, is read here, so that a stream that cannot start is reported as such.
+        auto first = std::make_shared<arrow::flight::protocol::FlightData>();
+        bool has_first = false;
+        while (reader->Read(first.get()))
+        {
+            if (!first->data_header().empty())
+            {
+                has_first = true;
+                break;
+            }
+        }
+        if (!has_first)
+        {
+            auto status = reader->Finish();
+            if (!status.ok() && !isCancelled())
+                throw Exception(
+                    ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE,
+                    "Failed to initialize Arrow Flight stream: {}",
+                    ArrowFlightConnection::formatError(status, *new_call_context));
+            if (!status.ok())
+                return false;
+            /// An empty stream: there is nothing to read from this endpoint.
+            {
+                std::lock_guard lock{call_mutex};
+                call_context = nullptr;
+            }
+            ++current_endpoint;
+            continue;
+        }
+
+        auto * reader_ptr = reader.get();
+        auto * call_ptr = new_call_context.get();
+        startReading([reader_ptr, call_ptr, first, this](ArrowIPC::IPCMessage & message) mutable
+        {
+            if (first)
+            {
+                message.header = std::move(*first->mutable_data_header());
+                message.body = std::move(*first->mutable_data_body());
+                first.reset();
+                return true;
+            }
+            arrow::flight::protocol::FlightData data;
+            while (reader_ptr->Read(&data))
+            {
+                /// A message with metadata only carries no data.
+                if (data.data_header().empty())
+                    continue;
+                message.header = std::move(*data.mutable_data_header());
+                message.body = std::move(*data.mutable_data_body());
+                return true;
+            }
+            auto status = reader_ptr->Finish();
+            stream->finished = true;
+            /// The source cancels the call when the query is cancelled, so a cancelled query reaches this as a failed
+            /// read. Reporting it would turn `KILL QUERY` into an Arrow transport error.
+            if (!status.ok() && !isCancelled())
+            {
+                const int code = status.error_code() == grpc::StatusCode::UNAVAILABLE ? ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE
+                                                                                       : ErrorCodes::ARROWFLIGHT_INTERNAL_ERROR;
+                throw Exception(code, "Arrow Flight internal error: {}", ArrowFlightConnection::formatError(status, *call_ptr));
+            }
+            return false;
+        });
+        stream->call_context = new_call_context;
+        stream->reader = std::move(reader);
+
+
         ++current_endpoint;
-        return nextEndpoint();
+        return true;
     }
 
-    auto * reader_ptr = reader.get();
-    auto * call_ptr = new_call_context.get();
-    startReading([reader_ptr, call_ptr, first, this](ArrowIPC::IPCMessage & message) mutable
-    {
-        if (first)
-        {
-            message.header = std::move(*first->mutable_data_header());
-            message.body = std::move(*first->mutable_data_body());
-            first.reset();
-            return true;
-        }
-        arrow::flight::protocol::FlightData data;
-        while (reader_ptr->Read(&data))
-        {
-            /// A message with metadata only carries no data.
-            if (data.data_header().empty())
-                continue;
-            message.header = std::move(*data.mutable_data_header());
-            message.body = std::move(*data.mutable_data_body());
-            return true;
-        }
-        auto status = reader_ptr->Finish();
-        stream->finished = true;
-        /// The source cancels the call when the query is cancelled, so a cancelled query reaches this as a failed
-        /// read. Reporting it would turn `KILL QUERY` into an Arrow transport error.
-        if (!status.ok() && !isCancelled())
-        {
-            const int code = status.error_code() == grpc::StatusCode::UNAVAILABLE ? ErrorCodes::ARROWFLIGHT_CONNECTION_FAILURE
-                                                                                   : ErrorCodes::ARROWFLIGHT_INTERNAL_ERROR;
-            throw Exception(code, "Arrow Flight internal error: {}", ArrowFlightConnection::formatError(status, *call_ptr));
-        }
-        return false;
-    });
-    stream->call_context = new_call_context;
-    stream->reader = std::move(reader);
-
-    ++current_endpoint;
-    return true;
+    return false;
 }
 
 void ArrowFlightSource::onCancel() noexcept
