@@ -15674,6 +15674,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             params_with_invalidated_columns);
     }
 
+    /// Both ways above take the files of the source part by the name of its directory, each of them when its turn
+    /// comes, and not through the readers of the part. The source may be a part of a `leader_election` table that
+    /// this server only reads: its leader may remove the part and reuse the name for other data while the files
+    /// are being copied, and the copy would then mix the files of two parts and still load, because loading a part
+    /// compares the sizes of the files, not their contents. The storage of such a part is bound to its directory
+    /// (see `IDataPartStorage::pinSharedStorageIdentity`), and an identity never comes back to a name: if the name
+    /// still refers to the directory of the source part now, every file was taken from it. Otherwise the command
+    /// fails here, before the copy becomes a part, and the temporary directory is handled like after any other
+    /// failure below. For every other storage this does nothing.
+    src_part_storage->assertSharedStorageIdentityUnchanged();
+
     if (params.metadata_version_to_write.has_value())
     {
         chassert(!params.keep_metadata_version);
