@@ -13,6 +13,8 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/hasNullable.h>
 
@@ -540,6 +542,15 @@ public:
         /// `equals` ignores the time zone of `DateTime`, so compare names to keep the time zone of the replaced term.
         if (node->getResultType()->getName() != new_node->getResultType()->getName())
         {
+            /// An equality compares the elements of tuples by position, but `CAST` matches named elements by name.
+            auto is_named_tuple = [](const IDataType & type)
+            {
+                const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
+                return tuple && tuple->hasExplicitNames();
+            };
+            if (anyInTypeTree(*new_node->getResultType(), is_named_tuple))
+                return;
+
             node = buildCastFunction(new_node, node->getResultType(), context);
             return;
         }
