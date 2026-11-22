@@ -4,7 +4,6 @@
 #include <Poco/LRUCache.h>
 #include <base/scope_guard.h>
 #include <map>
-#include <unordered_map>
 
 
 namespace DB
@@ -44,7 +43,6 @@ private:
 
     const AccessControl & access_control;
     std::map<UUID, SettingsProfilePtr> all_profiles;
-    std::unordered_map<String, UUID> profiles_by_name;
     bool all_profiles_read = false;
     /// Set while applying a batch of changes; the rebuild is coalesced to once per notification batch.
     bool need_merge_settings_and_constraints TSA_GUARDED_BY(mutex) = false;

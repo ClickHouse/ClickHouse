@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/AccessChangesNotifier.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/LDAPClient.h>
 #include <Access/Credentials.h>
@@ -8,6 +9,7 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <unordered_set>
 #include <vector>
 
 
@@ -51,9 +53,8 @@ private: // IAccessStorage implementations.
     std::optional<AuthResult> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, const ClientInfo & client_info, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
 
     void setConfiguration(const Poco::Util::AbstractConfiguration & config, const String & prefix);
-    void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
+    void processRoleChanges(const std::vector<AccessChangesNotifier::Change> & changes);
 
-    void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
     std::set<String> mapExternalRolesNoLock(const LDAPClient::SearchResultsList & external_roles) const;
@@ -68,8 +69,9 @@ private: // IAccessStorage implementations.
     mutable std::map<String, LDAPClient::SearchResultsList> users_external_roles; // user name -> LDAPClient::SearchResultsList (most recently retrieved and processed)
     mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)
     mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
-    mutable std::map<UUID, String> granted_role_names;          // (currently granted) role id -> its name
-    mutable std::map<String, UUID> granted_role_ids;            // (currently granted) role name -> its id
+    mutable std::map<String, UUID> granted_role_ids;            // (currently granted) configured or mapped role name -> id of the role it is resolved to
+    std::unordered_set<UUID> pending_role_ids;                  // ids of the changed roles which are not reconciled with the users yet (see processRoleChanges)
+    bool pending_role_may_exist = false;                        // whether any of the pending changes is an addition or an update of a role (not a removal)
     scope_guard role_change_subscription;
     mutable MemoryAccessStorage memory_storage;
 };

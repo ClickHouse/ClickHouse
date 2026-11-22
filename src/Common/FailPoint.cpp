@@ -34,6 +34,7 @@ static struct InitFiu
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
     ONCE(replicated_queue_fail_next_entry) \
+    ONCE(ldap_access_storage_fail_role_reconciliation) \
     ONCE(nats_fail_resubscribe_within_query) \
     ONCE(reverse_index_build_index_throw) \
     REGULAR(replicated_queue_unfail_entries) \
