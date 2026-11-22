@@ -294,6 +294,8 @@ void StorageMergeTree::startup()
     if (shutdown_called.load())
         return;
 
+    delayMergesAfterStartup();
+
     const bool readonly = isTableReadonly();
     if (!readonly)
     {
@@ -2823,6 +2825,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     cleanup_thread.wakeupEarlierIfNeeded();
 
+    const bool merges_delayed_after_startup = areMergesDelayedAfterStartup();
+
     StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
@@ -2851,6 +2855,11 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
+        if (merges_delayed_after_startup)
+        {
+            LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start merge: merges are delayed after the table startup");
+        }
+        else
         {
             if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());

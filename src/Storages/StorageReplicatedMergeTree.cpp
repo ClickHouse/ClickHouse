@@ -5996,6 +5996,8 @@ void StorageReplicatedMergeTree::startup()
         return;
     }
 
+    delayMergesAfterStartup();
+
     if (attach_thread)
     {
         attach_thread->start();
