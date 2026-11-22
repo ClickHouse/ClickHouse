@@ -25,6 +25,7 @@
 #include <Storages/expressionSourceColumns.h>
 
 #include <algorithm>
+#include <iterator>
 #include <unordered_set>
 
 namespace DB
@@ -62,6 +63,20 @@ bool usesColumn(const Names & used_columns, const ColumnsDescription & columns, 
         const auto in_storage = found ? found->getNameInStorage() : used;
         return in_storage == column || (whole_nested && in_storage.starts_with(column + "."));
     });
+}
+
+/// a type change of a base column also changes what an alias column of it computes
+Names withAliasSources(const Names & reads, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    Names result = reads;
+    for (const auto & read : reads)
+    {
+        const auto found = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, read);
+        const auto * column = found ? columns.tryGet(found->getNameInStorage()) : nullptr;
+        if (column && column->default_desc.kind == ColumnDefaultKind::Alias)
+            std::ranges::move(expressionSourceColumns(column->default_desc.expression, columns, context), std::back_inserter(result));
+    }
+    return result;
 }
 
 using TableNames = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
@@ -243,9 +258,10 @@ void checkRowPoliciesBeforeAlter(
                             command.type == AlterCommand::DROP_COLUMN ? "drop" : "rename", backQuote(command.column_name), policy_name);
                 }
 
+                const auto modify_reads = withAliasSources(used_columns, old_columns, analysis_context);
                 const bool modifies_used = std::any_of(commands.begin(), commands.end(), [&](const auto & command)
                 {
-                    return modifiesColumn(command) && usesColumn(used_columns, old_columns, command.column_name);
+                    return modifiesColumn(command) && usesColumn(modify_reads, old_columns, command.column_name);
                 });
                 if (!modifies_used)
                     continue;
@@ -282,10 +298,10 @@ void checkRowPoliciesBeforeAlter(
                                 backQuote(old_column->getNameInStorage()), policy_name, backQuote(used), how);
                     }
                 };
-                refuse_new_types(subquery_reads, "in a subquery");
+                refuse_new_types(withAliasSources(subquery_reads, old_columns, analysis_context), "in a subquery");
                 /// with the same types the filter evaluates as before the alter
                 if (!checkFilterAfterAlter(filter, policy_name, new_storage_snapshot, table_id, analysis_context))
-                    refuse_new_types(used_columns, "and a scalar subquery");
+                    refuse_new_types(modify_reads, "and a scalar subquery");
             }
         }
     }
