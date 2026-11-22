@@ -986,7 +986,7 @@ void Session::wait(TimePoint deadline)
     if (until <= now)
         return;
     auto timeout_ms = std::chrono::ceil<std::chrono::milliseconds>(until - now).count();
-    [[maybe_unused]] int res = ::poll(fds.data(), fds.size(), static_cast<int>(timeout_ms));
+    [[maybe_unused]] int res = ::poll(fds.data(), static_cast<nfds_t>(fds.size()), static_cast<int>(timeout_ms));
 }
 
 bool Session::hasPendingOutput() const

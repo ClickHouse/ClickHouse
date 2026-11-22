@@ -116,7 +116,8 @@ String compress(PulsarProto::CompressionType codec, const String & data)
         {
             uLongf size = compressBound(data.size());
             res.resize(size);
-            EXPECT_EQ(::compress(reinterpret_cast<Bytef *>(res.data()), &size, reinterpret_cast<const Bytef *>(data.data()), data.size()), Z_OK);
+            const int code = ::compress(reinterpret_cast<Bytef *>(res.data()), &size, reinterpret_cast<const Bytef *>(data.data()), data.size());
+            EXPECT_EQ(code, Z_OK);
             res.resize(size);
             break;
         }
@@ -372,13 +373,15 @@ TEST(PulsarProtocol, Codecs)
     {
         /// The Java client ends a zlib stream with a sync flush, without the final block and the checksum.
         z_stream stream{};
-        ASSERT_EQ(deflateInit(&stream, Z_DEFAULT_COMPRESSION), Z_OK);
+        const int init_code = deflateInit(&stream, Z_DEFAULT_COMPRESSION);
+        ASSERT_EQ(init_code, Z_OK);
         String sync_flushed(compressBound(data.size()) + 64, '\0');
         stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(data.data()));
         stream.avail_in = static_cast<uInt>(data.size());
         stream.next_out = reinterpret_cast<Bytef *>(sync_flushed.data());
         stream.avail_out = static_cast<uInt>(sync_flushed.size());
-        ASSERT_EQ(deflate(&stream, Z_SYNC_FLUSH), Z_OK);
+        const int deflate_code = deflate(&stream, Z_SYNC_FLUSH);
+        ASSERT_EQ(deflate_code, Z_OK);
         sync_flushed.resize(stream.total_out);
         deflateEnd(&stream);
 
