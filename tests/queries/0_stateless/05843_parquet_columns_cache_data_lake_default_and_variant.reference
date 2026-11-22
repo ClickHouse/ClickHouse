@@ -1,0 +1,23 @@
+--- a field of Iceberg with a long initial-default, missing in the file
+65536	2147450880	67108864
+65536	2147450880	67108864
+cached	0
+65536	2147450880	67108864
+id	65536
+65536	2147450880	67108864
+--- its size is counted in the block size in bytes
+1	65536	1024
+--- a variant read as Variant with a member much wider than the value
+65536	16777216
+65536	16777216
+cached	0
+65536	16777216
+v	65536
+65536	16777216
+--- the same variant inside a tuple
+65536	16777216
+65536	16777216
+cached	0
+65536	16777216
+t.v	65536
+65536	16777216
