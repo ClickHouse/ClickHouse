@@ -163,10 +163,6 @@ def test_marker_in_the_body_binds_without_a_search():
     assert targets == {OUTER_REVERT: {INNER_REVERT}, INNER_REVERT: {ORIGINAL}}
 
 
-if __name__ == "__main__":
-    sys.exit(pytest.main([__file__, "-v"]))
-
-
 def _bullet(pr, text):
     return (
         f"* {text} [#{pr}](https://github.com/ClickHouse/ClickHouse/pull/{pr}) "
@@ -180,7 +176,7 @@ def _changelog(reapply_category):
     raw = "\n".join(
         [
             cn.RAW_BEGIN,
-            '### ClickHouse release 26.11 (sha) FIXME as compared to 26.10 (sha)',
+            "### ClickHouse release 26.11 (sha) FIXME as compared to 26.10 (sha)",
             "",
             "#### NOT FOR CHANGELOG / INSIGNIFICANT",
             "",
@@ -188,7 +184,7 @@ def _changelog(reapply_category):
             "",
             "#### NO CL ENTRY",
             "",
-            _bullet(INNER_REVERT, 'NO CL ENTRY: \'Revert "Add tests"\'.'),
+            _bullet(INNER_REVERT, "NO CL ENTRY: 'Revert \"Add tests\"'."),
             "",
             f"#### {reapply_category}",
             "",
@@ -325,9 +321,7 @@ def test_reapply_own_entry_survives_the_next_run():
     assert OUTER_REVERT not in second["cancelling"]
     # Already integrated: not put to the agent again.
     assert second["reapplying_with_entry_new"] == []
-    assert (
-        _verify(second_base, _edited(FIX_BULLET, UNRELATED_BULLET), second) is None
-    )
+    assert _verify(second_base, _edited(FIX_BULLET, UNRELATED_BULLET), second) is None
     error = _verify(second_base, _edited(UNRELATED_BULLET), second)
     assert error is not None and f"'{OUTER_REVERT}'" in error
 
@@ -376,7 +370,11 @@ def _record_deletions(old_text, new_text, reverts):
         cn.Shell, "get_output", return_value=old_text
     ), mock.patch.object(cn, "_read_changelog", return_value=new_text):
         return cn.revert_licensed_deletions(
-            "base", "26.11", reverts["credits"], reverts["cancelling"]
+            "base",
+            "26.11",
+            reverts["credits"],
+            reverts["cancelling"],
+            reverts["brought_back"],
         )
 
 
@@ -417,3 +415,227 @@ def test_reapply_own_entry_is_restored_after_its_revert_is_reverted():
     )
     assert _verify(restore_base, _edited(restored, UNRELATED_BULLET), restore) is None
     assert _verify(restore_base, _edited(UNRELATED_BULLET), restore) is not None
+
+
+def test_reapply_gets_one_bullet_of_its_own():
+    """The entry of a re-apply's own is one bullet, also when the change it
+    brought back has no entry for its link to sit on: the ledger keeps one
+    record of an own entry per pull request."""
+    base = f"{TOC}\n\n" + _changelog(BUG_FIX)
+    reverts = _analyze(base)
+    twice = _edited(FIX_BULLET, _bullet(OUTER_REVERT, "Fix it once more."))
+    error = _verify(base, twice, reverts)
+    assert error is not None and f"#{OUTER_REVERT} on 2 bullets of its own" in error
+
+
+FEATURE = "New Feature"
+FEATURE_BULLET = _bullet(ORIGINAL, "Add the thing.")
+
+
+def _with_links(bullet, *prs):
+    """`bullet` with the attributions of `prs` appended, the way a re-apply is
+    recorded on the entry it brought back."""
+    links = "".join(
+        f" [#{pr}](https://github.com/ClickHouse/ClickHouse/pull/{pr}) "
+        "([Author](https://github.com/author))"
+        for pr in prs
+    )
+    return bullet.removesuffix(".") + links + "."
+
+
+def _sections(categories):
+    """A changelog after an edit, with the in-progress section holding the
+    bullets of `categories`, a mapping of category -> bullets."""
+    body = "\n\n".join(
+        f"#### {category}\n\n" + "\n".join(bullets)
+        for category, bullets in categories.items()
+        if bullets
+    )
+    return (
+        f"{TOC}\n\n"
+        '### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)\n\n'
+        f"{body}\n\n{RELEASED}"
+    )
+
+
+def _raw(text, categories):
+    """`text` with a raw block holding the bullets of `categories`."""
+    lines = [
+        cn.RAW_BEGIN,
+        "### ClickHouse release 26.11 (sha) FIXME as compared to 26.10 (sha)",
+    ]
+    for category, bullets in categories.items():
+        lines += ["", f"#### {category}", "", *bullets]
+    lines.append(cn.RAW_END)
+    return cn.insert_before_first_release(text, "\n".join(lines))
+
+
+def _revert_bullet(pr):
+    return _bullet(pr, f"NO CL ENTRY: '{CHAIN_TITLES[pr]}'.")
+
+
+def test_pure_reapply_link_goes_when_the_original_is_reverted_again():
+    """`#100` adds a feature, `#200` reverts it and `#300` re-applies it with
+    no entry and no change of its own: its link on the feature bullet is an
+    annotation. When `#600` reverts `#100` again on a later day, that link is
+    no evidence of an entry of `#300`'s own - the bullet goes with both links,
+    and `#300` gets no bullet for a feature that is not in the release."""
+    arrival_base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            FEATURE: [FEATURE_BULLET],
+            BUG_FIX: [UNRELATED_BULLET],
+            "NO CL ENTRY": [_revert_bullet(INNER_REVERT), _revert_bullet(OUTER_REVERT)],
+        },
+    )
+    arrival = _analyze_with_ledger(arrival_base, {}, CHAIN)
+    assert OUTER_REVERT in arrival["cancelling"]
+    annotated = _with_links(FEATURE_BULLET, OUTER_REVERT)
+    accepted = _sections({FEATURE: [annotated], BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(arrival_base, accepted, arrival) is None
+
+    # `#600` reverts `#100` directly.
+    removal_base = _raw(accepted, {"NO CL ENTRY": [_revert_bullet(REMOVER)]})
+    removal = _analyze_with_ledger(removal_base, CHAIN, {REMOVER: {ORIGINAL}})
+    assert OUTER_REVERT in removal["cancelling"]
+    assert removal["reapplying_with_entry"] == []
+    removed = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(removal_base, removed, removal) is None
+    # Neither the reverted feature nor a bullet of the re-apply for it stays.
+    assert _verify(removal_base, accepted, removal) is not None
+    standalone = _sections(
+        {
+            FEATURE: [_bullet(OUTER_REVERT, "Add the thing.")],
+            BUG_FIX: [UNRELATED_BULLET],
+        }
+    )
+    error = _verify(removal_base, standalone, removal)
+    assert error is not None and f"#{OUTER_REVERT}" in error
+    # The feature bullet is recorded for the feature; the re-apply has no entry.
+    recorded = _record_deletions(removal_base, removed, removal)
+    assert recorded == {ORIGINAL: (FEATURE, "section", annotated)}
+
+    # `#700` reverts `#600`: the feature is back, with both re-applies on it.
+    restore_base = _raw(removed, {"NO CL ENTRY": [_revert_bullet(RESTORER)]})
+    restore = _analyze_with_ledger(
+        restore_base,
+        {**CHAIN, REMOVER: {ORIGINAL}},
+        {RESTORER: {REMOVER}},
+        deleted={ORIGINAL: (FEATURE, annotated)},
+        integrated={ORIGINAL},
+    )
+    assert OUTER_REVERT in restore["cancelling"]
+    restored = _sections(
+        {FEATURE: [_with_links(annotated, RESTORER)], BUG_FIX: [UNRELATED_BULLET]}
+    )
+    assert _verify(restore_base, restored, restore) is None
+    assert _verify(restore_base, accepted, restore) is not None
+
+
+def test_reapply_own_entry_is_kept_apart_from_its_annotation():
+    """`#100` adds a feature, `#200` reverts it and `#300` re-applies it and
+    fixes something else, with an entry of its own. `#300` is then on two
+    bullets: the feature it brought back, as an annotation, and its fix. Both
+    are taken out when `#600` reverts `#300` and both have to come back when
+    `#700` reverts `#600` - the fix from its own record, not from the feature
+    bullet that merely carries the link of `#300`."""
+    arrival_base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            FEATURE: [FEATURE_BULLET],
+            "NO CL ENTRY": [_revert_bullet(INNER_REVERT)],
+            BUG_FIX: [FIX_BULLET],
+        },
+    )
+    arrival = _analyze_with_ledger(arrival_base, {}, CHAIN)
+    assert arrival["reapplying_with_entry"] == [OUTER_REVERT]
+    annotated = _with_links(FEATURE_BULLET, OUTER_REVERT)
+    accepted = _sections({FEATURE: [annotated], BUG_FIX: [FIX_BULLET]})
+    assert _verify(arrival_base, accepted, arrival) is None
+
+    # The next day, with an unrelated raw block: the fix bullet is the evidence
+    # of an own entry, and losing it is noticed although the feature bullet
+    # still attributes `#300`.
+    next_base = _raw(accepted, {"Performance Improvement": [UNRELATED_BULLET]})
+    next_day = _analyze_with_ledger(next_base, CHAIN, {})
+    assert next_day["reapplying_with_entry"] == [OUTER_REVERT]
+    kept = _sections({FEATURE: [annotated], BUG_FIX: [FIX_BULLET, UNRELATED_BULLET]})
+    assert _verify(next_base, kept, next_day) is None
+    fix_lost = _sections({FEATURE: [annotated], BUG_FIX: [UNRELATED_BULLET]})
+    error = _verify(next_base, fix_lost, next_day)
+    assert error is not None and f"'{OUTER_REVERT}'" in error
+
+    # `#600` reverts `#300`: the feature is out again and so is the fix.
+    removal_base = _raw(kept, {"NO CL ENTRY": [_revert_bullet(REMOVER)]})
+    removal = _analyze_with_ledger(removal_base, CHAIN, {REMOVER: {OUTER_REVERT}})
+    removed = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(removal_base, removed, removal) is None
+    assert _verify(removal_base, fix_lost, removal) is not None
+    fix_kept = _sections({BUG_FIX: [FIX_BULLET, UNRELATED_BULLET]})
+    assert _verify(removal_base, fix_kept, removal) is not None
+    # Each pull request is recorded with the bullet of its own entry.
+    recorded = _record_deletions(removal_base, removed, removal)
+    assert recorded == {
+        ORIGINAL: (FEATURE, "section", annotated),
+        OUTER_REVERT: (BUG_FIX, "section", FIX_BULLET),
+    }
+
+    # `#700` reverts `#600`: two bullets to restore.
+    restore_base = _raw(removed, {"NO CL ENTRY": [_revert_bullet(RESTORER)]})
+    restore = _analyze_with_ledger(
+        restore_base,
+        {**CHAIN, REMOVER: {OUTER_REVERT}},
+        {RESTORER: {REMOVER}},
+        deleted={pr: (category, line) for pr, (category, _, line) in recorded.items()},
+        integrated=set(recorded),
+    )
+    assert [(group["prs"], group["line"]) for group in restore["missing"]] == [
+        ([ORIGINAL], annotated),
+        ([OUTER_REVERT], FIX_BULLET),
+    ]
+    feature_back = _with_links(annotated, RESTORER)
+    fix_back = _with_links(FIX_BULLET, RESTORER)
+    both = _sections({FEATURE: [feature_back], BUG_FIX: [fix_back, UNRELATED_BULLET]})
+    assert _verify(restore_base, both, restore) is None
+    # The feature bullet alone attributes `#300`, but the fix is still lost.
+    only_feature = _sections({FEATURE: [feature_back], BUG_FIX: [UNRELATED_BULLET]})
+    error = _verify(restore_base, only_feature, restore)
+    assert error is not None and OUTER_REVERT in error
+    only_fix = _sections({BUG_FIX: [fix_back, UNRELATED_BULLET]})
+    assert _verify(restore_base, only_fix, restore) is not None
+    # The fix records its own re-apply, not only the feature bullet does.
+    unrecorded = _sections(
+        {FEATURE: [feature_back], BUG_FIX: [FIX_BULLET, UNRELATED_BULLET]}
+    )
+    assert _verify(restore_base, unrecorded, restore) is not None
+    # And it comes back under its own category, not the feature's.
+    misplaced = _sections(
+        {FEATURE: [feature_back, fix_back], BUG_FIX: [UNRELATED_BULLET]}
+    )
+    assert _verify(restore_base, misplaced, restore) is not None
+
+
+def test_reapply_own_entry_stays_when_the_original_is_reverted_again():
+    """The same `#300` with a fix of its own, but this time `#600` reverts the
+    original `#100` directly: the feature bullet goes, with the link of `#300`
+    on it, and the fix bullet stays - that change still ships."""
+    annotated = _with_links(FEATURE_BULLET, OUTER_REVERT)
+    accepted = _sections(
+        {FEATURE: [annotated], BUG_FIX: [FIX_BULLET, UNRELATED_BULLET]}
+    )
+    removal_base = _raw(accepted, {"NO CL ENTRY": [_revert_bullet(REMOVER)]})
+    removal = _analyze_with_ledger(removal_base, CHAIN, {REMOVER: {ORIGINAL}})
+    assert removal["reapplying_with_entry"] == [OUTER_REVERT]
+    fix_stays = _sections({BUG_FIX: [FIX_BULLET, UNRELATED_BULLET]})
+    assert _verify(removal_base, fix_stays, removal) is None
+    assert _verify(removal_base, accepted, removal) is not None
+    both_gone = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    error = _verify(removal_base, both_gone, removal)
+    assert error is not None and f"'{OUTER_REVERT}'" in error
+    # Only the feature was taken out, so only the feature is recorded.
+    recorded = _record_deletions(removal_base, fix_stays, removal)
+    assert recorded == {ORIGINAL: (FEATURE, "section", annotated)}
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-v"]))

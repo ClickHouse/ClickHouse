@@ -198,6 +198,14 @@ carries a change of its own with its own entry (case 6).
    `WHERE`. `#129425` has no entry, so `#129863`'s own `Bug Fix` bullet is the
    only place the fix appears.
 
+   When the re-applied change does have an entry, such a PR is on two bullets:
+   its link appended to the entry it brought back, and the bullet of its own.
+   The two are separate. The link goes when that entry goes — if the original
+   change is reverted once more, its entry is deleted with the link, and the
+   re-apply's own bullet stays, because its change still ships. And if the
+   re-apply itself is reverted and later put back, both bullets come back,
+   each as it was: the link on the first is not a substitute for the second.
+
    When a release is edited in daily increments, the three PRs arrive on
    three different days: the entry was integrated on the first day, deleted
    on the second, and the third brings only the revert of the revert. The
