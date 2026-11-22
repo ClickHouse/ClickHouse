@@ -55,6 +55,15 @@ void MergeTreeReaderCompactSingleBuffer::flushCompressedBlocksRead()
     CountedCompressedBlocks::Batch batch;
     counted_compressed_blocks->count(batch, *counted_ranges, ranges_read);
     counted_compressed_blocks->commit(batch);
+
+    if (counted_compressed_blocks->stopped())
+    {
+        if (stream)
+            stream->setBlocksReadSink(nullptr);
+        CompressedBlockRanges().swap(ranges_read);
+        counted_ranges = nullptr;
+        counted_compressed_blocks.reset();
+    }
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(

@@ -1181,6 +1181,8 @@ CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream
 void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
 {
     IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+    if (!counted_compressed_blocks)
+        return;
     /// The streams created later get their sink in `getOrAddStream`.
     streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
 }
@@ -1202,6 +1204,14 @@ void MergeTreeReaderWide::flushCompressedBlocksRead()
         counted_compressed_blocks->count(batch, *stream_ranges.counted, stream_ranges.ranges);
     }
     counted_compressed_blocks->commit(batch);
+
+    if (counted_compressed_blocks->stopped())
+    {
+        /// The streams created later get no sink either.
+        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(nullptr); });
+        ranges_read.clear();
+        counted_compressed_blocks.reset();
+    }
 }
 
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const

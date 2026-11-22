@@ -32,7 +32,7 @@ bool CompressedReadBufferFromFile::nextImpl()
         if (!size_compressed)
             return false;
         if (blocks_read)
-            blocks_read->emplace_back(block_offset, block_offset + size_compressed);
+            recordBlockRead(block_offset, block_offset + size_compressed);
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
@@ -140,7 +140,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             if (!new_size_compressed)
                 return bytes_read;
             if (blocks_read)
-                blocks_read->emplace_back(block_offset, block_offset + new_size_compressed);
+                recordBlockRead(block_offset, block_offset + new_size_compressed);
 
             auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 

@@ -90,7 +90,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         "{}, block size: {})", nextimpl_working_buffer_offset, toString(working_buffer.size()));
 
     if (blocks_read)
-        blocks_read->emplace_back(file_pos, file_pos + owned_cell->compressed_size);
+        recordBlockRead(file_pos, file_pos + owned_cell->compressed_size);
     file_pos += owned_cell->compressed_size;
 
     return true;

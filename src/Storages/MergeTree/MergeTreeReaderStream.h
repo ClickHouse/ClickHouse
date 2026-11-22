@@ -26,9 +26,9 @@ struct RuntimeDataflowStatisticsBlock;
 /// Counts the compressed blocks the readers of a read load into the input bytes of its statistics. A compressed block may
 /// hold the data of several columns, and may be loaded more than once, by one reader or by several, each reading other
 /// granules of it: it is counted once.
-/// The counted ranges of all the reads of a query take at most `automatic_parallel_replicas_max_memory_for_input_statistics`,
-/// checked before they grow. Past it, the reads stop counting, free what they counted, and the statistics record that the
-/// input was not measured.
+/// The counted ranges and files of all the reads of a query are at most `automatic_parallel_replicas_max_counted_ranges`,
+/// reserved before the maps grow. Past it, the reads stop counting, free what they counted, and the statistics record
+/// that the input was not measured.
 class CountedCompressedBlocks
 {
 public:
@@ -56,8 +56,8 @@ public:
     {
         Stopwatch watch;
         size_t bytes = 0;
-        /// The memory the counted ranges took or freed.
-        Int64 memory = 0;
+        /// Reserved from the limit and not taken by the ranges yet, released by `commit`.
+        size_t reserved = 0;
     };
 
     /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet, to `batch`.
@@ -65,17 +65,19 @@ public:
     void count(Batch & batch, CountedRanges & file_ranges, CompressedBlockRanges & ranges);
     void commit(const Batch & batch);
 
+    /// Past the limit: nothing is counted any more, and the readers stop collecting the ranges.
+    [[nodiscard]] bool stopped() const;
+
 private:
-    /// Whether the counting stopped, or `additional_memory` more would take it past the limit, which stops it.
-    bool exceedsLimit(Int64 additional_memory);
-    void addMemory(Int64 memory);
+    /// Reserves `units` of the limit; past it, stops the counting instead.
+    bool reserve(size_t units);
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
 
     std::mutex mutex;
     UnorderedMapWithMemoryTracking<String, CountedRanges> counted TSA_GUARDED_BY(mutex);
-    /// Given out for the files looked up once the counting stopped, which then take no memory.
+    /// Given out for the files looked up once the counting stopped, which then take nothing.
     CountedRanges not_counted;
 };
 

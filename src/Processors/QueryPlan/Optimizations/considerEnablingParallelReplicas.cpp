@@ -1344,7 +1344,7 @@ static bool decideAtBoundary(
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
                 "Parallel replicas are not used: the input of hash {} could not be measured within "
-                "automatic_parallel_replicas_max_memory_for_input_statistics",
+                "automatic_parallel_replicas_max_counted_ranges",
                 single_replica_plan_boundary_hash);
             return false;
         }
@@ -1557,7 +1557,7 @@ static bool decideAtBoundary(
             return true;
 
         auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(
-            single_replica_plan_boundary_hash, rows_to_read, optimization_settings.automatic_parallel_replicas_max_memory_for_input_statistics);
+            single_replica_plan_boundary_hash, rows_to_read, optimization_settings.automatic_parallel_replicas_max_counted_ranges);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group

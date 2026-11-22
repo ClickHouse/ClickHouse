@@ -45,7 +45,7 @@ struct RuntimeDataflowStatistics
     size_t duplicated_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
-    /// Counting the compressed blocks read took more memory than `automatic_parallel_replicas_max_memory_for_input_statistics`,
+    /// Counting the compressed blocks read took more ranges than `automatic_parallel_replicas_max_counted_ranges`,
     /// so the bytes are not known. Remembered, so that the query does not pay for counting them again.
     bool input_not_measured = false;
 };
@@ -125,10 +125,10 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, size_t max_counted_blocks_memory_)
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, size_t max_counted_ranges_)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
-        , max_counted_blocks_memory(max_counted_blocks_memory_)
+        , max_counted_ranges(max_counted_ranges_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -142,12 +142,12 @@ struct RuntimeDataflowStatisticsBlock
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
     /// See `CountedCompressedBlocks`. 0 is no limit.
-    const size_t max_counted_blocks_memory = 0;
+    const size_t max_counted_ranges = 0;
 
     std::atomic_bool unsupported_case{false};
 
-    std::atomic<Int64> counted_blocks_memory{0};
-    std::atomic_bool counted_blocks_limit_exceeded{false};
+    std::atomic_size_t counted_ranges{0};
+    std::atomic_bool counted_ranges_limit_exceeded{false};
 
     /// The compressed bytes the readers loaded, see `CountedCompressedBlocks`.
     std::atomic_size_t input_bytes_read{0};
