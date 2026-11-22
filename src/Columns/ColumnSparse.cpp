@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
@@ -35,19 +36,27 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
 ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offsets_, size_t size_)
     : values(std::move(values_)), offsets(std::move(offsets_)), _size(size_)
 {
-    const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(offsets.get());
+    /// Use `std::as_const` for read-only validation: a non-const `WrappedPtr::get`/
+    /// `operator->` goes through `assumeMutableRef`, which `chassert(use_count() == 1)`.
+    /// This constructor is reached from `ColumnSparse::create(const ColumnPtr &, ...)`
+    /// where the caller may keep a reference to `values_`/`offsets_`, so `use_count()`
+    /// is `> 1` and the assertion would fire.
+    const auto & const_offsets = std::as_const(offsets);
+    const auto & const_values = std::as_const(values);
+
+    const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(const_offsets.get());
 
     if (!offsets_concrete)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", offsets->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", const_offsets->getName());
 
     /// 'values' should contain one extra element: default value at 0 position.
-    if (offsets->size() + 1 != values->size())
+    if (const_offsets->size() + 1 != const_values->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Values size ({}) is inconsistent with offsets size ({})", values->size(), offsets->size());
+            "Values size ({}) is inconsistent with offsets size ({})", const_values->size(), const_offsets->size());
 
-    if (_size < offsets->size())
+    if (_size < const_offsets->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, offsets->size());
+            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, const_offsets->size());
 
     if (!offsets_concrete->empty() && _size <= offsets_concrete->getData().back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -55,7 +64,11 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
                 _size, offsets_concrete->getData().back());
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    const auto & offsets_data = getOffsetsData();
+    /// Use the `const` overload of `getOffsetsData` (via `std::as_const(*this)`) so the
+    /// internal `*offsets` deref goes through `WrappedPtr::operator*` const, avoiding
+    /// `assumeMutableRef` and its `chassert(use_count() == 1)`. This constructor is
+    /// reached from `ColumnSparse::create(const ColumnPtr &, ...)` with shared inputs.
+    const auto & offsets_data = std::as_const(*this).getOffsetsData();
     const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");
@@ -1129,6 +1142,37 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
         return ColumnTuple::create(columns);
     }
 
+    if (const auto * column_object = typeid_cast<const ColumnObject *>(column.get()))
+    {
+        UnorderedMapWithMemoryTracking<String, ColumnPtr> typed_paths;
+        typed_paths.reserve(column_object->getTypedPaths().size());
+        bool changed = false;
+        for (const auto & [path, path_column] : column_object->getTypedPaths())
+        {
+            auto full_path_column = recursiveRemoveSparse(path_column);
+            changed |= full_path_column.get() != path_column.get();
+            typed_paths[path] = std::move(full_path_column);
+        }
+
+        if (!changed)
+            return column;
+
+        UnorderedMapWithMemoryTracking<String, ColumnPtr> dynamic_paths;
+        dynamic_paths.reserve(column_object->getDynamicPaths().size());
+        for (const auto & [path, path_column] : column_object->getDynamicPaths())
+            dynamic_paths[path] = path_column;
+
+        return ColumnObject::create(
+            typed_paths,
+            dynamic_paths,
+            column_object->getSharedDataPtr(),
+            column_object->getMaxDynamicPaths(),
+            column_object->getMaxDynamicPathsUpperBound(),
+            column_object->getGlobalMaxDynamicPaths(),
+            column_object->getMaxDynamicTypes(),
+            column_object->getStatistics());
+    }
+
     return column->convertToFullColumnIfSparse();
 }
 
@@ -1144,6 +1188,15 @@ bool recursiveHasSparse(const ColumnPtr & column)
     {
         for (const auto & element : column_tuple->getColumns())
             if (recursiveHasSparse(element))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * column_object = typeid_cast<const ColumnObject *>(column.get()))
+    {
+        for (const auto & [_, path_column] : column_object->getTypedPaths())
+            if (recursiveHasSparse(path_column))
                 return true;
 
         return false;
