@@ -1063,32 +1063,40 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-/// Whether the column `name` of `node` is the column `column` of the read below, only renamed by expressions and filters: a
-/// key `optimizeJoinByShards` can split by, which matches it to the primary key exactly, not through a monotonic function.
-static bool isReadColumn(const QueryPlan::Node & node, const QueryPlan::Node & reading, String name, const String & column)
+/// The first node below `node` that is not an expression or a filter, if the column `name` of `node` is only renamed on the
+/// way there; `name` becomes the column's name at that node. Nullptr if the column is computed on the way.
+static const QueryPlan::Node * findColumnThroughRenames(const QueryPlan::Node & node, String & name)
 {
-    for (const auto * current = &node; current != &reading; current = current->children.front())
+    const auto * current = &node;
+    while (true)
     {
-        if (current->children.size() != 1)
-            return false;
         const ActionsDAG * dag = nullptr;
         if (const auto * expression = typeid_cast<const ExpressionStep *>(current->step.get()))
             dag = &expression->getExpression();
         else if (const auto * filter = typeid_cast<const FilterStep *>(current->step.get()))
             dag = &filter->getExpression();
         else
-            return false;
+            return current;
+        if (current->children.size() != 1)
+            return nullptr;
 
         const auto * output = dag->tryFindInOutputs(name);
         if (!output)
-            return false;
+            return nullptr;
         while (output->type == ActionsDAG::ActionType::ALIAS)
             output = output->children.front();
         if (output->type != ActionsDAG::ActionType::INPUT)
-            return false;
+            return nullptr;
         name = output->result_name;
+        current = current->children.front();
     }
-    return name == column;
+}
+
+/// Whether the column `name` of `node` is the column `column` of the read below, only renamed by expressions and filters: a
+/// key `optimizeJoinByShards` can split by, which matches it to the primary key exactly, not through a monotonic function.
+static bool isReadColumn(const QueryPlan::Node & node, const QueryPlan::Node & reading, String name, const String & column)
+{
+    return findColumnThroughRenames(node, name) == &reading && name == column;
 }
 
 /// For each input, the longest sequence of its `candidates` columns that `optimizeReadInOrder` could read it in order of.
@@ -1109,7 +1117,24 @@ static VectorWithMemoryTracking<QueryGraph::ReadInOrder> findReadInOrderPrefixes
         if (columns.empty())
             continue;
         auto * reading_node = findReadingStepForReadInOrder(*inputs[i], /*read_in_order_through_join=*/ false);
-        auto * reading = reading_node ? typeid_cast<ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+        if (!reading_node)
+        {
+            /// A sort-merge join planned in a group of its own is sorted by its merge key.
+            std::ranges::sort(columns);
+            for (const auto & column : columns)
+            {
+                String name = column;
+                const auto * join_node = findColumnThroughRenames(*inputs[i], name);
+                const auto * join = join_node ? typeid_cast<const JoinStepLogical *>(join_node->step.get()) : nullptr;
+                if (!join || !join->getPlannedMergeOrder() || join->getPlannedMergeOrder()->column != name)
+                    continue;
+                const auto & order = *join->getPlannedMergeOrder();
+                prefixes[i] = {.prefix = {column}, .primary_key_prefix = static_cast<size_t>(order.sharded), .from_join = true};
+                break;
+            }
+            continue;
+        }
+        auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
         if (!reading || reading->isParallelReadingFromReplicas())
             continue;
 
@@ -1575,7 +1600,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
             /// The physical join runs it, with the user's `join_algorithm` list as its fallback.
             if (entry->join_method == JoinMethod::Merge)
+            {
                 join_step->setPlannedAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+                join_step->setPlannedMergeOrder({entry->merge_order_column, entry->sharded});
+            }
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;
