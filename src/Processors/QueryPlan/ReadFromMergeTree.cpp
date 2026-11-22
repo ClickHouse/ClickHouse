@@ -3341,7 +3341,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     /// - All sorting key columns before it are fixed (constant due to WHERE)
     /// - The partition column is within the read-in-order prefix
     /// - Adjacent partitions don't overlap on the partition column
+    /// - The engine is not `GraphiteMergeTree`: its merge rounds `Time` down, so the minmax
+    ///   bounds describe the input keys rather than the keys emitted by `FINAL`. Partitions
+    ///   with disjoint input time ranges can produce equal output times, and the order then
+    ///   depends on the next sorting key column (same reason as in `canUseVirtualRowWithFinal`).
     if (do_not_merge_across_partitions_select_final
+        && !is_graphite
         && reader_settings.read_in_order
         && settings[Setting::optimize_final_sequential_partitions]
         && settings[Setting::optimize_final_limit_pushdown]
