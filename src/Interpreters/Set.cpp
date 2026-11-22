@@ -70,10 +70,10 @@ namespace ErrorCodes
 namespace
 {
 
-/// Whether at least 15 of 16 sampled rows, one pseudo-random row per sixteenth of the block, repeat the previous key.
-bool keysAreSorted(const ColumnRawPtrs & key_columns, size_t rows)
+/// Whether at least 13/16 of the sampled rows, one pseudo-random row per 64th of the block, repeat the previous key.
+bool keysRepeat(const ColumnRawPtrs & key_columns, size_t rows)
 {
-    static constexpr size_t max_samples = 16;
+    static constexpr size_t max_samples = 64;
     if (rows < 2)
         return false;
     const size_t samples = std::min(max_samples, rows - 1);
@@ -87,7 +87,7 @@ bool keysAreSorted(const ColumnRawPtrs & key_columns, size_t rows)
             repeat = repeat && column->compareAt(row, row - 1, *column, 1) == 0;
         repeats += repeat;
     }
-    return repeats * 16 >= samples * 15;
+    return repeats * 16 >= samples * 13;
 }
 
 }
@@ -1196,18 +1196,18 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     const bool may_use_cuckoo_lookup = cuckoo_lookup || rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0;
     const size_t num_null_rows = null_map && may_use_cuckoo_lookup ? countBytesInFilter(*null_map) : 0;
     /// The hash table answers a key equal to the previous row's from its cache, without a lookup.
-    const bool keys_sorted = may_use_cuckoo_lookup && keysAreSorted(key_columns, vec_res.size());
+    const bool keys_repeat = may_use_cuckoo_lookup && keysRepeat(key_columns, vec_res.size());
     /// The keys do not change while the shared lock is held, so the table is built here, looks up this block, and is
     /// installed below.
     const Int64 rows = static_cast<Int64>(vec_res.size() - num_null_rows);
-    if (!keys_sorted && rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
+    if (!keys_repeat && rows > 0 && !cuckoo_lookup && rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0)
     {
         const Int64 rows_before = rows_before_cuckoo_lookup.fetch_sub(rows, std::memory_order_relaxed);
         if (rows_before > 0 && rows_before <= rows)
             new_cuckoo_lookup = createCuckooLookup();
     }
     const CuckooLookup * lookup_table = cuckoo_lookup ? cuckoo_lookup.get() : new_cuckoo_lookup.get();
-    const bool used_cuckoo_lookup = !keys_sorted && lookup_table && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
+    const bool used_cuckoo_lookup = !keys_repeat && lookup_table && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
         { return lookup_table->execute(method, key_columns, key_sizes, vec_res, negative, null_map); });
     if (!used_cuckoo_lookup)
         data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
