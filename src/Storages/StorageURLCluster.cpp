@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/ClusterFunctionReadTask.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
@@ -130,7 +129,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     if (add_structure_and_format)
         TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
             table_function,
-            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
+            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
             format_name,
             context
         );
@@ -162,7 +161,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
         uri, urlWithGlobs(uri), context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
 
-    auto next_callback = [iter = std::move(iterator), context](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
+    auto next_callback = [iter = std::move(iterator), context](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto url = iter->next();
         if (url.empty())

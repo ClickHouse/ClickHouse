@@ -64,8 +64,6 @@ public:
         // nullopt if the server doesn't report it.
         std::optional<size_t> file_size;
         std::optional<time_t> last_modified;
-        /// The `Date` of the response: the time by the clock of the server that reported `last_modified`.
-        std::optional<time_t> response_date;
         bool seekable = false;
     };
 
@@ -203,8 +201,6 @@ private:
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range, bool with_request_body) const;
 
-    /// `mute_logging` mutes the messages about the final error, which the caller handles; the
-    /// retries are logged anyway.
     void doWithRetries(
         std::function<void()> && callable,
         std::function<void()> on_retry = nullptr,
@@ -303,10 +299,6 @@ public:
 
     std::optional<time_t> tryGetLastModificationTime();
 
-    /// The `Date` of the response which the file metadata came from, if the metadata is already known.
-    /// Does not send any request.
-    std::optional<time_t> tryGetResponseDateOfFileInfo() const { return file_info ? file_info->response_date : std::nullopt; }
-
     bool hasNotFoundURL() const { return has_not_found_url; }
 
     HTTPFileInfo getFileInfo();
@@ -375,17 +367,14 @@ public:
     /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 
-    /// Same, with the credentials given as strings (no header is sent when the user is empty).
-    ReadWriteBufferFromHTTPPtr createWithBasicCredentials(std::string_view user_, std::string_view password_);
-
     /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
-    ReadWriteBufferFromHTTPPtr createWithBearerToken(std::string_view bearer_token_);
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(const std::string & bearer_token_);
 
     /// Authenticate with the bearer token when it is non-empty, otherwise with the Basic
     /// credentials: both occupy the `Authorization` header, so a request carries one or the
     /// other, never both.
     ReadWriteBufferFromHTTPPtr createWithBearerToken(
-        std::string_view bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
+        const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).

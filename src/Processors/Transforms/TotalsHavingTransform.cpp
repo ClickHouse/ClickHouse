@@ -211,7 +211,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
 
     auto finalized = chunk.clone();
     if (final)
-        finalizeChunk(finalized, aggregates_mask, finalized_header);
+        finalizeChunk(finalized, aggregates_mask);
 
     total_keys += finalized.getNumRows();
 
@@ -418,7 +418,7 @@ void TotalsHavingTransform::prepareTotals()
     }
 
     totals = Chunk(std::move(current_totals), 1);
-    finalizeChunk(totals, aggregates_mask, finalized_header);
+    finalizeChunk(totals, aggregates_mask);
 
     if (isCancelled())
     {

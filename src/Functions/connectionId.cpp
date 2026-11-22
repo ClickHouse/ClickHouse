@@ -22,17 +22,17 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionConnectionId>(context_); }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] String getName() const override { return name; }
+    String getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override { return "() -> UInt64"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return std::make_shared<DataTypeUInt64>(); }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumnConst(input_rows_count, connection_id);
     }

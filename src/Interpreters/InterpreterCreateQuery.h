@@ -16,7 +16,6 @@ namespace DB
 {
 
 class ASTCreateQuery;
-class ASTColumns;
 class ASTColumnDeclaration;
 class ASTExpressionList;
 class ASTStorage;
@@ -40,8 +39,6 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
-    /// `CODEC name (...)` entries for the subcolumn codecs of the columns.
-    static ASTPtr formatCodecDeclarations(const ColumnsDescription & columns);
     static ASTPtr formatIndices(const IndicesDescription & indices);
     static ASTPtr formatConstraints(const ConstraintsDescription & constraints);
     static ASTPtr formatProjections(const ProjectionsDescription & projections);
@@ -89,17 +86,15 @@ public:
     /// check_defaults_over_virtual_columns rejects DEFAULT/MATERIALIZED expressions over virtual columns;
     /// pass false for objects that never evaluate their own column defaults over an insert block
     /// (ordinary views and external-target materialized views).
-    /// The codecs declared with `CODEC name (...)` in the list are applied to the columns. `columns_list.columns` must not be null.
-    static ColumnsDescription getColumnsDescription(const ASTColumns & columns_list, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
-    /// The grant needed to create a table from the table function, besides `CREATE TABLE`: `TABLE ENGINE` on its engine
-    /// when the engine has a source, or `READ` and `WRITE` on the source of a function that has no engine.
-    /// A definition that cannot be a table is refused.
-    static std::optional<AccessRightsElement> getRequiredAccessOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
+    /// The engine of a table created from the table function, when its `TABLE ENGINE` grant is required, i.e. when the
+    /// engine has a source. A definition that cannot be a table is refused.
+    static std::optional<String> getSourceEngineOfTableFunction(const ASTPtr & table_function_ast, const ContextPtr & query_context);
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
@@ -131,7 +126,7 @@ private:
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
-    [[nodiscard]] AccessRightsElements getRequiredAccess() const;
+    AccessRightsElements getRequiredAccess() const;
 
     /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
     /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
@@ -159,12 +154,12 @@ private:
 
     /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
-    [[nodiscard]] bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
+    bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
 
     /// The name of the single source table an atomically populated materialized view would be subscribed
     /// to (the table of its FROM clause), or std::nullopt when the view has no such single source. Pure
     /// AST analysis - it does not touch the catalog, so it can be called before the view is created.
-    [[nodiscard]] std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
+    std::optional<QualifiedTableName> tryGetAtomicPopulateSourceName(const ASTCreateQuery & create) const;
 
     /// Resolves the single source table that an atomically populated materialized view is subscribed to,
     /// if it can provide a pinned point-in-time snapshot. Returns nullptr when atomic population does not

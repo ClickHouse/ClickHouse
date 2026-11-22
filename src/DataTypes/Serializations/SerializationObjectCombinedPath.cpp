@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <Interpreters/castColumn.h>
-#include <Common/Exception.h>
 
 namespace DB
 {

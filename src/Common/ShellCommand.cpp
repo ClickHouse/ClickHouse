@@ -13,11 +13,8 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <dlfcn.h>
 #include <unistd.h>
-
-#if defined(OS_DARWIN)
-#    include <dlfcn.h>
-#endif
 
 #include <algorithm>
 #include <csignal>
@@ -61,18 +58,19 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_FORK;
     extern const int CANNOT_DLSYM;
+    extern const int CANNOT_FORK;
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
     extern const int BAD_ARGUMENTS;
 }
 
-ShellCommand::ShellCommand(int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
+ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
     : in(in_fd_)
     , out(out_fd_)
     , err(err_fd_)
+    , pid(pid_)
     , config(config_)
 {
 }
@@ -101,9 +99,6 @@ UInt64 ShellCommand::remainingTerminationTimeoutMs()
 
 ShellCommand::~ShellCommand()
 {
-    if (pid == -1)
-        return;
-
     if (do_not_terminate)
         return;
 
@@ -188,6 +183,21 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     logCommand(filename, argv);
     ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
+#if !defined(USE_MUSL)
+    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
+      *  because of the resolving of symbols in the shared library
+      * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
+      * Therefore, separate the resolving of the symbol from the call.
+      */
+    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
+#else
+    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
+    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
+#endif
+
+    if (!real_vfork)
+        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
+
     PipeFDs pipe_stdin;
     PipeFDs pipe_stdout;
     PipeFDs pipe_stderr;
@@ -230,42 +240,11 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             fds->tryIncreaseSize(pipe_capacity);
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(
-        pipe_stdin.fds_rw[1],
-        pipe_stdout.fds_rw[0],
-        pipe_stderr.fds_rw[0],
-        config));
-
-    for (size_t i = 0; i < config.read_fds.size(); ++i)
-    {
-        auto & fds = *read_pipe_fds[i];
-        auto fd = config.read_fds[i];
-        res->read_fds.emplace(fd, fds.fds_rw[0]);
-    }
-
-    for (size_t i = 0; i < config.write_fds.size(); ++i)
-    {
-        auto & fds = *write_pipe_fds[i];
-        auto fd = config.write_fds[i];
-        res->write_fds.emplace(fd, fds.fds_rw[1]);
-    }
-
-#if defined(OS_DARWIN)
-    /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
-    /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-    if (!real_vfork)
-        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
-    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
-#else
-    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
-#endif
+    pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
     if (pid == -1)
         throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
 
-    /// The child only calls async-signal-safe functions before `exec`.
-    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     if (0 == pid)
     {
         /// We are in the freshly created process.
@@ -316,12 +295,30 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
-    // NOLINTEND(clang-analyzer-unix.Vfork)
 
-    res->pid = pid;
+    std::unique_ptr<ShellCommand> res(new ShellCommand(
+        pid,
+        pipe_stdin.fds_rw[1],
+        pipe_stdout.fds_rw[0],
+        pipe_stderr.fds_rw[0],
+        config));
 
     if (config.register_in_udf_process_registry)
         res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
+
+    for (size_t i = 0; i < config.read_fds.size(); ++i)
+    {
+        auto & fds = *read_pipe_fds[i];
+        auto fd = config.read_fds[i];
+        res->read_fds.emplace(fd, fds.fds_rw[0]);
+    }
+
+    for (size_t i = 0; i < config.write_fds.size(); ++i)
+    {
+        auto & fds = *write_pipe_fds[i];
+        auto fd = config.write_fds[i];
+        res->write_fds.emplace(fd, fds.fds_rw[1]);
+    }
 
     LOG_TRACE(
         getLogger(),
