@@ -1049,6 +1049,55 @@ void mutate(
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
 }
 
+/// As `TableMetadata.Builder.build` of the Iceberg reference implementation: each source column of the default partition
+/// spec and of the default sort order must be in `schema`. A `void` partition field, which format version 1 keeps for a
+/// removed field, needs none.
+static std::optional<String> findFieldWithoutSourceColumn(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
+{
+    const auto columns = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
+    auto find_missing_source_id = [&](const Poco::JSON::Object::Ptr & field) -> std::optional<Int64>
+    {
+        if (field->has(Iceberg::f_source_id) && !columns.contains(field->getValue<Int64>(Iceberg::f_source_id)))
+            return field->getValue<Int64>(Iceberg::f_source_id);
+        if (const auto source_ids = field->getArray(Iceberg::f_source_ids))
+            for (UInt32 i = 0; i < source_ids->size(); ++i)
+                if (!columns.contains(source_ids->getElement<Int64>(i)))
+                    return source_ids->getElement<Int64>(i);
+        return std::nullopt;
+    };
+
+    if (metadata->has(Iceberg::f_partition_specs) && metadata->has(Iceberg::f_default_spec_id))
+    {
+        const auto default_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
+        const auto specs = metadata->getArray(Iceberg::f_partition_specs);
+        for (UInt32 i = 0; i < specs->size(); ++i)
+        {
+            const auto spec = specs->getObject(i);
+            if (spec->getValue<Int64>(Iceberg::f_spec_id) != default_spec_id)
+                continue;
+            const auto fields = spec->getArray(Iceberg::f_fields);
+            for (UInt32 j = 0; j < fields->size(); ++j)
+            {
+                const auto field = fields->getObject(j);
+                if (Poco::toLower(field->getValue<String>(Iceberg::f_transform)) == "void")
+                    continue;
+                if (auto id = find_missing_source_id(field))
+                    return fmt::format(
+                        "the partition field '{}' of the default partition spec has no source column with field id {}",
+                        field->getValue<String>(Iceberg::f_name), *id);
+            }
+        }
+    }
+
+    if (metadata->has(Iceberg::f_sort_orders) && metadata->has(Iceberg::f_default_sort_order_id))
+        if (const auto fields = getDefaultSortOrderFields(metadata))
+            for (UInt32 i = 0; i < fields->size(); ++i)
+                if (auto id = find_missing_source_id(fields->getObject(i)))
+                    return fmt::format("the default sort order has no source column with field id {}", *id);
+
+    return std::nullopt;
+}
+
 void alter(
     const AlterCommands & params,
     ContextPtr context,
@@ -1127,7 +1176,10 @@ void alter(
         }
         if (new_schema)
         {
-            if (auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true))
+            auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true);
+            if (!violation)
+                violation = findFieldWithoutSourceColumn(metadata, new_schema);
+            if (violation)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
         }
 
