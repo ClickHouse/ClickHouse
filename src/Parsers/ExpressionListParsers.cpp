@@ -1,3 +1,4 @@
+#include <array>
 #include <charconv>
 #include <functional>
 #include <limits>
@@ -519,7 +520,7 @@ namespace
     class ParserFunctionName : public IParserBase
     {
     protected:
-        const char * getName() const override { return "function name"; }
+        [[nodiscard]] const char * getName() const override { return "function name"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
             ParserCompoundIdentifier parser(false, true, Highlight::function);
@@ -676,12 +677,12 @@ public:
 
     virtual bool parse(IParser::Pos & /*pos*/, Expected & /*expected*/, Action & /*action*/) = 0;
 
-    bool isFinished() const
+    [[nodiscard]] bool isFinished() const
     {
         return finished;
     }
 
-    int previousPriority() const
+    [[nodiscard]] int previousPriority() const
     {
         if (operators.empty())
             return 0;
@@ -689,7 +690,7 @@ public:
         return operators.back().priority;
     }
 
-    OperatorType previousType() const
+    [[nodiscard]] OperatorType previousType() const
     {
         if (operators.empty())
             return OperatorType::None;
@@ -697,7 +698,7 @@ public:
         return operators.back().type;
     }
 
-    const Operator * previousOperator() const
+    [[nodiscard]] const Operator * previousOperator() const
     {
         if (operators.empty())
             return nullptr;
@@ -711,7 +712,7 @@ public:
     /// a lambda body can leave higher-priority binary operators on top of the
     /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
     /// inspecting only the stack top via `previousType` would miss the lambda.
-    bool hasPendingOperator(OperatorType type) const
+    [[nodiscard]] bool hasPendingOperator(OperatorType type) const
     {
         for (const auto & op : operators)
             if (op.type == type)
@@ -719,7 +720,7 @@ public:
         return false;
     }
 
-    int isCurrentElementEmpty() const
+    [[nodiscard]] int isCurrentElementEmpty() const
     {
         return operators.empty() && operands.empty();
     }
@@ -1007,9 +1008,6 @@ struct ParserExpressionImpl
     ParserColumnsMatcher columns_matcher_parser;
     ParserQualifiedColumnsMatcher qualified_columns_matcher_parser;
     ParserSubquery subquery_parser;
-
-    /// Positions of CASE and INTERVAL tokens whose keyword reading failed; only the identifier reading is tried there.
-    std::unordered_set<const char *> failed_keyword_readings;
 
     bool parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected);
 
@@ -1670,13 +1668,13 @@ private:
 
     /// `argument` put back as text, when it is a literal and the target type reads the text more
     /// precisely - see `exactCastArgument`.
-    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
     {
         return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 
     /// `TRY_CAST(x AS T)` is `accurateCastOrNull(x, 'T')`. It reads a literal argument as exactly as `CAST` does.
-    ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
     {
         auto exact_argument = exactArgument(argument, type_text, pos);
         if (is_try)
@@ -3155,11 +3153,16 @@ public:
             ASTPtr query;
             auto select_pos = pos;
             auto select_expected = expected;
+            /// The speculation keeps its failed keyword readings to itself, as its variants may be discarded.
+            select_expected.failed_keyword_readings = nullptr;
+            select_expected.failed_subquery_readings = nullptr;
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
             {
                 pos = select_pos;
+                select_expected.failed_keyword_readings = expected.failed_keyword_readings;
+                select_expected.failed_subquery_readings = expected.failed_subquery_readings;
                 expected = select_expected;
                 elements = {make_intrusive<ASTSubquery>(std::move(query))};
                 finished = true;
@@ -3472,7 +3475,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     return false;
 }
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table
 {
     {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)},
     {"?",             Operator("",                2,  0, OperatorType::StartIf)},
@@ -3535,7 +3538,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"::",            Operator(toString(toStringView(Keyword::CAST)),            14, 2, OperatorType::Cast)},
 };
 
-const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
+[[clang::no_destroy]] const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
     {toStringView(Keyword::NOT), Operator("not", 5, 1, OperatorType::Not)},
     {"-", Operator("negate", 13, 1)},
@@ -3598,6 +3601,24 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
     if (auto it = map.find(std::string{function_name}); it != map.end())
         return it->second;
     return std::nullopt;
+}
+
+struct FailedKeywordReadings
+{
+    /// Indexed by `is_table_function` of the start layer, which changes how the keyword's operands are parsed.
+    std::array<std::unordered_set<const char *>, 2> positions;
+};
+
+static void addFailedKeywordReading(Expected & expected, bool is_table_function, const char * position)
+{
+    if (!expected.failed_keyword_readings)
+        expected.failed_keyword_readings = std::make_shared<FailedKeywordReadings>();
+    expected.failed_keyword_readings->positions[is_table_function].insert(position);
+}
+
+static bool hasFailedKeywordReading(const Expected & expected, bool is_table_function, const char * position)
+{
+    return expected.failed_keyword_readings && expected.failed_keyword_readings->positions[is_table_function].contains(position);
 }
 
 bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected)
@@ -3666,7 +3687,7 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 
         /// A keyword layer reads nothing below itself, so if it failed unfinished it fails wherever this position is reached.
         if (popped_keyword_layer)
-            failed_keyword_readings.insert(saved_checkpoint.first->begin);
+            addFailedKeywordReading(expected, layers.front()->is_table_function, saved_checkpoint.first->begin);
 
         pos = saved_checkpoint.first;
         layers.back()->current_checkpoint = saved_checkpoint.second;
@@ -3981,7 +4002,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     layers.back()->current_checkpoint = Checkpoint::None;
 
     /// Skipping a failed keyword reading leaves no checkpoint, as trying it again and restoring would.
-    const bool keyword_reading_failed = failed_keyword_readings.contains(old_pos->begin);
+    const bool keyword_reading_failed = hasFailedKeywordReading(expected, layers.front()->is_table_function, old_pos->begin);
     if (keyword_reading_failed)
         layers.back()->saved_checkpoint.reset();
 
