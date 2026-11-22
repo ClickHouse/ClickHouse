@@ -2412,7 +2412,6 @@ protected:
     StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
     void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
 
-    /// Called by `startup` of the storage.
     void delayMergesAfterStartup();
 
     /// Only a table loaded from its existing metadata (server startup, UNDROP TABLE) delays its merges.
