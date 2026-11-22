@@ -553,6 +553,15 @@ def main():
         elif build_type == BuildTypes.ARM_BINARY:
             targets = "clickhouse-bundle"
         elif build_type in (
+            BuildTypes.ARM_DEBUG,
+            BuildTypes.ARM_ASAN_UBSAN,
+            BuildTypes.ARM_TSAN,
+            BuildTypes.ARM_MSAN,
+        ):
+            # `clickhouse-bundle` without `clickhouse-tests`: no job runs the aarch64 unit tests,
+            # and `arm_tidy` still checks their sources.
+            targets = "self-extracting"
+        elif build_type in (
             BuildTypes.AMD_TIDY,
             BuildTypes.ARM_TIDY,
         ):
