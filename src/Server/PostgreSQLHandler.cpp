@@ -1941,6 +1941,13 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         if (copy_query->format == ASTCopyQuery::Formats::CSV)
             query_context->setSetting("format_csv_null_representation", copy_query->csv_null_marker);
 
+        /// PostgreSQL writes a `boolean` as `t`/`f` in both the text and the CSV format of `COPY ... TO`, and
+        /// that is what a client parses the column with - the emulated `pg_attribute` reports `Bool` as
+        /// `boolean`. ClickHouse's own `postgresql` table function reading from this server does not accept
+        /// the default `true`/`false`. The array elements below are written the same way.
+        query_context->setSetting("bool_true_representation", String("t"));
+        query_context->setSetting("bool_false_representation", String("f"));
+
         /// Lazily prepare the emulated `pg_catalog` views before running the copied query, exactly as
         /// `processQuery` does for ordinary queries. Otherwise `COPY (SELECT * FROM pg_namespace) TO STDOUT`
         /// on a fresh connection would fail with `UNKNOWN_TABLE` while a plain `SELECT * FROM pg_namespace`
