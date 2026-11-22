@@ -66,7 +66,8 @@ SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, log_comment = 'gbl_
 
 -- The part with the aggregate projection has enough keys; the reading of the part without it has to stop too.
 DROP TABLE IF EXISTS t_group_by_limit_stops_reading_projection;
-CREATE TABLE t_group_by_limit_stops_reading_projection (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_group_by_limit_stops_reading_projection (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 SYSTEM STOP MERGES t_group_by_limit_stops_reading_projection;
 INSERT INTO t_group_by_limit_stops_reading_projection SELECT 7 FROM numbers(5000000);
 ALTER TABLE t_group_by_limit_stops_reading_projection ADD PROJECTION p (SELECT k, count() GROUP BY k);
