@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -86,7 +88,6 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 
-#include "config.h"
 #if USE_PARQUET
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #endif
