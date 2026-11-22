@@ -55,7 +55,7 @@ SYSTEM FLUSH LOGS query_log, text_log;
 WITH (
     SELECT groupArray(query_id) FROM system.text_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600
-        AND message_format_string = 'Analyzing the primary key of parts in {} threads to decide whether to load statistics'
+        AND message_format_string = 'Analyzing the primary key of parts in up to {} threads to decide whether to load statistics'
 ) AS parallel_probes
 SELECT log_comment, ProfileEvents['LoadedStatistics'] > 0, ProfileEvents['SelectedParts'],
     if(log_comment = 'parallel_probe_small_cache',

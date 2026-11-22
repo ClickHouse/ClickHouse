@@ -7,11 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
-#include <Common/Scheduler/CPULeaseAllocation.h>
-#include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CurrentCPULease.h>
-#include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -27,6 +23,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/allocateCPUSlots.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -46,9 +43,7 @@ namespace Setting
 {
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool opentelemetry_trace_processors;
-    extern const SettingsBool opentelemetry_trace_cpu_scheduling;
     extern const SettingsSeconds max_execution_time;
-    extern const SettingsString workload;
 }
 
 namespace ErrorCodes
@@ -161,7 +156,6 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors, Query
         profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
             && process_list_element->getContext()->getProcessorsProfileLog();
         trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
-        trace_cpu_scheduling = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_cpu_scheduling];
     }
     try
     {
@@ -598,97 +592,13 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
 /// Properly allocate CPU slots or lease for the thread pool
 SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation)
 {
-    // The first thread is called master thread.
-    // It is NOT the thread that handles async tasks (unless query has max_threads=1).
-    // Master thread is different from other threads due to special role in scheduling:
-    //  1. During query start, master thread spawns worker threads, so starting it fast is important.
-    //  2. It should never be downscaled to avoid query deadlock (0 threads to process tasks), although it can be preempted.
-    //  3. When using ConcurrencyControl, master thread is granted immediately and may not request CPU slot (see 'fair_round_robin').
-    //  4. When using resource scheduler, master thread may use different resource link than worker threads.
-    const auto master_threads = 1uz;
-
-    // Other threads are called worker threads.
-    // They are competing for CPU slots with other queries and may not start or can be preempted and downscaled after they start.
-    // Worker threads are spawned by master thread or other worker threads.
-    const auto worker_threads = num_threads - master_threads;
-
-    // There are a few possible modes of concurrency control.
-    // 1) If we have `CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)`:
-    //    all thread should be allocated through scheduler using the same resource link
-    // 2) If we have `CREATE RESOURCE cpu (WORKER THREAD)`:
-    //    master thread uses "free" noncompeting CPU slot, the other threads are allocated through resource scheduler
-    // 3) If we have two resources `CREATE RESOURCE master_cpu (MASTER THREAD)` and `CREATE RESOURCE worker_cpu (WORKER THREAD)`:
-    //    all thread should be allocated through scheduler using different resource links
-    // 4) If we have no cpu-related resources:
-    //    the ConcurrencyControl class is used instead of resource scheduler
     if (concurrency_control)
     {
-        auto query_context = CurrentThread::tryGetQueryContext();
-        ResourceLink master_thread_link;
-        ResourceLink worker_thread_link;
-        bool workload_cpu_scheduling_is_enabled = false;
-
-        if (query_context)
-        {
-            /// Hold a shared_ptr to keep the storage alive for the duration of this call.
-            /// The storage can be destroyed during server shutdown while a query is still
-            /// in pipeline initialization, causing a use-after-free of the internal mutex.
-            auto workload_storage = query_context->getWorkloadEntityStoragePtr();
-            if (workload_storage)
+        return allocateCPUSlots(num_threads, lazy_allocation,
             {
-                String master_thread_resource_name = workload_storage->getMasterThreadResourceName();
-                if (!master_thread_resource_name.empty())
-                    master_thread_link = query_context->getWorkloadClassifier()->get(master_thread_resource_name);
-                String worker_thread_resource_name = workload_storage->getWorkerThreadResourceName();
-                if (!worker_thread_resource_name.empty())
-                    worker_thread_link = query_context->getWorkloadClassifier()->get(worker_thread_resource_name);
-                workload_cpu_scheduling_is_enabled = !master_thread_resource_name.empty() || !worker_thread_resource_name.empty();
-            }
-        }
-
-        if (workload_cpu_scheduling_is_enabled)
-        {
-            if (master_thread_link || worker_thread_link) // Only use resource scheduler if at least one resource link is specified, otherwise unlimited
-            {
-                /// Allocate CPU slots through resource scheduler
-                if (query_context->getCPUSlotPreemption())
-                {
-                    auto quantum_ns = std::max<UInt64>(10, query_context->getCPUSlotQuantum());
-                    // Mirror the ConcurrencyControl branch: under lazy allocation, request only
-                    // `master_threads` from the workload scheduler at startup and let the
-                    // PipelineExecutor upscaling block grow the ceiling via `setMax` as the
-                    // pipeline actually pushes parallelizable work.
-                    SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
-                    return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
-                        CPULeaseSettings
-                        {
-                            .quantum_ns = static_cast<ResourceCost>(quantum_ns),
-                            .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
-                            .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
-                            .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
-                            .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
-                            .workload = query_context->getSettingsRef()[Setting::workload],
-                            .parking_enabled = query_context->getCPUSlotParking(),
-                            .trace_cpu_scheduling = trace_cpu_scheduling,
-                        },
-                        initial_max);
-                }
-                else
-                {
-                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
-                }
-            }
-        }
-        else
-        {
-            /// Allocate CPU slots from concurrency control with guaranteed master thread slot.
-            /// Default path (lazy_allocation=true): start at max=master_threads and grow on
-            /// demand via setMax from the upscaling block. Zero-waste per idle pipeline.
-            /// Rollback (lazy_allocation=false): pre-branch eager allocation — request the
-            /// full ceiling upfront and never call setMax.
-            SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
-            return ConcurrencyControl::instance().allocate(master_threads, initial_max);
-        }
+                .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
+                .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
+            });
     }
 
     /// If concurrency control is not used we should not even count threads as competing.

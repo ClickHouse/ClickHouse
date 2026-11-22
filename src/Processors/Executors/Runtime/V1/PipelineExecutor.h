@@ -66,7 +66,6 @@ private:
     bool profile_processors = false;
     /// system.opentelemetry_span_log
     bool trace_processors = false;
-    bool trace_cpu_scheduling = false;
 
     std::atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
     std::atomic_bool cancelled_reading = false;
