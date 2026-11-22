@@ -109,7 +109,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 
         // Looking for cpu.max in directories from the current cgroup to the top level
         // It does not stop on the first time since the child could have a greater value than parent
-        while (current_cgroup != default_cgroups_mount.parent_path())
+        while (current_cgroup != std::filesystem::path(default_cgroups_mount).parent_path())
         {
             std::ifstream cpu_max_file(current_cgroup / "cpu.max");
             if (cpu_max_file.is_open())
@@ -127,7 +127,7 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
         }
         current_cgroup = cgroup_path;
         // Looking for cpuset.cpus.effective in directories from the current cgroup to the top level
-        while (current_cgroup != default_cgroups_mount.parent_path())
+        while (current_cgroup != std::filesystem::path(default_cgroups_mount).parent_path())
         {
             std::ifstream cpuset_cpus_file(current_cgroup / "cpuset.cpus.effective");
             current_cgroup = current_cgroup.parent_path();
@@ -149,14 +149,14 @@ uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
     /// cgroupsv1
     /// Return the number of milliseconds per period process is guaranteed to run.
     /// -1 for no quota
-    int cgroup_quota = readFrom(default_cgroups_mount / "cpu/cpu.cfs_quota_us", -1);
-    int cgroup_period = readFrom(default_cgroups_mount / "cpu/cpu.cfs_period_us", -1);
+    int cgroup_quota = readFrom(std::filesystem::path(default_cgroups_mount) / "cpu/cpu.cfs_quota_us", -1);
+    int cgroup_period = readFrom(std::filesystem::path(default_cgroups_mount) / "cpu/cpu.cfs_period_us", -1);
     if (cgroup_quota > -1 && cgroup_period > 0)
         quota_count = static_cast<uint32_t>(ceil(static_cast<float>(cgroup_quota) / static_cast<float>(cgroup_period)));
 
     /// The base count is the online CPUs, which ignores the affinity mask, so a container limited
     /// only by `cpuset.cpus` (e.g. `docker run --cpuset-cpus`) must be accounted for here.
-    std::ifstream cpuset_cpus_file(default_cgroups_mount / "cpuset/cpuset.cpus");
+    std::ifstream cpuset_cpus_file(std::filesystem::path(default_cgroups_mount) / "cpuset/cpuset.cpus");
     if (cpuset_cpus_file.is_open())
     {
         std::string cpuset_line;
