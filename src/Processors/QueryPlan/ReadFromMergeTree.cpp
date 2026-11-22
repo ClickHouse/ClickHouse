@@ -7127,52 +7127,43 @@ ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPr
     const bool calculate_subcolumn_sizes
         = getContext()->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
 
-    auto add_rows = [](ColumnSizesForPrewhere & sizes, const MergeTreeDataPartPtr & part)
+    /// The sizes and the rows are measured on the same parts, so that they describe the same data. The sizes that the
+    /// storage caches are of its current active parts, which a merge or an insert can change after the query took
+    /// its snapshot (or between two separate reads of the cache and of the active parts), and dividing them by the
+    /// rows of other parts changes the column term but not the function term.
+    auto measure = [&](const auto & data_parts, auto && get_part)
     {
-        if (!isCompactPart(part))
-            sizes.rows += part->rows_count;
-    };
-
-    /// The sizes the storage caches are of its current active parts, not of this query's snapshot,
-    /// so the rows are counted on the same parts.
-    auto get_table_wide_sizes = [&]
-    {
-        ColumnSizesForPrewhere table_wide{.sizes = data.getColumnSizes(columns, calculate_subcolumn_sizes)};
-        for (const auto & part : data.getDataPartsVectorForInternalUsage())
-            add_rows(table_wide, part);
-        return table_wide;
-    };
-
-    /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means
-    /// the same part set. Nothing was pruned: keep the table-wide estimate the storage already caches instead
-    /// of measuring every part and column again, exactly as before pruned parts were taken into account.
-    const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
-    if (parts.size() == parts_before_pruning)
-        return get_table_wide_sizes();
-
-    ColumnSizesForPrewhere result;
-    for (const auto & part : parts)
-    {
-        for (const auto & column_name : columns)
+        ColumnSizesForPrewhere result;
+        for (const auto & part_entry : data_parts)
         {
-            const auto column = part.data_part->tryGetColumn(column_name);
-            if (!column)
-                continue;
+            const MergeTreeDataPartPtr & part = get_part(part_entry);
+            for (const auto & column_name : columns)
+            {
+                const auto column = part->tryGetColumn(column_name);
+                if (!column)
+                    continue;
 
-            const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
-                ? part.data_part->getSubcolumnSize(column_name)
-                : part.data_part->getColumnSize(column->getNameInStorage());
-            result.sizes[column_name].add(size);
+                const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
+                    ? part->getSubcolumnSize(column_name)
+                    : part->getColumnSize(column->getNameInStorage());
+                result.sizes[column_name].add(size);
+            }
+
+            /// `Compact` parts publish no per-column sizes.
+            if (!isCompactPart(part))
+                result.rows += part->rows_count;
         }
-        add_rows(result, part.data_part);
-    }
+        return result;
+    };
+
+    auto result = measure(parts, [](const RangesInDataPart & part) -> const MergeTreeDataPartPtr & { return part.data_part; });
 
     /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,
     /// while the wide parts that were pruned away would still describe the relative column sizes.
-    /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
+    /// Measure all active parts in that case, taken in one snapshot.
     const bool nothing_measured = std::ranges::all_of(result.sizes, [](const auto & entry) { return entry.second.data_compressed == 0; });
     if (!parts.empty() && nothing_measured)
-        return get_table_wide_sizes();
+        return measure(data.getDataPartsVectorForInternalUsage(), [](const MergeTreeDataPartPtr & part) -> const MergeTreeDataPartPtr & { return part; });
 
     return result;
 }
