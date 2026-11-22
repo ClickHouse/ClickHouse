@@ -1,0 +1,5 @@
+<clickhouse>
+    <concurrent_threads_scheduler>round_robin</concurrent_threads_scheduler>
+    <concurrent_threads_soft_limit_num>1</concurrent_threads_soft_limit_num>
+    <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
+</clickhouse>

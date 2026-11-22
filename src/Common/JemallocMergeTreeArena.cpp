@@ -31,8 +31,8 @@ namespace
 {
 
 /// Written once by `initialize` before `initialized` is published; read-only afterwards.
-std::vector<unsigned> arena_indices;
-std::optional<PerCPUSlots> cpu_slots;
+[[clang::no_destroy]] std::vector<unsigned> arena_indices;
+[[clang::no_destroy]] std::optional<PerCPUSlots> cpu_slots;
 /// Number of arenas `initialize` tried to create (configured count capped at the allowed CPUs);
 /// `arena_indices.size()` may be smaller if `arenas.create` failed.
 size_t intended_arena_count = 0;
