@@ -1092,9 +1092,9 @@ def test_uncommitted_base_files(started_cluster, table_version):
     name = f"test_uncommitted_base_files_{table_version}_{uuid.uuid4().hex[:8]}"
     tmp_dir = tempfile.mkdtemp()
 
-    def table(arm):
-        prefix = f"{name}_{arm}/"
-        path = os.path.join(tmp_dir, f"{name}_{arm}")
+    def table(variant):
+        prefix = f"{name}_{variant}/"
+        path = os.path.join(tmp_dir, f"{name}_{variant}")
         return path, prefix, f"hudi(s3, filename='{prefix}')"
 
     try:
@@ -1287,5 +1287,5 @@ def test_uncommitted_base_files(started_cluster, table_version):
         assert_rows(instance, source, "id, p, v", expected)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        for arm in "bcdef":
-            remove_directory(minio_client, bucket, f"{name}_{arm}")
+        for variant in "bcdef":
+            remove_directory(minio_client, bucket, f"{name}_{variant}")
