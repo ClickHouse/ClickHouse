@@ -336,7 +336,8 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
                 continue;
 
             /// `CHECK s = f` holds for the `String` 'a\0' and the `FixedString(2)` 'a', but `CAST(f, 'String')` is 'a'.
-            if (arguments.size() == 2 && comparesPaddedStrings(arguments[0], arguments[1]))
+            /// `CHECK toIntervalMinute(n) = n AND n = toIntervalSecond(n)` holds for 1, but 1 minute is not 1 second.
+            if (arguments.size() == 2 && comparesDifferentTypes(arguments[0], arguments[1]))
                 continue;
 
             /// `CHECK v = 1` does not give a `Dynamic` `v` the type of 1.

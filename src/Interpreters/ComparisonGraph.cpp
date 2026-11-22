@@ -260,15 +260,16 @@ bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const Qu
     return (is_string_constant(left) && !is_string(right)) || (is_string_constant(right) && !is_string(left));
 }
 
-bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
+bool comparesDifferentTypes(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
 {
-    auto has_fixed_string = [](const DataTypePtr & type)
+    auto needs_equal_types = [](const DataTypePtr & type)
     {
-        return anyInTypeTree(*type, [](const IDataType & nested) { return isFixedString(nested); });
+        return anyInTypeTree(
+            *type, [](const IDataType & nested) { return isFixedString(nested) || isArray(nested) || isMap(nested) || isInterval(nested); });
     };
     const auto left_type = removeLowCardinalityAndNullable(left->getResultType());
     const auto right_type = removeLowCardinalityAndNullable(right->getResultType());
-    return (has_fixed_string(left_type) || has_fixed_string(right_type)) && !left_type->equals(*right_type);
+    return (needs_equal_types(left_type) || needs_equal_types(right_type)) && !left_type->equals(*right_type);
 }
 
 bool comparesDateWithDateTime(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right)
@@ -453,12 +454,13 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
     /// relations in these orders, and it compares the constant bounds of the two sides by their `Field`s directly.
     /// A string constant compared with another type is a value of that type, which the bounds do not know.
     /// A `FixedString` compared with another string type is padded with zero bytes. A `Dynamic` compares by its active type.
+    /// Intervals of different kinds are converted to one unit, but their bounds are counts of their own units.
     /// A `Date` compared with a `DateTime` is converted to a time, but its bounds count days.
     /// A decimal compared with a float is rounded to `Float64`, but its relations in the graph are exact.
     if constexpr (!with_ast)
     {
         if (mixesEnumAndString(left->getResultType(), right->getResultType()) || comparesStringConstantWithOtherType(left, right)
-            || comparesPaddedStrings(left, right) || hasDynamicArgument(left, right) || comparesDateWithDateTime(left, right)
+            || comparesDifferentTypes(left, right) || hasDynamicArgument(left, right) || comparesDateWithDateTime(left, right)
             || comparesDecimalWithFloat(left, right))
             return ComparisonGraphCompareResult::UNKNOWN;
     }

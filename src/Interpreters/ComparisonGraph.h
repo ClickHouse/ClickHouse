@@ -207,9 +207,12 @@ private:
 /// The comparison reads the string as a value of the other type, but the graph orders two strings by their bytes.
 bool comparesStringConstantWithOtherType(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
 
-/// Returns true if an argument has a `FixedString` and the other argument has another type, like `s = toFixedString('a', 2)` for a `String` `s`.
-/// The comparison pads the shorter string with zero bytes, but the graph compares the bytes, and `CAST` to `String` drops the zero bytes.
-bool comparesPaddedStrings(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
+/// Returns true if an argument has a `FixedString`, an `Array`, a `Map` or an interval and the other argument has another type.
+/// A `FixedString` compared with another string type is padded with zero bytes, but the graph compares the bytes, and `CAST` to `String` drops the zero bytes.
+/// Intervals of different kinds are converted to one unit, like `toIntervalMinute(1) = toIntervalSecond(60)`, but the graph compares the counts.
+/// Arrays of different types compare by their common type, or element by element without one, and only the first way finds `[nan] = [nan]`,
+/// so `a = b AND b = c` does not give `a = c`.
+bool comparesDifferentTypes(const QueryTreeNodePtr & left, const QueryTreeNodePtr & right);
 
 /// Returns true if one argument has a `Date` or `Date32` and the other has a `DateTime` or `DateTime64`, like `d < toDateTime(...)`.
 /// The comparison converts the date to a time in the time zone of the other side, but the graph compares a count of days with a count of seconds,
