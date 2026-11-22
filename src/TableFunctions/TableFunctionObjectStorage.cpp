@@ -47,6 +47,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -58,8 +59,13 @@ namespace DataLakeStorageSetting
 template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
-    if (!object_storage)
+    /// A client created read-only does not create a missing Azure container, which a write needs. The container
+    /// is created only while a client is built, so a cached writable client can also serve a read-only request.
+    if (!object_storage || (object_storage_is_readonly && !create_readonly))
+    {
         object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
+        object_storage_is_readonly = create_readonly;
+    }
     return object_storage;
 }
 
@@ -75,6 +81,14 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 : "";
             if (!disk_name.empty())
             {
+                /// Only Iceberg and Delta Lake support the `disk` setting; other data lakes (Paimon, Hudi)
+                /// have no configuration over a disk.
+                const std::string_view function_name = Definition::name;
+                const bool is_iceberg = function_name.starts_with("iceberg");
+                const bool is_delta_lake = function_name.starts_with("deltaLake");
+                if (!is_iceberg && !is_delta_lake)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `disk` is not supported by table function {}", function_name);
+
                 auto disk = context->getDisk(disk_name);
                 switch (disk->getObjectStorage()->getType())
                 {
@@ -83,10 +97,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                     if (Definition::object_storage_type != "s3")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -100,10 +114,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::object_storage_type != "azure")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
 
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -116,10 +130,10 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         Definition::name != "deltaLakeCluster" &&
                         Definition::object_storage_type != "local")
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
-                    if (std::string_view(Definition::name).starts_with("iceberg"))
+                    if (is_iceberg)
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-                    else
+                    else if (is_delta_lake)
                         configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
                     break;
@@ -127,6 +141,9 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for iceberg {}", disk->getObjectStorage()->getType());
                 }
+
+                if (!configuration)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No configuration over disk {} was created for table function {}", disk_name, function_name);
             }
             else
                 configuration = std::make_shared<Configuration>(settings);
@@ -141,17 +158,11 @@ template <typename Definition, typename Configuration, bool is_data_lake>
 VectorWithMemoryTracking<size_t> TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::skipAnalysisForArguments(
     const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
+    /// `headers(...)` and `extra_credentials(...)` are wrappers that the storage parser removes before it classifies
+    /// positional and named arguments (see `S3SecretArguments` and the S3/Azure `Configuration` parsers), so their
+    /// nested `key = value` arguments (e.g. `role_arn = ...`) are skipped with them.
     VectorWithMemoryTracking<size_t> result;
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
-    }
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers", "extra_credentials"});
     return result;
 }
 
@@ -196,12 +207,12 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
 
 template <typename Definition, typename Configuration, bool is_data_lake>
 ColumnsDescription TableFunctionObjectStorage<
-    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+    Definition, Configuration, is_data_lake>::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (configuration->structure == "auto")
     {
         configuration->check(context);
-        auto storage = getObjectStorage(context, !is_insert_query);
+        auto storage = getObjectStorage(context, /*create_readonly=*/ true);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
         std::string sample_path;
@@ -315,9 +326,6 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionObjectStorage<S3Definition, StorageS3Configuration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Provides a table-like interface to select/insert files in [Amazon S3](https://aws.amazon.com/s3/) and [Google Cloud Storage](https://cloud.google.com/storage/). This table function is similar to the [hdfs function](/reference/functions/table-functions/hdfs), but provides S3-specific features.
 
 If you have multiple replicas in your cluster, you can use the [s3Cluster function](/reference/functions/table-functions/s3Cluster) instead to parallelize inserts.
@@ -357,6 +365,8 @@ For GCS, substitute your HMAC key and HMAC secret where you see `access_key_id` 
 | `partition_columns_in_data_file`        | Parameter is optional. Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                          |
 | `extra_credentials`                     | Parameter is optional. Used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps. |
 | `storage_class_name`                    | Parameter is optional. Supported values: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/). Defaults to `STANDARD`. |
+| `upload_checksum_algorithm`             | Parameter is optional. Checksum algorithm for uploads: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256` (sent as `x-amz-checksum-*`). Empty uses `Content-MD5`, or `CRC32` for S3Express buckets. Ignored for GCS.                                                                                                                                                                                                                          |
+| `delete_checksum_algorithm`             | Parameter is optional. Checksum algorithm for batch `DeleteObjects` requests: `MD5` (sent as `Content-MD5`), `CRC32` or `SHA256`. Empty uses `MD5`, `CRC32` for S3Express buckets, or `SHA256` when `MD5` is unavailable (FIPS mode) or rejected by the server. Ignored for GCS.                                                                                                                                                              |
 
 <Info>
 **GCS**
@@ -690,13 +700,14 @@ SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date 
 
 ## Accessing requester-pays buckets {#accessing-requester-pays-buckets}
 
-To access a requester-pays bucket, a header `x-amz-request-payer = requester` must be passed in any requests. This is achieved by passing the parameter `headers('x-amz-request-payer' = 'requester')` to the s3 function. For example:
+To access a requester-pays bucket, a header `x-amz-request-payer = requester` must be passed in any requests. This is achieved with the setting [`s3_request_payer`](/reference/settings/session-settings/s3#s3_request_payer) set to `requester`, or with the `request_payer` key of the endpoint section in the server configuration. For example:
 
 ```sql
 SELECT
     count() AS num_rows,
     uniqExact(_file) AS num_files
-FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', headers('x-amz-request-payer' = 'requester'))
+FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements-100*.parquet', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY')
+SETTINGS s3_request_payer = 'requester'
 
 ┌───num_rows─┬─num_files─┐
 │ 1110000000 │       111 │
@@ -705,6 +716,8 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 1 row in set. Elapsed: 3.089 sec. Processed 1.09 billion rows, 0.00 B (353.55 million rows/s., 0.00 B/s.)
 Peak memory usage: 192.27 KiB.
 ```
+
+Passing the parameter `headers('x-amz-request-payer' = 'requester')` to the `s3` function works as well.
 
 ## Resolving relative URLs {#resolving-relative-urls}
 
@@ -1007,9 +1020,6 @@ As a result, the data is written into three files in different buckets: `my_buck
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionObjectStorage<AzureDefinition, StorageAzureConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](/reference/functions/table-functions/s3).
 
 ## Syntax {#syntax}
@@ -1033,6 +1043,17 @@ azureBlobStorage(storage_account_url, container_name, blobpath, account_name, ac
 ```
 
 </Tab>
+<Tab title="Workload identity">
+
+Uses Azure workload identity via `extra_credentials`; mutually exclusive with `account_name` / `account_key` and requires `storage_account_url` (not `connection_string`):
+
+```sql
+azureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, structure])
+```
+
+Workload identity uses the server's own identity, so it is refused by default: enable `allow_server_credentials_in_user_queries` in the querying session or its settings profile.
+
+</Tab>
 <Tab title="Named collection">
 
 See [Named Collections](#named-collections) below for the full list of supported keys:
@@ -1049,7 +1070,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | Argument                         | Description                                                                                                                                                                                                                                                                                                                                               |
 |----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `connection_string`              | A connection string that includes embedded credentials (account name + account key or SAS token). When using this form, `account_name` and `account_key` should **not** be passed separately. See [Configure a connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
-| `storage_account_url`            | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, you **must** also pass `account_name` and `account_key`.                                                                                                                                                                                         |
+| `storage_account_url`            | The storage account endpoint URL, e.g. `https://<account>.blob.core.windows.net/`. When using this form, pass either `account_name` and `account_key`, or `extra_credentials(client_id=, tenant_id=)` for workload identity.                                                                                                                              |
 | `container_name`                 | Container name.                                                                                                                                                                                                                                                                                                                                           |
 | `blobpath`                       | File path. Supports the following wildcards in read-only mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                                                                                                                                                                                            |
 | `account_name`                   | Storage account name. **Required** when using `storage_account_url` without SAS; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                               |
@@ -1059,7 +1080,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `structure`                      | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                             |
 | `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `WILDCARD`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `HIVE` when `file_like_engine_default_partition_strategy` is `HIVE`; otherwise it uses no partition strategy. |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
-| `extra_credentials`              | Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.                                                                                                                                                                                                     |
+| `extra_credentials`              | Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`).                                                                                                                                                          |
 
 ## Named Collections {#named-collections}
 
@@ -1069,15 +1090,15 @@ Arguments can also be passed using [named collections](/concepts/features/config
 |----------------------------------|----------|--------------------------------------------------------------------------------------------------------|
 | `container`                      | Yes      | Container name. Corresponds to the positional argument `container_name`.                               |
 | `blob_path`                      | Yes      | File path (with optional wildcards). Corresponds to the positional argument `blobpath`.                |
-| `connection_string`              | No*      | Connection string with embedded credentials. *Either `connection_string` or `storage_account_url` must be provided. |
-| `storage_account_url`            | No*      | Storage account endpoint URL. *Either `connection_string` or `storage_account_url` must be provided.   |
-| `account_name`                   | No       | Required when using `storage_account_url`                                                            |
-| `account_key`                    | No       | Required when using `storage_account_url`                                                            |
+| `connection_string`              | No*      | Connection string with embedded credentials. *Either `connection_string` or `storage_account_url` must be provided. Cannot be combined with `client_id` / `tenant_id`. |
+| `storage_account_url`            | No*      | Storage account endpoint URL. *Either `connection_string` or `storage_account_url` must be provided. Required for workload identity (`client_id` / `tenant_id`). |
+| `account_name`                   | No       | Required when using `storage_account_url` with account-key authentication. Cannot be combined with `client_id` / `tenant_id`. |
+| `account_key`                    | No       | Required when using `storage_account_url` with account-key authentication. Cannot be combined with `client_id` / `tenant_id`. |
 | `format`                         | No       | File format.                                                                                           |
 | `compression`                    | No       | Compression type.                                                                                      |
 | `structure`                      | No       | Table structure.                                                                                       |
-| `client_id`                      | No       | Client ID for authentication.                                                                          |
-| `tenant_id`                      | No       | Tenant ID for authentication.                                                                          |
+| `client_id`                      | No       | Client ID for Azure workload identity. Requires `tenant_id` and `storage_account_url`; the server process must have `AZURE_FEDERATED_TOKEN_FILE` set. |
+| `tenant_id`                      | No       | Tenant ID for Azure workload identity. Requires `client_id` and `storage_account_url`; the server process must have `AZURE_FEDERATED_TOKEN_FILE` set. |
 
 <Note>
 Named collection key names differ from positional function argument names: `container` (not `container_name`) and `blob_path` (not `blobpath`).
@@ -1283,9 +1304,6 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 #if USE_HDFS
     factory.registerFunction<TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>>(
         {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 Creates a table from files in HDFS. This table function is similar to the [url](/reference/functions/table-functions/url) and [file](/reference/functions/table-functions/file) table functions.
 
 ## Syntax {#syntax}
@@ -2267,8 +2285,6 @@ void registerTableFunctionPaimon(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionPaimon>(
          {.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
 <ExperimentalBadge />
 
 Provides a read-only table-like interface to Apache [Paimon](https://paimon.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
@@ -2300,9 +2316,11 @@ A table with the specified structure for reading data in the specified Paimon ta
 
 ## Limitations {#limitations}
 
-Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
-snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws.
+Merge-on-read is not implemented, so a primary-key table is read only where Paimon reads it without merging: a bucket is
+read when all its data files are above level 0, are known to have no retract rows, and are in one level. With
+`deletion-vectors.enabled` or `'merge-engine' = 'first-row'` the files may be in several levels, and, unless
+`batch-scan-mode` is set to a mode other than `none`, level-0 files are not read until they are compacted, as in Paimon.
+Reading any other bucket throws; a full compaction in Paimon (`compact_strategy => 'full'`) makes it readable.
 
 Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
 contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
@@ -2453,6 +2471,7 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression_method])
 
 deltaLakeLocal(path, [,format])
 ```
@@ -2463,6 +2482,8 @@ The arguments for this table function are the same as for the `s3`, `azureBlobSt
 The `format` argument stands for the format of data files in the Delta lake table.
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
+
+For Azure (`deltaLakeAzure`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity and cannot be combined with `account_name` / `account_key`. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional). Workload identity uses the server's own identity, so it is refused by default: enable `allow_server_credentials_in_user_queries` in the querying session or its settings profile.
 
 ## Returned value {#returned-value}
 
@@ -2557,7 +2578,8 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
          {.description = R"(The table function can be used to read and write the DeltaLake table stored on Azure object store (writes from version 26.9).)",
-            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
+            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])\n"
+                      "deltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression] [,structure])",
             .category = FunctionDocumentation::Category::TableFunction},
          DataLake::withSecretSettings(azureTableFunctionSecretArguments(false)),
          {.allow_readonly = false});

@@ -17,7 +17,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "将 `ie_join` 追加到默认列表，因此 `ON` 部分仅包含不等式条件的连接将使用 IEJoin 执行，而非使用带过滤器的 `CROSS JOIN`。由于它位于最后，仅在其他算法不适用时才会使用。"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "已弃用 'default'，改为显式指定 join 算法，同时现在优先使用 parallel_hash 而不是 hash"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash,ie_join"},{"label": "将 `ie_join` 追加到默认列表，因此 `ON` 部分仅包含不等式条件的连接将使用 IEJoin 执行，而非使用带过滤器的 `CROSS JOIN`。由于它位于最后，仅在其他算法不适用时才会使用。"}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "已弃用 'default'，改为显式指定 JOIN 算法，同时现在优先使用 parallel_hash 而不是 hash"}]}]} />
 
 指定使用哪种 [JOIN](/zh/reference/statements/select/join) 算法。
 
@@ -32,7 +32,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 即使查询最终使用 `hash` 或其他算法运行，两者仍会生效。如果不希望如此，请勿在受影响查询的 `join_algorithm` 中列出上述算法。
 
-可能的值：
+可选值：
 
 * grace&#95;hash
 
@@ -100,7 +100,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * 已排序的侧 (按顺序读取的 MergeTree，或任何预排序输入)：保序地将数据分散到每分片 merge join 中可能会导致管道死锁。因此会保留按顺序读取及其 `read_in_order_use_virtual_row` 优化。
 * 当 initiator 构建分布式查询计划 (`make_distributed_plan`) 时，因为分散排序无法序列化以供远程执行。本地单片段计划和每个 worker 的片段会在禁用该设置后重新优化，因此仍可进行分片。
 
-跳过它只会禁用这一 rewrite，而不会禁用整体的 parallelism：join 会作为单个 `full_sorting_merge` 运行；当启用 `query_plan_join_shard_by_pk_ranges` 时，按顺序读取的 MergeTree 侧仍可在数据源处按主键 ranges 进行分片 (这些 ranges 按与 join 相同的比较方式排序，因此相等的键会保持在一起)。
+跳过它只会禁用这一 rewrite，而不会禁用整体的 parallelism：join 会作为单个 `full_sorting_merge` 运行；按顺序读取的 MergeTree 侧仍可通过 `query_plan_join_shard_by_pk_ranges` (默认启用) 在数据源处按主键 ranges 进行分片 (这些 ranges 按与 join 相同的比较方式排序，因此相等的键会保持在一起)。
 
 * prefer&#95;partial&#95;merge
 
@@ -109,7 +109,7 @@ ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*�
 * default (已弃用)
 
 遗留值，请不要再使用。
-等同于 `direct,hash`，即依次尝试使用 direct join 和 hash join。
+等同于 `direct,hash`，即依次尝试使用 direct join 和 哈希连接。
 
 ## join_any_take_last_row {#join_any_take_last_row}
 

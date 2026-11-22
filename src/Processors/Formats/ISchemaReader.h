@@ -1,6 +1,8 @@
 #pragma once
 
+#include <span>
 #include <Core/NamesAndTypes.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
@@ -34,16 +36,16 @@ public:
 
     /// True if order of columns is important in format.
     /// Exceptions: JSON, TSKV.
-    virtual bool hasStrictOrderOfColumns() const { return true; }
+    [[nodiscard]] virtual bool hasStrictOrderOfColumns() const { return true; }
 
-    virtual bool needContext() const { return false; }
+    [[nodiscard]] virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
     /// Infer the names `column_mapper` gives to the file's field ids, like `IInputFormat::setColumnMapper`.
     virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
 
     virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
-    virtual size_t getNumRowsRead() const { return 0; }
+    [[nodiscard]] virtual size_t getNumRowsRead() const { return 0; }
 
     virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
     virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
@@ -61,7 +63,7 @@ class IIRowSchemaReader : public ISchemaReader
 public:
     IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
 
-    bool needContext() const override { return !hints_str.empty(); }
+    [[nodiscard]] bool needContext() const override { return !hints_str.empty(); }
     void setContext(const ContextPtr & context) override;
 
 protected:
@@ -70,7 +72,7 @@ protected:
         max_rows_to_read = max_rows;
         max_bytes_to_read = max_bytes;
     }
-    size_t getNumRowsRead() const override { return rows_read; }
+    [[nodiscard]] size_t getNumRowsRead() const override { return rows_read; }
 
     virtual void transformFinalTypeIfNeeded(DataTypePtr &) {}
 
@@ -80,7 +82,7 @@ protected:
     DataTypePtr default_type;
     String hints_str;
     FormatSettings format_settings;
-    std::unordered_map<String, DataTypePtr> hints;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> hints;
     String hints_parsing_error;
 };
 
@@ -107,18 +109,18 @@ protected:
     /// Return std::nullopt if can't read more data.
     virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
 
-    void setColumnNames(const std::vector<String> & names) { column_names = names; }
+    void setColumnNames(std::span<const String> names) { column_names.assign(names.begin(), names.end()); }
 
-    virtual bool allowVariableNumberOfColumns() const { return false; }
+    [[nodiscard]] virtual bool allowVariableNumberOfColumns() const { return false; }
 
     size_t field_index{};
 
 private:
-    DataTypePtr getDefaultType(size_t column) const;
+    [[nodiscard]] DataTypePtr getDefaultType(size_t column) const;
     void initColumnNames(const String & column_names_str);
 
     DataTypes default_types;
-    std::vector<String> column_names;
+    Names column_names;
 };
 
 /// Base class for schema inference for formats that read data row by row and each
@@ -131,7 +133,7 @@ class IRowWithNamesSchemaReader : public IIRowSchemaReader
 public:
     IRowWithNamesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
     NamesAndTypesList readSchema() override;
-    bool hasStrictOrderOfColumns() const override { return false; }
+    [[nodiscard]] bool hasStrictOrderOfColumns() const override { return false; }
 
 protected:
     /// Read one row and determine types of columns in it.
@@ -213,7 +215,7 @@ void chooseResultColumnTypes(
     DataTypes & types,
     DataTypes & new_types,
     const DataTypePtr & default_type,
-    const std::vector<String> & column_names,
+    std::span<const String> column_names,
     size_t row)
 {
     if (types.size() != new_types.size())
