@@ -508,6 +508,17 @@ static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const Str
     return StoredObject(remote_path);
 }
 
+/// A destination is not at the version that the URL of the source selects, so it is looked up without one.
+static std::optional<ObjectMetadata>
+tryGetCurrentObjectMetadata(const IObjectStorage & object_storage, const String & path)
+{
+#if USE_AWS_S3
+    if (const auto * s3_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
+        return s3_storage->tryGetObjectVersionMetadata(path, /*version_id=*/{}, /*with_tags=*/false);
+#endif
+    return object_storage.tryGetObjectMetadata(path, /*with_tags=*/false);
+}
+
 #if USE_AZURE_BLOB_STORAGE
 
 static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
@@ -755,8 +766,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                 if (e.code() != ErrorCodes::FILE_ALREADY_EXISTS)
                                     throw;
 
-                                auto destination_metadata
-                                    = object_storage->tryGetObjectMetadata(object_to.remote_path, /*with_tags=*/false);
+                                auto destination_metadata = tryGetCurrentObjectMetadata(*object_storage, object_to.remote_path);
                                 return CopyResult{
                                     .destination_is_ours = destination_metadata
                                         && destinationIsOwnCommittedCopy(provenance, destination_metadata->attributes),
