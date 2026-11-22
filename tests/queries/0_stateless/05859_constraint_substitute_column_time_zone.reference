@@ -1,0 +1,12 @@
+datetime filter	1
+datetime filter	1
+datetime projection	2020-01-01 20:00:00
+datetime projection	2020-01-01 20:00:00
+datetime64 filter	1
+datetime64 filter	1
+datetime64 projection	2020-01-01 20:00:00.000
+datetime64 projection	2020-01-01 20:00:00.000
+tuple filter	1
+tuple filter	1
+tuple projection	(\'2020-01-01 20:00:00\')
+tuple projection	(\'2020-01-01 20:00:00\')
