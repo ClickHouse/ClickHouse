@@ -1060,7 +1060,7 @@ An entry holds a contiguous range of granules of one stripe: a granule enters th
 
 The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a chunk of 65536 rows of a column of one row group (the last chunk of a row group can be shorter), keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A row group that uses the cache is read in these chunks, whatever the block size settings. A chunk is written to the cache as it is decoded, without a copy, if all its rows were read before any filter was applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A column of a row group is served from the cache when all its chunks are there, so the chunks of a column that cannot all be written are taken back out of the cache. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
 )", 0, \
-        {"26.11", false, true, "Enable the columns cache by default."}, \
+        {"26.12", false, true, "Enable the columns cache by default."}, \
         {"26.10", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."}) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
 Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
