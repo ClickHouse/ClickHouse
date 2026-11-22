@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/NestedDefaultsReconciliation.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -549,19 +550,16 @@ void IMergeTreeReader::evaluateMissingDefaults(
             };
 
             /// A column read from the part by this step whose stored values are computed from its
-            /// `MATERIALIZED` expression and may be computed again (the expression is deterministic).
+            /// `MATERIALIZED` expression and may be computed again: the expression is deterministic
+            /// and the column is not a part of a table key.
             /// Columns produced by earlier steps are not returned by this step, so they stay as is.
             std::unordered_map<String, bool> recomputable_stored_columns;
             auto is_recomputable_stored_column = [&](const String & column_name)
             {
                 auto [cached, inserted] = recomputable_stored_columns.emplace(column_name, false);
                 if (inserted && current_step_columns.contains(column_name))
-                {
-                    auto column_default = combined_columns.getDefault(column_name);
-                    cached->second = column_default && column_default->kind == ColumnDefaultKind::Materialized
-                        && column_default->expression
-                        && isDeterministicDefaultExpression(column_default->expression, context_copy);
-                }
+                    cached->second = isStoredMaterializedColumnRecomputable(
+                        column_name, storage_snapshot->metadata->getColumns(), *storage_snapshot->metadata, context_copy);
                 return cached->second;
             };
 

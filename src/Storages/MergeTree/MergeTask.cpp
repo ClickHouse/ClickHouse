@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/NestedDefaultsReconciliation.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -18,11 +19,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
-#include <Parsers/IAST.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -183,154 +182,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
-}
-
-namespace
-{
-
-/// Resolve a source-column identifier used inside a `DEFAULT` expression to the name of the
-/// storage column it reads through. Physical columns and their subcolumns resolve directly; a
-/// subcolumn read through an `ALIAS` column (whose subcolumns are not registered) is resolved by
-/// finding the longest existing column name that is a dotted prefix of the identifier. Iterating
-/// over the actual column names (rather than peeling one dotted segment) correctly handles both
-/// nested subcolumns and legal quoted column names that themselves contain dots (e.g.
-/// `` `x.y` ALIAS m `` referenced as `` `x.y`.keys ``). Returns an empty string if nothing matches.
-String resolveDefaultDependencyToStorage(const String & required_name, const ColumnsDescription & columns_desc)
-{
-    /// `withSubcolumns` resolves subcolumns of *physical* columns (e.g. `m.keys` -> `m`).
-    if (auto resolved = columns_desc.tryGetColumn(
-            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_name))
-        return resolved->getNameInStorage();
-
-    /// Subcolumns of `ALIAS` columns are not registered (`ColumnsDescription::addSubcolumns` skips
-    /// `ColumnDefaultKind::Alias`), so an identifier like `m_alias.keys` with `m_alias ALIAS m` does
-    /// not resolve above. Find the longest existing column name that is a dotted prefix of the
-    /// identifier so the alias expansion below still reaches the physical dependency, even for alias
-    /// names that contain dots themselves.
-    String storage_name;
-    for (const auto & column : columns_desc.getAll())
-    {
-        if (required_name.size() > column.name.size()
-            && required_name.starts_with(column.name)
-            && required_name[column.name.size()] == '.'
-            && column.name.size() > storage_name.size())
-            storage_name = column.name;
-    }
-    return storage_name;
-}
-
-/// Collect the physical storage columns that a column's `DEFAULT` expression semantically
-/// depends on. It uses the same scope-aware dependency analysis as default evaluation
-/// (see `addDefaultRequiredExpressionsRecursively` / `evaluateMissingDefaults`):
-/// `RequiredSourceColumnsVisitor` correctly ignores lambda formal parameters, so
-/// `arrayMap(x -> f(x), col)` depends on `col`, not on a column named `x`. Each source column is
-/// resolved to its storage column name (e.g. the subcolumn `m.keys` resolves to the `Map` column
-/// `m`), including subcolumns read through an alias (e.g. `m_alias.keys` with `m_alias ALIAS m`
-/// resolves to `m`).
-///
-/// The dependency closure is transitive through intermediate columns that have no values in any
-/// source, so that a default depending on an expired column *through* another column is still
-/// detected:
-/// - `ALIAS` columns are never physically stored, so they are always expanded into the physical
-///   columns their expression reads (and are not themselves reported).
-/// - An ordinary `DEFAULT`/`MATERIALIZED` column that is recomputed from its expression for the
-///   rows of every source part during the merge has its dependencies expanded too (and the column
-///   itself is still reported). A chain such as `tmp DEFAULT m.keys`, `n.b DEFAULT tmp` with `m`
-///   expired therefore reports `m`, so `n.b` is expired as well.
-/// `columns_to_follow` holds such intermediates. The recursion stops at an intermediate that the merge
-/// is forced to write anyway: one stored in some source part, omitted with a `MissingColumnInfo`
-/// marker in some part, backed by a patch part, or being a pending rename target. The merge computes
-/// that intermediate, computes the outer default from it, and reconciles the outer value with the
-/// shared `Nested` offsets (see `reconcileEvaluatedDefaultWithSharedOffsets`), so the outer column
-/// can be materialized safely. Expiring it instead would turn a merge-time value into a read-time
-/// one, which changes the data for a non-deterministic default.
-NameSet collectDefaultStorageDependencies(
-    const ASTPtr & default_expression,
-    const ColumnsDescription & columns_desc,
-    const NameSet & columns_to_follow)
-{
-    NameSet result;
-    NameSet visited_columns;
-
-    std::vector<ASTPtr> to_visit;
-    to_visit.push_back(default_expression);
-
-    while (!to_visit.empty())
-    {
-        /// Clone defensively so the shared column-description AST is never touched, mirroring
-        /// how `evaluateMissingDefaults` analyses a cloned copy of the default expression.
-        auto expression = to_visit.back()->clone();
-        to_visit.pop_back();
-
-        RequiredSourceColumnsVisitor::Data columns_context;
-        RequiredSourceColumnsVisitor(columns_context).visit(expression);
-
-        for (const auto & required_name : columns_context.requiredColumns())
-        {
-            String storage_name = resolveDefaultDependencyToStorage(required_name, columns_desc);
-            if (storage_name.empty())
-                continue;
-
-            auto dependency_default = columns_desc.getDefault(storage_name);
-
-            /// An `ALIAS` column is not physically stored, so it never appears in `expired_columns`.
-            /// Expand it into the physical columns its expression reads instead. `visited_columns`
-            /// guards against cycles in (mutually) recursive definitions.
-            if (dependency_default && dependency_default->kind == ColumnDefaultKind::Alias && dependency_default->expression)
-            {
-                if (visited_columns.emplace(storage_name).second)
-                    to_visit.push_back(dependency_default->expression);
-                continue;
-            }
-
-            /// A physical column that has no values in any source is recomputed from its own
-            /// `DEFAULT`/`MATERIALIZED` expression for all rows, so follow its dependencies too: the
-            /// subcolumn we started from transitively reads whatever this expression reads.
-            if (dependency_default && dependency_default->expression
-                && columns_to_follow.contains(storage_name)
-                && visited_columns.emplace(storage_name).second)
-                to_visit.push_back(dependency_default->expression);
-
-            result.emplace(std::move(storage_name));
-        }
-    }
-
-    return result;
-}
-
-/// Array subcolumns of `Nested` structures with shared offsets that some source part does not store
-/// while storing another array subcolumn of the same structure. Reading such a part reconciles the
-/// default of the missing subcolumn with the offsets the part stores (see
-/// `reconcileEvaluatedDefaultWithSharedOffsets`), which may change the value the default expression
-/// produces, so the data derived from that value before the merge may disagree with the merged part.
-NameSet getNestedColumnsReconciledInSomePart(const NamesAndTypesList & storage_columns, const MergeTreeData::DataPartsVector & parts)
-{
-    std::unordered_map<String, Names> array_subcolumns_by_nested_name;
-    for (const auto & storage_column : storage_columns)
-    {
-        auto split = Nested::splitName(storage_column.name);
-        if (!split.second.empty() && isArray(storage_column.type))
-            array_subcolumns_by_nested_name[split.first].push_back(storage_column.name);
-    }
-
-    NameSet result;
-    for (const auto & part : parts)
-    {
-        const auto part_column_names = part->getColumns().getNameSet();
-        for (const auto & [_, subcolumns] : array_subcolumns_by_nested_name)
-        {
-            if (subcolumns.size() < 2
-                || !std::ranges::any_of(subcolumns, [&](const String & name) { return part_column_names.contains(name); }))
-                continue;
-
-            for (const auto & name : subcolumns)
-                if (!part_column_names.contains(name))
-                    result.insert(name);
-        }
-    }
-    return result;
-}
-
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -669,8 +520,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             auto is_recomputed_where_stored = [&]
             {
                 if (!recomputed_where_stored)
-                    recomputed_where_stored = column_default->kind == ColumnDefaultKind::Materialized
-                        && isDeterministicDefaultExpression(column_default->expression, global_ctx->context);
+                    recomputed_where_stored = isStoredMaterializedColumnRecomputable(
+                        storage_column.name, columns_desc, *global_ctx->metadata_snapshot, global_ctx->context);
                 return *recomputed_where_stored;
             };
 
@@ -1271,6 +1122,40 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// Merging text indexes maps rows to source parts by the `_part_index` virtual column, which a table column of that name shadows.
     global_ctx->rebuild_text_indexes = global_ctx->merge_may_reduce_rows || global_ctx->metadata_snapshot->getColumns().has("_part_index");
+
+    /// The merge may reconcile a `Nested` default with the shared offsets of a source part, and
+    /// recompute the stored `MATERIALIZED` columns that read it. The segments of a text index over
+    /// such a column were built from the values before the reconciliation, so the index is built
+    /// from the values written to the merged part instead of merging those segments.
+    if (!global_ctx->rebuild_text_indexes && (*global_ctx->data_settings)[MergeTreeSetting::share_nested_offsets])
+    {
+        NameSet reconciled_in_some_part;
+        bool reconciled_columns_collected = false;
+
+        for (const auto & index : global_ctx->metadata_snapshot->getSecondaryIndices())
+        {
+            if (index.type != "text")
+                continue;
+
+            if (!reconciled_columns_collected)
+            {
+                reconciled_in_some_part = getNestedColumnsReconciledInSomePart(global_ctx->storage_columns, global_ctx->future_part->parts);
+                reconciled_columns_collected = true;
+            }
+
+            if (mayReadReconciledNestedDefault(
+                    index.expression->getRequiredColumns(), reconciled_in_some_part,
+                    global_ctx->metadata_snapshot->getColumns(), global_ctx->storage_columns.getNameSet()))
+            {
+                LOG_DEBUG(
+                    ctx->log,
+                    "Text indexes will be rebuilt because index {} reads a `Nested` column the merge may reconcile with the shared offsets",
+                    index.name);
+                global_ctx->rebuild_text_indexes = true;
+                break;
+            }
+        }
+    }
 
     /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
@@ -2139,28 +2024,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
     const auto storage_column_names = global_ctx->storage_columns.getNameSet();
-    const auto virtual_column_names = global_ctx->virtual_columns.getNameSet();
 
     auto may_read_reconciled_column = [&](const Names & required_columns)
     {
-        if (reconciled_in_some_part.empty())
-            return false;
-
-        for (const auto & name : required_columns)
-        {
-            auto name_in_storage = getColumnNameInStorage(name, storage_column_names, virtual_column_names);
-            if (reconciled_in_some_part.contains(name_in_storage))
-                return true;
-
-            auto column_default = columns_desc.getDefault(name_in_storage);
-            if (column_default && column_default->expression)
-            {
-                for (const auto & dependency : collectDefaultStorageDependencies(column_default->expression, columns_desc, storage_column_names))
-                    if (reconciled_in_some_part.contains(dependency))
-                        return true;
-            }
-        }
-        return false;
+        return mayReadReconciledNestedDefault(required_columns, reconciled_in_some_part, columns_desc, storage_column_names);
     };
 
     for (const auto & projection : projections)
