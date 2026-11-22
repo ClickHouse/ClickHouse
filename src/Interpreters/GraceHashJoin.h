@@ -141,8 +141,7 @@ private:
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
-    /// The share of the query's spill budget the bucket in memory may keep, or 0 when it does not apply now.
-    /// Caller holds `hash_join_mutex`.
+    /// The share of the query's spill budget the bucket may keep now, or 0. Caller holds `hash_join_mutex`.
     size_t shareForSplit();
 
     /// Check that join satisfies limits on rows/bytes in table_join.

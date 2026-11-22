@@ -60,7 +60,6 @@ SpillingHashJoin::SpillingHashJoin(
     if (const size_t query_budget = table_join->maxBytesInQueryBeforeExternalJoin())
     {
         spill_budget = std::make_shared<QueryJoinSpillBudget>(query_budget, max_bytes_before_external_join);
-        /// The joins of a query are created one after another, so each reserves from what the others left of the budget.
         const size_t query_memory = static_cast<size_t>(std::max<Int64>(0, getCurrentQueryMemoryUsage()));
         max_reserve_bytes = std::min(max_bytes_before_external_join, query_budget - std::min(query_budget, query_memory));
     }
@@ -341,7 +340,6 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
         state.store(target_state, std::memory_order_release);
         QueryExecutionCounters::addUsedJoinAlgorithm(target_algorithm);
 
-        /// `MergeJoin` writes the right side through to disk, so it no longer takes a share of the budget.
         if (target_state == State::MERGE_JOIN && spill_budget)
             spill_budget->leave();
     }

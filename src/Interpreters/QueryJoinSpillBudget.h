@@ -12,9 +12,8 @@ namespace DB
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
-/// The spill budget the spill-capable hash joins of a query share: `max_bytes_ratio_before_external_join` of the
-/// memory available when the query was planned, never below the join's own threshold. While the memory of the query
-/// is at or over it, each join may keep an equal share of it in memory.
+/// The spill budget the spill-capable hash joins of a query share, never below the join's own threshold.
+/// While the memory of the query is at or over it, each join may keep an equal share of it in memory.
 class QueryJoinSpillBudget
 {
 public:
@@ -28,7 +27,6 @@ public:
     /// The join holds nothing that it could spill any more (switched to `MergeJoin`, or failed). Idempotent.
     void leave();
 
-    /// The memory of the query, the budget and the number of joins sharing it, for logs.
     String describe() const;
 
 private:

@@ -889,7 +889,6 @@ size_t GraceHashJoin::shareForSplit()
     if (!spill_budget)
         return 0;
 
-    /// Bounded like a forced split: a split for the share must not fail the query either.
     const size_t share = spill_budget->getShareWhenOverBudget();
     if (!share || !canForceRepartition() || hash_join->getTotalByteCount() < min_bytes_for_share_split)
         return 0;
@@ -1023,7 +1022,6 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
         /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
         const bool pre_own_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
-        /// While the query is over its join spill budget, the bucket is also held to this join's share of it.
         size_t share = shareForSplit();
         const bool pre_threshold_overflow = pre_own_overflow || (share && pre_total_bytes * 2 >= share);
         bool split_by_share_only = pre_threshold_overflow && !pre_own_overflow;
