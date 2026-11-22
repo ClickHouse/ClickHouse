@@ -309,6 +309,21 @@ FROM (EXPLAIN PLAN sorting = 1
 WITH (SELECT groupArray(intDiv(id, 10)) FROM (SELECT b.id AS id FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY intDiv(a.id, 10))) AS rows
 SELECT 'inner monotonic function of key order by result', length(rows), rows = arraySort(rows);
 
+-- A key compared with two keys of the other side makes all three equal.
+SELECT 'inner repeated key order by plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT a.v FROM fsmj_order_b AS b INNER JOIN fsmj_order_a AS a ON b.id = a.id AND b.id = a.v ORDER BY a.v);
+
+WITH (SELECT groupArray(v) FROM (SELECT a.v AS v FROM fsmj_order_b AS b INNER JOIN fsmj_order_a AS a ON b.id = a.id AND b.id = a.v ORDER BY a.v)) AS rows
+SELECT 'inner repeated key order by result', length(rows), rows = arraySort(rows);
+
+-- The equalities of a join stay known through a join on another key whose own order is not kept.
+SELECT 'inner chain other key between plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT count(), sum(b.v)
+    FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.v = c.v
+    INNER JOIN fsmj_order_b AS d ON a.id = d.id INNER JOIN fsmj_order_c AS e ON b.id = e.id);
+
 SELECT 'inner chain both keys', count(), sum(a.v), sum(b.v), sum(c.v), sum(d.v)
 FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
 INNER JOIN fsmj_order_b AS d ON a.id = d.id
@@ -376,6 +391,18 @@ SELECT 'left subquery other side', count(), sum(a.v), sum(s.y), sum(d.v), countI
 FROM fsmj_order_a AS a
 LEFT JOIN (SELECT b.id AS x, c.id AS y FROM fsmj_order_b AS b INNER JOIN fsmj_order_c AS c ON b.id = c.id) AS s ON a.id = s.x
 INNER JOIN fsmj_order_b AS d ON s.y = d.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+SELECT 'inner chain other key between', count(), sum(b.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.v = c.v
+INNER JOIN fsmj_order_b AS d ON a.id = d.id INNER JOIN fsmj_order_c AS e ON b.id = e.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'inner chain other key between', count(), sum(b.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.v = c.v
+INNER JOIN fsmj_order_b AS d ON a.id = d.id INNER JOIN fsmj_order_c AS e ON b.id = e.id;
+SELECT 'inner chain other key between', count(), sum(b.v)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON a.v = c.v
+INNER JOIN fsmj_order_b AS d ON a.id = d.id INNER JOIN fsmj_order_c AS e ON b.id = e.id
 SETTINGS query_plan_join_shard_by_pk_ranges = 1;
 
 DROP TABLE fsmj_order_a;

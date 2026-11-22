@@ -62,6 +62,9 @@ inner both keys order by plan	0	3
 inner both keys order by result	1400	1
 inner monotonic function of key order by plan	0	3
 inner monotonic function of key order by result	1400	1
+inner repeated key order by plan	0	3
+inner repeated key order by result	650	1
+inner chain other key between plan	3	5
 inner chain both keys	1804	1299992	696896	445864	696896
 inner chain both keys	1804	1299992	696896	445864	696896
 inner chain both keys	1804	1299992	696896	445864	696896
@@ -77,3 +80,6 @@ inner subquery function of key	936	2580
 left subquery other side	4302	3172596	525792	1321396	2522
 left subquery other side	4302	3172596	525792	1321396	2522
 left subquery other side	4302	3172596	525792	1321396	2522
+inner chain other key between	800	318800
+inner chain other key between	800	318800
+inner chain other key between	800	318800

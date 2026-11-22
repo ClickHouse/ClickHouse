@@ -260,9 +260,9 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
     if (keys_are_equal)
     {
         equivalences.merge(remapEquivalences(children_properties[1 - ordered_child].equivalences, unambiguous_inputs));
-        for (const auto & [ordered_key, equal_key] : ordered_key_to_equal_key)
-            if (unambiguous_inputs.contains(ordered_key) && unambiguous_inputs.contains(equal_key))
-                equivalences.add(ordered_key, equal_key);
+        for (size_t i = 0; i < clause.key_names_left.size(); ++i)
+            if (unambiguous_inputs.contains(clause.key_names_left[i]) && unambiguous_inputs.contains(clause.key_names_right[i]))
+                equivalences.add(clause.key_names_left[i], clause.key_names_right[i]);
     }
 
     UnorderedMapWithMemoryTracking<String, Names> unambiguous_outputs;
@@ -307,9 +307,6 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
             break;
     }
     sort_description.resize(num_columns_in_output);
-
-    if (sort_description.empty())
-        return {};
 
     /// A single merge join is resized to `max_streams` outputs, and a sharded one has one output per shard,
     /// so the order holds within every stream rather than globally.
