@@ -4511,7 +4511,7 @@ def test_kafka_stream_cursor(kafka_cluster, create_query_generator):
 
         def produce(partition, keys):
             for key in keys:
-                producer.send(topic=topic, value=json.dumps({"key": key}), partition=partition)
+                producer.send(topic=topic, value=json.dumps({"key": key, "payload": {"a": key + 100}}), partition=partition)
             producer.flush()
 
         produce(0, [0, 1, 2])
@@ -4520,7 +4520,7 @@ def test_kafka_stream_cursor(kafka_cluster, create_query_generator):
         instance.query(
             create_query_generator(
                 kafka_table,
-                "key UInt64",
+                "key UInt64, payload Tuple(a UInt64)",
                 topic_list=topic,
                 consumer_group=topic,
             )
@@ -4539,6 +4539,13 @@ def test_kafka_stream_cursor(kafka_cluster, create_query_generator):
             query(f"SELECT key FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{cursor_topic}': {{'0': 0, '1': 1}}}} ORDER BY ALL")
             == "1\n2\n"
         )
+
+        # A subcolumn is extracted from the parsed column.
+        assert (
+            query(f"SELECT payload.a, _offset FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{cursor_topic}': {{'0': 0, '1': 1}}}} ORDER BY ALL")
+            == "101\t1\n102\t2\n"
+        )
+        assert query(f"SELECT sum(payload.a) FROM test.{kafka_table} STREAM BOUNDED") == "524\n"
 
         # A cursor outside of a partition is an error, instead of reading the partition from the beginning.
         bounded_beyond_end = f"SELECT key FROM test.{kafka_table} STREAM BOUNDED CURSOR {{'{cursor_topic}': {{'0': 10}}}}"

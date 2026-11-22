@@ -106,6 +106,8 @@ private:
 
     const Block non_virtual_header;
     const Block virtual_header;
+    /// The columns of the query, which can be subcolumns of the columns of the table.
+    NamesAndTypes requested_columns;
 
     /// The offsets of the cursor of the query, including the partitions that do not exist yet.
     std::map<TopicPartition, Int64> cursor_offsets;

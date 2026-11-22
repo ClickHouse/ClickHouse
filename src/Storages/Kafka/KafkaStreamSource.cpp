@@ -11,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DeadLetterQueue.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/ErrnoException.h>
@@ -116,6 +116,16 @@ KafkaStreamSource::KafkaStreamSource(
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
 {
+    /// The same lookup as in `StorageSnapshot::getSampleBlockForColumns`, which the header of the source is built with.
+    const auto & columns_description = storage_snapshot->metadata->getColumns();
+    requested_columns.reserve(columns.size());
+    for (const auto & name : columns)
+    {
+        if (auto column = columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            requested_columns.push_back(std::move(*column));
+        else
+            requested_columns.emplace_back(name, getPort().getHeader().getByName(name).type);
+    }
 }
 
 KafkaStreamSource::~KafkaStreamSource()
@@ -553,14 +563,15 @@ Chunk KafkaStreamSource::generate()
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         result_block.insert(column);
 
-    auto converting_dag = ActionsDAG::makeConvertingActions(
-        result_block.cloneEmpty().getColumnsWithTypeAndName(),
-        getPort().getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
-    ExpressionActions(std::move(converting_dag)).execute(result_block);
+    /// The query can request subcolumns (e.g. an element of a `Tuple` or a path of a `JSON`), while the format parses
+    /// the whole columns, so the requested columns are extracted from the parsed block.
+    const size_t num_rows = result_block.rows();
+    Columns result_columns;
+    result_columns.reserve(requested_columns.size());
+    for (const auto & requested_column : requested_columns)
+        result_columns.push_back(getColumnFromBlock(result_block, requested_column));
 
-    return Chunk(result_block.getColumns(), result_block.rows());
+    return Chunk(std::move(result_columns), num_rows);
 }
 
 }
