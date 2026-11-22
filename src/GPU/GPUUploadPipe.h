@@ -119,6 +119,9 @@ private:
 };
 
 
+using DeviceColumnBuffer = std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer>;
+
+
 class IUploadPipe
 {
 public:
@@ -171,6 +174,14 @@ public:
 
     const IDeviceColumn & flush() override;
 
+    /// The staging is reused only after the copy, which `reset` and the next `stage` wait for.
+    const IDeviceColumn & sendWithoutWaiting();
+
+    const IDeviceColumn & deviceColumn() const;
+
+    /// Freed in the order of the pipe's stream; the pipe stages the next batch while the caller holds this one.
+    DeviceColumnBuffer takeDeviceColumn();
+
     void reset() override;
 
     void waitForUploads();
@@ -197,7 +208,7 @@ private:
     size_t staged_bytes = 0;
     size_t staged_chars = 0;
 
-    std::variant<DeviceFixedColumnBuffer, DeviceVariableColumnBuffer> device;
+    DeviceColumnBuffer device;
 };
 
 
