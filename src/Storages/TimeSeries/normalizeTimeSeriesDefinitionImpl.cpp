@@ -812,7 +812,7 @@ namespace
         if (inner_table_columns.columns)
         {
             auto & columns = inner_table_columns.columns->children;
-            auto has_name = [&](const ASTPtr & column) { return column->as<const ASTColumnDeclaration &>().name == column_name; };
+            auto has_name = [&](const ASTPtr & column) { return column->as<const ASTColumnDeclaration &>().getName() == column_name; };
             columns.erase(std::remove_if(columns.begin(), columns.end(), has_name), columns.end());
         }
 
@@ -1410,7 +1410,7 @@ namespace
         if (inner_table_columns.columns)
         {
             for (auto & child : inner_table_columns.columns->children)
-                original[child->as<ASTColumnDeclaration &>().name] = child;
+                original[child->as<ASTColumnDeclaration &>().getName()] = child;
         }
 
         auto new_list = make_intrusive<ASTExpressionList>();
@@ -1645,7 +1645,7 @@ namespace
         if (create_query.columns_list && create_query.columns_list->columns)
         {
             for (const auto & child : create_query.columns_list->columns->children)
-                outer_columns_by_name[child->as<ASTColumnDeclaration &>().name] = child;
+                outer_columns_by_name[child->as<ASTColumnDeclaration &>().getName()] = child;
         }
 
         auto type_from_outer = [&](const String & name) -> DataTypePtr

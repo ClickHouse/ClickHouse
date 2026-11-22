@@ -9156,7 +9156,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                         /// `MODIFY COLUMN <subcolumn> CODEC(...)` and `... REMOVE CODEC` change the codec of one stream
                         if (alter_cmd->type == ASTAlterCommand::MODIFY_COLUMN && (col->getCodec() || alter_cmd->remove_property == "CODEC")
                             && fuzz_rand() % 10 == 0)
-                            fuzzCodecTarget(col->getName());
+                        {
+                            String name = col->getName();
+                            fuzzCodecTarget(name);
+                            col->setName(name);
+                        }
                     }
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->first = !alter_cmd->first;
