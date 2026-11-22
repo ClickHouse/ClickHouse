@@ -636,6 +636,35 @@ Columns Set::getSetElements() const
     return result;
 }
 
+static Columns sortSetIndexColumns(const Columns & columns)
+{
+    Block block_to_sort;
+    SortDescription sort_description;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        String column_name = "_" + toString(i);
+        block_to_sort.insert({columns[i], nullptr, column_name});
+        sort_description.emplace_back(column_name, 1, 1);
+    }
+
+    sortBlock(block_to_sort, sort_description);
+    return block_to_sort.getColumns();
+}
+
+std::shared_ptr<const Columns> Set::getSortedSetElements() const
+{
+    checkIsCreated();
+
+    std::lock_guard lock(sorted_set_elements_mutex);
+    auto sorted = sorted_set_elements.lock();
+    if (!sorted)
+    {
+        sorted = std::make_shared<const Columns>(sortSetIndexColumns(getSetElements()));
+        sorted_set_elements = sorted;
+    }
+    return sorted;
+}
+
 ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const
 {
     /// The constant columns to the left of `IN` are not supported directly, so they are materialized. The key
@@ -968,7 +997,8 @@ static std::optional<BoolMask> checkInRangeSingleColumn(
     }
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(
+    const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
     , instance_id(getNextMergeTreeSetIndexId())
@@ -996,19 +1026,24 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
 
-    Block block_to_sort;
-    SortDescription sort_description;
-    for (size_t i = 0; i < tuple_size; ++i)
+    /// The elements sorted once for the set serve every index over all of the set's own columns in their order.
+    /// An index over only some of them sorts its own copy: sorting by more columns than it uses can cost more.
+    bool use_sorted_set_elements = false;
+    if (source_set && tuple_size > 0 && source_set->isCreated())
     {
-        String column_name = "_" + toString(i);
-        block_to_sort.insert({ordered_set[i], nullptr, column_name});
-        sort_description.emplace_back(column_name, 1, 1);
+        const Columns source_elements = source_set->getSetElements();
+        use_sorted_set_elements = tuple_size == source_elements.size();
+        for (size_t i = 0; use_sorted_set_elements && i < tuple_size; ++i)
+            use_sorted_set_elements = indexes_mapping[i].tuple_index == i && ordered_set[i].get() == source_elements[i].get();
     }
 
-    sortBlock(block_to_sort, sort_description);
-
-    for (size_t i = 0; i < tuple_size; ++i)
-        ordered_set[i] = block_to_sort.getByPosition(i).column;
+    if (use_sorted_set_elements)
+    {
+        shared_ordered_set = source_set->getSortedSetElements();
+        ordered_set = *shared_ordered_set;
+    }
+    else
+        ordered_set = sortSetIndexColumns(ordered_set);
 
     /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
     /// columns hold at most one value, so reuse cannot grow them. Variable-width columns

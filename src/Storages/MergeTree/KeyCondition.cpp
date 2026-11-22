@@ -4176,7 +4176,8 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     const Columns & set_columns,
     const DataTypes & set_types,
     SetAtomCandidate candidate,
-    const DataTypePtr & has_element_type)
+    const DataTypePtr & has_element_type,
+    const Set * source_set)
 {
     chassert(set_types.size() == set_columns.size());
     if (candidate.column_mappings.empty())
@@ -4232,7 +4233,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     indexes_mapping.reserve(candidate.column_mappings.size());
     for (auto & mapping : candidate.column_mappings)
         indexes_mapping.push_back(std::move(mapping.index_mapping));
-    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping));
+    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping), source_set);
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
     const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
@@ -4262,19 +4263,20 @@ void KeyCondition::appendSetAtoms(
     SetIndexAnalysisResult analysis,
     bool allow_relaxed_pruning,
     AtomGroup & group,
-    const DataTypePtr & has_element_type) const
+    const DataTypePtr & has_element_type,
+    const Set * source_set) const
 {
     const size_t args_count = analysis.componentwise_candidate.args_count;
 
     /// Component and packed-tuple mappings can coexist even when they constrain the same key column.
     /// Key coverage only limits the additional wrapped-set candidates below.
     if (auto atom = tryPrepareSetAtom(
-            set_columns, set_types, std::move(analysis.componentwise_candidate), has_element_type))
+            set_columns, set_types, std::move(analysis.componentwise_candidate), has_element_type, source_set))
         group.atoms.emplace_back(std::move(*atom));
 
     if (analysis.packed_tuple_candidate)
         if (auto atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), has_element_type))
+                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), has_element_type, source_set))
             group.atoms.emplace_back(std::move(*atom));
 
     /// Atoms for the predicate's components and whole tuple take priority over additional
@@ -4322,7 +4324,7 @@ void KeyCondition::appendSetAtoms(
             set_candidate.is_relaxed = !is_injective;
 
             auto candidate_atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(set_candidate), has_element_type);
+                set_columns, set_types, std::move(set_candidate), has_element_type, source_set);
 
             /// Additional atoms for complement predicates must be exact. `tryPrepareSetAtom` can relax
             /// even an injective transform when its mapping covers only some tuple components.
@@ -4381,7 +4383,7 @@ void KeyCondition::prepareSetAtomsForIn(
     const auto set_columns = prepared_set->getSetElements();
     const auto set_types = future_set->getTypes();
 
-    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group);
+    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group, /*has_element_type=*/ nullptr, prepared_set.get());
 }
 
 /// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
