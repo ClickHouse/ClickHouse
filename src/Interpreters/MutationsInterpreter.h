@@ -171,7 +171,7 @@ public:
     [[nodiscard]] Block getUpdatedHeader() const;
 
     /// Size checks for the `Nested` members among `written` that have none of their own; `header` is the writer's input.
-    VectorWithMemoryTracking<NestedSizesCheck> getNestedSizesChecks(const Names & written, const Block & header) const;
+    [[nodiscard]] VectorWithMemoryTracking<NestedSizesCheck> getNestedSizesChecks(const Names & written, const Block & header) const;
 
     [[nodiscard]] const ColumnDependencies & getColumnDependencies() const;
 
@@ -268,12 +268,12 @@ private:
 
     /// Whether the source part stores the column as an array, as its reader decides: only then are the column's array
     /// sizes the stored ones (converting an array to another array type keeps them).
-    bool isStoredAsArrayInSourcePart(const String & name) const;
-    bool checksNestedSizesOnWrite() const;
+    [[nodiscard]] bool isStoredAsArrayInSourcePart(const String & name) const;
+    [[nodiscard]] bool checksNestedSizesOnWrite() const;
     /// The members of `group` stored as arrays in the source part, in metadata order, minus `excluded`.
-    Names getStoredNestedMembers(const String & group, const NameSet & excluded) const;
+    [[nodiscard]] Names getStoredNestedMembers(const String & group, const NameSet & excluded) const;
     /// The `Nested` groups of the members among `written` that have no size check of their own.
-    std::set<String> getNestedGroupsToCheck(const NameSet & written) const;
+    [[nodiscard]] std::set<String> getNestedGroupsToCheck(const NameSet & written) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;
