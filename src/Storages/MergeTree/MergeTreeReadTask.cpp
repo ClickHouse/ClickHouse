@@ -93,6 +93,9 @@ void MergeTreeReadTask::Readers::countCompressedBytesRead(const CountedCompresse
     main->countCompressedBytesRead(counted);
     for (auto & reader : prewhere)
         reader->countCompressedBytesRead(counted);
+    /// A replica reading the same granules reads their patches too.
+    for (auto & patch : patches)
+        patch->getReader()->countCompressedBytesRead(counted);
 }
 
 void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)

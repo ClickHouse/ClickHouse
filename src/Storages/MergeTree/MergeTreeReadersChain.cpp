@@ -877,6 +877,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
 
         const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
         auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, main_block, last_read_patch);
+        patch_readers[i]->getReader()->flushCompressedBlocksRead();
         patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }
