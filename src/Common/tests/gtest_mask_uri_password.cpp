@@ -127,7 +127,7 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://u:unused@v:TOPSECRET@v2:TOPSECRET@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:unused@v:TOPSECRET@v2@TOPSECRET@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:pa//ss@host/x", "http://u:[HIDDEN]@host/x"},
-        // {"http://{u:p@host1,u:TOPSECRET@host2}/x", "http://{u:[HIDDEN]@host1,u:[HIDDEN]@host2}/x"},
+        {"http://{u:p@host1,u:TOPSECRET@host2}/x", "http://{u:[HIDDEN]@host2}/x"},
     };
 
     for (const auto & [input, expected] : cases)
