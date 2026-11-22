@@ -505,6 +505,20 @@ def stop_distributed_sends(server) -> None:
     logger.warning(f"Could not stop Distributed sends on {server.name}: {last_error}")
 
 
+POSTGRES_HEALTHY_TIMEOUT = 60
+
+
+def wait_container_healthy(name: str, timeout: float) -> bool:
+    container = cluster.get_instance_docker_id(name)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        state = cluster.docker_client.api.inspect_container(container)["State"]
+        if state.get("Health", {}).get("Status") == "healthy":
+            return True
+        time.sleep(1)
+    return False
+
+
 # Set seed first
 seed = args.seed
 if seed == 0:
@@ -1009,9 +1023,20 @@ while all_running and (not reached_limit):
             f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {stop_action}"
         )
 
+        # Docker reports a paused container as unhealthy until its first health probe after the unpause,
+        # and the autoheal sidecar of the postgres compose file restarts unhealthy containers
+        hold_autoheal = next_pick == "postgres" and stop_action == "pause"
+        if hold_autoheal:
+            cluster.process_integration_nodes(next_pick, ["autoheal"], "pause")
         cluster.process_integration_nodes(next_pick, choosen_instances, stop_action)
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, start_action)
+        if hold_autoheal:
+            if not wait_container_healthy("postgres1", POSTGRES_HEALTHY_TIMEOUT):
+                logger.warning(
+                    f"postgres1 is not healthy {POSTGRES_HEALTHY_TIMEOUT}s after the unpause, resuming autoheal"
+                )
+            cluster.process_integration_nodes(next_pick, ["autoheal"], "unpause")
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
