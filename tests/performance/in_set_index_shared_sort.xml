@@ -1,0 +1,20 @@
+<test>
+    <create_query>CREATE TABLE in_set_shared_sort_pk (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE in_set_shared_sort_tuple (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b)</create_query>
+
+    <fill_query>INSERT INTO in_set_shared_sort_pk SELECT number, number * 7 FROM numbers(6000000)</fill_query>
+    <fill_query>INSERT INTO in_set_shared_sort_tuple SELECT number % 1000, number FROM numbers(4000000)</fill_query>
+    <!-- One part per table, so that both compared servers analyze the same parts whatever the timing of the background merges. -->
+    <fill_query>OPTIMIZE TABLE in_set_shared_sort_pk FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE in_set_shared_sort_tuple FINAL</fill_query>
+    <fill_query>SELECT throwIf(count() != 1, 'in_set_shared_sort_pk: expected 1 active part') FROM system.parts WHERE database = currentDatabase() AND table = 'in_set_shared_sort_pk' AND active</fill_query>
+    <fill_query>SELECT throwIf(count() != 1, 'in_set_shared_sort_tuple: expected 1 active part') FROM system.parts WHERE database = currentDatabase() AND table = 'in_set_shared_sort_tuple' AND active</fill_query>
+
+    <!-- The primary key and both passes of part pruning by statistics analyze the same set. The set is every key, in a
+         scrambled order (7919 is prime), with the type of the key, so that no index converts it. -->
+    <query>SELECT count() FROM in_set_shared_sort_pk WHERE k IN (SELECT toUInt64(number * 7919 % 6000000) FROM numbers(6000000))</query>
+    <query>SELECT count() FROM in_set_shared_sort_tuple WHERE (a, b) IN (SELECT toUInt64(x % 1000), x FROM (SELECT toUInt64(number * 7919 % 4000000) AS x FROM numbers(4000000)))</query>
+
+    <drop_query>DROP TABLE IF EXISTS in_set_shared_sort_pk</drop_query>
+    <drop_query>DROP TABLE IF EXISTS in_set_shared_sort_tuple</drop_query>
+</test>
