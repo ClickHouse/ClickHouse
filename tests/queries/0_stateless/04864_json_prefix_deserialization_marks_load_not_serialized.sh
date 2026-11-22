@@ -77,12 +77,13 @@ SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 -- Three arms. 'async' additionally reaches the carriers that exist only while a marks load can
 -- still be in flight; 'prefetch' additionally executes the prefix prefetch callback. Only 'async'
 -- carries the overlap verdict at the end of this query; the other two run for the code paths they
--- reach and for the deterministic checks below.
-SELECT count() FROM (SELECT j FROM t LIMIT 1)
+-- reach and for the deterministic checks below. NOT ignore(j) reads the column above the LIMIT:
+-- without it nothing does, and removing unused columns would not read the column at all.
+SELECT count() FROM (SELECT j FROM t LIMIT 1) WHERE NOT ignore(j)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, log_comment = 'sync'
 FORMAT Null;
 
-SELECT count() FROM (SELECT j FROM t LIMIT 1)
+SELECT count() FROM (SELECT j FROM t LIMIT 1) WHERE NOT ignore(j)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1,
          log_comment = 'async'
 FORMAT Null;
@@ -90,7 +91,7 @@ FORMAT Null;
 -- The read method is pinned because a synchronous one turns ReadBuffer::prefetch into a no-op, and
 -- the effective default is only conditionally 'pread_threadpool': applySettingsQuirks downgrades it
 -- to 'pread' on a host where preadv2(RWF_NOWAIT) is unavailable, without marking it changed.
-SELECT count() FROM (SELECT j FROM t LIMIT 1)
+SELECT count() FROM (SELECT j FROM t LIMIT 1) WHERE NOT ignore(j)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1,
          local_filesystem_read_prefetch = 1, local_filesystem_read_method = 'pread_threadpool',
          enable_filesystem_read_prefetches_log = 1, log_comment = 'prefetch'
@@ -168,7 +169,7 @@ retry_async_arm() {
         measurement=$(${CLICKHOUSE_LOCAL} --config-file "$TD/config.xml" -q "
         SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 
-        SELECT count() FROM (SELECT j FROM t LIMIT 1)
+        SELECT count() FROM (SELECT j FROM t LIMIT 1) WHERE NOT ignore(j)
         SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1
         FORMAT Null;
 

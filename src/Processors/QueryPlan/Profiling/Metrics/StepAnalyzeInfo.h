@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,6 +19,7 @@ enum class MetricGroupKey : UInt8
     Left,
     Right,
     HashTable,
+    Memory,
     Buffer,
     Spill,
     Build,
@@ -27,6 +29,7 @@ enum class MetricGroupKey : UInt8
     Output,
     InputLeft,
     InputRight,
+    RuntimeFilter,
 };
 
 enum class MetricKey : UInt8
@@ -52,6 +55,7 @@ enum class MetricKey : UInt8
 
     UniqueKeys,
     Memory,
+    Bytes,
     Buckets,
     Rehashes,
 
@@ -76,6 +80,16 @@ enum class MetricKey : UInt8
     Median,
     Max,
     Sum,
+
+    FilterType,
+    ReplacedFilterType,
+    Reason,
+    SetBits,
+    RowsChecked,
+    RowsPassed,
+    PassRate,
+    RowsSkipped,
+    RowsBeforeReady,
 };
 
 enum class MetricFormat : UInt8
@@ -112,7 +126,7 @@ struct StepMetric
     MetricValue value;
 };
 
-using MetricList = std::vector<StepMetric>;
+using MetricList = VectorWithMemoryTracking<StepMetric>;
 
 struct MetricGroup
 {
@@ -120,7 +134,7 @@ struct MetricGroup
     MetricList metrics;
 };
 
-using StepAnalysisReport = std::vector<MetricGroup>;
+using StepAnalysisReport = VectorWithMemoryTracking<MetricGroup>;
 
 inline const MetricGroup * findGroup(const StepAnalysisReport & report, MetricGroupKey key)
 {
@@ -128,6 +142,17 @@ inline const MetricGroup * findGroup(const StepAnalysisReport & report, MetricGr
         if (group.key == key)
             return &group;
     return nullptr;
+}
+
+/// Whether anything was measured for this group. A group of placeholders means the values were
+/// never collected -- the work intervals are only gathered for `EXPLAIN ANALYZE` with `time` --
+/// and every renderer leaves such a group out.
+inline bool hasCollectedMetrics(const MetricGroup & group)
+{
+    for (const auto & metric : group.metrics)
+        if (!std::holds_alternative<std::monostate>(metric.value))
+            return true;
+    return false;
 }
 
 inline MetricGroup * findGroup(StepAnalysisReport & report, MetricGroupKey key)
@@ -173,7 +198,7 @@ public:
             available = false;
     }
 
-    std::optional<UInt64> get() const { return available ? std::optional<UInt64>(total) : std::nullopt; }
+    [[nodiscard]] std::optional<UInt64> get() const { return available ? std::optional<UInt64>(total) : std::nullopt; }
 
 private:
     UInt64 total = 0;

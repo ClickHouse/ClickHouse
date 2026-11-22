@@ -122,6 +122,7 @@ public:
     UInt64 getNumberOfDefaultRows() const override;
     bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return false; }
     void insertData(const char * pos, size_t length) override;
 
     void insert(const Field & x) override;
@@ -215,6 +216,10 @@ public:
     /// Flat vector of typed path column pointers in the same order as sorted_typed_paths.
     /// Used for cache-friendly iteration in hot loops (e.g., default filling).
     const VectorWithMemoryTracking<IColumn *> & getSortedTypedPathColumns() const { return sorted_typed_path_columns; }
+    /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
+    /// Must be called after any operation that replaces typed path column pointers
+    /// (e.g. forEachMutableSubcolumn or an assignment through getTypedPaths).
+    void rebuildSortedTypedPathColumns();
 
     const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
     PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
@@ -339,12 +344,17 @@ public:
 
         /// Compare paths and values of 2 iterators.
         /// Returns -1, 0, 1 if this iterator is less, equal or greater than rhs.
-        int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const;
+        [[nodiscard]] int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const;
 
-        PathInfo getCurrentPathInfo() const;
+        /// If `materialize_shared_data_value` is false, `column` is not set for a path in shared data; use `getCurrentSharedDataValue`.
+        [[nodiscard]] PathInfo getCurrentPathInfo(bool materialize_shared_data_value = true) const;
 
         /// Path string of the current entry.
-        std::string_view getCurrentPath() const;
+        [[nodiscard]] std::string_view getCurrentPath() const;
+
+        /// Raw serialized value of the current path when it is stored in shared data.
+        /// Only valid when current_path_type == PathType::SHARED_DATA.
+        [[nodiscard]] std::string_view getCurrentSharedDataValue() const;
 
         /// Serialize the current path's value into `buf`.
         ///
@@ -360,10 +370,7 @@ public:
 
     private:
         void setCurrentPath();
-        std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
-        /// Raw serialized value of the current path when it is stored in shared data.
-        /// Only valid when current_path_type == PathType::SHARED_DATA.
-        std::string_view getCurrentSharedDataValue() const;
+        [[nodiscard]] std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const;
 
         const ColumnObject & column_object;
         VectorWithMemoryTracking<std::string_view>::const_iterator typed_paths_it;
@@ -385,11 +392,6 @@ private:
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
-    /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
-    /// Must be called after any operation that can replace typed path column pointers
-    /// (e.g. forEachMutableSubcolumn).
-    void rebuildSortedTypedPathColumns();
-
     /// Map path -> column for paths with explicitly specified types.
     /// This set of paths is constant and cannot be changed.
     PathToColumnMap typed_paths;

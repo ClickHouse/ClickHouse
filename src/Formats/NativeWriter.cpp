@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/VarInt.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -9,10 +10,15 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatSettings.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -23,7 +29,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 
@@ -261,8 +266,61 @@ std::optional<String> renderTypeNameWithLiveVersions(
     return {};
 }
 
+ColumnPtr materializeObjectTypedPaths(const ColumnPtr & column)
+{
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        return ColumnReplicated::create(
+            materializeObjectTypedPaths(replicated->getNestedColumn()),
+            replicated->getIndexesColumn());
+    }
+
+    if (const auto * array = typeid_cast<const ColumnArray *>(column.get()))
+    {
+        auto nested = materializeObjectTypedPaths(array->getDataPtr());
+        if (nested.get() == array->getDataPtr().get())
+            return column;
+        return ColumnArray::create(nested, array->getOffsetsPtr());
+    }
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        if (tuple->tupleSize() == 0)
+            return column;
+
+        auto columns = tuple->getColumnsCopy();
+        bool changed = false;
+        for (auto & element : columns)
+        {
+            auto materialized = materializeObjectTypedPaths(element);
+            changed |= materialized.get() != element.get();
+            element = std::move(materialized);
+        }
+        if (!changed)
+            return column;
+        return ColumnTuple::create(columns);
+    }
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        auto nested = materializeObjectTypedPaths(nullable->getNestedColumnPtr());
+        if (nested.get() == nullable->getNestedColumnPtr().get())
+            return column;
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+    }
+
+    if (typeid_cast<const ColumnObject *>(column.get()))
+        return recursiveRemoveSparse(column);
+
+    return column;
 }
 
+}
+
+NativeWriter::NativeWriter(WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_)
+    : NativeWriter(ostr_, client_revision_, std::move(header_), std::nullopt)
+{
+}
 
 NativeWriter::NativeWriter(
     WriteBuffer & ostr_,
@@ -271,15 +329,23 @@ NativeWriter::NativeWriter(
     std::optional<FormatSettings> format_settings_,
     bool remove_low_cardinality_,
     IndexForNativeFormat * index_,
-    size_t initial_size_of_file_)
+    size_t initial_size_of_file_,
+    NativeWriterTypeCache * type_cache_)
     : ostr(ostr_)
     , client_revision(client_revision_)
     , header(header_)
     , index(index_)
     , initial_size_of_file(initial_size_of_file_)
     , remove_low_cardinality(remove_low_cardinality_)
-    , format_settings(std::move(format_settings_))
+    , format_settings(format_settings_ ? std::make_shared<const FormatSettings>(std::move(*format_settings_)) : nullptr)
+    , type_cache(type_cache_)
 {
+    /// The map keeps what the current protocol writes. Old revisions and these settings change the type name or the serialization.
+    if (type_cache
+        && (remove_low_cardinality || client_revision < DBMS_TCP_PROTOCOL_VERSION
+            || (format_settings && format_settings->native.encode_types_in_binary_format)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "NativeWriter got a type cache with revision {} or with settings that change the types it writes", client_revision);
+
     if (index)
     {
         ostr_concrete = typeid_cast<CompressedWriteBuffer *>(&ostr);
@@ -298,7 +364,7 @@ void NativeWriter::flush()
     const ISerialization & serialization,
     const ColumnPtr & column,
     WriteBuffer & ostr,
-    const std::optional<FormatSettings> & format_settings,
+    const FormatSettings * format_settings,
     UInt64 offset,
     UInt64 limit,
     UInt64 client_revision)
@@ -314,7 +380,7 @@ void NativeWriter::flush()
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
     settings.native_format = true;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
+    settings.format_settings = format_settings;
     if (client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION)
     {
         settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V1;
@@ -334,11 +400,12 @@ void NativeWriter::flush()
 
 std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
+    ColumnPtr result_column = column.column->convertToFullColumnIfConst()->decompress();
+    if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
+        result_column = result_column->convertToFullColumnIfReplicated();
+
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
-        ColumnPtr result_column = column.column;
-        if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
-            result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
             result_column = recursiveRemoveSparse(result_column);
         if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
@@ -347,15 +414,53 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
-        /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
-        auto info = column.type->getSerializationInfo(
-            *result_column,
-            SerializationInfoSettings::enableAllSupportedSerializations(
-                client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+        /// Typed paths in `JSON` are materialized because the `Native` wire format has no
+        /// recursive serialization-info entry for them.
+        result_column = materializeObjectTypedPaths(result_column);
+
+        auto info = column.type->getSerializationInfo(*result_column, getSerializationInfoSettings(client_revision));
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(result_column)};
+}
+
+SerializationInfoSettings NativeWriter::getSerializationInfoSettings(UInt64 client_revision)
+{
+    /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
+    return SerializationInfoSettings::enableAllSupportedSerializations(
+        client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+}
+
+NativeWriterTypeCache::Entry & NativeWriter::getCachedType(const DataTypePtr & type)
+{
+    if (auto it = type_cache->entries.find(type.get()); it != type_cache->entries.end())
+        return it->second;
+    NativeWriterTypeCache::Entry entry;
+    entry.source = type;
+    entry.type = type;
+    setAggregateFunctionStateVersions(entry.type, client_revision);
+    entry.name = entry.type->getName();
+    return type_cache->entries.emplace(type.get(), std::move(entry)).first->second;
+}
+
+SerializationPtr NativeWriter::getCachedSerialization(NativeWriterTypeCache::Entry & entry, const SerializationInfo & info)
+{
+    WriteBufferFromOwnString kinds;
+    info.serialializeKindStackBinary(kinds);
+    for (const auto & cached : entry.serializations)
+        if (cached.kinds == kinds.str())
+            return cached.serialization;
+    SerializationPtr serialization = entry.type->getSerialization(info);
+    if (entry.serializations.size() < NativeWriterTypeCache::max_serializations_per_type)
+        entry.serializations.push_back({.kinds = kinds.str(), .serialization = serialization});
+    return serialization;
+}
+
+void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
+{
+    bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+    setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 }
 
 size_t NativeWriter::write(const Block & block)
@@ -428,8 +533,11 @@ size_t NativeWriter::write(const Block & block)
         /// nothing from a revision and trusts the type name in the stream, so a version pinned on a
         /// stored column (`pinCurrentStateVersionToAggregateFunctions`) has to survive, or the state
         /// would silently degrade to version 0 on every round trip through local persistence.
-        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        NativeWriterTypeCache::Entry * cached_type = type_cache ? &getCachedType(column.type) : nullptr;
+        if (cached_type)
+            column.type = cached_type->type;
+        else
+            setAggregateFunctionStateVersions(column.type, client_revision);
 
         /// Whether the announced type string may carry an `AggregateFunction(<version>, ...)` token. The
         /// leading `client_revision &&` keeps revision `0` out of the branch: only a non-zero revision
@@ -452,6 +560,10 @@ size_t NativeWriter::write(const Block & block)
         {
             encodeDataType(column.type, ostr);
         }
+        else if (cached_type)
+        {
+            writeStringBinary(cached_type->name, ostr);
+        }
         else
         {
             String type_name = renderTypeName();
@@ -469,7 +581,19 @@ size_t NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         {
             SerializationInfoPtr info;
-            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
+            if (cached_type)
+            {
+                /// Typed paths in `JSON` are materialized, as in `getSerializationAndColumn`. The column is
+                /// made full first, as `writeData` does: a constant or compressed column hides the `JSON`
+                /// column, so its typed paths would stay sparse and the kinds would not match the data.
+                column.column = materializeObjectTypedPaths(column.column->convertToFullColumnIfConst()->decompress());
+                info = column.type->getSerializationInfo(*column.column, getSerializationInfoSettings(client_revision));
+                serialization = getCachedSerialization(*cached_type, *info);
+            }
+            else
+            {
+                std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
+            }
             if (info)
             {
                 writeBinary(static_cast<UInt8>(info->hasCustomSerialization()), ostr);
@@ -480,7 +604,7 @@ size_t NativeWriter::write(const Block & block)
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
+            writeData(*serialization, column.column, ostr, format_settings.get(), 0, 0, client_revision);
 
         if (index)
         {

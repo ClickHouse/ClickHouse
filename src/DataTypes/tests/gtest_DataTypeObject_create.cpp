@@ -1,8 +1,11 @@
+#include <Columns/ColumnBLOB.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationDetached.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -56,7 +59,7 @@ TEST(DataTypeObject, CreateJSONWithNonObjectTypeArgumentChildDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(make_intrusive<ASTLiteral>(Field(UInt64(42))));
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is an `ASTFunction` named
@@ -78,7 +81,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsNullArgumentsDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `equals` function has `arguments` with zero children — `children[0]`
@@ -101,7 +104,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsZeroChildrenDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `equals` function has only one child — `children[1]` reads past the end.
@@ -124,7 +127,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsOneChildDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is a function that is NOT
@@ -146,7 +149,7 @@ TEST(DataTypeObject, CreateJSONWithParameterWrongFunctionNameIsRejected)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is not an `ASTFunction` at all
@@ -166,7 +169,7 @@ TEST(DataTypeObject, CreateJSONWithParameterNotAFunctionDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `path_with_type` of an `ASTObjectTypeArgument` is not an
@@ -186,7 +189,7 @@ TEST(DataTypeObject, CreateJSONWithPathWithTypeWrongKindDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `skip_path_regexp` of an `ASTObjectTypeArgument` is not a string literal
@@ -207,7 +210,7 @@ TEST(DataTypeObject, CreateJSONWithSkipPathRegexpWrongKindDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// Verify well-formed `JSON(...)` types still parse correctly.
@@ -220,6 +223,15 @@ TEST(DataTypeObject, CreateJSONWithValidAST)
 
     auto type_default = factory.get("JSON");
     ASSERT_NE(type_default, nullptr);
+}
+
+TEST(DataTypeObject, CreateColumnWithDetachedSerialization)
+{
+    auto type = DataTypeFactory::instance().get("JSON(x Nullable(String), max_dynamic_paths=0)");
+    auto serialization = SerializationDetached::create(type->getDefaultSerialization());
+    auto column = type->createColumn(*serialization);
+
+    EXPECT_NE(typeid_cast<const ColumnBLOB *>(column.get()), nullptr);
 }
 
 TEST(DataTypeObject, SubcolumnLookup)
@@ -260,15 +272,17 @@ TEST(DataTypeObject, SubcolumnLookup)
         expectSubcolumnType(object, subcolumn, expected_name);
 }
 
-TEST(DataTypeObject, SubcolumnLookupPreservesSerializationPrecedence)
+/// A typed path wins over every other reading of its name: a subcolumn of another typed path, the special subcolumn
+/// of the distinct paths, and a sub-object prefix.
+TEST(DataTypeObject, SubcolumnLookupPrefersTypedPath)
 {
     auto & factory = DataTypeFactory::instance();
 
     auto array_collision = factory.get("JSON(a Array(UInt64), a.size0 String)");
-    expectSubcolumnType(*array_collision, "a.size0", "UInt64");
+    expectSubcolumnType(*array_collision, "a.size0", "String");
 
     auto tuple_collision = factory.get("JSON(a Tuple(size0 String), a.size0 UInt64)");
-    expectSubcolumnType(*tuple_collision, "a.size0", "String");
+    expectSubcolumnType(*tuple_collision, "a.size0", "UInt64");
 
     auto multiple_prefixes = factory.get("JSON(a Array(JSON), a.b Int64)");
     expectSubcolumnType(*multiple_prefixes, "a.b", "Int64");
@@ -281,7 +295,7 @@ TEST(DataTypeObject, SubcolumnLookupPreservesSerializationPrecedence)
 
     auto prefixed_name_collision = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{{"^`obj`", factory.get("JSON(x UInt8)")}});
+        DataTypeObject::TypedPathsMap{{"^`obj`", factory.get("JSON(x UInt8)")}});
     expectSubcolumnType(*prefixed_name_collision, "^`obj`.x", "UInt8");
 }
 
@@ -290,7 +304,7 @@ TEST(DataTypeObject, SubcolumnLookupUsesCanonicalPathNames)
     auto nested_type = DataTypeFactory::instance().get("JSON(x UInt8)");
     auto object = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{
+        DataTypeObject::TypedPathsMap{
             {"escaped.dot", nested_type},
             {R"(back\slash)", nested_type},
             {"back`tick", nested_type},
@@ -303,14 +317,15 @@ TEST(DataTypeObject, SubcolumnLookupUsesCanonicalPathNames)
     expectSubcolumnType(*object, R"(back\slash.x)", "UInt8");
     expectSubcolumnType(*object, "back`tick.x", "UInt8");
     expectSubcolumnType(*object, "spaced path.x", "UInt8");
-    expectSubcolumnType(*object, ".x", "UInt8");
+    /// The typed path `.x` wins over `x` of the typed path with the empty name.
+    expectSubcolumnType(*object, ".x", "UInt16");
 }
 
 TEST(DataTypeObject, SubcolumnLookupDefersToCustomSerialization)
 {
     auto object = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{{"a", DataTypeFactory::instance().get("UInt8")}});
+        DataTypeObject::TypedPathsMap{{"a", DataTypeFactory::instance().get("UInt8")}});
     auto serialization = object->getDefaultSerialization();
     object->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, std::move(serialization)));
 
@@ -323,4 +338,13 @@ TEST(DataTypeObject, SubcolumnsThroughContainers)
     expectSubcolumnType(*factory.get("Array(JSON(x UInt8))"), "x", "Array(UInt8)");
     expectSubcolumnType(*factory.get("Tuple(j JSON(x UInt8))"), "j.x", "UInt8");
     expectSubcolumnType(*factory.get("Dynamic"), "JSON.x", "Dynamic");
+}
+
+/// A clone keeps the SHARED marks of the typed paths: they are part of the type, not of the children.
+TEST(DataTypeObject, CloneWithChildrenKeepsSharedPaths)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=3, SHARED a UInt64, b String, SHARED c Array(UInt8), SKIP d)");
+    auto clone = type->cloneWithChildren(type->getChildren());
+    EXPECT_EQ(clone->getName(), type->getName());
+    EXPECT_TRUE(clone->equals(*type));
 }

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <Interpreters/castColumn.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -77,11 +78,11 @@ struct DeserializeBinaryBulkStateObjectCombinedPath : public ISerialization::Des
     ISerialization::DeserializeBinaryBulkStatePtr literal_state;
     ISerialization::DeserializeBinaryBulkStatePtr sub_object_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectCombinedPath>(*this);
-        new_state->literal_state = literal_state ? literal_state->clone() : nullptr;
-        new_state->sub_object_state = sub_object_state ? sub_object_state->clone() : nullptr;
+        new_state->literal_state = literal_state ? literal_state->clone(context) : nullptr;
+        new_state->sub_object_state = sub_object_state ? sub_object_state->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -159,7 +160,7 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
         *literal_column, limit, settings, combined_state->literal_state, cache);
 
     /// Deserialize sub-object into a temporary column, then keep it as an immutable pointer (we only read it below).
-    auto mutable_sub_object_column = sub_object_type->createColumn();
+    auto mutable_sub_object_column = sub_object_type->createColumn(*sub_object_serialization);
     sub_object_serialization->deserializeBinaryBulkWithMultipleStreams(
         *mutable_sub_object_column, limit, settings, combined_state->sub_object_state, cache);
     ColumnPtr sub_object_column = std::move(mutable_sub_object_column);

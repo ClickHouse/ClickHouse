@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/HistogramMetrics.h>
@@ -13,6 +14,13 @@ namespace DB
 {
 class AsynchronousMetrics;
 class WriteBuffer;
+
+/// Writes a metric or label name with the "underscores" escaping, the default of the Prometheus text format:
+/// each character not allowed in a legacy name ([a-zA-Z_:][a-zA-Z0-9_:]*) becomes '_'.
+void writePrometheusLabelName(std::string_view name, WriteBuffer & out);
+
+/// Writes a label value escaped like the Prometheus text format (without the surrounding quotes).
+void writePrometheusLabelValue(std::string_view value, WriteBuffer & out);
 
 /// Write metrics in Prometheus format
 class PrometheusMetricsWriter
@@ -37,7 +45,7 @@ public:
     /// is needed because it decides whether the asynchronous metric keys are exposed as labels at all.
     /// The default reflects the full server surface;
     /// derived writers override to reflect their own (e.g. Keeper exposes only keeper_* families).
-    virtual std::unordered_set<std::string> getReservedLabelNames(
+    [[nodiscard]] virtual std::unordered_set<std::string> getReservedLabelNames(
         bool expose_info,
         bool expose_asynchronous_metrics,
         AsynchronousMetricsKeyValuesMode async_metrics_mode,
@@ -68,7 +76,7 @@ public:
     void writeErrors(WriteBuffer & wb) const override;
     void writeHistogramMetrics(WriteBuffer & wb) const override;
     void writeDimensionalMetrics(WriteBuffer & wb) const override;
-    std::unordered_set<std::string> getReservedLabelNames(
+    [[nodiscard]] std::unordered_set<std::string> getReservedLabelNames(
         bool expose_info,
         bool expose_asynchronous_metrics,
         AsynchronousMetricsKeyValuesMode async_metrics_mode,
