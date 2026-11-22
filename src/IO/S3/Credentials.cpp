@@ -66,6 +66,7 @@ namespace S3
 #    include <Common/Concepts.h>
 #    include <Common/SipHash.h>
 #    include <Common/ProfileEvents.h>
+#    include <Common/re2.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 #    include <Common/Silk/FiberScheduler.h>
@@ -116,6 +117,13 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
 
     const Aws::Utils::DateTime now = Aws::Utils::DateTime::Now();
     return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
+}
+
+/// Whether the string has the form of a name of an AWS region, such as `eu-central-1`, `us-gov-west-1` or `eusc-de-east-1`.
+bool hasFormOfRegionName(std::string_view region)
+{
+    static const RE2 region_name_pattern(R"([a-z]{2,}(?:-[a-z]+)+-[0-9]+)");
+    return RE2::FullMatch(region, region_name_pattern);
 }
 
 struct ResolvedWebIdentitySettings
@@ -715,11 +723,20 @@ Aws::String AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::resolveStsRegion
 {
     if (!configured_region.empty())
         return Aws::String(configured_region);
-    /// No AWS_DEFAULT_REGION / profile region: call STS in the region of the S3 client instead of requiring AWS_DEFAULT_REGION exist
-    // for cross-cloud writers from Azure and/or GCP.
-    /// `aws-global` (an S3 endpoint without a region) is not an STS region.
-    if (!client_region.empty() && client_region != Aws::Region::AWS_GLOBAL)
+
+    /// Neither `AWS_DEFAULT_REGION` nor the AWS profile sets a region: call STS in the region of the S3 client,
+    /// so that a server which runs outside of AWS and writes to buckets in several regions does not depend on one of them.
+    ///
+    /// The region becomes a part of the host name of the STS endpoint, which the web identity token is sent to,
+    /// and what an S3 client has as its region is not always a region:
+    /// - `aws-global` for an endpoint without a region;
+    /// - a part of the host name for endpoints such as `s3-accelerate.amazonaws.com` (`accelerate`),
+    ///   see `PocoHTTPClientConfiguration::updateSchemeAndRegion`;
+    /// - any string from the `region` setting, for example, of an S3-compatible storage.
+    /// So only a string in the form of a region name is used, and STS is called in `us-east-1` otherwise, as before.
+    if (hasFormOfRegionName(client_region))
         return Aws::String(client_region);
+
     return Aws::Region::US_EAST_1;
 }
 

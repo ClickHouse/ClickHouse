@@ -1498,6 +1498,26 @@ TEST(IOTestAwsS3Client, WebIdentityStsRegionFallsBackToClientRegion)
     EXPECT_EQ(Provider::resolveStsRegion("", ""), "us-east-1");
     /// So does an S3 endpoint without a region: there is no `aws-global` STS endpoint.
     EXPECT_EQ(Provider::resolveStsRegion("", "aws-global"), "us-east-1");
+
+    /// Regions of other partitions are regions as well.
+    EXPECT_EQ(Provider::resolveStsRegion("", "cn-northwest-1"), "cn-northwest-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "us-gov-west-1"), "us-gov-west-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eusc-de-east-1"), "eusc-de-east-1");
+
+    /// What an S3 client has as its region is a part of the host name for some endpoints,
+    /// such as `s3-accelerate.amazonaws.com` and `s3-external-1.amazonaws.com`. There is no STS in such a region.
+    EXPECT_EQ(Provider::resolveStsRegion("", "accelerate"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "external-1"), "us-east-1");
+
+    /// And it is any string if it comes from the `region` setting. The STS region is a part of the host name
+    /// which the web identity token is sent to, so only a string in the form of a region name gets there.
+    EXPECT_EQ(Provider::resolveStsRegion("", "auto"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "EU-WEST-1"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-west-1.example.org"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "example.org/eu-west-1"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-west-1@example.org"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "example.org:8443/#eu-west-1"), "us-east-1");
+    EXPECT_EQ(Provider::resolveStsRegion("", "eu-west-1\n"), "us-east-1");
 }
 
 TEST(IOTestAwsS3Client, WebIdentityStsClientUsesClientRegion)
@@ -1550,6 +1570,9 @@ TEST(IOTestAwsS3Client, WebIdentityStsRegionFollowsS3RegionThroughCredentialsCha
     EXPECT_NE(eu_west, web_identity_provider_for("eu-central-1"));
     /// An S3 endpoint without a region keeps the default STS region.
     EXPECT_EQ(web_identity_provider_for("aws-global"), web_identity_provider_for("us-east-1"));
+    /// So does an S3 client with a string that is not a region name instead of the region.
+    EXPECT_EQ(web_identity_provider_for("accelerate"), web_identity_provider_for("us-east-1"));
+    EXPECT_EQ(web_identity_provider_for("example.org/eu-west-1"), web_identity_provider_for("us-east-1"));
 }
 
 TEST(IOTestAwsS3Client, HttpResponseCodeToString)
