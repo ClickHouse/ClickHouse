@@ -60,6 +60,8 @@ struct MergeTreeReaderSettings
     bool enable_multiple_prewhere_read_steps = false;
     /// In case of multiple prewhere steps, execute filtering earlier to support short-circuit properly.
     bool force_short_circuit_execution = false;
+    /// Deserialize the columns read after PREWHERE only for the rows that passed it, if their fraction is at most this value.
+    float filtered_deserialization_max_ratio = 0;
     /// In case of multiple prewhere steps, a step may read the columns of later steps over the same storage
     /// column, so that the column is deserialized once. Only set when reading those columns cannot throw,
     /// see `ReadFromMergeTree::canReadPrewhereColumnsAhead`.
