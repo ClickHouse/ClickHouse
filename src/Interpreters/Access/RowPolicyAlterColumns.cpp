@@ -51,11 +51,15 @@ bool usesColumn(const Names & used_columns, const ColumnsDescription & columns, 
     });
 }
 
+using TableNames = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
+/// a subquery over any of the tables reads the same columns
 Names columnsReadByFilter(
     const String & filter,
     const String & policy_name,
     const StorageSnapshotPtr & storage_snapshot,
     const StorageID & table_id,
+    const TableNames & tables,
     const ContextPtr & context)
 {
     try
@@ -63,7 +67,8 @@ Names columnsReadByFilter(
         ParserExpression parser;
         auto ast = wrapStandaloneSubqueryFilter(parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         return expressionSourceColumns(
-            ast, storage_snapshot->metadata->getColumns(), context, /*keep_alias_columns=*/ true, storage_snapshot, table_id);
+            ast, storage_snapshot->metadata->getColumns(), context, /*keep_alias_columns=*/ true, storage_snapshot, table_id,
+            [&](const StorageID & id) { return tables.contains(id); });
     }
     catch (Exception & e)
     {
@@ -71,8 +76,6 @@ Names columnsReadByFilter(
         throw;
     }
 }
-
-using TableNames = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
 
 bool isAlias(const StoragePtr & storage)
 {
@@ -145,7 +148,7 @@ void checkRowPoliciesBeforeAlter(
                 if (filter.empty())
                     continue;
 
-                const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, analysis_context);
+                const auto used_columns = columnsReadByFilter(filter, policy_name, storage_snapshot, table_id, tables, analysis_context);
                 for (const auto & command : commands)
                 {
                     if (removesColumn(command) && usesColumn(used_columns, metadata_snapshot->getColumns(), command.column_name))

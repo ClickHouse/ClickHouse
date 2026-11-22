@@ -1,5 +1,6 @@
 #include <Storages/expressionSourceColumns.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -42,6 +43,31 @@ void collectFoldedSourceColumns(const QueryTreeNodePtr & node, PlannerContextPtr
             collectFoldedSourceColumns(child, planner_context, keep_alias_columns);
 }
 
+/// columns that subqueries, also folded ones, read from an accepted table;
+/// an alias column pins only itself, because RENAME rewrites its expression
+void collectReadsFrom(
+    const QueryTreeNodePtr & node,
+    const QueryTreeNodePtr & outer_table,
+    const std::function<bool(const StorageID &)> & reads_from,
+    Names & columns)
+{
+    if (const auto * column = node->as<ColumnNode>())
+    {
+        const auto source = column->getColumnSourceOrNull();
+        const auto * table = source ? source->as<TableNode>() : nullptr;
+        if (table && source != outer_table && reads_from(table->getStorageID()))
+            columns.push_back(column->getColumnName());
+        return;
+    }
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        collectReadsFrom(constant->getSourceExpression(), outer_table, reads_from, columns);
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectReadsFrom(child, outer_table, reads_from, columns);
+}
+
 }
 
 Names expressionSourceColumns(
@@ -50,12 +76,16 @@ Names expressionSourceColumns(
     const ContextPtr & context,
     bool keep_alias_columns,
     const StorageSnapshotPtr & storage_snapshot,
-    const std::optional<StorageID> & table_id)
+    const std::optional<StorageID> & table_id,
+    const std::function<bool(const StorageID &)> & reads_from)
 {
     if (!ast)
         return {};
 
     auto analysis_context = Context::createCopy(context);
+    /// the optimization replaces a scalar subquery of a subquery by `__getScalar`, which hides its reads
+    if (reads_from)
+        analysis_context->setSetting("enable_scalar_subquery_optimization", false);
     auto expression = buildQueryTree(ast, analysis_context);
 
     auto name = table_id ? *table_id : (storage_snapshot ? storage_snapshot->storage.getStorageID() : StorageID{"dummy", "dummy"});
@@ -70,12 +100,14 @@ Names expressionSourceColumns(
     collectSetsAndSourceColumns(expression, planner_context, keep_alias_columns);
     collectFoldedSourceColumns(expression, planner_context, keep_alias_columns);
 
-    const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node);
-    if (!table_expression_data)
-        return {};
-
+    Names result;
     /// a kept alias is registered as selected and its base columns as not selected, an expanded one the other way round
-    return keep_alias_columns ? table_expression_data->getSelectedColumnsNames() : table_expression_data->getColumnNames();
+    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
+        result = keep_alias_columns ? table_expression_data->getSelectedColumnsNames() : table_expression_data->getColumnNames();
+
+    if (reads_from)
+        collectReadsFrom(expression, table_node, reads_from, result);
+    return result;
 }
 
 }
