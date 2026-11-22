@@ -322,6 +322,7 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    PAUSEABLE(tcp_handler_pause_before_query_plan_deserialization) \
     REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
@@ -455,6 +456,7 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
+    PAUSEABLE_ONCE(rename_table_pause_after_locks) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \
@@ -564,7 +566,8 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
     REGULAR(whatif_projection_scan_cut_short) \
-    REGULAR(http_connection_socket_inode_unavailable)
+    REGULAR(http_connection_socket_inode_unavailable) \
+    PAUSEABLE(silk_fiber_socket_send_timeout_expires_after_write)
 
 namespace FailPoints
 {

@@ -689,6 +689,14 @@ enum class S3UriStyle : uint8_t
 
 DECLARE_SETTING_ENUM(S3UriStyle)
 
+enum class S3RequestPayer : uint8_t
+{
+    NONE,
+    REQUESTER,
+};
+
+DECLARE_SETTING_ENUM(S3RequestPayer)
+
 enum class ExplainQueryPlanDefault : uint8_t
 {
     LEGACY,
