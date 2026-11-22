@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: the test measures the analysis of the MergeTree primary key and asserts the number of parts. -->
     <create_query>CREATE TABLE in_set_shared_sort_pk (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
     <create_query>CREATE TABLE in_set_shared_sort_tuple (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b)</create_query>
 
