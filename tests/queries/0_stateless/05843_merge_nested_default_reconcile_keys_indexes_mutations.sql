@@ -89,3 +89,18 @@ ALTER TABLE t_nested_reconcile_materialize_column MATERIALIZE COLUMN `n.b` SETTI
 SELECT id, `n.a`, `n.b` FROM t_nested_reconcile_materialize_column ORDER BY id;
 CHECK TABLE t_nested_reconcile_materialize_column SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_nested_reconcile_materialize_column;
+
+SELECT 'MATERIALIZE INDEX that records the missing subcolumn keeps the shared offsets';
+DROP TABLE IF EXISTS t_nested_reconcile_materialize_index;
+CREATE TABLE t_nested_reconcile_materialize_index (id UInt32, `n.a` Array(UInt32))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+INSERT INTO t_nested_reconcile_materialize_index VALUES (1, [10, 20]), (2, [30]);
+ALTER TABLE t_nested_reconcile_materialize_index ADD COLUMN `n.b` Array(String) DEFAULT ['x'];
+ALTER TABLE t_nested_reconcile_materialize_index ADD INDEX i `n.b` TYPE bloom_filter GRANULARITY 1;
+ALTER TABLE t_nested_reconcile_materialize_index MATERIALIZE INDEX i SETTINGS mutations_sync = 2;
+SELECT id, `n.a`, `n.b` FROM t_nested_reconcile_materialize_index ORDER BY id;
+SELECT count() FROM t_nested_reconcile_materialize_index WHERE has(`n.b`, '') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_nested_reconcile_materialize_index WHERE has(`n.b`, '') SETTINGS use_skip_indexes = 1, force_data_skipping_indices = 'i';
+CHECK TABLE t_nested_reconcile_materialize_index SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_nested_reconcile_materialize_index;

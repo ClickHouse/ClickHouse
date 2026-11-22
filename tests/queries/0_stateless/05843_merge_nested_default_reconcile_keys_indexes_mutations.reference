@@ -23,3 +23,9 @@ MATERIALIZE COLUMN of the missing subcolumn keeps the shared offsets
 1	[10,20]	['','']
 2	[30]	['x']
 1
+MATERIALIZE INDEX that records the missing subcolumn keeps the shared offsets
+1	[10,20]	['','']
+2	[30]	['x']
+1
+1
+1
