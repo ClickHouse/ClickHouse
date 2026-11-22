@@ -864,6 +864,12 @@ private:
         if (isNullableOrLowCardinalityNullable(dictget_function_info->return_type))
             return;
 
+        /// `dictGet` with a `LowCardinality` key returns `LowCardinality(Float*)`, whose dictionary
+        /// maps `-0.0` onto the `+0.0` default slot, whereas the subquery's `IN` over the raw float
+        /// attribute (and raw `DEFAULT`) distinguishes `-0.0` and `+0.0` by bit representation.
+        if (dictget_function_info->return_type->lowCardinality() && isFloat(removeLowCardinality(dictget_function_info->return_type)))
+            return;
+
         auto lookup = tryGetDictionaryLookup(*dictget_function_info);
         if (!lookup)
             return;
