@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Random settings limits: output_format_parquet_compression_method=('zstd', 'zstd')
 
 INSERT INTO FUNCTION file(currentDatabase() || '_zstd_level.parquet', Parquet)
 SELECT number AS a, a + 1 AS b, a + 2 AS c, a + 3 AS d FROM numbers(100000)

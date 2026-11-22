@@ -1,7 +1,7 @@
 import random
 import re
 from decimal import ROUND_HALF_UP, Decimal, getcontext, localcontext
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, timezone, date
 import json
 import logging
 import math
@@ -9,7 +9,10 @@ import string
 import sys
 import threading
 import traceback
+import uuid
+import pyarrow as pa
 from pyspark.sql import Row, SparkSession
+from pyspark.sql.pandas.types import to_arrow_type
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType,
@@ -48,7 +51,7 @@ except ImportError:
     HAS_TIMESTAMP_NTZ = False
 
 from .tablegenerator import LakeTableGenerator
-from .clickhousetospark import ClickHouseTypeMapper
+from .clickhousetospark import ClickHouseMapping, ClickHouseTypeMapper
 
 from .laketables import SparkTable, LakeFormat
 
@@ -276,6 +279,22 @@ class LakeDataGenerator:
         hours = random.randint(0, 999 if random.randint(1, 10) == 1 else 23)
         res = f"{hours:02d}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
         return f"-{res}" if random.randint(1, 10) == 1 else res
+
+    def _rand_hinted_string(self, ch_hint: str):
+        """A valid text value of the STRING-mapped ClickHouse type `ch_hint`, None for other types."""
+        if ch_hint == "Date":
+            # `Date` holds [1970-01-01, 2149-06-06]
+            return str(date.fromordinal(self._rand_int(date(1970, 1, 1).toordinal(), date(2149, 6, 6).toordinal())))
+        if re.match(r"DateTime($|\()", ch_hint):
+            # `DateTime` holds [1970-01-01 00:00:00, 2106-02-07 06:28:15] UTC
+            return datetime.fromtimestamp(self._rand_int(0, 2**32 - 1), timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        if ch_hint == "UUID":
+            return str(uuid.UUID(int=random.getrandbits(128)))
+        if ch_hint == "IPv4":
+            return ".".join(str(self._rand_int(0, 255)) for _ in range(4))
+        if ch_hint == "IPv6":
+            return ":".join(f"{self._rand_int(0, 65535):x}" for _ in range(8))
+        return None
 
     def _rand_binary(self, nlen):
         return bytes(random.getrandbits(8) for _ in range(nlen))
@@ -572,6 +591,10 @@ class LakeDataGenerator:
             # back to `Time`, so they must be valid times
             if re.match(r"Time(64)?($|\()", ch_hint):
                 return self._rand_time_string()
+            # Same for the other STRING-mapped types ClickHouse parses back
+            hinted = self._rand_hinted_string(ch_hint)
+            if hinted is not None:
+                return hinted
             # Same for Enum columns: values must be declared enum elements
             if ch_hint.startswith("Enum"):
                 enum_values = self._enum_text_values(self._parse_enum_values(ch_hint))
@@ -736,6 +759,39 @@ class LakeDataGenerator:
             )
         )
 
+    # Limits of `random_clickhouse_values`: each row goes into one broker message
+    _MESSAGE_LIMITS = {
+        "_min_nested": 0,
+        "_max_nested": 3,
+        "_min_str_len": 0,
+        "_max_str_len": 10,
+        "_nested_budget": 100,
+    }
+
+    def random_clickhouse_values(self, ch_types: list) -> list:
+        """Random values of the ClickHouse types `ch_types`, for the rows of a streaming table."""
+        local = self._thread_local
+        saved = {name: getattr(local, name) for name in self._MESSAGE_LIMITS if hasattr(local, name)}
+        for name, value in self._MESSAGE_LIMITS.items():
+            setattr(local, name, value)
+        try:
+            res = []
+            for ch_type in ch_types:
+                _, nullable, spark_type = self.type_generator.clickhouse_to_spark(
+                    ch_type, False, ClickHouseMapping.Spark
+                )
+                res.append(
+                    self._random_value_for_type(spark_type, 0.1 if nullable else 0.0, ch_type)
+                )
+            return res
+        finally:
+            # Restore the limits of a Spark insert running on this thread
+            for name in self._MESSAGE_LIMITS:
+                if name in saved:
+                    setattr(local, name, saved[name])
+                else:
+                    delattr(local, name)
+
     def _map_type_to_insert(self, dtype):
         # Char and Varchar have to be Strings
         if isinstance(dtype, (CharType, VarcharType)) or (
@@ -817,10 +873,8 @@ class LakeDataGenerator:
 
         return col_expr
 
-    def _create_random_df(self, spark: SparkSession, table: SparkTable, n_rows: int):
-        """
-        Build a DataFrame of random rows for the given schema (types as strings are fine).
-        """
+    def _random_rows(self, table: SparkTable, n_rows: int):
+        """The schema of `table`, the one its rows are inserted with, and `n_rows` random rows."""
         # Set limits
         self._thread_local._min_nested = random.randint(0, 100)
         self._thread_local._max_nested = max(
@@ -867,6 +921,13 @@ class LakeDataGenerator:
                     f.dataType, nr, getattr(col, "clickhouse_type", "")
                 )
             rows.append(Row(**rec))
+        return struct1, struct2, rows
+
+    def _create_random_df(self, spark: SparkSession, table: SparkTable, n_rows: int):
+        """
+        Build a DataFrame of random rows for the given schema (types as strings are fine).
+        """
+        struct1, struct2, rows = self._random_rows(table, n_rows)
         # Use explicit schema so types match exactly
         df = spark.createDataFrame(rows, schema=struct2)
         if HAS_VARIANT_TYPE:
@@ -877,6 +938,15 @@ class LakeDataGenerator:
                         self._build_variant_conversion(F.col(f.name), f.dataType),
                     )
         return df
+
+    def random_arrow_table(self, table: SparkTable, n_rows: int):
+        """The random rows of `_create_random_df` as a pyarrow table, without a Spark session.
+        `Variant` columns hold their JSON text, as in the rows Spark inserts."""
+        _, struct2, rows = self._random_rows(table, n_rows)
+        schema = pa.schema(
+            [pa.field(f.name, to_arrow_type(f.dataType), f.nullable) for f in struct2.fields]
+        )
+        return pa.Table.from_pylist([row.asDict() for row in rows], schema=schema)
 
     def _random_predicate(self, table: SparkTable) -> str:
         # Simple, always-valid filter for WHERE / overwrite conditions.
