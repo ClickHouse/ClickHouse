@@ -94,7 +94,7 @@ namespace S3AuthSetting
 extern const S3AuthSettingsString http_client;
 extern const S3AuthSettingsString region;
 extern const S3AuthSettingsBool no_sign_request;
-extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+extern const S3AuthSettingsSecretString server_side_encryption_customer_key_base64;
 }
 #endif
 
