@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Columns/ColumnIndex.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
@@ -295,11 +296,6 @@ public:
     /// so that a caller may skip repeated values.
     virtual bool ignoresRepeatedValues() const { return false; }
 
-    /// Return true if `add` and the batch methods read an argument in the replicated representation (`ColumnReplicated`)
-    /// through its indexes, as a `String` column with dictionary granules is read, so that the caller need not
-    /// materialize it.
-    virtual bool supportsReplicatedArguments() const { return false; }
-
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
     /// All overrides must be done on `mergeImpl` below.
@@ -493,6 +489,18 @@ public:
         const IColumn ** columns,
         Arena * arena) const = 0;
 
+    /// The version of "addBatch" whose rows read the arguments through `indexes`: row `i` adds row
+    /// `indexes[i]` of `columns`, as an argument in the replicated representation (`ColumnReplicated`) is
+    /// read through its nested column. A row whose place is null is skipped, as in "addBatch".
+    virtual void addBatchIndexed(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        const ColumnIndex & indexes,
+        Arena * arena) const = 0;
+
     virtual void mergeBatch(
         size_t row_begin,
         size_t row_end,
@@ -520,6 +528,16 @@ public:
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena) const;
+
+    /// The version of "addBatchSinglePlace" whose rows read the arguments through `indexes` (see
+    /// `addBatchIndexed`).
+    virtual void addBatchSinglePlaceIndexed(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const ColumnIndex & indexes,
+        Arena * arena) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
@@ -879,6 +897,38 @@ public:
             if (places[offset_it.getCurrentRow()])
                 static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
                                                         &values, offset_it.getValueIndex(), arena);
+    }
+
+    void addBatchIndexed(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        const ColumnIndex & indexes,
+        Arena * arena) const override
+    {
+        indexes.callForIndexesData([&](const auto & data)
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                if (places[i])
+                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, data[i], arena);
+        });
+    }
+
+    void addBatchSinglePlaceIndexed(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const ColumnIndex & indexes,
+        Arena * arena) const override
+    {
+        indexes.callForIndexesData([&](const auto & data)
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                static_cast<const Derived *>(this)->add(place, columns, data[i], arena);
+        });
     }
 
     void mergeBatch(

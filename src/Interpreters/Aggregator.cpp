@@ -1219,6 +1219,25 @@ bool Aggregator::hasSparseArguments(const AggregateFunctionInstruction * aggrega
     return false;
 }
 
+namespace
+{
+
+/// The replicated argument of an instruction with `has_indexed_argument`.
+const ColumnReplicated & indexedArgument(const Aggregator::AggregateFunctionInstruction & inst)
+{
+    return assert_cast<const ColumnReplicated &>(*inst.batch_arguments[0]);
+}
+
+}
+
+bool Aggregator::hasIndexedArguments(const AggregateFunctionInstruction * aggregate_instructions)
+{
+    for (const auto * inst = aggregate_instructions; inst->that; ++inst)
+        if (inst->has_indexed_argument)
+            return true;
+    return false;
+}
+
 void Aggregator::executeOnBlockSmall(
     AggregatedDataVariants & result,
     size_t row_begin,
@@ -1805,7 +1824,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                         }
                     }
 
-                    if (!has_arrays && !hasSparseArguments(aggregate_instructions))
+                    if (!has_arrays && !hasSparseArguments(aggregate_instructions) && !hasIndexedArguments(aggregate_instructions))
                     {
                         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
                         {
@@ -2447,6 +2466,12 @@ void Aggregator::addBatch(
             inst->state_offset,
             inst->batch_arguments,
             arena);
+    else if (inst->has_indexed_argument)
+    {
+        const auto & argument = indexedArgument(*inst);
+        const IColumn * nested = argument.getNestedColumn().get();
+        inst->batch_that->addBatchIndexed(row_begin, row_end, places, inst->state_offset, &nested, argument.getIndexes(), arena);
+    }
     else if (all_places_are_non_null)
         inst->batch_that->addBatchWithNonNullPlaces(
             row_begin, row_end, places,
@@ -2468,7 +2493,7 @@ void Aggregator::addBatchSkippingRepeatedRows(
     const AggregateDataPtr * places,
     Arena * arena)
 {
-    const auto & argument = assert_cast<const ColumnReplicated &>(*inst->batch_arguments[0]);
+    const auto & argument = indexedArgument(*inst);
 
     /// The place of the last row of the batch at each position, and the places of the rows, null for a skipped one.
     PaddedPODArray<AggregateDataPtr> last_places(argument.getNestedColumn()->size(), nullptr);
@@ -2490,17 +2515,10 @@ void Aggregator::addBatchSkippingRepeatedRows(
         }
     };
 
-    const IColumn & indexes = *argument.getIndexesColumn();
-    if (const auto * indexes_uint8 = typeid_cast<const ColumnUInt8 *>(&indexes))
-        skip_repeated(indexes_uint8->getData());
-    else if (const auto * indexes_uint16 = typeid_cast<const ColumnUInt16 *>(&indexes))
-        skip_repeated(indexes_uint16->getData());
-    else if (const auto * indexes_uint32 = typeid_cast<const ColumnUInt32 *>(&indexes))
-        skip_repeated(indexes_uint32->getData());
-    else
-        skip_repeated(assert_cast<const ColumnUInt64 &>(indexes).getData());
+    argument.getIndexes().callForIndexesData(skip_repeated);
 
-    inst->batch_that->addBatch(row_begin, row_end, distinct_places.data(), inst->state_offset, inst->batch_arguments, arena);
+    const IColumn * nested = argument.getNestedColumn().get();
+    inst->batch_that->addBatchIndexed(row_begin, row_end, distinct_places.data(), inst->state_offset, &nested, argument.getIndexes(), arena);
 }
 
 void Aggregator::addBatchSinglePlace(
@@ -2521,6 +2539,12 @@ void Aggregator::addBatchSinglePlace(
             row_begin, row_end, place,
             inst->batch_arguments,
             arena);
+    else if (inst->has_indexed_argument)
+    {
+        const auto & argument = indexedArgument(*inst);
+        const IColumn * nested = argument.getNestedColumn().get();
+        inst->batch_that->addBatchSinglePlaceIndexed(row_begin, row_end, place, &nested, argument.getIndexes(), arena);
+    }
     else
         inst->batch_that->addBatchSinglePlace(
             row_begin, row_end, place,
@@ -2546,18 +2570,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
 
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-    {
-        if (inst->offsets)
-            inst->batch_that->addBatchSinglePlace(
-                inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-                inst->offsets[static_cast<ssize_t>(row_end) - 1],
-                res + inst->state_offset,
-                inst->batch_arguments,
-                data_variants.aggregates_pool);
-        else
-            inst->batch_that->addBatchSinglePlace(
-                row_begin, row_end, res + inst->state_offset, inst->batch_arguments, data_variants.aggregates_pool);
-    }
+        addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, data_variants.aggregates_pool);
 }
 
 void NO_INLINE Aggregator::mergeOnIntervalWithoutKey(
@@ -2596,6 +2609,7 @@ void Aggregator::prepareAggregateInstructions(
             = params.keys_size == 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues();
         bool has_low_cardinality_argument = false;
         bool has_replicated_argument = false;
+        bool has_indexed_argument = false;
         bool skips_repeated_rows = false;
 
         size_t constant_argument_rows = 0;
@@ -2629,24 +2643,26 @@ void Aggregator::prepareAggregateInstructions(
             if (constant_argument_rows)
                 column = column->cloneResized(constant_argument_rows);
 
-            /// A replicated `String` argument keeps its representation when the function reads its used values once each,
-            /// for the same reason and on the same conditions as a `LowCardinality` one below.
+            /// A function of one argument reads a replicated `String` one, as a `String` column with
+            /// dictionary granules is read, through its indexes (see `IAggregateFunction::addBatchIndexed`).
             const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get());
-            const bool replicated_string = replicated && typeid_cast<const ColumnString *>(replicated->getNestedColumn().get());
-            if (allow_low_cardinality_argument && replicated_string && replicated->getNestedColumn()->size() * 2 <= replicated->size())
-                has_replicated_argument = true;
+            if (replicated && aggregate_columns[i].size() == 1 && typeid_cast<const ColumnString *>(replicated->getNestedColumn().get()))
+            {
+                has_indexed_argument = true;
 
-            /// A function that reads replicated arguments through their indexes also gets the column as it is.
-            const bool keep_replicated = has_replicated_argument || (replicated_string && aggregate_functions[i]->supportsReplicatedArguments());
-
-            /// With keys, the rows of one position and one place add one value to one state, which a function that ignores
-            /// repeated values needs only once. Skipping them pays when the positions repeat, on the bound above.
-            if (keep_replicated && params.keys_size > 0 && aggregate_columns[i].size() == 1 && aggregate_functions[i]->ignoresRepeatedValues()
-                && replicated->getNestedColumn()->size() * 2 <= replicated->size())
-                skips_repeated_rows = true;
+                /// A function that ignores repeated values needs the value of a position once: without keys
+                /// it adds the used values once, as for a `LowCardinality` argument below, and with keys it
+                /// skips the rows that repeat both a position and a place. Either pays when the positions
+                /// repeat.
+                if (aggregate_functions[i]->ignoresRepeatedValues() && replicated->getNestedColumn()->size() * 2 <= replicated->size())
+                {
+                    has_replicated_argument = params.keys_size == 0;
+                    skips_repeated_rows = params.keys_size > 0;
+                }
+            }
 
             /// Only the converted columns have to be held here, the original ones are held by the caller.
-            auto converted_column = keep_replicated
+            auto converted_column = has_indexed_argument
                 ? column->convertToFullColumnIfConst()
                 : column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
             if (converted_column.get() != aggregate_columns[i][j])
@@ -2692,6 +2708,7 @@ void Aggregator::prepareAggregateInstructions(
         buildAggregateFunctionInstruction(i, has_sparse_arguments, aggregate_columns, aggregate_functions_instructions, nested_columns_holder);
         aggregate_functions_instructions[i].has_low_cardinality_argument = has_low_cardinality_argument;
         aggregate_functions_instructions[i].has_replicated_argument = has_replicated_argument;
+        aggregate_functions_instructions[i].has_indexed_argument = has_indexed_argument;
         aggregate_functions_instructions[i].skips_repeated_rows = skips_repeated_rows;
         aggregate_functions_instructions[i].constant_argument_rows = constant_argument_rows;
     }
@@ -2810,13 +2827,15 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// running, so an active heap never sees key columns in a representation it cannot rank.
     const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
-    /// The methods of one `String` key and of fixed-width keys and one `String` read a replicated `String` key through its
-    /// indexes (see `HashMethodPackedString`), so the strings of a column with dictionary granules are not copied into a
-    /// full column. An active top-K heap ranks and keeps such a key through the indexes as well (see
-    /// `TopKAggregationHeapBase::insertSourceKey`).
+    /// The methods of one `String` key and of fixed-width keys and one `String` read a replicated `String`
+    /// key through its indexes (see `HashMethodPackedString`), and the serialized methods serialize it
+    /// through them (see `ColumnReplicated::batchSerializeValueIntoMemory`), so the strings of a column with
+    /// dictionary granules are not copied into a full column. An active top-K heap ranks and keeps such a key
+    /// through the indexes as well (see `TopKAggregationHeapBase::insertSourceKey`).
     const bool reads_replicated_strings_in_place = result.type == AggregatedDataVariants::Type::key_packed_string
         || result.type == AggregatedDataVariants::Type::key_packed_string_two_level
-        || AggregatedDataVariants::isKeysAndPackedString(result.type);
+        || AggregatedDataVariants::isKeysAndPackedString(result.type)
+        || result.isSerialized();
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)

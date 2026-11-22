@@ -598,11 +598,16 @@ public:
         bool can_optimize_equal_keys_ranges = true;
         /// The only argument is a `LowCardinality` column whose used values are added once (aggregation without keys).
         bool has_low_cardinality_argument = false;
-        /// The same for a replicated `String` column, as a `String` column with dictionary granules is read.
+        /// The only argument is a replicated `String` column, as a `String` column with dictionary granules
+        /// is read, which the batch methods read through its indexes (`IAggregateFunction::addBatchIndexed`)
+        /// instead of a full copy.
+        bool has_indexed_argument = false;
+        /// With `has_indexed_argument`, for a function that ignores repeated values: without keys, the used
+        /// values of the argument are added once, as for `has_low_cardinality_argument`.
         bool has_replicated_argument = false;
-        /// The only argument is a replicated `String` column that the function reads as it is, and the function ignores
-        /// repeated values (aggregation with keys): a row whose position in the argument's nested column and whose place
-        /// repeat those of an earlier row of the batch is skipped (see `addBatchSkippingRepeatedRows`).
+        /// With `has_indexed_argument`, for a function that ignores repeated values: with keys, a row whose
+        /// position in the argument's nested column and whose place repeat those of an earlier row of the
+        /// batch is skipped (see `addBatchSkippingRepeatedRows`).
         bool skips_repeated_rows = false;
         /// The arguments are copies of constants with this many rows, added repeatedly to cover the rows (aggregation without keys); 0 otherwise.
         size_t constant_argument_rows = 0;
@@ -2068,6 +2073,9 @@ private:
         MutableColumns & final_key_columns) const;
 
     static bool hasSparseArguments(const AggregateFunctionInstruction * aggregate_instructions);
+    /// Whether an instruction reads its argument through indexes
+    /// (`AggregateFunctionInstruction::has_indexed_argument`).
+    static bool hasIndexedArguments(const AggregateFunctionInstruction * aggregate_instructions);
 
     static void addBatch(
         size_t row_begin, size_t row_end,

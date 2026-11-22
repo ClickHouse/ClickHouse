@@ -150,6 +150,9 @@ public:
             return "uniqCombined";
     }
 
+    /// The hash set and the HyperLogLog registers stay the same when a value comes again.
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
+
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -339,6 +342,9 @@ public:
         else
             return "uniqCombined";
     }
+
+    /// The hash set and the HyperLogLog registers stay the same when a value comes again.
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
 
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 

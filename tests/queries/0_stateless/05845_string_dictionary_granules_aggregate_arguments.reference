@@ -1,0 +1,5 @@
+UInt8 key	1
+UInt64 key	1
+without keys	1
+two String keys	1
+two String keys, one Nullable	1

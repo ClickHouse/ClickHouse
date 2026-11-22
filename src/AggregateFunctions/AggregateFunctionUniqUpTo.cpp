@@ -211,6 +211,9 @@ public:
 
     [[nodiscard]] String getName() const override { return "uniqUpTo"; }
 
+    /// A value that the state holds, or any value once the state passed the threshold, leaves it unchanged.
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
+
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
@@ -270,6 +273,9 @@ public:
     }
 
     [[nodiscard]] String getName() const override { return "uniqUpTo"; }
+
+    /// A value that the state holds, or any value once the state passed the threshold, leaves it unchanged.
+    [[nodiscard]] bool ignoresRepeatedValues() const override { return true; }
 
     [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 

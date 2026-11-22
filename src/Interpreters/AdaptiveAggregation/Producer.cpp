@@ -1070,12 +1070,14 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         const auto & argument_layout = *adaptive_argument_layout;
 
         /// The arguments are staged in the form the drain rebuilds and the instructions consume (see
-        /// `AdaptiveArgumentLayout::build`): the instructions' `arguments`, which `prepareAggregateInstructions` built
-        /// for the whole block with constant, replicated and `LowCardinality` columns materialized. They hold whole
-        /// rows, unlike the `batch_arguments` that an `-Array` combinator unnests: the drain rebuilds the instructions
-        /// from the staged rows and unnests them again. Building them again from the block's own columns would copy
-        /// each such column once more, however few rows miss. Of a column that several aggregates read, a dense form
-        /// that one of them prepared is preferred to a sparse one, which takes a pass over its offsets (below).
+        /// `AdaptiveArgumentLayout::build`): the instructions' `arguments`, which
+        /// `prepareAggregateInstructions` built for the whole block with constant and `LowCardinality`
+        /// columns materialized, and replicated ones too unless an aggregate of one argument reads a
+        /// replicated `String` through its indexes. They hold whole rows, unlike the `batch_arguments` that
+        /// an `-Array` combinator unnests: the drain rebuilds the instructions from the staged rows and
+        /// unnests them again. Building them again from the block's own columns would copy each such column
+        /// once more, however few rows miss. Of a column that several aggregates read, a dense form that one
+        /// of them prepared is preferred to a sparse one, which takes a pass over its offsets (below).
         std::vector<ArgumentSource> arguments(argument_layout.num_positions, {nullptr, source_rows});
         for (size_t i = 0; i < params.aggregates_size; ++i)
             for (size_t j = 0; j < aggregates_positions[i].size(); ++j)
@@ -1092,8 +1094,8 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
         const auto read_through_values = [&](size_t position)
         {
             ArgumentSource & argument = arguments[position];
-            /// A replicated column, which an aggregate that reads replicated arguments consumes as it is, is read through
-            /// its nested column at the indexes of the source rows.
+            /// A replicated `String` column, which an aggregate of one argument reads through its indexes, is
+            /// read through its nested column at the indexes of the source rows.
             if (const auto * replicated = typeid_cast<const ColumnReplicated *>(argument.column))
             {
                 auto & rows = value_rows[position];

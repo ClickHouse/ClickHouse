@@ -400,6 +400,55 @@ char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const
     return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
 }
 
+void ColumnReplicated::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+{
+    if (empty())
+        return;
+
+    const size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    /// A nested column with more values than the block has rows, as after a filter, would cost more to size
+    /// whole than the rows that use it, as `ColumnLowCardinality::collectSerializedValueSizes` notes for its
+    /// dictionary.
+    if (nested_column->size() > rows && nested_column->getSerializedValueSize(indexes.getIndexAt(0), settings))
+    {
+        indexes.callForIndexesData([&](const auto & data)
+        {
+            for (size_t i = 0; i < rows; ++i)
+                sizes[i] += is_null ? 1 + (is_null[i] ? 0 : *nested_column->getSerializedValueSize(data[i], settings))
+                                    : *nested_column->getSerializedValueSize(data[i], settings);
+        });
+        return;
+    }
+
+    PaddedPODArray<UInt64> nested_sizes;
+    nested_column->collectSerializedValueSizes(nested_sizes, nullptr, settings);
+    if (!is_null)
+    {
+        indexes.collectSerializedValueSizes(sizes, nested_sizes);
+        return;
+    }
+
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            sizes[i] += 1 + (is_null[i] ? 0 : nested_sizes[data[i]]);
+    });
+}
+
+void ColumnReplicated::batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
+{
+    indexes.callForIndexesData([&](const auto & data)
+    {
+        for (size_t i = 0; i < memories.size(); ++i)
+            memories[i] = nested_column->serializeValueIntoMemory(data[start_row + i], memories[i], settings);
+    });
+}
+
 std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
     return nested_column->getSerializedValueSize(indexes.getIndexAt(n), settings);
