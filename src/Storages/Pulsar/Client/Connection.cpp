@@ -154,10 +154,21 @@ void Connection::startNextAddress()
                     socket = std::make_unique<Poco::Net::StreamSocket>();
                 }
                 socket->connectNB(address);
-                registered_fd = socket->impl()->sockfd();
-                client.interrupter.add(registered_fd);
+                int fd = socket->impl()->sockfd();
+                client.interrupter.add(fd);
                 if (owner_interrupter)
-                    owner_interrupter->add(registered_fd);
+                {
+                    try
+                    {
+                        owner_interrupter->add(fd);
+                    }
+                    catch (...)
+                    {
+                        client.interrupter.remove(fd);
+                        throw;
+                    }
+                }
+                registered_fd = fd;
                 current_state = State::TCPConnecting;
                 step_started = Clock::now();
                 LOG_TRACE(log, "Connecting to {} ({})", broker_address.toString(), address.toString());
@@ -644,6 +655,11 @@ UInt64 Session::nextRequestId()
     return next_request_id++;
 }
 
+bool Session::wasIssued(UInt64 request_id) const
+{
+    return request_id != 0 && request_id < next_request_id;
+}
+
 Connection & Session::connection(const BrokerAddress & address)
 {
     for (auto & connection : connections)
@@ -793,7 +809,14 @@ void Session::onFrame(Connection & connection, Frame & frame, const SharedBuffer
                 throwUnexpected("LOOKUP_RESPONSE");
             const auto & response = command.lookuptopicresponse();
             RequestPtr request = take_request(response.request_id());
-            if (!request || !request->is_lookup)
+            if (!request)
+            {
+                if (!wasIssued(response.request_id()))
+                    throwUnexpected("LOOKUP_RESPONSE for an unknown request");
+                LOG_DEBUG(log, "Ignoring LOOKUP_RESPONSE for the request {}, which is not awaited", response.request_id());
+                return;
+            }
+            if (!request->is_lookup)
                 throwUnexpected("LOOKUP_RESPONSE for an unknown request");
             if (!request->done)
                 completeLookup(request, response);
@@ -805,7 +828,14 @@ void Session::onFrame(Connection & connection, Frame & frame, const SharedBuffer
                 throwUnexpected("PARTITIONED_METADATA_RESPONSE");
             const auto & response = command.partitionmetadataresponse();
             RequestPtr request = take_request(response.request_id());
-            if (!request || request->is_lookup)
+            if (!request)
+            {
+                if (!wasIssued(response.request_id()))
+                    throwUnexpected("PARTITIONED_METADATA_RESPONSE for an unknown request");
+                LOG_DEBUG(log, "Ignoring PARTITIONED_METADATA_RESPONSE for the request {}, which is not awaited", response.request_id());
+                return;
+            }
+            if (request->is_lookup)
                 throwUnexpected("PARTITIONED_METADATA_RESPONSE for an unknown request");
             if (request->done)
                 return;
@@ -908,8 +938,14 @@ void Session::process()
                 request.is_lookup ? "lookup" : "getting the partitions", request.topic, timeout.count());
         }
     };
-    for (auto & [_, request] : requests_in_flight)
-        expire(*request);
+    for (auto it = requests_in_flight.begin(); it != requests_in_flight.end();)
+    {
+        expire(*it->second);
+        if (it->second->done)
+            it = requests_in_flight.erase(it);
+        else
+            ++it;
+    }
     for (auto & request : requests_to_send)
         expire(*request);
     std::erase_if(requests_to_send, [](const RequestPtr & request) { return request->done; });

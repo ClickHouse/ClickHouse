@@ -27,7 +27,8 @@ public:
     /// can arrive before the received ones are returned, or when `timeout` expires (possibly none).
     Messages batchReceive(size_t max_messages, std::chrono::milliseconds timeout);
 
-    /// Sends the acknowledgements and waits until the socket accepts them.
+    /// Sends the acknowledgements and waits until the socket accepts them. Those of a partition that is subscribing again
+    /// are sent when it has subscribed.
     void acknowledge(std::span<const MessageId> ids);
 
     /// Requests redelivery. Does nothing on a consumer that has failed, because closing it redelivers anyway.

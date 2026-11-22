@@ -34,9 +34,18 @@ namespace
 /// The defaults of the Pulsar C++ client for the total prefetch across the partitions of a consumer.
 constexpr size_t MAX_TOTAL_RECEIVER_QUEUE_SIZE = 50'000;
 
+/// A `MessageIdData` with two 64-bit varints and its tag and length.
+constexpr size_t MAX_ENCODED_MESSAGE_ID_SIZE = 24;
+
 UInt64 wallClockMilliseconds()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+/// The broker closes the connection on a frame bigger than its maximum message size and a padding.
+size_t messageIdsPerCommand(const Connection & connection)
+{
+    return std::max<size_t>(1, connection.maxMessageSize() / MAX_ENCODED_MESSAGE_ID_SIZE);
 }
 
 }
@@ -140,6 +149,7 @@ void ConsumerImpl::subscribe()
 
 void ConsumerImpl::checkUsable() const
 {
+    session.checkInterrupted();
     if (closed)
         throw Exception(ErrorCodes::ABORTED, "The Pulsar consumer is closed");
     if (failed)
@@ -329,20 +339,24 @@ void ConsumerImpl::sendAck(SubConsumer & sub, const VectorWithMemoryTracking<Ent
             sub.pending_acks.insert(sub.pending_acks.end(), ids.begin(), ids.end());
         return;
     }
-    PulsarProto::BaseCommand command;
-    command.set_type(PulsarProto::BaseCommand::ACK);
-    auto & ack = *command.mutable_ack();
-    ack.set_consumer_id(sub.consumer_id);
-    ack.set_ack_type(PulsarProto::CommandAck::Individual);
-    for (const auto & id : ids)
+    const size_t group_size = messageIdsPerCommand(*connection);
+    for (size_t begin = 0; begin < ids.size(); begin += group_size)
     {
-        auto & message_id = *ack.add_message_id();
-        message_id.set_ledgerid(id.ledger_id);
-        message_id.set_entryid(id.entry_id);
+        PulsarProto::BaseCommand command;
+        command.set_type(PulsarProto::BaseCommand::ACK);
+        auto & ack = *command.mutable_ack();
+        ack.set_consumer_id(sub.consumer_id);
+        ack.set_ack_type(PulsarProto::CommandAck::Individual);
+        for (size_t i = begin; i < std::min(ids.size(), begin + group_size); ++i)
+        {
+            auto & message_id = *ack.add_message_id();
+            message_id.set_ledgerid(ids[i].ledger_id);
+            message_id.set_entryid(ids[i].entry_id);
+        }
+        if (error)
+            ack.set_validation_error(*error);
+        connection->send(command);
     }
-    if (error)
-        ack.set_validation_error(*error);
-    connection->send(command);
     if (std::find(acked_connections.begin(), acked_connections.end(), connection->id()) == acked_connections.end())
         acked_connections.push_back(connection->id());
 }
@@ -352,17 +366,21 @@ void ConsumerImpl::sendRedeliver(SubConsumer & sub, const VectorWithMemoryTracki
     Connection * connection = session.findConnection(sub.connection_id);
     if (!connection || sub.state != State::Ready || ids.empty())
         return;
-    PulsarProto::BaseCommand command;
-    command.set_type(PulsarProto::BaseCommand::REDELIVER_UNACKNOWLEDGED_MESSAGES);
-    auto & redeliver = *command.mutable_redeliverunacknowledgedmessages();
-    redeliver.set_consumer_id(sub.consumer_id);
-    for (const auto & id : ids)
+    const size_t group_size = messageIdsPerCommand(*connection);
+    for (size_t begin = 0; begin < ids.size(); begin += group_size)
     {
-        auto & message_id = *redeliver.add_message_ids();
-        message_id.set_ledgerid(id.ledger_id);
-        message_id.set_entryid(id.entry_id);
+        PulsarProto::BaseCommand command;
+        command.set_type(PulsarProto::BaseCommand::REDELIVER_UNACKNOWLEDGED_MESSAGES);
+        auto & redeliver = *command.mutable_redeliverunacknowledgedmessages();
+        redeliver.set_consumer_id(sub.consumer_id);
+        for (size_t i = begin; i < std::min(ids.size(), begin + group_size); ++i)
+        {
+            auto & message_id = *redeliver.add_message_ids();
+            message_id.set_ledgerid(ids[i].ledger_id);
+            message_id.set_entryid(ids[i].entry_id);
+        }
+        connection->send(command);
     }
-    connection->send(command);
 }
 
 ConsumerImpl::SubConsumer * ConsumerImpl::findSubConsumer(Connection & connection, UInt64 consumer_id)
@@ -407,13 +425,23 @@ void ConsumerImpl::onFrame(Connection & connection, Frame & frame, const SharedB
                     && sub->connection_id == connection.id())
                 {
                     sub->state = State::Ready;
+                    /// Before the permits, so that the broker applies them before it dispatches the redelivered messages.
+                    if (!sub->pending_acks.empty())
+                    {
+                        auto pending = std::move(sub->pending_acks);
+                        sub->pending_acks.clear();
+                        sendAck(*sub, pending, {});
+                    }
                     sub->pending_flow = sub->window;
                     sendFlow(*sub);
                     LOG_TRACE(log, "Subscribed to the Pulsar topic {} with the consumer id {}", *sub->topic, sub->consumer_id);
                     return;
                 }
             }
-            throwUnexpected("SUCCESS for an unknown request");
+            if (!session.wasIssued(command.success().request_id()))
+                throwUnexpected("SUCCESS for an unknown request");
+            LOG_DEBUG(log, "Ignoring SUCCESS for the request {}, which is not awaited", command.success().request_id());
+            return;
         }
         case Type::ERROR:
         {
@@ -422,7 +450,10 @@ void ConsumerImpl::onFrame(Connection & connection, Frame & frame, const SharedB
                     && sub->connection_id == connection.id())
                     throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot subscribe to the Pulsar topic {}: {} {}", *sub->topic,
                         PulsarProto::ServerError_Name(command.error().error()), command.error().message());
-            throwUnexpected("ERROR for an unknown request");
+            if (!session.wasIssued(command.error().request_id()))
+                throwUnexpected("ERROR for an unknown request");
+            LOG_DEBUG(log, "Ignoring ERROR for the request {}, which is not awaited", command.error().request_id());
+            return;
         }
         case Type::CLOSE_CONSUMER:
         {
@@ -609,6 +640,8 @@ Messages ConsumerImpl::batchReceive(size_t max_messages, std::chrono::millisecon
     catch (...)
     {
         failed = true;
+        /// An interruption replaces the failure it caused.
+        session.checkInterrupted();
         throw;
     }
 }
@@ -678,6 +711,7 @@ void ConsumerImpl::acknowledge(std::span<const MessageId> ids)
     catch (...)
     {
         failed = true;
+        session.checkInterrupted();
         throw;
     }
 }

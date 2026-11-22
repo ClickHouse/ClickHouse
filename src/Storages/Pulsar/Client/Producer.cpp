@@ -108,6 +108,7 @@ ProducerImpl::~ProducerImpl()
 
 void ProducerImpl::checkUsable() const
 {
+    session.checkInterrupted();
     if (closed)
         throw Exception(ErrorCodes::ABORTED, "The Pulsar producer is closed");
     if (failed)
@@ -252,14 +253,19 @@ void ProducerImpl::onFrame(Connection & connection, Frame & frame, const SharedB
                 throwUnexpected("PRODUCER_SUCCESS");
             const auto & success = command.producer_success();
             if (state != State::ProducerPending || success.request_id() != producer_request_id || connection.id() != connection_id)
-                throwUnexpected("PRODUCER_SUCCESS for an unknown request");
+            {
+                if (!session.wasIssued(success.request_id()))
+                    throwUnexpected("PRODUCER_SUCCESS for an unknown request");
+                LOG_DEBUG(log, "Ignoring PRODUCER_SUCCESS for the request {}, which is not awaited", success.request_id());
+                return;
+            }
             /// The producer is not ready yet if the topic has another exclusive producer.
             if (!success.producer_ready())
                 return;
             if (!producer_name)
                 producer_name = success.producer_name();
             if (!next_sequence_id)
-                next_sequence_id = static_cast<UInt64>(success.last_sequence_id() + 1);
+                next_sequence_id = static_cast<UInt64>(success.last_sequence_id()) + 1;
             state = State::Ready;
             LOG_TRACE(log, "Created the Pulsar producer {} for topic {}", *producer_name, topic);
             return;
@@ -269,7 +275,10 @@ void ProducerImpl::onFrame(Connection & connection, Frame & frame, const SharedB
             if (state == State::ProducerPending && command.error().request_id() == producer_request_id && connection.id() == connection_id)
                 throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot create the Pulsar producer for topic {}: {} {}", topic,
                     PulsarProto::ServerError_Name(command.error().error()), command.error().message());
-            throwUnexpected("ERROR for an unknown request");
+            if (!session.wasIssued(command.error().request_id()))
+                throwUnexpected("ERROR for an unknown request");
+            LOG_DEBUG(log, "Ignoring ERROR for the request {}, which is not awaited", command.error().request_id());
+            return;
         }
         case Type::SEND_RECEIPT:
         {
@@ -343,6 +352,7 @@ void ProducerImpl::send(std::string_view payload, std::optional<std::string_view
         /// A partial frame may remain in the output.
         failed = true;
         pending.reset();
+        session.checkInterrupted();
         throw;
     }
 }

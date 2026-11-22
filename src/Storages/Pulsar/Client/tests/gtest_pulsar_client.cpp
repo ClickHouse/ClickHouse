@@ -19,6 +19,8 @@
 
 #include <gtest/gtest.h>
 
+#include <zstd.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <map>
@@ -57,6 +59,8 @@ public:
     struct Event
     {
         size_t connection = 0;
+        /// The size of the frame after its size field.
+        size_t frame_size = 0;
         PulsarProto::BaseCommand command;
         PulsarProto::MessageMetadata metadata;
         String payload;
@@ -121,6 +125,13 @@ public:
         return res;
     }
 
+    /// In the order of receipt.
+    std::vector<Event> allEvents() /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    {
+        std::lock_guard lock(mutex);
+        return events;
+    }
+
     size_t count(Type::Type type) { return eventsOf(type).size(); }
 
     bool waitForCount(Type::Type type, size_t n)
@@ -172,6 +183,24 @@ public:
     {
         std::lock_guard lock(mutex);
         ::shutdown(connections.at(connection)->socket.impl()->sockfd(), SHUT_RDWR);
+    }
+
+    void setPartitions(const String & topic, UInt32 n)
+    {
+        std::lock_guard lock(config_mutex);
+        partitions[topic] = n;
+    }
+
+    void setRedirect(std::optional<String> url)
+    {
+        std::lock_guard lock(config_mutex);
+        redirect_to = std::move(url);
+    }
+
+    void setMaxMessageSize(Int32 size)
+    {
+        std::lock_guard lock(config_mutex);
+        max_message_size = size;
     }
 
     /// Configuration, used by the connection threads.
@@ -266,6 +295,7 @@ private:
             size_t command_size = unalignedLoadBigEndian<UInt32>(body.data());
             Event event;
             event.connection = index;
+            event.frame_size = size;
             EXPECT_TRUE(event.command.ParseFromArray(body.data() + 4, static_cast<int>(command_size)));
             if (event.command.type() == Type::SEND)
             {
@@ -298,11 +328,14 @@ private:
         switch (command.type())
         {
             case Type::CONNECT:
+            {
                 response.set_type(Type::CONNECTED);
                 response.mutable_connected()->set_server_version("fake");
                 response.mutable_connected()->set_protocol_version(19);
+                std::lock_guard lock(config_mutex);
                 response.mutable_connected()->set_max_message_size(max_message_size);
                 break;
+            }
             case Type::PING:
                 response.set_type(Type::PONG);
                 response.mutable_pong();
@@ -465,7 +498,7 @@ TEST(PulsarClient, LookupRedirectAndValidator)
 {
     FakeBroker b;
     FakeBroker a;
-    a.redirect_to = b.url();
+    a.setRedirect(b.url());
 
     std::vector<std::pair<String, UInt16>> validated; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     Client client(a.url(), configuration(&validated));
@@ -478,7 +511,7 @@ TEST(PulsarClient, LookupRedirectAndValidator)
 
     /// A rejected host is never connected.
     FakeBroker c;
-    a.redirect_to = c.url();
+    a.setRedirect(c.url());
     auto config = configuration();
     config.connection_validator = [&](const String &, UInt16 port)
     {
@@ -493,7 +526,7 @@ TEST(PulsarClient, LookupRedirectAndValidator)
 TEST(PulsarClient, PartitionsAndBatchReceive)
 {
     FakeBroker broker;
-    broker.partitions[topicName("t")] = 3;
+    broker.setPartitions(topicName("t"), 3);
     Client client(broker.url(), configuration());
     ConsumerConfiguration consumer_configuration;
     consumer_configuration.receiver_queue_size = 10;
@@ -539,7 +572,7 @@ TEST(PulsarClient, PartitionsAndBatchReceive)
 TEST(PulsarClient, TooManyPartitions)
 {
     FakeBroker broker;
-    broker.partitions[topicName("t")] = 70000;
+    broker.setPartitions(topicName("t"), 70000);
     Client client(broker.url(), configuration());
     EXPECT_EQ(errorCode([&] { client.subscribe({"t"}, "s", {}); }), ErrorCodes::LIMIT_EXCEEDED);
     EXPECT_EQ(broker.count(Type::LOOKUP), 0);
@@ -549,7 +582,7 @@ TEST(PulsarClient, TooManyPartitions)
 TEST(PulsarClient, Acknowledgements)
 {
     FakeBroker broker;
-    broker.partitions[topicName("t")] = 3;
+    broker.setPartitions(topicName("t"), 3);
     Client client(broker.url(), configuration());
     auto consumer = client.subscribe({"t"}, "s", {});
     auto subs = subscriptions(broker);
@@ -638,7 +671,7 @@ TEST(PulsarClient, ProtocolViolations)
 {
     {
         FakeBroker broker;
-        broker.max_message_size = 1000;
+        broker.setMaxMessageSize(1000);
         Client client(broker.url(), configuration());
         auto consumer = client.subscribe({"t"}, "s", {});
         auto [connection, consumer_id] = subscriptions(broker).begin()->second;
@@ -715,7 +748,22 @@ TEST(PulsarClient, ResubscribeAfterCloseConsumerAndLostConnection)
     EXPECT_EQ(ack.command.ack().consumer_id(), second.command.subscribe().consumer_id());
     EXPECT_EQ(ack.command.ack().message_id(0).entryid(), 1);
 
+    /// The acknowledgement is sent before the permits of the new subscription.
     UInt64 new_consumer_id = second.command.subscribe().consumer_id();
+    auto is_new_flow = [&](const FakeBroker::Event & e)
+    {
+        return e.connection == second.connection && e.command.type() == Type::FLOW && e.command.flow().consumer_id() == new_consumer_id;
+    };
+    auto is_ack = [&](const FakeBroker::Event & e) { return e.connection == second.connection && e.command.type() == Type::ACK; };
+    const auto start = std::chrono::steady_clock::now();
+    while (std::ranges::none_of(broker.allEvents(), is_new_flow) && std::chrono::steady_clock::now() - start < HANG_GUARD)
+        consumer->batchReceive(1, 100ms);
+    auto all = broker.allEvents();
+    auto flow_position = std::ranges::find_if(all, is_new_flow) - all.begin();
+    auto ack_position = std::ranges::find_if(all, is_ack) - all.begin();
+    ASSERT_LT(flow_position, std::ssize(all));
+    EXPECT_LT(ack_position, flow_position);
+
     broker.sendMessage(second.connection, new_consumer_id, 2, metadataOf(), "second");
     messages = receiveAtLeast(*consumer, 1);
     ASSERT_EQ(messages.size(), 1);
@@ -813,17 +861,14 @@ TEST(PulsarClient, StepTimeout)
 TEST(PulsarClient, PartitionRefresh)
 {
     FakeBroker broker;
-    broker.partitions[topicName("t")] = 3;
+    broker.setPartitions(topicName("t"), 3);
     Client client(broker.url(), configuration());
     ConsumerConfiguration consumer_configuration;
     consumer_configuration.partitions_refresh_interval = 1000ms;
     auto consumer = client.subscribe({"t"}, "s", consumer_configuration);
     EXPECT_EQ(broker.count(Type::SUBSCRIBE), 3);
 
-    {
-        std::lock_guard lock(broker.config_mutex);
-        broker.partitions[topicName("t")] = 4;
-    }
+    broker.setPartitions(topicName("t"), 4);
     const auto start = std::chrono::steady_clock::now();
     while (broker.count(Type::SUBSCRIBE) < 4 && std::chrono::steady_clock::now() - start < HANG_GUARD)
         consumer->batchReceive(1, 100ms);
@@ -918,6 +963,7 @@ TEST(PulsarClient, Producer)
     });
     EXPECT_EQ(errorCode([&] { interrupted->send("six"); }), ErrorCodes::ABORTED);
     interrupter.join();
+    EXPECT_EQ(errorCode([&] { interrupted->send("seven"); }), ErrorCodes::ABORTED);
 }
 
 TEST(PulsarClient, CloseFromAnotherThread)
@@ -938,7 +984,135 @@ TEST(PulsarClient, CloseFromAnotherThread)
     EXPECT_EQ(errorCode([&] { consumer->batchReceive(10, 600s); }), ErrorCodes::ABORTED);
     EXPECT_LT(std::chrono::steady_clock::now() - start, HANG_GUARD);
     closer.join();
+    EXPECT_EQ(errorCode([&] { consumer->batchReceive(1, 100ms); }), ErrorCodes::ABORTED);
     EXPECT_EQ(errorCode([&] { client.subscribe({"t"}, "s", {}); }), ErrorCodes::ABORTED);
+}
+
+TEST(PulsarClient, LargeAcknowledgementIsSplit)
+{
+    FakeBroker broker;
+    broker.setMaxMessageSize(1000);
+    Client client(broker.url(), configuration());
+    ConsumerConfiguration consumer_configuration;
+    consumer_configuration.receiver_queue_size = 1000;
+    auto consumer = client.subscribe({"t"}, "s", consumer_configuration);
+    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+
+    for (UInt64 entry = 1; entry <= 200; ++entry)
+        broker.sendMessage(connection, consumer_id, entry, metadataOf(), "x");
+    auto messages = receiveAtLeast(*consumer, 200);
+    ASSERT_EQ(messages.size(), 200);
+    std::vector<MessageId> ids; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    for (const auto & message : messages)
+        ids.push_back(message.id());
+    consumer->acknowledge(ids);
+
+    auto acknowledged = [](const auto & events)
+    {
+        size_t res = 0;
+        for (const auto & event : events)
+            if (event.command.type() == Type::ACK)
+                res += event.command.ack().message_id_size();
+        return res;
+    };
+    ASSERT_TRUE(broker.waitFor([&](const auto & all) { return acknowledged(all) >= 200; }));
+    auto acks = broker.eventsOf(Type::ACK);
+    EXPECT_EQ(acknowledged(acks), 200);
+    EXPECT_GE(acks.size(), 2);
+    for (const auto & ack : acks)
+        EXPECT_LE(ack.frame_size, 1000);
+}
+
+TEST(PulsarClient, CompressedChunkedMessage)
+{
+    FakeBroker broker;
+    Client client(broker.url(), configuration());
+    ConsumerConfiguration consumer_configuration;
+    consumer_configuration.receiver_queue_size = 3;
+    auto consumer = client.subscribe({"t"}, "s", consumer_configuration);
+    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+    ASSERT_TRUE(broker.waitForCount(Type::FLOW, 1));
+
+    String data;
+    for (size_t i = 0; data.size() < 30000; ++i)
+        data += fmt::format("{}", i % 1000);
+    data.resize(30000);
+    String compressed(ZSTD_compressBound(data.size()), '\0');
+    compressed.resize(ZSTD_compress(compressed.data(), compressed.size(), data.data(), data.size(), 1));
+    ASSERT_GE(compressed.size(), 3);
+
+    /// The producer compresses the whole payload and then slices it into chunks.
+    const size_t part = compressed.size() / 3;
+    for (Int32 i = 0; i < 3; ++i)
+    {
+        auto metadata = metadataOf();
+        metadata.set_uuid("u");
+        metadata.set_chunk_id(i);
+        metadata.set_num_chunks_from_msg(3);
+        metadata.set_total_chunk_msg_size(static_cast<Int32>(compressed.size()));
+        metadata.set_compression(PulsarProto::ZSTD);
+        metadata.set_uncompressed_size(static_cast<UInt32>(data.size()));
+        broker.sendMessage(connection, consumer_id, i + 1, metadata, std::string_view(compressed).substr(i * part, i == 2 ? String::npos : part));
+    }
+
+    auto messages = receiveAtLeast(*consumer, 1);
+    ASSERT_EQ(messages.size(), 1);
+    EXPECT_EQ(messages[0].payload(), data);
+    EXPECT_TRUE(consumer->batchReceive(10, 100ms).empty());
+
+    /// One permit for each chunk.
+    auto permits_after_initial = [](const auto & events)
+    {
+        UInt64 res = 0;
+        bool initial = true;
+        for (const auto & event : events)
+        {
+            if (event.command.type() != Type::FLOW)
+                continue;
+            if (!initial)
+                res += event.command.flow().messagepermits();
+            initial = false;
+        }
+        return res;
+    };
+    ASSERT_TRUE(broker.waitFor([&](const auto & all) { return permits_after_initial(all) >= 3; }));
+    EXPECT_EQ(permits_after_initial(broker.allEvents()), 3);
+
+    consumer->acknowledge(std::span(&messages[0].id(), 1));
+    ASSERT_TRUE(broker.waitForCount(Type::ACK, 1));
+    auto acks = broker.eventsOf(Type::ACK);
+    ASSERT_EQ(acks.size(), 1);
+    ASSERT_EQ(acks[0].command.ack().message_id_size(), 3);
+    for (Int32 i = 0; i < 3; ++i)
+        EXPECT_EQ(acks[0].command.ack().message_id(i).entryid(), static_cast<UInt64>(i + 1));
+    EXPECT_FALSE(acks[0].command.ack().has_validation_error());
+}
+
+TEST(PulsarClient, LateResponseIsIgnored)
+{
+    FakeBroker broker;
+    Client client(broker.url(), configuration());
+    auto consumer = client.subscribe({"t"}, "s", {});
+    auto [connection, consumer_id] = subscriptions(broker).begin()->second;
+
+    /// The response to a request that is not awaited anymore.
+    PulsarProto::BaseCommand success;
+    success.set_type(Type::SUCCESS);
+    success.mutable_success()->set_request_id(broker.eventsOf(Type::SUBSCRIBE)[0].command.subscribe().request_id());
+    broker.sendCommand(connection, success);
+    EXPECT_TRUE(consumer->batchReceive(1, 100ms).empty());
+    broker.sendMessage(connection, consumer_id, 1, metadataOf(), "after");
+    auto messages = receiveAtLeast(*consumer, 1);
+    ASSERT_EQ(messages.size(), 1);
+    EXPECT_EQ(messages[0].payload(), "after");
+
+    /// The response to a request that was never sent.
+    success.mutable_success()->set_request_id(1000000);
+    broker.sendCommand(connection, success);
+    int code = 0;
+    for (size_t i = 0; i < 100 && !code; ++i)
+        code = errorCode([&] { consumer->batchReceive(1, 100ms); });
+    EXPECT_EQ(code, ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 
 #endif

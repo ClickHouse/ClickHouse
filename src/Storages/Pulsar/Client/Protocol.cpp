@@ -3,6 +3,7 @@
 #if USE_PULSAR
 
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <base/unaligned.h>
@@ -187,6 +188,11 @@ bool decompress(Int32 codec, std::string_view in, char * out, size_t size)
     }
 }
 
+UInt128 hashUuid(const String & uuid)
+{
+    return sipHash128(uuid.data(), uuid.size());
+}
+
 }
 
 
@@ -272,24 +278,22 @@ void decodeEntry(std::string_view tail, Entry & entry)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Malformed Pulsar frame: cannot parse the broker entry metadata");
     }
 
-    std::optional<UInt32> checksum;
     if (reader.peekUInt16(magic) && magic == MAGIC_CRC32C)
     {
         reader.skip(2, "the checksum magic");
-        checksum = reader.readUInt32("the checksum");
+        UInt32 checksum = reader.readUInt32("the checksum");
+        std::string_view checksummed = reader.rest();
+        if (crc32c::Crc32c(checksummed.data(), checksummed.size()) != checksum)
+        {
+            entry.metadata.Clear();
+            entry.payload = {};
+            entry.checksum_mismatch = true;
+            return;
+        }
     }
 
-    std::string_view checksummed = reader.rest();
     size_t metadata_size = reader.readUInt32("the metadata size");
     std::string_view metadata = reader.read(metadata_size, "the metadata");
-
-    if (checksum && crc32c::Crc32c(checksummed.data(), checksummed.size()) != *checksum)
-    {
-        entry.metadata.Clear();
-        entry.payload = {};
-        entry.checksum_mismatch = true;
-        return;
-    }
 
     entry.metadata.Clear();
     if (!entry.metadata.ParsePartialFromArray(metadata.data(), static_cast<int>(metadata.size())))
@@ -446,18 +450,18 @@ void ChunkAssembler::remove(const String & uuid)
     std::erase_if(contexts, [&](const Context & context) { return context.uuid == uuid; });
 }
 
-void ChunkAssembler::rememberAbandoned(const String & uuid, bool redeliver)
+void ChunkAssembler::rememberAbandoned(UInt128 uuid_hash, bool redeliver)
 {
-    std::erase_if(abandoned, [&](const auto & entry) { return entry.first == uuid; });
+    std::erase_if(abandoned, [&](const auto & entry) { return entry.first == uuid_hash; });
     if (abandoned.size() >= MAX_ABANDONED_MESSAGES)
         abandoned.pop_front();
-    abandoned.emplace_back(uuid, redeliver);
+    abandoned.emplace_back(uuid_hash, redeliver);
 }
 
-std::optional<bool> ChunkAssembler::abandonedDisposition(const String & uuid) const
+std::optional<bool> ChunkAssembler::abandonedDisposition(UInt128 uuid_hash) const
 {
-    for (const auto & [abandoned_uuid, redeliver] : abandoned)
-        if (abandoned_uuid == uuid)
+    for (const auto & [abandoned_hash, redeliver] : abandoned)
+        if (abandoned_hash == uuid_hash)
             return redeliver;
     return std::nullopt;
 }
@@ -472,7 +476,7 @@ void ChunkAssembler::discardMalformed(const String & uuid, ChunkId id, Result & 
                 result.ack.push_back(chunk);
         remove(uuid);
     }
-    rememberAbandoned(uuid, false);
+    rememberAbandoned(hashUuid(uuid), false);
     result.ack_corrupted = id;
 }
 
@@ -517,12 +521,13 @@ void ChunkAssembler::add(
             LOG_WARNING(getLogger("PulsarClient"), "Requesting redelivery of the incomplete chunked message {}, because {} chunked messages are pending",
                 oldest.uuid, contexts.size());
             result.redeliver.insert(result.redeliver.end(), oldest.chunks.begin(), oldest.chunks.end());
-            String evicted = oldest.uuid;
+            const UInt128 evicted = hashUuid(oldest.uuid);
             contexts.pop_front();
             rememberAbandoned(evicted, true);
         }
 
-        std::erase_if(abandoned, [&](const auto & entry) { return entry.first == uuid; });
+        const UInt128 uuid_hash = hashUuid(uuid);
+        std::erase_if(abandoned, [&](const auto & entry) { return entry.first == uuid_hash; });
         Context & context = contexts.emplace_back();
         context.uuid = uuid;
         context.num_chunks = num_chunks;
@@ -540,7 +545,7 @@ void ChunkAssembler::add(
         bool redeliver = true;
         if (publish_expired)
             redeliver = false;
-        else if (auto disposition = abandonedDisposition(uuid))
+        else if (auto disposition = abandonedDisposition(hashUuid(uuid)))
             redeliver = *disposition;
         LOG_ERROR(getLogger("PulsarClient"), "Received an uncached chunk {} of {} at {}:{}", chunk_id, uuid, id.ledger_id, id.entry_id);
         (redeliver ? result.redeliver : result.ack).push_back(id);
@@ -561,7 +566,7 @@ void ChunkAssembler::add(
         LOG_WARNING(getLogger("PulsarClient"), "Received chunk {} of {} after chunk {}", chunk_id, uuid, last_chunk_id);
         result.redeliver.insert(result.redeliver.end(), context->chunks.begin(), context->chunks.end());
         remove(uuid);
-        rememberAbandoned(uuid, true);
+        rememberAbandoned(hashUuid(uuid), true);
         (publish_expired ? result.ack : result.redeliver).push_back(id);
         return;
     }
@@ -599,9 +604,9 @@ void ChunkAssembler::expire(Result & result)
             return;
         LOG_INFO(getLogger("PulsarClient"), "Removing the expired incomplete chunked message {}", it->uuid);
         result.ack.insert(result.ack.end(), it->chunks.begin(), it->chunks.end());
-        String uuid = it->uuid;
+        const UInt128 uuid_hash = hashUuid(it->uuid);
         contexts.erase(it);
-        rememberAbandoned(uuid, false);
+        rememberAbandoned(uuid_hash, false);
     }
 }
 

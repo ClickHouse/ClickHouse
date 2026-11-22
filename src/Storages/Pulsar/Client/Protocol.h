@@ -5,6 +5,7 @@
 #if USE_PULSAR
 
 #include <Storages/Pulsar/Client/Message.h>
+#include <base/extended_types.h>
 #include <base/types.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/StringWithMemoryTracking.h>
@@ -192,15 +193,16 @@ private:
 
     Context * find(const String & uuid);
     void remove(const String & uuid);
-    void rememberAbandoned(const String & uuid, bool redeliver);
-    std::optional<bool> abandonedDisposition(const String & uuid) const;
+    void rememberAbandoned(UInt128 uuid_hash, bool redeliver);
+    std::optional<bool> abandonedDisposition(UInt128 uuid_hash) const;
     void discardMalformed(const String & uuid, ChunkId id, Result & result);
 
     Clock clock;
     /// The oldest first.
     DequeWithMemoryTracking<Context> contexts;
-    /// The uuids of the dropped messages, with whether their chunks were redelivered (or acknowledged). The oldest first.
-    DequeWithMemoryTracking<std::pair<String, bool>> abandoned;
+    /// The hashes of the uuids of the dropped messages (a uuid can be as big as a frame), with whether their chunks were
+    /// redelivered (or acknowledged). The oldest first.
+    DequeWithMemoryTracking<std::pair<UInt128, bool>> abandoned;
 };
 
 /// `topic`, `tenant/namespace/topic` or `persistent://tenant/namespace/topic`, `non-persistent://...`.

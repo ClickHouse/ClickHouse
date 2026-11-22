@@ -16,7 +16,7 @@
 /// to (partitioned) topics with batched, chunked and compressed messages, acknowledgements, and a producer that sends
 /// one message at a time and waits for its receipt. TLS uses the `openSSL.client` configuration of the server.
 ///
-/// The client runs no threads: all network I/O happens inside the calls, which never wait longer than their timeouts.
+/// The client runs no threads: all network I/O happens inside the calls, which wait only up to their timeouts, apart from DNS resolution.
 /// A consumer or producer is used by one thread at a time; only `Client::close` and `Producer::interrupt` may be called
 /// from another thread. After a call has thrown, the consumer or producer must be closed and created again.
 namespace DB::Pulsar

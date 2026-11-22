@@ -16,6 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+// Copied from proto/PulsarApi.proto of apache/pulsar-client-cpp at f71d7e99019d. Changed: the package (was
+// `pulsar.proto`). NOTICE of Apache Pulsar: Copyright 2017-2022 The Apache Software Foundation. This product includes
+// software developed at The Apache Software Foundation (http://www.apache.org/).
 syntax = "proto2";
 
 package DB.PulsarProto;

@@ -221,6 +221,9 @@ public:
     Connection & connection(const BrokerAddress & address);
     /// Unique within the session.
     UInt64 nextRequestId();
+    /// Whether `nextRequestId` returned this id. A response to such a request that is not awaited anymore is ignored:
+    /// the broker may answer after closing the consumer or producer, or after the request expired.
+    [[nodiscard]] bool wasIssued(UInt64 request_id) const;
     /// Null if the connection does not exist anymore.
     Connection * findConnection(UInt64 id);
 

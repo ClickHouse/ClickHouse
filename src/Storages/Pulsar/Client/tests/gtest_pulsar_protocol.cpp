@@ -308,6 +308,12 @@ TEST(PulsarProtocol, EntryValidation)
     decodeEntry(tail, entry);
     EXPECT_TRUE(entry.checksum_mismatch);
 
+    /// A corrupted metadata size in a checksummed entry is a checksum mismatch too.
+    tail = messageTail(metadata, "payload");
+    tail.replace(6, 4, be32(THREE_GIB));
+    EXPECT_NO_THROW(decodeEntry(tail, entry));
+    EXPECT_TRUE(entry.checksum_mismatch);
+
     /// Sizes beyond the frame.
     expectUnexpected([&] { decodeEntry(be16(0x0e02) + be32(THREE_GIB) + "x", entry); });
     expectUnexpected([&] { decodeEntry(be16(0x0e02) + be32(2) + "\xff\xff" + messageTail(metadata, "p"), entry); });
@@ -803,6 +809,23 @@ TEST(PulsarChunks, InvalidLayout)
     EXPECT_FALSE(result.message);
     EXPECT_EQ(result.ack, ids({70}));
     EXPECT_EQ(result.ack_corrupted, (ChunkId{1, 71}));
+}
+
+TEST(PulsarChunks, LongUuid)
+{
+    ChunkTest t;
+    const String uuid(1024 * 1024, 'u');
+    EXPECT_TRUE(t.add(t.chunk(uuid, 0, 5, 4), 1, "a").ack_corrupted);
+    /// A later chunk of the discarded message is acknowledged, as with a short uuid.
+    auto result = t.add(t.chunk(uuid, 1, 5, 4), 2, "b");
+    EXPECT_EQ(result.ack, ids({2}));
+    EXPECT_TRUE(result.redeliver.empty());
+    /// Another uuid of the same length is not abandoned.
+    String other = uuid;
+    other.back() = 'v';
+    result = t.add(t.chunk(other, 1, 5, 4), 3, "c");
+    EXPECT_EQ(result.redeliver, ids({3}));
+    EXPECT_TRUE(result.ack.empty());
 }
 
 TEST(PulsarChunks, Expiry)
