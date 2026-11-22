@@ -30,8 +30,10 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/ISource.h>
 #include <Core/Streaming/Settings.h>
 #include <Core/Streaming/CursorTree.h>
@@ -292,46 +294,17 @@ public:
         Names nested_arrays_,
         std::shared_ptr<const StorageMemory> storage_,
         bool bounded_,
-        const CursorTreeNodePtr & cursor,
+        CursorTreeNodePtr cursor_,
         ContextPtr context_)
         : ISource(header_)
         , columns_to_read(std::move(columns_))
         , nested_arrays(std::move(nested_arrays_))
         , storage(std::move(storage_))
         , bounded(bounded_)
+        , resume_cursor(std::move(cursor_))
         , context(std::move(context_))
         , wakeup(storage->stream_subscribers->subscribe())
     {
-        /// The subscription is created before the first look at the data, so that no change is missed.
-        const auto snapshot = storage->data.get();
-        generation = snapshot->generation;
-        next_block_number = snapshot->first_block_number;
-        end_block_number = snapshot->first_block_number + snapshot->blocks.size();
-
-        if (cursor)
-        {
-            if (!cursor->hasValue("epoch") || !cursor->hasValue("generation") || !cursor->hasValue("block_number"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The cursor of a Memory table must have 'epoch', 'generation' and 'block_number'");
-
-            const bool same_generation = static_cast<UInt64>(cursor->getValue("epoch")) == processEpoch()
-                && static_cast<UInt64>(cursor->getValue("generation")) == generation;
-            if (same_generation)
-            {
-                const Int64 last_block_number = cursor->getValue("block_number");
-                if (last_block_number < -1)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid block number {} in the cursor", last_block_number);
-                next_block_number = static_cast<UInt64>(last_block_number + 1);
-                if (next_block_number > end_block_number)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The block number {} in the cursor is beyond the blocks of the Memory table", last_block_number);
-            }
-            else if (snapshot->rows_rewritten && static_cast<UInt64>(cursor->getValue("epoch")) == processEpoch())
-                throw Exception(ErrorCodes::ABORTED,
-                    "The data of the Memory table {} was rewritten by a mutation since the cursor was taken",
-                    storage->getStorageID().getNameForLogs());
-            /// Otherwise the data started anew (by `TRUNCATE` or a restart of the server) after the cursor: all the blocks are new.
-        }
     }
 
     /// A random number of the server process: the generations of the data are numbered anew in every process.
@@ -351,9 +324,21 @@ public:
             return Status::Finished;
         }
 
-        /// E.g. a downstream `LIMIT` has got enough rows.
         if (getPort().isFinished())
+        {
+            /// The query does not need the rest of the rows (e.g. a `DISTINCT` by constants already has its result),
+            /// so it stopped the read. A bounded read still has to report the cursor after all its blocks: they are
+            /// consumed by the query, although they are not read, and the next incremental refresh must not get them
+            /// again, the same as in `MergeTreeCommitOrderSource::handleShutdown`. If the query was stopped by
+            /// an exception instead, it fails, and the reported cursor is discarded along with it.
+            /// If the read did not start, it returned nothing, and the cursor stays in place.
+            if (bounded && initialized)
+            {
+                next_block_number = end_block_number;
+                reportFinalCursor();
+            }
             return Status::Finished;
+        }
 
         if (is_async_state)
             return Status::Async;
@@ -384,10 +369,51 @@ public:
     }
 
 protected:
+    /// The first look at the data. It is done when the query starts to read rather than when it is planned: the table
+    /// of a materialized CTE or of a `GLOBAL` subquery is filled during the execution of the query, and the pipeline
+    /// lets this source read only after that (see `StorageMemory::delayReadForGlobalSubqueries`).
+    /// The subscription is created before it (in the constructor), so that no change is missed.
+    void initialize()
+    {
+        const auto snapshot = storage->data.get();
+        generation = snapshot->generation;
+        next_block_number = snapshot->first_block_number;
+        end_block_number = snapshot->first_block_number + snapshot->blocks.size();
+
+        if (resume_cursor)
+        {
+            if (!resume_cursor->hasValue("epoch") || !resume_cursor->hasValue("generation") || !resume_cursor->hasValue("block_number"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The cursor of a Memory table must have 'epoch', 'generation' and 'block_number'");
+
+            const bool same_generation = static_cast<UInt64>(resume_cursor->getValue("epoch")) == processEpoch()
+                && static_cast<UInt64>(resume_cursor->getValue("generation")) == generation;
+            if (same_generation)
+            {
+                const Int64 last_block_number = resume_cursor->getValue("block_number");
+                if (last_block_number < -1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid block number {} in the cursor", last_block_number);
+                next_block_number = static_cast<UInt64>(last_block_number + 1);
+                if (next_block_number > end_block_number)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The block number {} in the cursor is beyond the blocks of the Memory table", last_block_number);
+            }
+            else if (snapshot->rows_rewritten && static_cast<UInt64>(resume_cursor->getValue("epoch")) == processEpoch())
+                throw Exception(ErrorCodes::ABORTED,
+                    "The data of the Memory table {} was rewritten by a mutation since the cursor was taken",
+                    storage->getStorageID().getNameForLogs());
+            /// Otherwise the data started anew (by `TRUNCATE` or a restart of the server) after the cursor: all the blocks are new.
+        }
+        initialized = true;
+    }
+
     std::optional<Chunk> tryGenerate() override
     {
         if (isCancelled())
             return {};
+
+        if (!initialized)
+            initialize();
 
         if (bounded && next_block_number >= end_block_number)
         {
@@ -447,14 +473,109 @@ private:
     const Names nested_arrays;
     const std::shared_ptr<const StorageMemory> storage;
     const bool bounded;
+    /// The cursor to resume the read after, if any.
+    const CursorTreeNodePtr resume_cursor;
     const ContextPtr context;
     const MemoryTableWakeupPtr wakeup;
     bool reported = false;
+    bool initialized = false;
 
     UInt64 generation = 0;
     UInt64 next_block_number = 0;
     UInt64 end_block_number = 0;
     bool is_async_state = false;
+};
+
+/// The step of a streaming read. It is a `SourceStepWithFilter`, so that the planner sees the stream settings of the read
+/// (see `hasUnboundedSource`) and plans an unbounded stream as a streaming query.
+///
+/// The planner gives the row-level security filter and `PREWHERE` to the storage (as `Memory` supports `PREWHERE`)
+/// and does not filter the rows itself. They are applied inside the pipe of this step, the row-level filter first and in
+/// a transform of its own, so that no optimization of the query plan can merge it with an expression of the user, and
+/// no such expression is ever evaluated on the rows the policy hides.
+class ReadFromMemoryStream final : public SourceStepWithFilter
+{
+public:
+    ReadFromMemoryStream(
+        const Names & column_names_,
+        const SelectQueryInfo & query_info_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ContextPtr & context_,
+        std::shared_ptr<const StorageMemory> storage_)
+        : SourceStepWithFilter(
+            std::make_shared<const Block>(makeOutputHeader(
+                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.row_level_filter, query_info_.prewhere_info)),
+            column_names_, query_info_, storage_snapshot_, context_)
+        , storage(std::move(storage_))
+    {
+        setStepDescription("Read from Memory STREAM");
+    }
+
+    String getName() const override { return "ReadFromMemoryStream"; }
+
+    /// `optimizePrewhere` can move the conditions of `WHERE` to `PREWHERE`.
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override
+    {
+        query_info.prewhere_info = prewhere_info_value;
+        output_header = std::make_shared<const Block>(makeOutputHeader(
+            storage_snapshot->getSampleBlockForColumns(required_source_columns), query_info.row_level_filter, query_info.prewhere_info));
+    }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+
+        auto columns = storage_snapshot->getColumnsByNames(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_source_columns);
+        auto nested_arrays = getArraysOfRequestedNestedFromMemory(columns, storage_snapshot);
+        auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(required_source_columns));
+        auto source = std::make_shared<MemoryStreamingSource>(
+            header, std::move(columns), std::move(nested_arrays), storage,
+            !stream_settings.subscribe_for_updates, stream_settings.cursor, context);
+        source->setStorageLimits(query_info.storage_limits);
+
+        Pipe pipe(std::move(source));
+        const ExpressionActionsSettings actions_settings(context);
+        if (query_info.row_level_filter)
+        {
+            const auto & row_level_filter = *query_info.row_level_filter;
+            auto actions = std::make_shared<ExpressionActions>(row_level_filter.actions.clone(), actions_settings);
+            pipe.addSimpleTransform([&](const SharedHeader & input_header)
+            {
+                return std::make_shared<FilterTransform>(
+                    input_header, actions, row_level_filter.column_name, row_level_filter.do_remove_column);
+            });
+        }
+        if (query_info.prewhere_info)
+        {
+            const auto & prewhere_info = *query_info.prewhere_info;
+            auto actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone(), actions_settings);
+            pipe.addSimpleTransform([&](const SharedHeader & input_header)
+            {
+                return std::make_shared<FilterTransform>(
+                    input_header, actions, prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
+            });
+        }
+
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+        pipeline.init(std::move(pipe));
+    }
+
+private:
+    /// The header after the transforms of `initializePipeline`.
+    static Block makeOutputHeader(Block header, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
+    {
+        if (row_level_filter)
+            header = FilterTransform::transformHeader(
+                header, &row_level_filter->actions, row_level_filter->column_name, row_level_filter->do_remove_column);
+        if (prewhere_info)
+            header = FilterTransform::transformHeader(
+                header, &prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column);
+        return header;
+    }
+
+    const std::shared_ptr<const StorageMemory> storage;
 };
 
 #endif
@@ -477,38 +598,8 @@ void StorageMemory::readImpl(
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
         storage_snapshot->check(column_names);
-        auto columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names);
-        auto nested_arrays = getArraysOfRequestedNestedFromMemory(columns, storage_snapshot);
-        auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
-        auto source = std::make_shared<MemoryStreamingSource>(
-            header, std::move(columns), std::move(nested_arrays), std::static_pointer_cast<const StorageMemory>(shared_from_this()),
-            !stream_settings.subscribe_for_updates, stream_settings.cursor, context);
-        source->setStorageLimits(query_info.storage_limits);
-        auto step = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
-        step->setStepDescription("Read from Memory STREAM");
-        query_plan.addStep(std::move(step));
-
-        /// The planner gives the row-level security filter and `PREWHERE` to the storage (as `Memory` supports `PREWHERE`)
-        /// and does not filter the rows itself, so apply them here, the row-level filter first, so that `PREWHERE` is never
-        /// evaluated on the rows the policy hides.
-        if (query_info.row_level_filter)
-        {
-            const auto & row_level_filter = *query_info.row_level_filter;
-            auto filter_step = std::make_unique<FilterStep>(
-                query_plan.getCurrentHeader(), row_level_filter.actions.clone(), row_level_filter.column_name,
-                row_level_filter.do_remove_column);
-            filter_step->setStepDescription("Row-level security filter");
-            query_plan.addStep(std::move(filter_step));
-        }
-        if (query_info.prewhere_info)
-        {
-            const auto & prewhere_info = *query_info.prewhere_info;
-            auto filter_step = std::make_unique<FilterStep>(
-                query_plan.getCurrentHeader(), prewhere_info.prewhere_actions.clone(), prewhere_info.prewhere_column_name,
-                prewhere_info.remove_prewhere_column);
-            filter_step->setStepDescription("PREWHERE");
-            query_plan.addStep(std::move(filter_step));
-        }
+        query_plan.addStep(std::make_unique<ReadFromMemoryStream>(
+            column_names, query_info, storage_snapshot, context, std::static_pointer_cast<const StorageMemory>(shared_from_this())));
         return;
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries from a Memory table are not supported on this platform");
