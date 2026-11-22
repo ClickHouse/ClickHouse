@@ -44,6 +44,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
@@ -134,6 +135,12 @@ static constexpr size_t MAX_LIST_RETRIES = 5;
 
 namespace DB::Iceberg
 {
+
+void useUTCForORCTimestamps(FormatSettings & settings)
+{
+    settings.orc.reader_time_zone_name = "UTC";
+    settings.orc.writer_time_zone_name = "UTC";
+}
 
 using namespace DB;
 
@@ -2427,22 +2434,23 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object)
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
 
-    Poco::JSON::Array::Ptr fields;
     for (UInt32 i = 0; i < sort_orders->size(); ++i)
     {
         auto sort_order = sort_orders->getObject(i);
         if (sort_order->getValue<Int64>(f_order_id) == sort_order_id)
-        {
-            fields = sort_order->getArray(f_fields);
-            break;
-        }
+            return sort_order->getArray(f_fields);
     }
+    return nullptr;
+}
 
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description)
+{
+    auto fields = getDefaultSortOrderFields(metadata_object);
     if (!fields || fields->size() == 0)
         return KeyDescription{};
 
@@ -2456,6 +2464,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     }
 
     String order_by_str;
+    std::vector<int> nulls_directions;
 
     for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
     {
@@ -2467,6 +2476,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             return KeyDescription{};
         const auto & column_name = column->second;
         int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+        nulls_directions.push_back(field->optValue<String>(f_null_order, "") == "nulls-first" ? -direction : direction);
         auto iceberg_transform_name = field->getValue<String>(f_transform);
         std::optional<TransformAndArgument> clickhouse_transform_name;
         try
@@ -2507,7 +2517,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             order_by_str += fmt::format("{} DESC,", full_argument);
     }
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+    auto key = KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+    if (sort_description)
+        for (size_t i = 0; i < key.column_names.size(); ++i)
+            sort_description->emplace_back(key.column_names[i], key.reverse_flags.empty() || !key.reverse_flags[i] ? 1 : -1, nulls_directions[i]);
+    return key;
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)
@@ -2517,41 +2531,41 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
     return std::make_shared<DataTypeInt32>();
 }
 
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context)
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context)
 {
-    std::vector<String> initial_column_names;
-    std::unordered_set<String> initial_column_names_set;
-    for (const auto & column_name : block.getNames())
-    {
-        initial_column_names.push_back(column_name);
-        initial_column_names_set.insert(column_name);
-    }
-    /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+    Block source_block;
     for (const auto & required_column : sort_description.expression->getRequiredColumns())
-        if (!block.has(required_column))
-            if (auto subcolumn = block.findSubcolumnByName(required_column))
-                block.insert(std::move(*subcolumn));
-    ASTPtr combined_expr_list = sort_description.expression_list_ast;
-
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());
-    auto analyzer = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
-    analyzer->execute(block);
-
-    ColumnsWithTypeAndName reordered_columns;
-    for (const auto & column_name : initial_column_names)
-        reordered_columns.push_back(block.getByName(column_name));
-    for (const auto & column : block.getColumnsWithTypeAndName())
-        if (!initial_column_names_set.contains(column.name))
-            reordered_columns.push_back(column);
-
-    block = Block(reordered_columns);
-    SortDescription result_sort_description;
-    for (size_t i = 0; i < sort_description.column_names.size(); ++i)
     {
-        if (sort_description.reverse_flags.empty() || !sort_description.reverse_flags[i])
-            result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i]));
-        else
-            result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
+        if (block.has(required_column))
+            source_block.insert(block.getByName(required_column));
+        /// A struct field in the key, e.g. `t.a`, is a subcolumn of a block column.
+        else if (auto subcolumn = block.findSubcolumnByName(required_column))
+            source_block.insert(std::move(*subcolumn));
+    }
+
+    const auto & keys = sort_description.expression_list_ast->children;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        String sort_column_name = sort_description.column_names[i];
+        const bool is_identifier = keys[i]->as<ASTIdentifier>();
+        if (!is_identifier || !block.has(sort_column_name))
+        {
+            /// Each key is evaluated alone on its own inputs, so a column named like the key is never taken for it.
+            /// A computed key is not named like a source column, which a later identity key may denote.
+            ASTPtr key_ast = keys[i];
+            auto syntax_result = TreeRewriter(context).analyze(key_ast, source_block.getNamesAndTypesList());
+            Block key_block;
+            for (const auto & column_name : syntax_result->requiredSourceColumns())
+                key_block.insert(source_block.getByName(column_name));
+            ExpressionAnalyzer(key_ast, syntax_result, context).getActions(false)->execute(key_block);
+
+            auto key_column = key_block.getByName(sort_column_name);
+            while (block.has(key_column.name) || (!is_identifier && source_block.has(key_column.name)))
+                key_column.name = "_" + key_column.name;
+            sort_column_name = key_column.name;
+            block.insert(std::move(key_column));
+        }
+        result_sort_description[i].column_name = sort_column_name;
     }
     sortBlock(block, result_sort_description);
 }

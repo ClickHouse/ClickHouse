@@ -14,6 +14,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -21,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataManifestsRewriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -34,6 +36,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
@@ -116,6 +119,7 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
+    Poco::JSON::Array::Ptr current_schema_fields;
 
     class ParititonEncoder
     {
@@ -238,6 +242,7 @@ static Plan getPlan(
         }
     }
     plan.initial_metadata_object = initial_metadata_object;
+    plan.current_schema_fields = current_schema;
 
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
@@ -366,7 +371,8 @@ static void writeDataFiles(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     const String & write_format,
-    CompressionMethod write_compression_method)
+    CompressionMethod write_compression_method,
+    IcebergColumnSketches * column_sketches)
 {
     ColumnMapperPtr column_mapper;
     {
@@ -383,6 +389,10 @@ static void writeDataFiles(
         }
     }
 
+    FormatSettings iceberg_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    Iceberg::useUTCForORCTimestamps(iceberg_format_settings);
+    const bool write_orc = Poco::toUpper(write_format) == "ORC";
+
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
@@ -396,7 +406,7 @@ static void writeDataFiles(
                 sample_block,
                 data_file->data_object_info,
                 object_storage,
-                format_settings,
+                iceberg_format_settings,
                 // todo make compaction using same FormatParserSharedResources
                 std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
                 context);
@@ -422,7 +432,7 @@ static void writeDataFiles(
             *sample_block,
             context,
             8192,
-            format_settings,
+            iceberg_format_settings,
             parser_shared_resources,
             input_format_filter_info,
             object_storage->isRemote(),
@@ -439,7 +449,7 @@ static void writeDataFiles(
         FormatFilterInfoPtr output_format_filter_info
             = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
         auto output_format = FormatFactory::instance().getOutputFormat(
-            write_format, *write_buffer, *sample_block, context, format_settings, output_format_filter_info);
+            write_format, *write_buffer, *sample_block, context, iceberg_format_settings, output_format_filter_info);
 
         while (true)
         {
@@ -447,9 +457,14 @@ static void writeDataFiles(
             if (chunk.empty())
                 break;
 
+            /// The bounds must describe the stored values.
+            if (write_orc)
+                ORC::replaceTimestampsStoredAsEpoch(chunk);
             data_file->manifest_list->statistics.update(chunk);
             if (delete_file_transform)
                 delete_file_transform->transform(chunk);
+            if (column_sketches)
+                column_sketches->update(chunk.getColumns());
             data_file->new_records_count += chunk.getNumRows();
             ColumnsWithTypeAndName columns_with_types_and_name;
             for (size_t i = 0; i < sample_block->columns(); ++i)
@@ -635,6 +650,9 @@ static bool writeConsolidatedManifestFile(
     /// One manifest file per (partition spec, partition value) group.
     DataManifestsRewriter::Result rewritten;
 
+    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
+    std::optional<String> statistics_file_path;
+
     /// Cleanup for both commit conflict and exceptions; paths are tracked before writeObject so partially-created objects are removed (removeObjectIfExists tolerates missing objects).
     auto cleanup = [&]()
     {
@@ -656,6 +674,17 @@ static bool writeConsolidatedManifestFile(
         catch (...)
         {
             tryLogCurrentException(log, "Failed to remove orphaned manifest list during cleanup");
+        }
+        if (statistics_file_path)
+        {
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove orphaned statistics file during cleanup");
+            }
         }
     };
 
@@ -692,6 +721,12 @@ static bool writeConsolidatedManifestFile(
             /* entry_partition_spec_ids */ rewritten.partition_spec_ids,
             /* entry_partition_summaries */ rewritten.partition_summaries);
         buffer_manifest_list->finalize();
+
+        /// A manifest-only rewrite keeps every row.
+        if (write_statistics)
+            statistics_file_path = writeIcebergTableStatisticsNdv(
+                /*column_sketches=*/ nullptr, /*union_with_parent=*/ true, metadata_object, new_snapshot.snapshot, generator,
+                path_resolver, object_storage, context);
 
         // Commit: write metadata file with If-None-Match + ETag-based CAS version hint; returns false if another writer claimed this version, so the caller retries.
         {
@@ -802,7 +837,14 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 }
 
 static bool writeMetadataFiles(
-    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
+    Plan & plan,
+    const IcebergPathResolver & path_resolver,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    SharedHeader sample_block_,
+    String write_format,
+    String table_path,
+    IcebergColumnSketches * column_sketches)
 {
     auto log = getLogger("IcebergCompaction");
 
@@ -1147,6 +1189,16 @@ static bool writeMetadataFiles(
         buffer_manifest_list->finalize();
     }
 
+    /// The current snapshot holds every rewritten row.
+    /// TODO: keep the statistics of the retained snapshots, whose files `clearOldFiles` deletes.
+    std::optional<String> statistics_file_path;
+    if (column_sketches && metadata_object->has(Iceberg::f_current_snapshot_id))
+        if (auto current = snapshot_id_to_snapshot.find(metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id));
+            current != snapshot_id_to_snapshot.end())
+            statistics_file_path = writeIcebergTableStatisticsNdv(
+                column_sketches, /*union_with_parent=*/ false, metadata_object, current->second, plan.generator, path_resolver,
+                object_storage, context);
+
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
@@ -1157,7 +1209,20 @@ static bool writeMetadataFiles(
                 json_representation,
                 object_storage,
                 context))
+        {
+            if (statistics_file_path)
+            {
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to remove orphaned statistics file during cleanup");
+                }
+            }
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Metadata file {} already exists", generated_metadata_info.path.serialize());
+        }
 
         return tryWriteVersionHintFile(
             path_resolver,
@@ -1361,6 +1426,9 @@ void compactIcebergTable(
                         default_spec_id);
             }
         }
+        std::optional<IcebergColumnSketches> column_sketches;
+        if (shouldWriteIcebergTableStatisticsNdv(context_, /*catalog=*/ nullptr))
+            column_sketches.emplace(*sample_block_, plan.current_schema_fields);
 
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
@@ -1371,8 +1439,17 @@ void compactIcebergTable(
             format_settings_,
             context_,
             write_format,
-            persistent_table_components.metadata_compression_method);
-        if (writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path))
+            persistent_table_components.metadata_compression_method,
+            column_sketches ? &*column_sketches : nullptr);
+        if (writeMetadataFiles(
+                plan,
+                persistent_table_components.path_resolver,
+                object_storage_,
+                context_,
+                sample_block_,
+                write_format,
+                persistent_table_components.table_path,
+                column_sketches ? &*column_sketches : nullptr))
             clearOldFiles(object_storage_, old_files);
         else
             LOG_WARNING(getLogger("IcebergCompaction"), "Compacted metadata was written but its version hint was not confirmed; old files were retained");
