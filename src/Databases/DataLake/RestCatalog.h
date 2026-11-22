@@ -80,7 +80,7 @@ public:
 
     void createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    bool supportsMetadataUpdates() const override { return true; }
+    [[nodiscard]] bool supportsMetadataUpdates() const override { return true; }
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, const String & base_catalog_metadata_location, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
