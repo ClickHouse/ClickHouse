@@ -7162,6 +7162,50 @@ ReadFromMergeTree::ColumnSizesForPrewhere ReadFromMergeTree::getColumnSizesForPr
         return result;
     };
 
+    /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means the same
+    /// part set. Nothing was pruned: take the sizes the storage caches for its active parts together with their rows,
+    /// read under one lock, instead of measuring every part and column again during planning.
+    const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
+    if (!parts.empty() && parts.size() == parts_before_pruning)
+    {
+        auto [cached_sizes, cached_rows] = data.getColumnSizesAndRowsOfSizedParts();
+        const auto & storage_columns = getStorageMetadata()->getColumns();
+
+        ColumnSizesForPrewhere cached;
+        cached.rows = cached_rows;
+        bool needs_subcolumn_sizes = false;
+        for (const auto & column_name : columns)
+        {
+            if (auto it = cached_sizes.find(column_name); it != cached_sizes.end())
+            {
+                cached.sizes[column_name] = it->second;
+                continue;
+            }
+
+            const auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+            if (column && column->isSubcolumn())
+            {
+                /// Exact subcolumn sizes are known only to the parts.
+                if (calculate_subcolumn_sizes)
+                {
+                    needs_subcolumn_sizes = true;
+                    break;
+                }
+                if (auto it = cached_sizes.find(column->getNameInStorage()); it != cached_sizes.end())
+                {
+                    cached.sizes[column_name] = it->second;
+                    continue;
+                }
+            }
+
+            /// A column that no part stores (e.g. the virtual column of a text index) counts as unknown, as in `measure`.
+            cached.sizes.try_emplace(column_name);
+        }
+
+        if (!needs_subcolumn_sizes)
+            return cached;
+    }
+
     auto result = measure(parts, [](const RangesInDataPart & part) -> const MergeTreeDataPartPtr & { return part.data_part; });
 
     /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,

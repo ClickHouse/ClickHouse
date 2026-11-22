@@ -9935,6 +9935,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
 
     column_sizes.clear();
+    rows_of_sized_parts = 0;
     secondary_index_sizes.clear();
     primary_index_size = {};
 
@@ -9952,6 +9953,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
         return;
 
     column_sizes.clear();
+    rows_of_sized_parts = 0;
     secondary_index_sizes.clear();
     primary_index_size = {};
 
@@ -9989,6 +9991,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
 void MergeTreeData::invalidateColumnAndSecondaryIndexSizesUnlocked() const
 {
     column_sizes.clear();
+    rows_of_sized_parts = 0;
     secondary_index_sizes.clear();
     primary_index_size = {};
     are_columns_and_secondary_indices_sizes_calculated = false;
@@ -10018,6 +10021,9 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
         ColumnSize part_column_size = part->getColumnSize(column.name);
         total_column_size.add(part_column_size);
     }
+
+    if (!isCompactPart(part))
+        rows_of_sized_parts += part->rows_count;
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto indexes_descriptions = metadata_snapshot->secondary_indices;
@@ -10120,6 +10126,13 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
         log_subtract(total_column_size.data_uncompressed, part_column_size.data_uncompressed, ".data_uncompressed");
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
+    }
+
+    if (!isCompactPart(part))
+    {
+        if (part->rows_count > rows_of_sized_parts)
+            LOG_ERROR(log, "Possibly incorrect rows subtraction: {} - {}, part: {}", rows_of_sized_parts, part->rows_count, part->name);
+        rows_of_sized_parts -= part->rows_count;
     }
 
     for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)

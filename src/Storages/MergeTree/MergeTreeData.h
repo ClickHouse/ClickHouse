@@ -1354,6 +1354,17 @@ public:
 
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
 
+    /// The cached column sizes of the active parts together with the rows of the parts that publish per-column sizes
+    /// (not `Compact`), read under one lock, so that both describe the same parts.
+    std::pair<ColumnSizeByName, UInt64> getColumnSizesAndRowsOfSizedParts() const
+    {
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = readLockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnAndSecondaryIndexSizesLazily(parts_lock, sizes_lock);
+        return {column_sizes, rows_of_sized_parts};
+    }
+
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         /// Always keep locks order parts_lock -> sizes_lock
@@ -1842,6 +1853,8 @@ private:
     mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
     mutable ColumnSizeByName column_sizes;
+    /// Rows of the active parts that contribute to `column_sizes` with per-column sizes (not `Compact`).
+    mutable UInt64 rows_of_sized_parts = 0;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
     mutable IndexSize primary_index_size;
@@ -1857,6 +1870,7 @@ protected:
     {
         std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
         column_sizes.clear();
+        rows_of_sized_parts = 0;
         secondary_index_sizes.clear();
         primary_index_size = {};
         are_columns_and_secondary_indices_sizes_calculated = false;
