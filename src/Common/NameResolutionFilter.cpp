@@ -1,6 +1,7 @@
 #include <Common/NameResolutionFilter.h>
 
 #include <Common/Exception.h>
+#include <Common/FiberLocal.h>
 #include <Common/LoggingHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <Common/RemoteHostFilter.h>
@@ -59,12 +60,14 @@ State & state()
     return *instance;
 }
 
-/// The depth of `InternalScope`s of the current thread.
-thread_local size_t internal_scope_depth = 0;
+/// The depth of `InternalScope`s of the current thread or fiber. It is not a plain `thread_local`: a scope may
+/// be held across a suspension of a fiber (credential providers refresh inside fibers), and the fiber may resume
+/// on another thread, which would leave the first thread exempted forever.
+constinit FiberLocal<size_t, FiberLocalSlot::NAME_RESOLUTION_INTERNAL_SCOPE_DEPTH> internal_scope_depth;
 
 /// Set while the filter itself runs: logging a rejection must not recurse into the filter if a log channel
 /// resolves a name.
-thread_local bool inside_filter = false;
+constinit FiberLocal<bool, FiberLocalSlot::NAME_RESOLUTION_INSIDE_FILTER> inside_filter;
 
 /// `[::1]` is `::1`; host names are case-insensitive.
 std::string normalizeHost(std::string_view host)
@@ -169,12 +172,12 @@ void NameResolutionFilter::check(std::string_view host)
 
 NameResolutionFilter::InternalScope::InternalScope()
 {
-    ++internal_scope_depth;
+    internal_scope_depth = internal_scope_depth + 1;
 }
 
 NameResolutionFilter::InternalScope::~InternalScope()
 {
-    --internal_scope_depth;
+    internal_scope_depth = internal_scope_depth - 1;
 }
 
 }
