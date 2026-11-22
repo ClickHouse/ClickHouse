@@ -1,0 +1,16 @@
+before	[1,2]
+before a2	[1,2,3]
+-- a scalar subquery over the target
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- an IN subquery over another alias of the target
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a scalar subquery inside a subquery
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- an alias column in a subquery, whose expression RENAME rewrites
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- other columns are free
+after	[1,2]
+after a2	[1,2,3]
