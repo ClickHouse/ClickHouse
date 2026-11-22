@@ -163,6 +163,7 @@ class RandomDisruptor:
         "VECTOR SIMILARITY INDEX CACHE",
         "TEXT INDEX CACHES",
         "ICEBERG METADATA CACHE",
+        "PAIMON METADATA CACHE",
         "PARQUET METADATA CACHE",
         "DNS CACHE",
         "CONNECTIONS CACHE",

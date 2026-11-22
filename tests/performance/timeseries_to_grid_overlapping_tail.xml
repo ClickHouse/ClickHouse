@@ -1,0 +1,15 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!--
+        Benchmarks the `timeSeries*ToGrid` aggregate functions when many series with the same timestamps go into one state,
+        so the unsorted tail of a bucket covers almost the whole bucket and the sorted prefix is a single series.
+        Sorting the bucket must not copy it, as that raises the peak memory.
+    -->
+
+    <!-- 500 series of 20000 samples, one sample every 15s, all series with the same timestamps, in one state: 10M rows. -->
+    <query>SELECT timeSeriesRateToGrid(0, 300000, 300000, 300000)(toDateTime64((number % 20000) * 15, 3), toFloat64(number % 1000)) FROM numbers(10000000) FORMAT Null</query>
+</test>
