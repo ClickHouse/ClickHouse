@@ -1340,6 +1340,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
 
+        /// The array phrase of `hasPhrase` is a token sequence taken verbatim. It matches the stored tokens of a string value
+        /// only without a preprocessor, which direct read does not apply to a JSON path.
+        if (function_name == "hasPhrase" && !has_preprocessor
+            && WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString())
+            is_special_text_index_function = true;
+
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
         if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
