@@ -26,6 +26,11 @@ finite_background_limits_node = cluster.add_instance(
     main_configs=["configs/expanded_ast_profile.xml"],
     user_configs=["configs/finite_background_limits_users.xml"],
 )
+nonconst_node = cluster.add_instance(
+    "nonconst_node",
+    main_configs=["configs/nonconst_background_profile.xml"],
+    user_configs=["configs/nonconst_profile.xml"],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -744,10 +749,10 @@ def test_ready_subquery_union_respects_background_byte_limit():
 
 
 def test_ready_subquery_union_respects_background_temporary_column_limits():
-    # Four groups make the replacement wider than each original action. The first
-    # group repeats one key, so the row-limited profile still admits its union.
+    # Four groups make the replacement wider than each original action. Use
+    # separate profiles for the total and non-constant temporary-column limits.
     for instance, expected_batches in (
-        (finite_background_limits_node, 0), (node, 0), (replicated_node, 1)
+        (finite_background_limits_node, 0), (nonconst_node, 0), (replicated_node, 1)
     ):
         table = f"ready_union_temporary_limit_{instance.name}"
         try:

@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <row_mask_nonconst_limited>
+            <max_temporary_non_const_columns>12</max_temporary_non_const_columns>
+            <enable_sharing_sets_for_mutations>0</enable_sharing_sets_for_mutations>
+            <compile_expressions>0</compile_expressions>
+            <short_circuit_function_evaluation>disable</short_circuit_function_evaluation>
+        </row_mask_nonconst_limited>
+    </profiles>
+</clickhouse>
