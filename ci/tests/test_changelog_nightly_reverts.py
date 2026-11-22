@@ -333,6 +333,7 @@ CHAIN_TITLES = {
     **{pr: METADATA[pr][0] for pr in CHAIN},
     REMOVER: f'Revert "{METADATA[OUTER_REVERT][0]}"',
     RESTORER: f'Revert "Revert "{METADATA[OUTER_REVERT][0]}""',
+    "800": f'Revert "{METADATA[ORIGINAL][0]}"',
 }
 
 
@@ -635,6 +636,219 @@ def test_reapply_own_entry_stays_when_the_original_is_reverted_again():
     # Only the feature was taken out, so only the feature is recorded.
     recorded = _record_deletions(removal_base, fix_stays, removal)
     assert recorded == {ORIGINAL: (FEATURE, "section", annotated)}
+
+
+SECOND_REMOVER = "800"
+REPEATED_BULLET = _bullet(ORIGINAL, "Fix the thing.")
+REPEATING_BULLET = _bullet(OUTER_REVERT, "Fix the thing.")
+# The whole chain and the revert of the re-apply, arriving on one night.
+REVERTED_ON_ARRIVAL = {**CHAIN, REMOVER: {OUTER_REVERT}}
+
+
+def _ledger_records(recorded):
+    """What the ledger gives back for the deletions `recorded`: the records
+    and the pull requests among them whose entry was in the section."""
+    deleted = {pr: (category, line) for pr, (category, _, line) in recorded.items()}
+    integrated = {pr for pr, (_, where, _) in recorded.items() if where == "section"}
+    return deleted, integrated
+
+
+def test_repeating_reapply_entry_can_be_merged_on_restoration():
+    """`#100` and its re-apply `#300` carry the same entry, and `#600` reverts
+    `#300` on the night they all arrive, so both raw entries are deleted before
+    any edit has placed them. When `#700` reverts `#600`, the entry of `#300`
+    is placed as it would have been on arrival: merged into the entry it
+    brought back, or as a bullet of its own. A merged one makes `#300` a plain
+    re-apply again, whose link goes when `#100` is reverted once more."""
+    arrival_base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            BUG_FIX: [REPEATED_BULLET, REPEATING_BULLET, UNRELATED_BULLET],
+            "NO CL ENTRY": [_revert_bullet(INNER_REVERT), _revert_bullet(REMOVER)],
+        },
+    )
+    arrival = _analyze_with_ledger(arrival_base, {}, REVERTED_ON_ARRIVAL)
+    removed = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(arrival_base, removed, arrival) is None
+    recorded = _record_deletions(arrival_base, removed, arrival)
+    assert recorded == {
+        ORIGINAL: (BUG_FIX, "raw", REPEATED_BULLET),
+        OUTER_REVERT: (BUG_FIX, "raw", REPEATING_BULLET),
+    }
+    deleted, integrated = _ledger_records(recorded)
+
+    # `#700` reverts `#600`: both are back, and `#300` is still to be placed.
+    restore_base = _raw(removed, {"NO CL ENTRY": [_revert_bullet(RESTORER)]})
+    restore = _analyze_with_ledger(
+        restore_base,
+        REVERTED_ON_ARRIVAL,
+        {RESTORER: {REMOVER}},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert restore["unplaced"] == [OUTER_REVERT]
+    assert restore["required"] == [ORIGINAL, OUTER_REVERT]
+    merged_bullet = _with_links(REPEATED_BULLET, OUTER_REVERT, RESTORER)
+    merged = _sections({BUG_FIX: [merged_bullet, UNRELATED_BULLET]})
+    assert _verify(restore_base, merged, restore) is None
+    separate = _sections(
+        {
+            BUG_FIX: [
+                merged_bullet,
+                _with_links(REPEATING_BULLET, RESTORER),
+                UNRELATED_BULLET,
+            ]
+        }
+    )
+    assert _verify(restore_base, separate, restore) is None
+    # Not without a trace of `#300`, and not without the entries at all.
+    untraced = _sections(
+        {BUG_FIX: [_with_links(REPEATED_BULLET, RESTORER), UNRELATED_BULLET]}
+    )
+    assert _verify(restore_base, untraced, restore) is not None
+    assert _verify(restore_base, removed, restore) is not None
+
+    # The next day the merged link is what the section says about `#300`: a
+    # plain re-apply. The raw record asks for nothing more.
+    later_ledger = {**REVERTED_ON_ARRIVAL, RESTORER: {REMOVER}}
+    another = _bullet("450", "Speed something up.")
+    next_base = _raw(merged, {"Performance Improvement": [another]})
+    next_day = _analyze_with_ledger(
+        next_base, later_ledger, {}, deleted=deleted, integrated=integrated
+    )
+    assert OUTER_REVERT in next_day["cancelling"]
+    assert next_day["unplaced"] == []
+    assert next_day["required"] == [ORIGINAL]
+    kept = _sections({BUG_FIX: [merged_bullet, UNRELATED_BULLET, another]})
+    assert _verify(next_base, kept, next_day) is None
+
+    # `#800` reverts `#100` again: the bullet goes with all of its links, and
+    # the old raw record does not ask for `#300` back.
+    again_base = _raw(kept, {"NO CL ENTRY": [_revert_bullet(SECOND_REMOVER)]})
+    again = _analyze_with_ledger(
+        again_base,
+        later_ledger,
+        {SECOND_REMOVER: {ORIGINAL}},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert OUTER_REVERT in again["cancelling"]
+    assert again["required"] == []
+    gone = _sections({BUG_FIX: [UNRELATED_BULLET, another]})
+    assert _verify(again_base, gone, again) is None
+    assert _verify(again_base, kept, again) is not None
+    standalone = _sections(
+        {
+            BUG_FIX: [
+                _with_links(REPEATING_BULLET, RESTORER),
+                UNRELATED_BULLET,
+                another,
+            ]
+        }
+    )
+    error = _verify(again_base, standalone, again)
+    assert error is not None and f"#{OUTER_REVERT}" in error
+
+
+def test_unplaced_reapply_entry_comes_back_as_a_bullet_when_nothing_carries_its_link():
+    """The `#129863` shape, reverted on the night it arrives: the change it
+    re-applied has no entry, so when it comes back its raw entry can only be
+    placed as a bullet of its own - and from then on that bullet is its entry."""
+    arrival_base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            "NOT FOR CHANGELOG / INSIGNIFICANT": [_bullet(ORIGINAL, "Add tests.")],
+            BUG_FIX: [FIX_BULLET, UNRELATED_BULLET],
+            "NO CL ENTRY": [_revert_bullet(INNER_REVERT), _revert_bullet(REMOVER)],
+        },
+    )
+    arrival = _analyze_with_ledger(arrival_base, {}, REVERTED_ON_ARRIVAL)
+    removed = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(arrival_base, removed, arrival) is None
+    recorded = _record_deletions(arrival_base, removed, arrival)
+    assert recorded[OUTER_REVERT] == (BUG_FIX, "raw", FIX_BULLET)
+    deleted, integrated = _ledger_records(recorded)
+
+    restore_base = _raw(removed, {"NO CL ENTRY": [_revert_bullet(RESTORER)]})
+    restore = _analyze_with_ledger(
+        restore_base,
+        REVERTED_ON_ARRIVAL,
+        {RESTORER: {REMOVER}},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert restore["unplaced"] == [OUTER_REVERT]
+    # The tests-only original was a prunable raw bullet: offered, not required.
+    assert restore["required"] == [OUTER_REVERT]
+    fix_back = _with_links(FIX_BULLET, RESTORER)
+    back = _sections({BUG_FIX: [fix_back, UNRELATED_BULLET]})
+    assert _verify(restore_base, back, restore) is None
+    assert _verify(restore_base, removed, restore) is not None
+
+    another = _bullet("450", "Speed something up.")
+    next_base = _raw(back, {"Performance Improvement": [another]})
+    next_day = _analyze_with_ledger(
+        next_base,
+        {**REVERTED_ON_ARRIVAL, RESTORER: {REMOVER}},
+        {},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert next_day["reapplying_with_entry"] == [OUTER_REVERT]
+    lost = _sections({BUG_FIX: [UNRELATED_BULLET, another]})
+    assert _verify(next_base, lost, next_day) is not None
+
+
+def test_unplaced_reapply_entry_is_offered_when_the_original_is_out_again():
+    """The revert of `#600` and a second revert of `#100` arrive together: the
+    re-apply is back but what it re-applied is not, so there is no entry for
+    its link to sit on. Whether its raw entry says more than the re-apply is
+    then the agent's call - it is offered, with or without a bullet passing."""
+    arrival_base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            BUG_FIX: [REPEATED_BULLET, REPEATING_BULLET, UNRELATED_BULLET],
+            "NO CL ENTRY": [_revert_bullet(INNER_REVERT), _revert_bullet(REMOVER)],
+        },
+    )
+    arrival = _analyze_with_ledger(arrival_base, {}, REVERTED_ON_ARRIVAL)
+    removed = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    deleted, integrated = _ledger_records(
+        _record_deletions(arrival_base, removed, arrival)
+    )
+
+    restore_base = _raw(
+        removed,
+        {"NO CL ENTRY": [_revert_bullet(RESTORER), _revert_bullet(SECOND_REMOVER)]},
+    )
+    restore = _analyze_with_ledger(
+        restore_base,
+        REVERTED_ON_ARRIVAL,
+        {RESTORER: {REMOVER}, SECOND_REMOVER: {ORIGINAL}},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert restore["unplaced"] == [OUTER_REVERT]
+    assert restore["required"] == []
+    assert [
+        (group["prs"], group["required"], group["unplaced"])
+        for group in restore["missing"]
+    ] == [([OUTER_REVERT], False, True)]
+    assert _verify(restore_base, removed, restore) is None
+    own = _sections(
+        {BUG_FIX: [_with_links(REPEATING_BULLET, RESTORER), UNRELATED_BULLET]}
+    )
+    assert _verify(restore_base, own, restore) is None
+    # The original stays out either way.
+    with_original = _sections(
+        {
+            BUG_FIX: [
+                _with_links(REPEATED_BULLET, OUTER_REVERT, RESTORER),
+                UNRELATED_BULLET,
+            ]
+        }
+    )
+    assert _verify(restore_base, with_original, restore) is not None
 
 
 if __name__ == "__main__":

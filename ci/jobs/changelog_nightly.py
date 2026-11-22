@@ -965,6 +965,9 @@ def analyze_reverts(text, anchor, range_prs=()):
                    (arriving under a strict category today, kept as a bullet of
                    their own by an earlier edit, or recorded as such in the
                    ledger): kept like any entry instead of leaving no trace;
+    `unplaced`   - re-applies in `restore` whose recorded entry is a raw one
+                   that no edit had placed: a bullet of their own or their link
+                   on an entry they brought back both restore them;
     `brought_back`
                  - revert -> the pull requests whose entries it can be an
                    annotation on, which is what tells the bullet of a re-apply's
@@ -1066,6 +1069,44 @@ def analyze_reverts(text, anchor, range_prs=()):
         """The (category, bullet) of the entry of `pr` in the section."""
         return entry_placement(section, pr, brought_back.get(pr, ()))
 
+    # A re-apply whose raw entry a revert took out before any edit had placed
+    # it: `#300` arrives with an entry of its own on the same night as the
+    # `#600` that reverts it. Such a record is not a bullet of its own that an
+    # edit had accepted - it is an entry that still has to be placed, the way
+    # it would have been on the day it arrived: as a bullet of its own, or
+    # merged into the entry it brought back when it only repeats that one
+    # (skill section 2, case 6). So it is restored on the run that brings the
+    # re-apply back - the one whose raw blocks hold the revert that takes its
+    # reverter out, which the ledger of the earlier runs does not know yet -
+    # and either placement restores it. On later runs the section says which it
+    # was: a bullet of its own is its entry, and a link on the entry it brought
+    # back makes it a plain re-apply. The record has nothing more to ask then,
+    # and asking would demand the entry again once that link went, with the
+    # entry it sat on, for a second revert of the original change.
+    credits_before, _ = revert_net_effect(ledger_targets)
+    unplaced = {
+        pr
+        for pr in restore
+        if pr not in integrated and targets.get(pr) and targets[pr] <= set(targets)
+    }
+    for pr in unplaced:
+        if pr not in credits_before:
+            del restore[pr]
+            required.discard(pr)
+        elif all(other in credits for other in brought_back.get(pr, ())):
+            # Nothing it brought back ships - the original has been reverted
+            # again - so there is no entry for its link to sit on, and whether
+            # the raw entry describes more than the re-apply is the agent's
+            # judgement: offered, like a raw bullet an edit may prune.
+            required.discard(pr)
+    unplaced &= set(restore)
+
+    def is_back(pr):
+        """Whether what the ledger recorded for `pr` is in the section."""
+        if pr in unplaced:
+            return is_attributed(section, pr)
+        return bool(own_entry(pr)[1])
+
     # Everything about a restoration is asked of the in-progress section, not
     # of the whole file. A recorded entry was in that section before it was
     # deleted, so that is where it has to come back; the same pull request
@@ -1124,13 +1165,14 @@ def analyze_reverts(text, anchor, range_prs=()):
     # entry it brought back is no such evidence: every plain re-apply has that
     # link, and it has to be free to go when that entry is reverted again. And
     # once a later revert took the own entry out, the ledger is the record: it
-    # keeps the own bullet (`revert_licensed_deletions`), and a deletion it
-    # recorded as strict or already accepted is `required` when it comes back.
+    # keeps the own bullet (`revert_licensed_deletions`), which is in `restore`
+    # when it comes back - an accepted one for as long as it ships, an unplaced
+    # raw one on the run that brings it back (see `unplaced` above).
     reapplying_with_entry = {
         pr
         for pr in cancelling
         if targets[pr] <= set(targets)
-        and (pr in strict_prs or own_entry(pr)[1] or pr in required)
+        and (pr in strict_prs or own_entry(pr)[1] or pr in restore)
     }
     cancelling -= reapplying_with_entry
     # Which pull requests have to carry which re-applying links. Asked of every
@@ -1211,13 +1253,10 @@ def analyze_reverts(text, anchor, range_prs=()):
     ]
     # Missing when the entry of the pull request itself is not there: the link
     # of a re-apply on an entry it brought back does not stand in for the
-    # recorded bullet of its own.
+    # recorded bullet of its own - unless that record is an unplaced raw entry,
+    # which such a link does place.
     missing = group_restorations(
-        {
-            pr: record
-            for pr, record in restore.items()
-            if not own_entry(pr)[1]
-        },
+        {pr: record for pr, record in restore.items() if not is_back(pr)},
         section,
         withheld,
     )
@@ -1225,6 +1264,17 @@ def analyze_reverts(text, anchor, range_prs=()):
         group["removed_by"] = removed_by(group["prs"])
         group["reapplied_by"] = reapplied_by(group["prs"])
         group["required"] = bool(set(group["prs"]) & required)
+        # A raw bullet attributes one pull request, so an unplaced re-apply is
+        # a group of its own; what it brought back is named for the prompt.
+        group["unplaced"] = bool(set(group["prs"]) & unplaced)
+        group["brought_back"] = sorted(
+            {
+                other
+                for pr in group["prs"]
+                for other in brought_back.get(pr, ())
+            },
+            key=int,
+        )
         # The pull requests that shared the bullet, as opposed to the re-apply
         # links a previous restoration appended to it. Only the latter are
         # excluded: a revert of an earlier release is rewritten into a normal
@@ -1250,6 +1300,7 @@ def analyze_reverts(text, anchor, range_prs=()):
         "reapply_allowance": allowance,
         "own_entry_required": own_entry_required,
         "reapplying_with_entry": sorted(reapplying_with_entry, key=int),
+        "unplaced": sorted(unplaced, key=int),
         "brought_back": {
             pr: sorted(prs, key=int) for pr, prs in brought_back.items()
         },
@@ -1506,6 +1557,31 @@ def _they_are(prs):
     return "those changes are" if len(prs) > 1 else "that change is"
 
 
+def _unplaced_reapply_note(group):
+    """What the prompt says about the raw entry of a re-apply that a revert
+    took out before any edit had placed it (`unplaced` in `analyze_reverts`)."""
+    brought = _pr_list(group["brought_back"])
+    if group["required"]:
+        return (
+            f"\n     This is the raw entry of a pull request that re-applied "
+            f"{brought}, and it was deleted before any edit had placed it. "
+            f"Place it now, the way skill section 2 case 6 places a re-apply "
+            f"with an entry of its own: if it describes a change beyond the "
+            f"one it brought back, restore it as a bullet of its own; if it "
+            f"only repeats that entry, do not restore the line - the link of "
+            f"this pull request on the entry it brought back, which that entry "
+            f"carries anyway, is all it needs."
+        )
+    return (
+        f"\n     This is the raw entry of a pull request that re-applied "
+        f"{brought}, and it was deleted before any edit had placed it. What "
+        f"it re-applied has been reverted again, so it is offered rather than "
+        f"required: restore it as a bullet of its own only if it describes a "
+        f"change of its own that still ships, and leave it out if it only "
+        f"repeats the reverted entry."
+    )
+
+
 def _edit_prompt(version, reverts, previous_error=None):
     anchor = _anchor_id(version)
     strict = "\n".join(f"   - {c}" for c in sorted(STRICT_RETENTION_CATEGORIES))
@@ -1529,7 +1605,9 @@ def _edit_prompt(version, reverts, previous_error=None):
                 else ""
             )
             + (
-                ""
+                _unplaced_reapply_note(group)
+                if group["unplaced"]
+                else ""
                 if group["required"]
                 else f"\n     The generator had filed this one under "
                 f"`#### {group['category']}`, which the rules let an edit "
@@ -1549,7 +1627,7 @@ def _edit_prompt(version, reverts, previous_error=None):
             for group in reverts["missing"]
         )
         restore = f"""
-Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section as a single bullet — one bullet carrying all of the pull requests listed with it, never one bullet each — under the `#### <Category>` header named with it, carrying the links of every pull request listed as having re-applied it — some may already be on the recorded line from an earlier restoration, append the ones that are not — and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up with two entries in the section: beyond its own entry, the only place a pull request is attributed is as the re-apply link on an entry it brought back. A re-apply listed here with a bullet of its own gets that bullet back as it was, separately from those links.
+Entries to restore. Point 4 above, spread over several days: an earlier run of this job deleted these entries because a revert cancelled them, and that revert has now itself been reverted, so the changes do ship in {version}. They are no longer in {CHANGELOG_FILE} and the intervening reverts are no longer in the raw blocks, so the text they had is quoted here. Put each bullet below back into the in-progress section as a single bullet — one bullet carrying all of the pull requests listed with it, never one bullet each — under the `#### <Category>` header named with it, carrying the links of every pull request listed as having re-applied it — some may already be on the recorded line from an earlier restoration, append the ones that are not — and do not add a bullet for the reverts themselves. Use that category as given: it is where the entry was when it was deleted, which is a decision of the earlier edit (an entry promoted out of `NOT FOR CHANGELOG` or moved between categories does not go back to the category of its pull request). No pull request may end up with two entries in the section: beyond its own entry, the only place a pull request is attributed is as the re-apply link on an entry it brought back. A re-apply listed here with a bullet of its own gets that bullet back as it was, separately from those links, unless the note under it says the entry was never placed.
 {entries}
 """
     amend = ""
@@ -1768,8 +1846,15 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # not as a mention inside someone else's bullet. Nothing here disappeared
     # — the entry went away days ago — so only the ledger can tell. For a
     # re-apply the recorded bullet is its own entry, and its link on an entry
-    # it brought back does not bring that back.
-    not_restored = sorted(pr for pr in reverts["required"] if not own_entry(pr)[1])
+    # it brought back does not bring that back - except where the record is a
+    # raw entry that no edit had placed (`unplaced`): that one may still be
+    # merged into the entry it brought back, as on the day it arrived.
+    unplaced = set(reverts["unplaced"])
+    not_restored = sorted(
+        pr
+        for pr in reverts["required"]
+        if not (is_attributed(section, pr) if pr in unplaced else own_entry(pr)[1])
+    )
     if not_restored:
         return (
             f"Entries deleted by an earlier run for a revert that was itself "
