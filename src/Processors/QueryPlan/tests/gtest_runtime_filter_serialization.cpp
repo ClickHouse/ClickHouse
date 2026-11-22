@@ -1,10 +1,12 @@
 #include <list>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
@@ -503,6 +505,68 @@ TEST(RuntimeFilterSerialization, DegradedBloomIsSizedByGeometryNotTheExactByteBo
     sized_from_exact_bound.bloom_filter_bytes = geometry.exact_bytes_limit;
     ReadBufferFromString sized_from_exact_bound_in(state);
     EXPECT_THROW(AdaptiveSetRuntimeFilter::deserialize(sized_from_exact_bound_in, type, sized_from_exact_bound), Exception);
+}
+
+namespace
+{
+
+/// Rows of (value, is NULL). Value 0 is the default of the nested type, any other value is a key.
+ColumnPtr makeNullableColumn(const DataTypePtr & nested_type, const std::vector<std::pair<UInt64, bool>> & rows)
+{
+    auto nested = nested_type->createColumn();
+    auto null_map = ColumnUInt8::create();
+    for (const auto & [value, is_null] : rows)
+    {
+        if (value == 0)
+            nested->insertDefault();
+        else if (isString(nested_type))
+            nested->insert(Field(std::to_string(value)));
+        else
+            nested->insert(Field(value));
+        null_map->insertValue(is_null);
+    }
+    return ColumnNullable::create(std::move(nested), std::move(null_map));
+}
+
+}
+
+TEST(RuntimeFilterSerialization, TransportedPartialsOfNullableKeysSkipNulls)
+{
+    for (const auto & nested_type : DataTypes{std::make_shared<DataTypeUInt64>(), stringType()})
+    {
+        const auto type = makeNullable(nested_type);
+        const auto make_partial = [&](UInt64 from, UInt64 to)
+        {
+            /// The NULL rows hold the default nested value, which is not a key.
+            std::vector<std::pair<UInt64, bool>> rows{{0, true}, {0, true}};
+            for (UInt64 value = from; value < to; ++value)
+                rows.emplace_back(value, false);
+            AdaptiveSetRuntimeFilter filter(type, makeGeometry(), /*distinct_keys_hint_=*/std::nullopt, /*distinct_keys_hint_matches_filter_key_=*/false);
+            filter.boundExactSetByKeyBytes();
+            filter.insert(makeNullableColumn(nested_type, rows));
+            return serializeToString(filter);
+        };
+        const String bloom_state = make_partial(1, 1001);
+        const String exact_state = make_partial(5001, 5011);
+        ASSERT_TRUE(isBloomState(bloom_state)) << type->getName();
+        ASSERT_FALSE(isBloomState(exact_state)) << type->getName();
+
+        for (const auto & [first, second] : {std::pair{bloom_state, exact_state}, std::pair{exact_state, bloom_state}})
+        {
+            ReadBufferFromString first_in(first);
+            auto merged = AdaptiveSetRuntimeFilter::deserialize(first_in, type, makeGeometry());
+            ReadBufferFromString second_in(second);
+            merged.mergeFrom(AdaptiveSetRuntimeFilter::deserialize(second_in, type, makeGeometry()));
+            finishInsert(merged);
+
+            /// A key of each partial, a NULL whose nested value is a key, and the default nested value.
+            const auto probe_column = makeNullableColumn(nested_type, {{10, false}, {5005, false}, {10, true}, {0, false}});
+            std::optional<size_t> rows_passed;
+            const auto mask = merged.find({probe_column, type, "probe"}, rows_passed);
+            EXPECT_EQ(maskToVector(mask, 4), (std::vector<bool>{true, true, false, false})) << type->getName();
+            EXPECT_EQ(rows_passed.value_or(0), 2u) << type->getName();
+        }
+    }
 }
 
 namespace

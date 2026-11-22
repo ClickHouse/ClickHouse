@@ -25,6 +25,11 @@ c_off	0
 1	705
 d_on	15
 d_off	0
+--- D2 a Nullable key, the [min, max] range when the exact set is too large ---
+1	705
+1	705
+d2_on	15
+d2_off	0
 --- E a key under one cast ---
 2	1415
 2	1415

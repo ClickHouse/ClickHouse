@@ -56,7 +56,7 @@ SELECT
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k = b.k
     SETTINGS join_runtime_filter_exact_values_limit = 100, join_runtime_bloom_filter_max_ratio_of_set_bits = 0);
 
--- A `Nullable` key has no Bloom filter, so a positive filter whose exact set overflows passes every row.
+-- A `Nullable` key whose exact set overflows gets a Bloom filter over its nested values.
 SELECT 'nullable key';
 SELECT replaceRegexpAll(replaceRegexpOne(explain, '^[│└├─ ]+', ''), ', (size|set bits) [^,)]+', '')
 FROM (EXPLAIN ANALYZE SELECT count() FROM t_probe_nullable AS p INNER JOIN t_build_nullable AS b ON p.k = b.k SETTINGS join_runtime_filter_exact_values_limit = 100)

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
@@ -19,6 +20,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Formats/NativeReader.h>
@@ -315,6 +317,28 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
         out_hashes[row] = BloomFilter::computeHashPair(position, value_size, seed);
         position += value_size;
     }
+}
+
+/// The column whose values a Bloom filter hashes and the NULL map of its rows (null if it has none).
+/// A runtime filter key comes from an `=` predicate, so a NULL key is neither inserted nor found.
+struct BloomFilterKeys
+{
+    ColumnPtr column;
+    ColumnPtr null_map_holder;
+    const IColumn * keys = nullptr;
+    ConstNullMapPtr null_map = nullptr;
+};
+
+BloomFilterKeys splitNullKeys(const ColumnPtr & column)
+{
+    BloomFilterKeys result;
+    result.column = column->convertToFullIfWrapped();
+    if (isColumnLowCardinalityNullable(*result.column))
+        result.column = result.column->convertToFullColumnIfLowCardinality();
+    ColumnRawPtrs key_columns{result.column.get()};
+    result.null_map_holder = extractNestedColumnsAndNullMap(key_columns, result.null_map);
+    result.keys = key_columns[0];
+    return result;
 }
 
 template <typename ProcessBatch>
@@ -615,12 +639,9 @@ RuntimeFilterDescription ExactSetRuntimeFilter<negate>::describe() const
 
 bool ApproximateSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
-    /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
-    /// LowCardinality reports a contiguous representation unconditionally, but its getDataAt() delegates to the
-    /// dictionary column; for LowCardinality(Nullable(...)) that is ColumnNullable::getDataAt(), which throws on a NULL.
-    /// Strip LowCardinality and test the inner type so LC(Nullable(...)) falls back to the exact (NULL-safe) Set path,
-    /// exactly like a plain Nullable(...) key already does.
-    return removeLowCardinality(data_type)->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    /// A NULL key is never inserted nor found, so a `Nullable` key is hashed by its nested value.
+    /// `LowCardinality` is stripped first because it reports a contiguous value unconditionally.
+    return removeNullable(removeLowCardinality(data_type))->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateSetRuntimeFilter::ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_)
@@ -635,16 +656,31 @@ void ApproximateSetRuntimeFilter::insert(ColumnPtr values, size_t first_row)
 
 void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values, size_t first_row)
 {
+    const auto keys = splitNullKeys(values);
     forEachColumnHashBatch(
-        *values,
+        *keys.keys,
         bloom_filter.getSeed(),
-        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
-        { bloom_filter.addHashPairs(hash_pairs, count); },
+        [&](BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+        {
+            if (keys.null_map)
+            {
+                const auto & null_map = *keys.null_map;
+                size_t kept = 0;
+                for (size_t i = 0; i < count; ++i)
+                {
+                    hash_pairs[kept] = hash_pairs[i];
+                    kept += !null_map[start_row + i];
+                }
+                count = kept;
+            }
+            bloom_filter.addHashPairs(hash_pairs, count);
+        },
         first_row);
 }
 
 ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
 {
+    const auto keys = splitNullKeys(values.column);
     auto dst = ColumnVector<UInt8>::create();
     auto & dst_data = dst->getData();
     dst_data.resize(values.column->size());
@@ -653,10 +689,21 @@ ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values
     /// `rows_passed` so the caller does not rescan the mask to collect stats.
     size_t found_count = 0;
     forEachColumnHashBatch(
-        *values.column,
+        *keys.keys,
         bloom_filter.getSeed(),
         [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
         { found_count += bloom_filter.findHashPairs(hash_pairs, count, dst_data.data() + start_row); });
+
+    if (keys.null_map)
+    {
+        const auto & null_map = *keys.null_map;
+        for (size_t row = 0; row < dst_data.size(); ++row)
+        {
+            const UInt8 is_null = !!null_map[row];
+            found_count -= dst_data[row] & is_null;
+            dst_data[row] &= !is_null;
+        }
+    }
 
     rows_passed = found_count;
     return dst;

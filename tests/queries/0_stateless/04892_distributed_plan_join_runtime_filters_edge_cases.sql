@@ -25,7 +25,7 @@ SET distributed_plan_join_runtime_filters = 1;
 SELECT '-- tiny probe side, huge build side: the filter cannot arrive in time, rows pass unfiltered';
 SELECT count() FROM tiny, huge WHERE tid = hid;
 
-SELECT '-- Nullable key is not transportable, the local filter stays';
+SELECT '-- Nullable key, the filter is sent';
 SELECT count() FROM big_nullable, small_nullable WHERE bid = sid SETTINGS log_comment = '04892_nullable';
 
 SELECT '-- early close under LIMIT';
@@ -48,50 +48,15 @@ SYSTEM FLUSH LOGS query_log, text_log, processors_profile_log;
 --   * an `rf_merge_%` task: it exists only for a sent filter; its name ends with the filter name.
 -- A local filter shows neither. The receiver is not checked: a probe task stops waiting for the
 -- filter when its data work is done, so the filter may not arrive.
-SELECT '-- Nullable key sent no states';
--- A `Nullable` join key is not transportable, so neither transported processor may appear.
--- `count() > 0` keeps this from holding just because no task ran.
-SELECT count() > 0 AND (
-    SELECT count()
-    FROM system.processors_profile_log
-    WHERE event_date >= yesterday()
-      AND name IN ('BuildRuntimeFilterPartialTransform', 'MergeRuntimeFiltersTransform')
-      AND query_id IN (
-          SELECT query_id FROM system.query_log
-          WHERE type = 'QueryFinish' AND event_date >= yesterday()
-            AND initial_query_id IN (
-                SELECT query_id FROM system.query_log
-                WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-                  AND current_database = currentDatabase() AND log_comment = '04892_nullable'))
-) = 0
+SELECT '-- Nullable key: states crossed the exchange';
+-- A `Nullable` join key is transported like a plain one.
+SELECT sum(ProfileEvents['RuntimeFilterStatesSent']) >= 2
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query LIKE 'stage_%'
   AND initial_query_id IN (
       SELECT query_id FROM system.query_log
       WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-        AND current_database = currentDatabase() AND log_comment = '04892_nullable')
-  AND (query LIKE 'stage_%' OR query LIKE 'rf_merge_%');
-
-SELECT '-- Nullable key keeps its local filter: registered and applied';
--- The check above shows that nothing was sent, not that a filter still works. A filter that is
--- not transported works only inside the join stage: each join task derives its own local
--- build/apply pair when it optimizes its fragment. The initiator's build step sits in the
--- build-scan stage with no apply site next to it and does nothing. So a `Registered runtime filter`
--- line comes from a join task's local build. A `Stats for` line with a nonzero block count comes
--- from the apply site that found that filter.
-SELECT countIf(startsWith(message, 'Registered runtime filter')) >= 1
-   AND countIf(startsWith(message, 'Stats for')
-       AND toUInt64OrZero(extract(message, 'blocks processed (\\d+)'))
-           + toUInt64OrZero(extract(message, 'blocks skipped (\\d+)')) > 0) >= 1
-FROM system.text_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'RuntimeFilter'
-  AND query_id IN (
-      SELECT query_id FROM system.query_log
-      WHERE type = 'QueryFinish' AND event_date >= yesterday()
-        AND initial_query_id IN (
-            SELECT query_id FROM system.query_log
-            WHERE type = 'QueryFinish' AND is_initial_query AND event_date >= yesterday()
-              AND current_database = currentDatabase() AND log_comment = '04892_nullable'));
+        AND current_database = currentDatabase() AND log_comment = '04892_nullable');
 
 SELECT '-- two joins, each with a transported filter';
 -- Two joins means two filters, each with its own merge tree and its own serialized partials: two
