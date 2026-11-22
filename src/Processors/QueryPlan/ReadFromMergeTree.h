@@ -400,6 +400,10 @@ public:
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void copyVirtualRowConversions(const ReadFromMergeTree & other)
+    {
+        virtual_row_conversion = other.virtual_row_conversion;
+    }
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
 
     /// Whether every part surviving pruning has the value of its virtual row in the index.
@@ -425,9 +429,26 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
     void requestOutputEachPartitionThroughSeparatePortForDistinct();
     void requestOutputEachPartitionThroughSeparatePortForWindow();
+    /// Whether `requestOutputEachPartitionThroughSeparatePortForWindow` would apply, without applying it.
+    bool canOutputEachPartitionThroughSeparatePortForWindow() const;
     bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
+    /// Signal that downstream needs multiple output streams (e.g. aggregation-in-order).
+    /// When set, PrefetchingConcatProcessor will not be used to avoid collapsing parallel streams.
+    void setPreferMultipleStreams() { prefer_multiple_streams = true; }
+    bool getPreferMultipleStreams() const { return prefer_multiple_streams; }
+
+    /// For optimizations that rebuild the reading step (e.g. lazy `FINAL`): carry over the fact that
+    /// reading in order was requested through `requestReadingInOrder`, together with the opt-outs
+    /// already stamped into `prefer_multiple_streams`, so the rebuilt read keeps the same
+    /// `PrefetchingConcatProcessor` eligibility as the original.
+    void setReadInOrderRequestedByPlanOptimizer() { read_in_order_requested_by_plan_optimizer = true; }
+    bool isReadInOrderRequestedByPlanOptimizer() const { return read_in_order_requested_by_plan_optimizer; }
+
+    void setQueryTaskSizeLimit(UInt64 query_task_size_limit_) { query_task_size_limit = query_task_size_limit_; }
+    UInt64 getQueryTaskSizeLimit() const { return query_task_size_limit; }
 
     /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
     /// window functions.
@@ -435,6 +456,9 @@ public:
     bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
+    /// The last result of `selectRangesToReadForEstimation`. It is never the analysis of the executed read; the probe
+    /// plan of automatic parallel replicas estimates its joins from it to choose what this plan chose.
+    AnalysisResultPtr getAnalyzedResultForEstimation() const { return analyzed_result_for_estimation_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
     /// Adopt from another read of the same table, for the same query, everything that
@@ -771,6 +795,9 @@ private:
     /// The name this read is coordinated under, which every replica must announce identically.
     String getParallelReplicasStreamId() const;
 
+    /// `ClusterProxy::getReplicasCountForParallelReplicas`, cached: it may read Keeper.
+    size_t getReplicasCountForParallelReading();
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
@@ -818,6 +845,17 @@ private:
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
+
+    /// Set by aggregation-in-order optimizer to prevent PrefetchingConcat from collapsing streams.
+    bool prefer_multiple_streams = false;
+
+    /// True when reading in order was requested through `requestReadingInOrder` (the query-plan
+    /// optimizer entry points: `optimizeReadInOrder`, `applyOrder`, and `ReadFromMerge` forwarding).
+    /// The legacy path (`InterpreterSelectQuery` with `query_plan_read_in_order = 0`, including the
+    /// `query_info.order_optimizer` branch of `ReadFromMerge::createChildrenPlans`) sets
+    /// `query_info.input_order_info` directly instead, bypassing the opt-outs that stamp
+    /// `prefer_multiple_streams`; PrefetchingConcat must stay disabled there.
+    bool read_in_order_requested_by_plan_optimizer = false;
 
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 
@@ -968,6 +1006,7 @@ private:
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
+    mutable AnalysisResultPtr analyzed_result_for_estimation_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
 
@@ -989,6 +1028,7 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+    std::optional<size_t> replicas_count_for_parallel_reading;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     std::shared_ptr<HypotheticalProjection> hypothetical_projection;

@@ -47,6 +47,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/saturatedDuration.h>
@@ -149,6 +150,7 @@ namespace FailPoints
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
 extern const char tcp_handler_fail_connection_setup[];
+extern const char tcp_handler_pause_before_query_plan_deserialization[];
 }
 }
 
@@ -3131,6 +3133,8 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
         throwUnexpectedPacket(Protocol::Client::QueryPlan);
 
     const auto & context = state.query_context;
+
+    FailPointInjection::pauseFailPoint(FailPoints::tcp_handler_pause_before_query_plan_deserialization);
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));

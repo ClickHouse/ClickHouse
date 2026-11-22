@@ -654,7 +654,7 @@ struct TableDiskRoot
 };
 
 std::mutex table_disk_roots_mutex;
-std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
+[[clang::no_destroy]] std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
 
 /// Whether one path is equal to the other one or contains it, compared by path components.
 bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
@@ -982,6 +982,111 @@ void MergeTreeData::MutationsSnapshotBase::addSupportedCommands(const MutationCo
             auto & result_command = result_commands.emplace_back(command);
             result_command.mutation_version = mutation_version;
         }
+    }
+}
+
+void MergeTreeData::MutationsSnapshotBase::filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const
+{
+    std::erase_if(commands, [&](const MutationCommand & command)
+    {
+        if (!command.has_partition)
+            return false;
+
+        /// A scoped command whose partitions are not resolved is applied to no partition at all: not
+        /// applying it only defers its effect until the mutation materializes, while applying it to a
+        /// partition it does not name answers wrong values and can persist them.
+        return !command.partition_ids || !command.partition_ids->contains(partition_id);
+    });
+}
+
+void MergeTreeData::resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned) const
+{
+    auto is_pinned = [](const IAST * partition_ast)
+    {
+        const auto * partition = partition_ast->as<ASTPartition>();
+        return partition && partition->id;
+    };
+
+    auto make_partition_id_ast = [](const String & partition_id)
+    {
+        auto partition = make_intrusive<ASTPartition>();
+        partition->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+        return partition;
+    };
+
+    for (auto & command : commands)
+    {
+        if (!command.has_partition || command.partition_ids)
+            continue;
+
+        auto command_ast = command.ast();
+        if (!command_ast)
+            continue;
+
+        if (only_pinned)
+        {
+            bool all_pinned = true;
+            if (const auto * partitions = command_ast->partitions)
+            {
+                for (const auto & partition : partitions->children)
+                    all_pinned = all_pinned && is_pinned(partition.get());
+            }
+            else if (const auto * partition = command_ast->partition)
+            {
+                all_pinned = is_pinned(partition);
+            }
+
+            /// An entry written by an older version may still carry a partition expression. It is not
+            /// evaluated here: this runs while the table is being loaded (the expression may contain a
+            /// subquery over the very table, which is not in the catalog yet) or while the mutations of a
+            /// replicated table are updated. Such a command stays unresolved and is not applied on the fly;
+            /// its partitions are evaluated when the mutation materializes, as before.
+            if (!all_pinned)
+                continue;
+        }
+
+        /// Resolved before the AST is opened for editing, so that an expression which cannot be
+        /// resolved throws with the command left untouched.
+        std::vector<String> resolved;
+        if (const auto * partitions = command_ast->partitions)
+        {
+            for (const auto & partition : partitions->children)
+                resolved.push_back(getPartitionIDFromQuery(partition, local_context, nullptr));
+        }
+        else if (const auto * partition = command_ast->partition)
+        {
+            resolved.push_back(getPartitionIDFromQuery(ASTPtr(partition->clone()), local_context, nullptr));
+        }
+
+        /// Every partition expression is replaced with the `ID '...'` it resolves to, so the command
+        /// text that is persisted - in `mutation_*.txt` or in the `/mutations` znode - names exactly the
+        /// partitions resolved here. Whatever parses it again later (loading the entry after a restart,
+        /// another replica, the rewrites of `AlterConversions`) gets the same partitions back without
+        /// evaluating any user SQL.
+        auto handle = command.mutateAst();
+        if (auto * partitions = handle->partitions)
+        {
+            chassert(partitions->children.size() == resolved.size());
+            for (size_t i = 0; i < resolved.size(); ++i)
+                partitions->children[i] = make_partition_id_ast(resolved[i]);
+        }
+        else if (const auto * partition = handle->partition)
+        {
+            chassert(resolved.size() == 1);
+            for (auto & child : handle->children)
+            {
+                if (child.get() == partition)
+                {
+                    child = make_partition_id_ast(resolved.front());
+                    handle->partition = child.get();
+                    break;
+                }
+            }
+        }
+
+        NameSet partition_ids(resolved.begin(), resolved.end());
+        handle.commit();
+        command.partition_ids = std::move(partition_ids);
     }
 }
 
@@ -1387,6 +1492,19 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
 
         window_begin = window_end;
     }
+}
+
+bool MergeTreeData::isInsertOrderSensitive() const
+{
+    /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
+    /// `Replacing` keeps the last inserted row among rows with equal versions too.
+    /// A table with a `UNIQUE KEY` resolves a conflict between two rows by the order in which their
+    /// blocks are committed (see `unique_key_conflict_action`), so it depends on the input order as well.
+    return merging_params.mode == MergingParams::Collapsing
+        || merging_params.mode == MergingParams::Coalescing
+        || merging_params.mode == MergingParams::Graphite
+        || merging_params.mode == MergingParams::Replacing
+        || hasUniqueKey();
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -2297,6 +2415,53 @@ void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata &
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Trying to set TTL for key column {}", name);
 }
 
+void MergeTreeData::checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata)
+{
+    using Violations = std::vector<std::pair<String, String>>;
+    auto get_violations = [](const StorageInMemoryMetadata & metadata)
+    {
+        Violations violations;
+        auto add = [&](const String & owner, const ASTPtr & expression_list, const Names & names, const ColumnsDescription * projection_columns = nullptr)
+        {
+            if (!expression_list)
+                return;
+            const auto & elements = expression_list->children;
+            chassert(elements.size() == names.size());
+            for (size_t i = 0; i < elements.size(); ++i)
+                if (!elements[i]->as<ASTIdentifier>() && metadata.columns.hasPhysical(names[i])
+                    && (!projection_columns || projection_columns->hasPhysical(names[i])))
+                    violations.emplace_back(owner, names[i]);
+        };
+
+        add("sorting key", metadata.sorting_key.expression_list_ast, metadata.sorting_key.column_names);
+        /// An undefined primary key mirrors the sorting key, and `MODIFY ORDER BY` turns it into a defined one.
+        add("primary key", metadata.primary_key.expression_list_ast, metadata.primary_key.column_names);
+        add("sampling key", metadata.sampling_key.expression_list_ast, metadata.sampling_key.column_names);
+        for (const auto & index : metadata.secondary_indices)
+            if (!index.isImplicitlyCreated())
+                add("skip index " + backQuoteIfNeed(index.name), index.expression_list_ast, index.column_names);
+        /// A projection part is sorted by its own key, which replaces only a column that the projection stores.
+        for (const auto & projection : metadata.projections)
+            add("sorting key of projection " + backQuoteIfNeed(projection.name), projection.metadata->sorting_key.expression_list_ast,
+                projection.metadata->sorting_key.column_names, &projection.metadata->columns);
+        return violations;
+    };
+
+    const Violations old_violations = old_metadata ? get_violations(*old_metadata) : Violations{};
+    for (const auto & violation : get_violations(new_metadata))
+    {
+        if (std::ranges::contains(old_violations, violation))
+            continue;
+
+        const auto & [owner, name] = violation;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The expression {} of the {} has the same name as the column {}, so the table would use one in place of the "
+            "other when it is written or queried. Rename the column or change the expression. "
+            "To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'",
+            name, owner, backQuote(name));
+    }
+}
+
 namespace
 {
 
@@ -2734,7 +2899,7 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     /// TODO Checks for Graphite mode.
 }
 
-const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
+[[clang::no_destroy]] const Names MergeTreeData::virtuals_useful_for_filter = {"_part", "_partition_id", "_part_uuid", "_partition_value", "_part_data_version", "_disk_name"};
 
 Block MergeTreeData::getHeaderWithVirtualsForFilter(const StorageMetadataPtr & metadata) const
 {
@@ -7373,6 +7538,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
+    if (!is_secondary_replay && !settings[Setting::allow_suspicious_indexes])
+        checkKeyExpressionNamesForCollision(new_metadata, &old_metadata);
 
     /// The TTL is analyzed while the table is loaded, when the table itself cannot be read yet.
     const bool modifies_ttl = std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL; });
@@ -11895,9 +12062,12 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         {
             auto query_tree = subquery->detachQueryTree();
             createUniqueAliasesIfNecessary(query_tree, execution_context);
+            /// The `Planner` mutates the options it is given (see `Planner::markDistributedPlanContext`),
+            /// so each subquery gets its own copy and cannot affect the planning of its siblings.
+            SelectQueryOptions current_subquery_options = subquery_options;
             Planner subquery_planner(
                 query_tree,
-                subquery_options,
+                current_subquery_options,
                 std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
             subquery_planner.buildQueryPlanIfNeeded();
 
@@ -15506,12 +15676,11 @@ static void updateSerializationHintsForPart(const DataPartPtr & part, const Colu
         if (!new_hint)
             continue;
 
-        /// Structure may change after alter. Do not add info for such items.
-        /// Instead it will be updated on commit of the result part of alter.
-        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
+        /// Structure may change after alter or differ because the part preserves older serialization settings.
+        /// Do not add info for such items. Instead it will be updated on commit of a compatible part.
+        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name) || !new_hint->structureEquals(*info))
             continue;
 
-        chassert(new_hint->structureEquals(*info));
         if (remove)
             new_hint->remove(*info);
         else

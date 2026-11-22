@@ -93,6 +93,9 @@ public:
     /// once for it, from one snapshot of its table. Without it, the step builds the sets for its own readers.
     virtual void setDefaultExpressionsSets(DefaultExpressionsSetsPtr sets) { shared_default_expressions_sets = std::move(sets); }
 
+    /// Whether a filter on `column` lets the source skip data by statistics without dropping rows that pass it.
+    [[nodiscard]] virtual bool canSkipDataByFilterOn(const ColumnWithTypeAndName & /*column*/) const { return false; }
+
     [[nodiscard]] const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
