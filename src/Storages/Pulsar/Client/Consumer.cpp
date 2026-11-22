@@ -161,13 +161,11 @@ void ConsumerImpl::resetSubConsumer(SubConsumer & sub, const char * reason)
     if (sub.state == State::Ready || sub.state == State::SubscribePending)
         LOG_INFO(log, "Subscribing to the Pulsar topic {} again: {}", *sub.topic, reason);
     by_consumer_id.erase(sub.consumer_id);
-    if (sub.queued)
-    {
-        /// The broker redelivers them.
-        std::erase_if(queue, [&](const QueuedEntry & queued) { return queued.consumer_id == sub.consumer_id; });
-        queued_messages -= sub.queued;
-        sub.queued = 0;
-    }
+    by_subscribe_request_id.erase(sub.subscribe_request_id);
+    /// The broker redelivers the queued messages.
+    queued_messages -= sub.queued;
+    stale_messages += sub.queued;
+    sub.queued = 0;
     sub.state = State::NeedLookup;
     sub.lookup.reset();
     sub.connection_id = 0;
@@ -177,6 +175,17 @@ void ConsumerImpl::resetSubConsumer(SubConsumer & sub, const char * reason)
     sub.received_entries = 0;
     sub.pending_flow = 0;
     sub.chunks = ChunkAssembler(wallClockMilliseconds);
+
+    if (stale_messages > queued_messages)
+    {
+        std::erase_if(queue, [&](const QueuedEntry & queued) { return isStale(queued); });
+        stale_messages = 0;
+    }
+}
+
+bool ConsumerImpl::isStale(const QueuedEntry & queued) const
+{
+    return queued.consumer_id != sub_consumers[queued.sub_consumer]->consumer_id;
 }
 
 void ConsumerImpl::advance()
@@ -213,6 +222,7 @@ void ConsumerImpl::advance()
             sub.consumer_id = next_consumer_id++;
             sub.subscribe_request_id = session.nextRequestId();
             by_consumer_id[sub.consumer_id] = &sub;
+            by_subscribe_request_id[sub.subscribe_request_id] = &sub;
 
             PulsarProto::BaseCommand command;
             command.set_type(PulsarProto::BaseCommand::SUBSCRIBE);
@@ -391,6 +401,14 @@ ConsumerImpl::SubConsumer * ConsumerImpl::findSubConsumer(Connection & connectio
     return it->second;
 }
 
+ConsumerImpl::SubConsumer * ConsumerImpl::findSubscribing(Connection & connection, UInt64 request_id)
+{
+    auto it = by_subscribe_request_id.find(request_id);
+    if (it == by_subscribe_request_id.end() || it->second->state != State::SubscribePending || it->second->connection_id != connection.id())
+        return nullptr;
+    return it->second;
+}
+
 void ConsumerImpl::onConnectionClosed(Connection & connection)
 {
     for (auto & sub : sub_consumers)
@@ -419,24 +437,21 @@ void ConsumerImpl::onFrame(Connection & connection, Frame & frame, const SharedB
         {
             if (!command.has_success() || !command.success().has_request_id())
                 throwUnexpected("SUCCESS");
-            for (auto & sub : sub_consumers)
+            if (SubConsumer * sub = findSubscribing(connection, command.success().request_id()))
             {
-                if (sub->state == State::SubscribePending && sub->subscribe_request_id == command.success().request_id()
-                    && sub->connection_id == connection.id())
+                by_subscribe_request_id.erase(sub->subscribe_request_id);
+                sub->state = State::Ready;
+                /// Before the permits, so that the broker applies them before it dispatches the redelivered messages.
+                if (!sub->pending_acks.empty())
                 {
-                    sub->state = State::Ready;
-                    /// Before the permits, so that the broker applies them before it dispatches the redelivered messages.
-                    if (!sub->pending_acks.empty())
-                    {
-                        auto pending = std::move(sub->pending_acks);
-                        sub->pending_acks.clear();
-                        sendAck(*sub, pending, {});
-                    }
-                    sub->pending_flow = sub->window;
-                    sendFlow(*sub);
-                    LOG_TRACE(log, "Subscribed to the Pulsar topic {} with the consumer id {}", *sub->topic, sub->consumer_id);
-                    return;
+                    auto pending = std::move(sub->pending_acks);
+                    sub->pending_acks.clear();
+                    sendAck(*sub, pending, {});
                 }
+                sub->pending_flow = sub->window;
+                sendFlow(*sub);
+                LOG_TRACE(log, "Subscribed to the Pulsar topic {} with the consumer id {}", *sub->topic, sub->consumer_id);
+                return;
             }
             if (!session.wasIssued(command.success().request_id()))
                 throwUnexpected("SUCCESS for an unknown request");
@@ -445,11 +460,9 @@ void ConsumerImpl::onFrame(Connection & connection, Frame & frame, const SharedB
         }
         case Type::ERROR:
         {
-            for (auto & sub : sub_consumers)
-                if (sub->state == State::SubscribePending && sub->subscribe_request_id == command.error().request_id()
-                    && sub->connection_id == connection.id())
-                    throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot subscribe to the Pulsar topic {}: {} {}", *sub->topic,
-                        PulsarProto::ServerError_Name(command.error().error()), command.error().message());
+            if (SubConsumer * sub = findSubscribing(connection, command.error().request_id()))
+                throw Exception(ErrorCodes::CANNOT_CONNECT_PULSAR, "Cannot subscribe to the Pulsar topic {}: {} {}", *sub->topic,
+                    PulsarProto::ServerError_Name(command.error().error()), command.error().message());
             if (!session.wasIssued(command.error().request_id()))
                 throwUnexpected("ERROR for an unknown request");
             LOG_DEBUG(log, "Ignoring ERROR for the request {}, which is not awaited", command.error().request_id());
@@ -586,6 +599,12 @@ Messages ConsumerImpl::takeMessages(size_t max_messages)
     while (res.size() < max_messages && !queue.empty())
     {
         QueuedEntry & front = queue.front();
+        if (isStale(front))
+        {
+            stale_messages -= front.cursor.remaining();
+            queue.pop_front();
+            continue;
+        }
         SubConsumer & sub = *sub_consumers[front.sub_consumer];
         const MessageFields & fields = front.cursor.next();
 
@@ -757,6 +776,7 @@ void ConsumerImpl::close() noexcept
     session.close();
     queue.clear();
     queued_messages = 0;
+    stale_messages = 0;
 }
 
 

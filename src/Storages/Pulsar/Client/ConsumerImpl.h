@@ -115,7 +115,9 @@ private:
     void advance();
     void refreshPartitions(TimePoint now);
     void resetSubConsumer(SubConsumer & sub, const char * reason);
+    bool isStale(const QueuedEntry & queued) const;
     SubConsumer * findSubConsumer(Connection & connection, UInt64 consumer_id);
+    SubConsumer * findSubscribing(Connection & connection, UInt64 request_id);
     void sendFlow(SubConsumer & sub);
     void sendAck(SubConsumer & sub, const VectorWithMemoryTracking<EntryId> & ids, std::optional<ValidationError> error);
     void sendRedeliver(SubConsumer & sub, const VectorWithMemoryTracking<EntryId> & ids);
@@ -134,11 +136,14 @@ private:
 
     VectorWithMemoryTracking<std::unique_ptr<SubConsumer>> sub_consumers;
     UnorderedMapWithMemoryTracking<UInt64, SubConsumer *> by_consumer_id;
+    /// The sub-consumers in `SubscribePending`.
+    UnorderedMapWithMemoryTracking<UInt64, SubConsumer *> by_subscribe_request_id;
     UInt64 next_consumer_id = 1;
 
-    /// The received messages in the order of arrival.
+    /// The received messages in the order of arrival, including the stale ones of the previous subscriptions.
     DequeWithMemoryTracking<QueuedEntry> queue;
     size_t queued_messages = 0;
+    size_t stale_messages = 0;
 
     /// The acknowledged messages of the batches that are not acknowledged completely.
     UnorderedMapWithMemoryTracking<BatchKey, PartialBatch, BatchKeyHash> partial_acks;

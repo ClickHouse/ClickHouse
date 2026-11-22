@@ -875,6 +875,57 @@ TEST(PulsarClient, ResubscribeAfterCloseConsumerAndLostConnection)
     EXPECT_EQ(messages[0].payload(), "segmented");
 }
 
+TEST(PulsarClient, QueuedMessagesOfAClosedConsumerAreDropped)
+{
+    FakeBroker broker;
+    broker.setPartitions(topicName("t"), 3);
+    Client client(broker.url(), configuration());
+    auto consumer = client.subscribe({"t"}, "s", {});
+    ASSERT_EQ(subscriptions(broker).size(), 3);
+
+    /// Queues two messages for each partition in one write and returns the first one, then the broker closes the consumers
+    /// of the last `closed` partitions. Their queued messages are redelivered to the new consumers, so they are dropped.
+    UInt64 entry = 1;
+    auto receive_after_close = [&](size_t closed)
+    {
+        auto subs = subscriptions(broker);
+        String frames;
+        for (const auto & [topic, sub] : subs)
+            for (size_t i = 0; i < 2; ++i)
+                frames += FakeBroker::messageFrame(sub.second, entry++, metadataOf(), topic);
+        broker.sendRaw(0, frames);
+        EXPECT_EQ(receiveAtLeast(*consumer, 1).size(), 1);
+
+        String closes;
+        for (auto it = std::prev(subs.end(), closed); it != subs.end(); ++it)
+        {
+            PulsarProto::BaseCommand close;
+            close.set_type(Type::CLOSE_CONSUMER);
+            close.mutable_close_consumer()->set_consumer_id(it->second.second);
+            close.mutable_close_consumer()->set_request_id(entry++);
+            closes += encodeCommand(close);
+        }
+        const size_t flows = broker.count(Type::FLOW) + closed;
+        broker.sendRaw(0, closes);
+
+        std::map<String, size_t> per_topic;
+        const auto start = std::chrono::steady_clock::now();
+        while (broker.count(Type::FLOW) < flows && std::chrono::steady_clock::now() - start < HANG_GUARD)
+            for (const auto & message : consumer->batchReceive(100, 100ms))
+                ++per_topic[String(message.payload())];
+        for (const auto & message : consumer->batchReceive(100, 100ms))
+            ++per_topic[String(message.payload())];
+        return per_topic;
+    };
+    const String p0 = topicName("t-partition-0");
+    const String p1 = topicName("t-partition-1");
+
+    /// The messages of the closed consumer are between others in the queue.
+    EXPECT_EQ(receive_after_close(1), (std::map<String, size_t>{{p0, 1}, {p1, 2}}));
+    /// Most of the queue is dropped at once.
+    EXPECT_EQ(receive_after_close(2), (std::map<String, size_t>{{p0, 1}}));
+}
+
 TEST(PulsarClient, HeldLookupDoesNotBlockCalls)
 {
     FakeBroker broker;
