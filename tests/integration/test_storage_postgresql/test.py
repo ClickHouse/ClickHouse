@@ -1722,6 +1722,36 @@ def test_postgres_query_passing(started_cluster):
     )
     cursor.execute(f'DROP TABLE "{keyword_name}"')
 
+    # `ROLLUP` and `CUBE` in a list of grouping elements are keywords of PostgreSQL, so the re-serialized
+    # query must leave them unquoted, although ClickHouse quotes a function of such a name in its own
+    # dialect. A column of such a name is not quoted either when it is spelled with upper-case characters:
+    # quoted, it would no longer be the column `cube`.
+    grouping_name = "test_query_passing_grouping"
+    cursor.execute(f"DROP TABLE IF EXISTS {grouping_name}")
+    cursor.execute(f"CREATE TABLE {grouping_name} (a integer, b integer, cube integer, rollup integer)")
+    cursor.execute(f"INSERT INTO {grouping_name} VALUES (1, 1, 10, 20), (1, 2, 10, 20), (2, 1, 10, 20)")
+    started_cluster.postgres_conn.commit()
+    q_rollup = (
+        f"postgresql('{host}', 'postgres', "
+        f"(SELECT a, b, count(*) AS n FROM {grouping_name} GROUP BY a, ROLLUP(b)), 'postgres', '{pg_pass}')"
+    )
+    assert node1.query(f"SELECT a, b, n FROM {q_rollup} ORDER BY a, b") == (
+        "1\t1\t1\n1\t2\t1\n1\t\\N\t2\n2\t1\t1\n2\t\\N\t1\n"
+    )
+    q_cube = (
+        f"postgresql('{host}', 'postgres', "
+        f"(SELECT a, b, count(*) AS n FROM {grouping_name} GROUP BY a, CUBE(b)), 'postgres', '{pg_pass}')"
+    )
+    assert node1.query(f"SELECT a, b, n FROM {q_cube} ORDER BY a, b") == (
+        "1\t1\t1\n1\t2\t1\n1\t\\N\t2\n2\t1\t1\n2\t\\N\t1\n"
+    )
+    q_columns = (
+        f"postgresql('{host}', 'postgres', "
+        f"(SELECT DISTINCT CUBE AS x, ROLLUP AS y FROM {grouping_name}), 'postgres', '{pg_pass}')"
+    )
+    assert node1.query(f"SELECT x, y FROM {q_columns}") == "10\t20\n"
+    cursor.execute(f"DROP TABLE {grouping_name}")
+
     # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
     # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
     q_strict = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'postgres', '{pg_pass}')"

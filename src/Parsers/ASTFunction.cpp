@@ -550,6 +550,19 @@ static void writeFunctionName(
 {
     if (!is_compound_name)
     {
+        /// The quoting below is for the ClickHouse parser, which reads some unquoted names as something else
+        /// than a function. In a query for PostgreSQL such a name is a construct of its own grammar that
+        /// cannot be quoted: `ROLLUP` and `CUBE` in `GROUP BY a, ROLLUP(b)` are grouping keywords, and
+        /// `COALESCE` is not a function there. PostgreSQL also matches a quoted name case-sensitively.
+        if (settings.identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotesPostgreSQL)
+        {
+            if (isValidIdentifier(name))
+                ostr << name;
+            else
+                writeDoubleQuotedStringPostgreSQL(name, ostr);
+            return;
+        }
+
         ostr << (functionNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
         return;
     }

@@ -92,69 +92,79 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes
+/// Which words cannot be left unquoted depends on the parser that reads the text. `for_postgresql` is set
+/// for a query that is sent to PostgreSQL and is never parsed back by ClickHouse.
 template <typename F>
-static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
+static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string, bool for_postgresql = false)
 {
-    /// These are valid identifiers but are problematic if present unquoted in SQL query
-    /// because they are keywords that the parser interprets as clause starters or modifiers,
-    /// causing the formatted AST to fail parsing back.
     auto isCaseInsensitiveEqual = [](std::string_view a, std::string_view b)
     {
         return a.size() == b.size()
             && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
     };
 
-    /// These are valid identifiers that the parser reads back as a literal instead of an identifier:
-    /// `ParserNumber` hands a bare word to `strtod`, which accepts `inf`, `infinity` and `nan`, and
-    /// `true`/`false` are parsed as `Bool` literals. (`null` is already rejected by
-    /// `isValidIdentifier`.) Left unquoted, a reference to a column with such a name silently turns
-    /// into a constant: a table with a column named `inf` has `ORDER BY inf` written to its
-    /// metadata, and the next server start fails to load it with `Sorting key cannot contain
-    /// constants`.
-    auto isParsedAsLiteral = [&](std::string_view identifier)
+    /// These are valid identifiers but are problematic if present unquoted in SQL query
+    /// because they are keywords that the parser interprets as clause starters or modifiers,
+    /// causing the formatted AST to fail parsing back. PostgreSQL reserves them as well.
+    auto isKeyword = [&](std::string_view identifier)
     {
+        /// `true`/`false` are parsed as `Bool` literals. Left unquoted, a reference to a column with such
+        /// a name silently turns into a constant.
+        return isCaseInsensitiveEqual(identifier, "true")
+            || isCaseInsensitiveEqual(identifier, "false")
+            || isCaseInsensitiveEqual(identifier, "distinct")
+            || isCaseInsensitiveEqual(identifier, "all")
+            /// The parser can consume a bare `SOME` as the array-quantifier keyword, which rewrites the
+            /// node at parse time, so a function of that name has to stay quoted to survive a re-parse.
+            || isCaseInsensitiveEqual(identifier, "some")
+            || isCaseInsensitiveEqual(identifier, "table")
+            /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
+            /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
+            /// re-parses as a subquery (SELECT [x]) with a different structure.
+            || isCaseInsensitiveEqual(identifier, "select")
+            /// Causes parsing ambiguity when used as a function or identifier name, because the parser
+            /// consumes it as a clause-starting keyword.
+            || isCaseInsensitiveEqual(identifier, "from")
+            /// Parsed as unary NOT operator
+            || isCaseInsensitiveEqual(identifier, "not")
+            /// `CAST(as AS T)` fails to parse
+            || isCaseInsensitiveEqual(identifier, "as");
+    };
+
+    /// These are problematic only for the ClickHouse parser. PostgreSQL reads every one of them as an
+    /// ordinary name when it is not quoted, and it matches a quoted name case-sensitively, while an
+    /// unquoted one is folded to lower case: quoted, `CUBE` would refer to a column spelled exactly
+    /// this way instead of the column `cube`. So a query for PostgreSQL leaves them alone.
+    /// When adding a word, put it here unless PostgreSQL cannot read it unquoted either.
+    auto isKeywordOnlyInClickHouse = [&](std::string_view identifier)
+    {
+        /// `ParserNumber` hands a bare word to `strtod`, which accepts `inf`, `infinity` and `nan`.
+        /// (`null` is already rejected by `isValidIdentifier`.) Left unquoted, a reference to a column
+        /// with such a name silently turns into a constant: a table with a column named `inf` has
+        /// `ORDER BY inf` written to its metadata, and the next server start fails to load it with
+        /// `Sorting key cannot contain constants`.
         return isCaseInsensitiveEqual(identifier, "inf")
             || isCaseInsensitiveEqual(identifier, "infinity")
             || isCaseInsensitiveEqual(identifier, "nan")
-            || isCaseInsensitiveEqual(identifier, "true")
-            || isCaseInsensitiveEqual(identifier, "false");
+            /// CUBE and ROLLUP are parsed as GROUP BY modifiers when left unquoted, so identifiers
+            /// with these names must stay quoted to survive formatting and re-parsing.
+            || isCaseInsensitiveEqual(identifier, "cube")
+            || isCaseInsensitiveEqual(identifier, "rollup")
+            /// RECURSIVE is parsed as the WITH RECURSIVE keyword when left unquoted, so a CTE named
+            /// `recursive` must stay quoted to survive formatting and re-parsing.
+            || isCaseInsensitiveEqual(identifier, "recursive")
+            /// These keywords cause parsing ambiguity when used as function or identifier names
+            /// because the parser consumes them as clause-starting keywords.
+            || isCaseInsensitiveEqual(identifier, "top")
+            || isCaseInsensitiveEqual(identifier, "values")
+            /// `interval AS DAY` parses as INTERVAL literal
+            || isCaseInsensitiveEqual(identifier, "interval")
+            /// `EXCEPT strict` parses as EXCEPT STRICT modifier
+            || isCaseInsensitiveEqual(identifier, "strict");
     };
 
-    if (isValidIdentifier(s)
-        && !isParsedAsLiteral(s)
-        && !isCaseInsensitiveEqual(s, "distinct")
-        && !isCaseInsensitiveEqual(s, "all")
-        /// The parser can consume a bare `SOME` as the array-quantifier keyword, which rewrites the
-        /// node at parse time, so a function of that name has to stay quoted to survive a re-parse.
-        && !isCaseInsensitiveEqual(s, "some")
-        && !isCaseInsensitiveEqual(s, "table")
-        /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
-        /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
-        /// re-parses as a subquery (SELECT [x]) with a different structure.
-        && !isCaseInsensitiveEqual(s, "select")
-        /// CUBE and ROLLUP are parsed as GROUP BY modifiers when left unquoted, so identifiers
-        /// with these names must stay quoted to survive formatting and re-parsing.
-        && !isCaseInsensitiveEqual(s, "cube")
-        && !isCaseInsensitiveEqual(s, "rollup")
-        /// RECURSIVE is parsed as the WITH RECURSIVE keyword when left unquoted, so a CTE named
-        /// `recursive` must stay quoted to survive formatting and re-parsing.
-        && !isCaseInsensitiveEqual(s, "recursive")
-        /// These keywords cause parsing ambiguity when used as function or identifier names
-        /// because the parser consumes them as clause-starting keywords.
-        && !isCaseInsensitiveEqual(s, "from")
-        && !isCaseInsensitiveEqual(s, "top")
-        && !isCaseInsensitiveEqual(s, "values")
-        /// Parsed as unary NOT operator
-        && !isCaseInsensitiveEqual(s, "not")
-        /// `CAST(as AS T)` fails to parse
-        && !isCaseInsensitiveEqual(s, "as")
-        /// `interval AS DAY` parses as INTERVAL literal
-        && !isCaseInsensitiveEqual(s, "interval")
-        /// `EXCEPT strict` parses as EXCEPT STRICT modifier
-        && !isCaseInsensitiveEqual(s, "strict"))
-    {
+    if (isValidIdentifier(s) && !isKeyword(s) && (for_postgresql || !isKeywordOnlyInClickHouse(s)))
         writeString(s, buf);
-    }
     else
         write_quoted_string(s, buf);
 }
@@ -171,7 +181,8 @@ void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf)
 
 void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedStringPostgreSQL(s_, buf_); });
+    writeProbablyQuotedStringImpl(
+        s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedStringPostgreSQL(s_, buf_); }, /*for_postgresql=*/ true);
 }
 
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
