@@ -22,9 +22,10 @@ COPY --from=cctools \
 # Refresh the kitware GPG key inherited from fasttest base image, it may be stale
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg
 
+# clang-tidy and llvm come from the fasttest image. Upgrading them here (apt would also do it for the packages of
+# bolt's source package) stores a second copy of LLVM in this layer whenever apt.llvm.org has rebuilt them.
 RUN apt-get update \
-    && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
-    && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
+    && apt-get -o Dpkg::Options::="--force-overwrite" -o APT::Get::Upgrade-By-Source-Package=false install --yes \
         binutils-dev \
         build-essential \
         zlib1g-dev \
@@ -35,8 +36,6 @@ RUN apt-get update \
         zstd \
         zip \
         qemu-user-static \
-        clang-tidy-${LLVM_VERSION} \
-        llvm-${LLVM_VERSION} \
         bolt-${LLVM_VERSION} \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
@@ -46,11 +45,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
+ARG TOOLCHAIN_COMMIT=51fdb0b1b64e10e205041802cd91d962fb1d281c
 # S3 directory of that commit's artifacts. Praktika owns the prefix layout and
 # has changed it, so the location is pinned next to the commit instead of being
 # spelled from it; update_toolchain_dockerfile.py rewrites both lines together.
-ARG TOOLCHAIN_S3_DIR=REFs/master/${TOOLCHAIN_COMMIT}
+ARG TOOLCHAIN_S3_DIR=REFs/master/51fdb0b1b64e10e205041802cd91d962fb1d281c/optimizetoolchain
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \
