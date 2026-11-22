@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_variant_values_scalar;
 DROP TABLE IF EXISTS t_variant_values_array;
 DROP TABLE IF EXISTS t_variant_values_tuple;
 DROP TABLE IF EXISTS t_variant_values_map;
+DROP TABLE IF EXISTS t_variant_values_nested;
 
 -- Scalars were already stored in the right alternative.
 CREATE TABLE t_variant_values_scalar (id UInt8, v Variant(Date, UInt64)) ENGINE = MergeTree ORDER BY id;
@@ -26,7 +27,14 @@ CREATE TABLE t_variant_values_map (id UInt8, v Variant(Map(String, Date), Map(St
 INSERT INTO t_variant_values_map VALUES (1, map('a', toUInt64(20000)));
 SELECT id, variantType(v), v FROM t_variant_values_map ORDER BY id;
 
+-- A `Variant` nested in the value keeps its own type: a `Field` does not hold it, and the value used to become `('2024-10-04')`.
+SET input_format_values_deduce_templates_of_expressions = 0;
+CREATE TABLE t_variant_values_nested (id UInt8, v Variant(Tuple(Variant(Date, UInt64)))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_variant_values_nested VALUES (1, tuple(CAST(toUInt64(20000) AS Variant(Date, UInt64))));
+SELECT id, variantType(v), v FROM t_variant_values_nested ORDER BY id;
+
 DROP TABLE t_variant_values_scalar;
 DROP TABLE t_variant_values_array;
 DROP TABLE t_variant_values_tuple;
 DROP TABLE t_variant_values_map;
+DROP TABLE t_variant_values_nested;

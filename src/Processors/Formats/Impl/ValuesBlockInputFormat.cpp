@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
@@ -668,7 +669,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+    /// A `Field` does not keep the discriminators of a `Variant` nested in the value, so for a `Variant` column keep
+    /// the evaluated column as well.
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(&type);
+    ColumnPtr value_column;
+    std::pair<Field, DataTypePtr> value_raw;
+    if (variant_type)
+    {
+        auto constant = evaluateConstantExpressionAsColumn(ast, context);
+        value_column = constant.getColumn();
+        value_raw = {constant.getField(), constant.getType()};
+    }
+    else
+        value_raw = evaluateConstantExpression(ast, context);
 
     Field & expression_value = value_raw.first;
 
@@ -700,10 +713,9 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     /// The same applies to a Variant with an alternative of exactly the type of the value: inserting the Field
     /// would put it into the first alternative that accepts it, for example Array(Date) for an Array(UInt64).
-    const auto * variant_type = typeid_cast<const DataTypeVariant *>(&type);
     if (type.hasDynamicStructure() || (variant_type && variant_type->tryGetVariantDiscriminator(value_raw.second->getName())))
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
+        ColumnPtr const_column = value_column ? value_column : value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }

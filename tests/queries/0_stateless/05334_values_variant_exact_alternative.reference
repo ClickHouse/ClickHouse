@@ -6,3 +6,4 @@
 4	None	\N
 1	Tuple(UInt64)	(20000)
 1	Map(String, UInt64)	{'a':20000}
+1	Tuple(Variant(Date, UInt64))	(20000)
