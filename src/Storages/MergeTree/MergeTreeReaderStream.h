@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <base/defines.h>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/Stopwatch.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <mutex>
@@ -25,6 +26,8 @@ struct RuntimeDataflowStatisticsBlock;
 /// Counts the compressed blocks the readers of a read load into the input bytes of its statistics. A compressed block may
 /// hold the data of several columns, and may be loaded more than once, by one reader or by several, each reading other
 /// granules of it: it is counted once.
+/// The counted ranges of all the reads of a query take at most `automatic_parallel_replicas_max_memory_for_input_statistics`.
+/// Past it, the reads stop counting, free what they counted, and the statistics record that the input was not measured.
 class CountedCompressedBlocks
 {
 public:
@@ -37,7 +40,7 @@ public:
         friend class CountedCompressedBlocks;
 
         /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
-        size_t take(CompressedBlockRanges & ranges);
+        size_t take(CompressedBlockRanges & ranges) TSA_REQUIRES(mutex);
 
         std::mutex mutex;
         /// Merged, by their begin.
@@ -47,10 +50,23 @@ public:
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
     CountedRanges & getCountedRanges(const String & path);
 
-    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
-    void count(CountedRanges & file_ranges, CompressedBlockRanges & ranges);
+    /// What a reader counted from its files since the last `flushCompressedBlocksRead`, added to the statistics at once.
+    struct Batch
+    {
+        Stopwatch watch;
+        size_t bytes = 0;
+        /// The memory the counted ranges took or freed.
+        Int64 memory = 0;
+    };
+
+    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet, to `batch`.
+    /// Clears `ranges`.
+    void count(Batch & batch, CountedRanges & file_ranges, CompressedBlockRanges & ranges);
+    void commit(const Batch & batch);
 
 private:
+    void addMemory(Int64 memory);
+
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
 

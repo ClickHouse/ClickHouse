@@ -326,6 +326,7 @@ struct QueryPlanOptimizationSettings
     bool automatic_parallel_replicas_ignore_thresholds;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
+    size_t automatic_parallel_replicas_max_memory_for_input_statistics;
     float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
     /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica

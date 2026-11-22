@@ -64,6 +64,13 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
         return;
     }
 
+    if (counted_blocks_limit_exceeded)
+    {
+        LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "The input is not measured, the statistics only record that");
+        getRuntimeDataflowStatisticsCache().update(cache_key, {.total_rows_to_read = total_rows_to_read, .input_not_measured = true});
+        return;
+    }
+
     auto log_stats = [](const auto & stats, auto type) TSA_REQUIRES(stats.mutex)
     {
         LOG_TEST(

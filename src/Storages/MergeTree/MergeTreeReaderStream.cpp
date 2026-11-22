@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -349,12 +350,15 @@ CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRang
 {
     std::lock_guard lock(mutex);
     /// References to the elements of an unordered map stay valid when it grows.
-    return counted[path];
+    auto [it, inserted] = counted.try_emplace(path);
+    /// The node with the key and the mutex and the map, its bucket, and the heap buffer of the path.
+    if (inserted)
+        addMemory(sizeof(String) + sizeof(CountedRanges) + 3 * sizeof(void *) + path.capacity());
+    return it->second;
 }
 
 size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & ranges)
 {
-    std::lock_guard lock(mutex);
     size_t bytes = 0;
     for (const auto & [begin, end] : ranges)
     {
@@ -395,15 +399,45 @@ size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & rang
     return bytes;
 }
 
-void CountedCompressedBlocks::count(CountedRanges & file_ranges, CompressedBlockRanges & ranges)
+void CountedCompressedBlocks::count(Batch & batch, CountedRanges & file_ranges, CompressedBlockRanges & ranges)
 {
     if (ranges.empty())
         return;
 
-    Stopwatch watch;
-    const size_t bytes = file_ranges.take(ranges);
-    (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
-    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
+    std::lock_guard lock(file_ranges.mutex);
+    if (block->counted_blocks_limit_exceeded.load(std::memory_order_relaxed))
+    {
+        ranges.clear();
+        file_ranges.counted.clear();
+        return;
+    }
+
+    /// A node of the map holds a range and three pointers and the color, aligned.
+    static constexpr Int64 memory_per_range = sizeof(std::pair<size_t, size_t>) + 4 * sizeof(void *);
+    const auto ranges_before = static_cast<Int64>(file_ranges.counted.size());
+    batch.bytes += file_ranges.take(ranges);
+    batch.memory += (static_cast<Int64>(file_ranges.counted.size()) - ranges_before) * memory_per_range;
+}
+
+void CountedCompressedBlocks::commit(const Batch & batch)
+{
+    if (batch.memory)
+        addMemory(batch.memory);
+    if (batch.bytes)
+        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(batch.bytes, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, batch.watch.elapsedNanoseconds());
+}
+
+void CountedCompressedBlocks::addMemory(Int64 memory)
+{
+    if (!block->max_counted_blocks_memory)
+        return;
+    const Int64 total = block->counted_blocks_memory.fetch_add(memory, std::memory_order_relaxed) + memory;
+    if (total > static_cast<Int64>(block->max_counted_blocks_memory) && !block->counted_blocks_limit_exceeded.exchange(true))
+        LOG_DEBUG(
+            getLogger("RuntimeDataflowStatisticsCacheUpdater"),
+            "The counted ranges of the compressed blocks read take more than {} bytes, the input is not measured",
+            block->max_counted_blocks_memory);
 }
 
 void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)

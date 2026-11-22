@@ -62,6 +62,7 @@ extern const Event AutoParallelReplicasApplied;
 extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
 extern const Event AutoParallelReplicasRejectedByDuplicatedReads;
+extern const Event AutoParallelReplicasRejectedByUnmeasuredInput;
 extern const Event AutoParallelReplicasRejectedByCostModel;
 extern const Event AutoParallelReplicasBytesPerReplica;
 }
@@ -1336,6 +1337,18 @@ static bool decideAtBoundary(
             /// mode production runs in - a dedicated event for it would only be noise there.
         }
 
+        if (apply_plan_with_parallel_replicas && stats->input_not_measured)
+        {
+            /// Without the input bytes there is nothing to compare; they are counted again only once the table drifts.
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByUnmeasuredInput);
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Parallel replicas are not used: the input of hash {} could not be measured within "
+                "automatic_parallel_replicas_max_memory_for_input_statistics",
+                single_replica_plan_boundary_hash);
+            return false;
+        }
+
         if (apply_plan_with_parallel_replicas)
         {
             const auto max_threads = optimization_settings.max_threads;
@@ -1543,7 +1556,8 @@ static bool decideAtBoundary(
         if (!replicas)
             return true;
 
-        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read);
+        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(
+            single_replica_plan_boundary_hash, rows_to_read, optimization_settings.automatic_parallel_replicas_max_memory_for_input_statistics);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group

@@ -45,6 +45,9 @@ struct RuntimeDataflowStatistics
     size_t duplicated_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
+    /// Counting the compressed blocks read took more memory than `automatic_parallel_replicas_max_memory_for_input_statistics`,
+    /// so the bytes are not known. Remembered, so that the query does not pay for counting them again.
+    bool input_not_measured = false;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -54,6 +57,7 @@ inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs
         .duplicated_bytes = lhs.duplicated_bytes + rhs.duplicated_bytes,
         .output_bytes = lhs.output_bytes + rhs.output_bytes,
         .total_rows_to_read = lhs.total_rows_to_read + rhs.total_rows_to_read,
+        .input_not_measured = lhs.input_not_measured || rhs.input_not_measured,
     };
 }
 
@@ -121,9 +125,10 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, size_t max_counted_blocks_memory_)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , max_counted_blocks_memory(max_counted_blocks_memory_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -136,8 +141,13 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    /// See `CountedCompressedBlocks`. 0 is no limit.
+    const size_t max_counted_blocks_memory = 0;
 
     std::atomic_bool unsupported_case{false};
+
+    std::atomic<Int64> counted_blocks_memory{0};
+    std::atomic_bool counted_blocks_limit_exceeded{false};
 
     /// The compressed bytes the readers loaded, see `CountedCompressedBlocks`.
     std::atomic_size_t input_bytes_read{0};

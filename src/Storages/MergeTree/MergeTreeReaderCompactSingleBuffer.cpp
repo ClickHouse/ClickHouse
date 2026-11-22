@@ -52,7 +52,9 @@ void MergeTreeReaderCompactSingleBuffer::flushCompressedBlocksRead()
     if (!counted_ranges)
         counted_ranges = &counted_compressed_blocks->getCountedRanges(
             data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
-    counted_compressed_blocks->count(*counted_ranges, ranges_read);
+    CountedCompressedBlocks::Batch batch;
+    counted_compressed_blocks->count(batch, *counted_ranges, ranges_read);
+    counted_compressed_blocks->commit(batch);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(
