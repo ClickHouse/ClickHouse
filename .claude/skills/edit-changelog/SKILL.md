@@ -206,6 +206,13 @@ carries a change of its own with its own entry (case 6).
    re-apply itself is reverted and later put back, both bullets come back,
    each as it was: the link on the first is not a substitute for the second.
 
+   The same reading applies when the original change is already out again by
+   the time the re-apply's entry is placed (a second revert of the original
+   in the same range). There is then no entry for the link to sit on. An entry
+   that only repeats the original describes a change that is not in the
+   release, so it is deleted with it; an entry describing a change of its own
+   that still ships is kept as a bullet.
+
    When a release is edited in daily increments, the three PRs arrive on
    three different days: the entry was integrated on the first day, deleted
    on the second, and the third brings only the revert of the revert. The

@@ -334,6 +334,8 @@ CHAIN_TITLES = {
     REMOVER: f'Revert "{METADATA[OUTER_REVERT][0]}"',
     RESTORER: f'Revert "Revert "{METADATA[OUTER_REVERT][0]}""',
     "800": f'Revert "{METADATA[ORIGINAL][0]}"',
+    "900": 'Revert "Revert the thing once more"',
+    "1000": f'Revert "{METADATA[ORIGINAL][0]}", again',
 }
 
 
@@ -849,6 +851,183 @@ def test_unplaced_reapply_entry_is_offered_when_the_original_is_out_again():
         }
     )
     assert _verify(restore_base, with_original, restore) is not None
+
+
+def test_repeating_reapply_entry_may_go_when_the_original_is_out_again_on_arrival():
+    """Four pull requests on one night: `#100`, `#200` reverting it, `#300`
+    re-applying it with the same entry, and `#800` reverting `#100` again. The
+    fix is not in the release, so the entry that only repeats it may go with
+    it; one describing a fix of `#300`'s own may stay. And when `#800` is
+    reverted later, the original comes back with `#300` recorded on it."""
+    base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            BUG_FIX: [REPEATED_BULLET, REPEATING_BULLET, UNRELATED_BULLET],
+            "NO CL ENTRY": [
+                _revert_bullet(INNER_REVERT),
+                _revert_bullet(SECOND_REMOVER),
+            ],
+        },
+    )
+    out_again = {**CHAIN, SECOND_REMOVER: {ORIGINAL}}
+    reverts = _analyze_with_ledger(base, {}, out_again)
+    assert reverts["optional"] == [OUTER_REVERT]
+    assert reverts["optional_new"] == [OUTER_REVERT]
+    assert reverts["reapplying_with_entry_new"] == []
+    # Not a revert that has to leave no trace either: a bullet is its call.
+    assert OUTER_REVERT not in reverts["cancelling"]
+    gone = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(base, gone, reverts) is None
+    independent = _sections({BUG_FIX: [FIX_BULLET, UNRELATED_BULLET]})
+    assert _verify(base, independent, reverts) is None
+    with_original = _sections(
+        {BUG_FIX: [_with_links(REPEATED_BULLET, OUTER_REVERT), UNRELATED_BULLET]}
+    )
+    assert _verify(base, with_original, reverts) is not None
+    recorded = _record_deletions(base, gone, reverts)
+    assert recorded == {ORIGINAL: (BUG_FIX, "raw", REPEATED_BULLET)}
+    deleted, integrated = _ledger_records(recorded)
+
+    # `#900` reverts `#800`: the fix ships after all.
+    back_base = _raw(gone, {"NO CL ENTRY": [_revert_bullet("900")]})
+    back = _analyze_with_ledger(
+        back_base,
+        out_again,
+        {"900": {SECOND_REMOVER}},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert OUTER_REVERT in back["cancelling"]
+    assert back["required"] == [ORIGINAL]
+    restored = _sections(
+        {
+            BUG_FIX: [
+                _with_links(REPEATED_BULLET, OUTER_REVERT, "900"),
+                UNRELATED_BULLET,
+            ]
+        }
+    )
+    assert _verify(back_base, restored, back) is None
+    without_reapply = _sections(
+        {BUG_FIX: [_with_links(REPEATED_BULLET, "900"), UNRELATED_BULLET]}
+    )
+    assert _verify(back_base, without_reapply, back) is not None
+
+
+def test_optional_reapply_is_no_entry_for_a_later_reapply_to_stand_on():
+    """`#300` and `#700` both re-apply `#100` with an entry repeating it (`#600`
+    reverts `#300` in between), and `#800` reverts `#100` again, all on one
+    night. The entry of `#300` is optional, so it does not make the entry of
+    `#700` required: all three repeated descriptions may go."""
+    twice = _bullet(RESTORER, "Fix the thing.")
+    base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            BUG_FIX: [REPEATED_BULLET, REPEATING_BULLET, twice, UNRELATED_BULLET],
+            "NO CL ENTRY": [
+                _revert_bullet(pr) for pr in (INNER_REVERT, REMOVER, SECOND_REMOVER)
+            ],
+        },
+    )
+    reverts = _analyze_with_ledger(
+        base,
+        {},
+        {
+            **CHAIN,
+            REMOVER: {OUTER_REVERT},
+            RESTORER: {REMOVER},
+            SECOND_REMOVER: {ORIGINAL},
+        },
+    )
+    assert reverts["optional"] == [OUTER_REVERT, RESTORER]
+    gone = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(base, gone, reverts) is None
+
+
+# `#300` re-applies `#100` with no entry of its own, `#600` reverts `#300`,
+# `#700` re-applies it again with an entry repeating `#100`, `#800` reverts
+# `#700`.
+LONG_CHAIN = {
+    "200": {"100"},
+    "300": {"200"},
+    "600": {"300"},
+    "700": {"600"},
+    "800": {"700"},
+}
+
+
+def test_unplaced_reapply_entry_is_offered_past_a_plain_reapply_in_between():
+    """What a re-apply brought back is the original change, not the plain
+    re-apply in between: when `#900` brings `#700` back and `#1000` reverts
+    `#100` again, `#300` still stands in the chain, but it carries no entry, so
+    there is nothing for the link of `#700` to sit on and its repeating raw
+    entry is offered. Without `#1000` the fix ships and it is required."""
+    repeating = _bullet("700", "Fix the thing.")
+    arrival_base = _raw(
+        f"{TOC}\n\n{RELEASED}",
+        {
+            BUG_FIX: [REPEATED_BULLET, repeating, UNRELATED_BULLET],
+            "NO CL ENTRY": [_revert_bullet(pr) for pr in ("200", "300", "600", "800")],
+        },
+    )
+    arrival = _analyze_with_ledger(arrival_base, {}, LONG_CHAIN)
+    removed = _sections({BUG_FIX: [UNRELATED_BULLET]})
+    assert _verify(arrival_base, removed, arrival) is None
+    recorded = _record_deletions(arrival_base, removed, arrival)
+    assert recorded == {
+        "100": (BUG_FIX, "raw", REPEATED_BULLET),
+        "700": (BUG_FIX, "raw", repeating),
+    }
+    deleted, integrated = _ledger_records(recorded)
+
+    restore_base = _raw(
+        removed, {"NO CL ENTRY": [_revert_bullet("900"), _revert_bullet("1000")]}
+    )
+    restore = _analyze_with_ledger(
+        restore_base,
+        LONG_CHAIN,
+        {"900": {"800"}, "1000": {"100"}},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert restore["unplaced"] == ["700"]
+    # `#300` is above `#700` in the chain and stands, but it is no entry.
+    assert restore["brought_back"]["700"] == ["100", "200", "300"]
+    assert "300" not in restore["credits"]
+    assert restore["optional"] == ["700"]
+    assert restore["required"] == []
+    assert _verify(restore_base, removed, restore) is None
+    independent = _sections(
+        {
+            BUG_FIX: [
+                _with_links(_bullet("700", "Fix something else."), "900"),
+                UNRELATED_BULLET,
+            ]
+        }
+    )
+    assert _verify(restore_base, independent, restore) is None
+
+    # Only `#900`: the original fix is back, and so is the entry of `#700`.
+    shipping_base = _raw(removed, {"NO CL ENTRY": [_revert_bullet("900")]})
+    shipping = _analyze_with_ledger(
+        shipping_base,
+        LONG_CHAIN,
+        {"900": {"800"}},
+        deleted=deleted,
+        integrated=integrated,
+    )
+    assert shipping["optional"] == []
+    assert shipping["required"] == ["100", "700"]
+    assert _verify(shipping_base, removed, shipping) is not None
+    merged = _sections(
+        {
+            BUG_FIX: [
+                _with_links(REPEATED_BULLET, "300", "700", "900"),
+                UNRELATED_BULLET,
+            ]
+        }
+    )
+    assert _verify(shipping_base, merged, shipping) is None
 
 
 if __name__ == "__main__":

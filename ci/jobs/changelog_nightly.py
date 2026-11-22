@@ -968,6 +968,9 @@ def analyze_reverts(text, anchor, range_prs=()):
     `unplaced`   - re-applies in `restore` whose recorded entry is a raw one
                    that no edit had placed: a bullet of their own or their link
                    on an entry they brought back both restore them;
+    `optional`   - re-applies whose raw entry is placed on this run (arriving
+                   today, or `unplaced`) while nothing they brought back ships:
+                   a bullet of their own is neither required nor forbidden;
     `brought_back`
                  - revert -> the pull requests whose entries it can be an
                    annotation on, which is what tells the bullet of a re-apply's
@@ -1093,12 +1096,6 @@ def analyze_reverts(text, anchor, range_prs=()):
         if pr not in credits_before:
             del restore[pr]
             required.discard(pr)
-        elif all(other in credits for other in brought_back.get(pr, ())):
-            # Nothing it brought back ships - the original has been reverted
-            # again - so there is no entry for its link to sit on, and whether
-            # the raw entry describes more than the re-apply is the agent's
-            # judgement: offered, like a raw bullet an edit may prune.
-            required.discard(pr)
     unplaced &= set(restore)
 
     def is_back(pr):
@@ -1175,6 +1172,44 @@ def analyze_reverts(text, anchor, range_prs=()):
         and (pr in strict_prs or own_entry(pr)[1] or pr in restore)
     }
     cancelling -= reapplying_with_entry
+
+    optional = set()
+
+    def carries_entry(pr):
+        """Whether `pr` is in the release as something the link of a re-apply
+        can stand for: an original change that no standing revert takes out
+        (also one whose entry an edit pruned - it ships, and a re-apply of it
+        with an entry is where it shows), or a revert with an entry of its
+        own that the release keeps (not an `optional` one, which may well be
+        deleted). A plain re-apply in between is neither: when `#700`
+        re-applies `#300`, which had re-applied `#100`, what it brings back is
+        `#100`."""
+        if pr in credits or pr in optional:
+            return False
+        if pr not in targets:
+            return True
+        return bool(own_entry(pr)[1]) or pr in strict_prs or pr in restore
+
+    # A raw entry of a re-apply that is placed on this run - arriving today, or
+    # unplaced and brought back today - is kept because the re-apply puts
+    # something back: its link belongs on that entry, or on a bullet of its
+    # own. When nothing it brought back ships, because the original change was
+    # reverted once more, there is no entry for the link to sit on, and a raw
+    # entry that only repeats the original describes a change that is not in
+    # the release. Whether it says more than that is a judgement the verifier
+    # cannot make, so it neither demands the entry nor forbids it: such a
+    # re-apply is exempt from retention like a cancelling revert, and allowed
+    # a bullet of its own unlike one.
+    # Decided in ascending order, like the chains themselves are settled in
+    # descending order by `revert_net_effect`: what a re-apply brought back has
+    # lower numbers than it, and a re-apply whose own entry is optional is not
+    # an entry for a later one to stand on.
+    for pr in sorted(reapplying_with_entry, key=int):
+        if (pr in strict_prs or pr in unplaced) and not any(
+            carries_entry(other) for other in brought_back.get(pr, ())
+        ):
+            optional.add(pr)
+    required -= optional
     # Which pull requests have to carry which re-applying links. Asked of every
     # entry that ships and was ever reverted, not only of the restorations:
     # when the whole chain arrives in one raw block the entry never left the
@@ -1301,13 +1336,23 @@ def analyze_reverts(text, anchor, range_prs=()):
         "own_entry_required": own_entry_required,
         "reapplying_with_entry": sorted(reapplying_with_entry, key=int),
         "unplaced": sorted(unplaced, key=int),
+        "optional": sorted(optional, key=int),
         "brought_back": {
             pr: sorted(prs, key=int) for pr, prs in brought_back.items()
         },
         # The ones to put to the agent: those arriving in today's raw blocks.
         # The others are already in the section, where their link stays.
         "reapplying_with_entry_new": sorted(
-            (pr for pr in reapplying_with_entry if pr in strict_prs), key=int
+            (
+                pr
+                for pr in reapplying_with_entry
+                if pr in strict_prs and pr not in optional
+            ),
+            key=int,
+        ),
+        # And the ones arriving today whose entry is the agent's judgement.
+        "optional_new": sorted(
+            (pr for pr in optional if pr in strict_prs), key=int
         ),
         "case_five": case_five,
         "amend": amend,
@@ -1575,10 +1620,10 @@ def _unplaced_reapply_note(group):
     return (
         f"\n     This is the raw entry of a pull request that re-applied "
         f"{brought}, and it was deleted before any edit had placed it. What "
-        f"it re-applied has been reverted again, so it is offered rather than "
-        f"required: restore it as a bullet of its own only if it describes a "
-        f"change of its own that still ships, and leave it out if it only "
-        f"repeats the reverted entry."
+        f"it re-applied has been reverted once more, so it is offered rather "
+        f"than required: restore it as a bullet of its own only if it "
+        f"describes a change of its own that still ships, and leave it out if "
+        f"it only repeats the reverted change."
     )
 
 
@@ -1645,6 +1690,10 @@ Entries to amend. These entries are already in the in-progress section and stay,
     if reverts.get("reapplying_with_entry_new"):
         own = f"""
 Re-applies with an entry of their own. These pull requests revert reverts of this release, so they put a change back (point 4), but their authors also wrote a changelog entry under one of the categories of point 3: {_pr_list(reverts["reapplying_with_entry_new"])}. A re-apply can carry more than the re-apply, such as a fix made along the way. Read each with `gh pr view <N> --json title,body`. If its entry describes a change beyond the one it brings back, keep it as a bullet of its own; if it only repeats the entry it brought back, merge it into that entry (skill section 7). Either way, its link has to stay in the section.
+"""
+    if reverts.get("optional_new"):
+        own += f"""
+Re-applies of changes that are out again. These pull requests also revert reverts of this release and have a changelog entry under one of the categories of point 3, but what they put back has been reverted once more, so that change is not in {version} and there is no entry for their link to sit on: {_pr_list(reverts["optional_new"])}. Read each with `gh pr view <N> --json title,body`. If its entry describes a change of its own that still ships, keep it as a bullet of its own. If it only repeats the reverted change, delete it: point 3 does not protect such an entry.
 """
     outside = ""
     if reverts["case_five"]:
@@ -1825,8 +1874,14 @@ def verify_edit(version, base_sha, reverts, pre_untracked=frozenset()):
     # has already advanced past it). A revert usually names the original PR
     # only in its title, so the deletion it licenses is bound to a PR number
     # through `analyze_reverts`, not through the entry text.
+    # `optional` on top of `cancelling`: a raw entry of a re-apply of something
+    # that is out again may go as well, see `analyze_reverts`.
     unmatched = disappeared_entries(
-        old_text, text, anchor, reverts["cancelling"], brought_back
+        old_text,
+        text,
+        anchor,
+        set(reverts["cancelling"]) | set(reverts["optional"]),
+        brought_back,
     ) - set(reverts["credits"])
     if unmatched:
         return (
