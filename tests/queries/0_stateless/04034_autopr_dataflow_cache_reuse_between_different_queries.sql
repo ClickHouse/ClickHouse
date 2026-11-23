@@ -1,5 +1,4 @@
 -- Tags: no-sanitizers
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- no-sanitizers: too slow
 
 -- Verify that statistics are reused between queries with identical "distributed to replicas" sub-plans.

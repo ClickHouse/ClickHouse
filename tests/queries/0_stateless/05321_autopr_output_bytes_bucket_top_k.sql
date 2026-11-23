@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- no-parallel-replicas: the bucket Top-K conversion requires a final aggregation.
 
 -- The output-bytes estimate of an aggregation must not depend on whether the final merge keeps only

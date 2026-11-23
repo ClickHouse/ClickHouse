@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- A candidate declined by `automatic_parallel_replicas_max_duplicated_read_ratio` after winning the cost
 -- model's time comparison ends in `AutoParallelReplicasRejectedByDuplicatedReads`, so that every query
 -- reaching the cost model ends in an event saying why. The setup is the one of

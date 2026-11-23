@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The node the automatic parallel replicas optimization instruments has to be the one the replicas
 -- would actually send from. `findTopNodeOfReplicasPlan` looks through the wrappers between the `Union`
 -- and that node, and an `ExpressionStep` may only be looked through when what comes out of it is what

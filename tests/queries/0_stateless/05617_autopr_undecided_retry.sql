@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas skips building the plan with parallel replicas for a number of executions of a plan whose
 -- last build ended without a decision. After the first such build of a plan, the next execution builds it again at once:
 -- the first execution of a join measures the hash tables that join reordering takes row counts from.

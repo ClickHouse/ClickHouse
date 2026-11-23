@@ -1,5 +1,4 @@
 -- Tags: no-random-merge-tree-settings
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 
 -- A compact part keeps no per-column sizes, so the input-bytes estimate cannot read them off the
 -- part and has to derive the compression ratio. Deriving it by compressing a sample with the

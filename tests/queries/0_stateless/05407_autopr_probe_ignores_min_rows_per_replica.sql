@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The automatic mode ignores `parallel_replicas_min_number_of_rows_per_replica`. Building its plan with
 -- parallel replicas used to run the row estimate this setting asks for, a full extra index analysis of the read.
 

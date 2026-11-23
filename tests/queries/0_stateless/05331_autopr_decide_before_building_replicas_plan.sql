@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Checks that automatic parallel replicas declines a query from the statistics of an earlier execution
 -- without building the plan with parallel replicas at all. Building that plan is the expensive half of the
 -- optimization, and on a declined query it used to be built only to be discarded.

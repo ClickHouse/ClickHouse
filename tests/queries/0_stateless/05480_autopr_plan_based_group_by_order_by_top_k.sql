@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- A plan-based parallel replicas plan splits the aggregation into the partial one and the merge, and ships the partial
 -- one to the replicas. Both the local and the shipped partial aggregation must get the `GROUP BY` top-K heap of the
 -- single-node aggregation: automatic parallel replicas matches the two plans, and prices the output of each replica by

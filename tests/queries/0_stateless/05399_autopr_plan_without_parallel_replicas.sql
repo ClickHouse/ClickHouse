@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- When the planner turns parallel replicas off by itself while building the plan with parallel replicas, the
 -- plan has no read from the other replicas. That is counted in `AutoParallelReplicasPlanWithoutParallelReplicas`,
 -- apart from `AutoParallelReplicasPlansNotComparable`, which is for plans this optimization cannot handle.

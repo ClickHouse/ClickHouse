@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Verify how query plans containing a Window step interact with the automatic parallel replicas
 -- optimization. Before the Window step supported dataflow statistics collection, any plan containing a
 -- window function was rejected outright (`AutoParallelReplicas: Some steps in the plan don't support dataflow

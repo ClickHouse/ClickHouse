@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The gate that skips building the parallel-replicas plan prices a read by the columns index
 -- analysis says it reads. `spreadMarkRangesAmongStreams` can invalidate that: with the range-split
 -- fault injection armed it turns an ordinary read into an in-order one and appends the whole sorting

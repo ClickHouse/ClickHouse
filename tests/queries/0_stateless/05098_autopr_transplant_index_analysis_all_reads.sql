@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The plan built for automatic parallel replicas carries no index analysis of its own
 -- (`query_plan_optimize_primary_key` is off while it is built), so every read in it depends on the
 -- single-node plan handing its analysis over. Only the read the decision is matched on used to get

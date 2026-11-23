@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- An `ORDER BY` in a subquery whose order the outer query does not use is removed by
 -- `query_plan_remove_redundant_sorting`, so it must not keep the outer query from going to the replicas:
 -- they used to sort the subquery for the initiator to aggregate, and the initiator dropped the order.

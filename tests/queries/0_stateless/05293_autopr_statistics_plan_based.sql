@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Coverage of the statistics path under `parallel_replicas_plan_based = 1`. **This test passes on master
 -- too** - measured 3/3 green against master's `considerEnablingParallelReplicas.cpp` - so it is coverage,
 -- not a regression test. The tests that fail on master are `05262` and `05291`.

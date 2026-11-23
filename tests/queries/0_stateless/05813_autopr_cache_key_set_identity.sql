@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The statistics of automatic parallel replicas are keyed by the plan, and the key of an expression
 -- leaves out the names the plan build chose. The name of an `IN` set was what told two sets of one type
 -- apart, so the set itself has to be in the key: otherwise a query reading through one set is decided

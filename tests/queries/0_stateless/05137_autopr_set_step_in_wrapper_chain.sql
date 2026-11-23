@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- `findTopNodeOfReplicasPlan` peels the wrappers between the `Union` and the node the two plans have in
 -- common, and they do not come one of each kind. An `IN (subquery)` puts a `DelayedCreatingSets` in the
 -- middle of that chain: the replica-side branch here is `Expression` over `DelayedCreatingSets` over

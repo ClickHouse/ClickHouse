@@ -1,5 +1,4 @@
 -- Tags: no-sanitizers
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- no-sanitizers: needs enough data and small blocks to make parallel replicas cost-beneficial,
 --                which is too slow under sanitizers (as for 04341).
 

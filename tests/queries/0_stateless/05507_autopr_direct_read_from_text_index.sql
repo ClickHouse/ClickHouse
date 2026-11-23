@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Direct read from a text index rewrites the text-search functions of a read into virtual columns, taking
 -- the conditions from the index analysis of that read. The plan for automatic parallel replicas is optimized
 -- without that analysis, so its read kept `hasToken`, its steps hashed differently from the single-node

@@ -1,5 +1,4 @@
 -- Tags: long
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- long: as in 05184, a flaky check runs copies of one test against each other. Over 4201 runs there this
 -- one reaches 119s against a 10.3s median, close enough to the 180s verdict to be exempted from it.
 

@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Coverage of the physical `RIGHT`-kind path through AutoPR. **This test passes on master too** - it is not
 -- a regression test for anything, and measured 3/3 green against master's `considerEnablingParallelReplicas.cpp`.
 --

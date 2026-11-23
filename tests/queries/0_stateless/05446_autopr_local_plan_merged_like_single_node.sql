@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- A join runtime filter pushed into an aggregated subquery splits the expression it passes, and once
 -- PREWHERE takes the filter, the split part is left as an `Expression` of its own. The plan merges it
 -- back after the runtime filters are added. The parallel replicas local branch has to get that merge too,

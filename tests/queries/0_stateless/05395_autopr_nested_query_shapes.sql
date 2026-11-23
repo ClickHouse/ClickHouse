@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas over a query nested in an outer aggregation, the way a result is hashed by
 -- wrapping the query in `SELECT sum(cityHash64(tuple(*))) FROM (...)`. Two shapes used to be declined
 -- even when the cost model wanted replicas:

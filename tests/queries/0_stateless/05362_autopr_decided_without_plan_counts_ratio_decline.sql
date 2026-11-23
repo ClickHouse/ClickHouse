@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Checks that `AutomaticParallelReplicasDecidedWithoutBuildingPlan` counts every decline taken at a remembered
 -- boundary, not only the one from the time comparison. Here the time comparison favours parallel replicas and
 -- `automatic_parallel_replicas_max_duplicated_read_ratio` declines the query instead, as in `05293`.

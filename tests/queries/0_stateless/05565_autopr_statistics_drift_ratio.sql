@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- `automatic_parallel_replicas_statistics_drift_ratio` decides how far the rows a read selects may move from the ones
 -- its statistics were collected on before they are collected again. The table grows by 1.75x between the runs.
 

@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The plan with parallel replicas that the automatic mode builds to decide is optimized without primary-key analysis:
 -- its reads take the analysis of the single-node plan. Join optimization estimates every input of a join, and for a
 -- read without an analysis that estimate used to analyze it, a second time and unpruned, so the probe checked every

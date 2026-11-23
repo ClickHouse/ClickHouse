@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- When the statistics cache already knows a node of the plan, automatic parallel replicas takes its decision
 -- from those statistics without building a plan with parallel replicas. A decline taken that way records
 -- nothing, so a drift check has to keep it from outliving the data it was measured against: once the read

@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The gate that skips building the parallel-replicas plan sizes a read from index analysis, which
 -- knows nothing about patch parts: `MergeTreeReadPoolBase` picks them per part, `addPatchPartsColumns`
 -- then adds the patch key columns to the main read, and the patch parts themselves are read in full

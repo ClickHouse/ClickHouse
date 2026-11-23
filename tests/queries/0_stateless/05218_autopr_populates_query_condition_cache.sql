@@ -1,5 +1,4 @@
 -- Tags: no-parallel
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Tag no-parallel: Messes with internal cache
 
 -- The granules a filter matched are recorded by tagging the filter step, which

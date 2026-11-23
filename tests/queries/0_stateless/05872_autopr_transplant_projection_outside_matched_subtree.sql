@@ -1,5 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
-
 -- A read of projection parts has a storage snapshot of its own. When such a read lies outside the subtree the
 -- decision is matched on, here on the other side of a `JOIN`, the plans still match, and the transplant of the
 -- index analysis must decline the projection read before it compares the snapshots. Both kinds of projection

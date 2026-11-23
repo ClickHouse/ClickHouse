@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The builder of the plan with parallel replicas checks what it can before building anything. When it
 -- stops there, the query is counted as skipped - by its settings or by the query - not as a plan that
 -- was built (`AutomaticParallelReplicasProbePlansBuilt`) and then could not be compared

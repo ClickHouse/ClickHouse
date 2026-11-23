@@ -2967,6 +2967,17 @@ class TestCase:
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
+    def enables_automatic_parallel_replicas_in_test(self):
+        # `automatic_parallel_replicas_mode = 1`, `--automatic_parallel_replicas_mode 2`, `'automatic_parallel_replicas_mode', 1`, ...
+        return not subprocess.call(
+            [
+                "grep",
+                "-iqE",
+                "automatic_parallel_replicas_mode['\"]?[[:space:]=,]*['\"]?[12]",
+                self.case_file,
+            ]
+        )
+
     def has_transactions_in_test(self):
         return not subprocess.call(
             ["grep", "-iqE", "implicit_transaction|begin transaction", self.case_file]
@@ -3483,6 +3494,18 @@ class TestCase:
                 args, self.tags
             )
             self.apply_random_settings_limits(base_mt_settings)
+
+        # The automatic parallel replicas plan is adopted only with one storage snapshot per table for
+        # the whole query: with `enable_shared_storage_snapshot_in_query` = 0 it is not even built
+        # (`buildQueryPlanForAutomaticParallelReplicas`), and the test would silently cover nothing.
+        # Keep it at its default wherever the automatic mode is on: the AutoPR job's profile, a
+        # randomized mode 2, or a test that sets the mode itself.
+        if "enable_shared_storage_snapshot_in_query" in base_mt_settings and (
+            args.autopr
+            or base_settings.get("automatic_parallel_replicas_mode", 0) != 0
+            or self.enables_automatic_parallel_replicas_in_test()
+        ):
+            del base_mt_settings["enable_shared_storage_snapshot_in_query"]
 
         # User-specified fixed dicts
         fixed_settings = dict(args.fixed_settings or {})

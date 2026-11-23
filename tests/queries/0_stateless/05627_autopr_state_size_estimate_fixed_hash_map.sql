@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas estimates the size of the aggregate states from a sample of them.
 -- A `UInt16` key is aggregated in a fixed hash map, which is iterated in key order. The sample has to
 -- span the whole table: here the states of the first 10000 keys are empty and all the others are large,

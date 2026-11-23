@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- no-parallel-replicas: parallel replicas split the aggregation into partial + merging, so the
 -- annotation's `isFinal()` requirement refuses and every applying cell below would return 0.
 

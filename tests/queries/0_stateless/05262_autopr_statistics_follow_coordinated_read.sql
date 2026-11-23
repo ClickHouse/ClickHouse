@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The cost model divides the instrumented read's `input_bytes` by the replica count, so the read it
 -- measures has to be the read parallel replicas actually coordinate. Which table that is, is not the
 -- optimization's decision - it only has to stay in step with the decision that was made. It used to derive

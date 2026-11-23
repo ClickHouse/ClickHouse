@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 
 # Automatic parallel replicas asks whether parallel replicas can read anything for a query before
 # building the candidate plan it would cost them, and answers from the storage the catalog holds for

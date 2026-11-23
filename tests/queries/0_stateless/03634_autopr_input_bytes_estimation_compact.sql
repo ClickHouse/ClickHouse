@@ -1,5 +1,4 @@
 -- Tags: no-random-merge-tree-settings
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 
 SET use_uncompressed_cache=0;
 

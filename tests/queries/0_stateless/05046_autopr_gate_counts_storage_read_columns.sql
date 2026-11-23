@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The check that skips building the parallel-replicas plan sizes a read by the columns the storage
 -- actually reads, not by the ones the step projects. A `PREWHERE` column need not be projected at
 -- all, and it is usually the largest thing the query touches, so pricing only the projected columns

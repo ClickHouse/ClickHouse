@@ -1,4 +1,3 @@
--- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Verify that automatic parallel replicas are not enabled for queries that read very little data.
 -- The effective_max_reading_threads cap (based on merge_tree_min_bytes_per_task_for_remote_reading)
 -- ensures that when input_bytes is small, local execution is recognized as already optimal.
