@@ -5,6 +5,7 @@
 
 #include <IO/ReadHelpers.h>
 
+#include <filesystem>
 #include <memory>
 #include <shared_mutex>
 
@@ -14,6 +15,47 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+bool isRoot(const std::string & path)
+{
+    const auto normalized = std::filesystem::path(path).lexically_normal().string();
+    return normalized.empty() || normalized == "." || normalized == "./";
+}
+
+/// Skips `SYSTEM_METADATA_DIR`, which is not a part of the disk contents.
+class DirectoryIteratorSkippingSystemMetadata final : public IDirectoryIterator
+{
+public:
+    explicit DirectoryIteratorSkippingSystemMetadata(DirectoryIteratorPtr impl_)
+        : impl(std::move(impl_))
+    {
+        skipSystemMetadata();
+    }
+
+    void next() override
+    {
+        impl->next();
+        skipSystemMetadata();
+    }
+
+    [[nodiscard]] bool isValid() const override { return impl->isValid(); }
+    [[nodiscard]] std::string path() const override { return impl->path(); }
+    [[nodiscard]] std::string name() const override { return impl->name(); }
+
+private:
+    void skipSystemMetadata()
+    {
+        while (impl->isValid() && impl->name() == MetadataStorageFromDisk::SYSTEM_METADATA_DIR)
+            impl->next();
+    }
+
+    const DirectoryIteratorPtr impl;
+};
+
 }
 
 MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, RemovalQueuePtr objects_to_remove_)
@@ -63,12 +105,17 @@ std::vector<std::string> MetadataStorageFromDisk::listDirectory(const std::strin
 {
     std::vector<std::string> result_files;
     disk->listFiles(path, result_files);
+    if (isRoot(path))
+        std::erase(result_files, MetadataStorageFromDisk::SYSTEM_METADATA_DIR);
     return result_files;
 }
 
 DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string & path) const
 {
-    return disk->iterateDirectory(path);
+    auto it = disk->iterateDirectory(path);
+    if (isRoot(path))
+        return std::make_unique<DirectoryIteratorSkippingSystemMetadata>(std::move(it));
+    return it;
 }
 
 std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const

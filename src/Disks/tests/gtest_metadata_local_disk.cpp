@@ -516,6 +516,34 @@ TEST_F(MetadataLocalDiskTest, TestBlobsToRemoveRestoredAfterRestart)
     verifyBlobsToRemove(restarted, {"blob"});
 }
 
+TEST_F(MetadataLocalDiskTest, TestSystemMetadataDirectoryIsNotListed)
+{
+    auto metadata = getMetadataStorage("/TestSystemMetadataDirectoryIsNotListed");
+    metadata->startup();
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("f.txt", {DB::StoredObject("blob", "f.txt", 100)});
+        transaction->createDirectory("dir");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("f.txt", /*if_exists=*/false, /*should_remove_objects=*/true);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile(".metadata/blobs_to_remove.log"));
+
+    for (const std::string root : {"", ".", "./"})
+    {
+        EXPECT_EQ(metadata->listDirectory(root), std::vector<std::string>{"dir"}) << root;
+
+        std::vector<std::string> names;
+        for (auto it = metadata->iterateDirectory(root); it->isValid(); it->next())
+            names.push_back(it->name());
+        EXPECT_EQ(names, std::vector<std::string>{"dir"}) << root;
+    }
+}
+
 TEST_F(MetadataLocalDiskTest, TestValidUnlinkMetadata)
 {
     auto metadata = getMetadataStorage("/TestValidUnlinkMetadata");

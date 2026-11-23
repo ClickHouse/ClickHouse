@@ -35,7 +35,7 @@ private:
 
 public:
     /// Directory in the root of the metadata disk for the internal files of the storage, such as the removal log.
-    /// It is not a part of the disk contents: it holds no file metadata and must be skipped by whoever walks the root.
+    /// It is not a part of the disk contents: it holds no file metadata, so listings of the root do not show it.
     static constexpr std::string_view SYSTEM_METADATA_DIR = ".metadata";
 
     MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, RemovalQueuePtr objects_to_remove_);
