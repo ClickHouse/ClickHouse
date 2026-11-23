@@ -1,8 +1,0 @@
-small cache
-100	4950	1	100000
-100	4950	1	100000
-not cached	0	1
-large cache
-100	4950	1	100000
-100	4950	1	100000
-cached	1	1

@@ -636,12 +636,13 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        auto file = std::make_shared<ScannedDataFile>(
-            KernelUtils::fromDeltaString(path),
-            size,
-            stats ? std::optional<UInt64>(stats->num_records) : std::nullopt,
-            std::move(dv_info_handle),
-            std::move(transform_handle));
+        auto file = std::make_shared<ScannedDataFile>();
+        file->path = KernelUtils::fromDeltaString(path);
+        file->size = size;
+        if (stats)
+            file->num_records = stats->num_records;
+        file->dv_info = std::move(dv_info_handle);
+        file->transform = std::move(transform_handle);
 
         LOG_TEST(
             context->log,
@@ -879,12 +880,14 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 
             if (visitor->collector && visitor->collector->isActive())
             {
-                visitor->collector->add(std::make_shared<ScannedDataFile>(
-                    KernelUtils::fromDeltaString(path),
-                    size,
-                    stats ? std::optional<UInt64>(stats->num_records) : std::nullopt,
-                    std::move(dv_info_handle),
-                    std::move(transform_handle)));
+                auto file = std::make_shared<ScannedDataFile>();
+                file->path = KernelUtils::fromDeltaString(path);
+                file->size = size;
+                if (stats)
+                    file->num_records = stats->num_records;
+                file->dv_info = std::move(dv_info_handle);
+                file->transform = std::move(transform_handle);
+                visitor->collector->add(file);
             }
             return true;
         }
