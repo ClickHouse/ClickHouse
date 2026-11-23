@@ -3,7 +3,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>

@@ -148,6 +148,12 @@ void throwIfReadsTables(const IAST & ast)
         throwIfReadsTables(*child);
 }
 
+bool hasAlias(const IAST & ast, std::string_view alias)
+{
+    return ast.tryGetAlias() == alias
+        || std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return hasAlias(*child, alias); });
+}
+
 /// `READ_COLUMN _part, _part_offset` plus an `UPDATE _row_exists = 0 IN PARTITION ID ... WHERE <predicate>`
 /// that is never applied: it only carries the predicate and the partition to `MutationsInterpreter`.
 /// An UPDATE because a DELETE stage reads every column; the UPDATE reads only the predicate's.
@@ -155,11 +161,17 @@ MutationCommands scanCommands(
     const ASTDeleteQuery & query, const StorageInMemoryMetadata & metadata, const String & partition_id, const ContextPtr & context)
 {
     /// `READ_COLUMN` and the `IN PARTITION ID` filter on `_partition_id` resolve their column by name,
-    /// where a table column of the same name wins.
+    /// where a table column, or a predicate alias, of the same name wins.
     for (const auto * name : {"_part", "_part_offset", "_partition_id"})
+    {
         if (metadata.getColumns().has(name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which a table column of the same name shadows", name);
+        if (hasAlias(*query.predicate, name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "DELETE on a UNIQUE KEY table reads the virtual column `{}`, which an alias of the same name in its predicate shadows",
+                name);
+    }
 
     MutationCommands commands;
     for (const auto * name : {"_part", "_part_offset"})
@@ -221,7 +233,7 @@ struct DeleteStatement
 
     /// The rows of one partition the predicate matches at `txn`'s snapshot. Scanned like a lightweight
     /// update: the storage is read directly, so only `ALTER DELETE` is checked.
-    DeleteRowsByPart findRowsInPartition(const MergeTreeTransactionPtr & txn, const String & partition_id) const
+    [[nodiscard]] DeleteRowsByPart findRowsInPartition(const MergeTreeTransactionPtr & txn, const String & partition_id) const
     {
         auto scan_context = Context::createCopy(query_context);
         scan_context->makeQueryContext();
@@ -267,7 +279,7 @@ struct DeleteStatement
     /// Scan and commit one partition under one transaction, retrying on a conflict.
     /// Each partition has its own snapshot, so a DELETE is atomic per partition, not statement-wide as a mutation.
     /// Returns the newly-dead rows committed.
-    size_t deleteInPartition(const String & partition_id) const
+    [[nodiscard]] size_t deleteInPartition(const String & partition_id) const
     {
         for (size_t attempt = 1;; ++attempt)
         {
