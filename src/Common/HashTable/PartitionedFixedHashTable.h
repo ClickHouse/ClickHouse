@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <type_traits>
+#include <base/sanitizer_defs.h>
 #include <Common/CacheLine.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/FixedHashSet.h>
@@ -63,7 +64,9 @@ public:
     /// For example, with 16-byte cells and 16 buckets, the multiples of 256 are 64 lines apart,
     /// so all of them land in bucket 0.
     /// XOR with a constant cannot move a small line number into the top bits.
-    static size_t ALWAYS_INLINE bucketOfKey(key_type key)
+    /// The multiply is Fibonacci hashing and wraps by design, which is how it mixes the low bits of
+    /// `line` into the top ones.
+    static size_t ALWAYS_INLINE_NO_SANITIZE_UNSIGNED_OVERFLOW bucketOfKey(key_type key)
     {
         if constexpr (NUM_BUCKETS == 1)
             return 0;
@@ -91,7 +94,7 @@ public:
         }
 
         /// The bucket the key routes to. There are no sub-tables, so a scan split by bucket filters on it.
-        size_t getBucket() const { return bucketOfKey(static_cast<key_type>(this->getHash())); }
+        [[nodiscard]] size_t getBucket() const { return bucketOfKey(static_cast<key_type>(this->getHash())); }
     };
 
     using iterator = BucketIterator<typename Impl::iterator>;
@@ -108,9 +111,9 @@ public:
     PartitionedFixedHashTable & operator=(const PartitionedFixedHashTable &) = delete;
 
     iterator begin() { return iterator(flat.begin()); }
-    const_iterator begin() const { return const_iterator(flat.begin()); }
+    [[nodiscard]] const_iterator begin() const { return const_iterator(flat.begin()); }
     iterator end() { return iterator(flat.end()); }
-    const_iterator end() const { return const_iterator(flat.end()); }
+    [[nodiscard]] const_iterator end() const { return const_iterator(flat.end()); }
 
     void ALWAYS_INLINE emplace(const key_type & key, LookupResult & it, bool & inserted, size_t hash_value = 0)
     {
@@ -118,15 +121,15 @@ public:
     }
 
     LookupResult ALWAYS_INLINE find(const key_type & key) { return flat.find(key); }
-    ConstLookupResult ALWAYS_INLINE find(const key_type & key) const { return flat.find(key); }
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const key_type & key) const { return flat.find(key); }
     LookupResult ALWAYS_INLINE find(const key_type & key, size_t hash_value) { return flat.find(key, hash_value); }
-    ConstLookupResult ALWAYS_INLINE find(const key_type & key, size_t hash_value) const { return flat.find(key, hash_value); }
-    bool ALWAYS_INLINE has(const key_type & key) const { return flat.has(key); }
+    [[nodiscard]] ConstLookupResult ALWAYS_INLINE find(const key_type & key, size_t hash_value) const { return flat.find(key, hash_value); }
+    [[nodiscard]] bool ALWAYS_INLINE has(const key_type & key) const { return flat.has(key); }
 
-    size_t size() const { return flat.size(); }
-    bool empty() const { return flat.empty(); }
-    size_t getBufferSizeInBytes() const { return flat.getBufferSizeInBytes(); }
-    size_t getBufferSizeInCells() const { return flat.getBufferSizeInCells(); }
+    [[nodiscard]] size_t size() const { return flat.size(); }
+    [[nodiscard]] bool empty() const { return flat.empty(); }
+    [[nodiscard]] size_t getBufferSizeInBytes() const { return flat.getBufferSizeInBytes(); }
+    [[nodiscard]] size_t getBufferSizeInCells() const { return flat.getBufferSizeInCells(); }
 
     /// A set has no mapped values, so this visits nothing, like `HashSetTable::forEachMapped`.
     template <typename Func>
