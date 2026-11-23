@@ -75,6 +75,43 @@ def test_single_file(started_cluster, cluster):
 
 
 @cluster_param
+def test_subset_of_columns(started_cluster, cluster):
+    node.query("drop table if exists test.distr_subset sync")
+
+    node.query(
+        "create table test.distr_subset (x UInt64, s String) engine = Distributed('{}', database, table)".format(
+            cluster
+        )
+    )
+    node.query("insert into test.distr_subset values (1, 'a'), (2, 'bb'), (3, 'ccc')")
+
+    path = get_dist_path(cluster, node, "distr_subset")
+    query = f"""
+    select x from file('{path}/1.bin', 'Distributed');
+    select s, x from file('{path}/1.bin', 'Distributed');
+    select s.size, _file from file('{path}/1.bin', 'Distributed');
+    select count() from file('{path}/1.bin', 'Distributed');
+    """
+    out = node.exec_in_container(
+        ["/usr/bin/clickhouse", "local", "--tmp", "--stacktrace", "-q", query]
+    )
+
+    assert out == "1\n2\n3\na\t1\nbb\t2\nccc\t3\n1\t1.bin\n2\t1.bin\n3\t1.bin\n3\n"
+
+    query = f"""
+    create table t (x UInt64, s String) engine = File('Distributed', '{path}/1.bin');
+    select s from t;
+    """
+    out = node.exec_in_container(
+        ["/usr/bin/clickhouse", "local", "--tmp", "--stacktrace", "-q", query]
+    )
+
+    assert out == "a\nbb\nccc\n"
+
+    node.query("drop table test.distr_subset sync")
+
+
+@cluster_param
 def test_two_files(started_cluster, cluster):
     node.query("drop table if exists test.distr_2 sync")
     node.query(

@@ -2141,7 +2141,14 @@ Chunk StorageFileSource::generate()
                 /// Special case for distributed format. Defaults are not needed here.
                 if (storage->format_name == "Distributed")
                 {
-                    pipeline = std::make_unique<QueryPipeline>(std::make_shared<DistributedAsyncInsertSource>(current_path));
+                    QueryPipelineBuilder builder;
+                    builder.init(Pipe(std::make_shared<DistributedAsyncInsertSource>(current_path)));
+                    builder.addSimpleTransform([&](const SharedHeader & header)
+                    {
+                        return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
+                    });
+
+                    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                     pipeline->disableProfileEventUpdate();
                     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                     continue;
