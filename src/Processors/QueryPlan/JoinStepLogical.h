@@ -232,6 +232,15 @@ public:
     [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
+    /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded.
+    struct PlannedMergeOrder
+    {
+        String column;
+        bool sharded = false;
+    };
+    [[nodiscard]] const std::optional<PlannedMergeOrder> & getPlannedMergeOrder() const { return planned_merge_order; }
+    void setPlannedMergeOrder(PlannedMergeOrder order) { planned_merge_order = std::move(order); }
+
     /// Swap left and right sides
     void swapInputs();
 
@@ -335,6 +344,7 @@ private:
 
     bool disjunctions_optimization_applied = false;
     std::optional<JoinAlgorithm> planned_algorithm;
+    std::optional<PlannedMergeOrder> planned_merge_order;
 };
 
 
