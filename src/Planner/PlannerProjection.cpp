@@ -160,6 +160,8 @@ ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const ColumnsDesc
     query_context->setSetting("enable_positional_arguments", false);
     query_context->setSetting("rewrite_in_to_join", false);
     query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
+    /// A projection is stored SQL: read table names in it as written.
+    query_context->setAllowCompoundTableIdentifierQualification(false);
 
     auto source = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, source_columns);
     query_tree = buildProjectionQueryTree(query_ast, source, query_context);

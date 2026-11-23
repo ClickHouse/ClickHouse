@@ -416,6 +416,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// does not exist when the projection is calculated. The context may be the global one (with the settings of the
     /// default profile) when the storage is created or attached, so a session setting cannot prevent it.
     mut_context->setSetting("enable_parallel_replicas", Field(0));
+    /// A projection is stored SQL: read table names in it as written.
+    mut_context->setAllowCompoundTableIdentifierQualification(false);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
