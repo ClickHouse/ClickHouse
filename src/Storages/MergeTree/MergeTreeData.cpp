@@ -13760,6 +13760,28 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         for (const auto & column : physical_columns)
             if (isNested(column.type) && !collected_names.contains(column.name))
                 columns_list.push_back(column);
+
+        /// The members of a flattened Nested read their array sizes as the group's `size0`, so no member can have that name.
+        /// A column of type `Nested` has no shared offsets: its own `size0` is resolved like any other name.
+        auto physical_names = physical_columns.getNameSet();
+        for (const auto & column : columns_list)
+        {
+            if (!isNested(column.type) || physical_names.contains(column.name))
+                continue;
+
+            const auto & member_names = assert_cast<const DataTypeNestedCustomName &>(*column.type->getCustomName()).getNames();
+            if (std::ranges::find(member_names, "size0") == member_names.end())
+                continue;
+
+            String message = fmt::format(
+                "Column '{}' is named like the array sizes the columns of Nested '{}' share (setting 'share_nested_offsets'), rename it",
+                Nested::concatenateName(column.name, "size0"), column.name);
+
+            if (throw_on_error)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+            LOG_ERROR(log, "Table definition is incorrect. {}", message);
+        }
     }
 
     MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];

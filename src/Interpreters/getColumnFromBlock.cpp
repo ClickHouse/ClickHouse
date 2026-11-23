@@ -58,7 +58,8 @@ ColumnPtr tryDecompressSubcolumn(const IDataType & type, const IColumn & column,
         }
         case TypeIndex::Nullable:
         {
-            /// A `null` subcolumn of the nested type hides the null map, see `SerializationNullable::enumerateStreams`.
+            /// The null map is hidden when the nested type resolves `null` itself, as a JSON does with a path,
+            /// see `isHiddenByDynamicSubcolumn` in `subcolumnResolution.cpp`.
             const auto * parts = getCompressedParts(column, 2);
             if (parts && subcolumn_name == "null" && !assert_cast<const DataTypeNullable &>(type).getNestedType()->hasSubcolumn("null"))
                 return (*parts)[1]->decompress();

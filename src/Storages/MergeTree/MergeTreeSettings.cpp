@@ -320,7 +320,8 @@ Escape special symbols in filenames created for subcolumns of Variant data type 
     DECLARE(Bool, share_nested_offsets, true, R"(
 When enabled (default), Array columns with dotted names that share a common prefix (e.g. n.a and n.b)
 are treated as part of a Nested structure: they share a single offsets file on disk (e.g. n.size0),
-and their array sizes are validated to be equal during INSERT.
+and their array sizes are validated to be equal during INSERT. As n.size0 names the shared array sizes,
+no Array column can be named n.size0 then.
 When disabled, each Array column gets its own independent offset file, dotted names carry no special
 semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
 (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.

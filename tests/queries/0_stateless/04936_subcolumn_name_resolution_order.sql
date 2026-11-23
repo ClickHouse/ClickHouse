@@ -145,46 +145,53 @@ INSERT INTO t_nested_log VALUES ([(10), (20)], ['a', 'b']);
 SELECT 'log', toTypeName(n.j.size0), n.j.size0, n.x.size0 FROM t_nested_log;
 DROP TABLE t_nested_log;
 
-SELECT '--- a member named size0 does not take the place of the shared offsets of Nested ---';
+SELECT '--- a Nested member named size0 ---';
 
-DROP TABLE IF EXISTS t_nested_size0_wide;
-DROP TABLE IF EXISTS t_nested_size0_compact;
+-- Where the members share their offsets, `n.size0` names those array sizes, so `MergeTree` rejects a member of that name.
+DROP TABLE IF EXISTS t_nested_size0_mt;
+CREATE TABLE t_nested_size0_mt (id UInt32, n Nested(`size0` UInt64, `x` String))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_nested_size0_mt (id UInt32, n Nested(`size0` UInt64, `x` String))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '10G'; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_nested_size0_mt (id UInt32, n Nested(`x` String)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_nested_size0_mt ADD COLUMN `n.size0` Array(UInt64); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_nested_size0_mt RENAME COLUMN `n.x` TO `n.size0`; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_nested_size0_mt;
+
+-- Without shared offsets each member has its own sizes, and the name is free.
+DROP TABLE IF EXISTS t_nested_size0_unshared;
+CREATE TABLE t_nested_size0_unshared (id UInt32, n Nested(`size0` UInt64, `x` String))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, share_nested_offsets = 0;
+INSERT INTO t_nested_size0_unshared VALUES (1, [100, 200], ['a', 'b']);
+SELECT 'unshared', toTypeName(n.size0), n.size0, toTypeName(n.x.size0), n.x.size0, n.size0.size0 FROM t_nested_size0_unshared;
+DROP TABLE t_nested_size0_unshared;
+
+-- The other engines keep the member and read the sizes of a member as its own.
 DROP TABLE IF EXISTS t_nested_size0_log;
 DROP TABLE IF EXISTS t_nested_size0_memory;
-CREATE TABLE t_nested_size0_wide (id UInt32, n Nested(`size0` UInt64, `x` String))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
-CREATE TABLE t_nested_size0_compact (id UInt32, n Nested(`size0` UInt64, `x` String))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '10G';
 CREATE TABLE t_nested_size0_log (id UInt32, n Nested(`size0` UInt64, `x` String)) ENGINE = Log;
 CREATE TABLE t_nested_size0_memory (id UInt32, n Nested(`size0` UInt64, `x` String)) ENGINE = Memory;
-INSERT INTO t_nested_size0_wide VALUES (1, [100, 200], ['a', 'b']);
-INSERT INTO t_nested_size0_compact VALUES (1, [100, 200], ['a', 'b']);
 INSERT INTO t_nested_size0_log VALUES (1, [100, 200], ['a', 'b']);
 INSERT INTO t_nested_size0_memory VALUES (1, [100, 200], ['a', 'b']);
-SELECT 'wide', toTypeName(n.size0), n.size0, toTypeName(n.x.size0), n.x.size0, n.size0.size0 FROM t_nested_size0_wide;
-SELECT 'compact', toTypeName(n.size0), n.size0, toTypeName(n.x.size0), n.x.size0, n.size0.size0 FROM t_nested_size0_compact;
 SELECT 'log', toTypeName(n.size0), n.size0, toTypeName(n.x.size0), n.x.size0, n.size0.size0 FROM t_nested_size0_log;
 SELECT 'memory', toTypeName(n.size0), n.size0, toTypeName(n.x.size0), n.x.size0, n.size0.size0 FROM t_nested_size0_memory;
-SELECT 'wide, length', length(n.x), length(n.size0) FROM t_nested_size0_wide SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT 'log, length', length(n.x), length(n.size0) FROM t_nested_size0_log SETTINGS optimize_functions_to_subcolumns = 1;
-
--- A wide part written before a member was added reads the sizes of that member through another member.
-ALTER TABLE t_nested_size0_wide ADD COLUMN `n.y` Array(String);
-SELECT 'wide, missed column', n.y.size0, n.y, n.size0 FROM t_nested_size0_wide;
-
--- The member named `size0` is the only one the part has.
-DROP TABLE IF EXISTS t_nested_only_size0;
-CREATE TABLE t_nested_only_size0 (id UInt32, n Nested(`size0` UInt64))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO t_nested_only_size0 VALUES (1, [100, 200]);
-ALTER TABLE t_nested_only_size0 ADD COLUMN `n.y` Array(String);
-SELECT 'wide, only size0 in the part', n.y.size0, n.y, n.size0 FROM t_nested_only_size0;
-
-DROP TABLE t_nested_size0_wide;
-DROP TABLE t_nested_size0_compact;
 DROP TABLE t_nested_size0_log;
 DROP TABLE t_nested_size0_memory;
-DROP TABLE t_nested_only_size0;
+
+SELECT '--- the members of Nested read their shared array sizes once ---';
+
+-- The sizes of several members, or the sizes of one and another whole member, come from one stream,
+-- which has to be read once across granules.
+DROP TABLE IF EXISTS t_nested_shared_sizes;
+CREATE TABLE t_nested_shared_sizes (id UInt32, `n.a` Array(UInt64), `n.b` Array(UInt64))
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO t_nested_shared_sizes SELECT 1, range(number % 10), range(number % 10) FROM numbers(100000);
+SELECT 'two sizes', sum(n.a.size0), sum(n.b.size0) FROM t_nested_shared_sizes;
+SELECT 'sizes and member', sum(n.a.size0), sum(length(n.b)) FROM t_nested_shared_sizes SETTINGS optimize_functions_to_subcolumns = 0;
+ALTER TABLE t_nested_shared_sizes ADD COLUMN `n.c` Array(UInt64);
+SELECT 'sizes of a missed member', sum(n.c.size0), sum(n.a.size0) FROM t_nested_shared_sizes;
+DROP TABLE t_nested_shared_sizes;
 
 SELECT '--- compressed Memory reads the declared element, not the array sizes ---';
 

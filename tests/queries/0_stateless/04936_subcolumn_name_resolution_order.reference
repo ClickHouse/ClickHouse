@@ -47,15 +47,15 @@ Dynamic
 wide	Array(UInt32)	[10,20]	2
 compact, missed column	Array(UInt32)	[0,0]	2
 log	Array(UInt32)	[10,20]	2
---- a member named size0 does not take the place of the shared offsets of Nested ---
-wide	Array(UInt64)	[100,200]	UInt64	2	2
-compact	Array(UInt64)	[100,200]	UInt64	2	2
+--- a Nested member named size0 ---
+unshared	Array(UInt64)	[100,200]	UInt64	2	2
 log	Array(UInt64)	[100,200]	UInt64	2	2
 memory	Array(UInt64)	[100,200]	UInt64	2	2
-wide, length	2	2
 log, length	2	2
-wide, missed column	2	['','']	[100,200]
-wide, only size0 in the part	2	['','']	[100,200]
+--- the members of Nested read their shared array sizes once ---
+two sizes	450000	450000
+sizes and member	450000	450000
+sizes of a missed member	450000	450000
 --- compressed Memory reads the declared element, not the array sizes ---
 Array(UInt64)	[100,200]
 Array(UInt64)	[300]
