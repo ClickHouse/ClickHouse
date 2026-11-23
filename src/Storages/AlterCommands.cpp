@@ -2068,7 +2068,7 @@ void AlterCommands::apply(
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
@@ -2228,32 +2228,17 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                 command.ignore = true;
         }
 
-        /// Later IF [NOT] EXISTS checks must see names freed or introduced by earlier commands.
+        /// Later IF NOT EXISTS checks must see names freed by earlier commands.
         if (command.ignore)
             continue;
 
-        switch (command.type)
+        if (command.type == AlterCommand::DROP_COLUMN)
         {
-            case AlterCommand::ADD_COLUMN:
-                for (auto & column : columnsAddedByAlter(
-                         columns,
-                         ColumnDescription(command.column_name, command.data_type),
-                         context,
-                         command.if_not_exists,
-                         share_nested_offsets))
-                    columns.add(std::move(column));
-                break;
-            case AlterCommand::DROP_COLUMN:
-                if (!command.clear && !command.partition && (!command.if_exists || columns.has(command.column_name)))
-                    columns.remove(command.column_name);
-                break;
-            case AlterCommand::RENAME_COLUMN:
-                if (columns.has(command.column_name))
-                    columns.rename(command.column_name, command.rename_to);
-                break;
-            default:
-                break;
+            if (!command.clear && !command.partition && (!command.if_exists || columns.has(command.column_name)))
+                columns.remove(command.column_name);
         }
+        else if (command.type == AlterCommand::RENAME_COLUMN && columns.has(command.column_name))
+            columns.rename(command.column_name, command.rename_to);
     }
 
     prepared = true;
