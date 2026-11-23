@@ -158,6 +158,10 @@ add_library(_parquet_format "${PARQUET_FORMAT_INCLUDE_DIR}/generated/parquet_typ
 target_include_directories(_parquet_format SYSTEM PUBLIC "${PARQUET_FORMAT_INCLUDE_DIR}")
 target_link_libraries(_parquet_format PUBLIC ch_contrib::thrift_minimal)
 add_library(ch_contrib::parquet_format ALIAS _parquet_format)
+# `${ARROW_SRC_DIR}` has the original `generated/parquet_types.h`. Every target exposing that directory also puts the
+# rewritten copy first, so that no translation unit sees the other declaration of the enums (that would violate the
+# ODR), whatever the order of the libraries a consumer links.
+target_include_directories(_arrow_ipc_metadata SYSTEM BEFORE INTERFACE "${PARQUET_FORMAT_INCLUDE_DIR}")
 
 if (NOT ENABLE_ARROW_LIBRARY)
     return()
@@ -478,6 +482,8 @@ target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 # Must come before ${ARROW_SRC_DIR}, so that our generated bindings shadow the ones Arrow ships.
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_IPC_GENERATED_INCLUDE_DIR})
+# Must come before ${ARROW_SRC_DIR}, see `_parquet_format`.
+target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${PARQUET_FORMAT_INCLUDE_DIR}")
 add_dependencies(_arrow _arrow_ipc_generated)
 
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
@@ -560,6 +566,7 @@ add_library(ch_contrib::parquet ALIAS _parquet)
 target_include_directories(_parquet SYSTEM BEFORE
     PUBLIC
         # Same as for `_arrow`: must come before the Arrow source directory.
+        "${PARQUET_FORMAT_INCLUDE_DIR}"
         "${ARROW_IPC_GENERATED_INCLUDE_DIR}"
         "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
