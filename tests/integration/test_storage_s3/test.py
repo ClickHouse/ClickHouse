@@ -3324,7 +3324,9 @@ def test_archive(started_cluster):
     paths_list_new = node.query(
         f"SELECT distinct(_path) FROM {cluster_function_new} SETTINGS cluster_function_process_archive_on_multiple_nodes = 1"
     )
-    assert "Failed to get object info" in node.query_and_get_error(
+    # The worker on that cluster runs with `cluster_function_process_archive_on_multiple_nodes = 0`, so a
+    # per-member task reaches a worker that expects whole archives and it refuses the task explicitly.
+    assert "looks like a per-member one" in node.query_and_get_error(
         f"SELECT distinct(_path) FROM {cluster_function_old} SETTINGS max_threads=1"
     )
 
@@ -3348,7 +3350,7 @@ def test_archive(started_cluster):
 
     expected_count = 14
     assert expected_count == int(node.query(f"SELECT count() FROM {function}"))
-    assert "Failed to get object info" in node.query_and_get_error(
+    assert "looks like a per-member one" in node.query_and_get_error(
         f"SELECT count() FROM {cluster_function_old} SETTINGS max_threads=1"
     )
 

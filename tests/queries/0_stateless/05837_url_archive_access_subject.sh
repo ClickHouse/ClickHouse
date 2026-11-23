@@ -73,9 +73,13 @@ EOF
 }
 SERVER_PID=$ARCHIVE_HTTP_PID
 user="url_archive_reader_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+# The grant on the archive is carried by a role, so that taking it back is a role revoke rather than a
+# partial revoke of a source filter, which ClickHouse refuses when the source is also granted unfiltered.
+role="url_archive_reader_role_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 function cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${user}" || true
+    ${CLICKHOUSE_CLIENT} --query "DROP ROLE IF EXISTS ${role}" || true
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
 }
@@ -84,6 +88,8 @@ trap cleanup EXIT
 read -r -t 30 PORT <&"${ARCHIVE_HTTP[0]}"
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "
+    DROP ROLE IF EXISTS ${role};
+    CREATE ROLE ${role};
     CREATE USER OR REPLACE ${user} IDENTIFIED WITH no_password;
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${user};
     GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip::eod.csv') TO ${user}"
@@ -94,12 +100,14 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query \
     | grep -o 'necessary to have the grant READ ON URL' | head -1
 
 echo "--- while a grant on the archive does"
-${CLICKHOUSE_CLIENT} --query "GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip') TO ${user}"
+${CLICKHOUSE_CLIENT} --multiquery --query "
+    GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip') TO ${role};
+    GRANT ${role} TO ${user}"
 ${CLICKHOUSE_CLIENT} --user="${user}" --query \
     "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')"
 
-echo "--- and revoking it brings the refusal back"
-${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL('http://127.0.0.1:${PORT}/a.zip') FROM ${user}"
+echo "--- and taking it back brings the refusal back"
+${CLICKHOUSE_CLIENT} --query "REVOKE ${role} FROM ${user}"
 ${CLICKHOUSE_CLIENT} --user="${user}" --query \
     "SELECT sum(c1) FROM url('http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
     | grep -o 'necessary to have the grant READ ON URL' | head -1
@@ -116,6 +124,8 @@ echo "--- urlCluster names the archive as well"
 ${CLICKHOUSE_CLIENT} --user="${user}" --query \
     "SELECT sum(c1) FROM urlCluster('test_shard_localhost', 'http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')" 2>&1 \
     | grep -o 'necessary to have the grant READ ON URL' | head -1
-${CLICKHOUSE_CLIENT} --query "GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip') TO ${user}"
+${CLICKHOUSE_CLIENT} --multiquery --query "
+    GRANT READ ON URL('http://127.0.0.1:${PORT}/a.zip') TO ${role};
+    GRANT ${role} TO ${user}"
 ${CLICKHOUSE_CLIENT} --user="${user}" --query \
     "SELECT sum(c1) FROM urlCluster('test_shard_localhost', 'http://127.0.0.1:${PORT}/a.zip :: eod.csv', 'CSV')"

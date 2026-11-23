@@ -2,7 +2,7 @@
 necessary to have the grant READ ON URL
 --- while a grant on the archive does
 3
---- and revoking it brings the refusal back
+--- and taking it back brings the refusal back
 necessary to have the grant READ ON URL
 --- a grant with spaces around the separator never matched
 necessary to have the grant READ ON URL
