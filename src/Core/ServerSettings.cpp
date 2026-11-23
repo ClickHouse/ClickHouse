@@ -1513,6 +1513,9 @@ Period in seconds to completely remove snapshot parts for SharedMergeTree. Only 
     DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
 Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
 )", 0) \
+    DECLARE(UInt64, snapshot_cleaner_max_replicas, 3, R"(
+Maximum number of replicas that run the snapshot cleaner for each table under the snapshot registry. Every replica running a cleaner advertises it with the `snapshot_cleaner_enabled` replica flag; the replicas rank the advertising replicas by a rendezvous hash of the table and the replica name, and a replica processes a table only when it is among the top entries, so the cleanup of different tables spreads across the fleet while duplicated work stays bounded. Replicas whose cleaner is disabled (`snapshot_cleaner_period = 0`) never advertise and are never elected. `0` means no limit: every replica processes every table. Only available in ClickHouse Cloud
+)", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
 )", 0) \
