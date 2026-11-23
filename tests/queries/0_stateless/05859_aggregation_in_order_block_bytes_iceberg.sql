@@ -1,6 +1,7 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest, no-replicated-database, no-parallel-replicas
 -- Tag no-fasttest: Iceberg needs Avro for its metadata
 -- Tag no-replicated-database: the replicated DDL worker evaluates the `IcebergLocal` arguments without the session, so it does not see the `TEMPORARY TABLE iceberg_path`
+-- Tag no-parallel-replicas: asserts on the plan and the merges of the initial query, which with parallel replicas reads the table with `ReadFromCluster`
 
 SET allow_insert_into_iceberg = 1, allow_experimental_iceberg_compaction = 0, use_iceberg_metadata_files_cache = 0, iceberg_delete_data_on_drop = 0, async_insert = 0;
 
