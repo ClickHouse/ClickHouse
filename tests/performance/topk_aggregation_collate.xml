@@ -1,4 +1,4 @@
-<test run_all_queries="1">
+<test>
     <!-- `GROUP BY` top-K with `COLLATE` on the ranked key, at default settings, against the optimization off. -->
     <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC COLLATE 'en' LIMIT 10 FORMAT Null</query>
     <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL DESC COLLATE 'en' LIMIT 10 FORMAT Null</query>
