@@ -1,0 +1,15 @@
+hash-int-34 1
+hash-long-34 1
+hash-decimal-14.20 1
+hash-date-2017-11-16 1
+hash-time-22-31-08 1
+hash-timestamp-no-frac 1
+hash-timestamp-micros 1
+hash-string-iceberg 1
+hash-uuid 1
+hash-fixed-00010203 1
+hash-binary-00010203 1
+hash-decimal-neg-1.28 1
+hash-decimal-neg-327.68 1
+hash-string-non-bmp 1
+hash-decimal-neg-83886.08 1

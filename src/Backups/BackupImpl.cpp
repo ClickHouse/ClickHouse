@@ -431,6 +431,9 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
+        /// A backup being written only looks up the sizes and checksums of the files of its base, to skip the files the base
+        /// already has. For a base of millions of files, the rest of the information about its files takes gigabytes.
+        base_params.for_file_lookups_only = (open_mode == OpenMode::WRITE);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -760,7 +763,7 @@ void BackupImpl::readBackupMetadata()
                 ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot parse <{}> value {}", backup_name_for_logging, key, quoteString(value));
         return result;
     };
-    auto to_bool = [&](const String & value, const String & key) -> bool
+    auto to_bool = [&](const String & value, std::string_view key) -> bool
     {
         if (value == "true" || value == "1")
             return true;
@@ -774,7 +777,7 @@ void BackupImpl::readBackupMetadata()
 
     handler.on_header = [&](const BackupMetadataHandler::Fields & h)
     {
-        auto req = [&](const String & key) -> const String &
+        auto req = [&](const Poco::XML::XMLString & key) -> const String &
         {
             auto it = h.find(key);
             if (it == h.end())
@@ -819,12 +822,24 @@ void BackupImpl::readBackupMetadata()
         contents_seen = true;
     };
 
+    /// Many files of a backup have the same size and checksum (e.g. `columns.txt` of the parts of a table), so the keys
+    /// are deduplicated while they are read, whenever their number doubles since the previous time: this keeps the vector
+    /// at about twice the number of distinct keys, however many duplicates there are.
+    static constexpr size_t min_num_sizes_and_checksums_to_deduplicate = 65536;
+    size_t num_sizes_and_checksums_after_deduplication = 0;
+    auto deduplicate_sizes_and_checksums = [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        std::ranges::sort(sizes_and_checksums);
+        sizes_and_checksums.erase(std::ranges::unique(sizes_and_checksums).begin(), sizes_and_checksums.end());
+        num_sizes_and_checksums_after_deduplication = sizes_and_checksums.size();
+    };
+
     /// `readBackupMetadata` runs under `mutex` (TSA_REQUIRES), and `on_file` is invoked synchronously from
-    /// `parseMemoryNP` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
+    /// `parse` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        auto req = [&](const String & key) -> const String &
+        auto req = [&](const Poco::XML::XMLString & key) -> const String &
         {
             auto it = f.find(key);
             if (it == f.end())
@@ -832,12 +847,12 @@ void BackupImpl::readBackupMetadata()
                     ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot read <{}> of a file from metadata", backup_name_for_logging, key);
             return it->second;
         };
-        auto opt = [&](const String & key, const String & def) -> String
+        auto opt = [&](const Poco::XML::XMLString & key, const String & def) -> String
         {
             auto it = f.find(key);
             return it == f.end() ? def : it->second;
         };
-        auto get_bool = [&](const String & key, bool def)
+        auto get_bool = [&](const Poco::XML::XMLString & key, bool def)
         {
             auto it = f.find(key);
             return it == f.end() ? def : to_bool(it->second, key);
@@ -919,7 +934,17 @@ void BackupImpl::readBackupMetadata()
         {
             file_names.emplace(info.file_name, size_and_checksum);
             if (info.size)
-                file_infos.try_emplace(size_and_checksum, std::move(info));
+            {
+                if (params.for_file_lookups_only)
+                {
+                    sizes_and_checksums.push_back(size_and_checksum);
+                    if (sizes_and_checksums.size()
+                        >= std::max(min_num_sizes_and_checksums_to_deduplicate, 2 * num_sizes_and_checksums_after_deduplication))
+                        deduplicate_sizes_and_checksums();
+                }
+                else
+                    file_infos.try_emplace(size_and_checksum, std::move(info));
+            }
         }
     };
 
@@ -960,6 +985,9 @@ void BackupImpl::readBackupMetadata()
     /// unset - and must be rejected instead of being treated as an empty backup.
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
+
+    deduplicate_sizes_and_checksums();
+    sizes_and_checksums.shrink_to_fit();
 
     uncompressed_size = size_of_entries + metadata_in.count();
 
@@ -1326,6 +1354,8 @@ bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
+    if (params.for_file_lookups_only)
+        return std::ranges::binary_search(sizes_and_checksums, size_and_checksum);
     return file_infos.contains(size_and_checksum);
 }
 
@@ -1387,6 +1417,9 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
 
     // Zero-sized files are not inserted into `file_infos` during metadata load,
     // but they are present in `file_names`. Short-circuit them here and return
@@ -1565,6 +1598,9 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
+
     if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
@@ -1723,7 +1759,12 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         if (src_disk && from_immutable_file)
         {
             LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-            writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
+            if (!writer->copyFileFromDiskNatively(
+                    info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size))
+            {
+                writer->copyFileFromDiskWithFallback(
+                    info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
+            }
         }
         else
         {
@@ -1773,6 +1814,7 @@ void BackupImpl::finalizeWriting()
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_before_writing_metadata is triggered");
         });
+        started_writing_metadata = true;
 #if CLICKHOUSE_CLOUD && USE_SSL
         if (!use_archive)
             uncompressed_size += encryption_sidecar->write();
@@ -1877,7 +1919,7 @@ bool BackupImpl::setIsCorrupted() noexcept
 
         if (writing_finalized)
         {
-            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct!");
+            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct");
             return false;
         }
 
@@ -1955,6 +1997,28 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     catch (...)
     {
         DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
+        return false;
+    }
+}
+
+
+bool BackupImpl::tryRemoveLockFileIfNothingWritten() noexcept
+{
+    try
+    {
+        std::lock_guard lock{mutex};
+        if (!corrupted || use_archive || lock_file_before_first_file_checked || started_writing_metadata)
+            return false;
+
+        LOG_INFO(log, "Removing the lock file of backup {}, nothing else was written", backup_name_for_logging);
+        if (!tryRemoveOwnLockFile())
+            return false;
+        writer->removeEmptyRootDirectory();
+        return true;
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log, "Caught exception while removing the lock file of a corrupted backup");
         return false;
     }
 }

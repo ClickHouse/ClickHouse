@@ -14,6 +14,7 @@
 #include <Storages/StorageConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Common/parseRemoteDescription.h>
 #include <Poco/URI.h>
 
 #include <string_view>
@@ -32,6 +33,30 @@ struct StorageID;
 class PullingPipelineExecutor;
 
 bool urlPathHasListableGlobs(std::string_view uri);
+
+/// Names of the `url` family surfaces, as they appear in the glob expansion error messages.
+inline constexpr auto TABLE_FUNCTION_URL_CALLER = "Table function 'url'";
+inline constexpr auto TABLE_ENGINE_URL_CALLER = "Table engine 'URL'";
+inline constexpr auto TABLE_FUNCTION_URL_CLUSTER_CALLER = "Table function 'urlCluster'";
+
+/// None of the `url` family surfaces can list the existing files, so their error messages recommend
+/// an object storage surface instead. The recommendation has to be of the same kind as the surface
+/// that was invoked: a table engine cannot be replaced by a table function, and `urlCluster` needs a
+/// clustered replacement.
+inline RemoteDescriptionCaller tableFunctionURLCaller()
+{
+    return urlCaller(TABLE_FUNCTION_URL_CALLER, "'s3' (or another object storage table function)");
+}
+
+inline RemoteDescriptionCaller tableEngineURLCaller()
+{
+    return urlCaller(TABLE_ENGINE_URL_CALLER, "'S3' (or another object storage table engine)");
+}
+
+inline RemoteDescriptionCaller tableFunctionURLClusterCaller()
+{
+    return urlCaller(TABLE_FUNCTION_URL_CLUSTER_CALLER, "'s3Cluster' (or another object storage cluster table function)");
+}
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
@@ -67,14 +92,16 @@ public:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const RemoteDescriptionCaller & caller = tableFunctionURLCaller());
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromData(
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const RemoteDescriptionCaller & caller = tableFunctionURLCaller());
 
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
@@ -101,7 +128,8 @@ protected:
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by = nullptr,
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        const RemoteDescriptionCaller & glob_caller_ = tableFunctionURLCaller());
 
     String uri;
     CompressionMethod compression_method;
@@ -118,6 +146,9 @@ protected:
     bool supports_prewhere = false;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
+    /// How the surface the user invoked (`url`, the `URL` engine, `urlCluster`, ...) is named when a
+    /// glob in the URL generates more addresses than allowed.
+    RemoteDescriptionCaller glob_caller;
 
     virtual std::string getReadMethod() const;
 
@@ -158,14 +189,15 @@ private:
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const RemoteDescriptionCaller & caller);
 
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
 };
 
 bool urlWithGlobs(const String & uri);
 
-String getSampleURI(String uri, ContextPtr context);
+String getSampleURI(String uri, ContextPtr context, const RemoteDescriptionCaller & caller = tableFunctionURLCaller());
 
 /// The `URL` engine and the `url` table function act as a unified wrapper on top of the
 /// File and object-storage engines: they dispatch to the right backend based on the URL scheme.
@@ -209,7 +241,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller = tableFunctionURLCaller(), const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
         String next();
         size_t size();
@@ -255,8 +287,6 @@ public:
 
     void cancel(CancelReason reason) noexcept override;
 
-    static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
-
     /// Returns no buffer when a hard teardown of the pipeline is noticed between the options while
     /// nothing else reports the interruption - the caller must end the stream then, see initialize.
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
@@ -293,15 +323,33 @@ private:
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
     std::optional<time_t> current_file_last_modified;
+    /// The `Date` of the response that reported `current_file_last_modified`, by the clock of the same server.
+    std::optional<time_t> current_file_response_date;
+    /// The URI of the current file after following the redirects of its metadata request.
+    Poco::URI current_file_resolved_uri;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
+    /// A hash of the request headers of the table, which are a part of the query condition cache key,
+    /// see `makeQueryConditionCacheFileKey`. The OpenTelemetry headers added per query are not included.
+    UInt128 request_headers_hash;
     bool need_only_count;
     StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+
+    /// The query condition cache is used only for a plain `GET`, whose response depends on the URL alone.
+    bool allow_query_condition_cache = false;
+    /// The query condition cache key (`part_name`) of the file being read: its URL and version, see
+    /// `makeQueryConditionCacheFileKey`. Unset if the file cannot use the cache.
+    std::optional<String> current_query_condition_cache_file_key;
+
+    std::optional<String> makeQueryConditionCacheFileKey() const;
+    /// Records in the query condition cache the row groups of the file just read which hold no row the
+    /// condition needs.
+    void writeQueryConditionCacheEntry() const;
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -376,6 +424,7 @@ public:
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
         bool distributed_processing_ = false,
+        const RemoteDescriptionCaller & glob_caller_ = tableFunctionURLCaller(),
         bool is_replayed_definition_ = false);
 
     String getName() const override
@@ -393,6 +442,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -432,6 +482,9 @@ public:
     /// The resolution is done by string manipulation to allow malformed URLs.
     /// `base_setting_name` is the name of the setting the base came from, used in error messages.
     static String resolveURLBase(const String & url, const String & base, const String & base_setting_name = "url_base");
+
+    /// Returns true if `url` starts with `scheme://`, so that `resolveURLBase` returns it unchanged for any base.
+    static bool isAbsoluteURL(const String & url);
 
     /// Rewrite engine args so that the URL literal (positional) or `url='...'`
     /// override (named-collection) matches the URL resolved via `url_base`.

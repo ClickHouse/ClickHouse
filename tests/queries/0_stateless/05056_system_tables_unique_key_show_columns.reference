@@ -1,0 +1,7 @@
+--- admin: unique_key present ---
+1
+--- column-scoped SELECT only: unique_key hidden ---
+0
+ACCESS_DENIED
+--- SHOW COLUMNS granted: unique_key visible ---
+1

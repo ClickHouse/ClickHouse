@@ -50,6 +50,11 @@ struct SQLDefinedHandler
     /// precomputed at build time so the request path does not re-parse the query on every matching request.
     NameSet receive_params;
 
+    /// Whether `query` uses the special `_request_body` parameter, regardless of where it is bound from: the request
+    /// body, or a named capture group of the `URL REGEXP` (in which case it is not in `receive_params`). Such a
+    /// handler rejects `_request_body` passed in the URL query string.
+    bool uses_request_body_param = false;
+
     /// The canonical CREATE HANDLER statement, used for persistence and introspection.
     String create_statement;
 
@@ -60,8 +65,14 @@ struct SQLDefinedHandler
     /// that never looks at the body must not impose that requirement on ordinary clients.
     bool consumes_request_body = false;
 
+    /// Whether the HTTP request body is the continuation of `query` - the data of an `INSERT` (or of the `input`
+    /// table function). Only then is the body appended to the query text. For any other query, including one that
+    /// reads the body through the `_request_body` parameter, appending it would let the request body extend the
+    /// handler's SQL, e.g. with `UNION ALL SELECT ...`, so it is never done.
+    bool feeds_request_body_to_query = false;
+
     /// Returns true if the request path (without query string and fragment) matches this handler's URL.
-    bool matchesURL(const String & path) const;
+    [[nodiscard]] bool matchesURL(const String & path) const;
 
     /// Whether `path` matches the base path `prefix` on a path-segment boundary: the base path itself or
     /// anything below it after a '/'. E.g. "/api/v1" matches "/api/v1", "/api/v1/" and "/api/v1/write",
@@ -71,11 +82,11 @@ struct SQLDefinedHandler
     static bool urlPrefixMatches(std::string_view prefix, std::string_view path);
 
     /// Returns true if the given HTTP method (uppercase) is allowed by this handler.
-    bool matchesMethod(const String & method) const;
+    [[nodiscard]] bool matchesMethod(const String & method) const;
 
     /// Returns true if the handler is active for the given protocol name.
     /// Empty protocol_name means a legacy http/https port (matches only protocol-less handlers).
-    bool matchesProtocol(const String & protocol_name) const;
+    [[nodiscard]] bool matchesProtocol(const String & protocol_name) const;
 };
 
 using SQLDefinedHandlerPtr = std::shared_ptr<const SQLDefinedHandler>;
