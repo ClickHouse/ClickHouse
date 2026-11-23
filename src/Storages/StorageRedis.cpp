@@ -369,7 +369,8 @@ void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
 
 namespace
 {
-    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context, const StorageID & table_id)
+    RedisConfiguration getRedisConfiguration(
+        ASTs & engine_args, ContextPtr context, const StorageID & table_id, bool from_existing_metadata)
     {
         RedisConfiguration configuration;
 
@@ -413,13 +414,18 @@ namespace
                 configuration.pool_size = DEFAULT_REDIS_POOL_SIZE;
         }
 
-        context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
+        /// A definition that this server stored is not checked against `remote_url_allow_hosts`, for the reason
+        /// given in `StoragePostgreSQL::getConfiguration`.
+        if (!from_existing_metadata)
+            context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
         return configuration;
     }
 
     StoragePtr createStorageRedis(const StorageFactory::Arguments & args)
     {
-        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext(), args.table_id);
+        auto configuration = getRedisConfiguration(
+            args.engine_args, args.getLocalContext(), args.table_id,
+            /*from_existing_metadata=*/ isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax);
 
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);

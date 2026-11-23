@@ -105,7 +105,9 @@ class StorageMongoDB final : public StorageWithCommonVirtualColumns
 {
 public:
     static MongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
-    static MongoDBConfiguration getConfigurationFromCollection(MutableNamedCollectionPtr named_collection, ContextPtr context);
+    /// `from_existing_metadata`: the hosts are not checked against `remote_url_allow_hosts`, see `getConfigurationImpl`.
+    static MongoDBConfiguration getConfigurationFromCollection(
+        MutableNamedCollectionPtr named_collection, ContextPtr context, bool from_existing_metadata = false);
 
     StorageMongoDB(
         const StorageID & table_id_,

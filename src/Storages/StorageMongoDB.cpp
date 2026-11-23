@@ -30,6 +30,7 @@
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <QueryPipeline/Pipe.h>
@@ -246,7 +247,8 @@ static String encodeString(const String & str)
     return encoded;
 }
 
-MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamedCollectionPtr named_collection, ContextPtr context)
+MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(
+    MutableNamedCollectionPtr named_collection, ContextPtr context, bool from_existing_metadata)
 {
     MongoDBConfiguration configuration;
     if (named_collection->has("uri"))
@@ -277,15 +279,19 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
     if (named_collection->has("oid_columns"))
         boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
 
-    configuration.checkHosts(context);
+    if (!from_existing_metadata)
+        configuration.checkHosts(context);
     configuration.checkCollection();
     return configuration;
 }
 
-static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
+/// A definition that this server stored is not checked against `remote_url_allow_hosts`, for the reason
+/// given in `StoragePostgreSQL::getConfiguration`.
+static MongoDBConfiguration getConfigurationImpl(
+    const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host, bool from_existing_metadata)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, /* throw_unknown_collection */ true, /* complex_args */ nullptr, table_id))
-        return StorageMongoDB::getConfigurationFromCollection(named_collection, context);
+        return StorageMongoDB::getConfigurationFromCollection(named_collection, context, from_existing_metadata);
 
     MongoDBConfiguration configuration;
 
@@ -358,7 +364,8 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
                             "Incorrect number of arguments. Example usage: "
                             "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
 
-    configuration.checkHosts(context);
+    if (!from_existing_metadata)
+        configuration.checkHosts(context);
     configuration.checkCollection();
 
     return configuration;
@@ -366,7 +373,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
 
 MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    return getConfigurationImpl(nullptr, std::move(engine_args), context, false);
+    return getConfigurationImpl(nullptr, std::move(engine_args), context, false, /*from_existing_metadata=*/ false);
 }
 
 static std::string mongoFuncName(const std::string & func)
@@ -954,7 +961,9 @@ void registerStorageMongoDB(StorageFactory & factory)
         bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
+            getConfigurationImpl(
+                &args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host,
+                /*from_existing_metadata=*/ isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax),
             args.columns,
             args.constraints,
             args.comment);
