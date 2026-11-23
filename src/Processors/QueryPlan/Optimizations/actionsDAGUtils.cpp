@@ -211,6 +211,13 @@ MatchedTrees::Matches matchTrees(
         inner_dag, outer_dag, check_monotonicity, max_size_for_sets_from_tuple_to_compare, /*outer_to_inner_input_names=*/nullptr);
 }
 
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
+
 static MatchedTrees::Matches matchTreesImpl(
     const ActionsDAG::NodeRawConstPtrs & inner_dag,
     const ActionsDAG & outer_dag,
@@ -241,6 +248,7 @@ static MatchedTrees::Matches matchTreesImpl(
 
                 for (const auto * child : node->children)
                 {
+                    child = skipAliases(child);
                     auto [it, inserted] = inner_parents.emplace(child, Parents());
                     it->second.emplace(node);
 
@@ -400,7 +408,7 @@ static MatchedTrees::Matches matchTreesImpl(
                                                     max_size_for_sets_from_tuple_to_compare);
                                         }
                                         else
-                                            all_children_matched = frame.mapped_children[i] == children[i];
+                                            all_children_matched = frame.mapped_children[i] == skipAliases(children[i]);
                                     }
 
                                     if (all_children_matched
@@ -751,6 +759,24 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
         ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
     return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
+}
+
+bool holdsInputValues(const ActionsDAG::Node & node)
+{
+    const ActionsDAG::Node * current = &node;
+    while (current->type != ActionsDAG::ActionType::INPUT)
+    {
+        bool passes_values_on = current->type == ActionsDAG::ActionType::ALIAS;
+        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base)
+        {
+            const auto & name = current->function_base->getName();
+            passes_values_on = name == "_CAST" || name == "CAST" || name == "materialize" || name == "toNullable";
+        }
+        if (!passes_values_on || current->children.empty())
+            return false;
+        current = current->children.front();
+    }
+    return true;
 }
 
 VectorWithMemoryTracking<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)

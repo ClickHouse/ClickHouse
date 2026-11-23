@@ -2050,13 +2050,16 @@ void AlterCommands::apply(
     {
         try
         {
+            /// A codec of `RECOMPRESS` that this `ALTER` defines was checked against the settings of the query when its
+            /// `MODIFY TTL` command was applied; one that was already stored is trusted, as an unchanged column `CODEC` is.
             metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 metadata_copy.table_ttl.definition_ast,
                 metadata_copy.columns,
                 context,
                 metadata_copy.primary_key,
                 context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                     : TTLValidationMode::Validate);
+                                                                                     : TTLValidationMode::Validate,
+                /*trust_recompression_codec=*/ true);
         }
         catch (const Exception & exception)
         {
