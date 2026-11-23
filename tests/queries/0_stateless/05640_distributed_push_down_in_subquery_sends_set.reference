@@ -1,0 +1,12 @@
+a table that differs on the shards
+10
+20
+10
+6
+10
+10
+only distinct values are sent
+10
+a local read uses the same set
+15
+100

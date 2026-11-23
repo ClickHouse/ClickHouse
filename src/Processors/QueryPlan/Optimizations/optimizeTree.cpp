@@ -18,6 +18,7 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/CurrentThread.h>
@@ -321,6 +322,16 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
         {
             predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
+        });
+    }
+
+    /// Remote reads go first: they ask to keep the elements of the sets they send, before a local read builds such a set.
+    if (optimization_settings.query_plan_optimize_primary_key)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            if (typeid_cast<ReadFromRemote *>(frame_node.step.get()))
+                optimizePrimaryKeyConditionAndLimit(stack);
         });
     }
 

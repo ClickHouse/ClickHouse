@@ -788,6 +788,9 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (distributed_fanout > 0)
         connections->setDistributedFanout(distributed_fanout);
 
+    if (before_sending_query)
+        before_sending_query(query, external_tables);
+
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
 
     established = false;

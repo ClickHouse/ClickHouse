@@ -2850,6 +2850,8 @@ Possible values:
 - `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
 - `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
 - `allow` — Allows the use of these types of subqueries.
+
+These checks and replacements are not made for an `IN` written over a subquery or a view that reads a distributed table. Such an `IN` can be pushed down to the shards (see [allow_push_predicate_ast_for_distributed_subqueries](#allow_push_predicate_ast_for_distributed_subqueries)). If, where the distributed table is read, the mode is `global`, or [prefer_global_in_and_join](#prefer_global_in_and_join) is enabled and the mode is not `local`, then the shards get the distinct values of its subquery, like for `GLOBAL IN`, whatever the subquery reads. If the values cannot be sent (for example, they exceed [max_rows_to_transfer](#max_rows_to_transfer) or another limit), the condition is not pushed down. A table with the `Set` engine is referred to by its name. The same holds for an `IN` pushed down to parallel replicas (see [parallel_replicas_filter_pushdown](#parallel_replicas_filter_pushdown)) and for distributed index analysis. In other modes the shards get the text of the subquery.
 )", IMPORTANT) \
     \
     DECLARE(UInt64, max_concurrent_queries_for_all_users, 0, R"(
@@ -3873,7 +3875,7 @@ Possible values:
 
 **Usage**
 
-Although `SET distributed_product_mode=global` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
+Although `SET distributed_product_mode=global` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources, except for an `IN` that is pushed down into a subquery (see [distributed_product_mode](#distributed_product_mode)). Here is when the `prefer_global_in_and_join` setting comes into play.
 
 For example, we have query serving nodes that contain local tables, which are not suitable for distribution. We need to scatter their data on the fly during distributed processing with the `GLOBAL` keyword — `GLOBAL IN`/`GLOBAL JOIN`.
 

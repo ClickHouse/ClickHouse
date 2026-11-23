@@ -243,6 +243,10 @@ public:
 
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
+    /// Can change the query and the tables right before they are sent.
+    using BeforeSendingQuery = std::function<void(String & query, Tables & external_tables)>;
+    void setBeforeSendingQuery(BeforeSendingQuery callback) { before_sending_query = std::move(callback); }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
@@ -288,7 +292,7 @@ private:
     std::unique_ptr<IConnections> connections;
     std::unique_ptr<ReadContext> read_context;
 
-    const String query;
+    String query;
     std::shared_ptr<const QueryPlan> query_plan;
     String query_id;
     ContextPtr context;
@@ -301,6 +305,7 @@ private:
     Scalars scalars;
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
+    BeforeSendingQuery before_sending_query;
     QueryProcessingStage::Enum stage;
     QueryProcessingStage::Enum query_plan_fallback_stage = QueryProcessingStage::Complete;
 
