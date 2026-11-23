@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 #include <vector>
 
@@ -63,11 +64,11 @@ private:
             const ExpressionActionsSettings & actions_settings);
 
         /// Returns the boundary columns and shared intermediates in the output header's order.
-        Columns evaluate(const Columns & columns, size_t num_rows) const;
+        [[nodiscard]] Columns evaluate(const Columns & columns, size_t num_rows) const;
 
-        const Block & getOutputHeader() const;
-        ColumnPtr getStartColumn(const Columns & columns) const { return start_position ? columns[*start_position] : nullptr; }
-        ColumnPtr getEndColumn(const Columns & columns) const { return end_position ? columns[*end_position] : nullptr; }
+        [[nodiscard]] const Block & getOutputHeader() const;
+        [[nodiscard]] ColumnPtr getStartColumn(const Columns & columns) const { return start_position ? columns[*start_position] : nullptr; }
+        [[nodiscard]] ColumnPtr getEndColumn(const Columns & columns) const { return end_position ? columns[*end_position] : nullptr; }
 
     private:
         ExpressionActionsPtr actions;
@@ -75,7 +76,7 @@ private:
         /// Positions of the required columns in the source chunk.
         std::vector<size_t> required_column_positions;
         /// Mapping from action inputs to positions in the reduced input header.
-        std::vector<ssize_t> action_input_positions;
+        VectorWithMemoryTracking<ssize_t> action_input_positions;
         /// Positions of the boundary columns in the evaluated result.
         std::optional<size_t> start_position;
         std::optional<size_t> end_position;

@@ -109,14 +109,15 @@ remote_write:
 
 Prometheus はサンプルを `prometheus.metrics` テーブルに送信します。
 
-多数の同時実行 リモート書き込み リクエストからのデータを少ないパーツにまとめるには、URL に `async_insert` 設定を追加する (またはユーザープロファイルで有効にする) ことで、[非同期挿入](/ja/reference/settings/session-settings/async-insert#async_insert)を有効にします。
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
-```
+多数の同時実行 リモート書き込み リクエストからのデータを少ないパーツにまとめるために、ClickHouse は[非同期挿入](/ja/reference/settings/session-settings/async-insert#async_insert)を使用します。非同期挿入はデフォルトで有効になっており、URL (またはユーザープロファイル) の `async_insert` 設定で有効・無効を切り替えられます。
 
 ClickHouse は、[`wait_for_async_insert`](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert) 設定にかかわらず、データが `TimeSeries` テーブルのすべての内部テーブルにフラッシュされた後にのみ、非同期 リモート書き込み リクエストを受理します。リモート書き込み プロトコルでは、受理された書き込みは永続化済みとして扱われます。フラッシュに失敗した場合、リクエストはエラーを返し、Prometheus は再試行します。
+
+各リクエストは自身のフラッシュを待機するため、非同期挿入を使用すると、1 つの送信元が書き込める速度に上限が生じます。Prometheus は、リモート書き込みのシャードごとに一度に 1 つのリクエストしか送信しません。複数のシャードが同時に送信すると、保留中のリクエストが先に [`async_insert_max_data_size`](/ja/reference/settings/session-settings/async-insert#async_insert_max_data_size) に達しない限り、アダプティブなフラッシュのタイムアウトは [`async_insert_busy_timeout_max_ms`](/ja/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) まで延びます。リクエストは自身のバッチがフラッシュされるまで待機し、そのフラッシュはバッチ開始から最大でこの時間が経過した時点で行われます。そのため、負荷が継続する状況では、各シャードの書き込み速度はおおよそ `samples per request / async_insert_busy_timeout_max_ms` になります。なお、Prometheus はデフォルトで 1 リクエストあたり最大 2,000 サンプルを送信します。この速度を上げるには、次のいずれかを行います。
+
+* [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write) の `queue_config` で `max_shards` (デフォルトは 50) または `max_samples_per_send` を引き上げます。Prometheus は処理が追いつかなくなると、`max_shards` を上限として自動的にシャードを追加します。
+* URL またはユーザープロファイルで `async_insert_busy_timeout_max_ms` を引き下げます (例: `&async_insert_busy_timeout_max_ms=50`)。これによりフラッシュの頻度が上がりますが、フラッシュのたびに内部テーブルに新しいパーツが作成されます。
+* `async_insert=0` で非同期挿入を無効化します。この場合、リクエストごとに内部テーブルに個別のパーツが作成されます。
 
 ## PromQL でクエリを実行する {#promql-query-support}
 
@@ -254,3 +255,35 @@ remote_read:
       username: default
       password: <password>
 ```
+
+## レコーディングルール {#recording-rules}
+
+ClickHouse は Prometheus のルールファイルを評価しません。代わりに、[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) を使用すると、[レコーディングルール](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)と同じ役割を果たせます。具体的には、PromQL の式をスケジュールに従って評価し、その結果を `TimeSeries` テーブルに追記します。次のビューは、`sum by (job) (rate(http_requests_total[5m]))` を 1 分ごとに `job:http_requests:rate5m` として記録します。
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+リフレッシュのたびに、現在の分の開始時刻を基準に式を評価し、`mapUpdate` でメトリクス名を設定したうえで、結果の系列ごとにサンプルを 1 つ追記します。同じ Map に追加ラベルを含めることもできます (例: `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`) 。記録された系列は、他のメトリクスと同じようにクエリできます:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+最後の評価の時刻とエラーは [`system.view_refreshes`](/ja/reference/system-tables/view_refreshes) に表示されます。
+
+ビューは、Prometheus のレコーディングルールと以下の点で異なります。
+
+* 評価時刻は、リフレッシュが実行された時点の `now()` です。ビューはスケジュールに基づくリフレッシュに加えて、作成直後 (`EMPTY` 付きで作成された場合を除く) 、リフレッシュが協調されていない場合のサーバー再起動後 (Replicated または Shared データベース外のビュー、または `all_replicas = 1` が指定されたビューは、最後のリフレッシュを記憶しません) 、そしてスケジュールされたリフレッシュを逃した後に `SYSTEM START VIEW` で再開されたときにもリフレッシュされます。これらのリフレッシュによってスケジュールどおりのサンプルの間に余分なサンプルが追加されないよう、例のように `now()` をインターバル単位で切り捨ててください。ただし、それでも追加のリフレッシュによって、同じ丸められたタイムスタンプに 2 つ目のサンプルが書き込まれる場合があります。5 分間隔のルールには、`toStartOfInterval(now(), INTERVAL 5 MINUTE)` を使用してください。
+* 実行されなかった評価が後から補完されることはありません。サーバーが停止していた場合やビューが停止されていた場合、ビューは現在のインターバルのみを評価し、それ以前のインターバルは空のままになります。リフレッシュにインターバルより長い時間がかかった場合も同様です。
+* 結果から外れた系列にはデータの有効期間を示すマーカー (staleness marker) が付与されないため、クエリはルックバック期間 (デフォルトでは 5 分) が経過するまで、その系列の最後に記録された値を返し続けます。
+* ルールファイルは存在せず、各ルールはそれぞれ個別のビューです。これらのルールは `/api/v1/rules` には一覧表示されません。

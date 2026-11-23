@@ -127,7 +127,7 @@ SELECT 'replacing',
 -- and the deletion of rows summed to zero still see the merged rows.
 CREATE TABLE t_stored_name (id UInt64, name String, `length(name)` UInt64, v Int64,
     INDEX il length(name) TYPE minmax GRANULARITY 1, INDEX im v % 7 TYPE minmax GRANULARITY 1)
-ENGINE = SummingMergeTree ORDER BY (id, `length(name)`) SETTINGS index_granularity = 100;
+ENGINE = SummingMergeTree ORDER BY (id, `length(name)`) SETTINGS index_granularity = 100, allow_suspicious_indices = 1;
 INSERT INTO t_stored_name SELECT number % 1000, 'abcde', 100, if(number < 2000 OR number % 2 = 0, 5, -10) FROM numbers(3000)
 SETTINGS optimize_on_insert = 1, max_insert_threads = 1, max_block_size = 65536;
 SELECT 'stored column named length(name)', count(), min(`length(name)`), max(`length(name)`), sum(v),
@@ -138,7 +138,7 @@ FROM t_stored_name;
 -- The same with both expressions in one index.
 CREATE TABLE t_stored_name_composite (id UInt64, name String, `length(name)` UInt64, v Int64,
     INDEX ic (length(name), v % 7) TYPE minmax GRANULARITY 1)
-ENGINE = SummingMergeTree ORDER BY (id, `length(name)`) SETTINGS index_granularity = 100;
+ENGINE = SummingMergeTree ORDER BY (id, `length(name)`) SETTINGS index_granularity = 100, allow_suspicious_indices = 1;
 INSERT INTO t_stored_name_composite SELECT number % 1000, 'abcde', 100, if(number < 2000 OR number % 2 = 0, 5, -10) FROM numbers(3000)
 SETTINGS optimize_on_insert = 1, max_insert_threads = 1, max_block_size = 65536;
 SELECT 'stored column named length(name), composite index', count(), min(`length(name)`), max(`length(name)`), sum(v),
