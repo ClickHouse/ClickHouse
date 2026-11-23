@@ -919,7 +919,15 @@ private:
             const fs::path aws_directory = absolute(home, "/") / ".aws";
             std::error_code error;
             if (fs::is_directory(aws_directory, error))
-                add(aws_directory, Access::ReadOnly, "the configuration of the AWS SDK in the home directory");
+            {
+                const std::string source = "the configuration of the AWS SDK in the home directory";
+                add(aws_directory, Access::ReadOnly, source);
+                /// The files can be links to a place that is not visible otherwise, as a mounted secret:
+                /// `~/.aws/credentials -> /mnt/cloud-credentials/credentials`.
+                for (const char * name : {"config", "credentials"})
+                    if (const fs::path file = aws_directory / name; FS::isSymlinkNoThrow(file))
+                        addLocation(file, Access::ReadOnly, source, /* only_file_in_shared_directory = */ true);
+            }
         }
     }
 
