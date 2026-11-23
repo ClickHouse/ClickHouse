@@ -50,8 +50,7 @@ struct SortingProperty
     EquivalenceClasses<String> equivalences = {};
 };
 
-/// Maps the property through `dag`. Where the sort description is cut at a column that `dag` does not carry, the
-/// columns from there on are replaced by equal columns that `dag` passes on unchanged, if that keeps more of it.
+/// Maps the property through `dag`, keeping a longer sort prefix where an equal column survives in place of a dropped one.
 static void applyActionsToProperty(SortingProperty & property, const ActionsDAG & dag, const ActionsDAG::Node * output_to_skip)
 {
     auto substituted = property.sort_description;
@@ -239,8 +238,7 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
     /// Every row of an INNER join has equal keys on both sides, so a key of the other side carries the same
     /// order as the ordered key it is compared with. That matters when the ordered key itself is not needed
     /// above the join and only the other one is kept, as in `a JOIN b ON a.id = b.id JOIN c ON b.id = c.id`.
-    /// It does not hold for the last key of an ASOF join, which is not compared for equality. The equalities of
-    /// the inputs are carried as well.
+    /// It does not hold for the last key of an ASOF join, which is not compared for equality.
     const bool keys_are_equal = isInner(kind) && table_join.strictness() != JoinStrictness::Asof;
     NameToNameMap ordered_key_to_equal_key;
     if (keys_are_equal)
@@ -400,7 +398,6 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (optimization_settings.optimize_sorting_by_input_stream_properties
             && !sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::Full)
         {
-            /// A column equal on every row to a sort column of the input is sorted the same way.
             auto input_description = properties->sort_description;
             const auto & sort_description = sorting_step->getSortDescription();
             for (size_t i = 0; i < std::min(input_description.size(), sort_description.size()); ++i)
