@@ -286,13 +286,12 @@ private:
         ProfileEvents::increment(ProfileEvents::TimeSeriesGroupArrayHistogramsAppendOnlyMerges);
         const TimeSeriesHistogramsColumnsMutableView view{tuple_to};
         const TimeSeriesHistogramPayloadColumnsView payload{view};
-        auto & hints = view.counter_reset_hint.getData();
         for (const auto & range : data.ranges)
         {
             const size_t begin = tuple_to.size();
             tuple_to.insertRangeFrom(*range.source, range.offset, range.size);
             if (&range != &data.ranges.front())
-                hints[begin] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(payload, begin - 1, begin);
+                view.setCounterResetHintAt(begin, TimeSeriesHistogramCounterResetRule::detectReset(payload, begin - 1, begin));
         }
     }
 
@@ -319,7 +318,6 @@ private:
         /// of the result only, whose hint is kept instead of being detected below: it is made unknown unless the equal ones agree.
         const TimeSeriesHistogramsColumnsMutableView view{source};
         const TimeSeriesHistogramPayloadColumnsView payload{view};
-        auto & hints = view.counter_reset_hint.getData();
         size_t num_unique = 1;
         for (size_t i = 1; i < num_elements; ++i)
         {
@@ -330,11 +328,11 @@ private:
                 permutation[num_unique++] = candidate;
                 continue;
             }
-            const int comparison = TimeSeriesDuplicateTimestampRule::compareHistograms(payload, candidate, kept);
+            const int comparison = TimeSeriesDuplicateTimestampRule::compareHistogramSamples(payload, candidate, kept);
             if (comparison > 0)
                 permutation[num_unique - 1] = candidate;
-            else if ((comparison == 0) && (num_unique == 1) && (hints[kept] != hints[candidate]))
-                hints[kept] = TimeSeriesHistogramCounterResetHint::Unknown;
+            else if ((comparison == 0) && (num_unique == 1) && (view.counterResetHintAt(kept) != view.counterResetHintAt(candidate)))
+                view.setCounterResetHintAt(kept, TimeSeriesHistogramCounterResetHint::Unknown);
         }
 
         /// Copy consecutive source rows together, directly into the result without materializing a permuted column.
@@ -352,9 +350,8 @@ private:
         /// first of each range, the moved ones) costs about as much as detecting them all, which the sort already paid for.
         const TimeSeriesHistogramsColumnsMutableView result_view{tuple_to};
         const TimeSeriesHistogramPayloadColumnsView result_payload{result_view};
-        auto & result_hints = result_view.counter_reset_hint.getData();
         for (size_t i = result_begin + 1; i < tuple_to.size(); ++i)
-            result_hints[i] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(result_payload, i - 1, i);
+            result_view.setCounterResetHintAt(i, TimeSeriesHistogramCounterResetRule::detectReset(result_payload, i - 1, i));
     }
 
     const String name;

@@ -1,7 +1,7 @@
 #include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 #include <Columns/IColumn.h>
-#include <DataTypes/TimeSeries/TimeSeriesHistogramCounterResetRule.h>
+#include <DataTypes/TimeSeries/PrometheusStaleMarker.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/DecomposedFloat.h>
 
@@ -33,12 +33,13 @@ namespace
     }
 }
 
-
-int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_t lhs, size_t rhs)
+namespace TimeSeriesDuplicateTimestampRule
+{
+int compareHistogramSamples(const View & view, size_t lhs, size_t rhs)
 {
     /// The other elements of a stale marker are ignored, so they must not let it beat another sample, e.g. by a greater count.
-    const bool lhs_stale = TimeSeriesHistogramCounterResetRule::isStaleMarker(view.sum.getData()[lhs]);
-    const bool rhs_stale = TimeSeriesHistogramCounterResetRule::isStaleMarker(view.sum.getData()[rhs]);
+    const bool lhs_stale = isPrometheusStaleMarker(view.sum.getData()[lhs]);
+    const bool rhs_stale = isPrometheusStaleMarker(view.sum.getData()[rhs]);
     if (lhs_stale != rhs_stale)
         return lhs_stale ? -1 : 1;
     if (const int by_count = compareCounts(view, lhs, rhs))
@@ -54,8 +55,8 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
         {
             /// Merging changes the counter hints, so a winner they decided would depend on the order of the merges. The gauge marker
             /// describes the sample itself and is never changed.
-            const bool lhs_gauge = view.counter_reset_hint.getData()[lhs] == TimeSeriesHistogramCounterResetHint::Gauge;
-            const bool rhs_gauge = view.counter_reset_hint.getData()[rhs] == TimeSeriesHistogramCounterResetHint::Gauge;
+            const bool lhs_gauge = view.counterResetHintAt(lhs) == TimeSeriesHistogramCounterResetHint::Gauge;
+            const bool rhs_gauge = view.counterResetHintAt(rhs) == TimeSeriesHistogramCounterResetHint::Gauge;
             if (lhs_gauge != rhs_gauge)
                 return lhs_gauge ? 1 : -1;
             continue;
@@ -64,6 +65,7 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
             return result;
     }
     return 0;
+}
 }
 
 }

@@ -88,7 +88,7 @@ FROM ts_non_finite FORMAT Vertical;
 
 DROP TABLE ts_non_finite;
 
--- Samples sharing a timestamp collapse into one keeping the largest real value (`timeseriesMaxValueForDuplicateTimestamp`).
+-- Samples sharing a timestamp collapse into one keeping the largest real value (`TimeSeriesDuplicateTimestampRule::floatSampleWinner`).
 -- All queries below use a single-point grid at 100 with the window (90, 100].
 SELECT 'Duplicate timestamps:';
 

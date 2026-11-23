@@ -17,7 +17,10 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-Int64 PrometheusTimestamps::fromStored(Int64 timestamp, UInt32 scale)
+namespace PrometheusTimestamps
+{
+
+Int64 fromStored(Int64 timestamp, UInt32 scale)
 {
     /// A timestamp stored bypassing the sink can be too far from the epoch to be expressed in milliseconds.
     DateTime64 timestamp_ms{};
@@ -27,7 +30,7 @@ Int64 PrometheusTimestamps::fromStored(Int64 timestamp, UInt32 scale)
     return timestamp_ms.value;
 }
 
-void PrometheusTimestamps::insertInto(Int64 timestamp_ms, IColumn & column)
+void insertInto(Int64 timestamp_ms, IColumn & column)
 {
     /// A sender can put any `Int64` into the timestamp. It's rejected with `INCORRECT_DATA`, an HTTP 400 on which the sender drops
     /// the request, not with the `DECIMAL_OVERFLOW` of the throwing conversions, an HTTP 500 on which it retries the request.
@@ -45,6 +48,8 @@ void PrometheusTimestamps::insertInto(Int64 timestamp_ms, IColumn & column)
     if (!DecimalUtils::tryConvertTo<UInt32>(DateTime64{timestamp_ms}, SCALE, timestamp_seconds))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Timestamp {} ms is out of the range of DateTime", timestamp_ms);
     assert_cast<ColumnUInt32 &>(column).getData().push_back(timestamp_seconds);
+}
+
 }
 
 }

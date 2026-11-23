@@ -13,7 +13,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 
 namespace DB
@@ -42,7 +42,7 @@ public:
             auto & last = buffer.back();
             if (timestamp == last.first)
             {
-                last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
+                last.second = TimeSeriesDuplicateTimestampRule::floatSampleWinner(last.second, value);
                 return;
             }
             sorted = false;
@@ -211,14 +211,14 @@ private:
         return lhs.first < rhs.first;
     }
 
-    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
+    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `TimeSeriesDuplicateTimestampRule::floatSampleWinner`.
     static void deduplicateSorted(Buffer & buf)
     {
         size_t last_unique = 0;
         for (size_t i = 1; i < buf.size(); ++i)
         {
             if (buf[i].first == buf[last_unique].first)
-                buf[last_unique].second = timeseriesMaxValueForDuplicateTimestamp(buf[last_unique].second, buf[i].second);
+                buf[last_unique].second = TimeSeriesDuplicateTimestampRule::floatSampleWinner(buf[last_unique].second, buf[i].second);
             else
                 buf[++last_unique] = buf[i];
         }

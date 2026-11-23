@@ -21,7 +21,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/PrometheusTimestamps.h>

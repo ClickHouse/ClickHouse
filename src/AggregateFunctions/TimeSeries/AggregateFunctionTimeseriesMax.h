@@ -13,7 +13,7 @@
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 
 namespace DB
@@ -46,7 +46,7 @@ struct AggregateFunctionTimeseriesMaxTraits
     }
 
     /// The maximum and the timestamp of the sample holding it. Samples at the same timestamp are collapsed by
-    /// `timeseriesMaxValueForDuplicateTimestamp`. Otherwise a real value beats a NaN, and among equal values (or NaNs)
+    /// `TimeSeriesDuplicateTimestampRule::floatSampleWinner`. Otherwise a real value beats a NaN, and among equal values (or NaNs)
     /// the latest timestamp wins, like in Prometheus. The order is total, so `merge` is commutative and associative.
     struct Summary
     {
@@ -60,7 +60,7 @@ struct AggregateFunctionTimeseriesMaxTraits
         {
             if (has_value && sample_timestamp == timestamp)
             {
-                value = timeseriesMaxValueForDuplicateTimestamp(value, sample_value);
+                value = TimeSeriesDuplicateTimestampRule::floatSampleWinner(value, sample_value);
             }
             else if (shouldReplace(sample_timestamp, sample_value))
             {

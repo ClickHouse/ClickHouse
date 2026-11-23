@@ -1,7 +1,7 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
 #include <Parsers/ASTFunction.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 

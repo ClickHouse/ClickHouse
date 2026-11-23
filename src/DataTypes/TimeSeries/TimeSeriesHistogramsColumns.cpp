@@ -3,26 +3,148 @@
 #include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
-#include <base/Decimal.h>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
-
-#include <algorithm>
 
 
 namespace DB
 {
 
-const std::vector<TimeSeriesHistogramsCodecDeclaration> & TimeSeriesHistogramsColumns::getCodecDeclarations()
+namespace TimeSeriesHistogramsColumns
+{
+
+namespace
+{
+
+/// The name, the type and the codec of an element of the histogram tuple, and its description for the documentation.
+/// This is the source of truth for generating the column, recognizing the generated one, validating the samples, and documenting them.
+/// `codec` is empty for the arrays of pairs: their codecs are declared for their `index` and `count` subcolumns, which keep one type
+/// and one data stream each (see TimeSeriesHistogramsColumns::getCodecDeclarations).
+struct TimeSeriesHistogramsColumnDefinition
+{
+    std::string_view name;
+    std::string_view type;
+    std::string_view codec;
+    std::string_view description;
+};
+
+constexpr std::string_view getCounterResetHintTypeName() { return "Enum8('unknown' = 0, 'reset' = 1, 'not_reset' = 2, 'gauge' = 3)"; }
+
+/// The codecs are declared for the subcolumns of the generated `histograms` column (`CODEC histograms.<name> (...)`). The counts
+/// are stored as sent: `T64` bit-packs the integer counts, the float counts get the general purpose codec only (`ALP` doesn't help
+/// on absolute counts), the bucket indexes of the pairs get `Delta` (see `getPairIndexCodec`).
+constexpr TimeSeriesHistogramsColumnDefinition getDefinition(TimeSeriesHistogramsColumn column)
+{
+    switch (column)
+    {
+        case TimeSeriesHistogramsColumn::IsFloat:
+            return {"is_float", "Bool", "CODEC(ZSTD(3))",
+                "Whether the histogram is a float histogram, with its counts in the `*_float` elements; an integer histogram has its counts "
+                "in the `*_int` elements. The readers ignore the elements of the other flavour, which remote write leaves 0 and empty"};
+        case TimeSeriesHistogramsColumn::CounterResetHint:
+            return {"counter_reset_hint", getCounterResetHintTypeName(), "CODEC(ZSTD(3))",
+                "The counter reset hint: `unknown`, `reset` (a counter reset happened), `not_reset` (no counter reset) or `gauge` "
+                "(a gauge histogram)"};
+        case TimeSeriesHistogramsColumn::Schema:
+            return {"schema", "Int8", "CODEC(ZSTD(3))",
+                "The bucket schema: from -4 to 8 for exponential buckets, -53 for custom buckets"};
+        case TimeSeriesHistogramsColumn::ZeroThreshold:
+            return {"zero_threshold", "Float64", "CODEC(ZSTD(3))",
+                "The width of the zero bucket"};
+        case TimeSeriesHistogramsColumn::Sum:
+            return {"sum", "Float64", "CODEC(ZSTD(3))",
+                "The sum of the observations; the stale marker `NaN` when the series went stale"};
+        case TimeSeriesHistogramsColumn::CountInt:
+            return {"count_int", "Int64", "CODEC(T64, ZSTD(3))",
+                "The total count of the observations of an integer histogram, 0 for a float histogram"};
+        case TimeSeriesHistogramsColumn::ZeroCountInt:
+            return {"zero_count_int", "Int64", "CODEC(T64, ZSTD(3))",
+                "The count of the zero bucket of an integer histogram, 0 for a float histogram"};
+        case TimeSeriesHistogramsColumn::CountFloat:
+            return {"count_float", "Float64", "CODEC(ZSTD(3))",
+                "The total count of the observations of a float histogram, 0 for an integer histogram"};
+        case TimeSeriesHistogramsColumn::ZeroCountFloat:
+            return {"zero_count_float", "Float64", "CODEC(ZSTD(3))",
+                "The count of the zero bucket of a float histogram, 0 for an integer histogram"};
+        case TimeSeriesHistogramsColumn::PositiveInt:
+            return {"positive_int", "Array(Tuple(index Int32, count Int64))", "",
+                "The positive buckets of an integer histogram as pairs of the bucket index and the count, sorted by index; "
+                "empty for a float histogram"};
+        case TimeSeriesHistogramsColumn::NegativeInt:
+            return {"negative_int", "Array(Tuple(index Int32, count Int64))", "",
+                "The negative buckets of an integer histogram as pairs of the bucket index and the count, sorted by index; "
+                "empty for a float histogram"};
+        case TimeSeriesHistogramsColumn::PositiveFloat:
+            return {"positive_float", "Array(Tuple(index Int32, count Float64))", "",
+                "The positive buckets of a float histogram as pairs of the bucket index and the count, sorted by index; "
+                "empty for an integer histogram"};
+        case TimeSeriesHistogramsColumn::NegativeFloat:
+            return {"negative_float", "Array(Tuple(index Int32, count Float64))", "",
+                "The negative buckets of a float histogram as pairs of the bucket index and the count, sorted by index; "
+                "empty for an integer histogram"};
+        case TimeSeriesHistogramsColumn::CustomValues:
+            return {"custom_values", "Array(Float64)", "CODEC(ZSTD(3))",
+                "The upper bounds of the custom buckets (`schema = -53`), empty otherwise"};
+    }
+}
+
+constexpr std::string_view getDescription(TimeSeriesHistogramsColumn column) { return getDefinition(column).description; }
+
+/// Whether the element is one of the four arrays of pairs of the bucket index and the count.
+constexpr bool isPairs(TimeSeriesHistogramsColumn column)
+{
+    return (column == TimeSeriesHistogramsColumn::PositiveInt) || (column == TimeSeriesHistogramsColumn::NegativeInt)
+        || (column == TimeSeriesHistogramsColumn::PositiveFloat) || (column == TimeSeriesHistogramsColumn::NegativeFloat);
+}
+
+/// Whether the element holds the counts of the float flavour (`count_float`, `zero_count_float`, `positive_float`, `negative_float`).
+constexpr bool isFloatFlavour(TimeSeriesHistogramsColumn column)
+{
+    return (column == TimeSeriesHistogramsColumn::CountFloat) || (column == TimeSeriesHistogramsColumn::ZeroCountFloat)
+        || (column == TimeSeriesHistogramsColumn::PositiveFloat) || (column == TimeSeriesHistogramsColumn::NegativeFloat);
+}
+
+/// The elements of a pair: the first one is the bucket index, the second one the count.
+constexpr std::string_view getPairIndexName() { return "index"; }
+constexpr std::string_view getPairCountName() { return "count"; }
+
+/// The codec of the `timestamp` element: near-monotonic timestamps barely compress under generic codecs.
+constexpr std::string_view getTimestampCodec() { return "CODEC(Delta, T64, ZSTD(3))"; }
+
+/// The codecs of the subcolumns of an array of pairs. The indexes of one histogram increase, so `Delta` makes them small.
+constexpr std::string_view getPairIndexCodec() { return "CODEC(Delta, ZSTD(3))"; }
+constexpr std::string_view getPairCountCodec(TimeSeriesHistogramsColumn column)
+{
+    return isFloatFlavour(column) ? "CODEC(ZSTD(3))" : "CODEC(T64, ZSTD(3))";
+}
+
+const DataTypePtr & getDefaultTimestampType()
+{
+    static const DataTypePtr type = std::make_shared<DataTypeDateTime64>(3);
+    return type;
+}
+
+}
+
+std::string_view getName(TimeSeriesHistogramsColumn column)
+{
+    return getDefinition(column).name;
+}
+
+std::string_view getType(TimeSeriesHistogramsColumn column)
+{
+    return getDefinition(column).type;
+}
+
+const std::vector<TimeSeriesHistogramsCodecDeclaration> & getCodecDeclarations()
 {
     static const std::vector<TimeSeriesHistogramsCodecDeclaration> declarations = []
     {
         std::vector<TimeSeriesHistogramsCodecDeclaration> result;
-        result.push_back({TimeSeriesColumnNames::Timestamp, getTimestampCodec()});
+        result.push_back({String{getTimestampName()}, getTimestampCodec()});
         for (const auto column : getAll())
         {
             if (isPairs(column))
@@ -41,7 +163,7 @@ const std::vector<TimeSeriesHistogramsCodecDeclaration> & TimeSeriesHistogramsCo
     return declarations;
 }
 
-const DataTypePtr & TimeSeriesHistogramsColumns::getDataType(TimeSeriesHistogramsColumn column)
+const DataTypePtr & getDataType(TimeSeriesHistogramsColumn column)
 {
     static const auto data_types = []
     {
@@ -53,7 +175,7 @@ const DataTypePtr & TimeSeriesHistogramsColumns::getDataType(TimeSeriesHistogram
     return data_types[static_cast<size_t>(column)];
 }
 
-const IColumn & TimeSeriesHistogramsColumns::getEmptyColumn(TimeSeriesHistogramsColumn column)
+const IColumn & getEmptyColumn(TimeSeriesHistogramsColumn column)
 {
     static const auto columns = []
     {
@@ -65,10 +187,10 @@ const IColumn & TimeSeriesHistogramsColumns::getEmptyColumn(TimeSeriesHistograms
     return *columns[static_cast<size_t>(column)];
 }
 
-DataTypePtr TimeSeriesHistogramsColumns::makeHistogramsArrayType(const DataTypePtr & timestamp_type)
+DataTypePtr makeHistogramsArrayType(const DataTypePtr & timestamp_type)
 {
     DataTypes element_types{timestamp_type};
-    Strings element_names{TimeSeriesColumnNames::Timestamp};
+    Strings element_names{String{getTimestampName()}};
     for (auto column : getAll())
     {
         element_types.push_back(getDataType(column));
@@ -77,7 +199,7 @@ DataTypePtr TimeSeriesHistogramsColumns::makeHistogramsArrayType(const DataTypeP
     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::move(element_types), std::move(element_names)));
 }
 
-DataTypePtr TimeSeriesHistogramsColumns::tryGetTimestampType(const DataTypePtr & type)
+DataTypePtr tryGetTimestampType(const DataTypePtr & type)
 {
     /// A type wrapped in `SimpleAggregateFunction` is the nested type with a custom name, so no unwrapping is needed.
     const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
@@ -92,80 +214,20 @@ DataTypePtr TimeSeriesHistogramsColumns::tryGetTimestampType(const DataTypePtr &
     return timestamp_type;
 }
 
-namespace
+String describeHistogramsArrayTypeForDocs()
 {
-    /// The list of the codecs without the keyword: `CODEC(Delta, T64, ZSTD(3))` -> `Delta, T64, ZSTD(3)`.
-    std::string_view getCodecList(std::string_view codec)
-    {
-        static constexpr std::string_view prefix = "CODEC(";
-        chassert(codec.starts_with(prefix) && codec.ends_with(')'));
-        return codec.substr(prefix.size(), codec.size() - prefix.size() - 1);
-    }
-
-    /// The list of the codecs of a declaration as an inner table prints it: `Delta` with the byte size of the values of the subcolumn,
-    /// e.g. `Delta(8), T64, ZSTD(3)` for `DateTime64(3)` timestamps. Only the timestamps and the bucket indexes have `Delta`.
-    String getCodecListForInnerTable(const TimeSeriesHistogramsCodecDeclaration & declaration)
-    {
-        static constexpr std::string_view delta = "Delta";
-        const auto codec_list = getCodecList(declaration.codec);
-        if (!codec_list.starts_with(delta))
-            return String{codec_list};
-        const size_t byte_size = (declaration.subcolumn == TimeSeriesColumnNames::Timestamp) ? sizeof(DateTime64) : sizeof(Int32);
-        return fmt::format("{}({}){}", delta, byte_size, codec_list.substr(delta.size()));
-    }
+    return makeHistogramsArrayType(getDefaultTimestampType())->getName();
 }
 
-String TimeSeriesHistogramsColumns::describeArrayTypeForDocs(std::string_view timestamp_type_text)
+String describeHistogramsElementsForDocs()
 {
-    String elements = fmt::format("{} {}", TimeSeriesColumnNames::Timestamp, timestamp_type_text);
-    for (const auto column : getAll())
-        elements += fmt::format(", {} {}", getName(column), getType(column));
-    return fmt::format("Array(Tuple({}))", elements);
-}
-
-String TimeSeriesHistogramsColumns::describeElementsForDocs(std::string_view timestamp_type_text, std::string_view timestamp_description)
-{
-    String result = fmt::format("| `{}` | `{}` by default | {} |\n", TimeSeriesColumnNames::Timestamp, timestamp_type_text, timestamp_description);
+    String result = fmt::format("| `{}` | `{}` by default | The timestamp of the histogram sample, of the type of the timestamps of `samples` |\n",
+        getTimestampName(), getDefaultTimestampType()->getName());
     for (const auto column : getAll())
         result += fmt::format("| `{}` | `{}` | {} |\n", getName(column), getType(column), getDescription(column));
     return result;
 }
 
-String TimeSeriesHistogramsColumns::describeInnerCodecsForDocs()
-{
-    /// The groups are in the order of the first declaration with the codec, so the timestamps come first.
-    std::vector<std::pair<std::string_view, std::vector<std::string_view>>> groups;
-    for (const auto & declaration : getCodecDeclarations())
-    {
-        const auto it = std::ranges::find_if(groups, [&](const auto & group) { return group.first == declaration.codec; });
-        if (it == groups.end())
-            groups.emplace_back(declaration.codec, std::vector<std::string_view>{declaration.subcolumn});
-        else
-            it->second.push_back(declaration.subcolumn);
-    }
-
-    String result;
-    for (const auto & [codec, subcolumns] : groups)
-    {
-        if (!result.empty())
-            result += "; ";
-        result += fmt::format("`{}` for `{}`", getCodecList(codec), fmt::join(subcolumns, "`, `"));
-    }
-    return result;
-}
-
-String TimeSeriesHistogramsColumns::describeInnerCodecsForCreateExample(bool for_inner_table)
-{
-    String result;
-    for (const auto & declaration : getCodecDeclarations())
-    {
-        if (!result.empty())
-            result += ",\n";
-        result += fmt::format("    CODEC `{}.{}` ({})",
-            TimeSeriesColumnNames::Histograms, declaration.subcolumn,
-            for_inner_table ? getCodecListForInnerTable(declaration) : String{getCodecList(declaration.codec)});
-    }
-    return result;
 }
 
 }

@@ -3,6 +3,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 
 
@@ -20,21 +21,13 @@ namespace
     template <typename ValueType>
     AggregateFunctionPtr createWithValueType(const String & name, const DataTypes & argument_types, const DataTypePtr & timestamp_type)
     {
-        AggregateFunctionPtr res;
         if (isDateTime64(timestamp_type))
-        {
-            res = std::make_shared<AggregateFunctionTimeSeriesGroupArray<DateTime64, ValueType>>(argument_types);
-        }
-        else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
-        {
-            res = std::make_shared<AggregateFunctionTimeSeriesGroupArray<UInt32, ValueType>>(argument_types);
-        }
+            return std::make_shared<AggregateFunctionTimeSeriesGroupArray<DateTime64, ValueType>>(argument_types);
+        if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
+            return std::make_shared<AggregateFunctionTimeSeriesGroupArray<UInt32, ValueType>>(argument_types);
 
-        if (!res)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
-                            timestamp_type->getName(), name);
-
-        return res;
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
+            timestamp_type->getName(), name);
     }
 
     AggregateFunctionPtr createWithTimestampAndValueTypes(
@@ -85,7 +78,8 @@ namespace
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument for aggregate function {}, expected Array(Tuple(timestamp, value)) or the type of the "
                 "`histograms` column of a TimeSeries table: {}",
-                argument_types[0]->getName(), name, TimeSeriesHistogramsColumns::describeArrayTypeForDocs("<timestamp type>"));
+                argument_types[0]->getName(), name,
+                TimeSeriesHistogramsColumns::makeHistogramsArrayType(std::make_shared<DataTypeDateTime64>(3))->getName());
         }
 
         assertBinary(name, argument_types);

@@ -28,7 +28,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
@@ -426,7 +426,8 @@ namespace
     {
         return [&ts_values](size_t kept_index, size_t new_index)
         {
-            return TimeSeriesDuplicateTimestampRule::floatSampleWins(ts_values.getFloat64(kept_index), ts_values.getFloat64(new_index));
+            return TimeSeriesDuplicateTimestampRule::compareFloatSamples(
+                ts_values.getFloat64(new_index), ts_values.getFloat64(kept_index)) > 0;
         };
     }
 
@@ -437,8 +438,8 @@ namespace
     {
         return [&view, &duplicate_hints_differ](size_t kept_index, size_t new_index)
         {
-            const int comparison = TimeSeriesDuplicateTimestampRule::compareHistograms(view, new_index, kept_index);
-            if ((comparison == 0) && (view.counter_reset_hint.getData()[kept_index] != view.counter_reset_hint.getData()[new_index]))
+            const int comparison = TimeSeriesDuplicateTimestampRule::compareHistogramSamples(view, new_index, kept_index);
+            if ((comparison == 0) && (view.counterResetHintAt(kept_index) != view.counterResetHintAt(new_index)))
                 duplicate_hints_differ[kept_index] = 1;
             return comparison > 0;
         };

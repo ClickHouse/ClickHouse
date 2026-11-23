@@ -9,17 +9,16 @@ class IColumn;
 
 /// Conversions between Prometheus timestamps (milliseconds since the epoch) and the timestamps of a TimeSeries table: `DateTime64`
 /// with a scale, or `DateTime` / `UInt32` with the scale 0. They throw INCORRECT_DATA for a timestamp the other side can't represent.
-class PrometheusTimestamps
+namespace PrometheusTimestamps
 {
-public:
     /// The scale of a Prometheus timestamp as a `DateTime64`: milliseconds.
-    static constexpr UInt32 SCALE = 3;
+    constexpr UInt32 SCALE = 3;
 
     /// The Prometheus timestamp of a stored timestamp with the scale `scale`.
-    static Int64 fromStored(Int64 timestamp, UInt32 scale);
+    Int64 fromStored(Int64 timestamp, UInt32 scale);
 
     /// Appends a Prometheus timestamp to a column of the timestamp type of a TimeSeries table.
-    static void insertInto(Int64 timestamp_ms, IColumn & column);
-};
+    void insertInto(Int64 timestamp_ms, IColumn & column);
+}
 
 }

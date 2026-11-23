@@ -1,7 +1,8 @@
 #include <DataTypes/TimeSeries/TimeSeriesHistogramCounterResetRule.h>
 
+#include <DataTypes/TimeSeries/PrometheusStaleMarker.h>
+
 #include <algorithm>
-#include <bit>
 
 
 namespace DB
@@ -34,31 +35,15 @@ namespace
 }
 
 
-bool TimeSeriesHistogramCounterResetRule::isStaleMarker(Float64 sum)
+namespace
 {
-    return std::bit_cast<UInt64>(sum) == 0x7ff0000000000002ULL;
-}
-
-Int8 TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(const View & view, size_t previous, size_t current)
-{
-    /// A stale marker carries only `sum`, so its counts can't be compared with the predecessor's.
-    if (isStaleMarker(view.sum.getData()[current]))
-        return Hint::Unknown;
-    /// A gauge marker describes the sample itself, not its relation to the predecessor. A counter hint the sample was sent with is
-    /// about the predecessor its sender saw, which this one need not be, so it is detected from the data instead.
-    const Int8 hint = view.counter_reset_hint.getData()[current];
-    if (hint == Hint::Gauge)
-        return hint;
-    return detect(view, previous, current);
-}
-
-Int8 TimeSeriesHistogramCounterResetRule::detect(const View & columns, size_t previous, size_t current)
+Hint detectResetFromData(const View & columns, size_t previous, size_t current)
 {
     const bool is_float = columns.isFloatAt(current);
-    if (is_float != columns.isFloatAt(previous) || columns.counter_reset_hint.getData()[previous] == Hint::Gauge)
+    if (is_float != columns.isFloatAt(previous) || columns.counterResetHintAt(previous) == Hint::Gauge)
         return Hint::Unknown;
 
-    if (isStaleMarker(columns.sum.getData()[previous]))
+    if (isPrometheusStaleMarker(columns.sum.getData()[previous]))
         return Hint::Unknown;
 
     const bool count_decreased = is_float
@@ -94,5 +79,26 @@ Int8 TimeSeriesHistogramCounterResetRule::detect(const View & columns, size_t pr
     }
     return Hint::NotReset;
 }
+}
+
+namespace TimeSeriesHistogramCounterResetRule
+{
+
+TimeSeriesHistogramCounterResetHint detectReset(const View & view, size_t previous, size_t current)
+{
+    /// A stale marker carries only `sum`, so its counts can't be compared with the predecessor's.
+    if (isPrometheusStaleMarker(view.sum.getData()[current]))
+        return Hint::Unknown;
+    /// A gauge marker describes the sample itself, not its relation to the predecessor. A counter hint the sample was sent with is
+    /// about the predecessor its sender saw, which this one need not be, so it is detected from the data instead.
+    const Hint hint = view.counterResetHintAt(current);
+    if (hint == Hint::Gauge)
+        return hint;
+
+    return detectResetFromData(view, previous, current);
+}
+
+}
+
 
 }

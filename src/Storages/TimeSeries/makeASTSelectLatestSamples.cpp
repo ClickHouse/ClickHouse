@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/makeASTSelectLatestSamples.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/TimeSeries/PrometheusStaleMarker.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -8,7 +9,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <base/defines.h>
@@ -22,7 +23,6 @@ namespace
     constexpr const char * GROUP_COLUMN = "group";
     constexpr const char * LAST_VALUE_COLUMN = "last_value";
     constexpr const char * LAST_TIMESTAMP_COLUMN = "last_timestamp";
-    constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
 
     /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
     /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
@@ -121,7 +121,7 @@ ASTPtr makeASTSelectLatestSamples(
     builder.having = makeASTFunction(
         "notEquals",
         makeASTFunction("reinterpretAsUInt64", makeASTFunction("toFloat64", make_intrusive<ASTIdentifier>(LAST_VALUE_COLUMN))),
-        make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+        make_intrusive<ASTLiteral>(PROMETHEUS_STALE_MARKER_BITS));
 
     /// ORDER BY arrayFirst(tag -> tag.1 = '__name__', tags).2, tags
     builder.order_by.push_back(makeASTFunction(

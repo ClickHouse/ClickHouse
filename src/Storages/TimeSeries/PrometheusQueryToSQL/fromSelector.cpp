@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 
+#include <DataTypes/TimeSeries/PrometheusStaleMarker.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -16,14 +17,12 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
-
     ASTPtr isStaleMarker(ASTPtr value)
     {
         return makeASTFunction(
             "equals",
             makeASTFunction("reinterpretAsUInt64", std::move(value)),
-            make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+            make_intrusive<ASTLiteral>(PROMETHEUS_STALE_MARKER_BITS));
     }
 
     SQLQueryPiece fromRangeSelector(std::string_view instant_selector_text,

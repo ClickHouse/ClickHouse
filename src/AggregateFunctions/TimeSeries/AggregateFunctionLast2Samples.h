@@ -15,7 +15,7 @@
 #include <Columns/ColumnTuple.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 
 
 namespace DB
@@ -78,7 +78,7 @@ public:
                 else if (timestamp == timestamps[0])
                 {
                     /// Replace the value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    values[0] = TimeSeriesDuplicateTimestampRule::floatSampleWinner(values[0], value);
                 }
                 else
                 {
@@ -108,7 +108,7 @@ public:
                 else if (timestamp == timestamps[0])
                 {
                     /// Replace first sample value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    values[0] = TimeSeriesDuplicateTimestampRule::floatSampleWinner(values[0], value);
                 }
                 else if (timestamp > timestamps[1])
                 {
@@ -119,7 +119,7 @@ public:
                 else if (timestamp == timestamps[1])
                 {
                     /// Replace second sample value with the bigger one
-                    values[1] = timeseriesMaxValueForDuplicateTimestamp(values[1], value);
+                    values[1] = TimeSeriesDuplicateTimestampRule::floatSampleWinner(values[1], value);
                 }
             }
         }

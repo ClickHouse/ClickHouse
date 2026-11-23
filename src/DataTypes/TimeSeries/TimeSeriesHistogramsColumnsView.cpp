@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 
 namespace DB
 {
@@ -17,7 +16,7 @@ namespace ErrorCodes
 namespace
 {
     using Element = TimeSeriesHistogramsColumn;
-    using Registry = TimeSeriesHistogramsColumns;
+    namespace Registry = TimeSeriesHistogramsColumns;
     using PayloadColumns = TimeSeriesHistogramPayloadColumnsMutableView::Columns;
 
     [[noreturn]] void throwUnexpectedColumn(std::string_view column_name, std::string_view expected_type, const IColumn & column)
@@ -41,7 +40,7 @@ namespace
     {
         /// `ColumnDateTime` is `ColumnUInt32`, so the second check covers `DateTime` and `UInt32`.
         if (!typeid_cast<const ColumnDateTime64 *>(&column) && !typeid_cast<const ColumnUInt32 *>(&column))
-            throwUnexpectedColumn(TimeSeriesColumnNames::Timestamp, "DateTime64, DateTime or UInt32", column);
+            throwUnexpectedColumn(Registry::getTimestampName(), "DateTime64, DateTime or UInt32", column);
     }
 
     /// The sources of the columns a view is built over: the payload elements, the timestamps and the offsets of the outer array.
@@ -85,7 +84,8 @@ namespace
         {
             const auto * tuple = typeid_cast<const ColumnTuple *>(&array.getData());
             if (!tuple)
-                throwUnexpectedColumn(TimeSeriesColumnNames::Histograms, "Array(Tuple(...))", array);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "An array of histogram samples must have type Array(Tuple(...)), got {}",
+                    array.getName());
             return *tuple;
         }
     };

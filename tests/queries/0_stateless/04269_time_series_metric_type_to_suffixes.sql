@@ -1,8 +1,8 @@
 -- Tests for the timeSeriesMetricTypeToSuffixes scalar function.
 
--- Histogram: bucket/count/sum members.
+-- Histogram: the native histogram and the bucket/count/sum members.
 SELECT timeSeriesMetricTypeToSuffixes('histogram');
--- Gauge histogram: bucket/gcount/gsum members.
+-- Gauge histogram: the native histogram and the bucket/gcount/gsum members.
 SELECT timeSeriesMetricTypeToSuffixes('gaugehistogram');
 -- Summary: base/count/sum members.
 SELECT timeSeriesMetricTypeToSuffixes('summary');

@@ -33,7 +33,7 @@
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>

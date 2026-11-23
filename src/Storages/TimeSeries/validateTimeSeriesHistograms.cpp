@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <span>
+#include <utility>
 
 
 namespace DB
@@ -78,9 +79,10 @@ namespace
     template <typename Fail>
     void checkCounterResetHint(Int8 counter_reset_hint, const Fail & fail)
     {
-        using Hint = TimeSeriesHistogramCounterResetHint;
-        if ((counter_reset_hint < Hint::Unknown) || (counter_reset_hint > Hint::Gauge))
-            fail("counter_reset_hint {} is out of the range {}..{}", counter_reset_hint, Hint::Unknown, Hint::Gauge);
+        constexpr auto min_hint = std::to_underlying(TimeSeriesHistogramCounterResetHint::Unknown);
+        constexpr auto max_hint = std::to_underlying(TimeSeriesHistogramCounterResetHint::Gauge);
+        if ((counter_reset_hint < min_hint) || (counter_reset_hint > max_hint))
+            fail("counter_reset_hint {} is out of the range {}..{}", counter_reset_hint, min_hint, max_hint);
     }
 
     bool isCustomBucketsSchema(Int8 schema)

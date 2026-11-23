@@ -13,11 +13,12 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusTimestamps.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 
 namespace ProfileEvents
@@ -68,7 +69,7 @@ namespace
     }
 
     using MutableView = TimeSeriesHistogramsColumnsMutableView;
-    using Registry = TimeSeriesHistogramsColumns;
+    namespace Registry = TimeSeriesHistogramsColumns;
 
     /// The containers of an `Array(Float64)` element being built: the elements and the offsets.
     struct FloatArrayData
@@ -256,10 +257,10 @@ namespace
     }
 
     /// `appendHistogram` stores the `ResetHint` of a histogram as its number.
-    static_assert(TimeSeriesHistogramCounterResetHint::Unknown == prometheus::Histogram::UNKNOWN);
-    static_assert(TimeSeriesHistogramCounterResetHint::Reset == prometheus::Histogram::YES);
-    static_assert(TimeSeriesHistogramCounterResetHint::NotReset == prometheus::Histogram::NO);
-    static_assert(TimeSeriesHistogramCounterResetHint::Gauge == prometheus::Histogram::GAUGE);
+    static_assert(std::to_underlying(TimeSeriesHistogramCounterResetHint::Unknown) == prometheus::Histogram::UNKNOWN);
+    static_assert(std::to_underlying(TimeSeriesHistogramCounterResetHint::Reset) == prometheus::Histogram::YES);
+    static_assert(std::to_underlying(TimeSeriesHistogramCounterResetHint::NotReset) == prometheus::Histogram::NO);
+    static_assert(std::to_underlying(TimeSeriesHistogramCounterResetHint::Gauge) == prometheus::Histogram::GAUGE);
 
     /// Appends one histogram sample to the columns: the flavour's counts as sent, the other flavour's scalars 0 and arrays empty.
     /// A histogram is an integer or a float one by its `count` arm (Prometheus's `IsFloatHistogram`; an unset arm is an integer

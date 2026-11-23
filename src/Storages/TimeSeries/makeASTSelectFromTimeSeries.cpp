@@ -23,7 +23,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 
@@ -508,7 +508,7 @@ namespace
     /// Builds a JOIN clause for the "metric families" table to join it to the "tags" table:
     /// FULL JOIN
     /// (
-    ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type[, true]))) AS __metric_family_with_suffix
+    ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
     ///     FROM
     ///     (
     ///         SELECT metric_family, type, unit, help
@@ -521,20 +521,15 @@ namespace
     ///
     /// The FULL JOIN keeps every "tags" row (its metadata columns are empty when no member matches) and also
     /// every "metric families" member row that no time series belongs to (its "tags"/"samples" columns are then empty).
-    /// For a table storing native histograms (`native_histograms`) the histogram types also get the empty suffix: a native
-    /// histogram is a series named like its family. Without it a classic histogram family would make a member row with no series.
-    ASTPtr makeMetricFamiliesFullJoinElement(const StorageID & metric_families_table_id, const char * metric_family_column_name, bool native_histograms)
+    ASTPtr makeMetricFamiliesFullJoinElement(const StorageID & metric_families_table_id, const char * metric_family_column_name)
     {
         auto expanded_list = make_intrusive<ASTExpressionList>();
         expanded_list->children.push_back(make_intrusive<ASTAsterisk>());
 
-        auto suffixes = makeASTFunction("timeSeriesMetricTypeToSuffixes", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type));
-        if (native_histograms)
-            suffixes->arguments->children.push_back(make_intrusive<ASTLiteral>(true));
-
         auto metric_family_with_suffix = makeASTFunction("concat",
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamily),
-            makeASTFunction("arrayJoin", std::move(suffixes)));
+            makeASTFunction("arrayJoin",
+                makeASTFunction("timeSeriesMetricTypeToSuffixes", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type))));
         metric_family_with_suffix->setAlias(metric_family_with_suffix_alias);
         expanded_list->children.push_back(std::move(metric_family_with_suffix));
 
@@ -693,7 +688,6 @@ namespace
         const std::unordered_map<String, String> & columns_by_tags,
         const NamesAndTypesList & samples_table_columns,
         bool has_bucketed_samples,
-        bool native_histograms,
         bool final)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -712,7 +706,7 @@ namespace
             tables->children.push_back(makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ final));
         }
         if (metric_families_table_id)
-            tables->children.push_back(makeMetricFamiliesFullJoinElement(*metric_families_table_id, metric_family_column_name, native_histograms));
+            tables->children.push_back(makeMetricFamiliesFullJoinElement(*metric_families_table_id, metric_family_column_name));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return makeSelectWithUnionQuery(std::move(select_query));
@@ -804,7 +798,7 @@ ASTPtr makeASTSelectFromTimeSeries(
     chassert(need_tags);
     return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metric_families_table_id, metric_family_column_name,
                                               requested_columns, requested_tags, columns_by_tags, samples_table_columns,
-                                              has_bucketed_samples, storage_settings->hasHistogramsInSamples(), final);
+                                              has_bucketed_samples, final);
 }
 
 SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & storage_settings, bool final)

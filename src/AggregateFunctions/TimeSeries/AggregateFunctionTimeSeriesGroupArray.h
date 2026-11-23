@@ -1,10 +1,10 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/Arena.h>
@@ -30,7 +30,8 @@ namespace ErrorCodes
 
 /// Aggregate function sorting pairs (timestamp, values) by timestamp.
 /// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value,
-/// where a NaN value loses to any number and the stale marker to any other value (see `timeseriesMaxValueForDuplicateTimestamp`).
+/// where a NaN value loses to any number and the stale marker to any other value
+/// (see `TimeSeriesDuplicateTimestampRule::floatSampleWinner`).
 /// Samples can be passed in three ways: as two scalar arguments (timestamp, value),
 /// as two arrays (Array(timestamp), Array(value)), or as a single array of pairs Array(Tuple(timestamp, value)).
 template <typename TimestampType, typename ValueType>
@@ -75,7 +76,7 @@ public:
                 Element & last = elements.back();
                 if (timestamp == last.timestamp)
                 {
-                    last.value = timeseriesMaxValueForDuplicateTimestamp(last.value, value);
+                    last.value = TimeSeriesDuplicateTimestampRule::floatSampleWinner(last.value, value);
                     return;
                 }
                 sorted = false;
@@ -160,7 +161,7 @@ public:
             {
                 if (elements[i].timestamp == elements[last_unique].timestamp)
                     elements[last_unique].value
-                        = timeseriesMaxValueForDuplicateTimestamp(elements[last_unique].value, elements[i].value);
+                        = TimeSeriesDuplicateTimestampRule::floatSampleWinner(elements[last_unique].value, elements[i].value);
                 else
                     elements[++last_unique] = elements[i];
             }

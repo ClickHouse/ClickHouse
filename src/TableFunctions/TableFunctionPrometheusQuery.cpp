@@ -2,7 +2,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
-#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 

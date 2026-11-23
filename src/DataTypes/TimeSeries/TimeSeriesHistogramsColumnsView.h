@@ -8,6 +8,7 @@
 #include <array>
 #include <span>
 #include <type_traits>
+#include <utility>
 
 
 namespace DB
@@ -82,6 +83,16 @@ public:
     [[nodiscard]] PayloadColumns getPayloadColumnsInStoredOrder() const;
 
     [[nodiscard]] bool isFloatAt(size_t row) const { return is_float.getData()[row] != 0; }
+
+    [[nodiscard]] TimeSeriesHistogramCounterResetHint counterResetHintAt(size_t row) const
+    {
+        return TimeSeriesHistogramCounterResetHint{counter_reset_hint.getData()[row]};
+    }
+
+    void setCounterResetHintAt(size_t row, TimeSeriesHistogramCounterResetHint hint) const requires (!is_const)
+    {
+        counter_reset_hint.getData()[row] = std::to_underlying(hint);
+    }
 
     /// The total count of the observations of sample `row` of either flavour, as `Float64`.
     [[nodiscard]] Float64 countAt(size_t row) const
