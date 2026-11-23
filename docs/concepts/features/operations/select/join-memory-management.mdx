@@ -32,7 +32,7 @@ The limits act differently for other algorithms:
 ## Spill thresholds {#spill-thresholds}
 
 - [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) sets an absolute spill threshold in bytes for the right-hand side of a hash-based JOIN.
-- [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) sets the spill threshold as a ratio of the memory that remains under the user and server memory limits. If no memory limit is configured, the ratio has no effect.
+- [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) sets the spill threshold as a ratio of the memory that remains under the query's `max_memory_usage` and the user and server memory limits. If no memory limit is configured, the ratio has no effect.
 
 If both settings are set, the smaller resulting threshold applies. The thresholds apply to `hash`, `parallel_hash`, `grace_hash`, the `auto` value, and the block nested loop fallback. They require a configured temporary data path.
 

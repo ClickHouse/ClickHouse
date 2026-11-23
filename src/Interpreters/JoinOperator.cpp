@@ -31,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -573,37 +572,8 @@ bool JoinSettings::canRunGraceHash() const
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
 {
-    std::optional<UInt64> threshold;
-    if (max_bytes_before_external_join != 0)
-        threshold = max_bytes_before_external_join;
-
-    if (max_bytes_ratio_before_external_join != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_join;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_join should be >= 0 and < 1 ({:.3f})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            UInt64 ratio_in_bytes = static_cast<UInt64>(static_cast<double>(*available_system_memory) * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {:.3f}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("JoinSettings"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_join");
-        }
-    }
-
-    return threshold.value_or(0);
+    return getMaxBytesBeforeExternalProcessing(
+        max_bytes_before_external_join, max_bytes_ratio_before_external_join, "max_bytes_ratio_before_external_join");
 }
 
 String toString(const JoinActionRef & node)
