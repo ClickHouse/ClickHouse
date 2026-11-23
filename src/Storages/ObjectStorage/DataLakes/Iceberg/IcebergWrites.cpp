@@ -1639,6 +1639,18 @@ void IcebergStorageSink::removeDataFilesAndManifests()
             tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", manifest_filename_in_storage));
         }
     }
+
+    if (statistics_file_path)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", *statistics_file_path));
+        }
+    }
 }
 
 bool IcebergStorageSink::initializeMetadata()
@@ -1676,7 +1688,6 @@ bool IcebergStorageSink::initializeMetadata()
         MetadataGenerator::SnapshotOperation::Append,
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
-    std::optional<String> statistics_file_path;
 
     auto prepareRetryAfterMetadataConflict = [&]
     {
@@ -1693,7 +1704,7 @@ bool IcebergStorageSink::initializeMetadata()
             }
         };
 
-        /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
+        /// A commit conflict keeps the data files and manifests for the next attempt, but removes its manifest list and statistics.
         best_effort_remove(storage_manifest_list_name);
         if (statistics_file_path)
             best_effort_remove(*statistics_file_path);
