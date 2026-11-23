@@ -31,21 +31,18 @@ struct CompressedPiece
     size_t compressed_bytes = 0;
     std::span<const CompressedBlock> blocks;
     cudaEvent_t uploaded = nullptr;
-    /// Where the piece expands to, the bytes of its blocks one after another; without it, after the piece before, from
-    /// the destination of the call.
+    /// Without it, the piece expands after the piece before.
     char * destination = nullptr;
 };
 
-/// One batched nvcomp call on a stream, the decompression stream unless the caller gives one of its own, shared by both
-/// decompressors and `GPUBatchUploader`. Only the codecs of `GPUCodec` are expanded on the device; `codecOf` gives
-/// nothing for the others, whose columns are read decompressed by the CPU and sent through `ColumnUploadPipe` instead.
+/// One batched nvcomp call, on the decompression stream unless the caller gives its own. Codecs other than those of
+/// `GPUCodec` are decompressed by the CPU.
 class DecompressionBatch
 {
 public:
     explicit DecompressionBatch(cuda::stream_ref stream_ = GPUResources::get().decompression);
 
-    /// The destination is written once `destination_ready_event` has happened, or, without it, once all that the compute
-    /// stream has queued before has.
+    /// Writes the destination after `destination_ready_event`, or else after what the compute stream has queued.
     void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination, cudaEvent_t destination_ready_event = nullptr);
 
     void wait();

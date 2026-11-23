@@ -91,7 +91,6 @@ __host__ void appendColumns(
     }
 }
 
-/// The inputs of a predicate over `columns`, of `rows` rows each.
 __host__ std::vector<GPUExpressionInput> inputsOf(const GPUExpression & expression, GPUSpan<DeviceFixedColumn> columns, size_t rows)
 {
     if (columns.size() != expression.num_columns)
@@ -710,7 +709,6 @@ private:
     const cuda::stream_ref stream;
     const bool keyless;
     rmm::device_buffer keyless_key;
-    /// Of the `WHERE` of the last batch, or of the `HAVING`.
     rmm::device_buffer filter_mask;
     rmm::device_buffer all_true;
 
@@ -816,7 +814,6 @@ private:
     rmm::device_buffer all_true;
     std::vector<std::unique_ptr<cudf::table>> collected;
     std::unique_ptr<cudf::table> taken;
-    /// Of the columns of varying width of `taken`, see `viewOf`.
     mutable std::vector<std::unique_ptr<cudf::column>> widened_offsets;
 };
 

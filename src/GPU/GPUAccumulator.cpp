@@ -55,13 +55,11 @@ GPUElementType resultTypeFor(GPUElementType element_type, GPUAggregationKind agg
     return aggregation == GPUAggregationKind::Sum ? sumResultTypeFor(element_type) : element_type;
 }
 
-/// What the bytes of a column are held as on the device: those of a column of values of varying width as bytes.
 GPUElementType dataElementTypeOf(GPUElementType column_type)
 {
     return columnKindOf(column_type) == GPUColumnKind::Variable ? GPUElementType::UInt8 : column_type;
 }
 
-/// Of rows collected rather than grouped, the values are carried by their bytes, see `collectElementTypeOf`.
 std::vector<GPUElementType> valueTypesOrThrow(const DataTypes & value_types, bool collect)
 {
     std::vector<GPUElementType> element_types;
@@ -90,7 +88,6 @@ std::vector<GPUElementType> keyElementTypesOf(const std::vector<GPUElementType> 
     return element_types;
 }
 
-/// The keys and then the values that are of varying width, by their place among the columns.
 std::vector<size_t> variableColumnsOf(const std::vector<GPUElementType> & keys, const std::vector<GPUElementType> & values)
 {
     std::vector<size_t> columns;
@@ -125,7 +122,6 @@ size_t rowBytesOf(
 
 std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_values, std::vector<GPUGroupByAggregate> aggregates, bool keyed)
 {
-    /// Without aggregates, the rows are collected, which they are not by keys.
     if (keyed && aggregates.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation with keys and without aggregates");
 
@@ -515,16 +511,12 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
     batch.buffers.reserve(num_columns);
     batch.starts.assign(num_columns, nullptr);
 
-    /// Of each column, the bytes in its buffer: what was carried, then what the staged blocks expand to. Of a column of
-    /// sizes, the rows whose offsets it holds.
     std::vector<size_t> sizes(num_columns, 0);
     std::vector<size_t> carried_rows(num_columns, 0);
-    /// Of each column of sizes, where the bytes of a size that the batch ends within are, and how many there are.
     std::vector<const char *> size_tails(num_columns, nullptr);
     std::vector<size_t> size_tail_bytes(num_columns, 0);
 
-    /// Blocks that would expand to an address that nvcomp does not take, at no multiple of `expand_alignment`, expand
-    /// to buffers of their own first and are copied to where they go once expanded.
+    /// nvcomp takes only aligned destinations: blocks of others expand elsewhere and are copied in place.
     std::vector<DeviceBuffer> expanded_elsewhere;
     expanded_elsewhere.reserve(num_columns);
     struct Move
@@ -535,8 +527,6 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
     };
     std::vector<Move> moves;
 
-    /// The compressed blocks of every column go to the device in one buffer, each column from a multiple of
-    /// `compressed_alignment`, as its blocks are within it.
     size_t compressed_total = 0;
     for (const auto & column : staged.columns)
     {
@@ -582,7 +572,7 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
                 checkCuda(
                     cudaMemcpyAsync(base, carried_of_column.data(), carried_of_column.size(), cudaMemcpyDeviceToDevice, own.get()),
                     "Cannot carry offsets on the device");
-            /// The sizes start after the carried offsets with the bytes of the size the batch before ended within.
+            /// After the carried offsets, the bytes of the size that the batch before ended within.
             char * const first_size = base + carried_entries * sizeof(UInt64);
             if (!tail.empty())
                 checkCuda(
@@ -598,10 +588,7 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
         }
         else
         {
-            /// The blocks expand right after where the carried bytes end, the bytes they skip over the end of those, which
-            /// are copied in once they are expanded.
-            /// A padding in front makes the column start at a multiple of its element, as the device reads it, even where
-            /// a mark is within a value of a block.
+            /// The carried bytes are copied over the skipped ones; the padding aligns the start of the column.
             const size_t carried_bytes = carried_of_column.size();
             const size_t lead = std::max(carried_bytes, column.skipped_bytes);
             const size_t element = layout->elementBytesOf(c);
@@ -667,7 +654,7 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
         const size_t fresh = sizes[o] - carried_rows[o];
         if (fresh == 0)
             continue;
-        /// The sizes come from the data, so nothing bounds them: checked, as on the CPU, before they become offsets.
+        /// The sizes are untrusted: bounded as on the CPU before they become offsets.
         if (sumOfSizesUpTo(offsets + carried_rows[o] + 1, fresh, max_total_string_bytes, own) > max_total_string_bytes)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
@@ -739,8 +726,7 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
         }
     }
 
-    /// What the batch does not take is carried to the next one, copied in the order of this stream before the batch
-    /// goes to another.
+    /// What the batch does not take is carried to the next one.
     for (size_t c = 0; c < num_columns; ++c)
     {
         if (layout->isAliased(c))
@@ -810,7 +796,6 @@ GPUGroupingLane::GPUGroupingLane(
         return;
     }
 
-    /// The `GROUP BY` takes the computed arguments as values after those of the batch.
     std::vector<GPUElementType> all_values = values;
     computed_values.reserve(computed.size());
     for (const auto & argument : computed)
@@ -885,7 +870,6 @@ std::vector<DeviceColumnView> GPUGroupingLane::withComputedArguments(const std::
         for (const uint32_t column : computed[i].columns)
             inputs.push_back({.data = value_columns[column].fixed.data, .type = value_columns[column].fixed.element_type});
 
-        /// The values of the batch before are done with in the order of the stream, which this one follows.
         DeviceBuffer & out = computed_values[i];
         out.clear();
         char * const result = out.grow(rows * sizeOf(expression.value_type));

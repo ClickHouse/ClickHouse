@@ -31,8 +31,7 @@ public:
     CudfGroupBy(const CudfGroupBy &) = delete;
     CudfGroupBy & operator=(const CudfGroupBy &) = delete;
 
-    /// The rows where `filter`, a predicate over `filter_columns`, is false are left out. The
-    /// columns must stay alive in the order of the stream.
+    /// Leaves out the rows where `filter` is false. The columns must stay alive in the order of the stream.
     __host__ void addBatch(
         GPUSpan<DeviceColumnView> keys,
         GPUSpan<DeviceColumnView> values,
@@ -44,8 +43,7 @@ public:
 
     __host__ size_t finalize();
 
-    /// Keeps the groups where `having`, a predicate, holds. `columns[i]` is the group column it reads as its column `i`:
-    /// a key index, or an aggregate index after the keys.
+    /// `columns[i]` is what `having` reads as its column `i`: a key, or an aggregate after the keys.
     __host__ size_t filterGroups(const GPUExpression & having, GPUSpan<size_t> columns);
 
     __host__ DeviceColumnView key(size_t index) const;
@@ -65,13 +63,11 @@ public:
     CudfRowCollector(const CudfRowCollector &) = delete;
     CudfRowCollector & operator=(const CudfRowCollector &) = delete;
 
-    /// As `CudfGroupBy::addBatch`, of the values only.
     __host__ void addBatch(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns = {}, const GPUExpression * filter = nullptr);
 
-    /// The rows collected and not taken yet.
     __host__ size_t collectedRows() const;
 
-    /// Makes the rows collected so far what `value` views, until the next call, and returns how many there are.
+    /// The rows collected so far, which `value` views until the next call.
     __host__ size_t take();
 
     __host__ DeviceColumnView value(size_t index) const;

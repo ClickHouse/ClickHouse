@@ -46,7 +46,6 @@ std::optional<GPUAggregationKind> aggregationOf(const String & aggregate_functio
 
 String aggregationName(GPUAggregationKind aggregation);
 
-/// Whether a key of `type` is grouped by as a `String`, of varying width.
 bool isStringKey(const IDataType & type);
 
 /// Also a `FixedString` of 1, 2, 4 or 8 bytes, grouped by its bytes as an integer as wide.

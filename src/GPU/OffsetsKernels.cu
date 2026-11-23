@@ -24,8 +24,7 @@ struct SubtractFrom
     __device__ uint64_t operator()(uint64_t offset) const { return offset - minus; }
 };
 
-/// The addition of sizes that stops at `limit + 1`: it is associative, so that a reduction in any order gives the sum
-/// where it is at most `limit`, and `limit + 1` otherwise, without overflowing.
+/// Saturates at `limit + 1`, which keeps it associative and free of overflow.
 struct SaturatingAdd
 {
     uint64_t limit;
