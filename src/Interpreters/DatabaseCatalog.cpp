@@ -315,6 +315,12 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             if (isPredefinedDatabase(database.first))
                 continue;
 
+            /// Neither a data lake catalog nor a `Remote` database: listing their tables is a request
+            /// to another server, which can be retried for minutes when that server is unreachable,
+            /// and their tables hold no buffered rows.
+            if (database.second->isDatalakeCatalog() || database.second->isRemoteDatabase())
+                continue;
+
             try
             {
                 for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
