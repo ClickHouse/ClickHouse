@@ -829,6 +829,8 @@ Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Ge
 
 void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::SetNeedRefresh()
 {
+    /// Wait for an ongoing refresh so its completion cannot clear this invalidation.
+    std::lock_guard lock(get_aws_credentials_mutex);
     last_loaded_ms.store(0, std::memory_order_relaxed);
 }
 
