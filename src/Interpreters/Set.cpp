@@ -423,6 +423,12 @@ private:
         size_t i = 0;
         for (; i + 4 <= rows; i += 4)
         {
+#if defined(__x86_64__)
+            /// On x86 this loop stalls on keys that are not in the cache (e.g. those of a `Memory` table) unless prefetched.
+            static constexpr size_t prefetch_distance = 2048 / sizeof(Key);
+            if (i + prefetch_distance < rows)
+                __builtin_prefetch(values + (i + prefetch_distance) * sizeof(Key));
+#endif
             const Key v0 = unalignedLoad<Key>(values + (i + 0) * sizeof(Key));
             const Key v1 = unalignedLoad<Key>(values + (i + 1) * sizeof(Key));
             const Key v2 = unalignedLoad<Key>(values + (i + 2) * sizeof(Key));
