@@ -2,6 +2,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageAlias.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -213,6 +214,17 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                     context_->checkAccess(drop_storage, table_id);
                 return proxy->getNested();
             }();
+            /// An `Alias` reports the row count of its target, which can be such a stand-in as well.
+            /// `TRUNCATE` goes on to the target, so the right to truncate it is required to load it.
+            /// `DROP` and `DETACH` remove only the alias, so the target is loaded for a user who can see it,
+            /// which is what the alias requires to report the count of a loaded target.
+            if (table->as<StorageAlias>())
+            {
+                const bool is_truncate = query.kind == ASTDropQuery::Kind::Truncate;
+                if (is_truncate)
+                    checkAccessBeforeLoadingLazyTable(table, table_id, context_, {AccessType::TRUNCATE});
+                loadTableIfLazy(table_id, context_, is_truncate ? AccessType::TRUNCATE : AccessType::SHOW_TABLES);
+            }
             if (auto rows = storage_to_count->totalRows(getContext()); rows > 0)
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
         }
