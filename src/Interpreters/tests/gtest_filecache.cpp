@@ -5031,35 +5031,35 @@ TEST_F(FileCacheTest, LoadMetadataCountsKeysWithoutFileSegments)
     ASSERT_EQ(cache->getUsedCacheSize(), num_fitting_keys * segment_size);
 }
 
-TEST_F(FileCacheTest, EmptiedKeyDirectoryWithUnknownFileIsKept)
+TEST_F(FileCacheTest, EmptiedKeyDirectoryWithUntrackedFileIsRemoved)
 {
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
     const size_t segment_size = 50;
     const auto & user = FileCache::getCommonOrigin();
-    const auto key_with_unknown_file = FileCacheKey::fromPath("with_unknown_file");
+    const auto key_with_untracked_file = FileCacheKey::fromPath("with_untracked_file");
     const auto plain_key = FileCacheKey::fromPath("plain");
-    const auto unknown_file = getKeyDirectory(key_with_unknown_file) / "unknown";
+    const auto untracked_file = getKeyDirectory(key_with_untracked_file) / "untracked";
 
     const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
     {
-        auto cache = DB::FileCache("EmptiedKeyDirectoryWithUnknownFile", getSettingsForLoadTests(/* max_size */ 100 * segment_size));
+        auto cache = DB::FileCache("EmptiedKeyDirectoryWithUntrackedFile", getSettingsForLoadTests(/* max_size */ 100 * segment_size));
         cache.initialize();
 
-        download(cache.getOrSet(key_with_unknown_file, 0, segment_size, segment_size, {}, 0, user));
+        download(cache.getOrSet(key_with_untracked_file, 0, segment_size, segment_size, {}, 0, user));
         download(cache.getOrSet(plain_key, 0, segment_size, segment_size, {}, 0, user));
-        std::ofstream(unknown_file).close();
+        std::ofstream(untracked_file).close();
 
-        cache.removeFileSegment(key_with_unknown_file, 0, user.user_id);
+        cache.removeFileSegment(key_with_untracked_file, 0, user.user_id);
         cache.removeFileSegment(plain_key, 0, user.user_id);
 
         waitForCleanupQueue(delayed_cleanup_elements_before);
     }
 
     ASSERT_FALSE(fs::exists(getKeyDirectory(plain_key)));
-    ASSERT_TRUE(fs::exists(unknown_file));
-    ASSERT_EQ(countFilesInKeyDirectories(), 1);
+    ASSERT_FALSE(fs::exists(getKeyDirectory(key_with_untracked_file)));
+    ASSERT_EQ(countFilesInKeyDirectories(), 0);
 }
 
 TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
@@ -5128,4 +5128,46 @@ TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
     ASSERT_TRUE(log_output.contains("Started a helper cleanup thread")) << log_output;
     for (const auto & directory : empty_key_directories)
         ASSERT_FALSE(fs::exists(directory)) << directory;
+}
+
+TEST_F(FileCacheTest, RemovedKeyDoesNotComeBackFromDuplicateFile)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t segment_size = 50;
+    const auto settings = getSettingsForLoadTests(/* max_size */ 100 * segment_size);
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key = FileCacheKey::fromPath("with_duplicate_file");
+
+    {
+        auto cache = DB::FileCache("DuplicateFile_init", settings);
+        cache.initialize();
+        download(cache.getOrSet(key, 0, segment_size, segment_size, {}, 0, user));
+    }
+
+    /// Two files for one offset: the load keeps the one without the size in its name and ignores the other.
+    const auto file_with_size = getKeyDirectory(key) / "0_50";
+    const auto file_without_size = getKeyDirectory(key) / "0";
+    ASSERT_NE(fs::exists(file_with_size), fs::exists(file_without_size));
+    if (fs::exists(file_with_size))
+        fs::copy_file(file_with_size, file_without_size);
+    else
+        fs::copy_file(file_without_size, file_with_size);
+
+    {
+        auto cache = DB::FileCache("DuplicateFile_remove", settings);
+        cache.initialize();
+        ASSERT_EQ(cache.getUsedCacheSize(), segment_size);
+
+        cache.removeKeyIfExists(key, user.user_id);
+        ASSERT_EQ(cache.getUsedCacheSize(), 0);
+        ASSERT_FALSE(fs::exists(getKeyDirectory(key)));
+    }
+
+    /// The ignored file must not be loaded as a file segment by the next start.
+    auto cache = DB::FileCache("DuplicateFile_restart", settings);
+    cache.initialize();
+    ASSERT_EQ(cache.getUsedCacheSize(), 0);
+    ASSERT_EQ(countFilesInKeyDirectories(), 0);
 }

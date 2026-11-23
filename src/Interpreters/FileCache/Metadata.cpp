@@ -10,6 +10,8 @@
 #include <Common/ErrnoException.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <filesystem>
 #include <unordered_set>
@@ -755,8 +757,10 @@ CacheMetadata::removeEmptyKey(
 
     try
     {
-        /// Only `rmdir`, never a recursive removal: files in the directory are not ours to delete here.
-        if (removeDirectoryIfEmpty(key_directory))
+        /// One `rmdir` is enough when the directory is empty, which is the usual case. Otherwise it holds files
+        /// which metadata does not know: e.g. `0` and `0_50` for one offset, of which the load kept one and
+        /// ignored the other. Such a file must go with the key, or the next startup loads it as valid data.
+        if (removeDirectoryIfEmpty(key_directory) || fs::remove_all(key_directory))
             LOG_TEST(log, "Directory ({}) for key {} removed", key_directory.string(), key);
     }
     catch (...)
@@ -800,12 +804,14 @@ void CacheMetadata::removeEmptyKeyDirectoryFromStartup(const std::string & key_p
     if (bucket.contains(key))
         return;
 
-    removeDirectoryIfEmpty(fs::path(key_prefix_directory) / key.toString());
+    const auto key_directory = fs::path(key_prefix_directory) / key.toString();
+    if (removeDirectoryIfEmpty(key_directory))
+        LOG_DEBUG(log, "Removed empty key directory: {}", key_directory.string());
 }
 
 struct CleanupTask
 {
-    FileCacheKey key;
+    FileCacheKey key{};
     /// Set for a key directory which the initial load found empty, not set for an emptied key.
     std::optional<std::string> key_prefix_directory_from_startup;
     /// Tasks which were still waiting when this one was taken.
@@ -924,8 +930,9 @@ private:
     }
 
     std::unordered_set<FileCacheKey> keys;
-    /// Key directories that the initial load found empty, by key prefix directory.
-    std::unordered_map<std::string, std::vector<FileCacheKey>> empty_key_directories_from_startup;
+    /// Key directories that the initial load found empty, by key prefix directory. There can be millions
+    /// of them, so the memory limit applies: the load does not queue a directory which goes over it.
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<FileCacheKey>> empty_key_directories_from_startup;
     /// Emptied keys plus key directories from startup.
     size_t size = 0;
     std::mutex mutex;

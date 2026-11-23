@@ -88,6 +88,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
@@ -2090,6 +2091,7 @@ struct FileCache::LoadMetadataProgress
     std::atomic<size_t> loaded_file_segments = 0;
     std::atomic<size_t> failed_to_fit_file_segments = 0;
     std::atomic<size_t> empty_key_directories = 0;
+    std::atomic<size_t> empty_key_directories_over_memory_limit = 0;
 
     void logIfDue(const LoggerPtr & logger)
     {
@@ -2102,11 +2104,12 @@ struct FileCache::LoadMetadataProgress
         LOG_INFO(logger,
             "{} filesystem cache: {} sec elapsed, {} key prefix directories listed, {} empty key prefix directories removed, "
             "{} keys with {} file segments loaded, {} keys removed because no file segment was loaded for them, "
-            "{} file segments removed because they do not fit, {} empty key directories left for background cleanup",
+            "{} file segments removed because they do not fit, {} empty key directories left for background cleanup, "
+            "{} empty key directories left for the next startup because of the memory limit",
             state, since_start.elapsedSeconds(), listed_key_prefix_directories.load(),
             empty_key_prefix_directories.load(), loaded_keys.load(), loaded_file_segments.load(),
             keys_without_file_segments.load(), failed_to_fit_file_segments.load(),
-            empty_key_directories.load());
+            empty_key_directories.load(), empty_key_directories_over_memory_limit.load());
     }
 
 private:
@@ -2431,8 +2434,19 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     if (offset_it == fs::directory_iterator())
     {
         /// Not removed here: with many such directories the removal takes most of the load time.
-        metadata.addEmptyKeyDirectoryFromStartup(key_directory.parent_path().string(), key);
-        ++progress.empty_key_directories;
+        try
+        {
+            metadata.addEmptyKeyDirectoryFromStartup(key_directory.parent_path().string(), key);
+            ++progress.empty_key_directories;
+        }
+        catch (const Exception & e)
+        {
+            /// The queue of such directories is over the memory limit. The directory is neither queued
+            /// nor removed, so the load does not fail and does not get slow: the next startup finds it again.
+            if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                throw;
+            ++progress.empty_key_directories_over_memory_limit;
+        }
         return;
     }
 
