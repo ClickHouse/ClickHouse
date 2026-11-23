@@ -1,0 +1,63 @@
+kernel_golden/dv-partitioned-with-checkpoint/delta	35	16961569575555737244
+kernel_golden/dv-partitioned-with-checkpoint/delta	35	16961569575555737244
+kernel_golden/dv-partitioned-with-checkpoint/delta	35	16961569575555737244
+kernel_golden/dv-with-columnmapping/delta	35	16961569575555737244
+kernel_golden/dv-with-columnmapping/delta	35	16961569575555737244
+kernel_golden/dv-with-columnmapping/delta	35	16961569575555737244
+kernel_golden/log-replay-dv-key-cases/delta	47	1132547663966575450
+kernel_golden/log-replay-dv-key-cases/delta	47	1132547663966575450
+kernel_golden/log-replay-dv-key-cases/delta	47	1132547663966575450
+kernel_data/table-with-dv-small	8	6969406955776124833
+kernel_data/table-with-dv-small	8	6969406955776124833
+kernel_data/table-with-dv-small	8	6969406955776124833
+kernel_data/cdf-table-with-dv	10	16147520666042407460
+kernel_data/cdf-table-with-dv	10	16147520666042407460
+kernel_data/cdf-table-with-dv	10	16147520666042407460
+kernel_data/v2-checkpoints-parquet-with-sidecars	1233	8967540848346110472
+kernel_data/v2-checkpoints-parquet-with-sidecars	1233	8967540848346110472
+kernel_data/v2-checkpoints-parquet-with-sidecars	1233	8967540848346110472
+trino/databricks122/deletion_vectors	1	18168654548352836813
+trino/databricks122/deletion_vectors	1	18168654548352836813
+trino/databricks122/deletion_vectors	1	18168654548352836813
+kernel_data/cdf-table-non-partitioned	id = 3	1
+kernel_data/cdf-table-non-partitioned	id = 3	1
+pruned files	10
+kernel_data/cdf-table-non-partitioned	id > 8	2
+kernel_data/cdf-table-non-partitioned	id > 8	2
+pruned files	19
+kernel_data/cdf-table-non-partitioned	id IS NULL	0
+kernel_data/cdf-table-non-partitioned	id IS NULL	0
+pruned files	30
+kernel_data/cdf-table-non-partitioned	name = \'Ada\'	1
+kernel_data/cdf-table-non-partitioned	name = \'Ada\'	1
+pruned files	40
+kernel_data/cdf-table-non-partitioned	birthday = \'2024-04-15\'	1
+kernel_data/cdf-table-non-partitioned	birthday = \'2024-04-15\'	1
+pruned files	50
+kernel_data/cdf-table-non-partitioned	double_field < 0	0
+kernel_data/cdf-table-non-partitioned	double_field < 0	0
+pruned files	61
+kernel_data/cdf-table-non-partitioned	NOT (id >= 2)	2
+kernel_data/cdf-table-non-partitioned	NOT (id >= 2)	2
+pruned files	70
+delta_rs/delta-1.2.1-only-struct-stats	integer = 5	1
+delta_rs/delta-1.2.1-only-struct-stats	integer = 5	1
+pruned files	72
+delta_rs/delta-1.2.1-only-struct-stats	integer IN (1, 7)	2
+delta_rs/delta-1.2.1-only-struct-stats	integer IN (1, 7)	2
+pruned files	74
+delta_rs/delta-1.2.1-only-struct-stats	string = \'string\'	12
+delta_rs/delta-1.2.1-only-struct-stats	string = \'string\'	12
+pruned files	74
+delta_rs/delta-1.2.1-only-struct-stats	timestamp >= \'2022-10-24 22:59:44\'	2
+delta_rs/delta-1.2.1-only-struct-stats	timestamp >= \'2022-10-24 22:59:44\'	2
+pruned files	74
+delta_rs/delta-1.2.1-only-struct-stats	timestamp = \'2022-10-24 22:59:46.083211\'	1
+delta_rs/delta-1.2.1-only-struct-stats	timestamp = \'2022-10-24 22:59:46.083211\'	1
+pruned files	75
+kernel_golden/dv-with-columnmapping/delta	col1 > 25	22
+kernel_golden/dv-with-columnmapping/delta	col1 > 25	22
+pruned files	80
+kernel_data/v2-checkpoints-parquet-with-sidecars	id < 10	43
+kernel_data/v2-checkpoints-parquet-with-sidecars	id < 10	43
+pruned files	149
