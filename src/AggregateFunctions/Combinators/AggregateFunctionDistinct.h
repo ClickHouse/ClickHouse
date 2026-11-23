@@ -8,6 +8,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -233,7 +234,7 @@ private:
     /// Adds the rows in [row_begin, row_end) to the places returned by `get_place(row)` (nullptr to skip the row).
     /// The rows with the values seen for the first time in their place are collected and passed to the nested function together,
     /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
-    /// `places` with `place_offset`, if not nullptr, give the same places as `get_place`.
+    /// `places` with `place_offset`, if not nullptr, give the same places as `get_place` (they are changed during the call and restored).
     template <typename GetPlace>
     void addBatchToNested(
         size_t row_begin, size_t row_end, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos, GetPlace && get_place,
@@ -274,6 +275,28 @@ private:
                 nested_func->addBatchWithNonNullPlaces(0, row_end, new_places.data(), prefix_size, columns, arena);
                 return;
             }
+        }
+
+        /// A short range is not copied: it is passed as it is, with the places of the rows that are not new set to nullptr for the call.
+        static constexpr size_t max_rows_to_hide = 64;
+        if (places && row_end - row_begin <= max_rows_to_hide)
+        {
+            const size_t num_rows = row_end - row_begin;
+            AggregateDataPtr saved_places[max_rows_to_hide];
+            memcpy(saved_places, places + row_begin, num_rows * sizeof(AggregateDataPtr));
+            SCOPE_EXIT(memcpy(places + row_begin, saved_places, num_rows * sizeof(AggregateDataPtr)));
+
+            size_t next_new = 0;
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (next_new < new_rows_data.size() && new_rows_data[next_new] == row)
+                    ++next_new;
+                else
+                    places[row] = nullptr;
+            }
+
+            nested_func->addBatch(row_begin, row_end, places, place_offset + prefix_size, columns, arena);
+            return;
         }
 
         auto new_rows = ColumnUInt64::create();

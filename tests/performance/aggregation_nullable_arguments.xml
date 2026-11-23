@@ -17,6 +17,8 @@
     <query>SELECT k8, sum(v_half_nulls), avg(v_half_nulls) FROM nullable_arguments GROUP BY k8 FORMAT Null</query>
     <query>SELECT k1000, sumDistinct(v_half_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
     <query>SELECT k1000, sumDistinct(v_sixteenth_nulls) FROM nullable_arguments GROUP BY k1000 FORMAT Null</query>
+    <query>SELECT k, sumDistinct(x) FROM (SELECT toUInt8(number % 6) AS k, if(number % 16 = 0, NULL, if(cityHash64(number) % 5 &lt; 3, toDecimal64(number, 2), toDecimal64(number % 1000, 2))) AS x FROM numbers_mt(3000000)) GROUP BY k FORMAT Null</query>
+    <query>SELECT k, sumDistinct(x) FROM (SELECT number % 1000 AS k, if(number % 16 = 0, NULL, if(cityHash64(number) % 5 &lt; 3, toDecimal64(number, 2), toDecimal64(number % 1000, 2))) AS x FROM numbers_mt(3000000)) GROUP BY k FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS nullable_arguments</drop_query>
 </test>
