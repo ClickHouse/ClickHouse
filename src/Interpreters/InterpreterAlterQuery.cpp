@@ -823,8 +823,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<ASTAlterCommand &>();
-        required_access.append_range(
-            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+        required_access.append_range(getRequiredAccessForCommand(
+            command, alter.getDatabase(), alter.getTable(), row_exists_is_marker,
+            storage && alter.cluster.empty() ? storage->getName() : ""));
 
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
@@ -834,7 +835,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
 }
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
-    const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker)
+    const ASTAlterCommand & command,
+    const String & database,
+    const String & table,
+    bool row_exists_is_lightweight_marker,
+    const String & engine)
 {
     AccessRightsElements required_access;
 
@@ -1018,11 +1023,14 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
 
             /// A setting that sends the table's data elsewhere, e.g. the move destination of a queue, is the same data flow as
             /// `INSERT INTO FUNCTION s3(...) SELECT * FROM <table>`. The creator of the table supplied its source and credentials,
-            /// so the reading part is `SELECT` on the table. The grants do not depend on the engine of the table, so the initiator
-            /// of `ON CLUSTER` can check them without the table.
+            /// so the reading part is `SELECT` on the table. For `ON CLUSTER`, `engine` is empty, so the grants can be checked
+            /// without the table.
             if (command.type == ASTAlterCommand::MODIFY_SETTING && command.settings_changes)
             {
-                auto export_access = StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes->as<ASTSetQuery &>().changes);
+                const auto & changes = command.settings_changes->as<ASTSetQuery &>().changes;
+                auto export_access = engine.empty()
+                    ? StorageFactory::instance().getExportAccessOfAnyEngine(changes)
+                    : StorageFactory::instance().getExportAccess(changes, engine);
                 if (!export_access.empty())
                 {
                     required_access.append_range(std::move(export_access));
