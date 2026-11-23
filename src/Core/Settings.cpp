@@ -1253,6 +1253,15 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
+    DECLARE(Bool, optimize_move_to_prewhere_respect_short_circuit, true, R"(
+When moving conditions from WHERE to PREWHERE, keep a condition that can throw behind the conditions written before it
+if short-circuit evaluation would evaluate it only on the rows that these conditions keep.
+For example, `a = 'one' AND toDateTime64(s, 3) > '2020-01-01'` does not parse `s` in the rows where `a != 'one'`.
+Such a condition is not ordered by cost. With the setting disabled, the conditions are ordered as if
+[short_circuit_function_evaluation](#short_circuit_function_evaluation) were `disable`, and the query can throw
+on the rows that a preceding condition excludes.
+)", 0, \
+        {"26.12", false, true, "New setting: automatic PREWHERE keeps a condition that can throw behind the conditions that short-circuit evaluation applies before it. `compatibility` below 26.12 restores the previous order."}) \
     DECLARE(Bool, apply_string_filters_during_scan, true, R"(
 Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
 
@@ -1477,7 +1486,7 @@ Possible values:
 In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_suspicious_indexes, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
 )", 0, allow_suspicious_indices, \
         {"26.11", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
         {"23.4", true, false, "If true, index can defined with identical expressions"}) \
@@ -6056,9 +6065,9 @@ Possible values:
     DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
 Enables or disables the optimization of a trivial query `SELECT ... FROM table GROUP BY key_expr LIMIT n` (with no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window clauses and no `GROUP BY` modifiers) by capping the aggregation at `n + offset` distinct keys.
 
-With no aggregate functions in the projection, the cap is applied by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'` (this form also applies on the shards of distributed queries). With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
+With no aggregate functions in the projection, the aggregation of such a query (also of such a subquery, and also on the shards of distributed queries) works as with `max_rows_to_group_by = n + offset` and `group_by_overflow_mode = 'any'`. The settings are not changed, so the aggregations in the views and subqueries that the query reads are not affected, unless they have this shape themselves. With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
 
-The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), when the user has already set a tighter `max_rows_to_group_by`, and with [exact_rows_before_limit](#exact_rows_before_limit) (the cap would make `rows_before_limit_at_least` report at most `n + offset`).
+The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), when the user has already set a tighter `max_rows_to_group_by`, in a correlated subquery and in a query with a correlated subquery in the projection, with [make_distributed_plan](#make_distributed_plan) (also when only an enclosing query enables it), and with [exact_rows_before_limit](#exact_rows_before_limit) (the cap would make `rows_before_limit_at_least` report at most `n + offset`).
 
 The aggregate-function form excludes the `GROUP BY` top-K heap of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) on the same query. The heap is faster, so the cutoff is applied only when the heap does not apply: when it is disabled, when `n + offset` exceeds [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization), when `max_rows_to_group_by` is set, or when the query plan is serialized.
 
@@ -8974,9 +8983,10 @@ Use userspace page cache when distributed cache is used.
 Use userspace page cache when reading from local disks. Used for testing, unlikely to improve performance in practice. Requires local_filesystem_read_method = 'pread' or 'read'. Doesn't disable the OS page cache; min_bytes_to_use_direct_io can be used for that. Only affects regular tables, not file() table function or File() table engine.
 )", 0, \
         {"26.2", false, false, "New setting to use userspace page cache for local disks"}) \
-    DECLARE(Bool, use_page_cache_for_object_storage, false, R"(
-Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
+    DECLARE(Bool, use_page_cache_for_object_storage, true, R"(
+Use userspace page cache when reading from object storage table functions (s3, azure, hdfs, Iceberg, Delta Lake, etc.) and table engines (S3, Azure, HDFS, Iceberg, Delta Lake, etc.). It has an effect only if the userspace page cache is configured on the server (`page_cache_max_size`), and only for objects with a strong ETag or with an immutable identity taken from the table records (data files of Iceberg and Delta Lake). It is not used together with the filesystem cache. Together with the distributed cache, it is used only if `use_page_cache_with_distributed_cache` is also enabled.
 )", 0, \
+        {"26.12", false, true, "Use the userspace page cache for object storage table engines and table functions by default, if the page cache is configured on the server."}, \
         {"26.2", false, false, "New setting to use userspace page cache for object storage table functions"}) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
@@ -9397,9 +9407,10 @@ Only has an effect in ClickHouse Cloud. Allow to read only from current availabi
 Only has an effect in ClickHouse Cloud. The maximum size of the buffer which is written to distributed cache servers, per write buffer. It is independent of the buffer which is written to the object storage: that one keeps growing towards the upload part size. If 0, `DBMS_DEFAULT_BUFFER_SIZE` (1 MiB) is used. The buffer starts at `adaptive_write_buffer_initial_size` and grows up to this size only as the stream is written, so that a part does not allocate it for every stream it writes.
 )", 0, \
         {"25.7", 0, 0, "New cloud setting"}) \
-    DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc). The cache is keyed on the object's ETag, so that an object overwritten in place is not served stale. An object whose ETag is missing or is not a strong content identifier is read from the object storage directly.
+    DECLARE(BoolAuto, table_engine_read_through_distributed_cache, Field("auto"), R"(
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, Iceberg, Delta Lake, etc). `auto` (the default) means to read through the distributed cache when it is used for other reads, as decided by the server setting `enable_read_through_distributed_cache` and the setting `force_read_through_distributed_cache`. The cache is keyed on the object's ETag, so that an object overwritten in place is not served stale, or on the immutable identity of a data file taken from the table records (Iceberg, Delta Lake), so that no `HEAD` request is needed. An object without a strong ETag or such an identity is read from the object storage directly, as are reads that the cache server cannot repeat: `url` tables, `s3` reads with `NOSIGN` or with `headers`, data files with a fully qualified path (a Delta Lake shallow clone), and, unless the setting is `1`, `azure` reads.
 )", 0, \
+        {"26.12", false, "auto", "Read object storage table engines and table functions through the distributed cache when it is used for other reads."}, \
         {"25.7", false, false, "New setting"}) \
     DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
 Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distributed cache connection creation.
