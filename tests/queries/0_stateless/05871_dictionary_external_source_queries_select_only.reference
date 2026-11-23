@@ -7,8 +7,21 @@ MySQL update_field: OK
 MySQL named collection invalidate_query: OK
 PostgreSQL invalidate_query: OK
 PostgreSQL query: OK
+MySQL query is an expression: OK
+ODBC invalidate_query: OK
+--- What the database reads differently from ClickHouse is rejected
+MySQL executable comment: OK
+MySQL -- without a space: OK
+MySQL comment in where: OK
+Heredoc: OK
+Typographic quotes: OK
+PostgreSQL backslash: OK
+--- Every way to create a dictionary from a definition is checked
+ON CLUSTER: OK
+CREATE OR REPLACE: OK
 --- SELECT is accepted
 MySQL: OK
+MySQL with expressions: OK
 PostgreSQL: OK
 --- A named collection requires the privilege NAMED COLLECTION
 Without the grant: denied, not created
@@ -21,5 +34,8 @@ Without the grant, the name is an expression: denied, not created
 1
 0
 With the grant: created
+0
+1
+With the grant, the name is an expression: created
 0
 1
