@@ -44,7 +44,7 @@ struct HypotheticalBinding
     static HypotheticalBinding of(const ProjectionDescription & projection, const StorageInMemoryMetadata & metadata);
 
     /// empty when nothing changed, otherwise what changed; a change needs SELECT on the columns it names
-    String changeIn(const StorageInMemoryMetadata & metadata, const ContextPtr & context, const StorageID & table_id) const;
+    [[nodiscard]] String changeIn(const StorageInMemoryMetadata & metadata, const ContextPtr & context, const StorageID & table_id) const;
 };
 
 /// Session-scoped store for hypothetical indexes and projections, used by EXPLAIN WHATIF
@@ -61,7 +61,7 @@ public:
         StorageID table_id;
         IndexDescription index;
         HypotheticalBinding binding;
-        const String & name() const { return index.name; }
+        [[nodiscard]] const String & name() const { return index.name; }
     };
     std::vector<Entry> getForTable(const StorageID & table_id) const;
     std::vector<Entry> getAll() const;
@@ -77,7 +77,7 @@ public:
         StorageID table_id;
         ProjectionDescription projection;
         HypotheticalBinding binding;
-        const String & name() const { return projection.name; }
+        [[nodiscard]] const String & name() const { return projection.name; }
     };
     std::vector<ProjectionEntry> getProjectionsForTable(const StorageID & table_id) const;
     std::vector<ProjectionEntry> getAllProjections() const;
