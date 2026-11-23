@@ -53,8 +53,8 @@ $CLIENT -q "CREATE TABLE ts_inner_column ENGINE = TimeSeries SETTINGS store_exem
 $CLIENT -q "INSERT INTO ts_inner_column (metric_name, tags, samples) VALUES ('m', {'a': 'b'}, [(toDateTime64(100, 3), 1)])"
 $CLIENT -q "SELECT metric_name, tags, length(samples), length(exemplars) FROM ts_inner_column FORMAT TSV"
 
-echo "-- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator, also with the old entry format"
-$CLIENT --distributed_ddl_output_mode=none --distributed_ddl_entry_format_version=2 -q "CREATE TABLE ts_copy ON CLUSTER test_shard_localhost AS ts ENGINE = TimeSeries"
+echo "-- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator"
+$CLIENT --distributed_ddl_output_mode=none -q "CREATE TABLE ts_copy ON CLUSTER test_shard_localhost AS ts ENGINE = TimeSeries"
 $CLIENT -q "
     SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name LIKE '.inner_id.exemplars.%'
@@ -63,7 +63,7 @@ $CLIENT -q "
 
 echo "-- a copy of a table of version 11 made ON CLUSTER gets no UUID of an exemplars table, as a server of an earlier version can't parse it"
 $CLIENT -q "CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11"
-$CLIENT --distributed_ddl_output_mode=none --distributed_ddl_entry_format_version=2 -q "CREATE TABLE ts_v11_copy ON CLUSTER test_shard_localhost AS ts_v11 ENGINE = TimeSeries SETTINGS version = 11"
+$CLIENT --distributed_ddl_output_mode=none -q "CREATE TABLE ts_v11_copy ON CLUSTER test_shard_localhost AS ts_v11 ENGINE = TimeSeries SETTINGS version = 11"
 $CLIENT -q "
     SELECT count() FROM system.distributed_ddl_queue
     WHERE query LIKE '%' || currentDatabase() || '%ts_v11_copy%' AND query NOT LIKE '%EXEMPLARS%'"

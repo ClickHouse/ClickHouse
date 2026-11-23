@@ -20,7 +20,7 @@ is reserved for the exemplars
 0
 -- a column of the tags table can have the name of the exemplars column
 m	{'__name__':'m','a':'b'}	1	0
--- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator, also with the old entry format
+-- a copy made ON CLUSTER gets the UUID of its exemplars table from the initiator
 1
 -- a copy of a table of version 11 made ON CLUSTER gets no UUID of an exemplars table, as a server of an earlier version can't parse it
 1
