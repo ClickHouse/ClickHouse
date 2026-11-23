@@ -7,7 +7,6 @@ namespace DB
 
 template <typename T1, typename T2> using AggregateFunctionCovar = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, CovarMoments>>;
 
-void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description covarSamp_description = R"(
@@ -17,10 +16,10 @@ $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n - 1}
 $$
 
-<Note>
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarSampStable`](/reference/functions/aggregate-functions/covarSampStable) function.
+:::note
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarSampStable`](/sql-reference/aggregate-functions/reference/covarsampstable) function.
 It works slower but provides a lower computational error.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax covarSamp_syntax = "covarSamp(x, y)";
     FunctionDocumentation::Arguments covarSamp_arguments = {
@@ -54,7 +53,7 @@ FROM series LIMIT 1
         )",
         R"(
 ┌─covarSamp(x_value, y_value)─┐
-│           7.206275555555556 │
+│                         nan │
 └─────────────────────────────┘
         )"
     }
@@ -62,7 +61,7 @@ FROM series LIMIT 1
     FunctionDocumentation::Category covarSamp_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarSamp_introduced_in = {1, 1};
     FunctionDocumentation covarSamp_documentation = {covarSamp_description, covarSamp_syntax, covarSamp_arguments, covarSamp_parameters, covarSamp_returned_value, covarSamp_examples, covarSamp_introduced_in, covarSamp_category};
-    factory.registerFunction("covarSamp", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarSamp>, covarSamp_documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("covarSamp", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarSamp>, covarSamp_documentation});
 
     FunctionDocumentation::Description covarPop_description = R"(
 Calculates the population covariance:
@@ -73,9 +72,9 @@ $$
 
 <br/>
 
-<Note>
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarPopStable`](/reference/functions/aggregate-functions/covarPopStable) function. It works slower but provides a lower computational error.
-</Note>
+:::note
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`covarPopStable`](../reference/covarPopStable.md) function. It works slower but provides a lower computational error.
+:::
     )";
     FunctionDocumentation::Syntax covarPop_syntax = "covarPop(x, y)";
     FunctionDocumentation::Arguments covarPop_arguments = {
@@ -106,7 +105,7 @@ FROM series
     FunctionDocumentation::IntroducedIn covarPop_introduced_in = {1, 1};
     FunctionDocumentation covarPop_documentation = {covarPop_description, covarPop_syntax, covarPop_arguments, covarPop_parameters, covarPop_returned_value, covarPop_examples, covarPop_introduced_in, covarPop_category};
 
-    factory.registerFunction("covarPop", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarPop>, covarPop_documentation, {.variant_arguments_conversion = VariantArgumentsConversion::All}});
+    factory.registerFunction("covarPop", {createAggregateFunctionStatisticsBinary<AggregateFunctionCovar, StatisticsFunctionKind::covarPop>, covarPop_documentation});
 
     /// Synonyms for compatibility.
     factory.registerAlias("COVAR_SAMP", "covarSamp", AggregateFunctionFactory::Case::Insensitive);

@@ -1,22 +1,17 @@
-#include <atomic>
 #include <optional>
 #include <shared_mutex>
 
 #include <Core/Field.h>
 
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 
 #include <Common/Logger.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerUtils.h>
-#include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <fmt/format.h>
+#include <Columns/ColumnDecimal.h>
 
-#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -24,33 +19,21 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Interpreters/Set.h>
-#include <Interpreters/SetVariants.h>
-#include <Interpreters/DiskSet.h>
-#include <Interpreters/DiskSetBuilder.h>
-#include <Interpreters/DiskSetKeys.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/getDateTime64CastLossMap.h>
 #include <Interpreters/Context.h>
 
 #include <Processors/Chunk.h>
 
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/sort.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event SetsSpilledToDisk;
-}
 
 namespace DB
 {
@@ -65,276 +48,8 @@ namespace ErrorCodes
 
 Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
     :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
-    , data(std::make_unique<SetVariants>())
     , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
 {}
-
-
-Set::~Set() = default;
-
-bool Set::hasExplicitSetElements() const
-{
-    return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount());
-}
-
-void Set::setSpillSettings(SetSpillSettings spill_settings_)
-{
-    std::lock_guard lock(rwlock);
-    chassert(!isCreated());
-    spill_settings = std::move(spill_settings_);
-}
-
-void Set::finishInsert()
-{
-    /// Consumers may already expose this set to the scheduler while its builder is still running.
-    std::lock_guard lock(rwlock);
-    if (disk_set_builder)
-    {
-        disk_set = disk_set_builder->finish();
-        is_truncated = disk_set_builder->isTruncated();
-        disk_set_builder.reset();
-    }
-    is_created = true;
-}
-
-ProcessorMemoryStats Set::getMemoryStatsUnlocked() const
-{
-    if (!spill_settings.tmp_data || !data || data->empty() || !data->getTotalRowCount()
-        || spill_after_build_started.load())
-        return {};
-
-    ProcessorMemoryStats stats;
-    stats.spillable_memory_bytes = data->getTotalByteCount();
-    stats.need_reserved_memory_bytes = estimateMemoryToSpill(/*requested=*/ true);
-
-    /// A built set writes its disk set while lookups keep reading the table, so the directory and the Bloom
-    /// filters of the disk set take memory besides the table until the disk set replaces it. A set that
-    /// spills while it is built frees the table first and creates them only when it finishes.
-    if (isCreated())
-        stats.need_reserved_memory_bytes += estimateMemoryOfDiskSet();
-    return stats;
-}
-
-ProcessorMemoryStats Set::getMemoryStats() const
-{
-    std::shared_lock lock(rwlock);
-    return getMemoryStatsUnlocked();
-}
-
-size_t Set::spill(size_t /*at_least_bytes*/)
-{
-    std::unique_lock lock(rwlock);
-    const size_t bytes = getMemoryStatsUnlocked().spillable_memory_bytes;
-    if (!bytes)
-        return 0;
-
-    if (isCreated())
-    {
-        lock.unlock();
-        return spillAfterBuild("memory scheduler request", /*requested=*/ true);
-    }
-
-    spillWhileBuilding("memory scheduler request", /*requested=*/ true);
-    return bytes;
-}
-
-bool Set::isLargeEnoughToSpill() const
-{
-    return data->getTotalByteCount() >= DiskSetBuilder::getMinBytesInRun(spill_settings.max_bytes_before_external_set);
-}
-
-bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t rows) const
-{
-    const size_t threshold = spill_settings.max_bytes_before_external_set;
-
-    if (!threshold || !isLargeEnoughToSpill())
-        return false;
-
-    /// Query accounting can briefly become negative while a concurrent free saturates its counter.
-    const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
-    const UInt64 available_memory = threshold - std::min<UInt64>(threshold, query_memory_usage);
-
-    /// Spilling needs memory while the table still exists.
-    const size_t spill_memory = estimateMemoryToSpill();
-    if (spill_memory > available_memory)
-        return true;
-
-    /// The insertion grows the table and its arena, and the state of a method with fixed keys packs the keys of
-    /// the whole chunk before inserting them.
-    size_t insert_memory = data->estimateGrowthMemory(key_columns, /*start_row=*/0, rows);
-    if (common::addOverflow(insert_memory, data->estimatePreparedKeysMemory(rows, key_sizes), insert_memory))
-        return true;
-
-    if (fill_set_elements)
-    {
-        /// Explicit elements copy the new keys.
-        for (const auto * column : key_columns)
-        {
-            if (common::addOverflow(insert_memory, column->byteSize(), insert_memory))
-                return true;
-        }
-    }
-
-    return insert_memory > available_memory - spill_memory;
-}
-
-void Set::spillWhileBuilding(std::string_view reason, bool requested)
-{
-    logSpill("while it is built", reason);
-
-    /// `fill_set_elements` mainly serves index analysis. Since the set itself has to be spilled, it is safe
-    /// to assume that its elements would not fit in memory for index analysis later either. Index analysis
-    /// could possibly work on disk, but this is not implemented yet.
-    fill_set_elements = false;
-    set_elements.clear();
-
-    data->callOnMethod([&]<typename Method>(const Method & method)
-    {
-        compute_disk_set_keys = computeDiskSetKeys<Method>;
-        disk_set_builder = createDiskSetBuilderWithKeys(method, limits, requested);
-    });
-
-    data.reset();
-    ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
-}
-
-bool Set::isSpillNeeded() const
-{
-    return spill_settings.max_bytes_before_external_set
-        && getCurrentQueryMemoryUsage() > static_cast<Int64>(spill_settings.max_bytes_before_external_set)
-        && isLargeEnoughToSpill();
-}
-
-bool Set::isSpillNeededAfterBuild() const
-{
-    return spill_settings.max_bytes_before_external_set && isLargeEnoughToSpill()
-        && getCurrentQueryMemoryUsage() + static_cast<Int64>(estimateMemoryOfDiskSet())
-        > static_cast<Int64>(spill_settings.max_bytes_before_external_set);
-}
-
-size_t Set::estimateMemoryOfDiskSet() const
-{
-    return data->callOnMethod(
-        [&]<typename Method>(const Method &)
-        { return estimateDiskSetMemory<DiskSetKey<Method>>(data->getTotalRowCount(), spill_settings.max_bytes_for_bloom_filter); });
-}
-
-size_t Set::spillAfterBuild(std::string_view reason, bool requested) const
-{
-    if (spill_after_build_started.exchange(true))
-        return 0;
-
-    size_t bytes = 0;
-    std::unique_ptr<DiskSet> new_disk_set;
-    ComputeDiskSetKeys new_compute_disk_set_keys = nullptr;
-    {
-        /// The table does not change after the build, so other lookups keep reading it while its keys are
-        /// written.
-        std::shared_lock lock(rwlock);
-
-        /// Only the lookup that started the spill replaces the table, so the table is still in memory here.
-        chassert(data && !disk_set);
-        bytes = data->getTotalByteCount();
-        logSpill("while it is used", reason);
-
-        data->callOnMethod([&]<typename Method>(const Method & method)
-        {
-            /// The keys are final, so the builder applies no size limits and keeps all of them.
-            new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{}, requested)->finish();
-            new_compute_disk_set_keys = computeDiskSetKeys<Method>;
-        });
-    }
-
-    /// It is freed when the function returns, after the lock is released, so the lookups waiting for the lock
-    /// do not also wait for the table to be freed.
-    std::unique_ptr<SetVariants> table;
-    {
-        /// The exclusive lock waits for the lookups in progress, which hold the shared lock for one chunk
-        /// each.
-        std::lock_guard lock(rwlock);
-        compute_disk_set_keys = new_compute_disk_set_keys;
-        disk_set = std::move(new_disk_set);
-        table = std::move(data);
-    }
-    ProfileEvents::increment(ProfileEvents::SetsSpilledToDisk);
-    return bytes;
-}
-
-void Set::logSpill(std::string_view stage, std::string_view reason) const
-{
-    LOG_TRACE(log, "Switching the set of IN to external mode {}: {} "
-        "(keys in memory: {}, set memory: {}, query memory: {}, spill threshold: {})",
-        stage,
-        reason,
-        data->getTotalRowCount(),
-        formatReadableSizeWithBinarySuffix(data->getTotalByteCount()),
-        formatReadableSizeWithBinarySuffix(std::max<Int64>(0, getCurrentQueryMemoryUsage())),
-        formatReadableSizeWithBinarySuffix(spill_settings.max_bytes_before_external_set));
-}
-
-size_t Set::getBuilderSpillThreshold(bool requested) const
-{
-    return requested ? 0 : spill_settings.max_bytes_before_external_set;
-}
-
-size_t Set::estimateMemoryToSpill(bool requested) const
-{
-    const size_t buffer_size = spill_settings.tmp_data->getSettings().buffer_size;
-    return data->callOnMethod(
-        [&]<typename Method>(const Method &)
-        {
-            return estimateMemoryToComputeDiskSetKeysOfTable<Method>(spill_settings.max_block_size)
-                + DiskSetBuilder::estimateMemoryToWriteRun(
-                    getBuilderSpillThreshold(requested), spill_settings.max_block_size, sizeof(DiskSetKey<Method>),
-                    buffer_size);
-        });
-}
-
-template <typename Method>
-std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(
-    const Method & method, const SizeLimits & builder_limits, bool requested) const
-{
-    /// The runs of the external sort of a set use `temporary_files_codec`, as other external sorts do, while
-    /// the file of the set is never compressed (see `DiskSetImpl::createFileScope`). For sets of numbers,
-    /// `LZ4` makes the runs 2 to 4 times smaller, and the builds 8-22% slower while the runs stay in the page
-    /// cache. The disk keys of the methods without fixed-size keys are mostly hash bits, which compress too
-    /// little to pay for compressing the runs. `LZ4` makes 128-bit hashes slightly larger, and `ZSTD` saves
-    /// only about 2%. The disk keys of strings share their first bytes with their neighbors, but `LZ4` saves
-    /// only about 6% of their runs and makes the queries that build such sets about 12% slower. So the runs
-    /// of such a set are written uncompressed, whatever `temporary_files_codec` is.
-    TemporaryDataOnDiskScopePtr tmp_data = spill_settings.tmp_data;
-    if constexpr (!set_method_has_fixed_size_keys<Method>)
-        tmp_data = tmp_data->childScope(tmp_data->getSettings().metrics, /*buffer_size_=*/0, "NONE");
-
-    auto builder = createDiskSetBuilder<DiskSetKey<Method>>(
-        std::move(tmp_data),
-        builder_limits,
-        getBuilderSpillThreshold(requested),
-        spill_settings.max_block_size,
-        spill_settings.min_free_disk_space,
-        spill_settings.max_bytes_for_bloom_filter,
-        spill_settings.max_bytes_for_cache,
-        spill_settings.process_list_element);
-
-    computeDiskSetKeysOfTable(method, data_types, key_sizes, spill_settings.max_block_size, [&](ColumnPtr keys)
-    {
-        builder->add(std::move(keys));
-    });
-
-    return builder;
-}
-
-void Set::executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const
-{
-    const size_t rows = vec_res.size();
-    auto keys = compute_disk_set_keys(key_columns, key_sizes, rows, /*null_map=*/nullptr);
-
-    disk_set->containsBatch(*keys, {vec_res.data(), rows});
-
-    /// Keys with a `NULL` component are not in the set, as in `executeImplCase`.
-    for (size_t row = 0; row < rows; ++row)
-        vec_res[row] = negative ^ (vec_res[row] && !(null_map && (*null_map)[row]));
-}
 
 
 template <typename Method>
@@ -372,7 +87,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
     [[maybe_unused]] ConstNullMapPtr null_map,
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -401,8 +116,9 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
     for (auto & type : types)
     {
-        /// Strip LowCardinality recursively to match what insertFromColumns does:
-        /// it calls recursiveRemoveLowCardinality on the column side.
+        /// Strip LowCardinality recursively to match what setHeader/insertFromColumns do:
+        /// insertFromColumns calls convertToFullIfNeeded which recursively strips LC from
+        /// compound types like Tuple(LowCardinality(T), ...).
         type = recursiveRemoveLowCardinality(type);
 
         if (!transform_null_in)
@@ -417,7 +133,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
     std::lock_guard lock(rwlock);
 
-    if (!data->empty())
+    if (!data.empty())
         return;
 
     keys_size = header.size();
@@ -446,7 +162,9 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         }
 
         /// Strip LowCardinality recursively from set_elements_types so they match what
-        /// recursiveRemoveLowCardinality does to columns in insertFromColumns.
+        /// convertToFullIfNeeded (which is recursive) does to columns in insertFromColumns.
+        /// Without this, compound types like Tuple(LowCardinality(T), ...) keep LowCardinality
+        /// in the type while the column has it stripped, causing type/column mismatches later.
         set_elements_types.back() = recursiveRemoveLowCardinality(set_elements_types.back());
     }
 
@@ -466,7 +184,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     }
 
     /// Choose data structure to use for the set.
-    data->init(SetVariants::chooseMethod(key_columns, key_sizes));
+    data.init(SetVariants::chooseMethod(key_columns, key_sizes));
 }
 
 void Set::fillSetElements()
@@ -488,8 +206,6 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 
 bool Set::insertFromColumns(const Columns & columns)
 {
-    /// Include explicit-element updates in the critical section: another owner may request a spill.
-    std::lock_guard lock(rwlock);
     size_t rows = columns.at(0)->size();
 
     SetKeyColumns holder;
@@ -497,10 +213,10 @@ bool Set::insertFromColumns(const Columns & columns)
     if (fill_set_elements)
         holder.filter = ColumnUInt8::create(rows);
 
-    bool inserted = insertFromColumnsImpl(columns, holder);
+    bool inserted = insertFromColumns(columns, holder);
     if (inserted && fill_set_elements)
     {
-        if (max_elements_to_fill && max_elements_to_fill < data->getTotalRowCount())
+        if (max_elements_to_fill && max_elements_to_fill < data.getTotalRowCount())
         {
             /// Drop filled elementes
             fill_set_elements = false;
@@ -516,12 +232,8 @@ bool Set::insertFromColumns(const Columns & columns)
 bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 {
     std::lock_guard lock(rwlock);
-    return insertFromColumnsImpl(columns, holder);
-}
 
-bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
-{
-    if (data && data->empty())
+    if (data.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
     holder.key_columns.reserve(keys_size);
@@ -530,7 +242,7 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
+        holder.materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 
@@ -542,29 +254,19 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
     if (!transform_null_in)
         null_map_holder = extractNestedColumnsAndNullMap(holder.key_columns, null_map);
 
-    if (!disk_set_builder && isSpillNeededBeforeInsert(holder.key_columns, rows))
-        spillWhileBuilding("the projected growth of the set exceeds the memory left under the spill threshold");
-
-    if (disk_set_builder)
+    switch (data.type)
     {
-        auto keys = compute_disk_set_keys(holder.key_columns, key_sizes, rows, null_map);
-        if (!keys->empty())
-            disk_set_builder->add(std::move(keys));
-        return true;
+        case SetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+        case SetVariants::Type::NAME: \
+            insertFromBlockImpl(*data.NAME, holder.key_columns, rows, data, null_map, holder.filter ? &holder.filter->getData() : nullptr); \
+            break;
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
     }
 
-    data->callOnMethod([&](auto & method)
-    {
-        insertFromBlockImpl(method, holder.key_columns, rows, *data, null_map, holder.filter ? &holder.filter->getData() : nullptr);
-    });
-
-    bool within_limits = limits.check(data->getTotalRowCount(), data->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-    if (!within_limits)
-        is_truncated = true;
-    /// Actual allocations and concurrent operators can consume more memory than projected before insertion.
-    else if (isSpillNeeded())
-        spillWhileBuilding("query memory exceeds the spill threshold after insertion");
-    return within_limits;
+    return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 void Set::appendSetElements(SetKeyColumns & holder)
@@ -592,40 +294,6 @@ void Set::checkIsCreated() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
 }
 
-size_t Set::getSetElementsBytes() const
-{
-    size_t bytes = 0;
-    for (const auto & column : set_elements)
-        bytes += column->byteSize();
-    return bytes;
-}
-
-std::shared_ptr<const PlainRanges> Set::getPlainRanges() const
-{
-    /// The result is cached on first use, so reading `set_elements` before the set is filled would not
-    /// merely give one wrong answer - it would pin an empty range set for every later caller.
-    checkIsCreated();
-
-    callOnce(
-        plain_ranges_once,
-        [this]
-        {
-            /// A tuple set has no single-column range representation; leave the cache null.
-            if (set_elements.size() != 1)
-                return;
-
-            const auto & column = *set_elements.front();
-            Ranges ranges;
-            ranges.reserve(column.size());
-            for (size_t i = 0; i < column.size(); ++i)
-                ranges.emplace_back(column[i]);
-
-            plain_ranges = std::make_shared<const PlainRanges>(ranges, /*may_have_intersection*/ true, /*ordered*/ false);
-        });
-
-    return plain_ranges;
-}
-
 Columns Set::getSetElements() const
 {
     checkIsCreated();
@@ -636,80 +304,106 @@ Columns Set::getSetElements() const
     return result;
 }
 
-ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const
+ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
 {
-    /// The constant columns to the left of `IN` are not supported directly, so they are materialized. The key
-    /// types have no top-level `LowCardinality`, see `setHeader`, and without it the NULLs of a
-    /// `LowCardinality(Nullable)` probe are those of a `Nullable` one.
-    const ColumnWithTypeAndName probe = {
-        column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality(),
-        removeLowCardinality(column.type),
-        column.name};
-    const DataTypePtr & key_type = data_types[key];
+    // Handle nullable columns
+    const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
+    const IColumn * original_nested_column = original_nullable_column
+        ? &original_nullable_column->getNestedColumn()
+        : column_to_cast.column.get();
 
-    ColumnPtr result;
-    if (canContainNull(*key_type) && !key_type->isNullable() && !probe.type->isNullable())
+    // Check if the original column is of ColumnDecimal<DateTime64> type
+    const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
+    if (!original_decimal_column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for DateTime64");
+
+    // Get the data array from the original column
+    const auto & original_data = original_decimal_column->getData();
+    size_t vec_res_size = original_data.size();
+
+    // Prepare the precision null map
+    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, static_cast<UInt8>(0));
+    NullMap & precision_null_map = precision_null_map_column->getData();
+
+    // Determine which rows should be null based on precision loss
+    const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_to_cast.type.get());
+    auto scale = datetime64_type->getScale();
+    if (scale >= 1)
     {
-        /// A `Variant` or `Dynamic` key type stores NULLs as its own values, the same way a join compares
-        /// such keys, so the NULLs of a `Variant` or `Dynamic` probe convert as they are.
-        result = castColumnAccurate(probe, key_type, cast_cache.get());
+        Int64 scale_multiplier = common::exp10_i32(scale);
+        for (size_t row = 0; row < vec_res_size; ++row)
+        {
+            Int64 value = original_data[row];
+            if (value % scale_multiplier != 0)
+                precision_null_map[row] = 1; // Mark as null due to precision loss
+            else
+                precision_null_map[row] = 0;
+        }
+    }
+
+    return precision_null_map_column;
+}
+
+ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
+{
+    if (!null_map_column1)
+        return null_map_column2;
+    if (!null_map_column2)
+        return null_map_column1;
+
+    const auto & null_map1 = assert_cast<const ColumnUInt8 &>(*null_map_column1).getData();
+    const auto & null_map2 = (*null_map_column2).getData();
+
+    size_t size = null_map1.size();
+    if (size != null_map2.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null maps have different sizes");
+
+    auto merged_null_map_column = ColumnUInt8::create(size);
+    auto & merged_null_map = merged_null_map_column->getData();
+
+    for (size_t i = 0; i < size; ++i)
+        merged_null_map[i] = null_map1[i] || null_map2[i];
+
+    return merged_null_map_column;
+}
+
+void Set::processDateTime64Column(
+    const ColumnWithTypeAndName & column_to_cast,
+    ColumnPtr & result,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map) const
+{
+    // Check for sub-second precision and create a null map
+    ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
+
+    // Extract existing null map and nested column from the result
+    const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
+    const IColumn * nested_result_column = result_nullable_column
+        ? &result_nullable_column->getNestedColumn()
+        : result.get();
+
+    ColumnPtr existing_null_map_column = result_nullable_column
+        ? result_nullable_column->getNullMapColumnPtr()
+        : nullptr;
+
+    if (transform_null_in)
+    {
+        if (!null_map_holder)
+            null_map_holder = filtered_null_map_column;
+        else
+            null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
+
+        const ColumnUInt8 * null_map_column = checkAndGetColumn<ColumnUInt8>(null_map_holder.get());
+        if (!null_map_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null map must be ColumnUInt8");
+
+        null_map = &null_map_column->getData();
     }
     else
     {
-        const DataTypePtr key_type_without_nullable = removeNullable(key_type);
-        ColumnPtr values;
-
-        /// A value the key type cannot represent is simply not a member - which is what the literal `IN` list
-        /// concludes, because it compares in a common supertype. Converting it strictly would raise
-        /// `CANNOT_CONVERT_TYPE` on the rows the read path happens to deliver, so `v IN set_table` would fail
-        /// where `v IN (1)` returns 0. A tuple does not fit when one of its fields does not, including a NULL
-        /// in a field that cannot hold it. The lenient conversion produces a `Nullable`, so the key type must
-        /// be one that `accurateCastOrNull` can produce. When the probe already has the key type (up to
-        /// `Nullable`), no value can fail to fit, so the cheap path is kept: an exact-type cast is a no-op,
-        /// and that is the common `x IN set_table` case. With `transform_null_in = 0` a `Bool` key is the
-        /// exception, because the cast to `Bool` turns every byte other than 0 into `true`: `equals` also holds
-        /// for a `UInt8` probe, and a `Bool` probe can hold such a byte too, e.g. from `reinterpret`. With
-        /// `transform_null_in = 1` the probe keeps its bytes, as primary-key analysis does, which matches a
-        /// `Bool` member only against the byte 1 (see `KeyCondition::tryPrepareSetColumnsForIndex`).
-        const bool converts_bool_key = !transform_null_in && isBool(key_type_without_nullable);
-        const bool cast_is_no_op = removeNullable(probe.type)->equals(*key_type_without_nullable) && !converts_bool_key;
-        if (canBeAccurateCastOrNullTarget(key_type) && !cast_is_no_op)
-        {
-            const ColumnPtr converted = castColumnAccurateOrNullSkipNulls(probe, key_type_without_nullable, cast_cache.get());
-            const auto & converted_nullable = assert_cast<const ColumnNullable &>(*converted);
-            values = converted_nullable.getNestedColumnPtr();
-            /// The NULLs of the conversion are the values that did not fit. Even when the set can hold a
-            /// NULL, a value that merely does not fit is not that NULL.
-            non_member_rows = mergeNullMaps(std::move(non_member_rows), converted_nullable.getNullMapColumnPtr());
-        }
-        else
-        {
-            values = castColumnAccurateSkipNulls(probe, key_type_without_nullable, cast_cache.get());
-        }
-
-        /// The NULLs of the probe, kept in the null map of a `Nullable` or the discriminators of a `Variant`,
-        /// stay out of the conversion. With `transform_null_in = 1`, a nullable key type keeps them to match
-        /// a NULL of the set. Otherwise they are not members: with `transform_null_in = 0` the set holds no
-        /// NULL and stores the nested columns of nullable keys, see `insertFromColumns`, and a non-nullable
-        /// key type has no NULL to match. Nullable fields inside a non-null tuple remain part of the key
-        /// value in either mode.
-        const ColumnPtr null_map = getOuterNullMap(*probe.column);
-        if (transform_null_in && key_type->isNullable())
-        {
-            if (null_map)
-                result = ColumnNullable::create(values, null_map);
-            else
-                result = makeNullable(values);
-        }
-        else
-        {
-            result = std::move(values);
-            non_member_rows = mergeNullMaps(std::move(non_member_rows), null_map);
-        }
+        ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
+        result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
     }
-
-    non_member_rows = mergeNullMaps(std::move(non_member_rows), getDateTime64CastLossMap(probe, key_type, cast_cache.get()));
-    return result;
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -740,40 +434,91 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
     checkColumnsNumber(num_key_columns);
 
-    /// The key columns converted to the key types of the set, and the columns that own them.
+    /// Remember the columns we will work with. Also check that the data types are correct.
     ColumnRawPtrs key_columns;
     key_columns.reserve(num_key_columns);
+
+    /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
 
-    ColumnPtr non_member_rows;
+    /// We will check existence in Set only for keys whose components do not contain any NULL value.
+    ConstNullMapPtr null_map{};
+    ColumnPtr null_map_holder;
+
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        materialized_columns.emplace_back(castToKeyType(columns.at(i), i, non_member_rows));
+        ColumnPtr result;
+
+        const auto & column_before_cast = columns.at(i);
+        ColumnWithTypeAndName column_to_cast
+            = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
+
+        /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
+        /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
+        /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
+        /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
+        auto target_type_without_nullable = removeNullable(data_types[i]);
+        bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
+
+        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
+
+        if (use_cast_accurate_or_null)
+        {
+            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
+        }
+        else
+        {
+            /// Special case when transform_null_in = true and type of column is Nullable but type of this key in Set is not Nullable.
+            /// For example: SELECT NULL::Nullable(String) IN (SELECT 'abc') SETTINGS transform_null_in = 1;
+            /// In this case we cannot just cast Nullable column to non-nullable type because it will fail if column contains nulls.
+            /// We should cast nested column and remember the null map to use negative value on rows with null (as key column is not
+            /// Nullable, Set cannot contain nulls for this column anyhow).
+            if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
+            {
+                auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
+                const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
+                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
+                if (!null_map_holder)
+                {
+                    null_map_holder = column_nullable.getNullMapColumnPtr();
+                }
+                else
+                {
+                    MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
+
+                    PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
+                    const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMapData();
+                    for (size_t j = 0, size = mutable_null_map.size(); j < size; ++j)
+                        mutable_null_map[j] |= other_null_map[j];
+
+                    null_map_holder = std::move(mutable_null_map_holder);
+                }
+
+                null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+            }
+            else
+            {
+                result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+            }
+        }
+
+        // If the original column is DateTime64, check for sub-second precision
+        if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
+        {
+            processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
+        }
+
+        // Append the result to materialized columns
+        materialized_columns.emplace_back(std::move(result));
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    const auto * null_map = non_member_rows ? &assert_cast<const ColumnUInt8 &>(*non_member_rows).getData() : nullptr;
+    if (!transform_null_in)
+        null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    if (disk_set)
-    {
-        executeDiskSet(key_columns, vec_res, negative, null_map);
-        return res;
-    }
+    executeOrdinary(key_columns, vec_res, negative, null_map);
 
-    data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
-
-    /// The set is usually built before the rest of the query takes its memory, so it also spills while it is
-    /// used. Spilling takes the lock exclusively, so this lookup releases its shared lock first.
-    if (isSpillNeededAfterBuild())
-    {
-        /// The reason reads the table, which a concurrent spill can replace once the lock is released.
-        const auto reason = fmt::format(
-            "query memory with the {} of the set on disk exceeds the spill threshold",
-            formatReadableSizeWithBinarySuffix(estimateMemoryOfDiskSet()));
-        lock.unlock();
-        spillAfterBuild(reason);
-    }
     return res;
 }
 
@@ -799,29 +544,19 @@ bool Set::hasNull() const
 bool Set::empty() const
 {
     std::shared_lock lock(rwlock);
-    return data && data->empty();
+    return data.empty();
 }
 
 size_t Set::getTotalRowCount() const
 {
     std::shared_lock lock(rwlock);
-
-    if (disk_set)
-        return disk_set->getTotalRowCount();
-
-    chassert(data);
-    return data->getTotalRowCount();
+    return data.getTotalRowCount();
 }
 
 size_t Set::getTotalByteCount() const
 {
     std::shared_lock lock(rwlock);
-
-    if (disk_set)
-        return disk_set->getTotalByteCount();
-
-    chassert(data);
-    return data->getTotalByteCount();
+    return data.getTotalByteCount();
 }
 
 
@@ -834,8 +569,7 @@ void NO_INLINE Set::executeImpl(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
-    /// `execute` casts most keys with `castColumnAccurateOrNull`, so a probe without NULLs has an all-zero null map.
-    if (null_map && !memoryIsZero(null_map->data(), 0, rows))
+    if (null_map)
         executeImplCase<Method, true>(method, key_columns, vec_res, negative, rows, null_map);
     else
         executeImplCase<Method, false>(method, key_columns, vec_res, negative, rows, null_map);
@@ -852,18 +586,11 @@ void NO_INLINE Set::executeImplCase(
     ConstNullMapPtr null_map) const
 {
     Arena pool;
-    typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
-    /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
-    /// the last-element cache compares the key with the previous row's before probing the hash
-    /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
-    /// calculating the hash.
-    ///
-    /// Since LLVM 23 a reference argument is known to be dereferenceable only at function entry, so after the calls
-    /// above the loads of the hash table fields (`buf`, `mask`, `has_zero`), which are conditional on the consecutive-keys
-    /// and zero-key checks, could no longer be hoisted and were repeated on every row. The assumption hoists them again.
-    __builtin_assume_dereferenceable(&method.data, sizeof(method.data));
+    /// NOTE Optimization is not used for consecutive identical strings.
+
+    /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])
@@ -878,6 +605,27 @@ void NO_INLINE Set::executeImplCase(
     }
 }
 
+
+void Set::executeOrdinary(
+    const ColumnRawPtrs & key_columns,
+    ColumnUInt8::Container & vec_res,
+    bool negative,
+    ConstNullMapPtr null_map) const
+{
+    size_t rows = key_columns[0]->size();
+
+    switch (data.type)
+    {
+        case SetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+        case SetVariants::Type::NAME: \
+            executeImpl(*data.NAME, key_columns, vec_res, negative, rows, null_map); \
+            break;
+    APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
+}
 
 void Set::checkColumnsNumber(size_t num_key_columns) const
 {
@@ -908,70 +656,8 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
-static UInt64 getNextMergeTreeSetIndexId()
-{
-    static std::atomic<UInt64> counter{0};
-    return counter.fetch_add(1, std::memory_order_relaxed);
-}
-
-template <typename T, typename FieldValueRange>
-static std::optional<BoolMask> checkInRangeSingleIntegerColumn(
-    const IColumn & column, const FieldValueRange & range, bool all_keys)
-{
-    if (!range.left.isNormal() || !range.right.isNormal())
-        return std::nullopt;
-
-    const auto * typed_column = typeid_cast<const ColumnVector<T> *>(&column);
-    if (!typed_column)
-        return std::nullopt;
-
-    const auto & values = typed_column->getData();
-    const T left = static_cast<const ColumnVector<T> &>(*range.left.column).getData()[0];
-    const T right = static_cast<const ColumnVector<T> &>(*range.right.column).getData()[0];
-    /// Let the general path validate ranges that can produce inverted search positions.
-    if (left > right || (left == right && !range.left_included && !range.right_included))
-        return std::nullopt;
-
-    size_t begin = 0;
-    size_t length = values.size();
-    while (length > 1)
-    {
-        const size_t half = length / 2;
-        const T value = values[begin + half - 1];
-        const bool below = value < left || (value == left && !range.left_included);
-        begin = below ? begin + half : begin;
-        length -= half;
-    }
-    if (length)
-        begin += values[begin] < left || (values[begin] == left && !range.left_included);
-
-    const bool can_be_true = begin < values.size()
-        && (values[begin] < right || (values[begin] == right && range.right_included));
-    return BoolMask{can_be_true, all_keys && left == right ? !can_be_true : true};
-}
-
-template <typename FieldValueRange>
-static std::optional<BoolMask> checkInRangeSingleColumn(
-    const IColumn & column, const FieldValueRange & range, bool all_keys)
-{
-    switch (column.getDataType())
-    {
-        case TypeIndex::UInt8: return checkInRangeSingleIntegerColumn<UInt8>(column, range, all_keys);
-        case TypeIndex::UInt16: return checkInRangeSingleIntegerColumn<UInt16>(column, range, all_keys);
-        case TypeIndex::UInt32: return checkInRangeSingleIntegerColumn<UInt32>(column, range, all_keys);
-        case TypeIndex::UInt64: return checkInRangeSingleIntegerColumn<UInt64>(column, range, all_keys);
-        case TypeIndex::Int8: return checkInRangeSingleIntegerColumn<Int8>(column, range, all_keys);
-        case TypeIndex::Int16: return checkInRangeSingleIntegerColumn<Int16>(column, range, all_keys);
-        case TypeIndex::Int32: return checkInRangeSingleIntegerColumn<Int32>(column, range, all_keys);
-        case TypeIndex::Int64: return checkInRangeSingleIntegerColumn<Int64>(column, range, all_keys);
-        default: return std::nullopt;
-    }
-}
-
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
-    : has_all_keys(set_elements.size() == indexes_mapping_.size())
-    , indexes_mapping(std::move(indexes_mapping_))
-    , instance_id(getNextMergeTreeSetIndexId())
+    : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
@@ -1009,278 +695,46 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
 
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = block_to_sort.getByPosition(i).column;
-
-    /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
-    /// columns hold at most one value, so reuse cannot grow them. Variable-width columns
-    /// (e.g. `ColumnString`) do not release reserved capacity on popBack, so caching them in
-    /// thread-local storage could pin arbitrarily large buffers after the query ends.
-    cache_ranges = std::all_of(ordered_set.begin(), ordered_set.end(),
-        [](const ColumnPtr & column) { return column->valuesHaveFixedSize(); });
 }
 
-MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuffer(FieldValueRanges & scratch) const
-{
-    size_t tuple_size = indexes_mapping.size();
-
-    if (!cache_ranges)
-    {
-        /// Query-scoped scratch buffer: normally tracked, freed when the caller returns.
-        scratch.reserve(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
-            scratch.emplace_back(*ordered_set[i]);
-        return scratch;
-    }
-
-    struct CacheEntry
-    {
-        UInt64 set_index_id;
-        FieldValueRanges ranges;
-    };
-    /// Must exceed the number of IN-set key conditions checked per mark within one query,
-    /// otherwise every call misses and rebuilds the buffer as before this cache existed.
-    static constexpr size_t max_entries = 8;
-    thread_local std::vector<CacheEntry> cache;
-
-    for (auto & entry : cache)
-        if (entry.set_index_id == instance_id)
-            return entry.ranges;
-
-    /// The cache outlives the query, so its memory (also freed here on eviction) must not be
-    /// charged to whichever query happens to be running on this thread. See FieldValue::update
-    /// for the same blocker on reallocations of the cached columns.
-    MemoryTrackerBlockerInThread blocker;
-
-    FieldValueRanges ranges;
-    ranges.reserve(tuple_size);
-    for (size_t i = 0; i < tuple_size; ++i)
-        ranges.emplace_back(*ordered_set[i], /*block_memory_tracker=*/ true);
-
-    if (cache.size() >= max_entries)
-        cache.erase(cache.begin());
-    cache.push_back({instance_id, std::move(ranges)});
-    return cache.back().ranges;
-}
 
 /** Return the BoolMask where:
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(
-    const std::vector<int> & key_col_to_sparse_pos,
-    const Ranges & sparse_key_ranges,
-    const DataTypes & sparse_data_types,
-    size_t first_function_number,
-    bool single_point) const
-{
-    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
-    {
-        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
-        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
-        return {is_key_col_present, sparse_pos};
-    };
-
-    size_t tuple_size = indexes_mapping.size();
-
-    FieldValueRanges scratch;
-    FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
-    size_t function_number = first_function_number;
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        const size_t mapping_first_function_number = function_number;
-        function_number += indexes_mapping[i].functions.size();
-
-        size_t key_column = indexes_mapping[i].key_index;
-        auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
-
-        FieldValueRange & range = ranges[i];
-
-        if (!is_key_col_present)
-        {
-            /// We have no range information for this key column.
-            /// Most likely earlier columns were high cardinality, so this column and later column marks were not loaded into memory
-            /// Treat it as completely unconstrained; since we do not have the type information,
-            /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
-            /// So, we choose the more relaxed option:
-            /// [-inf, +inf] instead of ( -inf, +inf ).
-            range.left.update(NEGATIVE_INFINITY);
-            range.right.update(POSITIVE_INFINITY);
-            range.left_included = true;
-            range.right_included = true;
-            continue;
-        }
-
-        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
-            sparse_key_ranges[sparse_pos],
-            indexes_mapping[i].functions,
-            mapping_first_function_number,
-            sparse_data_types[sparse_pos],
-            single_point);
-
-        if (!new_range)
-            return {true, true};
-
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
-    }
-
-    if (tuple_size == 1)
-        if (auto result = checkInRangeSingleColumn(*ordered_set[0], ranges[0], has_all_keys))
-            return *result;
-
-    /// lhs < rhs return -1
-    /// lhs == rhs return 0
-    /// lhs > rhs return 1
-    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
-    {
-        if (rhs.isNegativeInfinity())
-            return +1;
-        if (rhs.isPositiveInfinity())
-            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
-        return lhs.compareAt(row, 0, *rhs.column, 1);
-    };
-
-    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecutive. Use binary search to find the range of indices.
-
-    /// The part about left_included/right_included is a little tricky. It was initially implemented
-    /// incorrectly:
-    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
-    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
-    ///       begin += 1;
-    /// This breaks on the following example:
-    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
-    ///   ordered_set = [[0], [0]].
-    /// The incorrect implementation would output begin == 0 and conclude that the set element is
-    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
-
-    auto indices = collections::range(0, size());
-    size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return true if set[row] is below the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].left, row);
-
-                if (cmp > 0)
-                    return false;
-                /// Note: if some range has left_included == false then the left ends of all
-                /// subsequent ranges' don't matter. (Symmetrically for right.)
-                /// It's the only way to make sense of the notion of a range of tuples where the
-                /// included/excluded flags are given per element.
-                if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
-                    return true;
-            }
-            return false;
-        }) - indices.begin();
-    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
-        {
-            /// Return false if set[row] is above the key range.
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                int cmp = compare(*ordered_set[i], ranges[i].right, row);
-
-                if (cmp > 0 || (cmp == 0 && !ranges[i].right_included))
-                    return false;
-                if (cmp < 0)
-                    return true;
-            }
-            return true;
-        }) - indices.begin();
-
-    if (begin > end)
-    {
-        /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
-        for (const auto & mapping : indexes_mapping)
-        {
-            auto [is_key_col_present, sparse_pos] = get_sparse_info(mapping.key_index);
-            if (is_key_col_present && sparse_key_ranges[sparse_pos].empty())
-                return {false, true};
-        }
-
-        /// TODO: Remove the #ifndef and always throw after
-        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
-        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
-        ///        nonmonotonic functions, and we end up with left > right.)
-#ifndef NDEBUG
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
-#else
-        return {true, true};
-#endif
-    }
-
-    bool can_be_true = begin < end;
-
-    /// A special case of 1-element KeyRange. It's useful for partition pruning.
-    bool at_most_one_element_range = true;
-    for (size_t i = 0; i < tuple_size; ++i)
-    {
-        auto & r = ranges[i];
-        if (r.left.isNormal() && r.right.isNormal())
-        {
-            if (0 != r.left.column->compareAt(0, 0, *r.right.column, 1))
-            {
-                at_most_one_element_range = false;
-                break;
-            }
-        }
-        else if ((r.left.isPositiveInfinity() && r.right.isPositiveInfinity()) || (r.left.isNegativeInfinity() && r.right.isNegativeInfinity()))
-        {
-            /// Special value equality.
-        }
-        else
-        {
-            at_most_one_element_range = false;
-            break;
-        }
-    }
-    if (at_most_one_element_range && has_all_keys)
-    {
-        /// Here we know that there is at most one element in range.
-        /// The main difference with the normal case is that we can definitely say that
-        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
-        return {can_be_true, !can_be_true};
-    }
-
-    return {can_be_true, true};
-}
-
-BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
-    FieldValueRanges scratch;
-    FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
-    size_t function_number = first_function_number;
+    struct FieldValueRange
+    {
+        FieldValue left;
+        FieldValue right;
+        bool left_included = false;
+        bool right_included = false;
+
+        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
+    };
+
+    std::vector<FieldValueRange> ranges;
+    ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        const size_t mapping_first_function_number = function_number;
-        function_number += indexes_mapping[i].functions.size();
-
-        if (indexes_mapping[i].key_index >= key_ranges.size())
-            return {true, true};
-
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
-            mapping_first_function_number,
             data_types[indexes_mapping[i].key_index],
             single_point);
 
         if (!new_range)
             return {true, true};
 
-        FieldValueRange & range = ranges[i];
-        range.left.update(new_range->left);
-        range.right.update(new_range->right);
-        range.left_included = new_range->left_included;
-        range.right_included = new_range->right_included;
+        ranges.emplace_back(*ordered_set[i]);
+        ranges.back().left.update(new_range->left);
+        ranges.back().right.update(new_range->right);
+        ranges.back().left_included = new_range->left_included;
+        ranges.back().right_included = new_range->right_included;
     }
-
-    if (tuple_size == 1)
-        if (auto result = checkInRangeSingleColumn(*ordered_set[0], ranges[0], has_all_keys))
-            return *result;
 
     /// lhs < rhs return -1
     /// lhs == rhs return 0
@@ -1295,7 +749,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
     };
 
     /// Because ordered_set is sorted lexicographically, the elements we're looking for are
-    /// consecutive. Use binary search to find the range of indices.
+    /// consecituve. Use binary search to find the range of indices.
 
     /// The part about left_included/right_included is a little tricky. It was initially implemented
     /// incorrectly:
@@ -1344,13 +798,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
 
     if (begin > end)
     {
-        /// No set element can lie in an empty input key range (e.g. the open interval between two adjacent integers).
-        for (const auto & mapping : indexes_mapping)
-        {
-            if (key_ranges[mapping.key_index].empty())
-                return {false, true};
-        }
-
         /// TODO: Remove the #ifndef and always throw after
         ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
         ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
@@ -1412,11 +859,6 @@ void MergeTreeSetIndex::FieldValue::update(const Field & x)
         value = x;
     else
     {
-        /// When the column belongs to the thread-local buffer of getFieldValueRangesBuffer, which
-        /// outlives the query, its reallocations must not be charged to the current query.
-        std::optional<MemoryTrackerBlockerInThread> blocker;
-        if (block_memory_tracker)
-            blocker.emplace();
         /// Keep at most one element in column.
         if (!column->empty())
             column->popBack(1);

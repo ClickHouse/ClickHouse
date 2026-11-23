@@ -92,14 +92,6 @@ DROP TABLE tq_same;
 DROP TABLE tq_bucket_base;
 DROP TABLE tq_base;
 
--- In `exclusive` mode each server reads its own path, so the paths may differ, but the bucket must be the same.
-CREATE TABLE tq_x1 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_x1/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_exclusive';
-CREATE TABLE tq_x2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_x2/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_exclusive';
--- A different bucket is rejected.
-CREATE TABLE tq_x3 (x String) ENGINE = S3Queue('http://localhost:11111/other/05366_x1/*', NOSIGN, 'CSV') SETTINGS mode = 'exclusive', keeper_path = '/clickhouse/{database}/05366_exclusive'; -- { serverError METADATA_MISMATCH }
-SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'tq_x%';
-DROP TABLE tq_x2; DROP TABLE tq_x1;
-
 -- An `AzureQueue` and an `S3Queue` with the same endpoint, bucket and path read different storages.
 CREATE TABLE tq_type_azure (x String) ENGINE = AzureQueue('http://localhost:11111', 'test', '05366_type/*', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_type';
 CREATE TABLE tq_type_s3 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_type/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_type'; -- { serverError METADATA_MISMATCH }
@@ -109,12 +101,6 @@ DROP TABLE tq_type_azure;
 CREATE TABLE tq_u (x String) ENGINE = S3Queue('http://user:secret@localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info';
 CREATE TABLE tq_u2 (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_u/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info';
 DROP TABLE tq_u2; DROP TABLE tq_u;
--- The URL without user info is parsed with the same `s3_uri_style`: here `.s3.` in the host does not make it virtual-hosted.
-SET s3_uri_style = 'path';
-CREATE TABLE tq_u3 (x String) ENGINE = S3Queue('http://user:secret@queue.s3.localhost:11111/test/05366_u3/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info_path';
-CREATE TABLE tq_u4 (x String) ENGINE = S3Queue('http://queue.s3.localhost:11111/test/05366_u3/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_user_info_path';
-SET s3_uri_style = DEFAULT;
-DROP TABLE tq_u4; DROP TABLE tq_u3;
 -- Paths that differ only in a part like `&sig=` are different sources.
 CREATE TABLE tq_sig (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=a/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig';
 CREATE TABLE tq_sig_z (x String) ENGINE = S3Queue('http://localhost:11111/test/05366_root&sig=z/*', NOSIGN, 'CSV') SETTINGS mode = 'unordered', keeper_path = '/clickhouse/{database}/05366_sig'; -- { serverError METADATA_MISMATCH }

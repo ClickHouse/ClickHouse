@@ -1,4 +1,9 @@
 if (GLIBC_COMPATIBILITY)
+    add_subdirectory(memcpy)
+    if(TARGET memcpy)
+        set(MEMCPY_LIBRARY memcpy)
+    endif()
+
     enable_language(ASM)
 
     add_headers_and_sources(glibc_compatibility .)
@@ -29,13 +34,6 @@ if (GLIBC_COMPATIBILITY)
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
-    # Linked into every executable as an object (see `clickhouse_add_executable`), because in an archive it would lose
-    # to the definition in libpthread.so, which comes first on the link line.
-    list (REMOVE_ITEM glibc_compatibility_sources pthread_get_minstack.c)
-    if (ENABLE_CFI)
-        add_library(pthread_get_minstack OBJECT pthread_get_minstack.c)
-    endif ()
-
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
     target_no_warning(glibc-compatibility unused-command-line-argument)
@@ -48,7 +46,7 @@ if (GLIBC_COMPATIBILITY)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
-    target_link_libraries(global-libs INTERFACE glibc-compatibility)
+    target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 

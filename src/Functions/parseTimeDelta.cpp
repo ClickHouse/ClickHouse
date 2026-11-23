@@ -5,75 +5,71 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
-    /// Built on first use rather than by a static initializer.
-    const UnorderedMapWithMemoryTracking<std::string_view, Float64> & time_unit_to_float()
+    const std::unordered_map<std::string_view, Float64> time_unit_to_float =
     {
-        static const UnorderedMapWithMemoryTracking<std::string_view, Float64> map{
-            {"years", 365 * 24 * 3600},
-            {"year", 365 * 24 * 3600},
-            {"yr", 365 * 24 * 3600},
-            {"y", 365 * 24 * 3600},
+        {"years", 365 * 24 * 3600},
+        {"year", 365 * 24 * 3600},
+        {"yr", 365 * 24 * 3600},
+        {"y", 365 * 24 * 3600},
 
-            {"months", 30.5 * 24 * 3600},
-            {"month", 30.5 * 24 * 3600},
-            {"mo", 30.5 * 24 * 3600},
+        {"months", 30.5 * 24 * 3600},
+        {"month", 30.5 * 24 * 3600},
+        {"mo", 30.5 * 24 * 3600},
 
-            {"weeks", 7 * 24 * 3600},
-            {"week", 7 * 24 * 3600},
-            {"w", 7 * 24 * 3600},
+        {"weeks", 7 * 24 * 3600},
+        {"week", 7 * 24 * 3600},
+        {"w", 7 * 24 * 3600},
 
-            {"days", 24 * 3600},
-            {"day", 24 * 3600},
-            {"d", 24 * 3600},
+        {"days", 24 * 3600},
+        {"day", 24 * 3600},
+        {"d", 24 * 3600},
 
-            {"hours", 3600},
-            {"hour", 3600},
-            {"hr", 3600},
-            {"h", 3600},
+        {"hours", 3600},
+        {"hour", 3600},
+        {"hr", 3600},
+        {"h", 3600},
 
-            {"minutes", 60},
-            {"minute", 60},
-            {"min", 60},
-            {"m", 60},
+        {"minutes", 60},
+        {"minute", 60},
+        {"min", 60},
+        {"m", 60},
 
-            {"seconds", 1},
-            {"second", 1},
-            {"sec", 1},
-            {"s", 1},
+        {"seconds", 1},
+        {"second", 1},
+        {"sec", 1},
+        {"s", 1},
 
-            {"milliseconds", 1e-3},
-            {"millisecond", 1e-3},
-            {"millisec", 1e-3},
-            {"ms", 1e-3},
+        {"milliseconds", 1e-3},
+        {"millisecond", 1e-3},
+        {"millisec", 1e-3},
+        {"ms", 1e-3},
 
-            {"microseconds", 1e-6},
-            {"microsecond", 1e-6},
-            {"microsec", 1e-6},
-            {"μs", 1e-6}, // U+03BC = Greek letter mu
-            {"µs", 1e-6}, // U+00B5 = micro symbol
-            {"us", 1e-6},
+        {"microseconds", 1e-6},
+        {"microsecond", 1e-6},
+        {"microsec", 1e-6},
+        {"μs", 1e-6}, // U+03BC = Greek letter mu
+        {"µs", 1e-6}, // U+00B5 = micro symbol
+        {"us", 1e-6},
 
-            {"nanoseconds", 1e-9},
-            {"nanosecond", 1e-9},
-            {"nanosec", 1e-9},
-            {"ns", 1e-9},
-        };
-        return map;
-    }
+        {"nanoseconds", 1e-9},
+        {"nanosecond", 1e-9},
+        {"nanosec", 1e-9},
+        {"ns", 1e-9},
+    };
 
     /** Prints amount of seconds in form of:
      * "1 year 2 months 4 weeks 12 days 3 hours 1 minute 33 seconds".
@@ -105,43 +101,52 @@ namespace
      * The length of years and months (and even days in presence of time adjustments) are rough:
      * year is just 365 days, month is 30.5 days, day is 86400 seconds, similarly to what formatReadableTimeDelta is doing.
      */
-    class FunctionParseTimeDelta final : public IFunction
+    class FunctionParseTimeDelta : public IFunction
     {
     public:
         static constexpr auto name = "parseTimeDelta";
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseTimeDelta>(); }
 
-        [[nodiscard]] String getName() const override { return name; }
+        String getName() const override { return name; }
 
-        [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        bool isVariadic() const override { return true; }
 
-        [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        [[nodiscard]] String getSignatureString() const override
+        size_t getNumberOfArguments() const override { return 0; }
+
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            return "(String) -> Float64";
+            if (arguments.empty())
+                throw Exception(
+                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
+                    getName(),
+                    arguments.size());
+
+            if (arguments.size() > 1)
+                throw Exception(
+                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1.",
+                    getName(),
+                    arguments.size());
+
+            const IDataType & type = *arguments[0];
+
+            if (!isString(type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
+
+            return std::make_shared<DataTypeFloat64>();
         }
 
-        /// `parseTimeDelta` distinguished the two arity errors before it adopted the declarative
-        /// signature, and its tests pin those codes.
-        [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const override
-        {
-            return number_of_arguments < 1 ? ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION : ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-        }
-
-        [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
             return std::make_shared<DataTypeFloat64>();
         }
 
-        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-        /// row references it, so a function that throws on the default value must not be executed on
-        /// the whole dictionary - it would fail on entirely valid data.
-        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
+        bool useDefaultImplementationForConstants() const override { return true; }
 
-        [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-
-        [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto col_to = ColumnFloat64::create();
             auto & res_data = col_to->getData();
@@ -233,8 +238,8 @@ namespace
 
                     /// get unit number
                     std::string_view unit = str.substr(token_front, token_tail - token_front);
-                    auto iter = time_unit_to_float().find(unit);
-                    if (iter == time_unit_to_float().end()) /// not find unit
+                    auto iter = time_unit_to_float.find(unit);
+                    if (iter == time_unit_to_float.end()) /// not find unit
                     {
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS, "Invalid argument of function {}, can't parse the unit: \"{}\".", getName(), unit);
