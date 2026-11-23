@@ -199,17 +199,18 @@ def test_close_without_quorum_after_client_shutdown(started_cluster):
         client.send(int_struct.pack(45) + req)
         client.recv(1_000)
 
+        # Do not wait until node1 sees that the quorum is lost: that takes longer than the session timeout,
+        # and the session would expire first. With the other Keepers killed, the Close cannot be committed anyway.
         node2.stop_clickhouse(kill=True)
         node3.stop_clickhouse(kill=True)
-        keeper_utils.wait_until_quorum_lost(cluster, node1)
 
         close_xid, close_op = 0x7FFFFFFF, -11
         client.send(int_struct.pack(8) + int_int_struct.pack(close_xid, close_op))
         client.shutdown(socket.SHUT_WR)
-        client.settimeout(10)
+        client.settimeout(20)
         start = time.monotonic()
         assert client.recv(1_000) == b""
-        # The Close cannot be committed, its response only comes after operation_timeout_ms (5 s).
+        # Without the fix, the connection stays open until the Close request times out.
         assert time.monotonic() - start < 3
     finally:
         client.close()
