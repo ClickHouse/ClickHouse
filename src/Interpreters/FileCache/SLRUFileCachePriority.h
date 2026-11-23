@@ -159,7 +159,7 @@ private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
 
-    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, ObservedQueue observed_queue, FileSegmentSummaryInfos & result) override;
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, const ObservedQueue & observed_queue, FileSegmentSummaryInfos & result) override;
 
     std::string description;
     double size_ratio;

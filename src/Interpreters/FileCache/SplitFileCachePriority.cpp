@@ -130,7 +130,7 @@ void SplitFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    ObservedQueue observed_queue,
+    const ObservedQueue & observed_queue,
     FileSegmentSummaryInfos & result)
 {
     /// The same names as in `system.filesystem_cache.segment_type`.

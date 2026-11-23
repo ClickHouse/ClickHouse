@@ -213,7 +213,7 @@ void SLRUFileCachePriority::iterate(IterateFunc func, FileCacheReserveStat & sta
     probationary_queue.iterateImpl(probationary_queue.queue.begin(), func, stat, lock);
 }
 
-void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, ObservedQueue observed_queue, FileSegmentSummaryInfos & result)
+void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, const ObservedQueue & observed_queue, FileSegmentSummaryInfos & result)
 {
     auto lock = getPriorityGuard().readLock();
 

@@ -194,7 +194,7 @@ private:
     friend class SLRUFileCachePriority;
     friend class ::FileCacheTest_MoveEvictionPos_Test;
 
-    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, ObservedQueue observed_queue, FileSegmentSummaryInfos & result) override;
+    void iterate(UInt64 query_max_elements, UInt64 query_max_total_size, IterationOrder query_order, const ObservedQueue & observed_queue, FileSegmentSummaryInfos & result) override;
 
     /// Non-null when this queue's structural locking is redirected to another guard
     /// (set by SLRU for its sub-queues). See `getPriorityGuard`.
@@ -286,7 +286,7 @@ private:
         UInt64 query_max_elements,
         UInt64 query_max_total_size,
         IterationOrder query_order,
-        ObservedQueue observed_queue,
+        const ObservedQueue & observed_queue,
         FileSegmentSummaryInfos & result,
         const CachePriorityGuard::ReadLock &);
 

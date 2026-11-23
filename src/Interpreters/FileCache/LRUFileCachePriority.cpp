@@ -300,7 +300,7 @@ void LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    ObservedQueue observed_queue,
+    const ObservedQueue & observed_queue,
     FileSegmentSummaryInfos & result)
 {
     auto lock = getPriorityGuard().readLock();
@@ -311,7 +311,7 @@ void LRUFileCachePriority::iterate(
     UInt64 query_max_elements,
     UInt64 query_max_total_size,
     IterationOrder query_order,
-    ObservedQueue observed_queue,
+    const ObservedQueue & observed_queue,
     FileSegmentSummaryInfos & result,
     const CachePriorityGuard::ReadLock &)
 {
