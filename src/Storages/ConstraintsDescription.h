@@ -95,12 +95,12 @@ public:
         [[nodiscard]] std::vector<Analyzer::CNFAtomicFormula> getAtomsById(const AtomIds & ids) const;
         [[nodiscard]] const ComparisonGraph<QueryTreeNodePtr> & getGraph() const;
     private:
+        /// Keeps the context the constraints were analyzed with alive; declared first to be destroyed last.
+        ContextPtr analysis_context;
         QueryTreeNodes constraints;
         std::vector<std::vector<Analyzer::CNFAtomicFormula>> cnf_constraints;
         QueryTreeNodePtrWithHashMap<AtomIds> query_node_to_atom_ids;
         std::unique_ptr<ComparisonGraph<QueryTreeNodePtr>> graph;
-        /// Keeps the context the constraints were analyzed with alive.
-        ContextPtr analysis_context;
 
         friend ConstraintsDescription;
     };
