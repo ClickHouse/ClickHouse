@@ -161,7 +161,7 @@ private:
             typename Method::State state(columns, sizes, nullptr);
             static_assert(sizeof(*state.getKeyData()) == sizeof(Key));
             const char * values = reinterpret_cast<const char *>(state.getKeyData());
-            if (repeated_keys)
+            if (repeated_keys || keysChangeRegularly<Key>(values, rows))
                 findRepeatedNumbers<mixed, Key>(values, rows, res);
             else
                 findNumbers<mixed, Key>(values, rows, res);
@@ -402,6 +402,43 @@ private:
             }
         }
 
+        return true;
+    }
+
+    /// Whether the key changes every `n >= 2` rows, judged by the three runs after each of four rows spread over the block.
+    template <typename Key>
+    static bool keysChangeRegularly(const char * values, size_t rows)
+    {
+        static constexpr size_t num_starts = 4;
+        static constexpr size_t runs_per_start = 3;
+        static constexpr size_t max_run = 64;
+        static constexpr size_t rows_per_start = (runs_per_start + 1) * max_run;
+        if (rows < num_starts * rows_per_start)
+            return false;
+        size_t run = 0;
+        for (size_t start = 0; start < num_starts; ++start)
+        {
+            const size_t begin = start * (rows / num_starts);
+            /// The run that contains `begin` may have started before it, so it is not counted.
+            size_t last_change = 0;
+            size_t runs = 0;
+            for (size_t i = begin + 1; i < begin + rows_per_start && runs < runs_per_start; ++i)
+            {
+                if (unalignedLoad<Key>(values + i * sizeof(Key)) == unalignedLoad<Key>(values + (i - 1) * sizeof(Key)))
+                    continue;
+                if (last_change)
+                {
+                    const size_t length = i - last_change;
+                    if (length < 2 || (run && length != run))
+                        return false;
+                    run = length;
+                    ++runs;
+                }
+                last_change = i;
+            }
+            if (runs < runs_per_start)
+                return false;
+        }
         return true;
     }
 

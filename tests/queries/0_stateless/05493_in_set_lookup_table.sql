@@ -74,6 +74,11 @@ SELECT countIf(x IN (SELECT number * 3 FROM numbers(1000))) = countIf(x % 3 = 0 
     AND countIf(x NOT IN (SELECT number * 3 FROM numbers(1000))) = countIf(NOT (x % 3 = 0 AND x < 3000))
 FROM (SELECT if(number < 200000, intHash64(number), intDiv(number, 100)) % 6000 AS x FROM numbers(400000));
 
+-- Random keys, then runs of 4 equal keys.
+SELECT countIf(x IN (SELECT number * 3 FROM numbers(1000))) = countIf(x % 3 = 0 AND x < 3000)
+    AND countIf(x NOT IN (SELECT number * 3 FROM numbers(1000))) = countIf(NOT (x % 3 = 0 AND x < 3000))
+FROM (SELECT if(number < 200000, intHash64(number), intDiv(number, 4)) % 6000 AS x FROM numbers(400000));
+
 -- An exact JOIN runtime filter.
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_runtime_filter_exact_values_limit = 10000,
     join_runtime_filter_from_fixed_hash_table = 0;
