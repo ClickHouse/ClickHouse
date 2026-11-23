@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
@@ -600,8 +601,8 @@ bool isPatternScanCostlierThanReadableRows(
         return false;
 
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
-    const size_t dictionary_file_size
-        = part_info.getFileSizeOrZero(state.index.getFileName() + dictionary_substream.suffix + dictionary_substream.extension);
+    const size_t dictionary_file_size = getIndexStreamFileSize(
+        part_info, state.index.getFileName() + dictionary_substream.suffix, dictionary_substream.extension);
     if (dictionary_file_size == 0)
         return false;
 
