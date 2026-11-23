@@ -267,9 +267,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be numeric, Bool, String, Enum, temporal, UUID or IP", getName());
         const auto source_type = removeNullable(removeLowCardinality(arguments[1]));
-        if (!isDynamic(source_type) && !isVariant(source_type))
+        if (!isDynamic(source_type) && !isVariant(source_type)
+            && !isNumber(source_type) && !isBool(source_type) && !isStringOrFixedString(source_type)
+            && !isEnum(source_type) && !isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(source_type)
+            && !isUUID(source_type) && !isIPv4(source_type) && !isIPv6(source_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function {} must be a Dynamic or Variant", getName());
+                "Second argument for function {} must be a scalar, Dynamic or Variant", getName());
         auto result_type = std::make_shared<DataTypeUInt8>();
         if (canContainNull(*arguments[1]))
             return std::make_shared<DataTypeNullable>(result_type);
@@ -306,7 +309,7 @@ public:
                 continue;
 
             auto source_row = carrier->cut(row, 1);
-            DataTypePtr active_type;
+            DataTypePtr active_type = (isDynamic(source_type) || isVariant(source_type)) ? nullptr : source_type;
             if (const auto * dynamic = checkAndGetColumn<ColumnDynamic>(carrier))
                 active_type = dynamic->getTypeAt(row);
             else if (const auto * variant = checkAndGetColumn<ColumnVariant>(carrier))

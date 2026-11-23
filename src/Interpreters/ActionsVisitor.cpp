@@ -1877,6 +1877,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
                                 || isDynamic(bare_type) || isVariant(bare_type)
                                 || (left_is_identifier && left_bare_type->equals(*bare_type))
+                                || (left_is_temporal && left_bare_type->equals(*bare_type))
                                 || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)))
                                 || (left_is_numeric && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
                         });

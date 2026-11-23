@@ -4088,12 +4088,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (use_standard_null_semantics)
                     {
                         std::erase_if(matchable_elements, [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
-                        if (isStringOrFixedString(left_complex_type) || isEnum(left_complex_type))
+                        if (isNumber(left_complex_type) || isBool(left_complex_type)
+                            || isStringOrFixedString(left_complex_type) || isEnum(left_complex_type)
+                            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_complex_type)
+                            || isUUID(left_complex_type) || isIPv4(left_complex_type) || isIPv6(left_complex_type))
                         {
                             std::erase_if(matchable_elements, [&](const auto & arg)
                             {
                                 const auto source_type = removeNullable(removeLowCardinality(arg->getResultType()));
-                                if (isDynamic(source_type) || isVariant(source_type))
+                                const bool scalar_source = isNumber(source_type) || isBool(source_type)
+                                    || isStringOrFixedString(source_type) || isEnum(source_type)
+                                    || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(source_type)
+                                    || isUUID(source_type) || isIPv4(source_type) || isIPv6(source_type);
+                                if (isDynamic(source_type) || isVariant(source_type)
+                                    || (scalar_source && !left_complex_type->equals(*source_type)
+                                        && !(isNumber(left_complex_type) && isNumber(source_type))))
                                 {
                                     scalar_carrier_elements.push_back(arg);
                                     return true;

@@ -83,6 +83,8 @@ struct QueryPlanAndSets::SetFromTuple : public QueryPlanAndSets::Set
 struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
 {
     QueryPlanAndSets plan_and_sets;
+    std::optional<bool> transform_null_in;
+    bool in_null_as_unknown = false;
 };
 
 /// The payload of a `TupleValues` record: column count, row count, then per column the encoded
@@ -227,6 +229,18 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                 if (!plan)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
+                if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE)
+                {
+                    writeVarUInt(UInt64{from_subquery->transformsNullIn()}, out);
+                    writeVarUInt(UInt64{from_subquery->sourceStateRequired()}, out);
+                }
+                else if (from_subquery->sourceStateRequired())
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Cannot serialize an IN-subquery set with SQL NULL semantics for query-plan version {}; "
+                        "version {} or newer is required",
+                        flags.version,
+                        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE);
+
                 plan->serialize(out, flags);
             }
         }
@@ -329,6 +343,21 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
+            std::optional<bool> transform_null_in;
+            bool in_null_as_unknown = false;
+            if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE)
+            {
+                UInt64 transform_null_in_value = 0;
+                UInt64 in_null_as_unknown_value = 0;
+                readVarUInt(transform_null_in_value, in);
+                readVarUInt(in_null_as_unknown_value, in);
+                if (transform_null_in_value > 1 || in_null_as_unknown_value > 1
+                    || (in_null_as_unknown_value && !transform_null_in_value))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid serialized IN-subquery set NULL mode");
+                transform_null_in = transform_null_in_value != 0;
+                in_null_as_unknown = in_null_as_unknown_value != 0;
+            }
+
             auto nested_flags = flags;
             ++nested_flags.subquery_nesting_depth;
             if (nested_flags.subquery_nesting_depth > MAX_SUBQUERY_PLAN_NESTING_DEPTH)
@@ -341,7 +370,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},
-                std::move(plan_for_set)});
+                std::move(plan_for_set), transform_null_in, in_null_as_unknown});
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
@@ -404,8 +433,14 @@ static void makeSetsFromSubqueries(QueryPlan & plan, ListWithMemoryTracking<Quer
     {
         auto subquery_plan = QueryPlan::makeSets(std::move(set.plan_and_sets), context);
 
+        FutureSetSettings set_settings(settings);
+        if (set.transform_null_in)
+        {
+            set_settings.transform_null_in = *set.transform_null_in;
+            set_settings.in_null_as_unknown = set.in_null_as_unknown;
+        }
         auto future_set = std::make_shared<FutureSetFromSubquery>(
-            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)), nullptr, nullptr, FutureSetSettings(settings));
+            set.hash, nullptr, std::make_unique<QueryPlan>(std::move(subquery_plan)), nullptr, nullptr, std::move(set_settings));
 
         for (auto * column : set.columns)
             column->setData(future_set);

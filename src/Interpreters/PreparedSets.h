@@ -256,6 +256,7 @@ public:
 
     [[nodiscard]] const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
+    [[nodiscard]] bool transformsNullIn() const { return set_settings.transform_null_in; }
     [[nodiscard]] bool sourceStateRequired() const { return set_settings.in_null_as_unknown; }
 
     /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the

@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -45,6 +46,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
@@ -65,6 +67,7 @@ namespace Setting
 {
     extern const SettingsString additional_result_filter;
     extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -90,6 +93,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
@@ -283,6 +287,53 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
     /// But CTE is defined only for top-level query part, so may not be sent.
     /// Removing cte_name forces subquery to be always printed.
     auto ast = queryNodeToSelectQuery(query_node, /*set_subquery_cte_name=*/false);
+
+    /// A predicate moved into a shard query can retain the outer query's `IN`
+    /// semantics even when this query has different settings. The query tree
+    /// remembers that choice; SQL lowering must send it to the shard as well.
+    class CollectInNullModes : public ConstInDepthQueryTreeVisitor<CollectInNullModes>
+    {
+    public:
+        std::optional<bool> mode;
+
+        void visitImpl(const QueryTreeNodePtr & node)
+        {
+            const auto * function = node->as<FunctionNode>();
+            if (!function)
+                return;
+            const auto & name = function->getFunctionName();
+            if (name != "in" && name != "notIn" && name != "globalIn" && name != "globalNotIn")
+                return;
+            const bool current_mode = function->useNullAsUnknownSemanticsForIn();
+            if (mode && *mode != current_mode)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot ship IN predicates with different captured NULL modes in one distributed SQL query");
+            mode = current_mode;
+        }
+
+        static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
+        {
+            return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
+        }
+    };
+
+    if (const auto * query = query_node->as<QueryNode>())
+    {
+        CollectInNullModes modes;
+        modes.visit(query_node);
+        if (modes.mode && *modes.mode != query->getContext()->getSettingsRef()[Setting::in_null_as_unknown])
+        {
+            auto * select_query = ast->as<ASTSelectQuery>();
+            if (!select_query)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot attach captured IN NULL mode to distributed query");
+            auto settings_ast = select_query->settings()
+                ? select_query->settings()->as<ASTSetQuery>()->clone()
+                : make_intrusive<ASTSetQuery>();
+            settings_ast->as<ASTSetQuery>()->changes.setSetting("in_null_as_unknown", UInt64{*modes.mode});
+            settings_ast->as<ASTSetQuery>()->is_standalone = false;
+            select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_ast));
+        }
+    }
 
     deduplicateProjectionAliasesRecursive(ast);
 
