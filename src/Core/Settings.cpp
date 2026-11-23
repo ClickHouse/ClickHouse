@@ -3592,21 +3592,21 @@ Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(UInt64, http_max_fields, 1000, R"(
-Maximum number of fields in HTTP request headers, query parameters, and form data.
+Maximum number of fields in HTTP request headers, query parameters, and form data. The query parameters and the form fields of the request body share this limit, so it cannot be exceeded by splitting the fields between the two. The URL query string is parsed before authentication, because the name of the user is one of its parameters, so it is bounded by the server default value of this setting; it is re-validated against the authenticated user's value before the request is processed.
 
 Also limits the number of fields in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
         {"26.4", 1000, 1000, "The change was backported to 26.1 and is recorded there."}, \
         {"26.1", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
-Maximum length of a field name in HTTP request headers, query parameters, and form data.
+Maximum length of a field name in HTTP request headers, query parameters, and form data. As for `http_max_fields`, the URL query string is bounded by the server default value while it is parsed before authentication, and is re-validated against the authenticated user's value afterwards.
 
 Also limits the length of a field name in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0, \
         {"26.4", 4096, 4096, "The change was backported to 26.1 and is recorded there."}, \
         {"26.1", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."}) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
-Maximum length of a field value in HTTP request headers, query parameters, and form data.
+Maximum length of a field value in HTTP request headers, query parameters, and form data. As for `http_max_fields`, the URL query string is bounded by the server default value while it is parsed before authentication, and is re-validated against the authenticated user's value afterwards.
 
 Also limits the length of a field value in the headers of the HTTP responses that ClickHouse reads as a client, for example in the `url` table function.
 )", 0) \
@@ -5301,7 +5301,7 @@ If it's used on a cluster with a single shard and multiple replicas, disabling t
 Amount of retries while fetching partition from another host.
 )", 0) \
     DECLARE(UInt64, http_max_multipart_form_data_size, 1024 * 1024 * 1024, R"(
-Limit on size of multipart/form-data content. This setting cannot be parsed from URL parameters and should be set in a user profile. Note that content is parsed and external tables are created in memory before the start of query execution. And this is the only limit that has an effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).
+Limit on size of multipart/form-data content. When native decompression is enabled (via the _decompress parameter), this limit applies to the decompressed data size to prevent decompression bomb attacks. This setting cannot be parsed from URL parameters and should be set in a user profile. Note that content is parsed and external tables are created in memory before the start of query execution. And this is the only limit that has an effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).
 )", 0) \
     DECLARE(Bool, calculate_text_stack_trace, true, R"(
 Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.
