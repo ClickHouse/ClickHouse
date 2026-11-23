@@ -137,9 +137,9 @@ std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_values, std::vecto
     return aggregates;
 }
 
-std::vector<GPUDerivedLaneValue> derivedOrThrow(const std::vector<GPUElementType> & values, std::vector<GPUDerivedLaneValue> derived)
+std::vector<GPUComputedLaneArgument> computedArgumentsOrThrow(const std::vector<GPUElementType> & values, std::vector<GPUComputedLaneArgument> computed)
 {
-    for (const auto & value : derived)
+    for (const auto & value : computed)
     {
         const GPUExpression & expression = value.expression.expression;
         if (expression.result != GPUExpressionResult::Value)
@@ -153,7 +153,7 @@ std::vector<GPUDerivedLaneValue> derivedOrThrow(const std::vector<GPUElementType
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from value {} of {}", column, values.size());
         }
     }
-    return derived;
+    return computed;
 }
 
 }
@@ -789,13 +789,13 @@ GPUGroupingLane::GPUGroupingLane(
     std::vector<GPUElementType> keys_,
     std::vector<GPUElementType> values_,
     std::vector<GPUGroupByAggregate> aggregates_,
-    std::vector<GPUDerivedLaneValue> derived_,
+    std::vector<GPUComputedLaneArgument> computed_,
     std::optional<CompiledGPUExpression> where_,
     size_t num_parts)
     : keys(std::move(keys_))
     , values(std::move(values_))
-    , aggregates(aggregatesOrThrow(values.size() + derived_.size(), std::move(aggregates_), !keys.empty()))
-    , derived(derivedOrThrow(values, std::move(derived_)))
+    , aggregates(aggregatesOrThrow(values.size() + computed_.size(), std::move(aggregates_), !keys.empty()))
+    , computed(computedArgumentsOrThrow(values, std::move(computed_)))
     , where(std::move(where_))
     , lane_stream(createStream())
 {
@@ -804,17 +804,17 @@ GPUGroupingLane::GPUGroupingLane(
 
     if (aggregates.empty())
     {
-        if (!derived.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows collected on the GPU with derived values");
+        if (!computed.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows collected on the GPU with computed arguments");
         collector = std::make_unique<CudfRowCollector>(values, stream());
         return;
     }
 
-    std::vector<GPUDerivedValue> derived_values;
-    derived_values.reserve(derived.size());
-    for (const auto & value : derived)
-        derived_values.push_back({.expression = value.expression.expression, .columns = value.columns});
-    group_by = std::make_unique<CudfGroupBy>(keys, values, derived_values, aggregates, num_parts, stream());
+    std::vector<GPUComputedArgument> computed_arguments;
+    computed_arguments.reserve(computed.size());
+    for (const auto & value : computed)
+        computed_arguments.push_back({.expression = value.expression.expression, .columns = value.columns});
+    group_by = std::make_unique<CudfGroupBy>(keys, values, computed_arguments, aggregates, num_parts, stream());
 }
 
 CudfGroupBy & GPUGroupingLane::groupByOrThrow() const

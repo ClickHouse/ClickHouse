@@ -218,8 +218,9 @@ private:
     bool failed = false;
 };
 
-/// A value of a lane that the device computes for each batch from its values, see `GPUDerivedValue`.
-struct GPUDerivedLaneValue
+/// An argument of an aggregate of a lane that is an expression over the values, computed on the device for each batch,
+/// see `GPUComputedArgument`. It holds the compiled kernel, which must outlive the stream of the lane.
+struct GPUComputedLaneArgument
 {
     CompiledGPUExpression expression;
     /// `columns[i]` is the value the expression reads as its column `i`.
@@ -231,12 +232,12 @@ struct GPUDerivedLaneValue
 class GPUGroupingLane
 {
 public:
-    /// The aggregates take the values, then the derived values.
+    /// The aggregates take the values, then the computed arguments.
     GPUGroupingLane(
         std::vector<GPUElementType> keys_,
         std::vector<GPUElementType> values_,
         std::vector<GPUGroupByAggregate> aggregates_,
-        std::vector<GPUDerivedLaneValue> derived_,
+        std::vector<GPUComputedLaneArgument> computed_,
         std::optional<CompiledGPUExpression> where_,
         size_t num_parts);
 
@@ -247,7 +248,7 @@ public:
 
     void add(GPUDeviceBatch batch);
 
-    /// Columns there in the order of `stream`, until it is done with them: the keys, the values without the derived
+    /// Columns there in the order of `stream`, until it is done with them: the keys, the values without the computed
     /// ones, and the columns of the `WHERE`.
     void add(
         const std::vector<DeviceColumnView> & key_columns,
@@ -278,7 +279,7 @@ private:
     const std::vector<GPUElementType> values;
     const std::vector<GPUGroupByAggregate> aggregates;
     /// Declared before `lane_stream`, which is synchronized on destruction: their kernels must outlive it.
-    const std::vector<GPUDerivedLaneValue> derived;
+    const std::vector<GPUComputedLaneArgument> computed;
     const std::optional<CompiledGPUExpression> where;
 
     StreamPtr lane_stream;
