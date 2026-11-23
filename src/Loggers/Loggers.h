@@ -64,7 +64,7 @@ public:
     void stopLogging();
 
 protected:
-    virtual bool allowTextLog() const { return true; }
+    [[nodiscard]] virtual bool allowTextLog() const { return true; }
 
 private:
     /// Create and open the standalone audit writer, but only when the experimental feature is
