@@ -7,8 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Report the INSERT outcome for every outcome, so a run that stops exercising the
-# rejection path fails visibly instead of printing nothing.
+# Report the INSERT outcome for every outcome, so that a change of it fails visibly instead of printing nothing.
 insert_outcome() {
     local out
     if out=$(${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=600000 \
@@ -55,19 +54,20 @@ tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
 
-# A synchronous INSERT shaped by the stale schema (column c0) while the sink force-reads the latest
-# schema {c9, c1}. Before the fix this aborted the server with a std::out_of_range logical error in
-# Parquet::prepareColumnRecursive (unordered_map::at). After the fix it must be a clean query error.
+# A synchronous INSERT planned with the stale schema (column c0) while the sink force-reads the latest
+# schema {c9, c1}. This used to fail with a std::out_of_range logical error in
+# Parquet::prepareColumnRecursive (unordered_map::at). Like a write of the Java implementation, the data
+# file is written with the field ids of the schema the INSERT was planned with, so the value lands in c9.
 insert_outcome "INSERT INTO ${TABLE} (c0, c1) SELECT 2, 'b'"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${TABLE_PATH}') ORDER BY ALL FORMAT TSVWithNames"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 rm -rf "${TABLE_PATH}" 2>/dev/null
 
 # --- Scenario 2: nested column rename inside a stable top-level field --------------------------
-# A rename inside a Tuple keeps the top-level field id, so a top-level-only check would pass and the
-# renamed leaf would be silently written without a field id. Validation must be recursive: the
-# nested mismatch must also be rejected cleanly instead of writing a footer inconsistent with the
-# latest Iceberg schema.
+# A rename inside a Tuple keeps the top-level field id, so a top-level-only mapping would write the renamed
+# leaf without a field id. The nested leaf is matched in the schema the INSERT was planned with as well,
+# so its value lands in t.b.
 NTABLE="n_${CLICKHOUSE_DATABASE}_${RANDOM}"
 NTABLE_PATH="${USER_FILES_PATH}/${NTABLE}/"
 rm -rf "${NTABLE_PATH}" 2>/dev/null
@@ -98,6 +98,7 @@ os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
 
 insert_outcome "INSERT INTO ${NTABLE} (c0, t) SELECT 2, tuple(20)"
+${CLICKHOUSE_CLIENT} --print_pretty_type_names=0 --query "SELECT c0, t, toTypeName(t) FROM icebergLocal('${NTABLE_PATH}') ORDER BY ALL FORMAT TSVWithNames"
 
 # The server must still be alive after both scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
