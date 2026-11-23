@@ -20,7 +20,8 @@ def get_array_as_returned(query_result: str):
     return arr
 
 def top_step_output_columns(instance, query, step, settings=""):
-    """Columns the topmost processor of `step` emits, from EXPLAIN PIPELINE header=1.
+    """Columns of the first processor line EXPLAIN PIPELINE header=1 prints for `step`, the one it
+    added last. Adjacent same-name processors fold into one line showing the earliest one's header.
 
     A header block spans one line per column, so reading only the first line would miss exactly
     the leaked-column case this exists to catch. Every column line carries "(size = "; the next
@@ -308,10 +309,12 @@ def test_read_in_order_complex_key_more_files_than_streams(started_cluster_icebe
     # projection cannot remove it again (unmatched header columns are re-emitted), so the step
     # leaked a column absent from its declared output header. It must emit exactly the columns it
     # declares - the grouped and ungrouped shapes agree on that.
+    # max_threads=3 makes 3 groups of 2 files, so the last group ends in its converting transform;
+    # a single-file group's two ExpressionTransforms fold into one line with the key's header.
     for threshold in [2, 100]:
         assert top_step_output_columns(
             instance, q, "ReadFromObjectStorage",
-            f"max_threads=4, read_in_order_two_level_merge_threshold={threshold}"
+            f"max_threads=3, read_in_order_two_level_merge_threshold={threshold}"
         ) == ["id Nullable(Int64)"], threshold
 
 
