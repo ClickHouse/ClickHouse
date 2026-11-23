@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TraceCollector.h>
 #include <base/scope_guard.h>
@@ -820,39 +821,85 @@ TEST(MemoryTracker, MemoryCreditsOfDestroyedTrackerAreNotChargedToAnotherQuery)
     runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(held); });
 }
 
-/// `ThreadStatus::detachFromGroup` detaches the profile counters of a thread from the query before the cleanup that frees
-/// memory still charged to the query tracker. The `MemoryCredits` of the interval ended by that free must be kept for the
-/// flush at the snapshot of the owning thread group instead of being lost.
-TEST(MemoryTracker, MemoryCreditsAreKeptWhenCountersAreDetachedBeforeTheFree)
+/// Let the clock move for at least `hold_ns`. This does not wait for another thread.
+static void holdMemoryFor(UInt64 hold_ns)
+{
+    const UInt64 start_ns = clock_gettime_ns();
+    while (clock_gettime_ns() < start_ns + hold_ns)
+        std::this_thread::yield();
+}
+
+/// `MemoryCredits` are charged to the counters of the owner of the tracker and not to the counters of the thread that
+/// allocates or frees: `ThreadStatus::detachFromGroup` detaches the profile counters of a thread from the query before
+/// the cleanup that frees memory still charged to the query tracker, and the counters of a thread may be attached
+/// to another group altogether.
+TEST(MemoryTracker, MemoryCreditsAreChargedToTheOwnerOfTheTracker)
 {
     static constexpr Int64 held = 1024 * MB;
-    /// The interval ended by the free lasts at least this long, so it is worth at least `held / 100` byte-seconds,
-    /// much more than the interval between the free and the flush below.
+    /// The interval ended by the free lasts at least this long, so it is worth at least `held / 100` byte-seconds.
     static constexpr UInt64 hold_ns = 10'000'000;
 
     MemoryTrackerHierarchy hierarchy;
     ProfileEvents::Counters query_counters(VariableContext::Process);
+    ProfileEvents::Counters other_counters(VariableContext::Process);
+    hierarchy.process.setMemoryCreditsCounters(&query_counters);
 
     runInThread(hierarchy, [&](MemoryTracker &)
     {
-        DB::CurrentThread::get().performance_counters.setParent(&query_counters);
+        DB::CurrentThread::get().performance_counters.setParent(&other_counters);
         std::ignore = CurrentMemoryTracker::alloc(held);
         std::ignore = CurrentMemoryTracker::alloc(MB);
-
-        /// Hold the memory for a measurable time: this does not wait for another thread, it only lets the clock move.
-        const UInt64 start_ns = clock_gettime_ns();
-        while (clock_gettime_ns() < start_ns + hold_ns)
-            std::this_thread::yield();
-
-        /// The counters are detached, as in `detachFromGroup`, while the memory tracker still points to the query.
-        DB::CurrentThread::get().performance_counters.setParent(&ProfileEvents::global_counters);
+        holdMemoryFor(hold_ns);
         std::ignore = CurrentMemoryTracker::free(MB);
     });
 
-    /// Nothing reached the query counters through the detached thread, but the flush of the owning group charges it.
-    EXPECT_LT(query_counters[ProfileEvents::MemoryCredits], static_cast<UInt64>(held / 100));
-    hierarchy.process.flushMemoryCredits(query_counters);
     EXPECT_GE(query_counters[ProfileEvents::MemoryCredits], static_cast<UInt64>(held / 100));
+    EXPECT_EQ(other_counters[ProfileEvents::MemoryCredits], 0u);
+
+    /// The flush charges the interval since the last free to the same counters.
+    const auto before_flush = query_counters[ProfileEvents::MemoryCredits];
+    holdMemoryFor(hold_ns);
+    hierarchy.process.flushMemoryCredits();
+    EXPECT_GE(query_counters[ProfileEvents::MemoryCredits], before_flush + static_cast<UInt64>(held / 100));
+    EXPECT_EQ(other_counters[ProfileEvents::MemoryCredits], 0u);
 
     runInThread(hierarchy, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(held); });
+}
+
+/// The counters of a group made by `ThreadGroup::createWithoutQueryMemoryTracker` (a dictionary load triggered by a
+/// query) are nested in the counters of the query, but its memory is charged to the server alone. Its `MemoryCredits`
+/// must stay in its own counters, on allocations and frees as well as on a flush: the query does not hold that memory.
+TEST(MemoryTracker, MemoryCreditsOfGroupWithoutQueryMemoryTrackerAreNotChargedToQuery)
+{
+    static constexpr Int64 held = 1024 * MB;
+    static constexpr UInt64 hold_ns = 10'000'000;
+
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto query_group = std::make_shared<DB::ThreadGroup>(getContext().context, 0);
+        auto loader_group = DB::ThreadGroup::createWithoutQueryMemoryTracker(query_group);
+
+        /// A pipeline thread of the load: its memory goes to the loader group, its counters are under the query.
+        runAttachedTo(loader_group->memory_tracker, [&](MemoryTracker &)
+        {
+            DB::CurrentThread::get().performance_counters.setParent(&loader_group->performance_counters);
+            std::ignore = CurrentMemoryTracker::alloc(held);
+            std::ignore = CurrentMemoryTracker::alloc(MB);
+            holdMemoryFor(hold_ns);
+            std::ignore = CurrentMemoryTracker::free(MB);
+        });
+
+        EXPECT_EQ(query_group->memory_tracker.get(), 0);
+        const auto after_free = loader_group->performance_counters[ProfileEvents::MemoryCredits];
+        EXPECT_GE(after_free, static_cast<UInt64>(held / 100));
+        EXPECT_EQ(query_group->performance_counters[ProfileEvents::MemoryCredits], 0u);
+
+        holdMemoryFor(hold_ns);
+        loader_group->memory_tracker.flushMemoryCredits();
+        EXPECT_GE(loader_group->performance_counters[ProfileEvents::MemoryCredits], after_free + static_cast<UInt64>(held / 100));
+        EXPECT_EQ(query_group->performance_counters[ProfileEvents::MemoryCredits], 0u);
+
+        runAttachedTo(loader_group->memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(held); });
+    }).join();
 }

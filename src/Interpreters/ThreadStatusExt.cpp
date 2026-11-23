@@ -115,6 +115,8 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     , os_threads_nice_value(os_threads_nice_value_)
     , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]))
 {
+    memory_tracker.setMemoryCreditsCounters(&performance_counters);
+
     shared_data.query_is_canceled_predicate = [this] () -> bool {
             if (auto context_locked = query_context.lock())
             {
@@ -140,6 +142,7 @@ ThreadGroup::ThreadGroup(const ContextWeakPtr & global_context_)
     , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>())
     , memory_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+    memory_tracker.setMemoryCreditsCounters(&performance_counters);
 }
 
 // c-tor for methods createForMaterializedView, createForExplainAnalyze and createWithoutQueryMemoryTracker
@@ -159,6 +162,10 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_
           /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+    /// The counters are nested in the counters of the parent group. If the memory is not, the parent group and its
+    /// user must not receive `MemoryCredits` of memory that is charged to the server alone.
+    memory_tracker.setMemoryCreditsCounters(&performance_counters, /*charge_enclosing_counters=*/ charge_memory_to_parent);
+
     /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
     memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
 }
@@ -174,6 +181,8 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+    memory_tracker.setMemoryCreditsCounters(&performance_counters);
+
     /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
     memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
 
@@ -292,6 +301,9 @@ ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context, Thr
     if (query_thread_group)
     {
         group->performance_counters.setParent(&query_thread_group->performance_counters);
+        /// The memory of the merge is charged to the background tracker and not to the query, so its `MemoryCredits`
+        /// are reported by the merge (in `system.part_log`) and not by the query and its user.
+        group->memory_tracker.setMemoryCreditsCounters(&group->performance_counters, /*charge_enclosing_counters=*/ false);
         group->parent = std::move(query_thread_group);
     }
     return group;

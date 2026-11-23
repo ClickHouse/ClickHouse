@@ -175,11 +175,13 @@ private:
     /// held). This does the accounting only; the caller decides which profile counters to charge.
     UInt64 takeMemoryCreditsDelta(Int64 current_amount);
 
-    /// Accumulate the `MemoryCredits` profile event on allocation/free. The current thread's counter
-    /// chain is used only to locate the outermost Process `ProfileEvents::Counters`; the increment
-    /// starts there so Thread / nested Process scopes do not receive the query-scoped value.
+    /// Accumulate the `MemoryCredits` profile event on allocation/free into the counters of the owner of this tracker
+    /// (see `setMemoryCreditsCounters`), so Thread / nested Process scopes do not receive the query-scoped value.
     /// `current_amount` is the amount that was held during the interval that just elapsed.
     void updateMemoryCredits(Int64 current_amount);
+
+    /// Add `delta` byte-seconds to the counters of the owner of this tracker. Returns false if there are none.
+    bool publishMemoryCredits(UInt64 delta, bool trace);
 
     /// Keep `MemoryCredits` computed on a thread that may not belong to this tracker until the next update or flush.
     void addPendingMemoryCredits(UInt64 delta);
@@ -238,6 +240,9 @@ private:
     std::atomic<UInt64> memory_credits_remainder {0};
     /// `MemoryCredits` (byte-seconds) of intervals that ended with an adjustment, see `addPendingMemoryCredits`.
     std::atomic<UInt64> memory_credits_pending {0};
+    /// Where `MemoryCredits` of this tracker are published, see `setMemoryCreditsCounters`.
+    ProfileEvents::Counters * memory_credits_counters = nullptr;
+    bool memory_credits_charge_enclosing_counters = true;
 
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
@@ -300,11 +305,29 @@ public:
         return peak.load(std::memory_order_relaxed);
     }
 
+    /// Set the profile counters that receive the `MemoryCredits` of this tracker: the counters of the thread group that
+    /// owns it, so that the integral of the memory is always reported by the owner of the memory, whichever thread
+    /// allocates or frees it and whatever the counters of that thread are attached to. Both must have the same
+    /// lifetime (they are members of the same `ThreadGroup`). It must be called before the tracker is used.
+    ///
+    /// The counters and the memory trackers of nested thread groups do not always form the same hierarchy: the group
+    /// of a dictionary load (`ThreadGroup::createWithoutQueryMemoryTracker`) and the group of a merge run by `OPTIMIZE`
+    /// keep their counters under the counters of the query, while their memory is not charged to the query and its
+    /// user. For such a group `charge_enclosing_counters` is false: the value is added to `counters` alone and to the
+    /// server-wide counters, so the query and the user do not receive byte-seconds of memory that their memory
+    /// trackers do not account.
+    void setMemoryCreditsCounters(ProfileEvents::Counters * counters, bool charge_enclosing_counters = true)
+    {
+        memory_credits_counters = counters;
+        memory_credits_charge_enclosing_counters = charge_enclosing_counters;
+    }
+
     /// Charge the final interval of the `MemoryCredits` integral (the time memory was held between the last
-    /// allocation/free and now) into the given profile counters. Meant to be called on the query's outermost
-    /// Process tracker right before its thread group's counters are snapshotted at query finish, so the event
-    /// reflects the whole execution instead of stopping at the last allocation/free. A no-op on other trackers.
-    void flushMemoryCredits(ProfileEvents::Counters & counters);
+    /// allocation/free and now) into the counters of the owner of this tracker (see `setMemoryCreditsCounters`).
+    /// Meant to be called on the outermost Process tracker of a query or merge right before its thread group's
+    /// counters are snapshotted, so the event reflects the whole execution instead of stopping at the last
+    /// allocation/free. A no-op on other trackers.
+    void flushMemoryCredits();
 
     /// Convert an interval of `bytes` held for `microseconds` into the `MemoryCredits` increment in byte-seconds without
     /// overflowing, carrying the sub-second part across calls in `remainder` (which must start at zero).

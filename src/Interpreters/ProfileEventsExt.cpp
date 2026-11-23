@@ -185,7 +185,7 @@ DB::Block getProfileEvents(
     /// `system.query_log`. The monotonic timestamp update inside `takeMemoryCreditsDelta` charges every elapsed
     /// interval exactly once, so this periodic flush neither double-counts nor conflicts with the
     /// allocation-driven updates and with the final flush in `QueryStatus::getInfo`.
-    thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+    thread_group->memory_tracker.flushMemoryCredits();
 
     ThreadIdToCountersSnapshot new_snapshots;
 

@@ -98,36 +98,18 @@ TEST(ProfileEvents, ChainAccountsWithPerCPUDisabled)
     EXPECT_EQ(global[ProfileEvents::Query], num_threads * increments_per_thread);
 }
 
-/// Query-scoped events must start at the outermost Process counters so Thread and nested Process
-/// scopes (materialized views, nested async-insert flushes) never observe them.
-TEST(ProfileEvents, IncrementAtOutermostProcessSkipsNestedScopes)
+/// `MemoryCredits` of a group whose memory is not charged to the enclosing query are added to its own counters alone.
+TEST(ProfileEvents, IncrementLocalDoesNotReachParents)
 {
     ProfileEvents::Counters global(VariableContext::Global, nullptr);
-    ProfileEvents::Counters user(VariableContext::User, &global);
-    ProfileEvents::Counters query_process(VariableContext::Process, &user);
+    ProfileEvents::Counters query_process(VariableContext::Process, &global);
     ProfileEvents::Counters nested_process(VariableContext::Process, &query_process);
-    ProfileEvents::Counters thread(VariableContext::Thread, &nested_process);
-    ProfileEvents::Counters scope(VariableContext::Thread, &thread);
 
     const ProfileEvents::Count amount = 42;
-    EXPECT_TRUE(scope.incrementAtOutermostProcess(ProfileEvents::Query, amount));
+    nested_process.incrementLocal(ProfileEvents::Query, amount);
 
-    EXPECT_EQ(scope[ProfileEvents::Query], 0u);
-    EXPECT_EQ(thread[ProfileEvents::Query], 0u);
-    EXPECT_EQ(nested_process[ProfileEvents::Query], 0u);
-    EXPECT_EQ(query_process[ProfileEvents::Query], amount);
-    EXPECT_EQ(user[ProfileEvents::Query], amount);
-    EXPECT_EQ(global[ProfileEvents::Query], amount);
-}
-
-TEST(ProfileEvents, IncrementAtOutermostProcessNoProcessIsNoOp)
-{
-    ProfileEvents::Counters global(VariableContext::Global, nullptr);
-    ProfileEvents::Counters thread(VariableContext::Thread, &global);
-
-    EXPECT_FALSE(thread.incrementAtOutermostProcess(ProfileEvents::Query, 7));
-
-    EXPECT_EQ(thread[ProfileEvents::Query], 0u);
+    EXPECT_EQ(nested_process[ProfileEvents::Query], amount);
+    EXPECT_EQ(query_process[ProfileEvents::Query], 0u);
     EXPECT_EQ(global[ProfileEvents::Query], 0u);
 }
 

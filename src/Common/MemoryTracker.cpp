@@ -999,9 +999,8 @@ UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
     /// query-scoped quantity, so the rows of the nested scopes (a materialized view in `system.query_views_log`,
     /// an asynchronous insert flush running inside another query) do not report it separately - the memory they
     /// hold is integrated into the enclosing query. Nested Process trackers therefore skip the
-    /// delta; attribution still uses a single ProfileEvents increment, started at the outermost
-    /// Process `Counters` found via the current thread's counter parent chain (see
-    /// `updateMemoryCredits`), not a MemoryTracker-to-Counters back-reference.
+    /// delta; the value is charged once, to the counters of the thread group that owns this tracker
+    /// (see `setMemoryCreditsCounters`).
     if (!tracksMemoryCredits())
         return 0;
 
@@ -1097,38 +1096,61 @@ UInt64 MemoryTracker::takePendingMemoryCredits(UInt64 delta)
 }
 
 
+bool MemoryTracker::publishMemoryCredits(UInt64 delta, bool trace)
+{
+    auto * counters = memory_credits_counters;
+    if (!counters)
+        return false;
+
+    const auto amount = static_cast<ProfileEvents::Count>(delta);
+    if (!memory_credits_charge_enclosing_counters)
+    {
+        /// The memory of this group is not charged to the query and the user that its counters are nested in.
+        counters->incrementLocal(ProfileEvents::MemoryCredits, amount);
+        ProfileEvents::global_counters.incrementNoTrace(ProfileEvents::MemoryCredits, amount);
+    }
+    else if (trace)
+        counters->increment(ProfileEvents::MemoryCredits, amount);
+    else
+        counters->incrementNoTrace(ProfileEvents::MemoryCredits, amount);
+    return true;
+}
+
+
 void MemoryTracker::updateMemoryCredits(Int64 current_amount)
 {
-    /// Called from alloc/free while attached to some thread (possibly under a ProfileEventsScope or a
-    /// nested Process group). Walk that counter chain to the outermost Process counters and charge
-    /// once there, so the value propagates only to User / Global and never lands in Thread, scope, or
-    /// nested Process counters used by query_thread_log / query_views_log / nested async-insert rows.
+    /// Called from alloc/free on a thread attached to this tracker or to one nested in it (possibly under a
+    /// `ProfileEventsScope` or a nested Process group). The value is charged to the counters of the thread group that
+    /// owns this tracker and not to the counters of the current thread: these may be attached elsewhere (the counters of
+    /// a nested group whose memory is charged to the server alone are nested in the counters of the query; the counters
+    /// of a thread are detached from the query in `ThreadStatus::detachFromGroup` before the cleanup that frees
+    /// `local_data`). So the value propagates only to User / Global and never lands in Thread, scope, or nested
+    /// Process counters used by `query_thread_log` / `query_views_log` / nested async-insert rows.
     ///
-    /// The counters of the current thread may already be detached from the query while its memory tracker still points
-    /// to it: `ThreadStatus::detachFromGroup` resets the parent of `performance_counters` before the cleanup that frees
-    /// `local_data` (and before `setParent` flushes the untracked memory). The timestamp has been advanced already, so
-    /// the delta is kept in this tracker, to be charged by its next update or by the flush at the snapshot of the
-    /// owning thread group, instead of being lost.
+    /// A tracker without an owner keeps the delta (the timestamp has been advanced already).
     if (const UInt64 delta = takePendingMemoryCredits(takeMemoryCreditsDelta(current_amount)))
     {
-        if (!DB::CurrentThread::getProfileEvents().incrementAtOutermostProcess(ProfileEvents::MemoryCredits, static_cast<Int64>(delta)))
+        if (!publishMemoryCredits(delta, /*trace=*/ true))
             addPendingMemoryCredits(delta);
     }
 }
 
 
-void MemoryTracker::flushMemoryCredits(ProfileEvents::Counters & counters)
+void MemoryTracker::flushMemoryCredits()
 {
-    /// Called right before the query-finish snapshot of the thread group's counters. Allocations and frees
+    /// Called right before a snapshot of the thread group's counters. Allocations and frees
     /// only advance the integral on transitions, so a query that still holds memory at finish would otherwise
     /// lose the final segment (from the last alloc/free until now). Charge it here using the currently held
     /// amount, without the allocations still in flight: a snapshot may be taken while an allocation waits in the
-    /// overcommit tracker and then fails, and the bytes it never obtained must not be charged. The snapshot may be taken on a foreign thread (e.g. SHOW PROCESSLIST, query metric log), so
-    /// charge the passed-in thread-group counters directly instead of the current thread's counters. For the same
-    /// reason it does not trace: a `ProfileEvent` row in `system.trace_log` would carry the identity of the
-    /// current thread, which may belong to another query or to no query at all.
+    /// overcommit tracker and then fails, and the bytes it never obtained must not be charged. The snapshot may be
+    /// taken on a foreign thread (e.g. SHOW PROCESSLIST, query metric log), so it does not trace: a `ProfileEvent` row
+    /// in `system.trace_log` would carry the identity of the current thread, which may belong to another query or to
+    /// no query at all.
     if (const UInt64 delta = takePendingMemoryCredits(takeMemoryCreditsDelta(getMemoryCreditsHeldAmount())))
-        counters.incrementNoTrace(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
+    {
+        if (!publishMemoryCredits(delta, /*trace=*/ false))
+            addPendingMemoryCredits(delta);
+    }
 }
 
 

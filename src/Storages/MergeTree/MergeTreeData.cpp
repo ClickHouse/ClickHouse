@@ -14734,14 +14734,14 @@ try
 {
     /// MemoryCredits advances only on allocation/free transitions, so charge the final interval (from the last
     /// alloc/free of the merge or mutation until now) into the thread group's own counters first. This is the
-    /// single finish path shared by all merge and mutation tasks, and for a synchronous `OPTIMIZE` it runs before
-    /// the counters are replayed into the initial query, so both `system.part_log` and the query see the whole
-    /// execution of the operation. It is done before the `part_log` check, so that the query and
-    /// `system.events` are charged also when `part_log` is disabled.
+    /// single finish path shared by all merge and mutation tasks, so `system.part_log` sees the whole execution
+    /// of the operation. It is done before the `part_log` check, so that `system.events` is charged also when
+    /// `part_log` is disabled. The memory of a merge is charged to the background tracker also when a query
+    /// (`OPTIMIZE`) runs it, so the value is reported by the merge and not by that query.
     if (merge_entry && profile_counters)
     {
         const auto & thread_group = (*merge_entry)->thread_group;
-        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+        thread_group->memory_tracker.flushMemoryCredits();
     }
 
     auto table_id = getStorageID();

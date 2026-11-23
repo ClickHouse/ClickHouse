@@ -1174,7 +1174,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         /// `system.events['MemoryCredits']`, which must still account the held tail even when profile-event
         /// logging is disabled for the query. The monotonic timestamp update inside `takeMemoryCreditsDelta` charges
         /// each elapsed interval exactly once, so this never double-counts with the alloc/free updates.
-        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+        thread_group->memory_tracker.flushMemoryCredits();
 
         if (get_thread_list)
         {
@@ -1310,7 +1310,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
     /// The query-level counters propagate to the user-level ones. The monotonic timestamp update inside
     /// `takeMemoryCreditsDelta` charges every elapsed interval exactly once, so this never double-counts.
     for (const auto & thread_group : running_thread_groups)
-        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+        thread_group->memory_tracker.flushMemoryCredits();
 
     UserInfo per_user_infos;
     per_user_infos.reserve(users.size());
