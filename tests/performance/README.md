@@ -29,8 +29,10 @@ same rule and enable both architectures: submodules, build files, compiler image
 the performance harness, fixtures and server configuration, setting defaults,
 and the constants in `src/Core/Defines.h` used by default expressions.
 The `ci-force-all` label runs the full suite on eight shards per architecture.
-Full runs retain the existing query sampling settings. Master, release, nightly
-and special Iceberg comparisons keep their existing behavior.
+Full runs, and the Iceberg runs of a pull request, measure every query of each
+test XML the pull request adds or changes, and at most 10 queries, chosen at
+random, of every other test unless it sets `run_all_queries="1"`. Master,
+release, nightly and special Iceberg comparisons do not use coverage selection.
 
 Each job attaches `performance_selection.json` with its tests, selection reasons,
 coverage identities, source mapping gaps and query policy. Tests whose coverage
@@ -98,7 +100,7 @@ If your test takes more than 10 minutes, please, add tag `long` to have an oppor
 
 ### Queries whose time keeps growing with each run
 
-Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when the time of a query of the test keeps growing with each run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2). Usually each run reads what the previous runs changed, for example a table that grows with every timed `INSERT`. A pull request job runs at most 10 queries of a test, chosen at random, unless the test sets `run_all_queries="1"`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.
+Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when the time of a query of the test keeps growing with each run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2). Usually each run reads what the previous runs changed, for example a table that grows with every timed `INSERT`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.
 
 ### Unstable queries in a new or changed test
 

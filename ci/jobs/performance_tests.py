@@ -3302,7 +3302,8 @@ def main():
 
     test_keyword = args.test
     selection_path = Path(temp_dir) / "performance_selection.json"
-    all_query_tests = set()
+    # A pull request runs every query of the tests it adds or changes.
+    all_query_tests = set(test_discovery.changed_tests(info.get_changed_files() or [], "./tests/performance/")) if info.pr_number > 0 else set()
     selection_result = None
 
     # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
