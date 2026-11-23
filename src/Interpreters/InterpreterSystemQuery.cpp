@@ -1540,7 +1540,6 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
     std::optional<Exception> exception;
     auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
-    ASTPtr create_ast;
 
     if (!table)
     {
@@ -1577,6 +1576,24 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
+    /// Analyze the stored definition while the table is still attached and working, so that a failure
+    /// (e.g. a constraint's subquery reads a missing table) aborts the restart instead of losing the table.
+    /// Not under the exclusive lock below: such a subquery may need to lock a table that is being restarted.
+    /// The DDL guard held above keeps the definition from changing until the detach.
+    ASTPtr create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
+
+    /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
+    auto & create = create_ast->as<ASTCreateQuery &>();
+    create.attach = true;
+    /// The definition comes from metadata stored on this server, not from a user, so it must load the
+    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
+    /// that only a freshly introduced definition needs.
+    create.attach_short_syntax = true;
+
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list, system_context, LoadingStrictnessLevel::ATTACH);
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
+    auto data_path = database->getTableDataPath(create);
+
     SCOPE_EXIT({
         if (table)
             table->is_being_restarted = false;
@@ -1600,32 +1617,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        create_ast = database->getCreateTableQuery(replica_table_id.table_name, getContext());
-
         database->detachTable(system_context, replica_table_id.table_name);
     }
     table.reset();
-    {
-        QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-        database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
-        {
-            if (query_status)
-                query_status->throwIfKilled();
-        });
-    }
-
-    /// Attach actions
-    /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-    auto & create = create_ast->as<ASTCreateQuery &>();
-    create.attach = true;
-    /// The definition comes from metadata stored on this server, not from a user, so it must load the
-    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
-    /// that only a freshly introduced definition needs.
-    create.attach_short_syntax = true;
-
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list, system_context, LoadingStrictnessLevel::ATTACH);
-    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
-    auto data_path = database->getTableDataPath(create);
 
     /// After the table is detached, we must re-create and re-attach it.
     /// If table creation fails (e.g. due to memory allocation failure from fault injection),
@@ -1639,6 +1633,15 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     StoragePtr new_table;
     try
     {
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(replica_table_id.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
+
         size_t non_zk_retries = 0;
         constexpr size_t max_non_zk_retries = 10;
         while (true)

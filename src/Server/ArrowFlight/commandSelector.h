@@ -29,6 +29,11 @@ struct SQLSet
     /// `query_rules` setting cleared. The default is the safe one: a new command is treated as
     /// synthesized until it is known to carry the client's own SQL.
     bool sql_is_synthesized = true;
+
+    /// Whether `sql` runs with `use_query_cache` disabled: set for the catalog queries, which read system
+    /// tables and must work in a session with `use_query_cache = 1`. Initializers that set it also have
+    /// to set `sql_is_synthesized`, which precedes it.
+    bool skip_query_cache = false;
 };
 
 struct CommandSelectorResult : private std::variant<SQLSet, arrow::Result<std::shared_ptr<arrow::Table>>>
@@ -53,13 +58,17 @@ struct CommandSelectorResult : private std::variant<SQLSet, arrow::Result<std::s
     }
 };
 
-inline bool isArrowFlightSql(const google::protobuf::Any & any_msg)
+/// The name of the message type in the type URL of `any_msg`, which can be given with or without a prefix ending with a slash.
+inline std::string getTypeName(const google::protobuf::Any & any_msg)
 {
     const auto & type_url = any_msg.type_url();
     const auto slash_pos = type_url.find_last_of('/');
-    const auto type_name = (slash_pos == std::string::npos) ? type_url : type_url.substr(slash_pos + 1);
+    return (slash_pos == std::string::npos) ? type_url : type_url.substr(slash_pos + 1);
+}
 
-    return type_name.starts_with("arrow.flight.protocol.sql.");
+inline bool isArrowFlightSql(const google::protobuf::Any & any_msg)
+{
+    return getTypeName(any_msg).starts_with("arrow.flight.protocol.sql.");
 }
 
 inline bool cmdIsArrowFlightSql(const std::string & cmd)
