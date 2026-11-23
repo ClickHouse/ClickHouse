@@ -3297,8 +3297,12 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case ORC::LONG:
         {
             /// The microseconds of an Iceberg `time` are the ticks of `Time64(6)`, while the cast of an
-            /// integer to `Time64` would take them as seconds. An integer type is still read as is.
-            if (isIcebergTimeLong(*orc_type) && !(type_hint && WhichDataType(type_hint).isNativeInteger()))
+            /// integer to `Time64` would take them as seconds. Any integer type, including the wide ones
+            /// and the ones inside `Nullable` or `LowCardinality`, is still read as is, so that the final
+            /// cast keeps the stored microseconds.
+            const bool is_integer_requested
+                = type_hint && WhichDataType(removeNullable(recursiveRemoveLowCardinality(type_hint))).isInteger();
+            if (isIcebergTimeLong(*orc_type) && !is_integer_requested)
             {
                 auto column = readColumnWithNumericData<Int64>(orc_column, column_name);
                 auto time_type = std::make_shared<DataTypeTime64>(6);
