@@ -1,9 +1,0 @@
-covgap-ddl-queue-hostless	1	\N	\N	Unknown	\N
-covgap-ddl-queue-inactive	1	h1	9001	Inactive	\N
-covgap-ddl-queue-inactive	1	h2	9002	Inactive	\N
-covgap-ddl-queue-mixed	1	h1	9001	Finished	0
-covgap-ddl-queue-mixed	1	h3	9003	Inactive	\N
-covgap-ddl-queue-mixed	1	h4	9004	Active	\N
-covgap-ddl-queue-removing	1	h5	9005	Removing	\N
-UNKNOWN_FORMAT_VERSION
-7
