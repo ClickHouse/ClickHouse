@@ -43,6 +43,9 @@ namespace
 #    define NO_PROFILE_INSTRUMENTATION
 #endif
 
+/// Clang CFI (`cfi-icall`) cannot check the calls that step1 and step2 make to and from the scratch copy of the code.
+#define NO_SANITIZE_CFI_ICALL __attribute__((no_sanitize("cfi-icall")))
+
 /** The two below read and write the return address at a fixed offset from `%rsp`. A
   * `-fstack-protector-strong` canary sits between the locals and the return address and moves it, so
   * `8(%rsp)` would then find the canary. Neither has locals today, so neither is instrumented; the
@@ -80,7 +83,7 @@ NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) void
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch, void * syscall_in_scratch, void * step3_in_place)
+NO_PROFILE_INSTRUMENTATION NO_SANITIZE_CFI_ICALL __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch, void * syscall_in_scratch, void * step3_in_place)
 {
     /** Unmap old memory region with the code of our program.
       * Our instruction pointer is located inside scratch area and this function can execute after old code is unmapped.
@@ -141,7 +144,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep2(v
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
+NO_PROFILE_INSTRUMENTATION NO_SANITIZE_CFI_ICALL __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 {
     /// Allocate scratch area and copy the code there.
 
