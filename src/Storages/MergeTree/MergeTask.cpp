@@ -3620,7 +3620,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         std::move(writer_settings),
         global_ctx->compression_codec,
         global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension(),
-        *global_ctx->data->getSettings());
+        global_ctx->data->getSettings());
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.

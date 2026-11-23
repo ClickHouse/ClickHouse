@@ -306,6 +306,7 @@ protected:
     std::unordered_map<std::string, FallbackCopy> fallback_copies;
 
     void planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to);
+    void materializeVirtualDirectory(const NormalizedPath & directory);
     void markFallbackCopyMoved(const std::string & path_from, const std::string & path_to);
 
     /// Normalized paths of the files and directories the operations modify; locked for the duration of the commit.

@@ -47,7 +47,7 @@ Follow these best practices to improve JOIN performance:
 ## Choosing the optimal JOIN algorithm {#choosing-the-optimal-join-algorithm}
 
 ClickHouse supports several JOIN algorithms that trade off between speed and memory.
-The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [JOIN algorithms](/concepts/features/operations/select/join-algorithms).
+The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,hash,inequality`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [JOIN algorithms](/concepts/features/operations/select/join-algorithms).
 
 If your key optimization metric is performance and you're looking to execute the join as fast as possible, then you can use the following decision tree for choosing the right join algorithm:
 

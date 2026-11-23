@@ -443,6 +443,7 @@ static struct InitFiu
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
     PAUSEABLE(mt_alter_pause_after_metadata_publish) \
+    PAUSEABLE(insert_pause_before_reading_serialization_hints) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
@@ -485,6 +486,7 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
+    PAUSEABLE_ONCE(rename_table_pause_after_locks) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \
@@ -590,6 +592,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
     PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
     PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
+    REGULAR(host_resolvers_pool_drop_cache_during_resolve) \
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
