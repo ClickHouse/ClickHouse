@@ -4,6 +4,7 @@
 -- which is only valid when f skips NULL rows. respect_nulls functions count
 -- those rows, so the rewrite silently changed results (issue #107421).
 
+SET enable_analyzer = 1;
 SET optimize_rewrite_aggregate_function_with_if = 1;
 
 -- { echoOn }

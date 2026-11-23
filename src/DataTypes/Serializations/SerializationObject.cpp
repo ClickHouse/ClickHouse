@@ -1,7 +1,5 @@
 #include <DataTypes/Serializations/SerializationObject.h>
-#include <DataTypes/Serializations/SerializationInfoObject.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/DeserializationTask.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
@@ -59,9 +57,8 @@ void throwIfInvalidNumberOfBuckets(size_t num_buckets)
 }
 
 SerializationObject::SerializationObject(
-    const DataTypeObject::TypedPathsMap & typed_paths_types_,
+    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
-    const std::unordered_set<String> & shared_typed_paths_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
@@ -78,32 +75,10 @@ SerializationObject::SerializationObject(
         sorted_typed_paths.emplace_back(path);
 
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
-
-    for (const auto & path : sorted_typed_paths)
-    {
-        if (shared_typed_paths_.contains(path))
-            shared_typed_paths.push_back({path, typed_paths_types.at(path), typed_paths_serializations.at(path)});
-        else
-            sorted_own_typed_paths.push_back(path);
-    }
-
-    if (!shared_typed_paths.empty())
-        typed_shared_data_serialization = SerializationObjectTypedSharedData::create(shared_typed_paths);
     sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
     std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
-}
-
-MutableColumnPtr SerializationObject::createColumnForDeserialization(const IDataType & type) const
-{
-    const auto & object_type = assert_cast<const DataTypeObject &>(type);
-    auto column = object_type.createColumn();
-    auto & column_object = assert_cast<ColumnObject &>(*column);
-    for (auto & [path, path_column] : column_object.getTypedPaths())
-        path_column = typed_paths_serializations.at(path)->createColumnForDeserialization(*object_type.getTypedPaths().at(path));
-    column_object.rebuildSortedTypedPathColumns();
-    return column;
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const
@@ -176,9 +151,6 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> dynamic_path_states;
     ISerialization::SerializeBinaryBulkStatePtr shared_data_state;
     SerializationPtr shared_data_serialization;
-    /// The shared typed paths go into the typed shared data only inside data parts.
-    bool use_typed_shared_data = false;
-    ISerialization::SerializeBinaryBulkStatePtr typed_shared_data_state;
     /// Paths statistics.
     ColumnObject::Statistics statistics;
     /// If true, statistics will be recalculated during serialization.
@@ -201,25 +173,21 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
-    /// The shared typed paths are read from the typed shared data only inside data parts.
-    bool use_typed_shared_data = false;
-    ISerialization::DeserializeBinaryBulkStatePtr typed_shared_data_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateObject>(*this);
 
         new_state->typed_path_states.reserve(typed_path_states.size());
         for (const auto & [path, path_state] : typed_path_states)
-            new_state->typed_path_states[path] = path_state ? path_state->clone(context) : nullptr;
+            new_state->typed_path_states[path] = path_state ? path_state->clone() : nullptr;
 
         new_state->dynamic_path_states.reserve(dynamic_path_states.size());
         for (const auto & [path, path_state] : dynamic_path_states)
-            new_state->dynamic_path_states[path] = path_state ? path_state->clone(context) : nullptr;
+            new_state->dynamic_path_states[path] = path_state ? path_state->clone() : nullptr;
 
-        new_state->shared_data_state = shared_data_state ? shared_data_state->clone(context) : nullptr;
-        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
-        new_state->typed_shared_data_state = typed_shared_data_state ? typed_shared_data_state->clone(context) : nullptr;
+        new_state->shared_data_state = shared_data_state ? shared_data_state->clone() : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
 
         return new_state;
     }
@@ -233,32 +201,57 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
 
     const auto * column_object = data.column ? &assert_cast<const ColumnObject &>(*data.column) : nullptr;
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
-    const auto * info_object = data.serialization_info ? typeid_cast<const SerializationInfoObject *>(data.serialization_info.get()) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObject>(data.deserialize_state) : nullptr;
     const auto * structure_state = deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(deserialize_state->structure_state) : nullptr;
 
     settings.path.push_back(Substream::ObjectData);
 
-    /// First, iterate over typed paths in sorted order, we will always serialize them.
-    /// The shared typed paths have no streams of their own: they are in the typed shared data below.
-    /// A typed path is a dynamic subcolumn of the type (DataTypeObject::getDynamicSubcolumnInfo), so callers that
-    /// handle dynamic subcolumns separately skip its streams like those of a dynamic path.
-    for (const auto & path : sorted_own_typed_paths)
+    auto enumerate_typed_path = [&](const String & path)
     {
-        if (!settings.enumerate_dynamic_streams)
-            break;
-
+        settings.path.back().creator = std::make_shared<TypedPathSubcolumnCreator>(path);
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
         const auto & serialization = typed_paths_serializations.at(path);
         auto path_data = SubstreamData(serialization)
                                 .withType(type_object ? type_object->getTypedPaths().at(path) : nullptr)
                                 .withColumn(column_object ? column_object->getTypedPaths().at(path) : nullptr)
-                                .withSerializationInfo(info_object ? info_object->getTypedPathInfo(path) : nullptr)
+                                .withSerializationInfo(data.serialization_info)
                                 .withDeserializeState(deserialize_state ? deserialize_state->typed_path_states.at(path) : nullptr);
         settings.path.back().data = path_data;
         serialization->enumerateStreams(settings, callback, path_data);
         settings.path.pop_back();
+        settings.path.back().creator.reset();
+    };
+
+    if (settings.subcolumn_name)
+    {
+        /// Include the separator using the canonical stream naming, including empty path elements.
+        settings.path.push_back(Substream::ObjectTypedPath);
+        const auto prefix = getSubcolumnNameForStream(settings.path);
+        settings.path.pop_back();
+        auto name = *settings.subcolumn_name;
+        if (name.starts_with(prefix))
+        {
+            name.remove_prefix(prefix.size());
+            /// Only an exact typed path or its descendants can match the requested name.
+            /// Prefixes are already in the same order as `sorted_typed_paths`, preserving collisions.
+            size_t end = 0;
+            while (true)
+            {
+                end = name.find('.', end);
+                if (auto it = typed_paths_serializations.find(String(name.substr(0, end))); it != typed_paths_serializations.end())
+                    enumerate_typed_path(it->first);
+                if (end == std::string_view::npos)
+                    break;
+                ++end;
+            }
+        }
+    }
+    else
+    {
+        /// Full enumeration retains every typed path in serialization order.
+        for (const auto & path : sorted_typed_paths)
+            enumerate_typed_path(path);
     }
 
     /// If column or deserialization state was provided, iterate over dynamic paths,
@@ -288,6 +281,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
             auto path_data = SubstreamData(dynamic_serialization)
                                  .withType(dynamic_type)
                                  .withColumn(dynamic_paths ? dynamic_paths->at(path) : nullptr)
+                                 .withSerializationInfo(data.serialization_info)
                                  .withDeserializeState(deserialize_state ? deserialize_state->dynamic_path_states.at(path) : nullptr);
             settings.path.back().data = path_data;
             dynamic_serialization->enumerateStreams(settings, callback, path_data);
@@ -320,21 +314,9 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         auto shared_data_substream_data = SubstreamData(shared_data_serialization)
                                               .withType(DataTypeObject::getTypeOfSharedData())
                                               .withColumn(column_object ? column_object->getSharedDataPtr() : nullptr)
+                                              .withSerializationInfo(data.serialization_info)
                                               .withDeserializeState(deserialize_state ? deserialize_state->shared_data_state : nullptr);
         shared_data_serialization->enumerateStreams(settings, callback, shared_data_substream_data);
-        settings.path.pop_back();
-    }
-
-    /// The streams of the typed shared data are fixed by the type.
-    if (typed_shared_data_serialization)
-    {
-        settings.path.push_back(Substream::ObjectTypedSharedData);
-        auto typed_shared_data_substream_data = SubstreamData(typed_shared_data_serialization)
-                                                    .withType(data.type)
-                                                    .withColumn(data.column)
-                                                    .withSerializationInfo(data.serialization_info)
-                                                    .withDeserializeState(deserialize_state ? deserialize_state->typed_shared_data_state : nullptr);
-        typed_shared_data_serialization->enumerateStreams(settings, callback, typed_shared_data_substream_data);
         settings.path.pop_back();
     }
 
@@ -436,8 +418,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         writeVarUInt(static_cast<UInt64>(shared_data_serialization_version.value), *stream);
         /// If serialization supports buckets, write number of buckets that will be used.
         if (shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS
-            || shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
-            || shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
+            || shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
         {
             /// Avoid creating buckets for Wide part if shared data is empty.
             if (settings.data_part_type != MergeTreeDataPartType::Wide || !statistics->shared_data_paths_statistics.empty())
@@ -503,9 +484,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
 
     settings.path.push_back(Substream::ObjectData);
 
-    /// Only data parts have the marks and callbacks the typed shared data needs; the Native-only versions returned above.
-    object_state->use_typed_shared_data = typed_shared_data_serialization && settings.data_part_type != MergeTreeDataPartType::Unknown;
-    for (const auto & path : getTypedPathsToSerialize(object_state->use_typed_shared_data))
+    for (const auto & path : sorted_typed_paths)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
@@ -525,14 +504,6 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     object_state->shared_data_serialization = SerializationObjectSharedData::create(shared_data_serialization_version, dynamic_type, dynamic_serialization, shared_data_buckets);
     object_state->shared_data_serialization->serializeBinaryBulkStatePrefix(*shared_data, settings, object_state->shared_data_state);
     settings.path.pop_back();
-
-    if (object_state->use_typed_shared_data)
-    {
-        settings.path.push_back(Substream::ObjectTypedSharedData);
-        typed_shared_data_serialization->serializeBinaryBulkStatePrefix(column_object, settings, object_state->typed_shared_data_state);
-        settings.path.pop_back();
-    }
-
     settings.path.pop_back();
 
     state = std::move(object_state);
@@ -615,9 +586,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         }
     }
 
-    /// Only data parts have the typed shared data; the Native-only versions never run inside parts.
-    object_state->use_typed_shared_data = typed_shared_data_serialization && settings.data_part_type != MergeTreeDataPartType::Unknown;
-    for (const auto & path : getTypedPathsToSerialize(object_state->use_typed_shared_data))
+    for (const auto & path : sorted_typed_paths)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
@@ -655,6 +624,50 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
             object_state->dynamic_path_states[path] = nullptr;
 
+        /// When an ancestor parallel level already wrapped the callbacks under its own mutex, reuse them
+        /// directly. Wrapping again here would create a second stack-local mutex, and TSAN reports the two
+        /// nested-level mutexes (whose recycled stack addresses look identical across deserialization trees)
+        /// as a lock-order-inversion. With a single mutex shared down the tree no such ordering exists.
+        const bool wrap_callbacks = !settings.prefix_deserialization_callbacks_are_thread_safe;
+
+        /// All threads will use the same callbacks that are not thread safe.
+        std::mutex callbacks_mutex;
+        auto safe_getter = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            return settings.getter(path);
+        };
+
+        auto safe_dynamic_subcolumns_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            settings.dynamic_subcolumns_callback(path);
+        };
+
+        auto safe_prefixes_prefetch_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            settings.prefixes_prefetch_callback(path);
+        };
+
+        auto safe_release_stream_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            settings.release_stream_callback(path);
+        };
+
+        auto safe_seek_to_start_callback = [&](const SubstreamPath & path)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            settings.seek_to_start_callback(path);
+        };
+
+        auto safe_has_uniform_marks_callback = [&](const SubstreamPath & path, size_t max_transitions)
+        {
+            std::unique_lock lock(callbacks_mutex);
+            return settings.has_uniform_marks_callback(path, max_transitions);
+        };
+
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths->size() / num_tasks, 1ul);
 
         /// Ensure all already-scheduled tasks are drained on any exit path (including exceptions),
@@ -674,6 +687,22 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             auto deserialize = [&, batch_start, batch_end, cache_ptr = cache_copy.get()]()
             {
                 auto settings_copy = settings;
+                /// Keep the pool so a nested Object level can deserialize its prefixes in parallel too.
+                /// The callbacks below are made thread safe under callbacks_mutex; tell the nested level
+                /// to reuse them under that single mutex instead of wrapping again.
+                settings_copy.prefix_deserialization_callbacks_are_thread_safe = true;
+                if (wrap_callbacks)
+                {
+                    settings_copy.getter = safe_getter;
+                    settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
+                    settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
+                    settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
+                    settings_copy.seek_to_start_callback = settings.seek_to_start_callback ? safe_seek_to_start_callback : StreamCallback{};
+                    settings_copy.has_uniform_marks_callback = settings.has_uniform_marks_callback
+                        ? safe_has_uniform_marks_callback
+                        : decltype(settings.has_uniform_marks_callback){};
+                }
+                /// else: settings already carries the ancestor's thread-safe callbacks; reuse them as is.
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);
@@ -734,14 +763,6 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     object_state->shared_data_serialization = SerializationObjectSharedData::create(structure_state_concrete->shared_data_serialization_version, dynamic_type, dynamic_serialization, structure_state_concrete->shared_data_buckets);
     object_state->shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
-
-    if (object_state->use_typed_shared_data)
-    {
-        settings.path.push_back(Substream::ObjectTypedSharedData);
-        typed_shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->typed_shared_data_state, cache);
-        settings.path.pop_back();
-    }
-
     settings.path.pop_back();
 
     state = std::move(object_state);
@@ -774,7 +795,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != paths_size; ++i)
             {
                 String path;
-                readStringBinaryGrowing(path, *structure_stream);
+                readStringBinary(path, *structure_stream);
                 structure_state->flattened_paths.push_back(std::move(path));
             }
 
@@ -810,7 +831,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != dynamic_paths_size; ++i)
             {
                 String path;
-                readStringBinaryGrowing(path, *structure_stream);
+                readStringBinary(path, *structure_stream);
                 structure_state->sorted_dynamic_paths->push_back(std::move(path));
             }
             structure_state->dynamic_paths.insert(structure_state->sorted_dynamic_paths->begin(), structure_state->sorted_dynamic_paths->end());
@@ -828,8 +849,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                 structure_state->shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion(shared_data_serialization_version);
                 /// If shared serialization version supports buckets, read number of buckets.
                 if (structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS
-                    || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
-                    || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
+                    || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
                 {
                     readVarUInt(structure_state->shared_data_buckets, *structure_stream);
                     throwIfInvalidNumberOfBuckets(structure_state->shared_data_buckets);
@@ -948,7 +968,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
 
     settings.path.push_back(Substream::ObjectData);
 
-    for (const auto & path : getTypedPathsToSerialize(object_state->use_typed_shared_data))
+    for (const auto & path : sorted_typed_paths)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
@@ -996,14 +1016,6 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         }
     }
     settings.path.pop_back();
-
-    if (object_state->use_typed_shared_data)
-    {
-        settings.path.push_back(Substream::ObjectTypedSharedData);
-        typed_shared_data_serialization->serializeBinaryBulkWithMultipleStreams(column_object, offset, limit, settings, object_state->typed_shared_data_state);
-        settings.path.pop_back();
-    }
-
     settings.path.pop_back();
 }
 
@@ -1044,7 +1056,7 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
 
     settings.path.push_back(Substream::ObjectData);
 
-    for (const auto & path : getTypedPathsToSerialize(object_state->use_typed_shared_data))
+    for (const auto & path : sorted_typed_paths)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
@@ -1077,14 +1089,6 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
     settings.path.push_back(Substream::ObjectSharedData);
     object_state->shared_data_serialization->serializeBinaryBulkStateSuffix(settings, object_state->shared_data_state);
     settings.path.pop_back();
-
-    if (object_state->use_typed_shared_data)
-    {
-        settings.path.push_back(Substream::ObjectTypedSharedData);
-        typed_shared_data_serialization->serializeBinaryBulkStateSuffix(settings, object_state->typed_shared_data_state);
-        settings.path.pop_back();
-    }
-
     settings.path.pop_back();
 }
 
@@ -1114,7 +1118,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         FormatSettings format_settings = settings.format_settings ? *settings.format_settings : FormatSettings{};
         for (size_t i = 0; i != limit; ++i)
         {
-            readStringBinaryGrowing(data, *data_stream);
+            readStringBinary(data, *data_stream);
             ReadBufferFromString buf(data);
             deserializeObject(column, data, format_settings);
         }
@@ -1181,7 +1185,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     auto & shared_data = column_object.getSharedDataPtr();
 
     settings.path.push_back(Substream::ObjectData);
-    for (const auto & path : getTypedPathsToSerialize(object_state->use_typed_shared_data))
+    for (const auto & path : sorted_typed_paths)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
         settings.path.back().object_path_name = path;
@@ -1201,14 +1205,6 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::ObjectSharedData);
     object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSharedDataColumn(), limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
-
-    if (object_state->use_typed_shared_data)
-    {
-        settings.path.push_back(Substream::ObjectTypedSharedData);
-        typed_shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object, limit, settings, object_state->typed_shared_data_state, cache);
-        settings.path.pop_back();
-    }
-
     settings.path.pop_back();
 
     /// Verify that all typed paths, dynamic paths and shared data has consistent sizes
@@ -1294,22 +1290,6 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
 
 void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.binary.read_json_as_string)
-    {
-        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
-        typed_path_columns.reserve(typed_paths_types.size());
-        for (const auto & [path, type] : typed_paths_types)
-            typed_path_columns[path] = type->createColumn();
-
-        auto column = ColumnObject::create(
-            std::move(typed_path_columns),
-            DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS,
-            assert_cast<const DataTypeDynamic &>(*dynamic_type).getMaxDynamicTypes());
-        deserializeBinary(*column, istr, settings);
-        field = (*column)[0];
-        return;
-    }
-
     Object object;
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
@@ -1325,7 +1305,7 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     for (size_t i = 0; i != number_of_paths; ++i)
     {
         String path;
-        readStringBinaryGrowing(path, istr);
+        readStringBinary(path, istr);
         if (!shouldSkipPath(path))
         {
             if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
@@ -1415,7 +1395,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
     if (settings.binary.read_json_as_string)
     {
         String data;
-        readStringBinaryGrowing(data, istr);
+        readStringBinary(data, istr);
         deserializeObject(col, data, settings);
         return;
     }
@@ -1436,7 +1416,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         for (size_t i = 0; i != number_of_paths; ++i)
         {
             String path;
-            readStringBinaryGrowing(path, istr);
+            readStringBinary(path, istr);
             if (!shouldSkipPath(path))
             {
                 /// Check if we have this path in typed paths.
@@ -1448,10 +1428,6 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-
-                        /// Skip value of this path.
-                        auto tmp_column = typed_column->cloneEmpty();
-                        typed_it->second->deserializeBinary(*tmp_column, istr, settings);
                     }
                     else
                     {
@@ -1466,15 +1442,9 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     {
                         if (!settings.json.type_json_skip_duplicated_paths)
                             throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
+                    }
 
-                        /// Skip value of this path.
-                        auto tmp_column = dynamic_it->second->cloneEmpty();
-                        dynamic_serialization->deserializeBinary(*tmp_column, istr, settings);
-                    }
-                    else
-                    {
-                        dynamic_serialization->deserializeBinary(*dynamic_it->second, istr, settings);
-                    }
+                    dynamic_serialization->deserializeBinary(*dynamic_it->second, istr, settings);
                 }
                 /// Try to add a new dynamic paths.
                 else if (auto * dynamic_column = column_object.tryToAddNewDynamicPath(path))
@@ -1487,10 +1457,9 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                     String value;
                     Field field;
                     readParsedValueIntoString(value, istr, [&](ReadBuffer & buf){ dynamic_serialization->deserializeBinary(field, buf, settings); });
-                    /// Keep nulls as empty values, so a later duplicate of this path is skipped too.
-                    if (field.isNull())
-                        value.clear();
-                    paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
+                    /// Don't write nulls into shared data.
+                    if (!field.isNull())
+                        paths_and_values_for_shared_data.emplace_back(std::move(path), std::move(value));
                 }
             }
             else
@@ -1501,11 +1470,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             }
         }
 
-        /// Sort by path only, so the first value of a duplicated path is kept.
-        std::stable_sort(
-            paths_and_values_for_shared_data.begin(),
-            paths_and_values_for_shared_data.end(),
-            [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+        std::sort(paths_and_values_for_shared_data.begin(), paths_and_values_for_shared_data.end());
         for (size_t i = 0; i != paths_and_values_for_shared_data.size(); ++i)
         {
             const auto & [path, value] = paths_and_values_for_shared_data[i];
@@ -1514,33 +1479,37 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
                 if (!settings.json.type_json_skip_duplicated_paths)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Found duplicated path during binary deserialization of JSON type: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
             }
-            /// Don't write nulls into shared data.
-            else if (!value.empty())
+            else
             {
                 shared_data_paths->insertData(path.data(), path.size());
                 shared_data_values->insertData(value.data(), value.size());
             }
         }
         shared_data_offsets.push_back(shared_data_paths->size());
-
-        /// Insert default to all remaining typed and dynamic paths.
-        for (auto & [path, column] : typed_paths)
-        {
-            if (column->size() == prev_size)
-                typed_paths_types.at(path)->insertDefaultInto(*column);
-        }
-
-        for (auto & [_, column] : column_object.getDynamicPathsPtrs())
-        {
-            if (column->size() == prev_size)
-                column->insertDefault();
-        }
     }
     catch (...)
     {
         restoreColumnObject(column_object, prev_size);
         throw;
     }
+
+    /// Insert default to all remaining typed and dynamic paths.
+    for (auto & [_, column] : typed_paths)
+    {
+        if (column->size() == prev_size)
+            column->insertDefault();
+    }
+
+    for (auto & [_, column] : column_object.getDynamicPathsPtrs())
+    {
+        if (column->size() == prev_size)
+            column->insertDefault();
+    }
+}
+
+SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
+{
+    return SerializationObjectTypedPath::create(prev, path);
 }
 
 void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings)

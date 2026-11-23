@@ -21,7 +21,7 @@ USER, PASSWORD = E("CLICKHOUSE_USER", "default"), E("CLICKHOUSE_PASSWORD", "")
 DATABASE = E("CLICKHOUSE_DATABASE", "default")
 CLIENT = "aggregating step argument types"
 REVISION = 54482   # pinned, so the revision-gated fields of the handshake are fixed
-VERSION = 21       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION, pinned so the byte layout is fixed too
+VERSION = 10       # DBMS_QUERY_PLAN_SERIALIZATION_VERSION of 26.8, pinned so the byte layout is fixed too
 U64, STR = b"\x04", b"\x15"   # BinaryTypeIndex
 NUL = b"\x00"   # a zero flags byte
 
@@ -66,9 +66,10 @@ def node(step, payload, out_columns, children=(), version=VERSION, settings=()):
     out = vu(len(children)) + b"".join(children)
     out += sb(step) + (vu(0) if version >= 19 else b"")   # step name, per-step version
     out += sb("") + header(out_columns)   # description, header
-    for name, value in settings:   # name, flags, value; an empty name terminates
-        out += sb(name) + vu(0) + sb(value)
-    return out + vu(0) + payload
+    out += vu(len(settings))   # the number of settings, then name, flags, value (a `Bool` is a `VarUInt`)
+    for name, value in settings:
+        out += sb(name) + vu(0) + vu(value)
+    return out + payload
 
 def read_nothing(columns):
     return node("ReadNothing", b"", columns)
@@ -120,7 +121,7 @@ def forge_tree(label, root, version=VERSION):
         names = {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED", 44: "ILLEGAL_COLUMN"}
         print(label, "accepted" if code is None else names.get(code, code))
 
-FINAL, ONLY_MERGE = 1, 128
+FINAL = 1
 AF = b"\x25"   # BinaryTypeIndex::AggregateFunction
 
 def state(function, argument_type):   # AggregateFunction(function, argument_type), version 0
@@ -140,20 +141,11 @@ X = [("x", U64)]
 A = [("a", U64)]
 forge("argument type differs from the input", aggregating(FINAL, STR), [X], VERSION, A)
 forge("argument is not in the input", aggregating(FINAL, U64), [[("y", U64)]], VERSION, A)
-forge("merged column is not a state", aggregating(FINAL | ONLY_MERGE, U64), [A], VERSION, A)
 forge("well-formed", aggregating(FINAL, U64), [X], VERSION, A)
 
-# The merge reads the keys and then the states by position, so the input must have them in the order of the plan.
 ANY_SUM = [("a", "x", U64, "any"), ("b", "x", U64, "sum")]
 STATES = [("a", state("any", U64)), ("b", state("sum", U64))]
 AB = [("a", U64), ("b", U64)]
-forge("merged states are reordered", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM), [STATES[::-1]], VERSION, AB)
-forge("merged state is duplicated", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM[:1] * 2), [STATES[:1] * 2], VERSION, [("a", U64)] * 2)
-forge("merged key is after the states", aggregating(FINAL | ONLY_MERGE, keys=["k"], aggregates=ANY_SUM[:1]),
-      [STATES[:1] + [("k", U64)]], VERSION, [("k", U64), ("a", U64)])
-forge("merged state is repeated after the states", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM),
-      [STATES + STATES[:1]], VERSION, AB)
-forge("well-formed merge", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM), [STATES], VERSION, AB)
 
 # With grouping sets, the merge splits the rows by `__grouping_set`, read as `UInt64`, and keeps its type in the output.
 GROUPING_SETS = 4
@@ -175,14 +167,14 @@ forge("memory-efficient grouping sets merge", GS, [[("__grouping_set", U64)] + K
       [("__grouping_set", U64)] + K_A, "MergingAggregated")
 # The output header and the reconstruction of the missing keys take every key from the input by name.
 forge("grouping set key is repeated after the states", GS, [[("__grouping_set", U64)] + K_STATE + [("k", U64)]], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", 0)])
 # The memory-bound merge (with a non-empty sort description) does not support grouping sets either.
 MEMORY_BOUND = 32
 GS_SORTED = bytes([GS[0] | MEMORY_BOUND]) + GS[1:-2] + vu(1) + sb("k") + b"\x03" + vu(0)
 forge("memory-bound grouping sets merge", GS_SORTED, [[("__grouping_set", U64)] + K_STATE], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", 0)])
 forge("well-formed grouping sets merge", GS, [[("__grouping_set", U64)] + K_STATE], VERSION,
-      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", "false")])
+      [("__grouping_set", U64)] + K_A, "MergingAggregated", [("distributed_aggregation_memory_efficient", 0)])
 
 # Without grouping sets, the merge does not produce `__grouping_set`, so the input must not have it.
 MERGING = bytes([FINAL]) + vu(1) + sb("k") + aggregating(FINAL, aggregates=ANY_SUM[:1])[2:-1] + vu(0) + vu(0)
@@ -201,9 +193,6 @@ forge("well-formed totals", totals_having(ANY_SUM), [STATES], VERSION, AB, "Tota
 
 # The output of an ordinary aggregation has a column for every key and aggregate, finalized by name.
 forge("aggregate is duplicated", aggregating(FINAL, aggregates=[("a", "x", U64, "groupArray")] * 2), [X], VERSION, A * 2)
-# The in-order merge addresses the whole input with a mask for the keys and the states only.
-forge("merged input has another column", aggregating(FINAL | ONLY_MERGE, aggregates=ANY_SUM[:1]),
-      [STATES[:1] + [("extra", U64)]], VERSION, A)
 
 # `Rollup` and `Cube` always finalize, address the whole input with a mask for the keys and the states,
 # and finalize a single chunk with the functions of its columns.
@@ -243,13 +232,6 @@ forge("in-order sort description for merging is not a prefix", in_order(FINAL, [
 forge("in-order sort description refers to an aggregate", in_order(FINAL, ["a"], ["a"], ["k"], ANY_SUM[:1]), [KX], VERSION, K_A)
 forge("well-formed in-order", in_order(FINAL, ["k"], ["k"], ["k"], ANY_SUM[:1]), [KX], VERSION, K_A)
 
-# The merge-only in-order aggregation finalizes with the functions of the input states, and the header has the plan's types.
-QUANTILES_OF_X = [("a", "x", U64, "quantiles", F64 + struct.pack("<d", 0.5))]
-forge("in-order merged state is finalized to another type",
-      in_order(FINAL | ONLY_MERGE, ["k"], ["k"], ["k"], QUANTILES_OF_X), [[("k", U64), ("a", state("quantile", U64))]], VERSION,
-      [("k", U64), ("a", b"\x1e" + b"\x0e")])   # Array(Float64)
-forge("well-formed in-order merge",
-      in_order(FINAL | ONLY_MERGE, ["k"], ["k"], ["k"], ANY_SUM[:1]), [K_STATE], VERSION, K_A)
 
 # `DataTypeAggregateFunction::equals` considers the states of `quantile` and `quantiles` equal, so a `Union`
 # passes a column of `quantile` states under a header of `quantiles` states. They are finalized with the function

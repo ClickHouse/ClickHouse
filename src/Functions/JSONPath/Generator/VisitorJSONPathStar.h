@@ -15,25 +15,25 @@ public:
         current_index = 0;
     }
 
-    [[nodiscard]] const char * getName() const override { return "VisitorJSONPathStar"; }
+    const char * getName() const override { return "VisitorJSONPathStar"; }
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {
-        if (element.isArray())
-        {
-            typename JSONParser::Array array = element.getArray();
-            element = array[current_index];
-        }
+        typename JSONParser::Array array = element.getArray();
+        element = array[current_index];
         return VisitorStatus::Ok;
     }
 
     VisitorStatus visit(typename JSONParser::Element & element) override
     {
-        /// Per RFC 9535 lax semantics, a non-array element is treated as a one-element array containing the element itself.
-        const size_t array_size = element.isArray() ? element.getArray().size() : 1;
+        if (!element.isArray())
+        {
+            this->setExhausted(true);
+            return VisitorStatus::Error;
+        }
 
         VisitorStatus status = {};
-        if (current_index < array_size)
+        if (current_index < element.getArray().size())
         {
             apply(element);
             status = VisitorStatus::Ok;

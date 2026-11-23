@@ -4,7 +4,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
-#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -50,7 +49,12 @@ namespace
 
     bool pathPartEndsWithSlash(const std::string & path)
     {
-        return stripQueryAndFragment(path).ends_with('/');
+        const auto path_end = path.find_first_of("?#");
+        if (path_end == std::string::npos)
+            return path.ends_with('/');
+        if (path_end == 0)
+            return false;
+        return path[path_end - 1] == '/';
     }
 }
 
@@ -262,9 +266,7 @@ void WebObjectStorage::removeObjectIfExists(const StoredObject &)
     throwNotAllowed();
 }
 
-void WebObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects &,
-    StoredObjects *)
+void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
 {
     throwNotAllowed();
 }
@@ -285,11 +287,6 @@ void WebObjectStorage::startup()
 ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeyGenerator is not supported for {}", getName());
-}
-
-ObjectStoragePtr WebObjectStorage::cloneImpl() const
-{
-    return std::make_shared<WebObjectStorage>(url_shards, getContext(), headers, max_directories_to_read);
 }
 
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const

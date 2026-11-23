@@ -1,0 +1,72 @@
+---
+title: 'Agentic analytics'
+description: 'Learn how ClickHouse enables agentic analytics'
+keywords: ['use cases', 'agentic analytics', 'agents']
+sidebarTitle: 'Agentic analytics'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+AI workloads impose a consistent set of requirements regardless of use case:
+- high query concurrency
+- sub-second response times
+- full-fidelity data at scale
+
+This document explains how ClickHouse addresses those requirements across real-time analytics, data warehousing, and observability, and how those use cases are converging into a unified data platform for agentic applications.
+
+## ClickHouse for agentic workloads {#agentic-workloads}
+<Tabs>
+  <Tab title="Real-time analytics" icon="bolt">
+    AI-powered application features such as generated insights, anomaly detection, recommendations, and natural language interfaces to product data, all require a tight feedback loop between transactional writes and analytical reads.
+    The standard architecture for this is Postgres + ClickHouse:
+      - Postgres handles transactions and application state, ClickHouse handles analytics.
+      - ClickHouse provides fast ingestion, sub-second queries on billions of rows, and the concurrency levels that customer-facing applications require.
+
+    As applications become agentic, this pairing becomes more critical.
+    Agents must query live product data continuously, which increases both query frequency and concurrency.
+    ClickHouse addresses this with a native Postgres + ClickHouse integration that provides automatic data replication and a unified developer experience, removing the need to manage a separate CDC pipeline.
+  </Tab>
+  <Tab title="Data warehousing" icon="database">
+    Natural language analytics interfaces (sometimes called AI Analyst) are moving from experimentation into production.
+    Users ask questions in plain English and expect answers in seconds.
+
+    The infrastructure implication is that a single natural language query does not generate one SQL query — it typically generates dozens in rapid succession as the agent explores available datasets and evaluates multiple reasoning paths.
+    As a result, internal analyst workloads start to resemble external customer-facing workloads in their concurrency and latency profile.
+
+    Legacy data warehouses were designed for infrequent, batch-oriented queries. They optimize for overall throughput across many queries, not for sub-second response times at high concurrency. Running AI Analyst workloads on that architecture produces either unacceptable latency or costs that scale faster than the value delivered.
+
+    ClickHouse was built for high-concurrency interactive queries: petabyte-scale data, thousands of concurrent users, sub-second response times against billions of rows.
+  </Tab>
+  <Tab title="Observability" icon="eye">
+    Traditional observability stacks are built on three separate pillars — metrics, logs, and traces — with data pre-aggregated and sampled to control storage costs. This tradeoff is acceptable for human-driven workflows but breaks down for AI SRE.
+    Automated incident triage, root cause analysis, and anomaly correlation require granular, high-cardinality, long-retention data. An AI agent correlating an error pattern with a deployment event from three days ago cannot work with sampled logs or downsampled metrics.
+
+    The architecture that supports AI SRE is a single source of truth based on wide structured events stored in columnar storage. Full-fidelity events are stored once, and metrics, traces, and SLOs are derived from them at query time rather than pre-aggregated on ingest.
+    ClickHouse is well-suited for this model:
+
+    - High compression on log and event data
+    - Sub-second queries on high-cardinality wide events
+    - Efficient ingestion at production infrastructure volumes
+    - Cost model based on compute and storage, not per-GB ingestion fees
+
+    ClickStack is ClickHouse's observability stack built on this model, using OpenTelemetry as the data collection layer.
+    It is available open source and as a managed offering.
+  </Tab>
+</Tabs>
+
+## Convergence of data warehousing and observability {#convergence-dwh-o11y}
+Data warehousing and observability have historically been separate domains with separate vendors, buyers, and stacks. That separation is increasingly a convention rather than a technical requirement.
+Both domains now write to object storage. Both require interactive, low-latency queries at high concurrency. And at the data level, the same events are often stored twice — once in an observability platform and once in a data warehouse — with a fragile synchronization layer in between.
+Storing all of it once in open formats, queryable by both AI Analyst and AI SRE tooling, removes that duplication and makes context available across both workflows.
+
+## The platform layer: Agent-ready interfaces and LLM observability {#platform-layer}
+Two additional components are required alongside the database for a complete agentic analytics platform.
+
+**Agent-ready interfaces**
+
+When AI agents are the primary interface to data, the data platform needs to expose its capabilities in ways agents can consume — MCP-compatible APIs, natural language interfaces, and agent frameworks that integrate without bespoke per-use-case work. The Agentic Data Stack combines ClickHouse with LibreChat to provide a turnkey way to deploy analytics agents over your data.
+
+**LLM observability**
+
+As agents proliferate, tracing their execution, monitoring model performance, tracking costs, and debugging failures across multi-step workflows becomes a core engineering requirement. Langfuse runs on ClickHouse Cloud to provide real-time LLM observability at scale.

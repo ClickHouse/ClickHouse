@@ -41,21 +41,7 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>;
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
     {
-        /// Per the doc comment above, the caller may keep its own immutable references — the
-        /// underlying columns may be shared. `assumeMutable` here would `chassert(use_count() == 1)`
-        /// and abort, while `IColumn::mutate` would deep-clone and break invariants of composite
-        /// types like `LowCardinality(Nullable(...))`: inside `ColumnUnique::forEachMutableSubcolumn`,
-        /// after deep-cloning `column_holder`, the recursive call recreates `nested_column_nullable`
-        /// via `ColumnNullable::create(column_holder, nested_null_mask)`. With the cloning variant
-        /// of this overload, `nested_null_mask` (which still aliases the original `ColumnUnique`)
-        /// would be deep-cloned into the new `ColumnNullable`, so subsequent `updateNullMask`
-        /// resizes on `nested_null_mask` no longer propagate to `nested_column_nullable.null_map`.
-        /// Bypass the assertion via const_cast `+ getPtr` — equivalent to the old `assumeMutable`
-        /// fast path. The result is returned as `Ptr` (immutable), and any mutation must go through
-        /// `IColumn::mutate`, which deep-clones shared sub-columns at the proper time.
-        return ColumnNullable::create(
-            const_cast<IColumn *>(nested_column_.get())->getPtr(),
-            const_cast<IColumn *>(null_map_.get())->getPtr());
+        return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
     }
 
     template <typename ... Args>
@@ -78,16 +64,14 @@ public:
     UInt64 getUInt(size_t n) const override;
     Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
-
-    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t) const override;
-    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -123,8 +107,6 @@ public:
             throw;
         }
     }
-
-    void insertManyDefaults(size_t length) override;
 
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -220,7 +202,6 @@ public:
     void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     bool isNullable() const override { return true; }
-    ColumnPlanes getPlanes() const override;
     bool isFixedAndContiguous() const override { return false; }
     bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
@@ -273,12 +254,6 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
-
-    void gatherFromRows(const RowPointers & rows, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
-    void gatherRangeIntoRows(char * rows, size_t row_length, size_t field_offset, size_t start, size_t count, char *& overflow_cursor, const UInt8 * null_map) const override;
-
-    size_t rowStoreOverflowBytes(size_t start, size_t count) const override { return nested_column->rowStoreOverflowBytes(start, count); }
-    void gatherSelectedIntoRows(std::span<const UInt32> source_rows, std::span<char * const> destination_rows, size_t field_offset, const UInt8 * null_map) const override;
 
 private:
     WrappedPtr nested_column;

@@ -57,8 +57,7 @@ public:
 
     virtual void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) { }
 
-    /// Most integrations need nothing besides the engine arguments
-    virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return true; }
+    virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
 
     virtual bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) { return false; }
 
@@ -83,10 +82,7 @@ public:
 
     virtual String getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String &) { return String(); }
 
-    /// Backquoted identifier; only ClickHouse treats `\` as an escape inside it
     virtual String quoteIdentifier(const String & name) const;
-
-    virtual bool isClickHousePeer() const { return false; }
 
     virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
@@ -139,8 +135,6 @@ public:
 
     String getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, const String &) override;
 
-    bool isClickHousePeer() const override { return is_clickhouse; }
-
     String truncateStatement() override;
 
     String truncateSuffix() override;
@@ -169,7 +163,7 @@ private:
     /// No custom deleter: unlike MYSQL* and sqlite3*, the destructor closes safely.
     std::unique_ptr<pqxx::connection> postgres_connection;
 
-    int sqlstateToInt(std::string_view sqlstate);
+    int sqlstateToInt(const String & sqlstate);
 
 public:
     PostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, std::unique_ptr<pqxx::connection> pcon)
@@ -258,6 +252,8 @@ public:
 
     void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+
     ~RedisIntegration() override = default;
 };
 
@@ -306,11 +302,10 @@ public:
 #endif
 };
 
-/// Object storages (MinIO, Azurite) reached through the server's named collection
-class NamedCollectionIntegration : public ClickHouseIntegration
+class MinIOIntegration : public ClickHouseIntegration
 {
 public:
-    explicit NamedCollectionIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
         : ClickHouseIntegration(fcc, ssc)
     {
     }
@@ -319,11 +314,27 @@ public:
 
     void setBackupDetails(const String &, BackupOut *);
 
-    ~NamedCollectionIntegration() override = default;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+
+    ~MinIOIntegration() override = default;
 };
 
-using MinIOIntegration = NamedCollectionIntegration;
-using AzuriteIntegration = NamedCollectionIntegration;
+class AzuriteIntegration : public ClickHouseIntegration
+{
+public:
+    explicit AzuriteIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
+
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
+
+    void setBackupDetails(const String &, BackupOut *);
+
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+
+    ~AzuriteIntegration() override = default;
+};
 
 class HTTPIntegration : public ClickHouseIntegration
 {
@@ -334,6 +345,8 @@ public:
     }
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
+
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~HTTPIntegration() override = default;
 };
@@ -390,8 +403,6 @@ private:
     std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
 
     ClickHouseIntegratedDatabase * getPeerPtr(PeerTableDatabase pt) const;
-
-    ClickHouseIntegration * getIntegrationPtr(IntegrationCall ic) const;
 
 public:
     bool getRequiresExternalCallCheck() const { return requires_external_call_check > 0; }
