@@ -165,6 +165,10 @@ public:
     /// Returns null for a multi-column (tuple) set, which has no single-column range representation.
     std::shared_ptr<const PlainRanges> getPlainRanges() const;
 
+    /// The explicit elements sorted by their columns in order (ascending, NULLs last), as `MergeTreeSetIndex` orders them.
+    /// The copy is shared while someone holds it; the set keeps it only weakly.
+    std::shared_ptr<const Columns> getSortedSetElements() const;
+
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -236,6 +240,9 @@ private:
 
     mutable std::shared_ptr<const PlainRanges> plain_ranges;
     mutable OnceFlag plain_ranges_once;
+
+    mutable std::mutex sorted_set_elements_mutex;
+    mutable std::weak_ptr<const Columns> sorted_set_elements;
 
     /// Protects the keys of the set. `insertFromBlock` takes it exclusively and `execute` shares it; they
     /// run at the same time only for `StorageSet`, whose inserts can run while queries use the set.
@@ -373,7 +380,8 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(
+        const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set = nullptr);
 
     [[nodiscard]] size_t size() const { return ordered_set.at(0)->size(); }
 
@@ -445,6 +453,8 @@ private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
+    /// Keeps the sorted copy shared with the source set alive while this index uses it.
+    std::shared_ptr<const Columns> shared_ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
