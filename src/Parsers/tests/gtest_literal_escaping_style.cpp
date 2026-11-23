@@ -60,6 +60,17 @@ std::optional<std::string> formatSQLite(const Field & value)
             EXPECT_EQ(*formatted, (expected)); \
     } while (false)
 
+/// The same for `LiteralEscapingStyle::MySQL`. On the merge-base it returns an empty optional, so an
+/// expectation over the returned value fails there.
+template <typename Style = LiteralEscapingStyle>
+std::optional<std::string> formatMySQL(const Field & value)
+{
+    if constexpr (requires { Style::MySQL; })
+        return format(value, Style::MySQL);
+    else
+        return std::nullopt;
+}
+
 }
 
 TEST(LiteralEscapingStyle, TopLevelString)
@@ -184,4 +195,25 @@ TEST(LiteralEscapingStyle, NulByteInsideContainerIsRejectedForPostgreSQL)
     /// and it must not be silently emitted as the two characters `\` and `0` either. Such
     /// predicates are not pushed down; formatting one must fail explicitly.
     EXPECT_ANY_THROW(format(value, LiteralEscapingStyle::PostgreSQL));
+}
+
+TEST(LiteralEscapingStyle, FormFeedForMySQL)
+{
+    /// MySQL has no `\f` escape sequence: it reads `\f` as the letter `f`, so a form feed has to be
+    /// written as is. ClickHouse writes it as `\f`.
+    Field value = std::string("a\fb");
+
+    EXPECT_EQ(format(value, LiteralEscapingStyle::Regular), "'a\\fb'");
+    EXPECT_EQ(formatMySQL(value), std::optional<std::string>("'a\fb'"));
+
+    /// Every other byte is written as ClickHouse writes it, which MySQL reads back as the original byte.
+    Field other = std::string("q'\\\b\t\n\r\0z", 9);
+    EXPECT_EQ(format(other, LiteralEscapingStyle::Regular), "'q\\'\\\\\\b\\t\\n\\r\\0z'");
+    EXPECT_EQ(formatMySQL(other), std::optional<std::string>("'q\\'\\\\\\b\\t\\n\\r\\0z'"));
+
+    /// A string nested in a tuple (the elements of an `IN` list) is written the same way.
+    Tuple tuple;
+    tuple.push_back(std::string("\f"));
+    tuple.push_back(std::string("it's\f"));
+    EXPECT_EQ(formatMySQL(Field(tuple)), std::optional<std::string>("('\f', 'it\\'s\f')"));
 }

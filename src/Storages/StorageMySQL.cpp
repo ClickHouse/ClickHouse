@@ -176,7 +176,7 @@ void StorageMySQL::readImpl(
             column_names,
             storage_snapshot->metadata->getColumns().getAllPhysical(),
             IdentifierQuotingStyle::BackticksMySQL,
-            LiteralEscapingStyle::Regular,
+            LiteralEscapingStyle::MySQL,
             remote_database_name,
             remote_table_or_query.getTableName(),
             getStorageID(),
@@ -262,7 +262,11 @@ public:
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext());
+        /// The values are read by MySQL, not by ClickHouse, see `writeQuotedStringMySQL`.
+        auto format_settings = getFormatSettings(storage->getContext());
+        format_settings.values.mysql_string_literals = true;
+        auto writer = FormatFactory::instance().getOutputFormat(
+            "Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage->getContext(), format_settings);
         writer->write(block);
 
         if (!storage->on_duplicate_clause.empty())
@@ -582,7 +586,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular,
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::MySQL,
             IdentifierQuotingRule::Always);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {

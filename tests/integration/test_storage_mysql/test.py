@@ -362,6 +362,44 @@ def test_binary_type(started_cluster):
     drop_mysql_table(conn, "binary_type")
 
 
+def test_form_feed(started_cluster):
+    # MySQL has no `\f` escape sequence: it reads `\f` as the letter `f`, so a form feed (0x0C) has to
+    # be sent as is, both in the inserted values and in a filter that is pushed down.
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, "form_feed")
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "CREATE TABLE clickhouse.form_feed (id INT PRIMARY KEY, b BINARY(16) NOT NULL, s VARCHAR(16) NOT NULL)"
+        )
+    table_function = (
+        f"mysql('mysql80:3306', 'clickhouse', 'form_feed', 'root', '{mysql_pass}')"
+    )
+    # The ninth byte of this UUID is 0x0C.
+    uuid = "UUIDStringToNum('3c6f395f-c759-450c-8f18-0de417be064f')"
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {table_function} VALUES (1, {uuid}, 'a\\fb'), (2, {uuid}, 'afb')"
+    )
+
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT id, HEX(b), HEX(s) FROM clickhouse.form_feed ORDER BY id")
+        assert cursor.fetchall() == (
+            (1, "3C6F395FC759450C8F180DE417BE064F", "610C62"),
+            (2, "3C6F395FC759450C8F180DE417BE064F", "616662"),
+        )
+
+    assert (
+        node1.query(f"SELECT id FROM {table_function} WHERE b = {uuid} ORDER BY id")
+        == "1\n2\n"
+    )
+    assert node1.query(f"SELECT id FROM {table_function} WHERE s = 'a\\fb'") == "1\n"
+    assert (
+        node1.query(f"SELECT id FROM {table_function} WHERE s IN ('a\\fb', 'x')")
+        == "1\n"
+    )
+    drop_mysql_table(conn, "form_feed")
+
+
 def test_enum_type(started_cluster):
     table_name = "test_enum_type"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

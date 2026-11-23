@@ -333,7 +333,9 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    if (settings.values.escape_quote_with_quote)
+    if (settings.values.mysql_string_literals)
+        writeQuotedStringMySQL(buf.str(), ostr);
+    else if (settings.values.escape_quote_with_quote)
         writeQuotedStringPostgreSQL(buf.str(), ostr);
     else
         writeQuotedString(buf.str(), ostr);

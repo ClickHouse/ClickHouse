@@ -98,7 +98,9 @@ bool SerializationCustomSimpleText::tryDeserializeTextEscaped(IColumn & column, 
 void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto str = serializeToString(*this, column, row_num, settings);
-    if (settings.values.escape_quote_with_quote)
+    if (settings.values.mysql_string_literals)
+        writeQuotedStringMySQL(str, ostr);
+    else if (settings.values.escape_quote_with_quote)
         writeQuotedStringPostgreSQL(str, ostr);
     else
         writeQuotedString(str, ostr);

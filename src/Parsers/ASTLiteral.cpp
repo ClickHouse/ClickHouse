@@ -297,14 +297,40 @@ public:
     }
 };
 
+/// Like `FieldVisitorToString`, but strings are written as MySQL string literals (`writeQuotedStringMySQL`).
+/// MySQL reads a NUL byte written as `\0` back, so there is nothing to reject here.
+class FieldVisitorToStringMySQL : public FieldVisitorToStringForDialect<FieldVisitorToStringMySQL>
+{
+public:
+    static constexpr const char * dialect_name = "MySQL";
+
+    using FieldVisitorToStringForDialect<FieldVisitorToStringMySQL>::operator();
+
+    String operator() (const String & x) const
+    {
+        WriteBufferFromOwnString wb;
+        writeQuotedStringMySQL(x, wb);
+        return wb.str();
+    }
+};
+
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        ostr << applyVisitor(FieldVisitorToString(), value);
-    else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
-        ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
-    else
-        ostr << applyVisitor(FieldVisitorToStringSQLite(), value);
+    switch (settings.literal_escaping_style)
+    {
+        case LiteralEscapingStyle::Regular:
+            ostr << applyVisitor(FieldVisitorToString(), value);
+            break;
+        case LiteralEscapingStyle::PostgreSQL:
+            ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+            break;
+        case LiteralEscapingStyle::SQLite:
+            ostr << applyVisitor(FieldVisitorToStringSQLite(), value);
+            break;
+        case LiteralEscapingStyle::MySQL:
+            ostr << applyVisitor(FieldVisitorToStringMySQL(), value);
+            break;
+    }
 }
 
 }

@@ -529,6 +529,9 @@ struct FormatSettings : FormatSettingsEnums
         bool accurate_types_of_literals = true;
         bool allow_data_after_semicolon = false;
         bool escape_quote_with_quote = false;
+        /// Not a setting: `StorageMySQL` sets it for the values it sends to MySQL. Strings are written as
+        /// MySQL string literals (`writeQuotedStringMySQL`), whatever `escape_quote_with_quote` is.
+        bool mysql_string_literals = false;
     } values{};
 
     struct

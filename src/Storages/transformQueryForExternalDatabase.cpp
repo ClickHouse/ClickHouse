@@ -411,7 +411,7 @@ bool removeNullMembersFromINSet(ASTFunction & function)
 /// external database cannot parse: an `Array` / `Map` at any depth, or a tuple with fewer than
 /// two elements (which has no plain parenthesized form and can only be written as `tuple(...)`).
 /// Mirrors what `FieldVisitorToStringForDialect` rejects at format time for the PostgreSQL /
-/// SQLite escaping styles, for use where the `Regular` style (MySQL) is formatted instead.
+/// SQLite escaping styles, for use where the `Regular` or the `MySQL` style is formatted instead.
 bool fieldRequiresClickHouseOnlySyntax(const Field & field)
 {
     checkStackSize();
@@ -702,8 +702,9 @@ bool isCompatible(
     if (const auto * literal = node->as<ASTLiteral>())
     {
         /// SQLite cannot represent NUL bytes in string literals, and PostgreSQL cannot store NUL
-        /// bytes in string values, so do not push such predicates down.
-        if (literal_escaping_style != LiteralEscapingStyle::Regular && fieldHasStringWithNulByte(literal->value))
+        /// bytes in string values, so do not push such predicates down. MySQL reads `\0` back as a NUL byte.
+        if ((literal_escaping_style == LiteralEscapingStyle::PostgreSQL || literal_escaping_style == LiteralEscapingStyle::SQLite)
+            && fieldHasStringWithNulByte(literal->value))
             return false;
 
         /// The caller does not know which dialect reads the literal back (see
@@ -1560,10 +1561,10 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
                 "only valid as an operand of a comparison or IN there. Rewrite the query passed "
                 "to the external database without it");
         /// For PostgreSQL / SQLite the dialect field visitors reject such literals at format time
-        /// (see `FieldVisitorToStringForDialect`); the `Regular` style - used for MySQL, whose
-        /// string literals interpret backslash escapes the same way as ClickHouse - formats them
-        /// in ClickHouse-only syntax (`[...]`, `tuple(x)`) without complaint, so reject them here.
-        if (literal_escaping_style == LiteralEscapingStyle::Regular
+        /// (see `FieldVisitorToStringForDialect`); the `Regular` style formats them in ClickHouse-only
+        /// syntax (`[...]`, `tuple(x)`) without complaint, so reject them here. The `MySQL` style is
+        /// rejected here as well, to keep one error message for every caller that reads backslash escapes.
+        if ((literal_escaping_style == LiteralEscapingStyle::Regular || literal_escaping_style == LiteralEscapingStyle::MySQL)
             && fieldRequiresClickHouseOnlySyntax(literal->value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot format a literal of type {} for the external database: it can only be "

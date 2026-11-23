@@ -659,6 +659,29 @@ inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+/// MySQL string literals. MySQL reads the escape sequences that `writeQuotedString` writes for a quote, a
+/// backslash and the bytes 0x00 (`\0`), 0x08 (`\b`), 0x09 (`\t`), 0x0A (`\n`) and 0x0D (`\r`) back as the
+/// original byte, but it has no `\f`: it reads an escape sequence it does not know as the escaped character
+/// itself, so `\f` is the letter `f`. A form feed (0x0C) is therefore written as is, which a MySQL string
+/// literal accepts like any other byte.
+inline void writeQuotedStringMySQL(std::string_view ref, WriteBuffer & buf)
+{
+    const char * pos = ref.data();
+    const char * end = pos + ref.size();
+
+    writeChar('\'', buf);
+    while (true)
+    {
+        const char * form_feed = find_first_symbols<'\f'>(pos, end);
+        writeAnyEscapedString<'\''>(pos, form_feed, buf);
+        if (form_feed == end)
+            break;
+        writeChar('\f', buf);
+        pos = form_feed + 1;
+    }
+    writeChar('\'', buf);
+}
+
 /// SQLite identifiers: a " is escaped by doubling it; every other byte, backslash included, is literal.
 inline void writeDoubleQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
 {
