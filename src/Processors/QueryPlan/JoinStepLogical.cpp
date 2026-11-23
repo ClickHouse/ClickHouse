@@ -396,15 +396,19 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 
 bool JoinStepLogical::canRemoveUnusedColumns() const
 {
-    /// Position-based unused column removal can break HashJoin (and probably other joins too).
-    /// It is not clear yet why exactly, but the issue is probably around dealing with duplicate
-    /// columns by name instead of positions in TableJoin/HashJoin.
+    return true;
+}
 
-    /// Collect all INPUT nodes reachable from join condition nodes.
+/// The physical join finds its columns by name. Where a side has several columns named as an input a join
+/// condition reads, it takes the first of them, whichever one the condition reads, so all of them have to
+/// stay for it to keep taking the same one. Returns the inputs that read such columns.
+static UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> findConditionInputsWithRepeatedNames(
+    const JoinOperator & join_operator, const JoinExpressionActions & expression_actions, const SharedHeaders & input_headers)
+{
+    /// The names of the inputs the join conditions read, of each side.
+    std::array<UnorderedSetWithMemoryTracking<std::string_view>, 2> condition_input_names;
+
     UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
-    UnorderedSetWithMemoryTracking<std::string_view> left_condition_input_names;
-    UnorderedSetWithMemoryTracking<std::string_view> right_condition_input_names;
-
     VectorWithMemoryTracking<const ActionsDAG::Node *> stack;
     for (const auto & join_action : join_operator.expression)
         stack.push_back(join_action.getNode());
@@ -423,31 +427,35 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
         {
             auto ref = JoinActionRef(node, expression_actions);
             if (ref.fromLeft())
-                left_condition_input_names.insert(node->result_name);
+                condition_input_names[0].insert(node->result_name);
             else if (ref.fromRight())
-                right_condition_input_names.insert(node->result_name);
+                condition_input_names[1].insert(node->result_name);
         }
 
         for (const auto * child : node->children)
             stack.push_back(child);
     }
 
-    auto has_duplicated_condition_input = [](const Block & header, const UnorderedSetWithMemoryTracking<std::string_view> & condition_names)
+    /// Of those names, the ones the header of the side repeats.
+    for (size_t side = 0; side < 2; ++side)
     {
-        for (const auto & name : condition_names)
-        {
-            size_t count = 0;
-            for (size_t i = 0; i < header.columns(); ++i)
-            {
-                if (header.getByPosition(i).name == name && ++count > 1)
-                    return true;
-            }
-        }
-        return false;
-    };
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> columns_with_name;
+        for (const auto & column : *input_headers.at(side))
+            ++columns_with_name[column.name];
+        std::erase_if(condition_input_names[side], [&](std::string_view name) { return columns_with_name[name] < 2; });
+    }
 
-    return !has_duplicated_condition_input(*input_headers.at(0), left_condition_input_names)
-        && !has_duplicated_condition_input(*input_headers.at(1), right_condition_input_names);
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> inputs_with_repeated_names;
+    if (condition_input_names[0].empty() && condition_input_names[1].empty())
+        return inputs_with_repeated_names;
+
+    for (const auto * input : expression_actions.getActionsDAG()->getInputs())
+    {
+        const auto ref = JoinActionRef(input, expression_actions);
+        if (condition_input_names[ref.fromLeft() ? 0 : 1].contains(input->result_name))
+            inputs_with_repeated_names.insert(input);
+    }
+    return inputs_with_repeated_names;
 }
 
 JoinStepLogical::UnneededColumnsPlan
@@ -460,6 +468,14 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
     const SetWithMemoryTracking<size_t> unneeded_positions_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
 
+    /// Such inputs stay as they are, and so does what the join outputs of them.
+    const auto inputs_with_repeated_names = findConditionInputsWithRepeatedNames(join_operator, expression_actions, input_headers);
+    const auto reads_input_with_repeated_name = [&](const ActionsDAG::Node * output)
+    {
+        return !inputs_with_repeated_names.empty()
+            && anyReachableNode({output}, [&](const ActionsDAG::Node * node) { return inputs_with_repeated_names.contains(node); });
+    };
+
     ActionsDAG::NodeRawConstPtrs kept_output_nodes;
     const auto & dag_outputs = actions_dag.getOutputs();
     if (!unneeded_positions_set.empty() && *unneeded_positions_set.rbegin() >= dag_outputs.size())
@@ -471,7 +487,7 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
         const auto * output_node = dag_outputs[position];
         /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one
         /// output column, so it is kept even when it is not required.
-        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node))
+        if (!unneeded_positions_set.contains(position) || isDummyColumnOfThisStep(output_node) || reads_input_with_repeated_name(output_node))
             kept_output_nodes.push_back(output_node);
         else
             plan.dropped_output_positions.push_back(position);
@@ -486,6 +502,10 @@ JoinStepLogical::analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> &
 
     for (const auto & join_action : join_operator.residual_filter)
         plan.extra_pruning_roots.push_back(join_action.getNode());
+
+    for (const auto * input : actions_dag.getInputs())
+        if (inputs_with_repeated_names.contains(input))
+            plan.extra_pruning_roots.push_back(input);
 
     bool has_required_input_from_left = false;
     bool has_required_input_from_right = false;
