@@ -360,8 +360,7 @@ struct ReplaceRegexpImpl
         }
     }
 
-    /// `replaceRegexpOne` with a JIT matcher and a single-group replacement ('\1'): a row's result is never
-    /// longer than the row, so the block's result is sized once and written with overflow-15 copies.
+    /// A row's result is never longer than the row: the group lies within the match.
     static void vectorFirstSingleGroupJIT(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
