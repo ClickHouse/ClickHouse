@@ -8,6 +8,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <Common/HashTable/CuckooSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -17,7 +18,6 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <base/unaligned.h>
 #include <fmt/format.h>
 
 #include <Columns/ColumnNullable.h>
@@ -92,9 +92,7 @@ bool keysAreSorted(const ColumnRawPtrs & key_columns, size_t rows)
 
 }
 
-/// A cuckoo hash table of the keys of a set, looked up without data-dependent branches instead of the hash table
-/// (see `execute`). Each key is in one of its two slots, and every slot without a key holds a copy of some key of
-/// the set, so a value is in the set if and only if it equals one of its two slots.
+/// The keys of a set in a `CuckooSet`, looked up instead of the hash table (see `execute`).
 class Set::CuckooLookup
 {
 public:
@@ -102,11 +100,9 @@ public:
     static constexpr size_t max_keys = 1 << 15;
     static constexpr size_t max_bytes = 2 << 20;
 
-    static constexpr size_t minSlots(size_t num_keys) { return 2 * num_keys + num_keys / 4; }
-
     [[nodiscard]] size_t allocatedBytes() const
     {
-        return slots32.allocated_bytes() + slots64.allocated_bytes() + slots128.allocated_bytes();
+        return set32.allocatedBytes() + set64.allocatedBytes() + set128.allocatedBytes();
     }
 
     /// Builds nothing if the peak memory of a placement would exceed `memory_budget`.
@@ -120,11 +116,11 @@ public:
         {
             if constexpr (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>)
             {
-                if (attemptPeakBytes(num_keys + 1, sizeof(Key), minBits(num_keys), 0) > memory_budget)
+                if (CuckooSet<Key>::minPeakBytes(num_keys + 1, num_keys) > memory_budget)
                     return nullptr;
                 PODArray<Key> keys;
                 copyKeys(method.data, keys);
-                if (lookup->tryBuildTable(keys, memory_budget, attempts))
+                if (lookup->getSet<Key>().tryBuild(keys, max_bytes, memory_budget, attempts))
                     return lookup;
             }
         }
@@ -135,16 +131,6 @@ public:
     /// With `repeated_keys`, a row whose key equals the previous row's reuses its result, as in the hash table's cache.
     template <typename Method>
     bool execute(
-        const Method & method, const ColumnRawPtrs & columns, const Sizes & sizes,
-        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map, bool repeated_keys) const
-    {
-        return mixed_hash ? executeWithHash<true>(method, columns, sizes, vec_res, negative, null_map, repeated_keys)
-                          : executeWithHash<false>(method, columns, sizes, vec_res, negative, null_map, repeated_keys);
-    }
-
-private:
-    template <bool mixed, typename Method>
-    bool executeWithHash(
         const Method &, const ColumnRawPtrs & columns, const Sizes & sizes,
         ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map, bool repeated_keys) const
     {
@@ -154,27 +140,28 @@ private:
 
         if constexpr (IsSetMethodOneNumber<Method>::value && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64>))
         {
+            const auto & set = getSet<Key>();
             const IColumn & column = *columns[0];
-            if (getSlots<Key>().empty() || !column.isFixedAndContiguous() || column.sizeOfValueIfFixed() != sizeof(Key))
+            if (set.empty() || !column.isFixedAndContiguous() || column.sizeOfValueIfFixed() != sizeof(Key))
                 return false;
             /// Read through the method's state, so the values are those the hash table would look up.
             typename Method::State state(columns, sizes, nullptr);
             static_assert(sizeof(*state.getKeyData()) == sizeof(Key));
             const char * values = reinterpret_cast<const char *>(state.getKeyData());
-            if (repeated_keys || keysChangeRegularly<Key>(values, rows))
-                findRepeatedNumbers<mixed, Key>(values, rows, res);
+            if (repeated_keys || CuckooSet<Key>::keysChangeRegularly(values, rows))
+                set.findRepeated(values, rows, res);
             else
-                findNumbers<mixed, Key>(values, rows, res);
+                set.find(values, rows, res);
         }
         else if constexpr (IsSetMethodKeysFixed<Method>::value
                            && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>))
         {
-            if (getSlots<Key>().empty() || repeated_keys)
+            const auto & set = getSet<Key>();
+            if (set.empty() || repeated_keys)
                 return false;
             typename Method::State state(columns, sizes, nullptr);
             Arena pool;
-            for (size_t i = 0; i < rows; ++i)
-                res[i] = contains<mixed, Key>(state.getKeyHolder(i, pool));
+            set.findEach(rows, res, [&](size_t i) { return state.getKeyHolder(i, pool); });
         }
         else
             return false;
@@ -196,6 +183,7 @@ private:
         return true;
     }
 
+private:
     template <typename T> struct IsSetMethodOneNumber : std::false_type {};
     template <typename FieldType, typename Data, bool use_cache>
     struct IsSetMethodOneNumber<SetMethodOneNumber<FieldType, Data, use_cache>> : std::true_type {};
@@ -204,108 +192,29 @@ private:
     template <typename Data, bool has_nullable_keys>
     struct IsSetMethodKeysFixed<SetMethodKeysFixed<Data, has_nullable_keys>> : std::true_type {};
 
-    PODArray<UInt32> slots32;
-    PODArray<UInt64> slots64;
-    PODArray<UInt128> slots128;
-    /// One per 64-bit word of a key (see `places`).
-    UInt64 multipliers1[2] = {};
-    UInt64 multipliers2[2] = {};
-    bool mixed_hash = false;
-    size_t shift = 0;
-    UInt64 mask = 0;
-
-    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 splitMix64(UInt64 & state)
-    {
-        UInt64 z = (state += 0x9E3779B97F4A7C15ULL);
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-        return z ^ (z >> 31);
-    }
+    CuckooSet<UInt32> set32;
+    CuckooSet<UInt64> set64;
+    CuckooSet<UInt128> set128;
 
     template <typename Key>
-    PODArray<Key> & getSlots()
+    CuckooSet<Key> & getSet()
     {
         if constexpr (std::is_same_v<Key, UInt32>)
-            return slots32;
+            return set32;
         else if constexpr (std::is_same_v<Key, UInt64>)
-            return slots64;
+            return set64;
         else
         {
             static_assert(std::is_same_v<Key, UInt128>);
-            return slots128;
+            return set128;
         }
     }
 
     template <typename Key>
-    [[nodiscard]] const PODArray<Key> & getSlots() const
+    [[nodiscard]] const CuckooSet<Key> & getSet() const
     {
-        return const_cast<CuckooLookup *>(this)->getSlots<Key>();
+        return const_cast<CuckooLookup *>(this)->getSet<Key>();
     }
-
-    template <bool mixed, typename Key>
-    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW std::pair<size_t, size_t> places(const Key & key) const
-    {
-        static constexpr size_t num_words = sizeof(Key) <= sizeof(UInt64) ? 1 : sizeof(Key) / sizeof(UInt64);
-        auto word = [&](size_t i) -> UInt64
-        {
-            if constexpr (sizeof(Key) <= sizeof(UInt64))
-                return static_cast<UInt64>(key);
-            else
-                return key.items[i];
-        };
-
-        if constexpr (mixed && sizeof(Key) <= sizeof(UInt64))
-        {
-            const UInt64 hash = intHashCRC32(static_cast<UInt64>(key));
-            return {(hash * multipliers1[0]) >> shift, (hash * multipliers2[0]) >> shift};
-        }
-        else if constexpr (mixed)
-        {
-            UInt64 hash = 0;
-            for (size_t i = 0; i < num_words; ++i)
-                hash += intHash64(word(i) ^ multipliers1[i]);
-            return {hash >> shift, hash & mask};
-        }
-        else
-        {
-            UInt64 hash1 = 0;
-            UInt64 hash2 = 0;
-            for (size_t i = 0; i < num_words; ++i)
-            {
-                hash1 += word(i) * multipliers1[i];
-                hash2 += word(i) * multipliers2[i];
-            }
-            return {hash1 >> shift, hash2 >> shift};
-        }
-    }
-
-    template <bool mixed, typename Key>
-    [[nodiscard]] UInt8 contains(const Key & key) const
-    {
-        const Key * slots = getSlots<Key>().data();
-        const auto [place1, place2] = places<mixed>(key);
-        return static_cast<UInt8>(static_cast<UInt8>(slots[place1] == key) | static_cast<UInt8>(slots[place2] == key));
-    }
-
-    static size_t minBits(size_t num_keys)
-    {
-        size_t bits = 4;
-        while ((1ULL << bits) < minSlots(num_keys))
-            ++bits;
-        return bits;
-    }
-
-    /// The peak memory of a placement into `1 << bits` slots: the keys, the slots and their occupancy bits, or, while
-    /// the slots of the previous placement (none if `previous_bits` is 0) are reallocated, both blocks of slots.
-    static size_t attemptPeakBytes(size_t num_keys, size_t key_size, size_t bits, size_t previous_bits)
-    {
-        const size_t slot_bytes = (1ULL << bits) * key_size;
-        const size_t previous_slot_bytes = previous_bits ? (1ULL << previous_bits) * key_size : 0;
-        const size_t occupancy_bytes = occupancyWords(bits) * sizeof(UInt64);
-        return num_keys * key_size + std::max(previous_slot_bytes + slot_bytes, slot_bytes + occupancy_bytes);
-    }
-
-    static size_t occupancyWords(size_t bits) { return ((1ULL << bits) + 63) / 64; }
 
     /// Reads every cell without branches: an empty cell holds the zero key, which the hash table stores apart.
     template <typename Table, typename Key>
@@ -328,194 +237,6 @@ private:
             }
         }
         keys.resize(size);
-    }
-
-    template <typename Key>
-    bool tryBuildTable(const PODArray<Key> & keys, size_t memory_budget, size_t & attempts)
-    {
-        if (keys.empty())
-            return false;
-
-        size_t bits = minBits(keys.size());
-        size_t previous_bits = 0;
-        UInt64 random_state = keys.size();
-        for (size_t attempt = 0; attempt < 16; ++attempt)
-        {
-            if (attempt > 0 && attempt % 4 == 0)
-                ++bits;
-            /// A retry of the same size reuses the slots in place.
-            const size_t reallocated_bits = bits > previous_bits ? previous_bits : 0;
-            if ((1ULL << bits) * sizeof(Key) > max_bytes || attemptPeakBytes(keys.capacity(), sizeof(Key), bits, reallocated_bits) > memory_budget)
-                break;
-            for (size_t i = 0; i < std::size(multipliers1); ++i)
-            {
-                multipliers1[i] = splitMix64(random_state) | 1;
-                multipliers2[i] = splitMix64(random_state) | 1;
-            }
-            ++attempts;
-            mixed_hash = attempt > 0;
-            if (mixed_hash ? tryPlaceKeys<true>(keys, bits) : tryPlaceKeys<false>(keys, bits))
-                return true;
-            previous_bits = bits;
-        }
-        getSlots<Key>().clear();
-        return false;
-    }
-
-    template <bool mixed, typename Key>
-    bool tryPlaceKeys(const PODArray<Key> & keys, size_t bits)
-    {
-        shift = 64 - bits;
-        mask = (1ULL << bits) - 1;
-        const size_t num_slots = 1ULL << bits;
-        auto & slots = getSlots<Key>();
-        /// The slots that get no key keep this copy of a key of the set.
-        slots.assign(num_slots, keys[0]);
-        PODArray<UInt64> occupied(occupancyWords(bits), 0);
-
-        /// The moves would never end if more than two keys had the same two slots.
-        static constexpr size_t max_moves = 100;
-        static constexpr size_t prefetch_distance = 16;
-        const size_t num_keys = keys.size();
-        for (size_t i = 0; i < num_keys; ++i)
-        {
-            if (i + prefetch_distance < num_keys)
-                __builtin_prefetch(&slots[places<mixed>(keys[i + prefetch_distance]).first], 1);
-
-            Key key = keys[i];
-            size_t current = places<mixed>(key).first;
-            for (size_t moves = 0;; ++moves)
-            {
-                UInt64 & word = occupied[current / 64];
-                const UInt64 bit = 1ULL << (current % 64);
-                if (!(word & bit))
-                {
-                    word |= bit;
-                    slots[current] = key;
-                    break;
-                }
-                if (moves == max_moves)
-                    return false;
-                std::swap(key, slots[current]);
-                const auto [first, second] = places<mixed>(key);
-                current = current == first ? second : first;
-            }
-        }
-
-        return true;
-    }
-
-    /// Whether the key changes every `n >= 2` rows, judged by the three runs after each of four rows spread over the block.
-    template <typename Key>
-    static bool keysChangeRegularly(const char * values, size_t rows)
-    {
-        static constexpr size_t num_starts = 4;
-        static constexpr size_t runs_per_start = 3;
-        static constexpr size_t max_run = 64;
-        static constexpr size_t rows_per_start = (runs_per_start + 1) * max_run;
-        if (rows < num_starts * rows_per_start)
-            return false;
-        size_t run = 0;
-        for (size_t start = 0; start < num_starts; ++start)
-        {
-            const size_t begin = start * (rows / num_starts);
-            /// The run that contains `begin` may have started before it, so it is not counted.
-            size_t last_change = 0;
-            size_t runs = 0;
-            for (size_t i = begin + 1; i < begin + rows_per_start && runs < runs_per_start; ++i)
-            {
-                if (unalignedLoad<Key>(values + i * sizeof(Key)) == unalignedLoad<Key>(values + (i - 1) * sizeof(Key)))
-                    continue;
-                if (last_change)
-                {
-                    const size_t length = i - last_change;
-                    if (length < 2 || (run && length != run))
-                        return false;
-                    run = length;
-                    ++runs;
-                }
-                last_change = i;
-            }
-            if (runs < runs_per_start)
-                return false;
-        }
-        return true;
-    }
-
-    /// For keys that mostly repeat the previous row's: only a changed key is looked up.
-    template <bool mixed, typename Key>
-    void findRepeatedNumbers(const char * values, size_t rows, UInt8 * res) const
-    {
-        if (rows == 0)
-            return;
-        Key previous = unalignedLoad<Key>(values);
-        UInt8 found = contains<mixed, Key>(previous);
-        res[0] = found;
-        for (size_t i = 1; i < rows; ++i)
-        {
-            const Key key = unalignedLoad<Key>(values + i * sizeof(Key));
-            if (key != previous)
-            {
-                previous = key;
-                found = contains<mixed, Key>(key);
-            }
-            res[i] = found;
-        }
-    }
-
-    template <bool mixed, typename Key>
-    void findNumbers(const char * values, size_t rows, UInt8 * res) const
-    {
-        const Key * slots = getSlots<Key>().data();
-        const UInt64 m1 = multipliers1[0];
-        [[maybe_unused]] const UInt64 m2 = multipliers2[0];
-        const size_t s = shift;
-        [[maybe_unused]] const UInt64 m = mask;
-        /// Must match `places`.
-        auto places_of = [&](Key v) NO_SANITIZE_UNSIGNED_OVERFLOW -> std::pair<size_t, size_t>
-        {
-            if constexpr (mixed)
-            {
-                const UInt64 hash = intHashCRC32(static_cast<UInt64>(v));
-                return {(hash * m1) >> s, (hash * m2) >> s};
-            }
-            else
-                return {(static_cast<UInt64>(v) * m1) >> s, (static_cast<UInt64>(v) * m2) >> s};
-        };
-
-        size_t i = 0;
-        for (; i + 4 <= rows; i += 4)
-        {
-#if defined(__x86_64__)
-            /// On x86 this loop stalls on keys that are not in the cache (e.g. those of a `Memory` table) unless prefetched.
-            static constexpr size_t prefetch_distance = 2048 / sizeof(Key);
-            if (i + prefetch_distance < rows)
-                __builtin_prefetch(values + (i + prefetch_distance) * sizeof(Key));
-#endif
-            const Key v0 = unalignedLoad<Key>(values + (i + 0) * sizeof(Key));
-            const Key v1 = unalignedLoad<Key>(values + (i + 1) * sizeof(Key));
-            const Key v2 = unalignedLoad<Key>(values + (i + 2) * sizeof(Key));
-            const Key v3 = unalignedLoad<Key>(values + (i + 3) * sizeof(Key));
-            const auto [p0, q0] = places_of(v0);
-            const auto [p1, q1] = places_of(v1);
-            const auto [p2, q2] = places_of(v2);
-            const auto [p3, q3] = places_of(v3);
-            const Key a0 = slots[p0];
-            const Key a1 = slots[p1];
-            const Key a2 = slots[p2];
-            const Key a3 = slots[p3];
-            const Key b0 = slots[q0];
-            const Key b1 = slots[q1];
-            const Key b2 = slots[q2];
-            const Key b3 = slots[q3];
-            res[i + 0] = static_cast<UInt8>((a0 == v0) | (b0 == v0));
-            res[i + 1] = static_cast<UInt8>((a1 == v1) | (b1 == v1));
-            res[i + 2] = static_cast<UInt8>((a2 == v2) | (b2 == v2));
-            res[i + 3] = static_cast<UInt8>((a3 == v3) | (b3 == v3));
-        }
-
-        for (; i < rows; ++i)
-            res[i] = contains<mixed, Key>(unalignedLoad<Key>(values + i * sizeof(Key)));
     }
 };
 
