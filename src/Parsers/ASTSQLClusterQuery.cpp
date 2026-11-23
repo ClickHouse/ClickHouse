@@ -46,7 +46,10 @@ void formatPropertiesAssignments(
             ostr << ", ";
 
         formatSQLClusterSettingName(properties[i].name, ostr);
-        if (settings.show_secrets || (properties[i].name != "password" && properties[i].name != "secret"))
+        /// The parser keeps the identifier spelling, so `SECRET` and `Password` are secrets too.
+        const bool is_secret = equalsKeywordIgnoreCase(properties[i].name, "password")
+            || equalsKeywordIgnoreCase(properties[i].name, "secret");
+        if (settings.show_secrets || !is_secret)
             ostr << " = " << applyVisitor(FieldVisitorToSetting(), properties[i].value);
         else
             ostr << " = '[HIDDEN]'";
