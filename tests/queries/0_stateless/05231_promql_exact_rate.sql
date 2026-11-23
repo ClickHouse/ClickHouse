@@ -73,6 +73,13 @@ SELECT timeSeriesIncreaseToGrid(100, 200, 50, 20, 1)([100, 125, 150, 200]::Array
 SELECT '--- DateTime64 timestamps ---';
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(DateTime64(3)), [10, 20]::Array(Float64));
 
+SELECT '--- The sample before a huge window: the same instants in milliseconds and nanoseconds ---';
+-- Twice the window must fit Int64 at the timestamp scale, otherwise the window is rejected rather than losing the sample.
+SELECT timeSeriesIncreaseToGrid(9000000000, 9000000000, 1, 4000000000, 1)([fromUnixTimestamp64Milli(2000000000000), fromUnixTimestamp64Milli(9000000000000)], [10, 20]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(9000000000, 9000000000, 1, 4000000000, 1)([fromUnixTimestamp64Nano(2000000000000000000), fromUnixTimestamp64Nano(9000000000000000000)], [10, 20]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(9000000000, 9000000000, 1, 6000000000, 1)([fromUnixTimestamp64Milli(-2000000000000), fromUnixTimestamp64Milli(9000000000000)], [10, 20]::Array(Float64));
+SELECT timeSeriesIncreaseToGrid(9000000000, 9000000000, 1, 6000000000, 1)([fromUnixTimestamp64Nano(-2000000000000000000), fromUnixTimestamp64Nano(9000000000000000000)], [10, 20]::Array(Float64)); -- { serverError BAD_ARGUMENTS }
+
 SELECT '--- The setting promql_exact_rate does not affect the aggregate functions used directly ---';
 SELECT timeSeriesRateToGrid(120, 120, 1, 40)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) SETTINGS promql_exact_rate = 1;
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [10, 20]::Array(Float64)) SETTINGS promql_exact_rate = 0;

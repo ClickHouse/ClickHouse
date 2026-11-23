@@ -451,7 +451,7 @@ public:
     AggregateFunctionTimeseriesExtrapolatedValue(const DataTypes & argument_types_, const Array & parameters_,
         GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, typename Traits::GridScaleIntervalType grid_step_,
         typename Traits::GridScaleIntervalType window_, UInt32 grid_scale_, UInt32 column_timestamp_scale_)
-        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, getBucketsWindow(window_), grid_scale_, column_timestamp_scale_)
+        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, getBucketsWindow(window_, grid_scale_), grid_scale_, column_timestamp_scale_)
         , aggregator_window(window_)
     {
     }
@@ -487,16 +487,18 @@ private:
     /// The exact mode measures from the last sample before the window if it is not older than `window` before the window's
     /// start, so the buckets must hold the samples in `[grid_timestamp - 2 * window, grid_timestamp]`: the base class gets
     /// the window `2 * window + 1` for its buckets, while the aggregator keeps `window` (see `getAggregatorWindow`).
-    static typename Traits::GridScaleIntervalType getBucketsWindow(typename Traits::GridScaleIntervalType window_)
+    static typename Traits::GridScaleIntervalType getBucketsWindow(typename Traits::GridScaleIntervalType window_, UInt32 grid_scale_)
     {
         /// A negative window is rejected by the base class.
         const Int64 window_value = static_cast<Int64>(window_);
         if (!exact_rate || window_value <= 0)
             return window_;
-        /// A window this big covers every timestamp anyway.
-        static constexpr Int64 max_window = std::numeric_limits<Int64>::max();
-        if (window_value > (max_window - 1) / 2)
-            return max_window;
+        /// Timestamps span more than `Int64` ticks, so a capped window could drop the sample before the window: reject it instead.
+        static constexpr Int64 max_window = (std::numeric_limits<Int64>::max() - 1) / 2;
+        if (window_value > max_window)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window of {} ticks with scale {} is too large for the exact mode, it should be at most {} ticks",
+                window_value, grid_scale_, max_window);
         return 2 * window_value + 1;
     }
 
