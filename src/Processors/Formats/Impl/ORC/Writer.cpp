@@ -1,7 +1,10 @@
 #include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Processors/Formats/Impl/ORC/RLE.h>
+#include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -23,12 +26,12 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <algorithm>
 #include <bit>
 #include <optional>
-#include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -51,7 +54,7 @@ struct WriterContext
     size_t block_size = 0;
     bool enable_index = false;
     double dictionary_key_size_threshold = 0;
-    const DateLUTImpl * timezone = nullptr;
+    std::optional<TimezoneOffset> timezone_offset;
     bool timezone_is_utc = true;
     /// 2015-01-01 00:00:00 in the time zone of the writer, as seconds since the epoch.
     Int64 epoch_offset = 0;
@@ -144,7 +147,7 @@ public:
     /// Encodes the deferred data of the stripe.
     virtual void finalizeStripe() {}
 
-    virtual void writeIndex(std::vector<StreamData> & streams)
+    virtual void writeIndex(VectorWithMemoryTracking<StreamData> & streams)
     {
         Proto::RowIndex index;
         for (const auto & entry : entries)
@@ -159,7 +162,7 @@ public:
         streams.push_back({Proto::StreamKind::ROW_INDEX, static_cast<UInt32>(column_id), compressWhole(context, index.serialize())});
     }
 
-    virtual void flush(std::vector<StreamData> & streams)
+    virtual void flush(VectorWithMemoryTracking<StreamData> & streams)
     {
         present_encoder.flush();
         present_stream.finish();
@@ -167,17 +170,17 @@ public:
             streams.push_back({Proto::StreamKind::PRESENT, static_cast<UInt32>(column_id), present_stream.getOutput()});
     }
 
-    virtual void getColumnEncodings(std::vector<Proto::ColumnEncoding> & encodings) const
+    virtual void getColumnEncodings(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT, 0, {}});
     }
 
-    virtual void getStripeStatistics(std::vector<Proto::ColumnStatistics> & stats) const
+    virtual void getStripeStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const
     {
         stats.push_back(stripe_statistics.toProto());
     }
 
-    virtual void getFileStatistics(std::vector<Proto::ColumnStatistics> & stats) const
+    virtual void getFileStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const
     {
         stats.push_back(file_statistics.toProto());
     }
@@ -188,7 +191,7 @@ public:
         stripe_statistics.reset();
     }
 
-    virtual size_t estimateSize() const
+    [[nodiscard]] virtual size_t estimateSize() const
     {
         return present_stream.estimateSize();
     }
@@ -208,7 +211,7 @@ public:
 
 protected:
     /// Appends the positions of the data streams, in the order the reader seeks them.
-    virtual void recordDataPositions(std::vector<UInt64> & positions) = 0;
+    virtual void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) = 0;
     /// Clears the data streams for a new stripe.
     virtual void resetStreams() = 0;
 
@@ -230,8 +233,8 @@ protected:
 
     struct Entry
     {
-        std::vector<UInt64> present_positions;
-        std::vector<UInt64> data_positions;
+        VectorWithMemoryTracking<UInt64> present_positions;
+        VectorWithMemoryTracking<UInt64> data_positions;
         Proto::ColumnStatistics statistics;
     };
 
@@ -243,7 +246,7 @@ protected:
     StatisticsBuilder index_statistics;
     StatisticsBuilder stripe_statistics;
     StatisticsBuilder file_statistics;
-    std::vector<Entry> entries;
+    VectorWithMemoryTracking<Entry> entries;
 
 private:
     void recordPositions()
@@ -252,8 +255,8 @@ private:
         recordDataPositions(current_data_positions);
     }
 
-    std::vector<UInt64> current_present_positions;
-    std::vector<UInt64> current_data_positions;
+    VectorWithMemoryTracking<UInt64> current_present_positions;
+    VectorWithMemoryTracking<UInt64> current_data_positions;
 };
 
 namespace
@@ -333,14 +336,14 @@ public:
             child->finalizeStripe();
     }
 
-    void writeIndex(std::vector<StreamData> & streams) override
+    void writeIndex(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::writeIndex(streams);
         for (auto & child : children)
             child->writeIndex(streams);
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         flushOwnStreams(streams);
@@ -348,21 +351,21 @@ public:
             child->flush(streams);
     }
 
-    void getColumnEncodings(std::vector<Proto::ColumnEncoding> & encodings) const override
+    void getColumnEncodings(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const override
     {
         getOwnColumnEncoding(encodings);
         for (const auto & child : children)
             child->getColumnEncodings(encodings);
     }
 
-    void getStripeStatistics(std::vector<Proto::ColumnStatistics> & stats) const override
+    void getStripeStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const override
     {
         ColumnWriter::getStripeStatistics(stats);
         for (const auto & child : children)
             child->getStripeStatistics(stats);
     }
 
-    void getFileStatistics(std::vector<Proto::ColumnStatistics> & stats) const override
+    void getFileStatistics(VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const override
     {
         ColumnWriter::getFileStatistics(stats);
         for (const auto & child : children)
@@ -376,7 +379,7 @@ public:
             child->mergeStripeStatsIntoFileStats();
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         size_t size = ColumnWriter::estimateSize() + estimateOwnSize();
         for (const auto & child : children)
@@ -392,14 +395,14 @@ public:
     }
 
 protected:
-    virtual void flushOwnStreams(std::vector<StreamData> &) {}
-    virtual void getOwnColumnEncoding(std::vector<Proto::ColumnEncoding> & encodings) const
+    virtual void flushOwnStreams(VectorWithMemoryTracking<StreamData> &) {}
+    virtual void getOwnColumnEncoding(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT, 0, {}});
     }
-    virtual size_t estimateOwnSize() const { return 0; }
+    [[nodiscard]] virtual size_t estimateOwnSize() const { return 0; }
 
-    std::vector<std::unique_ptr<ColumnWriter>> children;
+    VectorWithMemoryTracking<std::unique_ptr<ColumnWriter>> children;
 };
 
 class StructColumnWriter final : public CompoundColumnWriter
@@ -438,7 +441,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> &) override {}
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> &) override {}
     void resetStreams() override {}
 };
 
@@ -467,7 +470,8 @@ public:
         ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
 
         UInt64 element_offset = offsets[static_cast<ssize_t>(offset) - 1];
-        UInt64 total_elements = offsets[offset + num_values - 1] - element_offset;
+        /// Both ends are indexed signed: the range of a child is empty for an empty parent array.
+        UInt64 total_elements = offsets[static_cast<ssize_t>(offset + num_values) - 1] - element_offset;
 
         if constexpr (is_map)
         {
@@ -497,7 +501,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
     {
         length_encoder.recordPosition(positions);
     }
@@ -507,19 +511,19 @@ protected:
         length_stream.reset();
     }
 
-    void flushOwnStreams(std::vector<StreamData> & streams) override
+    void flushOwnStreams(VectorWithMemoryTracking<StreamData> & streams) override
     {
         length_encoder.flush();
         length_stream.finish();
         streams.push_back({Proto::StreamKind::LENGTH, static_cast<UInt32>(column_id), length_stream.getOutput()});
     }
 
-    void getOwnColumnEncoding(std::vector<Proto::ColumnEncoding> & encodings) const override
+    void getOwnColumnEncoding(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const override
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT_V2, 0, {}});
     }
 
-    size_t estimateOwnSize() const override { return length_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateOwnSize() const override { return length_stream.estimateSize(); }
 
 private:
     OutputByteStream length_stream;
@@ -559,8 +563,8 @@ public:
 
         ColumnWriter::add(column, union_nulls, offset, num_values, parent_null_map);
 
-        std::vector<Int64> child_offset(children.size(), -1);
-        std::vector<UInt64> child_length(children.size(), 0);
+        VectorWithMemoryTracking<Int64> child_offset(children.size(), -1);
+        VectorWithMemoryTracking<UInt64> child_length(children.size(), 0);
         size_t count = 0;
         for (size_t i = 0; i < num_values; ++i)
         {
@@ -588,7 +592,7 @@ public:
     }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
     {
         tag_encoder.recordPosition(positions);
     }
@@ -598,14 +602,14 @@ protected:
         tag_stream.reset();
     }
 
-    void flushOwnStreams(std::vector<StreamData> & streams) override
+    void flushOwnStreams(VectorWithMemoryTracking<StreamData> & streams) override
     {
         tag_encoder.flush();
         tag_stream.finish();
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), tag_stream.getOutput()});
     }
 
-    size_t estimateOwnSize() const override { return tag_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateOwnSize() const override { return tag_stream.estimateSize(); }
 
 private:
     OutputByteStream tag_stream;
@@ -619,7 +623,7 @@ class PrimitiveColumnWriter : public ColumnWriter
 public:
     using ColumnWriter::ColumnWriter;
 
-    void getColumnEncodings(std::vector<Proto::ColumnEncoding> & encodings) const override
+    void getColumnEncodings(VectorWithMemoryTracking<Proto::ColumnEncoding> & encodings) const override
     {
         encodings.push_back({encoding_kind, dictionary_size, {}});
     }
@@ -654,7 +658,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         encoder.flush();
@@ -662,10 +666,10 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override { encoder.recordPosition(positions); }
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -699,7 +703,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         encoder.flush();
@@ -707,10 +711,10 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override { encoder.recordPosition(positions); }
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -758,7 +762,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         encoder.flush();
@@ -766,10 +770,10 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override { encoder.recordPosition(positions); }
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -815,17 +819,17 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         data_stream.finish();
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override { data_stream.recordPosition(positions); }
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { data_stream.recordPosition(positions); }
     void resetStreams() override { data_stream.reset(); }
 
 private:
@@ -876,7 +880,7 @@ public:
                 if (null_map && null_map[i])
                     continue;
                 size_t row = offset + i;
-                add_value(std::string_view(chars + offsets[row - 1], offsets[row] - offsets[row - 1]));
+                add_value(std::string_view(chars + offsets[static_cast<ssize_t>(row) - 1], offsets[row] - offsets[static_cast<ssize_t>(row) - 1]));
             }
         }
         else
@@ -912,7 +916,7 @@ public:
             encodeDirect();
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         if (*use_dictionary)
@@ -936,13 +940,13 @@ public:
         }
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + blob.size() + value_ends.size() * sizeof(UInt64);
     }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> &) override
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> &) override
     {
         /// The positions are known only after the encoding, at the end of the stripe.
         group_starts.push_back(value_ends.size());
@@ -960,7 +964,7 @@ protected:
     }
 
 private:
-    std::string_view getValue(size_t i) const
+    [[nodiscard]] std::string_view getValue(size_t i) const
     {
         size_t begin = i ? value_ends[i - 1] : 0;
         return std::string_view(blob.data() + begin, value_ends[i] - begin);
@@ -970,7 +974,7 @@ private:
     /// stripe without the row index), as in the reference implementation.
     void decideDictionary()
     {
-        std::unordered_set<std::string_view> distinct;
+        UnorderedSetWithMemoryTracking<std::string_view> distinct;
         for (size_t i = 0; i < value_ends.size(); ++i)
             distinct.insert(getValue(i));
         /// Compare as doubles: the threshold is user-provided and the product may not fit in `size_t`.
@@ -1003,8 +1007,8 @@ private:
         encoding_kind = Proto::ColumnEncodingKind::DICTIONARY_V2;
 
         /// The dictionary is sorted, as in the reference implementation.
-        std::unordered_map<std::string_view, UInt32> index_of;
-        std::vector<std::string_view> keys;
+        UnorderedMapWithMemoryTracking<std::string_view, UInt32> index_of;
+        VectorWithMemoryTracking<std::string_view> keys;
         for (size_t i = 0; i < value_ends.size(); ++i)
         {
             auto value = getValue(i);
@@ -1045,9 +1049,9 @@ private:
     IntRleEncoderV2 index_encoder;
 
     std::string blob;
-    std::vector<UInt64> value_ends;
+    VectorWithMemoryTracking<UInt64> value_ends;
     /// The index of the first value of each row group.
-    std::vector<UInt64> group_starts;
+    VectorWithMemoryTracking<UInt64> group_starts;
 };
 
 class TimestampColumnWriter final : public PrimitiveColumnWriter
@@ -1082,10 +1086,16 @@ public:
             Int64 nano = 0;
             if (scale)
             {
-                /// For the values before the epoch, the nanoseconds are negative (as in the Arrow ORC adapter).
+                /// The seconds are rounded down, so the nanoseconds are not negative.
                 Int64 value = unalignedLoad<Int64>(data + (offset + i) * sizeof(Int64));
                 secs = value / multiplier;
-                nano = (value % multiplier) * nanos_multiplier;
+                Int64 rest = value % multiplier;
+                if (rest < 0)
+                {
+                    rest += multiplier;
+                    --secs;
+                }
+                nano = rest * nanos_multiplier;
             }
             else
             {
@@ -1093,24 +1103,29 @@ public:
                 nano = 0;
             }
 
-            /// The statistics have the milliseconds rounded down and the rest of the nanoseconds, which is not negative.
-            Int64 nano_millis = nano / 1000000;
-            Int64 nano_rest = nano % 1000000;
-            if (nano_rest < 0)
+            /// As in the Apache ORC writers (Java `TimestampTreeWriter`, C++ `TimestampColumnWriter`), a negative
+            /// timestamp with more than 999999 nanoseconds is stored with one more second, which the readers subtract.
+            /// Between -1 and 0 seconds the stored seconds would be 0 and nothing is subtracted, so store the epoch,
+            /// which all readers read the same way (see the documentation of the format).
+            /// Keep in sync with `replaceTimestampsStoredAsEpoch`.
+            if (secs == -1 && nano > 999999)
             {
-                nano_rest += 1000000;
-                --nano_millis;
+                secs = 0;
+                nano = 0;
             }
+            const Int64 stored_secs = secs + (secs < 0 && nano > 999999);
+
+            /// The statistics have the milliseconds rounded down and the rest of the nanoseconds.
             Int64 utc_seconds = secs;
             Int64 millis = 0;
             Int64 encoded_seconds = 0;
-            if ((!is_utc && common::addOverflow(secs, static_cast<Int64>(context.timezone->timezoneOffset(secs)), utc_seconds))
+            if ((!is_utc && common::addOverflow(secs, (*context.timezone_offset)(secs), utc_seconds))
                 || common::mulOverflow(utc_seconds, Int64{1000}, millis)
-                || common::addOverflow(millis, nano_millis, millis)
-                || common::subOverflow(secs + (secs < 0 && nano > 999999), epoch_offset, encoded_seconds))
+                || common::addOverflow(millis, nano / 1000000, millis)
+                || common::subOverflow(stored_secs, epoch_offset, encoded_seconds))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Timestamp (seconds={}, nanoseconds={}) in ORC column {} is out of the range supported by the ORC format", secs, nano, column_id);
-            index_statistics.updateTimestamp(millis, static_cast<Int32>(nano_rest));
+            index_statistics.updateTimestamp(millis, static_cast<Int32>(nano % 1000000));
 
             seconds_encoder.write(encoded_seconds);
             nanos_encoder.write(formatNanos(nano));
@@ -1118,7 +1133,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         seconds_encoder.flush();
@@ -1129,13 +1144,13 @@ public:
         streams.push_back({Proto::StreamKind::SECONDARY, static_cast<UInt32>(column_id), nanos_stream.getOutput()});
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + seconds_stream.estimateSize() + nanos_stream.estimateSize();
     }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
     {
         seconds_encoder.recordPosition(positions);
         nanos_encoder.recordPosition(positions);
@@ -1226,7 +1241,7 @@ public:
         countValues(null_map, num_values);
     }
 
-    void flush(std::vector<StreamData> & streams) override
+    void flush(VectorWithMemoryTracking<StreamData> & streams) override
     {
         ColumnWriter::flush(streams);
         value_stream.finish();
@@ -1236,13 +1251,13 @@ public:
         streams.push_back({Proto::StreamKind::SECONDARY, static_cast<UInt32>(column_id), scale_stream.getOutput()});
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + value_stream.estimateSize() + scale_stream.estimateSize();
     }
 
 protected:
-    void recordDataPositions(std::vector<UInt64> & positions) override
+    void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override
     {
         value_stream.recordPosition(positions);
         scale_encoder.recordPosition(positions);
@@ -1327,7 +1342,7 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The ORC compression block size must be positive and less than 8 MiB, got {}", options.compression_block_size);
 
-    schema = Type::buildSelectedType(schema_, std::vector<bool>(schema_.getMaximumColumnId() + 1, true));
+    schema = Type::buildSelectedType(schema_, VectorWithMemoryTracking<bool>(schema_.getMaximumColumnId() + 1, true));
     schema->assignIds(0);
 
     compressor = createCompressor(options.compression);
@@ -1337,10 +1352,10 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
     context->block_size = options.compression_block_size;
     context->enable_index = options.row_index_stride > 0;
     context->dictionary_key_size_threshold = options.dictionary_key_size_threshold;
-    context->timezone = &DateLUT::instance(options.timezone_name);
-    context->timezone_is_utc = options.timezone_name == "GMT" || options.timezone_name == "UTC";
+    context->timezone_offset.emplace(DateLUT::instance(options.timezone_name));
+    context->timezone_is_utc = context->timezone_offset->isUTC();
     static constexpr Int64 UTC_2015_01_01 = 1420070400;
-    context->epoch_offset = UTC_2015_01_01 - context->timezone->timezoneOffset(UTC_2015_01_01);
+    context->epoch_offset = UTC_2015_01_01 - (*context->timezone_offset)(UTC_2015_01_01);
 
     if (schema->getKind() != STRUCT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The root type of ORC file must be a struct");
@@ -1406,8 +1421,8 @@ void Writer::writeStripe()
 
     column_writer->finalizeStripe();
 
-    std::vector<StreamData> index_streams;
-    std::vector<StreamData> data_streams;
+    VectorWithMemoryTracking<StreamData> index_streams;
+    VectorWithMemoryTracking<StreamData> data_streams;
     if (context->enable_index)
         column_writer->writeIndex(index_streams);
     column_writer->flush(data_streams);
@@ -1487,6 +1502,56 @@ void Writer::close()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC postscript is too large: {} bytes", postscript_data.size());
     write(postscript_data);
     write(std::string(1, static_cast<char>(postscript_data.size())));
+}
+
+ColumnPtr replaceTimestampsStoredAsEpoch(const ColumnPtr & column)
+{
+    if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
+    {
+        auto data = replaceTimestampsStoredAsEpoch(const_column->getDataColumnPtr());
+        if (data == const_column->getDataColumnPtr())
+            return column;
+        return ColumnConst::create(data, const_column->size());
+    }
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+    {
+        auto nested = replaceTimestampsStoredAsEpoch(nullable->getNestedColumnPtr());
+        if (nested == nullable->getNestedColumnPtr())
+            return column;
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+    }
+    const auto * timestamps = checkAndGetColumn<ColumnDateTime64>(column.get());
+    if (!timestamps)
+        return column;
+
+    const Int64 multiplier = common::exp10_i64(static_cast<int>(timestamps->getScale()));
+    const Int64 nanos_multiplier = common::exp10_i64(9 - static_cast<int>(timestamps->getScale()));
+    /// The seconds are -1 and the nanoseconds are more than 999999, as in `TimestampColumnWriter::add`.
+    auto is_stored_as_epoch = [&](const DateTime64 & timestamp)
+    {
+        const Int64 value = timestamp.value;
+        return value < 0 && value > -multiplier && (value + multiplier) * nanos_multiplier > 999999;
+    };
+    const auto & data = timestamps->getData();
+    if (std::none_of(data.begin(), data.end(), is_stored_as_epoch))
+        return column;
+
+    auto result = IColumn::mutate(column);
+    for (auto & timestamp : assert_cast<ColumnDateTime64 &>(*result).getData())
+    {
+        if (is_stored_as_epoch(timestamp))
+            timestamp = 0;
+    }
+    return result;
+}
+
+void replaceTimestampsStoredAsEpoch(Chunk & chunk)
+{
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = replaceTimestampsStoredAsEpoch(column);
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }
