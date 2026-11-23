@@ -39,6 +39,10 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/argsToConfig.h>
+#include <IO/CompressionMethod.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/copyData.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 
@@ -195,40 +199,20 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
     return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, std::move(lines)};
 }
 
-/// Run two commands connected by a pipe: lhs | rhs.
-/// Returns the exit code of the rhs process if lhs succeeded, and the exit code of lhs otherwise
-/// (-1 if it was killed by a signal), like a shell with `set -o pipefail`: otherwise a failure of lhs
-/// before it produced any output would go unnoticed, as rhs successfully processes empty input.
-int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::string> & rhs)
+/// Decompress the gzip file `path` into the standard input of the command `rhs`, as `gunzip -c path | rhs`: streaming,
+/// so the memory does not depend on the size of the file. Returns the exit code of `rhs`, or non-zero if the
+/// decompression fails (then the input of `rhs` ends early, like with `set -o pipefail` in entrypoint.sh).
+int runDecompressedGzipInto(const std::string & path, const std::vector<std::string> & rhs)
 {
     int pipefd[2];
     if (pipe(pipefd) < 0)
         return -1;
-
-    pid_t lhs_pid = fork();
-    if (lhs_pid < 0)
-    {
-        (void)close(pipefd[0]);
-        (void)close(pipefd[1]);
-        return -1;
-    }
-    if (lhs_pid == 0)
-    {
-        (void)close(pipefd[0]);
-        (void)dup2(pipefd[1], STDOUT_FILENO);
-        (void)close(pipefd[1]);
-        auto argv = buildArgv(lhs);
-        execvp(argv[0], argv.data());
-        _exit(127);
-    }
 
     pid_t rhs_pid = fork();
     if (rhs_pid < 0)
     {
         (void)close(pipefd[0]);
         (void)close(pipefd[1]);
-        kill(lhs_pid, SIGTERM);
-        while (waitpid(lhs_pid, nullptr, 0) < 0 && errno == EINTR) {}
         return -1;
     }
     if (rhs_pid == 0)
@@ -240,17 +224,34 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
         execvp(argv[0], argv.data());
         _exit(127);
     }
-
     (void)close(pipefd[0]);
+
+    /// A command that exits early closes the pipe: the write fails with `EPIPE` instead of killing this process.
+    struct sigaction ignore_sigpipe{};
+    ignore_sigpipe.sa_handler = SIG_IGN;
+    struct sigaction old_sigpipe{};
+    (void)sigaction(SIGPIPE, &ignore_sigpipe, &old_sigpipe);
+
+    bool decompressed = false;
+    try
+    {
+        auto in = DB::wrapReadBufferWithCompressionMethod(std::make_unique<DB::ReadBufferFromFile>(path), DB::CompressionMethod::Gzip);
+        DB::WriteBufferFromFileDescriptor out(pipefd[1]);
+        DB::copyData(*in, out);
+        out.finalize();
+        decompressed = true;
+    }
+    catch (...)
+    {
+        std::cerr << "docker-init: error: cannot decompress " << path << ": " << DB::getCurrentExceptionMessage(false) << "\n";
+    }
     (void)close(pipefd[1]);
+    (void)sigaction(SIGPIPE, &old_sigpipe, nullptr);
 
-    int lhs_status = 0;
     int rhs_status = 0;
-    while (waitpid(lhs_pid, &lhs_status, 0) < 0 && errno == EINTR) {}
     while (waitpid(rhs_pid, &rhs_status, 0) < 0 && errno == EINTR) {}
-
-    if (!WIFEXITED(lhs_status) || WEXITSTATUS(lhs_status) != 0)
-        return WIFEXITED(lhs_status) ? WEXITSTATUS(lhs_status) : -1;
+    if (!decompressed)
+        return 1;
     return WIFEXITED(rhs_status) ? WEXITSTATUS(rhs_status) : -1;
 }
 
@@ -875,23 +876,8 @@ bool runInitScripts(const std::vector<std::string> & client_base)
         else if (filename.ends_with(".sql.gz"))
         {
             std::cerr << "docker-init: running " << path << " (decompressing)\n";
-            /// Decompress via clickhouse-local (auto-detects .gz) and pipe to clickhouse-client.
-            /// Escape single quotes in the path to prevent SQL injection via crafted filenames.
-            std::string escaped_path;
-            for (char c : path.string())
-            {
-                if (c == '\'')
-                    escaped_path += "''";
-                else
-                    escaped_path += c;
-            }
-            std::vector<std::string> decompress_args = {
-                /// `--tmp`: no persistent storage in the home directory, which can be read-only (`docker run --read-only`).
-                g_clickhouse_binary, "local", "--tmp",
-                "--query",
-                "SELECT * FROM file('" + escaped_path + "', RawBLOB) FORMAT RawBLOB",
-            };
-            if (runPipeline(decompress_args, client_base) != 0)
+            /// Streaming, like `gunzip -c` in entrypoint.sh: the decompressed script can be larger than the memory.
+            if (runDecompressedGzipInto(path.string(), client_base) != 0)
             {
                 std::cerr << "docker-init: error: init script " << path << " failed\n";
                 return false;
