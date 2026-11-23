@@ -225,7 +225,21 @@ void RecordBatchEncoder::encodeValues(
         case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, begin, end); return;
         case TypeIndex::Float64: appendFixedWidth<ColumnFloat64>(*this, column, begin, end); return;
         case TypeIndex::Date32: appendFixedWidth<ColumnInt32>(*this, column, begin, end); return;
-        case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, begin, end); return;
+        case TypeIndex::DateTime:
+        {
+            if (!settings.arrow.output_datetime_as_timestamp)
+            {
+                appendFixedWidth<ColumnUInt32>(*this, column, begin, end);
+                return;
+            }
+            /// A timestamp in seconds is 64-bit.
+            const auto & data = assert_cast<const ColumnUInt32 &>(column).getData();
+            PODArray<Int64> timestamps(end - begin);
+            for (size_t i = begin; i < end; ++i)
+                timestamps[i - begin] = data[i];
+            appendBuffer(timestamps.data(), timestamps.size() * sizeof(Int64));
+            return;
+        }
         case TypeIndex::Date:
         {
             if (settings.arrow.output_date_as_uint16)
@@ -651,6 +665,13 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
         /// Materialize LowCardinality to its full column (matches output_format_arrow_low_cardinality_as_dictionary=false).
         auto full = column.cut(begin, end - begin)->convertToFullColumnIfLowCardinality();
         encodeField(*full, removeLowCardinality(type), 0, end - begin);
+        return;
+    }
+
+    /// The Arrow `Null` type has no buffers at all: all its values are null.
+    if (settings.arrow.output_nothing_as_null && isNothing(removeNullable(type)))
+    {
+        nodes.emplace_back(static_cast<Int64>(end - begin), static_cast<Int64>(end - begin));
         return;
     }
 

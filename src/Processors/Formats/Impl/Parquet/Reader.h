@@ -33,7 +33,6 @@ namespace DB::Parquet
 //  * test on files from https://www.timestored.com/data/sample/parquet
 //  * check fields for false sharing, add cacheline padding as needed
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
-//  * make writer write DataPageV2
 //  * make writer write DELTA_LENGTH_BYTE_ARRAY
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
@@ -242,6 +241,8 @@ struct Reader
         /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
         /// row groups using the smaller atoms.
         VectorWithMemoryTracking<UInt64> bloom_filter_hashes;
+        /// Number of condition atoms that probe this column's dictionary filter in one row group evaluation.
+        size_t hash_filter_atoms = 0;
 
         PrimitiveColumnInfo() = default;
         PrimitiveColumnInfo(PrimitiveColumnInfo &&) = default;
@@ -379,6 +380,8 @@ struct Reader
         bool top_k_bound_from_dictionary = false;
         /// The `Dictionary` stage decodes the dictionary only for `top_k_bound_from_dictionary`.
         bool decode_dictionary_for_top_k = false;
+        /// The `OffsetIndex` stage builds the page locations from the page headers, see `locatePagesFromHeaders`.
+        bool locate_pages_from_headers = false;
 
         /// Prefetches.
         PrefetchHandle bloom_filter_header_prefetch;
@@ -814,6 +817,8 @@ struct Reader
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
     void decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
+    /// Builds the page locations an offset index would hold from the page headers; leaves them empty on anything unusual.
+    void locatePagesFromHeaders(ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info);
     /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,
     /// adds pages that need prefetch to `out`. Must be called in order.
     /// May assign dictionary_page_prefetch.
@@ -897,6 +902,8 @@ private:
         bool build_string_value_filter_mask = true);
     /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
     void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// Returns the size of the header. `header` must be default-constructed.
+    size_t decodePageHeader(parq::PageHeader & header, const char * data, size_t size) const;
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
     bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, std::optional<size_t> target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
