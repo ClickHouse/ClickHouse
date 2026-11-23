@@ -1508,7 +1508,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
             /// With an explicit `distributed_ddl.host_name`, `DDLTask::findCurrentHostID` accepts `replica_host` by name
             /// without resolving it, so apply the same rule here: otherwise this replica executes the tasks addressed
             /// to `replica_host` but is never marked active under it.
-            if (config_host_name && !replica_host.empty() && host.host_name == replica_host
+            if (config_host_name && !replica_host.empty() && HostID::bracketIPv6Host(host.host_name) == replica_host
                 && (host.port == port || (maybe_secure_port && host.port == *maybe_secure_port)))
                 is_self_host = true;
             else
