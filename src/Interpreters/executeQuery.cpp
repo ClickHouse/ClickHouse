@@ -4002,6 +4002,8 @@ static BlockIO executeQueryImpl(
                     }
                     catch (...)
                     {
+                        /// The message string and the logger are created before tryLogCurrentException takes its own lock
+                        LockMemoryExceptionInThread lock_memory_tracker_global(VariableContext::Global);
                         tryLogCurrentException(getLogger("executeQuery"), "while writing processors_profile_log");
                     }
                 }
