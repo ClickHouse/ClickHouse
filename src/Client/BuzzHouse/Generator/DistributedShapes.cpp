@@ -155,9 +155,10 @@ void StatementGenerator::addParallelReplicasSettings(RandomGenerator & rg, Setti
     add("make_distributed_plan", "0");
     add("parallel_replicas_for_queries_with_multiple_tables", "1");
     add("parallel_replicas_allow_in_with_subquery", "1");
+    /// Set either way: an inherited mode 2 only collects statistics, which keeps a query off the replicas
+    add("automatic_parallel_replicas_mode", automatic ? "1" : "0");
     if (automatic)
     {
-        add("automatic_parallel_replicas_mode", "1");
         /// Let the cost model switch on the small tables the fuzzer creates
         add("automatic_parallel_replicas_min_bytes_per_replica", "0");
         add("automatic_parallel_replicas_ignore_thresholds", "1");
