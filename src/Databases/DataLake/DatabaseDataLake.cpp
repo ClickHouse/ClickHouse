@@ -2448,7 +2448,7 @@ The following settings are supported:
 
 ## Referencing tables in namespaces {#referencing-tables-in-namespaces}
 
-:::note
+<Note>
 Namespace-aware name resolution is an experimental feature, disabled by default. Enable it
 with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
 `catalog_name.namespace.table` is shorthand for the quoted form
@@ -2456,7 +2456,7 @@ with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
 setting such a query is rejected and the quoted form has to be used. Statements that name their target
 table (`INSERT`, `CREATE`, `DROP`, `ALTER`, `DESCRIBE` and similar) and stored definitions accept the
 path regardless of the setting.
-:::
+</Note>
 
 Data lake catalogs organize tables into namespaces, which can be nested to
 several levels. A table's fully-qualified name inside the catalog is therefore
