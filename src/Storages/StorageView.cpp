@@ -526,8 +526,12 @@ bool applyArrayJoinUseNullsFromSettings(const ASTPtr & settings_ast, bool use_nu
     if (!set_query)
         return use_nulls;
 
-    if (const Field * value = set_query->changes.tryGet("array_join_use_nulls"))
-        use_nulls = SettingFieldBool(*value).value;
+    /// A setting can be assigned several times in one clause, and the last assignment wins.
+    for (const auto & change : set_query->changes)
+    {
+        if (change.name == "array_join_use_nulls")
+            use_nulls = SettingFieldBool(change.value).value;
+    }
 
     if (std::ranges::find(set_query->default_settings, "array_join_use_nulls") != set_query->default_settings.end())
         use_nulls = false;
@@ -544,26 +548,22 @@ bool applyArrayJoinUseNullsFromSettings(const ASTPtr & settings_ast, bool use_nu
 /// a table subquery, a CTE or a nested `UNION` propagates its `Nullable` columns to the view output too.
 /// The setting is tracked per scope, the same way the query tree builder applies the `SETTINGS` clauses:
 /// the clause of a `SELECT` applies to it and to its subqueries, and the query-level clause of a `UNION`,
-/// `INTERSECT` or `EXCEPT` (left on its last operand by the parser) applies to all its operands.
+/// `INTERSECT` or `EXCEPT` (left on its last operand by the parser, possibly nested into `INTERSECT` / `EXCEPT` nodes,
+/// see `ASTSelectIntersectExceptQuery::getTrailingSettings`) applies to all its operands.
 bool hasLeftArrayJoinWithUseNulls(const IAST & ast, bool use_nulls)
 {
     if (const auto * union_query = ast.as<ASTSelectWithUnionQuery>())
     {
         use_nulls = applyArrayJoinUseNullsFromSettings(union_query->settings_ast, use_nulls);
         if (union_query->list_of_selects && union_query->list_of_selects->children.size() > 1)
-        {
-            if (const auto * last_select = union_query->list_of_selects->children.back()->as<ASTSelectQuery>())
-                use_nulls = applyArrayJoinUseNullsFromSettings(last_select->settings(), use_nulls);
-        }
+            use_nulls = applyArrayJoinUseNullsFromSettings(
+                ASTSelectIntersectExceptQuery::getTrailingSettings(union_query->list_of_selects->children.back()), use_nulls);
     }
     else if (const auto * intersect_except = ast.as<ASTSelectIntersectExceptQuery>())
     {
         const auto selects = intersect_except->getListOfSelects();
         if (!selects.empty())
-        {
-            if (const auto * last_select = selects.back()->as<ASTSelectQuery>())
-                use_nulls = applyArrayJoinUseNullsFromSettings(last_select->settings(), use_nulls);
-        }
+            use_nulls = applyArrayJoinUseNullsFromSettings(ASTSelectIntersectExceptQuery::getTrailingSettings(selects.back()), use_nulls);
     }
     else if (const auto * select = ast.as<ASTSelectQuery>())
     {

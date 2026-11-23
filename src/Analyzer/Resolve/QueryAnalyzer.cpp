@@ -6950,7 +6950,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
             if (!view_columns[i].type->equals(*subquery_columns[i].type))
             {
                 needs_type_conversion = true;
-                if (subquery_columns[i].type->isNullable() && !view_columns[i].type->isNullable())
+                if (isNullableOrLowCardinalityNullable(subquery_columns[i].type) && !isNullableOrLowCardinalityNullable(view_columns[i].type))
                     became_nullable = true;
             }
         }
