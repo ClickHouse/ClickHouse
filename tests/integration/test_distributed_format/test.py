@@ -108,6 +108,13 @@ def test_subset_of_columns(started_cluster, cluster):
 
     assert out == "a\nbb\nccc\n"
 
+    query = f"select x, _row_number, _size > 0, _time is not null from file('{path}/1.bin', 'Distributed')"
+    out = node.exec_in_container(
+        ["/usr/bin/clickhouse", "local", "--tmp", "--stacktrace", "-q", query]
+    )
+
+    assert out == "1\t0\t1\t1\n2\t1\t1\t1\n3\t2\t1\t1\n"
+
     node.query("drop table test.distr_subset sync")
 
 

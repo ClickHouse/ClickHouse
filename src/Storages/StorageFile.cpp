@@ -2141,6 +2141,10 @@ Chunk StorageFileSource::generate()
                 /// Special case for distributed format. Defaults are not needed here.
                 if (storage->format_name == "Distributed")
                 {
+                    struct stat file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    current_file_size = file_stat.st_size;
+                    current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+
                     QueryPipelineBuilder builder;
                     builder.init(Pipe(std::make_shared<DistributedAsyncInsertSource>(current_path)));
                     builder.addSimpleTransform([&](const SharedHeader & header)

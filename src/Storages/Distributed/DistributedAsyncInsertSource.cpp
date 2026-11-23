@@ -5,6 +5,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/Settings.h>
 #include <Formats/NativeReader.h>
+#include <Processors/Formats/IInputFormat.h>
 
 namespace DB
 {
@@ -18,6 +19,7 @@ struct DistributedAsyncInsertSource::Data
     NativeReader block_in;
 
     Block first_block;
+    size_t total_rows = 0;
 
     explicit Data(const String & file_name)
         : log(getLogger("DistributedAsyncInsertSource"))
@@ -48,6 +50,8 @@ Chunk DistributedAsyncInsertSource::generate()
     {
         size_t num_rows = data->first_block.rows();
         Chunk res(data->first_block.getColumns(), num_rows);
+        res.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(data->total_rows));
+        data->total_rows += num_rows;
         data->first_block.clear();
         return res;
     }
@@ -57,7 +61,10 @@ Chunk DistributedAsyncInsertSource::generate()
         return {};
 
     size_t num_rows = block.rows();
-    return Chunk(block.getColumns(), num_rows);
+    Chunk res(block.getColumns(), num_rows);
+    res.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(data->total_rows));
+    data->total_rows += num_rows;
+    return res;
 }
 
 }
