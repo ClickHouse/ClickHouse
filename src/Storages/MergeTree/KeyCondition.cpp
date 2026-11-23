@@ -1720,8 +1720,8 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
     return names;
 }
 
-/// A filter names a column by its raw name and a key node by its expression, so a column
-/// named `f(x)` and the key node computing `f(x)` look the same.
+/// Nodes are matched to the key by name: a column by its raw name, a function by its expression, so a
+/// column named `f(x)` and a node computing `f(x)` look the same on either side.
 static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
 {
     if (!filter_dag.dag)
@@ -1745,7 +1745,48 @@ static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPu
     return result;
 }
 
-static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names)
+NameSet KeyCondition::getStoredKeyColumnsNamedLikeExpressions(const ExpressionActions & key_expr, const Names & key_column_names)
+{
+    const auto & key_dag = key_expr.getActionsDAG();
+
+    NameSet result;
+    std::vector<const ActionsDAG::Node *> stack;
+    for (const auto & name : key_column_names)
+    {
+        const auto * root = key_dag.tryFindInOutputs(name);
+        if (!root)
+        {
+            for (const auto * input : key_dag.getInputs())
+                if (input->result_name.contains('('))
+                    result.insert(input->result_name);
+            return result;
+        }
+        stack.push_back(root);
+    }
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name.contains('('))
+            result.insert(node->result_name);
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return result;
+}
+
+static bool readsNodeNamedLikeOtherKeyNode(
+    const ActionsDAG::Node & root,
+    const NameSet & columns_named_like_key_expressions,
+    const NameSet & stored_key_columns_named_like_expressions,
+    const ContextPtr & context)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
     std::vector<const ActionsDAG::Node *> stack{&root};
@@ -1756,8 +1797,18 @@ static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & nam
         if (!visited.insert(node).second)
             continue;
 
-        if (node->type == ActionsDAG::ActionType::INPUT && names.contains(node->result_name))
+        if (node->type == ActionsDAG::ActionType::INPUT && columns_named_like_key_expressions.contains(node->result_name))
             return true;
+
+        if ((node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            && !stored_key_columns_named_like_expressions.empty())
+        {
+            /// Key names are also looked up in the `moduloLegacy` spelling.
+            RPNBuilderTreeNode tree_node(node, context);
+            if (stored_key_columns_named_like_expressions.contains(tree_node.getColumnName())
+                || stored_key_columns_named_like_expressions.contains(tree_node.getColumnNameWithModuloLegacy()))
+                return true;
+        }
 
         for (const auto * child : node->children)
             stack.push_back(child);
@@ -1865,6 +1916,7 @@ KeyCondition::KeyCondition(
         .key_expr = key_expr_,
         .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
         .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
+        .stored_key_columns_named_like_expressions = getStoredKeyColumnsNamedLikeExpressions(*key_expr_, key_column_names_),
         .require_ready_sets = require_ready_sets_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
@@ -5429,8 +5481,9 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         return;
     }
 
-    if (node_dag && !info.columns_named_like_key_expressions.empty()
-        && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
+    if (node_dag && (!info.columns_named_like_key_expressions.empty() || !info.stored_key_columns_named_like_expressions.empty())
+        && readsNodeNamedLikeOtherKeyNode(
+            *node_dag, info.columns_named_like_key_expressions, info.stored_key_columns_named_like_expressions, node.getContext()))
         return;
 
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
