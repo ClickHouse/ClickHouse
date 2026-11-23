@@ -1,0 +1,116 @@
+<test>
+    <settings>
+        <max_threads>4</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+
+        <query_plan_optimize_join_order_randomize>0</query_plan_optimize_join_order_randomize>
+        <query_plan_optimize_join_order_limit>10</query_plan_optimize_join_order_limit>
+        <query_plan_optimize_join_order_algorithm>greedy</query_plan_optimize_join_order_algorithm>
+        <query_plan_join_swap_table>auto</query_plan_join_swap_table>
+        <use_hash_table_stats_for_join_reordering>0</use_hash_table_stats_for_join_reordering>
+        <collect_hash_table_stats_during_joins>0</collect_hash_table_stats_during_joins>
+
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <enable_parallel_replicas>0</enable_parallel_replicas>
+        <enable_join_transitive_predicates>0</enable_join_transitive_predicates>
+        <query_plan_propagate_predicate_across_join>0</query_plan_propagate_predicate_across_join>
+
+        <use_statistics>1</use_statistics>
+        <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+        <use_datalake_metadata_statistics>1</use_datalake_metadata_statistics>
+        <use_iceberg_partition_pruning>1</use_iceberg_partition_pruning>
+        <use_iceberg_manifest_list_partition_pruning>0</use_iceberg_manifest_list_partition_pruning>
+        <use_iceberg_metadata_files_cache>0</use_iceberg_metadata_files_cache>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>offset</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+                <value>9</value>
+                <value>10</value>
+                <value>11</value>
+                <value>12</value>
+                <value>13</value>
+                <value>14</value>
+                <value>15</value>
+                <value>16</value>
+                <value>17</value>
+                <value>18</value>
+                <value>19</value>
+                <value>20</value>
+                <value>21</value>
+                <value>22</value>
+                <value>23</value>
+                <value>24</value>
+                <value>25</value>
+                <value>26</value>
+                <value>27</value>
+                <value>28</value>
+                <value>29</value>
+                <value>30</value>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+                <value>34</value>
+                <value>35</value>
+                <value>36</value>
+                <value>37</value>
+                <value>38</value>
+                <value>39</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>DROP TABLE IF EXISTS {database}.manifest_pruner_reuse</create_query>
+    <create_query>
+        CREATE TABLE {database}.manifest_pruner_reuse
+        (
+            filter_key Int64,
+            join_key Int64,
+            payload Int64
+        )
+        ENGINE = MergeTree
+        ORDER BY (filter_key, join_key)
+    </create_query>
+
+    <!-- Forty separate inserts, each intended to create one manifest with five
+         10,000-row data files. Each manifest has one file whose min-max range
+         overlaps the query predicate. The other four should be pruned. -->
+    <fill_query>
+        INSERT INTO {database}.manifest_pruner_reuse
+        SELECT
+            toInt64(number * 40 + {offset}) AS filter_key,
+            toInt64(number % 1000) AS join_key,
+            toInt64(number) AS payload
+        FROM numbers(50000)
+        SETTINGS
+            max_threads = 1,
+            max_insert_threads = 1,
+            iceberg_insert_max_rows_in_data_file = 10000
+    </fill_query>
+
+    <!-- The join causes read estimation during join optimization. The same
+         predicate is applied during the scan. Manifest-list pruning is disabled
+         so all forty manifests must be considered by both walks. -->
+    <query>
+        SELECT count(), sum(f.payload)
+        FROM {database}.manifest_pruner_reuse AS f
+        INNER JOIN (SELECT toInt64(number) AS join_key FROM numbers(1000)) AS d
+            ON f.join_key = d.join_key
+        WHERE f.filter_key >= 500000
+          AND f.filter_key &lt; 600000
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS {database}.manifest_pruner_reuse</drop_query>
+</test>
