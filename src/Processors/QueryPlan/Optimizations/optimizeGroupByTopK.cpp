@@ -3,6 +3,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -29,7 +30,6 @@
 #include <Common/logger_useful.h>
 
 #include <optional>
-#include <unordered_set>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -106,7 +106,7 @@ static NameSet inputsOfOutputs(const ActionsDAG & dag, const NameSet & names)
             inputs.insert(name);
     }
 
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
         const auto * node = stack.back();
