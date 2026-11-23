@@ -44,8 +44,9 @@ namespace
 /// The query is checked with the ClickHouse parser, so everything that the external database reads differently
 /// is rejected: MySQL executes the text of `/*! ... */`, does not take `--` without a following space for a comment,
 /// reads `$$...$$` and the typographic quotes that ClickHouse accepts (`‘...’`) as identifiers;
-/// PostgreSQL reads a backslash in a string literally.
-void checkExternalDatabaseQueryIsSelect(const String & query, const String & description, const char * error_message)
+/// PostgreSQL reads a backslash in a string literally. The dialect of an ODBC database is unknown, so square brackets
+/// are rejected for it too: SQL Server reads `['] = 1` as an identifier in brackets, while ClickHouse reads an array of a string.
+void checkExternalDatabaseQueryIsSelect(const String & query, const String & source_type, const String & description, const char * error_message)
 {
     Lexer lexer(query.data(), query.data() + query.size());
     for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
@@ -59,6 +60,12 @@ void checkExternalDatabaseQueryIsSelect(const String & query, const String & des
                 "{} cannot contain comments, heredocs, typographic quotes or backslashes, because the external database may read them differently: {}",
                 description,
                 text);
+
+        if (source_type == "odbc" && (token.type == TokenType::OpeningSquareBracket || token.type == TokenType::ClosingSquareBracket))
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} cannot contain square brackets, because the database may read them as quoted identifiers",
+                description);
     }
 
     ASTPtr ast = checkDictionaryQueryIsSelect(query, description, error_message);
@@ -103,17 +110,19 @@ void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguratio
         dict_struct, /* db_ */ "", /* schema_ */ "", /* table_ */ query.empty() ? "table" : "", query, where, IdentifierQuotingStyle::Backticks);
 
     static constexpr auto source_error = "Only SELECT query can be used as a dictionary source";
-    checkExternalDatabaseQueryIsSelect(query_builder.composeLoadAllQuery(), "Query for " + source_type + " dictionary", source_error);
+    checkExternalDatabaseQueryIsSelect(query_builder.composeLoadAllQuery(), source_type, "Query for " + source_type + " dictionary", source_error);
 
     if (!update_field.empty())
         checkExternalDatabaseQueryIsSelect(
             query_builder.composeUpdateQuery(update_field, "1970-01-01 00:00:00"),
+            source_type,
             "Update query for " + source_type + " dictionary",
             source_error);
 
     if (!invalidate_query.empty())
         checkExternalDatabaseQueryIsSelect(
             invalidate_query,
+            source_type,
             "Invalidate query for " + source_type + " dictionary",
             "Only SELECT query can be used as a dictionary invalidate query");
 }

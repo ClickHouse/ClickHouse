@@ -229,18 +229,28 @@ namespace fs = std::filesystem;
 namespace
 {
 
+/// Evaluates the constant expressions in the source of a dictionary in place (`currentDatabase()`, `concat(...)`).
+/// It must be done once, before the privileges and the queries of the source are checked, and the evaluated source is what
+/// is stored and sent to other hosts and replicas: an expression can return a different value at each evaluation (`randConstant()`),
+/// so a value checked on a separate evaluation could differ from the stored one. The later evaluation in
+/// `getTablePropertiesAndNormalizeCreateQuery` does not change the literals.
+void evaluateConstantsInDictionarySource(ASTCreateQuery & create, ContextPtr context)
+{
+    if (!create.dictionary || !create.dictionary->source)
+        return;
+
+    NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
+    NormalizeAndEvaluateConstantsVisitor(visitor_data).visit(create.dictionary->source->ptr());
+}
+
 /// Returns the named collection that the source of a dictionary refers to with the key `name`, if any.
-/// Under `ON CLUSTER` the hosts evaluate the expressions in the source, so they are evaluated here too, on a copy.
-std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery & create, ContextPtr context)
+/// The source must be already evaluated by `evaluateConstantsInDictionarySource`.
+std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery & create)
 {
     if (!create.dictionary || !create.dictionary->source || !create.dictionary->source->elements)
         return {};
 
-    ASTPtr source = create.dictionary->source->clone();
-    NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
-    NormalizeAndEvaluateConstantsVisitor(visitor_data).visit(source);
-
-    for (const auto & child : source->as<ASTFunctionWithKeyValueArguments &>().elements->children)
+    for (const auto & child : create.dictionary->source->elements->children)
     {
         const auto * pair = child->as<ASTPair>();
         if (!pair || Poco::toLower(pair->first) != "name")
@@ -255,19 +265,13 @@ std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery 
 }
 
 /// Checks the queries of a source of an external database in a `CREATE DICTIONARY` query, see `checkExternalDictionarySourceQueries`.
-/// The constant expressions in the source are evaluated on a copy, as `getTablePropertiesAndNormalizeCreateQuery` does later
-/// before the query is sent to other hosts and replicas, so they receive the values checked here.
+/// The source must be already evaluated by `evaluateConstantsInDictionarySource`, so the checked queries are the stored ones.
 void checkQueriesOfExternalDictionarySource(const ASTCreateQuery & create, ContextPtr context)
 {
     if (!create.dictionary || !create.dictionary->source || !isExternalDatabaseDictionarySource(Poco::toLower(create.dictionary->source->name)))
         return;
 
-    ASTPtr create_copy = create.clone();
-    const auto & dictionary_copy = *create_copy->as<ASTCreateQuery &>().dictionary;
-    NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
-    NormalizeAndEvaluateConstantsVisitor(visitor_data).visit(dictionary_copy.source->ptr());
-
-    checkExternalDictionarySourceQueries(*getDictionaryConfigurationFromAST(create_copy->as<ASTCreateQuery &>(), context), "dictionary");
+    checkExternalDictionarySourceQueries(*getDictionaryConfigurationFromAST(create, context), "dictionary");
 }
 
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
@@ -4182,6 +4186,10 @@ BlockIO InterpreterCreateQuery::execute()
         }
     }
 
+    /// Before the checks of the source of a dictionary, which must see the values that are stored.
+    if (create.is_dictionary)
+        evaluateConstantsInDictionarySource(create, getContext());
+
     getContext()->checkAccess(getRequiredAccess());
 
     /// The queries of a source of an external database are sent to it with the credentials of the source, so only `SELECT` is allowed.
@@ -4216,10 +4224,15 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.getDatabase(), create.getTable());
 
-        /// Required here, not where the dictionary is built: `ON CLUSTER` and `Replicated` databases build it with full access,
+        /// Required here, not where the dictionary is built: a `Replicated` database builds it with full access,
         /// and the dictionary is loaded with the global context.
-        if (auto collection_name = getNamedCollectionOfDictionarySource(create, getContext()))
+        if (auto collection_name = getNamedCollectionOfDictionarySource(create))
             required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
+
+        /// The `odbc` source can use the credentials of a DSN configured on the server, as the `odbc` table function,
+        /// which requires the same privilege. Its queries are checked to be `SELECT`, but the dialect of the database is unknown.
+        if (create.dictionary && create.dictionary->source && Poco::toLower(create.dictionary->source->name) == "odbc")
+            required_access.emplace_back(AccessType::READ, toStringSource(AccessTypeObjects::Source::ODBC));
     }
     else if (create.isView())
     {
