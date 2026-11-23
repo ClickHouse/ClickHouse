@@ -95,8 +95,8 @@ using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 /// An object whose size the table metadata records.
 struct ObjectInfoWithFileSizeHint : public ObjectInfo
 {
-    ObjectInfoWithFileSizeHint(RelativePathWithMetadata relative_path_with_metadata_, size_t file_size_hint_)
-        : ObjectInfo(std::move(relative_path_with_metadata_))
+    ObjectInfoWithFileSizeHint(const RelativePathWithMetadata & relative_path_with_metadata_, size_t file_size_hint_)
+        : ObjectInfo(relative_path_with_metadata_)
         , file_size_hint(file_size_hint_)
     {
     }
