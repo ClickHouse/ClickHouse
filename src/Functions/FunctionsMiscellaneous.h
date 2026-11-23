@@ -428,14 +428,28 @@ public:
     FunctionCapture(
         ExpressionActionsPtr expression_actions_,
         LambdaCapturePtr capture_,
-        DataTypePtr return_type_,
-        String name_)
+        DataTypePtr return_type_)
         : expression_actions(std::move(expression_actions_))
         , actions_pool(std::make_shared<ExpressionActionsPool>(expression_actions))
         , capture(std::move(capture_))
         , return_type(std::move(return_type_))
-        , name(std::move(name_))
+        , name(composeName(*capture))
     {
+    }
+
+    /// The name of a lambda is composed of its signature: the types of the captured columns, of the lambda arguments
+    /// and of the result. A lambda is never given a name from outside (`ActionsDAG::deserialize` does not take it from
+    /// the serialized data either), because functions are told apart by name: for example, a function with the name
+    /// `indexHint` is cast to `FunctionIndexHint`. So a lambda must not have the name of another function.
+    static String composeName(const LambdaCapture & capture)
+    {
+        DataTypes argument_types;
+        argument_types.reserve(capture.lambda_arguments.size());
+        for (const auto & lambda_argument : capture.lambda_arguments)
+            argument_types.push_back(lambda_argument.type);
+
+        return "Capture[" + toString(capture.captured_types) + "](" + toString(argument_types) + ") -> "
+            + capture.return_type->getName();
     }
 
     String getName() const override { return name; }
@@ -478,6 +492,25 @@ private:
     LambdaCapturePtr capture;
     DataTypePtr return_type;
     String name;
+
+    static String toString(const DataTypes & data_types)
+    {
+        std::string result;
+        {
+            WriteBufferFromString buffer(result);
+            bool first = true;
+            for (const auto & type : data_types)
+            {
+                if (!first)
+                    buffer << ", ";
+
+                first = false;
+                buffer << type->getName();
+            }
+        }
+
+        return result;
+    }
 };
 
 class FunctionCaptureOverloadResolver final : public IFunctionOverloadResolver
@@ -521,9 +554,6 @@ public:
 
         return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type);
 
-        name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) + ") -> "
-               + function_return_type->getName();
-
         capture = std::make_shared<LambdaCapture>(LambdaCapture{
             .captured_names = captured_names,
             .captured_types = std::move(captured_types),
@@ -532,6 +562,8 @@ public:
             .return_type = function_return_type,
             .allow_constant_folding = allow_constant_folding,
         });
+
+        name = FunctionCapture::composeName(*capture);
 
         expression_actions = createLambdaExpressionActions(std::move(actions_dag), actions_settings, *capture);
     }
@@ -546,7 +578,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type, name);
+        return std::make_unique<FunctionCapture>(expression_actions, capture, return_type);
     }
 
 private:
@@ -554,25 +586,6 @@ private:
     LambdaCapturePtr capture;
     DataTypePtr return_type;
     String name;
-
-    static String toString(const DataTypes & data_types)
-    {
-        std::string result;
-        {
-            WriteBufferFromString buffer(result);
-            bool first = true;
-            for (const auto & type : data_types)
-            {
-                if (!first)
-                    buffer << ", ";
-
-                first = false;
-                buffer << type->getName();
-            }
-        }
-
-        return result;
-    }
 };
 
 }
