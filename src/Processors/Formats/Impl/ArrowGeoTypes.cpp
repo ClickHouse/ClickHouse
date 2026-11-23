@@ -25,7 +25,7 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
-#if USE_ARROW
+#if USE_ARROW_LIBRARY
 const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata)
 {
     if (!metadata)
@@ -39,7 +39,7 @@ const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMeta
 }
 #endif
 
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str)
+UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str)
 {
     if (!geo_json_str)
         return {};
@@ -52,7 +52,7 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geo json metadata: missing \"columns\"");
     const Poco::JSON::Object::Ptr & columns = obj->getObject("columns");
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
 
     for (const auto & column_entry : *columns)
     {
