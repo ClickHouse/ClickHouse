@@ -448,7 +448,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     std::move(settings_),
                     true,                   /// require_part_metadata
                     mode,
-                    [this] (const std::string & name) { enqueuePartForCheck(name); })
+                    [this] (const std::string & name, bool after_read_error) { enqueuePartForCheck(name, 0, after_read_error); })
     , zookeeper_info(zookeeper_info_)
     , zookeeper_path(zookeeper_info.path)
     , replica_name(zookeeper_info.replica_name)
@@ -11067,7 +11067,7 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
                     "Cannot assign ALTER PARTITION because another ALTER PARTITION query was concurrently executed");
 }
 
-void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds)
+void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds, bool after_read_error)
 {
     MergeTreePartInfo covering_drop_range;
     /// NOTE This check is just an optimization, it's not reliable because drop entry could be removed concurrently.
@@ -11078,7 +11078,7 @@ void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, t
                     part_name, covering_drop_range.getPartNameForLogs());
         return;
     }
-    part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
+    part_check_thread.enqueuePart(part_name, delay_to_check_seconds, after_read_error);
 }
 
 IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
@@ -11185,7 +11185,7 @@ void StorageReplicatedMergeTree::checkBrokenDisks()
             for (auto & part : *parts)
             {
                 if (part->getDataPartStorage().getDiskName() == disk_ptr->getName())
-                    broken_part_callback(part->name);
+                    broken_part_callback(part->name, /* after_read_error */ false);
             }
             continue;
         }
