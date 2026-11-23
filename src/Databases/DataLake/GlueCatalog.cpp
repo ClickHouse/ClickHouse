@@ -544,7 +544,8 @@ ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCal
     /// S3 client is pinned to a snapshot that goes stale on long reads. This
     /// callback re-asks the same provider for current credentials each time
     /// `ReadBufferFromS3` reports an `ExpiredToken`, letting the read recover.
-    return [this, storage_id]() -> std::shared_ptr<IStorageCredentials>
+    /// `self` keeps catalog alive while S3 client holds this callback.
+    return [this, self = shared_from_this(), storage_id]() -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Refreshing AWS credentials for {} after expired token", storage_id.getNameForLogs());
         auto credentials = credentials_provider->GetAWSCredentials();

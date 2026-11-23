@@ -286,11 +286,11 @@ single stripe in compact parts
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge. A merge also reads a bigger part in a whole
-if the part is not bigger than the worst-case memory of a read buffer for each
-column (the configured buffer size, twice with prefetch). For a part with small
-stripes this can take more memory than reading each column separately, but it
-sends one request instead of one per column per stripe. 0 disables it.
+in a whole to memory during merge or mutation. A bigger part is also read in a
+whole if the part is not bigger than the worst-case memory of a read buffer for
+each column (the configured buffer size, twice with prefetch). For a part with
+small stripes this can take more memory than reading each column separately, but
+it sends one request instead of one per column per stripe. 0 disables it.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
@@ -944,6 +944,20 @@ requests to zookeeper in large-scale clusters
 The sleep time for merge selecting task is multiplied by this factor when
 there's nothing to merge and divided when a merge was assigned
 )", 0) \
+    DECLARE(UInt64, delay_merges_after_startup_seconds, 60, R"(
+Background merges of a table that the server loads at startup do not start
+until this many seconds after the table starts up, so that the first queries
+after a restart do not compete with them. The first `INSERT`, `OPTIMIZE`,
+mutation or lightweight update of the table on this server ends the delay. A
+replica of a `ReplicatedMergeTree` table postpones the merges of its
+replication queue, also those it would fetch as a merged part, so
+`SYSTEM SYNC REPLICA` and mutations started on another replica can wait on it
+until the delay ends. Tables created by `CREATE TABLE`, attached by
+`ATTACH TABLE` or restored by `UNDROP TABLE` are not delayed. Merges are not
+delayed while a partition has at least `parts_to_delay_insert` active parts.
+0 disables the delay.
+)", 0, \
+        {"26.12", 0, 60, "New setting to delay background merges after the server startup"}) \
     DECLARE(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, R"(
 Sets the interval in seconds for ClickHouse to execute the cleanup of old
 temporary directories.
@@ -2232,7 +2246,7 @@ The maximum postpone time for failed replicated task. The value is used if the t
         {"25.4", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."}) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
     )", 0) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
