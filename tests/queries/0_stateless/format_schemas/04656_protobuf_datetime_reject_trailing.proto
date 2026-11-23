@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+message Row {
+  string ts = 1;
+}

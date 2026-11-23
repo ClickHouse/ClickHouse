@@ -1,0 +1,5 @@
+x	Nullable(DateTime)					
+2024-01-02 03:04:05	Nullable(DateTime)
+x	Nullable(DateTime64(9))					
+2024-01-02 03:04:05.123000000	Nullable(DateTime64(9))
+2024-01-02 03:04:05	2024-01-02 03:04:05.5

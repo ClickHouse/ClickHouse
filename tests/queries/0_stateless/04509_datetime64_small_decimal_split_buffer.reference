@@ -1,0 +1,13 @@
+split parsing matches
+1	['1970-01-01 00:20:34.500']
+1	['1970-01-01 00:20:34.500']
+1	1	1	1	1	1	1
+1	1
+1
+1	1	1	1	1
+rejected: '.'
+rejected: '+.'
+rejected: '-.'
+rejected: toFixedString('.', 20)
+rejected: toFixedString('+.', 20)
+rejected: toFixedString('-.', 20)

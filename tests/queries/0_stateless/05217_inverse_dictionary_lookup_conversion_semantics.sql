@@ -66,13 +66,13 @@ INSERT INTO conversion_strings VALUES (1, '01 Jan 2026 00:00:00', ('01 Jan 2026 
 SET cast_string_to_date_time_mode = 'best_effort';
 SELECT 'date parsing settings';
 
-SELECT dictGet('conversion_dates', 'attr', s) = 'single' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_TEXT }
+SELECT dictGet('conversion_dates', 'attr', s) = 'single' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_DATETIME }
 
-SELECT dictGet('conversion_dates', 'attr', s) = 'single' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_PARSE_TEXT }
+SELECT dictGet('conversion_dates', 'attr', s) = 'single' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_PARSE_DATETIME }
 
-SELECT dictGet('conversion_dates', 'attr', s) LIKE 'si%' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_TEXT }
+SELECT dictGet('conversion_dates', 'attr', s) LIKE 'si%' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_PARSE_DATETIME }
 
-SELECT dictGet('conversion_dates', 'attr', s) LIKE 'si%' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_PARSE_TEXT }
+SELECT dictGet('conversion_dates', 'attr', s) LIKE 'si%' FROM conversion_strings SETTINGS optimize_inverse_dictionary_lookup = 1; -- { serverError CANNOT_PARSE_DATETIME }
 
 SET cast_string_to_date_time_mode = 'basic';
 
