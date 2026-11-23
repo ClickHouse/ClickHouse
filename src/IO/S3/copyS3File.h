@@ -26,9 +26,19 @@ struct S3CopyFileSettings
 {
     /// Refuses the write when the destination already exists, as `If-None-Match: *`.
     String if_none_match;
-    /// Restated on the re-upload a guard forces, which `CopyObject` would have carried for free.
+    /// The properties of the source, which `CopyObject` carries for free. They are restated on every request that
+    /// creates the destination anew (`PutObject` and `CreateMultipartUpload`, whether its parts are uploaded or copied
+    /// with `UploadPartCopy`) and never on `CopyObject`, so the caller does not have to predict which route the copy takes:
+    /// a guarded copy, a disabled native copy, a file above `max_single_operation_copy_size` and a runtime fallback
+    /// from `CopyObject` all end up on one of those requests.
     std::optional<S3::ObjectHeaders> source_headers;
+    /// The user metadata of the source. Unlike `object_metadata` it does not turn `CopyObject` to
+    /// `MetadataDirective::REPLACE`; `object_metadata` wins if both are given.
+    std::optional<ObjectAttributes> source_metadata;
     std::optional<ObjectAttributes> source_tags;
+    /// Reads the tags of the source when `source_tags` is not given. Called at most once, and only if the copy
+    /// reaches a request that has to restate them, so a plain `CopyObject` costs no `GetObjectTagging`.
+    std::function<ObjectAttributes()> source_tags_reader;
     /// The source `ETag` to pin the copy to (sent as `x-amz-copy-source-if-match` on `CopyObject` and every
     /// `UploadPartCopy`), or empty; the caller must pin `fallback_file_reader` to the same generation.
     String source_if_match;

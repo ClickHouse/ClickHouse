@@ -875,6 +875,82 @@ def test_buffered_move_with_other_keys_preserves_s3_properties(
     assert tags == expected_tags
 
 
+# Paths under `move_no_native_copy_` are uploaded again and paths under `move_multipart_` are copied with a
+# multipart copy (configs/s3_multipart_copy.xml), so neither of them is a `CopyObject`.
+@pytest.mark.parametrize("table_prefix", ["move_no_native_copy", "move_multipart"])
+def test_unguarded_move_without_copy_object_preserves_s3_properties(
+    started_cluster, table_prefix
+):
+    """A move that preserves the path needs no guard, and with the keys of the source it is allowed the native
+    copy. But only `CopyObject` carries the properties of the source for free: with the native copy disabled for
+    the endpoint the object is uploaded again, and above `max_single_operation_copy_size` it is copied by parts
+    into a new multipart upload. Both have to restate the metadata, the headers and the tags."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"{table_prefix}_properties_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    expires = datetime(2030, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    client.put_object(
+        Bucket=started_cluster.minio_bucket,
+        Key=source_key,
+        Body=b"1,2,3\n",
+        ContentType="text/csv",
+        Expires=expires,
+        Metadata={"owner": "queue"},
+        Tagging="classification=sensitive&team=data%20platform",
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": f"/clickhouse/{table_name}",
+            "after_processing_move_preserve_tags": 1,
+        },
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        preserve_move_path=True,
+    )
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (1, 0)
+    )
+    destination = started_cluster.minio_bucket
+    destination_key = next(
+        obj.object_name
+        for obj in started_cluster.minio_client.list_objects(
+            destination, prefix=processed_prefix, recursive=True
+        )
+    )
+    assert destination_key.endswith(source_key)
+    head = client.head_object(Bucket=destination, Key=destination_key)
+    assert head["ContentType"] == "text/csv"
+    assert head["Expires"] == expires
+    assert head["Metadata"]["owner"] == "queue"
+
+    tags = {
+        item["Key"]: item["Value"]
+        for item in client.get_object_tagging(Bucket=destination, Key=destination_key)[
+            "TagSet"
+        ]
+    }
+    assert tags == {"classification": "sensitive", "team": "data platform"}
+
+
 def test_move_preserve_tags_setting(started_cluster):
     node = started_cluster.instances["instance"]
     token = generate_random_string()

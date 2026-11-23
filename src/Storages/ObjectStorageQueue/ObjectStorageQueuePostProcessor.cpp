@@ -620,6 +620,9 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
     /// Flattened moves need an atomic no-overwrite precondition.
     if (!preserve_path)
         move_write_settings.object_storage_write_if_none_match = "*";
+    /// A preserved path is not guarded, but its copy may still upload the object again rather than send `CopyObject`
+    /// (`allow_native_copy = 0`, a multipart copy), and a moved object keeps its properties whatever the route is.
+    move_write_settings.object_storage_copy_preserve_source_properties = true;
     move_write_settings.object_storage_copy_preserve_source_tags = settings.after_processing_move_preserve_tags;
 
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(
@@ -950,11 +953,11 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             /// Prefixless moves do not flatten paths and need no guard.
             const String move_if_none_match
                 = (!move_prefix.empty() && !settings.after_processing_move_preserve_path) ? "*" : "";
-            /// `CopyObject` carries the user metadata, the headers and the tags of the source for free. A copy that uploads
-            /// the object again (a guarded one, or the buffered one when the native copy is not allowed: other endpoint,
-            /// other keys, or `allow_native_copy = 0`) has to restate them, otherwise the moved object would silently lose them.
-            const bool restates_source_properties
-                = !move_if_none_match.empty() || !s3_settings->request_settings[S3RequestSetting::allow_native_copy];
+            /// `CopyObject` carries the user metadata, the headers and the tags of the source for free. Any other route creates
+            /// the object anew and has to restate them, otherwise the moved object would silently lose them: a guarded copy,
+            /// the buffered copy when the native one is not allowed (other endpoint, other keys, or `allow_native_copy = 0`),
+            /// a multipart copy of a file above `max_single_operation_copy_size`, and a fallback from a refused `CopyObject`.
+            /// Which of them a copy takes is known only to `copyS3File`, so every move hands it the properties of the source.
             std::unordered_set<String> destinations;
             ChangedGeneration changed_generation;
             const String src_bucket = s3_storage->getObjectsNamespace();
@@ -1032,15 +1035,25 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         /// Everything below must describe the generation this `HEAD` saw (tied by the check above to the one read);
                         /// the version pins the copy and the delete to it even for unguarded moves. Empty on unversioned buckets.
                         const String & source_version_id = source_info.version_id;
-                        /// Such a move re-uploads the object, so the tags are read explicitly rather than through
-                        /// the `HeadObject` tag count, which restricted credentials do not get to see.
+                        /// The tags are read explicitly rather than through the `HeadObject` tag count, which restricted
+                        /// credentials do not get to see. A guarded move always re-uploads the object, so it reads them up
+                        /// front; an unguarded one reads them only if its copy gets to a request that has to restate them.
                         std::optional<ObjectAttributes> source_tags;
-                        if (restates_source_properties && settings.after_processing_move_preserve_tags)
-                            source_tags = S3::getObjectTags(
-                                *src_client, src_bucket, object_from.remote_path, source_version_id);
+                        std::function<ObjectAttributes()> source_tags_reader;
+                        if (settings.after_processing_move_preserve_tags)
+                        {
+                            if (!move_if_none_match.empty())
+                                source_tags = S3::getObjectTags(
+                                    *src_client, src_bucket, object_from.remote_path, source_version_id);
+                            else
+                                source_tags_reader = [&]
+                                {
+                                    return S3::getObjectTags(*src_client, src_bucket, object_from.remote_path, source_version_id);
+                                };
+                        }
                         /// Only a guarded move stamps the provenance, which recognises its own committed copy after a refused one.
-                        /// An unguarded buffered move restates the user metadata of the source as it is, and an unguarded
-                        /// native one passes nothing, so that `CopyObject` keeps `MetadataDirective::COPY`.
+                        /// An unguarded move passes the user metadata of the source as `source_metadata` instead, which is
+                        /// restated on a re-upload and leaves `CopyObject` with `MetadataDirective::COPY`.
                         std::optional<ObjectAttributes> destination_metadata;
                         if (!move_if_none_match.empty())
                             destination_metadata = makeMoveProvenance(
@@ -1051,8 +1064,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 source_info.last_modification_time,
                                 source_version_id,
                                 userMetadataLimit(ObjectStorageType::S3));
-                        else if (restates_source_properties)
-                            destination_metadata = source_info.metadata;
                         /// What the copy below consumes, and therefore the only generation the delete
                         /// that follows it may remove.
                         const SourceGeneration consumed{source_version_id, source_info.etag};
@@ -1089,9 +1100,12 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 /*object_metadata=*/destination_metadata,
                                 S3CopyFileSettings{
                                     .if_none_match = move_if_none_match,
-                                    .source_headers = restates_source_properties ? std::optional<S3::ObjectHeaders>{source_info.headers}
-                                                                                 : std::optional<S3::ObjectHeaders>{},
+                                    .source_headers = source_info.headers,
+                                    .source_metadata = destination_metadata.has_value()
+                                        ? std::optional<ObjectAttributes>{}
+                                        : std::optional<ObjectAttributes>{source_info.metadata},
                                     .source_tags = std::move(source_tags),
+                                    .source_tags_reader = std::move(source_tags_reader),
                                     .source_if_match = object_from.etag,
                                     .source_version_id = source_version_id});
                         }

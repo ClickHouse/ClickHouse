@@ -159,6 +159,8 @@ namespace
         const String idempotency_id
             = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
         const S3CopyFileSettings copy_settings;
+        /// What `S3CopyFileSettings::source_tags_reader` returned, once it has been called.
+        std::optional<ObjectAttributes> source_tags;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -204,10 +206,21 @@ namespace
 
         /// Restate tags that `CopyObject` would preserve.
         template <typename RequestType>
-        void applySourceTags(RequestType & request) const
+        void applySourceTags(RequestType & request)
         {
-            if (copy_settings.source_tags.has_value() && !copy_settings.source_tags->empty())
-                request.SetTagging(urlEncodeTagSet(*copy_settings.source_tags));
+            /// Read here rather than by the caller, because only the requests that create the object anew need the tags.
+            /// A `PutObject` that falls back to a multipart upload comes here twice, so the tags are kept.
+            if (!source_tags.has_value() && copy_settings.source_tags_reader)
+                source_tags = copy_settings.source_tags_reader();
+            const auto & tags = source_tags.has_value() ? source_tags : copy_settings.source_tags;
+            if (tags.has_value() && !tags->empty())
+                request.SetTagging(urlEncodeTagSet(*tags));
+        }
+
+        /// The user metadata of an object created anew: what the caller asked for, or else the metadata of the source.
+        const std::optional<ObjectAttributes> & metadataOfNewObject() const
+        {
+            return object_metadata.has_value() ? object_metadata : copy_settings.source_metadata;
         }
 
         void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
@@ -220,7 +233,7 @@ namespace
             applySourceHeaders(request);
             applySourceTags(request);
 
-            auto metadata = object_metadata.value_or(ObjectAttributes{});
+            auto metadata = metadataOfNewObject().value_or(ObjectAttributes{});
             /// S3 caps user metadata at 2 KiB, so the id is left out where it would not fit beside the source's own.
             size_t metadata_size = 0;
             for (const auto & [key, value] : metadata)
@@ -622,8 +635,8 @@ namespace
             request.SetContentLength(size);
             request.SetBody(createS3UploadBody(create_read_buffer, offset, size));
 
-            if (object_metadata.has_value())
-                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
+            if (const auto & metadata = metadataOfNewObject(); metadata.has_value())
+                request.SetMetadata(S3::objectAttributesToAwsMap(metadata.value()));
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())

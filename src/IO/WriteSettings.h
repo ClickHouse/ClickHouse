@@ -57,7 +57,11 @@ struct WriteSettings
     /// only this names the one the copy must read. Empty lets the copy resolve the key itself.
     std::string object_storage_copy_source_version_id;
 
-    /// Whether a guarded copy restates the source object's tags, which needs permission to read them.
+    /// Whether a copy that creates the destination anew (anything but a plain `CopyObject`) restates the user metadata
+    /// and the headers of the source, which `CopyObject` carries for free. A guarded copy always does.
+    bool object_storage_copy_preserve_source_properties = false;
+
+    /// Whether such a copy also restates the source object's tags, which needs permission to read them.
     /// When false the copy keeps the pre-guard permission set and does not carry the tags over.
     bool object_storage_copy_preserve_source_tags = true;
 

@@ -790,8 +790,13 @@ void S3ObjectStorage::copyObject( // NOLINT
         /// A caller that has already inspected the source names the version it saw, so this lookup and
         /// everything it feeds describe that generation rather than whatever the key points at now.
         const String & pinned_version_id = write_settings.object_storage_copy_source_version_id;
-        auto source_info
-            = S3::getObjectInfo(*current_client, src_bucket, src_key, pinned_version_id, /*with_metadata=*/false, /*with_tags=*/false);
+        /// A guarded copy always creates the destination anew. An unguarded one may still do so (the native copy is disabled,
+        /// the file takes a multipart copy, or `CopyObject` falls back), which `copyS3File` decides, so it is given the
+        /// properties of the source whenever the caller wants them kept and restates them only on those requests.
+        const bool restates_source_properties = guarded_copy || write_settings.object_storage_copy_preserve_source_properties;
+        auto source_info = S3::getObjectInfo(
+            *current_client, src_bucket, src_key, pinned_version_id,
+            /*with_metadata=*/restates_source_properties && !object_to_attributes.has_value(), /*with_tags=*/false);
         /// Everything below must describe the generation this HEAD saw, so a same-key re-upload cannot
         /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
         const String source_version_id
@@ -806,6 +811,10 @@ void S3ObjectStorage::copyObject( // NOLINT
         std::optional<ObjectAttributes> source_tags;
         if (guarded_copy && write_settings.object_storage_copy_preserve_source_tags)
             source_tags = S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id);
+        /// An unguarded copy reads them only if it gets to a request that has to restate them.
+        std::function<ObjectAttributes()> source_tags_reader;
+        if (!guarded_copy && restates_source_properties && write_settings.object_storage_copy_preserve_source_tags)
+            source_tags_reader = [&] { return S3::getObjectTags(*current_client, src_bucket, src_key, source_version_id); };
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
         auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
@@ -840,9 +849,13 @@ void S3ObjectStorage::copyObject( // NOLINT
             object_to_attributes,
             S3CopyFileSettings{
                 .if_none_match = write_settings.object_storage_write_if_none_match,
-                .source_headers = guarded_copy ? std::optional<S3::ObjectHeaders>{source_info.headers}
-                                               : std::optional<S3::ObjectHeaders>{},
+                .source_headers = restates_source_properties ? std::optional<S3::ObjectHeaders>{source_info.headers}
+                                                             : std::optional<S3::ObjectHeaders>{},
+                .source_metadata = restates_source_properties && !object_to_attributes.has_value()
+                    ? std::optional<ObjectAttributes>{source_info.metadata}
+                    : std::optional<ObjectAttributes>{},
                 .source_tags = std::move(source_tags),
+                .source_tags_reader = std::move(source_tags_reader),
                 .source_if_match = source_if_match,
                 .source_version_id = source_version_id});
     }
