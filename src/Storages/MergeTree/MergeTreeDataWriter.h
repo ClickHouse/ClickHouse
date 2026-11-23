@@ -161,11 +161,6 @@ public:
         IColumn::Permutation *& permutation,
         const MergeTreeData::MergingParams & merging_params);
 
-    /// Prediction of the part size for choosing its format: like `Block::bytes`, but the default values inside a `Nullable`
-    /// column (normally the payload of its NULL rows) are not counted, because they compress to nothing.
-    static size_t estimatePartSize(const Block & block);
-    static size_t estimateColumnSize(const IColumn & column);
-
 private:
     MergeTreeTemporaryPartPtr writeTempPartImpl(
         BlockWithPartition & block_with_partition,

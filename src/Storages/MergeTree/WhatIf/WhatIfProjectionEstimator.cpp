@@ -355,8 +355,8 @@ std::pair<size_t, size_t> calculatedBlockBytes(const Block & block)
         const auto * states = typeid_cast<const ColumnAggregateFunction *>(elem.column.get());
         if (!states)
         {
-            shared += MergeTreeDataWriter::estimateColumnSize(*elem.column);
-            owned += MergeTreeDataWriter::estimateColumnSize(*elem.column);
+            shared += elem.column->byteSize();
+            owned += elem.column->byteSize();
             continue;
         }
         auto copy = states->cloneEmpty();
@@ -436,7 +436,7 @@ String buildProjectionPart(
     auto add = [&](ProjectionPartData & target, MutableColumns & keys, Block projected, bool merged_states)
     {
         /// the writer chooses the part format before the key expression and sizes the granules after it
-        target.format_bytes += MergeTreeDataWriter::estimatePartSize(projected);
+        target.format_bytes += projected.bytes();
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!projected.has(required))
@@ -571,7 +571,7 @@ String buildProjectionPart(
             MutableColumns materialized_keys;
             add(*out.materialized, materialized_keys, mergeGroups(projection, {mutation_projected}), true);
             finish(*out.materialized, materialized_keys);
-            out.materialized->format_bytes = MergeTreeDataWriter::estimatePartSize(mutation_projected);
+            out.materialized->format_bytes = mutation_projected.bytes();
             /// the part does not record the settings of its insert, so the format of each block of the insert is possible
             const auto & merge_tree = read_step->getMergeTreeData();
             const auto [shared_bytes, owned_bytes] = calculatedBlockBytes(merged);
