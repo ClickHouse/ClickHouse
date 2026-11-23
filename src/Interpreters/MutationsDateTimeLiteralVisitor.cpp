@@ -1,4 +1,5 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
+#include <functional>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -229,6 +230,37 @@ const std::unordered_set<String> in_functions = {
     "in", "notIn", "globalIn", "globalNotIn",
 };
 
+/// Functions whose result depends on the exact type of an argument.
+const std::unordered_set<String> type_inspecting_functions = {
+    "toTypeName", "toColumnTypeName", "dumpColumnStructure", "defaultValueOfArgumentType",
+    "dynamicType", "dynamicElement", "variantType", "variantElement", "getTypeSerializationStreams",
+};
+
+/// A `Dynamic`, `Variant` or `JSON` column keeps the exact type of what is stored in it, so the timezone
+/// of the type would be visible there. Such assignments are left as they were submitted.
+bool keepsExactType(const String & column_name, const ColumnsDescription & columns)
+{
+    const auto * desc = columns.tryGet(column_name);
+    return desc && (desc->type->hasDynamicStructure() || desc->type->getName().contains("Variant"));
+}
+
+/// An alias can be used where the function that returns the type of its argument is, and the rewritten call may be the alias.
+bool inspectsTypeOfAlias(const ASTPtr & ast, const ColumnsDescription & columns)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && type_inspecting_functions.contains(function->name) && function->arguments)
+    {
+        std::function<bool(const ASTPtr &)> has_alias = [&](const ASTPtr & node)
+        {
+            if (const auto * identifier = node->as<ASTIdentifier>(); identifier && !columns.has(identifier->name()))
+                return true;
+            return std::any_of(node->children.begin(), node->children.end(), has_alias);
+        };
+        if (has_alias(function->arguments))
+            return true;
+    }
+    return std::any_of(ast->children.begin(), ast->children.end(), [&](const ASTPtr & child) { return inspectsTypeOfAlias(child, columns); });
+}
+
 class RewriteDateTimeLiteralsMatcher
 {
 public:
@@ -241,7 +273,16 @@ public:
 
     static bool needChildVisit(const ASTPtr & ast, const ASTPtr & /*child*/)
     {
-        return !ast->as<ASTSelectQuery>();
+        if (ast->as<ASTSelectQuery>())
+            return false;
+
+        /// The timezone is made explicit by changing the type of the rewritten call, from `DateTime` to
+        /// `DateTime('tz')`. The value is the same, but a function that returns the name of its argument's type
+        /// would report the changed one. Leave such expressions as they were submitted: they do not depend on the value.
+        if (const auto * function = ast->as<ASTFunction>())
+            return !type_inspecting_functions.contains(function->name);
+
+        return true;
     }
 
     static void visit(ASTPtr & ast, Data & data)
@@ -315,10 +356,16 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
     {
         ASTPtr update_assignments = new_command.update_assignments->clone();
         remove_child(new_command.children, new_command.update_assignments);
-        visitor.visit(update_assignments);
+        for (auto & child : update_assignments->children)
+        {
+            const auto * assignment = child->as<ASTAssignment>();
+            if ((assignment && keepsExactType(assignment->column_name, columns)) || inspectsTypeOfAlias(child, columns))
+                continue;
+            visitor.visit(child);
+        }
         new_command.update_assignments = new_command.children.emplace_back(std::move(update_assignments)).get();
     }
-    if (new_command.predicate)
+    if (new_command.predicate && !inspectsTypeOfAlias(new_command.predicate, columns))
     {
         ASTPtr predicate = new_command.predicate->clone();
         remove_child(new_command.children, new_command.predicate);

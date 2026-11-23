@@ -53,3 +53,22 @@ ALTER TABLE t_mut_fn_tz2 DELETE WHERE time = (CAST('2000-01-01 01:00:00' AS Date
 SELECT id FROM t_mut_fn_tz2 ORDER BY id;
 
 DROP TABLE t_mut_fn_tz2;
+
+-- The timezone is made explicit by changing the type of the call, so what depends on the exact type is left as it was submitted.
+DROP TABLE IF EXISTS t_mut_fn_tz3;
+CREATE TABLE t_mut_fn_tz3 (id UInt8, v String, d Dynamic) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_mut_fn_tz3 (id, v) VALUES (1, 'DateTime'), (9, 'DateTime(\'America/Denver\')'), (10, 'DateTime'), (11, 'DateTime(\'America/Denver\')');
+
+-- SELECT matches ids 1 and 10, the type name is `DateTime` here.
+ALTER TABLE t_mut_fn_tz3 DELETE WHERE v = toTypeName(toDateTime('2000-01-01 01:00:00'));
+ALTER TABLE t_mut_fn_tz3 DELETE WHERE v = toTypeName(CAST('2000-01-01 01:00:00' AS DateTime));
+INSERT INTO t_mut_fn_tz3 (id, v) VALUES (12, 'DateTime'), (13, 'DateTime(\'America/Denver\')');
+-- The same through an alias: the type of `x` is `DateTime` too, and the row with id 12 goes.
+ALTER TABLE t_mut_fn_tz3 DELETE WHERE v = toTypeName(x) AND (toDateTime('2000-01-01 01:00:00') AS x) IS NOT NULL;
+-- A `Dynamic` column keeps the exact type of what is stored in it.
+ALTER TABLE t_mut_fn_tz3 UPDATE d = toDateTime('2000-01-01 01:00:00') WHERE id = 9;
+
+SELECT id FROM t_mut_fn_tz3 ORDER BY id;
+SELECT dynamicType(d) FROM t_mut_fn_tz3 WHERE id = 9;
+
+DROP TABLE t_mut_fn_tz3;
