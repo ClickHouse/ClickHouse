@@ -28,6 +28,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -534,9 +535,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         const auto & join_key_build_side = join_keys_build_side[i];
         const auto & join_key_probe_side = join_keys_probe_side[i];
 
+        DataTypePtr common_type = join_key_build_side.type;
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            auto common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
+            common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
             if (!common_type)
             {
                 /// The keys still can be joined by the values that they have in common, see
@@ -553,12 +555,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
                 return false;
             }
-            common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), join_key_build_side.type, join_key_probe_side.type));
         }
-        else
-        {
-            common_types.push_back(join_key_build_side.type);
-        }
+        common_types.push_back(JoinCommon::compareBoolKeysAsUInt8(std::move(common_type), join_key_build_side.type, join_key_probe_side.type));
     }
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
@@ -693,6 +691,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Remove algorithms that are not compatible with runtime filters
     std::erase_if(join_algorithms, [&](auto join_algorithm) { return !supports_runtime_filter(join_algorithm); });
 
+    join_step->setHasRuntimeFilters();
+
     return true;
 }
 
@@ -711,7 +711,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     /// (which then fails the bare-column check) instead of colliding with a physical
     /// column's name. Unlike that pass, nothing is attached to the step's filter and no
     /// index analysis is redone: only the applied `__applyFilter` conjuncts are registered.
-    std::vector<const ActionsDAG *> expression_dags;
+    VectorWithMemoryTracking<const ActionsDAG *> expression_dags;
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (const auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
