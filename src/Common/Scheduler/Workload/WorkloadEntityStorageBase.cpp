@@ -306,26 +306,12 @@ struct EntityChange
         return before && after && resourceUnitChanged(before, after);
     }
 
-    /// True if the change drops the entity and creates a new one of another type
-    [[nodiscard]] bool changesType() const
-    {
-        return before && after && getEntityKey(before).type != getEntityKey(after).type;
-    }
-
-    /// True if the change replaces a workload by a resource of the same name
-    [[nodiscard]] bool replacesWorkloadByResource() const
-    {
-        return changesType() && getEntityKey(after).type == WorkloadEntityType::Resource;
-    }
-
     [[nodiscard]] std::vector<IWorkloadEntityStorage::Event> toEvents() const
     {
         if (!after)
             return {{key.type, key.name, {}}};
         if (recreates())
             return {{key.type, key.name, {}}, {key.type, key.name, after}};
-        if (changesType())
-            return {{key.type, key.name, {}}, {getEntityKey(after).type, key.name, after}};
         return {{key.type, key.name, after}};
     }
 };
@@ -403,10 +389,8 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             {
                 // Rule 1: Entity can only be removed after all existing references to it are removed as well. A recreated
                 // resource (cost unit change) is exempt: its create event follows the drop immediately, so its references
-                // stay valid between changes. A resource replaced by a workload is also exempt: the workload must exist
-                // before its new children are attached (rules 2 and 3), and a `FOR` clause naming a missing resource is
-                // harmless until its workload is updated.
-                if (change.recreates() || (change.changesType() && !change.replacesWorkloadByResource()))
+                // stay valid between changes, while waiting for them would make a cycle with rule 2.
+                if (change.recreates())
                     continue;
                 for (const auto & source : old_sources[change.key])
                 {
@@ -417,12 +401,11 @@ std::vector<EntityChange> topologicallySortedChanges(const std::vector<EntityCha
             else // CREATE || CREATE OR REPLACE
             {
                 // Rule 2: Entity can only be created or updated after all changed entities it references. A dropped target
-                // or a workload replaced by a resource is not waited for: its drop waits for its old children (rule 1),
-                // so the rules form no cycle.
+                // (a `FOR` clause may name a hidden resource) is not waited for, so nothing waits for a dropped entity and
+                // the rules form no cycle.
                 for (const auto & target : new_targets[change.key])
                 {
-                    if (auto it = change_by_key.find(target);
-                        it != change_by_key.end() && it->second->after && !it->second->replacesWorkloadByResource())
+                    if (auto it = change_by_key.find(target); it != change_by_key.end() && it->second->after)
                         dependencies[change.key].insert(target);
                 }
 
