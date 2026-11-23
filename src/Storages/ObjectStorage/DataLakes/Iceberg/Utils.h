@@ -220,13 +220,8 @@ FileCategory inspectFileCategory(const String & relative_path);
 Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object);
 
 /// If `sort_description` is set, it receives the order over the key columns `sortBlockByKeyDescription` appends, NULLs placed per `null-order`.
-/// The source fields of the sort order are looked up in `schema`, the current schema of the metadata by default.
 KeyDescription getSortingKeyDescriptionFromMetadata(
-    Poco::JSON::Object::Ptr metadata_object,
-    const NamesAndTypesList & ch_schema,
-    ContextPtr local_context,
-    SortDescription * sort_description = nullptr,
-    Poco::JSON::Object::Ptr schema = nullptr);
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description = nullptr);
 /// Sorts the block by the key `sort_description`, appending computed key columns under names no block column has; `result_sort_description` is pointed at the sort columns.
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context);
 

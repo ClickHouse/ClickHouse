@@ -10,8 +10,12 @@
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
@@ -41,6 +45,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/Decimal.h>
@@ -485,6 +490,73 @@ void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value
         setVersionedFieldNull(rec, field_name);
 }
 
+}
+
+/// The schema with id `schema_id` among the schemas of `metadata`; null if there is none.
+static Poco::JSON::Object::Ptr getSchemaById(const Poco::JSON::Object::Ptr & metadata, Int64 schema_id)
+{
+    auto schemas = metadata->getArray(Iceberg::f_schemas);
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(static_cast<UInt32>(i));
+        if (schema->getValue<Int64>(Iceberg::f_schema_id) == schema_id)
+            return schema;
+    }
+    return nullptr;
+}
+
+/// Throws if the column `path` of type `type`, or one of its nested fields, denotes another field in `current_field_ids` than in
+/// `planned_field_ids`, as a name does after a column is renamed and another one is added under its name. A name absent from the
+/// current schema is left to `validateIcebergFieldIds`, which rejects it when the data file is written. The paths are the ones
+/// `validateIcebergFieldIds` checks.
+static void checkFieldIdsKept(
+    const DataTypePtr & type, const String & path, const ColumnNameToFieldId & planned_field_ids, const ColumnNameToFieldId & current_field_ids)
+{
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            checkFieldIdsKept(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, planned_field_ids, current_field_ids);
+            return;
+        case TypeIndex::LowCardinality:
+            checkFieldIdsKept(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, planned_field_ids, current_field_ids);
+            return;
+        default:
+            break;
+    }
+
+    const auto current = current_field_ids.find(path);
+    if (current == current_field_ids.end())
+        return;
+    const auto planned = planned_field_ids.find(path);
+    if (planned == planned_field_ids.end() || planned->second != current->second)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Metadata changed during write operation, try again: column '{}' of the insert denotes another field of the table "
+            "than when the insert was planned",
+            path);
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            for (size_t i = 0; i < tuple.getElements().size(); ++i)
+                checkFieldIdsKept(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), planned_field_ids, current_field_ids);
+            break;
+        }
+        case TypeIndex::Array:
+            checkFieldIdsKept(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", planned_field_ids, current_field_ids);
+            break;
+        case TypeIndex::Map:
+        {
+            const auto & map = assert_cast<const DataTypeMap &>(*type);
+            checkFieldIdsKept(map.getKeyType(), path + ".key", planned_field_ids, current_field_ids);
+            checkFieldIdsKept(map.getValueType(), path + ".value", planned_field_ids, current_field_ids);
+            break;
+        }
+        default:
+            break;
+    }
 }
 
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
@@ -1399,31 +1471,34 @@ void IcebergStorageSink::readLatestMetadata()
     const auto schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
     if (is_retry)
     {
-        if (schema_id != base_schema_id)
+        if (schema_id != current_schema_id)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
         /// The schema, the partition spec and the sort order stay as on the first read. The data files and the manifests are already written with them.
         return;
     }
-    base_schema_id = schema_id;
+    current_schema_id = schema_id;
+    current_schema = getCurrentSchema(metadata);
 
-    /// The inserted columns are matched by name in the schema the query planned them with, not in the latest one, like
-    /// a write of the Java implementation does: when a column is renamed and another one is added under its name meanwhile,
-    /// the data keeps the field id of the column the query meant. The metadata keeps the earlier schemas of the table.
-    current_schema_id = planned_schema_id.value_or(schema_id);
-    auto schemas = metadata->getArray(Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
+    /// The data files are written with the current schema, which the committed snapshot records: a reader takes
+    /// the names of the columns in a file from the schema of its snapshot. The columns of the insert were matched
+    /// by name in the schema it was planned with, so each name must still denote the same field. Otherwise the data
+    /// of a column renamed while another one was added under its name would be written to the new field.
+    if (planned_schema_id && *planned_schema_id != current_schema_id)
     {
-        if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-        {
-            current_schema = schemas->getObject(static_cast<UInt32>(i));
-        }
+        const auto planned_schema = getSchemaById(metadata, *planned_schema_id);
+        if (!planned_schema)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Metadata changed during write operation, try again: the table metadata has no schema with id {} any more, "
+                "which the insert was planned with",
+                *planned_schema_id);
+
+        const auto planned_mapper = Iceberg::createColumnMapperFromFields(planned_schema->getArray(Iceberg::f_fields));
+        const auto current_mapper = Iceberg::createColumnMapperFromFields(current_schema->getArray(Iceberg::f_fields));
+        for (const auto & column : *sample_block)
+            checkFieldIdsKept(
+                column.type, column.name, planned_mapper->getStorageColumnEncoding(), current_mapper->getStorageColumnEncoding());
     }
-    if (!current_schema)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Metadata changed during write operation, try again: the table metadata has no schema with id {} any more, "
-            "which the insert was planned with",
-            current_schema_id);
 
     if (metadata->has(Iceberg::f_properties))
     {
@@ -1435,8 +1510,7 @@ void IcebergStorageSink::readLatestMetadata()
     partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
-    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(
-        metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description, current_schema);
+    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context, &sort_order_description);
     /// Files sorted by a key ClickHouse orders differently from Iceberg are sorted but not tagged.
     if (!sort_description.column_names.empty() && canTagSortOrder(metadata, current_schema))
         data_file_sort_order_id = metadata->getValue<Int32>(Iceberg::f_default_sort_order_id);
@@ -1869,8 +1943,7 @@ bool IcebergStorageSink::initializeMetadata()
                     /*per_file_statistics=*/{},
                     data_file_sort_order_ids,
                     /*per_file_entry_lineage=*/{},
-                    /// The schema the data files are written with.
-                    /*schema_to_serialize=*/current_schema,
+                    /*schema_to_serialize=*/nullptr,
                     &per_file_fresh_statistics);
                 buffer_manifest_entry->finalize();
                 auto size = buffer_manifest_entry->count();
