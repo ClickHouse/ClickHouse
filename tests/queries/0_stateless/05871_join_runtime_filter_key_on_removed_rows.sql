@@ -172,7 +172,7 @@ SELECT countIf(explain LIKE '%Runtime filters:%toFloat64(d)%') FROM (EXPLAIN SEL
 SELECT count() FROM pn JOIN g ON pn.id = g.id JOIN r ON toFloat64(pn.n) = toFloat64(r.k) WHERE pn.b + g.flag = 2;
 
 -- An explicit PREWHERE, evaluated in one step with the filter moved into it.
-SELECT count(), sum(q.id) FROM (SELECT id, s FROM p2 PREWHERE b = 1) AS q JOIN r32 ON IPv4StringToNum(q.s) = r32.k SETTINGS optimize_prewhere_after_pushdown = 1, enable_multiple_prewhere_read_steps = 0;
+SELECT count(), sum(q.id) FROM (SELECT id, s FROM p2 PREWHERE b = 1) AS q JOIN r32 ON IPv4StringToNum(q.s) = r32.k SETTINGS optimize_prewhere_after_pushdown = 1, enable_multiple_prewhere_read_steps = 0, optimize_move_to_prewhere = 1;
 
 -- FINAL removes the rows of a collapsed group.
 CREATE TABLE fc (k Int32, v UInt64, sign Int8) ENGINE = CollapsingMergeTree(sign) ORDER BY k;
@@ -181,4 +181,16 @@ INSERT INTO fc VALUES (1, 5, 1), (0, 6, 1);
 INSERT INTO fc VALUES (0, 6, -1);
 CREATE TABLE rk (k Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO rk VALUES (100);
-SELECT sum(fc.v) FROM fc FINAL JOIN rk ON intDiv(100, fc.k) = rk.k;
+SELECT sum(fc.v) FROM fc FINAL JOIN rk ON intDiv(100, fc.k) = rk.k SETTINGS optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1;
+
+-- SAMPLE removes its rows after PREWHERE.
+CREATE TABLE ps (id UInt64, b UInt8) ENGINE = MergeTree ORDER BY intHash32(id) SAMPLE BY intHash32(id);
+INSERT INTO ps SELECT number, intHash32(number) < 2147483648 FROM numbers(100000);
+SELECT count(), sum(ps.id) FROM ps SAMPLE 1/2 JOIN rk ON intDiv(100, ps.b) = rk.k SETTINGS optimize_move_to_prewhere = 1;
+
+-- Lazy FINAL builds its set of keys from a read without FINAL.
+CREATE TABLE rl (k UInt64, b UInt8) ENGINE = ReplacingMergeTree ORDER BY k;
+SYSTEM STOP MERGES rl;
+INSERT INTO rl SELECT number, 0 FROM numbers(100000);
+INSERT INTO rl SELECT number, 1 FROM numbers(100000);
+SELECT count() FROM rl FINAL JOIN rk ON intDiv(100, rl.b) = rk.k SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
