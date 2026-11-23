@@ -10,7 +10,7 @@ SELECT uniqExact(a.number)
 FROM numbers_mt(4000000) AS a
 INNER JOIN (SELECT number AS k FROM numbers(400000)) AS b ON a.number % 400000 = b.k
 SETTINGS max_threads = 2, max_block_size = 4096, max_threads_min_free_memory_per_thread = 0, join_algorithm = 'hash',
-    hash_join_layout = 'serial', query_plan_join_swap_table = false,
+    hash_join_layout = 'serial', query_plan_join_swap_table = false, max_bytes_ratio_before_external_join = 0,
     -- the default size: CI randomizes the join's runtime bloom filter up to 16 MiB, which does not fit the memory limit below
     join_runtime_bloom_filter_bytes = 524288,
     collect_hash_table_stats_during_aggregation = 0, optimize_uniq_exact_radix_partitioning = 1,
