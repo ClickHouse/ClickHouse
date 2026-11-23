@@ -16,7 +16,7 @@ Schema Advisor helps you migrate your schema in ClickHouse Cloud from a recommen
 In ClickHouse, the schema decides how a table is stored: the primary key, the `ORDER BY` key, compression, indexes, and projections. A better `ORDER BY` can turn a full table scan into a read of a few granules, and a better compression codec can cut the storage a table uses. 
 Making that change on a production table requires that you have a plan, validation on the plan, and a rollout with as little downtime as possible.
 
-Schema Advisor helps you with that work. Recommendations come from your query logs, based on deterministic tests, not AI-generated.
+Schema Advisor helps you with that work. Recommendations come from your query logs in [Monitoring](/products/cloud/features/monitoring/cloud-console), based on deterministic tests, not AI-generated.
 If you want to action those recommendations, then Schema Advisor proposes the plan to help you get there.
 A durable workflow runs the SQL. You approve each step before the workflow continues.
 
@@ -69,7 +69,7 @@ Else, run impact analysis first so you can see what the change does to your quer
 
 ## Start from a recommendation {#start-from-a-recommendation}
 
-After your organization has access, open a service and go to **Monitoring**, then **Tables**. Schema Advisor shows the recommendation for a table and the queries that produced it.
+After your organization has access, open a service and go to [**Monitoring**](/products/cloud/features/monitoring/cloud-console), then **Tables**. Schema Advisor shows the recommendation for a table and the queries that produced it. See [Query insights](/products/cloud/features/sql-console-features/query-insights) for the query log those recommendations are based on.
 Recommendations come from deterministic tests on your query logs. The tests run in the background and do not consume compute on your service.
 Once you're ready to apply the recommendation, click **Generate implementation plan** at the bottom of the recommendation page.
 
@@ -114,6 +114,8 @@ In this private preview, deployment of a full table rebuild change is unavailabl
 
 ## Related pages {#related-pages}
 
+- [Monitoring in the Cloud console](/products/cloud/features/monitoring/cloud-console)
+- [Query insights](/products/cloud/features/sql-console-features/query-insights)
 - [Warehouses](/products/cloud/features/infrastructure/warehouses)
 - [Schema design](/data-modeling/schema-design)
 - [Self-service previews](/products/cloud/features/self-service-previews)
