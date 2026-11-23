@@ -673,6 +673,21 @@ NameSet checkAccessRights(
             AccessType::SELECT,
             storage_id,
             storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, query_context, storage_id));
+
+        /// An `Alias` reports the columns of the last table of its chain, and `StorageAlias::read` checks the read columns on
+        /// every table of the chain. A query that is only analyzed is not read, but can expose the structure of these columns,
+        /// e.g. the query of `CREATE VIEW`, so they are checked here the same way.
+        if (const auto * alias = storage ? storage->as<StorageAlias>() : nullptr)
+        {
+            for (const auto & [database, table] : alias->getTargetChain())
+            {
+                const StorageID target_id(database, table);
+                query_context->checkAccess(
+                    AccessType::SELECT,
+                    target_id,
+                    storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, query_context, target_id));
+            }
+        }
     }
 
     return {};

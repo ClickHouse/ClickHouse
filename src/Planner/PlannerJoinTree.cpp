@@ -450,7 +450,11 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
             continue;
 
         if (storage_id.hasDatabase())
+        {
             query_context->checkAccess(AccessType::SELECT, storage_id);
+            /// An `Alias` is read from the tables of its chain, see `checkAccessRights`.
+            StorageAlias::checkTargetChainAccessIfAlias(table_node.getStorage(), query_context, AccessType::SELECT);
+        }
     }
 }
 

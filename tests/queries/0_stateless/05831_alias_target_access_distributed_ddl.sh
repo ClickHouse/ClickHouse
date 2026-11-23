@@ -67,6 +67,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = '
 
 echo "-- the hosts do not read through an alias without the initiating user"
 # The host the query is submitted to cannot authorize the alias for the other hosts, which may have another table of this name.
+# Without `SELECT` on the target, that host already refuses to analyze the query.
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${db_p}.secret TO ${user}"
 error_as_user "CREATE TABLE ${db_a}.copy ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY tuple() AS SELECT * FROM ${db_a}.alias"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.parts WHERE database = '${db_a}' AND table = 'copy' AND active"
 # A trivial `count()` answers from the target without reading it. As the administrator, who passes the checks on the

@@ -1,0 +1,20 @@
+-- without grants on the target
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+0
+-- with SELECT on one column of the target
+ACCESS_DENIED
+ACCESS_DENIED
+OK
+hidden_name
+-- with SHOW COLUMNS on the target
+ACCESS_DENIED
+-- with SELECT on the target
+OK
+hidden_name
+salary
+-- a chain of aliases requires every hop
+ACCESS_DENIED
+OK

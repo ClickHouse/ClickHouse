@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -465,43 +466,74 @@ void IdentifierResolver::checkAccessToTableMetadata(
         }
     }
 #endif
-    auto is_visible = [&](const String & column_name)
-    {
-        return access_rights->isGranted(AccessType::SELECT, access_database, access_table_name, column_name)
-            || access_rights->isGranted(AccessType::SHOW_COLUMNS, access_database, access_table_name, column_name);
-    };
     const auto & metadata = *storage_snapshot->metadata;
     const auto & columns = metadata.getColumns();
-    for (const auto & column : columns)
+    /// Whether the user may see the structure of the table of this name with these rights.
+    auto is_table_visible = [&](const AccessRights & rights, const String & database, const String & table)
     {
-        if (is_visible(column.name))
-            return;
-
-        /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
-        /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
-        /// visible too. Grants are matched by name only, so a granted name counts only if it resolves, by the same
-        /// type-aware resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a
-        /// subcolumn of this column: a grant on `secret.no_such_subcolumn` of a scalar column `secret` reveals nothing.
-        for (const auto access_type : {AccessType::SELECT, AccessType::SHOW_COLUMNS})
+        auto is_visible = [&](const String & column_name)
         {
-            if (!columns.getSubcolumnsWithExplicitGrant(
-                     *access_rights, access_type, access_database, access_table_name, column.name).empty())
-                return;
+            return rights.isGranted(AccessType::SELECT, database, table, column_name)
+                || rights.isGranted(AccessType::SHOW_COLUMNS, database, table, column_name);
+        };
+
+        for (const auto & column : columns)
+        {
+            if (is_visible(column.name))
+            {
+                return true;
+            }
+
+            /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
+            /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so it makes the table
+            /// visible too. Grants are matched by name only, so a granted name counts only if it resolves, by the same
+            /// type-aware resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a
+            /// subcolumn of this column: a grant on `secret.no_such_subcolumn` of a scalar column `secret` reveals nothing.
+            for (const auto access_type : {AccessType::SELECT, AccessType::SHOW_COLUMNS})
+            {
+                if (!columns.getSubcolumnsWithExplicitGrant(rights, access_type, database, table, column.name).empty())
+                {
+                    return true;
+                }
+            }
+        }
+
+        /// A grant on a virtual column alone is enough to read it.
+        for (const auto & column : metadata.virtuals)
+        {
+            if (is_visible(column.name))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    if (!is_table_visible(*access_rights, access_database, access_table_name))
+    {
+        /// Not a single column of the table is visible to the user. Report the denial through the
+        /// standard check, so the message and the query log get the table-level requirement without
+        /// naming any column.
+        context->checkAccess(AccessType::SELECT, storage_id);
+    }
+
+    /// An `Alias` reports the structure of the last table of its chain, so every table of the chain must be visible as
+    /// well, as `DESCRIBE` of the alias requires. Otherwise a query that is only analyzed, such as the query of
+    /// `CREATE VIEW` or `EXPLAIN QUERY TREE`, would expose the structure of the target to a user with a grant on the
+    /// alias alone.
+    if (const auto * alias = storage->as<StorageAlias>())
+    {
+        const auto chain_access_rights = context->getAccess()->getAccessRightsWithImplicit();
+        for (const auto & [database, table] : alias->getTargetChain())
+        {
+            if (!is_table_visible(*chain_access_rights, database, table))
+            {
+                /// Not through the standard check, which would name the target to a user who may not see it.
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", storage_id.getNameForLogs());
+            }
         }
     }
-    /// A grant on a virtual column alone is enough to read it. An `Alias` reports its target's virtual columns, so there
-    /// the grant must also hold through the whole chain.
-    const auto * alias = storage->as<StorageAlias>();
-    for (const auto & column : metadata.virtuals)
-        if (is_visible(column.name)
-            && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)
-                || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name)))
-            return;
-
-    /// Not a single column of the table is visible to the user. Report the denial through the
-    /// standard check, so the message and the query log get the table-level requirement without
-    /// naming any column.
-    context->checkAccess(AccessType::SELECT, storage_id);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
