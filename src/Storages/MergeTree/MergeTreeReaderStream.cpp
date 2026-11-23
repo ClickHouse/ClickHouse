@@ -352,7 +352,7 @@ ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String 
     return counted[path];
 }
 
-size_t ReadRangesRegistry::ReadRanges::unite(CompressedBlockRanges & ranges)
+size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)
 {
     std::lock_guard lock(mutex);
     size_t bytes = 0;
@@ -395,13 +395,13 @@ size_t ReadRangesRegistry::ReadRanges::unite(CompressedBlockRanges & ranges)
     return bytes;
 }
 
-void ReadRangesRegistry::count(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
+void ReadRangesRegistry::registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
 {
     if (ranges.empty())
         return;
 
     Stopwatch watch;
-    const size_t bytes = file_ranges.unite(ranges);
+    const size_t bytes = file_ranges.add(ranges);
     (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
 }

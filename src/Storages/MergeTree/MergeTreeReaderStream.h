@@ -36,7 +36,7 @@ public:
         friend class ReadRangesRegistry;
 
         /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
-        size_t unite(CompressedBlockRanges & ranges);
+        size_t add(CompressedBlockRanges & ranges);
 
         std::mutex mutex;
         /// Merged, by their begin.
@@ -47,7 +47,7 @@ public:
     ReadRanges & getReadRanges(const String & path);
 
     /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
-    void count(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
+    void registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
 
 private:
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;

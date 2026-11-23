@@ -53,12 +53,14 @@ public:
         if (fallback_reader)
             fallback_reader->registerReadRanges();
     }
+
     void setReadRangesRegistry(ReadRangesRegistryPtr registry) override
     {
         if (fallback_reader)
             fallback_reader->setReadRangesRegistry(registry);
         IMergeTreeReader::setReadRangesRegistry(std::move(registry));
     }
+
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 

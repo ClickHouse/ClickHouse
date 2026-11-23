@@ -1187,10 +1187,10 @@ void MergeTreeReaderWide::registerReadRanges()
     {
         if (stream_ranges.ranges.empty())
             continue;
-        if (!stream_ranges.counted)
-            stream_ranges.counted = &read_ranges_registry->getReadRanges(
+        if (!stream_ranges.read_ranges)
+            stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-        read_ranges_registry->count(*stream_ranges.counted, stream_ranges.ranges);
+        read_ranges_registry->registerRanges(*stream_ranges.read_ranges, stream_ranges.ranges);
     }
 }
 

@@ -145,7 +145,7 @@ private:
     {
         CompressedBlockRanges ranges;
         /// Of `read_ranges_registry`, looked up at the first flush.
-        ReadRangesRegistry::ReadRanges * counted = nullptr;
+        ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
     };
     std::mutex ranges_read_mutex;
     std::unordered_map<String, StreamRangesRead> ranges_read;

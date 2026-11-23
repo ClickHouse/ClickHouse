@@ -50,7 +50,7 @@ private:
     /// Read since the last `registerReadRanges`, see `CompressedReadBufferBase::setRangesReadSink`.
     CompressedBlockRanges ranges_read;
     /// Of `read_ranges_registry`, looked up at the first flush.
-    ReadRangesRegistry::ReadRanges * counted_ranges = nullptr;
+    ReadRangesRegistry::ReadRanges * read_ranges = nullptr;
 };
 
 }

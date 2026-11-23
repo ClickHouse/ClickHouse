@@ -49,10 +49,10 @@ void MergeTreeReaderCompactSingleBuffer::registerReadRanges()
     if (!read_ranges_registry)
         return;
 
-    if (!counted_ranges)
-        counted_ranges = &read_ranges_registry->getReadRanges(
+    if (!read_ranges)
+        read_ranges = &read_ranges_registry->getReadRanges(
             data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
-    read_ranges_registry->count(*counted_ranges, ranges_read);
+    read_ranges_registry->registerRanges(*read_ranges, ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(
