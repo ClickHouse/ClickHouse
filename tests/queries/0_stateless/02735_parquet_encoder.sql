@@ -1,4 +1,5 @@
 -- Tags: long, no-fasttest, no-parallel, no-tsan, no-msan, no-asan
+-- Random settings limits: output_format_parquet_max_dictionary_size=(1048576, None)
 
 set optimize_trivial_insert_select = 0;
 set output_format_parquet_row_group_size = 1000;
