@@ -41,8 +41,6 @@ public:
         return signature;
     }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-
 protected:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
@@ -50,8 +48,6 @@ protected:
 
     const char * getStorageEngineName() const override { return "URLCluster"; }
     const char * getNonClusteredStorageEngineName() const override { return "URL"; }
-
-    RemoteDescriptionCaller globCaller() const override { return tableFunctionURLClusterCaller(); }
 };
 
 }

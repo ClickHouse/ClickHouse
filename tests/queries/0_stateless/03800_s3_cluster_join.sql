@@ -1,5 +1,7 @@
 -- Tags: no-fasttest, no-parallel
 
+SET enable_analyzer = 1;
+
 -- Test LEFT JOIN
 SELECT 'LEFT JOIN';
 SELECT * 

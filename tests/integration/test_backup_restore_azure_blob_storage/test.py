@@ -1,28 +1,19 @@
 #!/usr/bin/env python3
 
-import datetime
 import io
 import os
 import time
 
 import pytest
-from azure.storage.blob import (
-    AccountSasPermissions,
-    BlobServiceClient,
-    ResourceTypes,
-    generate_account_sas,
-)
+from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
 
 
 def generate_cluster_def(port):
-    # Per-worker suffix so parallel xdist workers don't race on the generated file.
-    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
-    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        f"./_gen/named_collections{suffix}.xml",
+        "./_gen/named_collections.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -73,46 +64,6 @@ def generate_cluster_def(port):
                     </external>
                 </volumes>
             </blob_storage_policy>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-"""
-        )
-    return path
-
-
-def generate_cluster_def_legacy_native_copy(port):
-    # Legacy-form disk (`<type>azure_blob_storage</type>`) with native copy enabled, sharing the
-    # backup target's connection string so both resolve to the same endpoint key.
-    # Per-worker suffix so parallel xdist workers don't race on the generated file.
-    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
-    suffix = f"_{worker_id}" if worker_id else ""
-    path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        f"./_gen/legacy_native_copy{suffix}.xml",
-    )
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(
-            f"""<clickhouse>
-    <storage_configuration>
-        <disks>
-            <blob_storage_disk_legacy_native_copy>
-                <type>azure_blob_storage</type>
-                <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
-                <container_name>cont</container_name>
-                <skip_access_check>false</skip_access_check>
-                <use_native_copy>true</use_native_copy>
-            </blob_storage_disk_legacy_native_copy>
-        </disks>
-        <policies>
-            <blob_storage_policy_legacy_native_copy>
-                <volumes>
-                    <main>
-                        <disk>blob_storage_disk_legacy_native_copy</disk>
-                    </main>
-                </volumes>
-            </blob_storage_policy_legacy_native_copy>
         </policies>
     </storage_configuration>
 </clickhouse>
@@ -175,13 +126,6 @@ def cluster():
             user_configs=["configs/users.xml"],
             with_azurite=True,
             with_zookeeper=True,
-        )
-        cluster.add_instance(
-            "node_legacy_native_copy",
-            main_configs=[generate_cluster_def_legacy_native_copy(port)],
-            with_azurite=True,
-            # Otherwise database-metadata copies also bump AzureCopyObject.
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node_native_copy",
@@ -300,7 +244,7 @@ def test_backup_restore(cluster):
     )
     azure_query(
         node,
-        "INSERT INTO test_simple_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        f"INSERT INTO test_simple_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_c.csv", port))
     assert get_azure_file_content("test_simple_write_c.csv", port) == '1,"a"\n'
@@ -320,14 +264,14 @@ def test_backup_restore(cluster):
         f"RESTORE TABLE test_simple_write_connection_string AS test_simple_write_connection_string_restored FROM {backup_destination};",
     )
     assert (
-        azure_query(node, "SELECT * from test_simple_write_connection_string_restored")
+        azure_query(node, f"SELECT * from test_simple_write_connection_string_restored")
         == "1\ta\n"
     )
 
 
 def test_backup_restore_diff_container(cluster):
     node = cluster.instances["node"]
-    cluster.env_variables["AZURITE_PORT"]
+    port = cluster.env_variables["AZURITE_PORT"]
     azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string_cont1")
     azure_query(
         node,
@@ -335,7 +279,7 @@ def test_backup_restore_diff_container(cluster):
     )
     azure_query(
         node,
-        "INSERT INTO test_simple_write_connection_string_cont1 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        f"INSERT INTO test_simple_write_connection_string_cont1 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     backup_name = new_backup_name()
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont1', '{backup_name}')"
@@ -352,7 +296,7 @@ def test_backup_restore_diff_container(cluster):
     )
     assert (
         azure_query(
-            node, "SELECT * from test_simple_write_connection_string_restored_cont1"
+            node, f"SELECT * from test_simple_write_connection_string_restored_cont1"
         )
         == "1\ta\n"
     )
@@ -368,7 +312,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
     )
     azure_query(
         node,
-        "INSERT INTO test_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        f"INSERT INTO test_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write.csv", port))
     assert get_azure_file_content("test_simple_write.csv", port) == '1,"a"\n'
@@ -386,7 +330,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
         f"RESTORE TABLE test_write_connection_string AS test_write_connection_string_restored FROM {backup_destination};",
     )
     assert (
-        azure_query(node, "SELECT * from test_write_connection_string_restored")
+        azure_query(node, f"SELECT * from test_write_connection_string_restored")
         == "1\ta\n"
     )
 
@@ -401,7 +345,7 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
     )
     azure_query(
         node,
-        "INSERT INTO test_write_connection_string_2 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        f"INSERT INTO test_write_connection_string_2 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
     )
     print(get_azure_file_content("test_simple_write_2.csv", port))
     assert get_azure_file_content("test_simple_write_2.csv", port) == '1,"a"\n'
@@ -419,7 +363,7 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         f"RESTORE TABLE test_write_connection_string_2 AS test_write_connection_string_restored_2 FROM {backup_destination};",
     )
     assert (
-        azure_query(node, "SELECT * from test_write_connection_string_restored_2")
+        azure_query(node, f"SELECT * from test_write_connection_string_restored_2")
         == "1\ta\n"
     )
 
@@ -520,12 +464,12 @@ def test_backup_restore_on_merge_tree(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        """
+        f"""
         DROP TABLE IF EXISTS test_simple_merge_tree;
         CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'
         """,
     )
-    azure_query(node, "INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
+    azure_query(node, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
     backup_name = new_backup_name()
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
@@ -533,16 +477,16 @@ def test_backup_restore_on_merge_tree(cluster):
         node,
         f"BACKUP TABLE test_simple_merge_tree TO {backup_destination}",
     )
-    azure_query(node, "DROP TABLE IF EXISTS test_simple_merge_tree_restored")
+    azure_query(node, f"DROP TABLE IF EXISTS test_simple_merge_tree_restored")
     azure_query(
         node,
         f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored FROM {backup_destination};",
     )
     assert (
-        azure_query(node, "SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
+        azure_query(node, f"SELECT * from test_simple_merge_tree_restored") == "1\ta\n"
     )
-    azure_query(node, "DROP TABLE test_simple_merge_tree")
-    azure_query(node, "DROP TABLE test_simple_merge_tree_restored")
+    azure_query(node, f"DROP TABLE test_simple_merge_tree")
+    azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")
 
 
 @pytest.mark.parametrize("max_single_part_upload_size", [32 * 1024 * 1024, 1])
@@ -744,17 +688,12 @@ def test_backup_restore_correct_block_ids(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        """
+        f"""
         DROP TABLE IF EXISTS test_simple_merge_tree;
-        -- Pin the default codec to `LZ4` for the whole part: the test splits `data.bin` into fixed-size
-        -- upload blocks and asserts a minimum block count, so the compressed part size must not depend on
-        -- the server default codec. This is a compact part, so `data.bin` is the combined stream of all
-        -- columns; pinning only a per-column `CODEC` would leave the `key` column on the server default
-        -- (`ZSTD(3)`), which compresses it smaller and drops the block count below the threshold.
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
-        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic', default_compression_codec = 'LZ4'""",
+        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic'""",
     )
     data_query = "SELECT number, repeat('a', 100) FROM numbers(1000)"
     azure_query(
@@ -840,7 +779,7 @@ def test_backup_restore_with_checksum_data_file_name(cluster):
         f"CREATE TABLE test (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c.csv', 'CSV')",
     )
     azure_query(
-        node, "INSERT INTO test SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')"
+        node, f"INSERT INTO test SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')"
     )
 
     backup_name = new_backup_name()
@@ -855,19 +794,19 @@ def test_backup_restore_with_checksum_data_file_name(cluster):
         node,
         f"RESTORE TABLE test AS test_restored FROM {backup_destination};",
     )
-    assert azure_query(node, "SELECT * from test_restored") == "1\ta\n"
+    assert azure_query(node, f"SELECT * from test_restored") == "1\ta\n"
 
 
 def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
     node = cluster.instances["node"]
     azure_query(
         node,
-        """
+        f"""
         DROP TABLE IF EXISTS test;
         CREATE TABLE test(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'
         """,
     )
-    azure_query(node, "INSERT INTO test VALUES (1, 'a')")
+    azure_query(node, f"INSERT INTO test VALUES (1, 'a')")
 
     backup_name = new_backup_name()
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
@@ -875,36 +814,14 @@ def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
         node,
         f"BACKUP TABLE test TO {backup_destination} SETTINGS data_file_name_generator='checksum'",
     )
-    azure_query(node, "DROP TABLE IF EXISTS test_restored")
+    azure_query(node, f"DROP TABLE IF EXISTS test_restored")
     azure_query(
         node,
         f"RESTORE TABLE test AS test_restored FROM {backup_destination};",
     )
-    assert azure_query(node, "SELECT * from test_restored") == "1\ta\n"
-    azure_query(node, "DROP TABLE test")
-    azure_query(node, "DROP TABLE test_restored")
-
-
-def test_backup_zip_not_supported(cluster):
-    # Zip backups require seeking, which makes each read a separate HTTP request
-    # on object storage. They must be rejected early with a clear error (issue #53483).
-    node = cluster.instances["node"]
-    azure_query(node, "DROP TABLE IF EXISTS test_zip_not_supported")
-    azure_query(
-        node,
-        f"CREATE TABLE test_zip_not_supported (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_zip_not_supported.csv', 'CSV')",
-    )
-    azure_query(node, "INSERT INTO test_zip_not_supported VALUES (1, 'a')")
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}.zip')"
-    error = azure_query(
-        node,
-        f"BACKUP TABLE test_zip_not_supported TO {backup_destination}",
-        expect_error=True,
-    )
-    assert (
-        "Zip archive format is not supported for AzureBlobStorage backups" in error
-    ), error
-    azure_query(node, "DROP TABLE test_zip_not_supported")
+    assert azure_query(node, f"SELECT * from test_restored") == "1\ta\n"
+    azure_query(node, f"DROP TABLE test")
+    azure_query(node, f"DROP TABLE test_restored")
 
 
 def get_profile_event_count(node, event):
@@ -913,97 +830,6 @@ def get_profile_event_count(node, event):
             node, f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
         ).strip()
     )
-
-
-def test_backup_legacy_disk_endpoint_settings_loaded(cluster):
-    # A legacy `<type>azure_blob_storage</type>` disk's use_native_copy=true must be honored on
-    # BACKUP/RESTORE; before the fix such disks were skipped while building the endpoint map.
-    node = cluster.instances["node_legacy_native_copy"]
-    azure_query(node, "DROP TABLE IF EXISTS test_legacy_native_copy SYNC")
-    azure_query(
-        node,
-        "CREATE TABLE test_legacy_native_copy(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy_legacy_native_copy'",
-    )
-    azure_query(node, "INSERT INTO test_legacy_native_copy VALUES (1, 'a')")
-
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
-    azure_query(node, f"BACKUP TABLE test_legacy_native_copy TO {backup_destination}")
-    azure_query(node, "DROP TABLE IF EXISTS test_legacy_native_copy_restored")
-
-    before = get_profile_event_count(node, "AzureCopyObject")
-    azure_query(
-        node,
-        f"RESTORE TABLE test_legacy_native_copy AS test_legacy_native_copy_restored FROM {backup_destination};",
-    )
-    after = get_profile_event_count(node, "AzureCopyObject")
-    assert (
-        after > before
-    ), "legacy-declared disk's use_native_copy=true must enable native copy"
-    assert (
-        azure_query(node, "SELECT * from test_legacy_native_copy_restored") == "1\ta\n"
-    )
-
-    azure_query(node, "DROP TABLE test_legacy_native_copy")
-    azure_query(node, "DROP TABLE test_legacy_native_copy_restored")
-
-
-def test_connection_string_secrets_not_logged(cluster):
-    # The disk is configured by an account key connection string, which is also its description. The
-    # backup uses a SAS connection string, which the SDK appends to the blob service url as its query.
-    node = cluster.instances["node_legacy_native_copy"]
-    sas = generate_account_sas(
-        "devstoreaccount1",
-        "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-        resource_types=ResourceTypes(service=True, container=True, object=True),
-        permission=AccountSasPermissions(
-            read=True, write=True, delete=True, list=True, add=True, create=True
-        ),
-        expiry=datetime.datetime.now(datetime.timezone.utc)
-        + datetime.timedelta(hours=1),
-    )
-    # URL-encoded, so it has no grep metacharacters.
-    sig = sas.split("sig=")[1].split("&")[0]
-    connection_string = f"BlobEndpoint={cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']};SharedAccessSignature={sas}"
-
-    azure_query(node, "DROP TABLE IF EXISTS test_secrets_not_logged SYNC")
-    azure_query(
-        node,
-        "CREATE TABLE test_secrets_not_logged(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy_legacy_native_copy'",
-    )
-    azure_query(node, "INSERT INTO test_secrets_not_logged VALUES (1, 'a')")
-
-    backup_destination = (
-        f"AzureBlobStorage('{connection_string}', 'cont', '{new_backup_name()}')"
-    )
-    azure_query(node, f"BACKUP TABLE test_secrets_not_logged TO {backup_destination}")
-    azure_query(node, "DROP TABLE IF EXISTS test_secrets_not_logged_restored")
-    azure_query(
-        node,
-        f"RESTORE TABLE test_secrets_not_logged AS test_secrets_not_logged_restored FROM {backup_destination}",
-    )
-    assert (
-        azure_query(node, "SELECT * from test_secrets_not_logged_restored") == "1\ta\n"
-    )
-
-    function = f"azureBlobStorage('{connection_string}', 'cont', 'test_secrets_not_logged.csv'"
-    azure_query(
-        node,
-        f"INSERT INTO TABLE FUNCTION {function}, 'CSV', 'auto', 'x UInt64') SELECT 42 SETTINGS azure_truncate_on_insert = 1",
-    )
-    assert azure_query(node, f"SELECT * FROM {function})") == "42\n"
-    sources = azure_query(
-        node,
-        "SELECT source FROM system.schema_inference_cache WHERE source LIKE '%test_secrets_not_logged.csv'",
-    )
-    assert sources != "" and sig not in sources
-
-    assert node.contains_in_log("BackupWriterAzureBlobStorage: Source description")
-    assert node.contains_in_log("BackupReaderAzureBlobStorage: Source description")
-    assert not node.contains_in_log("Source description.*Eby8vdM02xNO")
-    assert not node.contains_in_log(f"Source description.*{sig}")
-
-    azure_query(node, "DROP TABLE test_secrets_not_logged")
-    azure_query(node, "DROP TABLE test_secrets_not_logged_restored")
 
 
 def test_reload_config_keeps_azure_endpoint_settings(cluster):

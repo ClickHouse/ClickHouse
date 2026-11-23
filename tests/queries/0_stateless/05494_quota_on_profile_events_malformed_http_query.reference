@@ -1,8 +1,0 @@
--- malformed queries fail to parse
-SYNTAX_ERROR
-SYNTAX_ERROR
-SYNTAX_ERROR
--- the parsing time is charged
-1	3
--- the following query is rejected
-QUOTA_EXCEEDED

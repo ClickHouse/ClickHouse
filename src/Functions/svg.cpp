@@ -10,10 +10,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 namespace
 {
 
-class FunctionSvg final : public IFunction
+class FunctionSvg : public IFunction
 {
 public:
     static inline const char * name = "svg";
@@ -25,34 +31,43 @@ public:
         return std::make_shared<FunctionSvg>();
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override
+    bool isVariadic() const override
     {
         return true;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(Any, [String]) -> String";
+        if (arguments.empty() || arguments.size() > 2)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments: expected 1 or 2 arguments");
+        }
+        if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
+        }
+
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnString::create();
         bool has_style = arguments.size() > 1;
@@ -81,7 +96,7 @@ public:
         return res_column;
     }
 
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override
+    bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
@@ -96,11 +111,11 @@ Returns a string representation of a geometry in [SVG](https://en.wikipedia.org/
     )";
     FunctionDocumentation::Syntax syntax = "svg(geometry[, style])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry object (Point, MultiPoint, Ring, LineString, MultiLineString, Polygon, MultiPolygon).", {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"}},
+        {"geometry", "Geometry object (Point, Ring, Polygon, MultiPolygon).", {"Point", "Ring", "Polygon", "MultiPolygon"}},
         {"style", "Optional CSS style string to apply to the SVG element.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the SVG representation of the geometry.", {"String"}};
-    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT svg((0.0, 1.0))", R"(<circle cx="0" cy="1" r="5" style=""/>)"}};
+    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT svg((0.0, 1.0))", R"(<circle cx="0" cy="-1" r="5"/>)"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

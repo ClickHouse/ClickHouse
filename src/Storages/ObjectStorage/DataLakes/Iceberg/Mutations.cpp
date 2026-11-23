@@ -1,36 +1,25 @@
-#include <Formats/ColumnNameMaps.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DataLake/Common.h>
-#include <Databases/DataLake/ICatalog.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -38,35 +27,29 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
-#include <Common/CurrentThread.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/logger_useful.h>
-#include <base/scope_guard.h>
-#include <deque>
 #include <limits>
-#include <map>
 #include <unordered_set>
-
-#include <roaring/roaring64map.hh>
-
-namespace DB::Setting
-{
-extern const SettingsNonZeroUInt64 max_block_size;
-}
 
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
-extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
-extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
+}
+
+namespace DB::Setting
+{
+extern const SettingsInt64 iceberg_expire_default_min_snapshots_to_keep;
+extern const SettingsInt64 iceberg_expire_default_max_snapshot_age_ms;
+extern const SettingsInt64 iceberg_expire_default_max_ref_age_ms;
 }
 
 namespace DB::FailPoints
@@ -79,42 +62,30 @@ namespace DB::Iceberg
 
 #if USE_AVRO
 
-static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path";
+static constexpr const char * block_datafile_path = "_path";
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
 struct DeleteFileWriteResult
 {
-    /// Metadata path (e.g. "wasb://container@account/table/data/uuid-deletes.parquet")
-    Iceberg::IcebergPathFromMetadata path;
-    Int64 total_rows{};
-    Int64 total_bytes{};
+    FileNamesGenerator::Result path;
+    Int32 total_rows;
+    Int32 total_bytes;
 };
 
 using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
 using DataFileStatisticsByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DataFileStatistics, ChunkPartitioner::PartitionKeyHasher>;
 
-/// `statistics[i]` are the statistics of `files[i]`.
-struct PartitionFiles
-{
-    std::vector<DeleteFileWriteResult> files;
-    std::vector<DataFileStatistics> statistics;
-};
-
 struct DataFileWriteResultWithStats
 {
-    std::unordered_map<ChunkPartitioner::PartitionKey, PartitionFiles, ChunkPartitioner::PartitionKeyHasher> files_by_partition;
+    DataFileWriteResultByPartitionKey delete_file;
+    DataFileStatisticsByPartitionKey delete_statistic;
 };
-
-using DeletedPositionsByDataFile = std::map<String, roaring::Roaring64Map>;
 
 struct WriteDataFilesResult
 {
     DataFileWriteResultWithStats delete_file;
-    /// Empty unless this is an UPDATE, which also writes new data files.
-    DataFileWriteResultWithStats data_file;
-    /// Null without statistics.
-    std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
+    std::optional<DataFileWriteResultWithStats> data_file;
 };
 
 static Block getPositionDeleteFileSampleBlock()
@@ -128,7 +99,7 @@ static Block getPositionDeleteFileSampleBlock()
     return Block(delete_file_columns_desc);
 }
 
-static Block getNonVirtualColumns(const Block & block, bool remove_low_cardinality = false)
+static Block getNonVirtualColumns(const Block & block)
 {
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     std::unordered_set<String> virtual_columns;
@@ -139,14 +110,7 @@ static Block getNonVirtualColumns(const Block & block, bool remove_low_cardinali
     {
         if (virtual_columns.contains(block.getNames()[i]))
             continue;
-        auto col_type = block.getDataTypes()[i];
-        auto col_data = block.getColumns()[i];
-        if (remove_low_cardinality)
-        {
-            col_type = removeLowCardinality(col_type);
-            col_data = col_data->convertToFullColumnIfLowCardinality();
-        }
-        columns.push_back(ColumnWithTypeAndName(col_data, col_type, block.getNames()[i]));
+        columns.push_back(ColumnWithTypeAndName(block.getColumns()[i], block.getDataTypes()[i], block.getNames()[i]));
     }
     return Block(columns);
 }
@@ -161,164 +125,32 @@ getPartitionedChunks(const Chunk & chunk, std::optional<ChunkPartitioner> & chun
     return unpartitioned_result;
 }
 
-/// Writes the position delete file of one data file, with positions in increasing order as the specification requires.
-/// Returns the pre-finalized write buffer, which the caller finalizes.
-static std::unique_ptr<WriteBuffer> writePositionDeleteFile(
-    const String & data_file_path,
-    const roaring::Roaring64Map & positions,
-    ContextPtr context,
-    ObjectStoragePtr object_storage,
-    const String & write_format,
-    FileNamesGenerator & generator,
-    const Iceberg::IcebergPathResolver & path_resolver,
-    const std::optional<FormatSettings> & format_settings,
-    PartitionFiles & partition_files)
-{
-    /// Registered before the object is created, so that a failed mutation removes it.
-    auto & result = partition_files.files.emplace_back(DeleteFileWriteResult{.path = generator.generatePositionDeleteFile()});
-    auto & statistics = partition_files.statistics.emplace_back(IcebergPositionDeleteTransform::getSchemaFields());
-
-    auto write_buffer = object_storage->writeObject(
-        StoredObject(path_resolver.resolve(result.path)),
-        WriteMode::Rewrite,
-        std::nullopt,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        context->getWriteSettings());
-
-    auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
-    ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
-    ColumnNameToFieldId field_ids;
-    field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
-    field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
-    column_mapper->setStorageColumnEncoding(std::move(field_ids));
-    /// `file_path` is Iceberg `string`, so mark it: without this the string-path-aware
-    /// writer would emit it as `binary` and produce spec-incompatible delete files.
-    column_mapper->setIcebergStringPaths({String(IcebergPositionDeleteTransform::data_file_path_column_name)});
-    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
-    auto output_format = FormatFactory::instance().getOutputFormat(
-        write_format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
-
-    const size_t max_block_size = context->getSettingsRef()[Setting::max_block_size];
-    const auto & file_path_column_description = delete_file_sample_block.getByPosition(0);
-    const auto & position_column_description = delete_file_sample_block.getByPosition(1);
-
-    const UInt64 num_positions = positions.cardinality();
-    UInt64 written_positions = 0;
-    ColumnPtr full_block_file_path_column;
-    auto it = positions.begin();
-    const auto end = positions.end();
-    while (it != end)
-    {
-        /// The read pipeline, which checks for a killed query or a timeout, has finished.
-        CurrentThread::checkIfNotCancelled();
-
-        auto position_column = ColumnInt64::create();
-        auto & position_data = position_column->getData();
-        position_data.reserve(std::min<UInt64>(max_block_size, num_positions - written_positions));
-        for (; it != end && position_data.size() < max_block_size; ++it)
-            position_data.push_back(static_cast<Int64>(*it));
-
-        const size_t rows = position_data.size();
-        written_positions += rows;
-        ColumnPtr position_column_ptr = std::move(position_column);
-
-        /// `data_file_path` comes from `_iceberg_metadata_file_path`, already in the metadata path format.
-        /// The statistics of a constant column are computed without scanning it.
-        ColumnPtr file_path_column = file_path_column_description.type->createColumnConst(rows, data_file_path);
-        statistics.update(Chunk(Columns{file_path_column, position_column_ptr}, rows));
-
-        if (rows == max_block_size && full_block_file_path_column)
-            file_path_column = full_block_file_path_column;
-        else
-        {
-            file_path_column = file_path_column->convertToFullColumnIfConst();
-            if (rows == max_block_size)
-                full_block_file_path_column = file_path_column;
-        }
-
-        output_format->write(Block({
-            ColumnWithTypeAndName(file_path_column, file_path_column_description.type, file_path_column_description.name),
-            ColumnWithTypeAndName(position_column_ptr, position_column_description.type, position_column_description.name)}));
-        result.total_rows += rows;
-    }
-
-    output_format->flush();
-    output_format->finalize();
-    statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), delete_file_sample_block);
-    /// Take the size before `preFinalize`, after which a small file's buffer may report 0.
-    result.total_bytes = write_buffer->count();
-    write_buffer->preFinalize();
-    return write_buffer;
-}
-
-struct PendingDeleteFileUpload
-{
-    PartitionFiles * partition_files;
-    size_t file_index;
-    std::unique_ptr<WriteBuffer> write_buffer;
-};
-
-static void finishDeleteFileUpload(
-    PendingDeleteFileUpload & upload, ObjectStoragePtr object_storage, const Iceberg::IcebergPathResolver & path_resolver)
-{
-    upload.write_buffer->finalize();
-    auto & result = upload.partition_files->files[upload.file_index];
-    if (result.total_bytes == 0)
-        result.total_bytes = object_storage->getObjectMetadata(path_resolver.resolve(result.path), /*with_tags=*/ false).size_bytes;
-    upload.write_buffer.reset();
-}
 
 static std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
-    StoragePtr storage_ptr,
+    StorageID storage_id,
     ObjectStoragePtr object_storage,
     String write_format,
     FileNamesGenerator & generator,
-    const Iceberg::IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
     std::optional<ChunkPartitioner> & chunk_partitioner,
     Poco::JSON::Object::Ptr data_schema,
-    bool write_statistics)
+    const String& blob_storage_namespace_name)
 {
     chassert(commands.size() == 1);
-    DataFileWriteResultWithStats delete_files;
+
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
+    DataFileWriteResultByPartitionKey delete_data_result;
+    DataFileStatisticsByPartitionKey delete_data_statistics;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
+    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> delete_data_writers;
 
     DataFileWriteResultByPartitionKey update_data_result;
     DataFileStatisticsByPartitionKey update_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> update_data_write_buffers;
     std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> update_data_writers;
-    std::unique_ptr<IcebergColumnSketches> updated_rows_sketches;
-
-    /// No snapshot references these files until the caller commits them, so remove them if writing fails.
-    bool written = false;
-    SCOPE_EXIT({
-        if (written)
-            return;
-        for (auto & [_, writer] : update_data_writers)
-            if (writer)
-                writer->cancel();
-        for (auto & [_, buffer] : update_data_write_buffers)
-            if (buffer)
-                buffer->cancel();
-        auto remove_file = [&](const Iceberg::IcebergPathFromMetadata & path)
-        {
-            try
-            {
-                object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(path)));
-            }
-            catch (...)
-            {
-                tryLogCurrentException("IcebergMutations", "Cannot remove a file of a failed mutation");
-            }
-        };
-        for (const auto & [_, partition_files] : delete_files.files_by_partition)
-            for (const auto & delete_file : partition_files.files)
-                remove_file(delete_file.path);
-        for (const auto & [_, file] : update_data_result)
-            remove_file(file.path);
-    });
 
     if (commands[0].type == MutationCommand::UPDATE || commands[0].type == MutationCommand::DELETE)
     {
@@ -329,122 +161,106 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         auto delete_commands = commands;
         delete_commands[0].type = MutationCommand::DELETE;
 
-        /// The deleted positions are sorted before they are written, so this read needs no order.
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata, delete_commands, context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
 
-        /// The deleted rows arrive in any order of data files and positions.
-        std::unordered_map<ChunkPartitioner::PartitionKey, DeletedPositionsByDataFile, ChunkPartitioner::PartitionKeyHasher> deleted_positions;
-        PaddedPODArray<UInt64> positions_buffer;
-
         Block block;
         bool has_any_rows = false;
         while (executor.pull(block))
         {
-            if (block.rows() == 0)
-                continue;
-
             has_any_rows = true;
             Chunk chunk(block.getColumns(), block.rows());
             auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
+
             size_t col_data_filename_index = block.getPositionByName(block_datafile_path);
             size_t col_position_index = block.getPositionByName(block_row_number);
+            ColumnWithTypeAndName col_data_filename = block.getByPosition(col_data_filename_index);
+            ColumnWithTypeAndName col_position = block.getByPosition(col_position_index);
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
-                /// The virtual column `_iceberg_metadata_file_path` may arrive as LowCardinality(String).
-                const IColumn & file_paths = *partition_chunk.getColumns()[col_data_filename_index];
-                ColumnPtr row_numbers = partition_chunk.getColumns()[col_position_index];
-                if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(row_numbers.get()))
+                if (!delete_data_statistics.contains(partition_key))
+                    delete_data_statistics.emplace(partition_key, DataFileStatistics(IcebergPositionDeleteTransform::getSchemaFields()));
+
+                if (!delete_data_writers.contains(partition_key))
+                {
+                    auto delete_file_info = generator.generatePositionDeleteFile();
+
+                    delete_data_result[partition_key].path = delete_file_info;
+                    auto write_buffer = object_storage->writeObject(
+                        StoredObject(delete_file_info.path_in_storage),
+                        WriteMode::Rewrite,
+                        std::nullopt,
+                        DBMS_DEFAULT_BUFFER_SIZE,
+                        context->getWriteSettings());
+
+                    auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
+                    ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
+                    std::unordered_map<String, Int64> field_ids;
+                    field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
+                    field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
+                    column_mapper->setStorageColumnEncoding(std::move(field_ids));
+                    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+                    auto output_format = FormatFactory::instance().getOutputFormat(
+                        write_format, *write_buffer, delete_file_sample_block, context, format_settings, format_filter_info);
+
+                    delete_data_write_buffers[partition_key] = std::move(write_buffer);
+                    delete_data_writers[partition_key] = std::move(output_format);
+                }
+
+                col_data_filename.column = partition_chunk.getColumns()[col_data_filename_index];
+                col_position.column = partition_chunk.getColumns()[col_position_index];
+
+                if (const ColumnNullable * nullable = typeid_cast<const ColumnNullable *>(col_position.column.get()))
                 {
                     const auto & null_map = nullable->getNullMapData();
                     if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 x) { return x != 0; }))
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected null _row_number");
-                    row_numbers = nullable->getNestedColumnPtr();
+                    col_position.column = nullable->getNestedColumnPtr();
                 }
 
-                /// Row numbers are non-negative.
-                const size_t num_rows = partition_chunk.getNumRows();
-                const UInt64 * positions = nullptr;
-                if (const auto * row_numbers_int64 = typeid_cast<const ColumnInt64 *>(row_numbers.get()))
+                auto col_data_filename_without_namespaces = ColumnString::create();
+                for (size_t i = 0; i < col_data_filename.column->size(); ++i)
                 {
-                    positions = reinterpret_cast<const UInt64 *>(row_numbers_int64->getData().data());
-                }
-                else
-                {
-                    positions_buffer.resize(num_rows);
-                    for (size_t row = 0; row < num_rows; ++row)
-                        positions_buffer[row] = row_numbers->get64(row);
-                    positions = positions_buffer.data();
-                }
+                    Field cur_value;
+                    col_data_filename.column->get(i, cur_value);
 
-                /// The rows of one data file come in runs.
-                const auto * low_cardinality_file_paths = typeid_cast<const ColumnLowCardinality *>(&file_paths);
-                auto & positions_by_data_file = deleted_positions[partition_key];
-                size_t run_begin = 0;
-                while (run_begin < num_rows)
-                {
-                    size_t run_end = run_begin + 1;
-                    if (isColumnConst(file_paths))
-                    {
-                        run_end = num_rows;
-                    }
-                    else if (low_cardinality_file_paths)
-                    {
-                        const IColumn & indexes = low_cardinality_file_paths->getIndexes();
-                        const UInt64 index = indexes.getUInt(run_begin);
-                        while (run_end < num_rows && indexes.getUInt(run_end) == index)
-                            ++run_end;
-                    }
-                    else
-                    {
-                        const std::string_view path = file_paths.getDataAt(run_begin);
-                        while (run_end < num_rows && file_paths.getDataAt(run_end) == path)
-                            ++run_end;
-                    }
+                    String path_without_namespace;
+                    if (cur_value.safeGet<String>().starts_with(blob_storage_namespace_name))
+                        path_without_namespace = cur_value.safeGet<String>().substr(blob_storage_namespace_name.size());
 
-                    positions_by_data_file[String(file_paths.getDataAt(run_begin))].addMany(run_end - run_begin, positions + run_begin);
-                    run_begin = run_end;
+                    if (!path_without_namespace.starts_with('/'))
+                        path_without_namespace = "/" + path_without_namespace;
+                    col_data_filename_without_namespaces->insert(path_without_namespace);
                 }
+                col_data_filename.column = std::move(col_data_filename_without_namespaces);
+                Columns chunk_pos_delete;
+                chunk_pos_delete.push_back(col_data_filename.column);
+                chunk_pos_delete.push_back(col_position.column);
+                auto stats_chunk = Chunk(chunk_pos_delete, partition_chunk.getNumRows());
+                delete_data_statistics.at(partition_key).update(stats_chunk);
+
+                Block delete_file_block({col_data_filename, col_position});
+                delete_data_result[partition_key].total_rows += delete_file_block.rows();
+                delete_data_writers[partition_key]->write(delete_file_block);
             }
         }
 
         if (!has_any_rows)
             return std::nullopt;
 
-        static constexpr size_t max_pending_uploads = 16;
-        std::deque<PendingDeleteFileUpload> pending_uploads;
-        try
+        for (const auto & [partition_key, _] : delete_data_result)
         {
-            for (const auto & [partition_key, positions_by_data_file] : deleted_positions)
-            {
-                auto & partition_files = delete_files.files_by_partition[partition_key];
-                for (const auto & [data_file_path, positions] : positions_by_data_file)
-                {
-                    if (pending_uploads.size() == max_pending_uploads)
-                    {
-                        finishDeleteFileUpload(pending_uploads.front(), object_storage, path_resolver);
-                        pending_uploads.pop_front();
-                    }
-                    auto write_buffer = writePositionDeleteFile(
-                        data_file_path, positions, context, object_storage, write_format, generator, path_resolver, format_settings, partition_files);
-                    pending_uploads.push_back({&partition_files, partition_files.files.size() - 1, std::move(write_buffer)});
-                }
-            }
-            for (auto & upload : pending_uploads)
-                finishDeleteFileUpload(upload, object_storage, path_resolver);
-            CurrentThread::checkIfNotCancelled();
-        }
-        catch (...)
-        {
-            for (auto & upload : pending_uploads)
-                if (upload.write_buffer)
-                    upload.write_buffer->cancel();
-            throw;
+            delete_data_writers[partition_key]->flush();
+            delete_data_writers[partition_key]->finalize();
+            delete_data_write_buffers[partition_key]->finalize();
+            delete_data_result[partition_key].total_bytes = static_cast<Int32>(delete_data_write_buffers[partition_key]->count());
+            delete_data_writers[partition_key].reset();
+            delete_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -459,57 +275,41 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         PullingPipelineExecutor executor(pipeline);
 
         auto header = interpreter->getUpdatedHeader();
-        auto update_sample_block = getNonVirtualColumns(header, /*remove_low_cardinality=*/ true);
-        if (write_statistics)
-            updated_rows_sketches = std::make_unique<IcebergColumnSketches>(update_sample_block, data_schema->getArray(Iceberg::f_fields));
 
         Block block;
         while (executor.pull(block))
         {
-            if (block.rows() == 0)
-                continue;
-
-            /// Strip virtual columns and unwrap LowCardinality to ensure the
-            /// block types are compatible with the Avro serializer schema.
-            auto data_block = getNonVirtualColumns(block, /*remove_low_cardinality=*/ true);
-            if (updated_rows_sketches)
-                updated_rows_sketches->update(data_block.getColumns());
+            auto data_block = getNonVirtualColumns(block);
             Chunk chunk(data_block.getColumns(), data_block.rows());
             auto partition_result = getPartitionedChunks(chunk, chunk_partitioner);
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
-                /// Drive the write and stats from this partition's rows only; the full `chunk`
-                /// spans every partition and would duplicate rows into each per-partition file.
-                auto partition_block = data_block.cloneWithColumns(partition_chunk.getColumns());
-
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
 
                 auto it = update_data_writers.find(partition_key);
                 if (it == update_data_writers.end())
                 {
-                    auto data_file_path = generator.generateDataFileName();
-                    update_data_result[partition_key].path = data_file_path;
+                    auto data_file_info = generator.generateDataFileName();
+                    update_data_result[partition_key].path = data_file_info;
                     auto data_write_buffer = object_storage->writeObject(
-                        StoredObject(path_resolver.resolve(data_file_path)),
+                        StoredObject(data_file_info.path_in_storage),
                         WriteMode::Rewrite,
                         std::nullopt,
                         DBMS_DEFAULT_BUFFER_SIZE,
                         context->getWriteSettings());
 
-                    ColumnMapperPtr data_column_mapper = createColumnMapper(data_schema);
-                    FormatFilterInfoPtr data_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, data_column_mapper, nullptr, nullptr);
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
-                        write_format, *data_write_buffer, partition_block, context, format_settings, data_format_filter_info);
+                        write_format, *data_write_buffer, data_block, context, format_settings, nullptr);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
                     it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
                 }
 
-                update_data_result[partition_key].total_rows += partition_block.rows();
-                it->second->write(partition_block);
-                update_data_statistics.at(partition_key).update(partition_chunk);
+                update_data_result[partition_key].total_rows += data_block.rows();
+                it->second->write(data_block);
+                update_data_statistics.at(partition_key).update(chunk);
             }
         }
 
@@ -517,136 +317,109 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
         {
             update_data_writers[partition_key]->flush();
             update_data_writers[partition_key]->finalize();
-            update_data_statistics.at(partition_key).addColumnSizesOnDisk(
-                update_data_writers[partition_key]->getColumnSizesOnDisk(), update_sample_block);
             update_data_write_buffers[partition_key]->finalize();
-            {
-                auto update_bytes = update_data_write_buffers[partition_key]->count();
-                if (update_bytes == 0)
-                    update_bytes = object_storage->getObjectMetadata(
-                        path_resolver.resolve(update_data_result[partition_key].path), /*with_tags=*/ false).size_bytes;
-                update_data_result[partition_key].total_bytes = update_bytes;
-            }
+            update_data_result[partition_key].total_bytes = static_cast<Int32>(update_data_write_buffers[partition_key]->count());
             update_data_writers[partition_key].reset();
             update_data_write_buffers[partition_key].reset();
         }
     }
 
-    std::optional<WriteDataFilesResult> result;
     if (commands[0].type == MutationCommand::DELETE)
-    {
-        result = WriteDataFilesResult{std::move(delete_files), {}, nullptr};
-    }
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, std::nullopt};
     else if (commands[0].type == MutationCommand::UPDATE)
-    {
-        /// An UPDATE writes one data file per partition.
-        DataFileWriteResultWithStats data_files;
-        for (auto & [partition_key, data_file] : update_data_result)
-        {
-            auto & partition_files = data_files.files_by_partition[partition_key];
-            partition_files.files.push_back(data_file);
-            partition_files.statistics.push_back(std::move(update_data_statistics.at(partition_key)));
-        }
-        result = WriteDataFilesResult{std::move(delete_files), std::move(data_files), std::move(updated_rows_sketches)};
-    }
-    written = true;
-    return result;
+        return WriteDataFilesResult{DataFileWriteResultWithStats{delete_data_result, delete_data_statistics}, DataFileWriteResultWithStats{update_data_result, update_data_statistics}};
+    else
+        return {};
 }
 
 static bool writeMetadataFiles(
-    const DataFileWriteResultWithStats & delete_files,
-    const DataFileWriteResultWithStats & data_files,
-    IcebergColumnSketches * updated_rows_sketches,
-    bool write_statistics,
+    DataFileWriteResultWithStats & delete_filenames,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     FileNamesGenerator & filename_generator,
-    const Iceberg::IcebergPathResolver & path_resolver,
     const DataLakeStorageSettings & data_lake_settings,
     String write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
     StorageID table_id,
     Poco::JSON::Object::Ptr metadata,
-    const String & base_catalog_metadata_location,
     Poco::JSON::Object::Ptr partititon_spec,
     Int32 partition_spec_id,
     std::optional<ChunkPartitioner> & chunk_partitioner,
-    SharedHeader data_sample_block)
+    Iceberg::FileContentType content_type,
+    SharedHeader sample_block,
+    CompressionMethod compression_method,
+    bool write_metadata_json_file,
+    const String& blob_storage_type_name,
+    const String& blob_storage_namespace_name)
 {
-    auto delete_sample_block = std::make_shared<const Block>(getPositionDeleteFileSampleBlock());
-
-    auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+    auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
 
-    auto sum_files = [](const DataFileWriteResultWithStats & set) -> std::tuple<Int64, Int64, Int64>
+    Int32 total_rows = 0;
+    Int32 total_bytes = 0;
+    Int32 total_files = 0;
+    for (const auto & [_, delete_filename] : delete_filenames.delete_file)
     {
-        Int64 rows = 0;
-        Int64 bytes = 0;
-        Int64 files = 0;
-        for (const auto & [_, partition_files] : set.files_by_partition)
-        {
-            for (const auto & f : partition_files.files)
-            {
-                rows += f.total_rows;
-                bytes += f.total_bytes;
-                ++files;
-            }
-        }
-        return {rows, bytes, files};
-    };
+        total_rows += delete_filename.total_rows;
+        total_bytes += delete_filename.total_bytes;
+        ++total_files;
+    }
 
-    auto [delete_rows, delete_bytes, delete_files_count] = sum_files(delete_files);
-    auto [data_rows, data_bytes, data_files_count] = sum_files(data_files);
+    Poco::JSON::Object::Ptr new_snapshot;
+    String manifest_list_name;
+    String storage_manifest_list_name;
+    if (content_type == Iceberg::FileContentType::POSITION_DELETE)
+    {
+        auto result_generation_metadata = MetadataGenerator(metadata)
+            .generateNextMetadata(
+                filename_generator,
+                metadata_name,
+                parent_snapshot,
+                /* added_files */0,
+                /* added_records */0,
+                total_bytes,
+                /* num_partitions */total_files,
+                /* added_delete_files */total_files,
+                total_rows);
+        new_snapshot = result_generation_metadata.snapshot;
+        manifest_list_name = result_generation_metadata.metadata_path;
+        storage_manifest_list_name = result_generation_metadata.storage_metadata_path;
+    }
+    else
+    {
+        auto result_generation_metadata = MetadataGenerator(metadata)
+            .generateNextMetadata(
+                filename_generator,
+                metadata_name,
+                parent_snapshot,
+                /* added_files */total_files,
+                /* added_records */total_rows,
+                total_bytes,
+                /* num_partitions */total_files,
+                /* added_delete_files */0,
+                /*num_deleted_rows*/0);
+        new_snapshot = result_generation_metadata.snapshot;
+        manifest_list_name = result_generation_metadata.metadata_path;
+        storage_manifest_list_name = result_generation_metadata.storage_metadata_path;
 
-    std::unordered_set<ChunkPartitioner::PartitionKey, ChunkPartitioner::PartitionKeyHasher> touched_partitions;
-    for (const auto & [partition_key, _] : delete_files.files_by_partition)
-        touched_partitions.insert(partition_key);
-    for (const auto & [partition_key, _] : data_files.files_by_partition)
-        touched_partitions.insert(partition_key);
-
-    auto result = MetadataGenerator(metadata).generateNextMetadata(
-        filename_generator,
-        metadata_info.path,
-        parent_snapshot,
-        /* added_files */ data_files_count,
-        /* added_records */ data_rows,
-        /* added_files_size */ delete_bytes + data_bytes,
-        /* num_partitions */ static_cast<Int64>(touched_partitions.size()),
-        /* added_delete_files */ delete_files_count,
-        /* num_deleted_rows */ delete_rows);
-    auto new_snapshot = result.snapshot;
-    auto storage_manifest_list_name = path_resolver.resolve(result.manifest_list_path);
-
+    }
     auto manifest_entries_in_storage = std::make_shared<Strings>();
-    std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
-    std::vector<Int64> manifest_entry_sizes;
-    std::vector<Int64> manifest_entry_row_counts;
-    std::vector<Int64> manifest_entry_file_counts;
-    std::vector<Iceberg::FileContentType> per_entry_content_types;
-    std::vector<ManifestPartitionSummary> entry_partition_summaries;
-
-    auto hint_path = filename_generator.generateVersionHint();
-    const bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint];
-    std::optional<String> statistics_file_path;
-
-    auto cleanup = [object_storage, &delete_files, &data_files, &path_resolver, manifest_entries_in_storage,
-                    storage_manifest_list_name, &statistics_file_path]()
+    Strings manifest_entries;
+    Int32 manifest_lengths = 0;
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
+    auto cleanup = [object_storage, delete_filenames, manifest_entries_in_storage, storage_manifest_list_name, storage_metadata_name]()
     {
         try
         {
-            for (const auto * set : {&delete_files, &data_files})
-                for (const auto & [_, partition_files] : set->files_by_partition)
-                    for (const auto & data_file : partition_files.files)
-                        object_storage->removeObjectIfExists(StoredObject(path_resolver.resolve(data_file.path)));
+            for (const auto & [_, data_file] : delete_filenames.delete_file)
+                object_storage->removeObjectIfExists(StoredObject(data_file.path.path_in_storage));
 
             for (const auto & manifest_filename_in_storage : *manifest_entries_in_storage)
                 object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
             object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-            if (statistics_file_path)
-                object_storage->removeObjectIfExists(StoredObject(*statistics_file_path));
         }
         catch (...)
         {
@@ -654,42 +427,27 @@ static bool writeMetadataFiles(
         }
     };
 
-    auto write_manifest_entries = [&](const DataFileWriteResultWithStats & set, Iceberg::FileContentType content_type, SharedHeader sample_block)
+    try
     {
-        /// One manifest per partition, with an entry and the statistics of each of its files.
-        for (const auto & [partition_key, partition_files] : set.files_by_partition)
+        for (const auto & [partition_key, delete_filename] : delete_filenames.delete_file)
         {
-            std::vector<Iceberg::IcebergPathFromMetadata> file_paths;
-            std::vector<UInt64> file_row_counts;
-            std::vector<UInt64> file_byte_counts;
-            std::vector<const DataFileStatistics *> file_statistics;
-            Int64 partition_rows = 0;
-            for (size_t i = 0; i < partition_files.files.size(); ++i)
-            {
-                const auto & data_file = partition_files.files[i];
-                file_paths.push_back(data_file.path);
-                file_row_counts.push_back(static_cast<UInt64>(data_file.total_rows));
-                file_byte_counts.push_back(static_cast<UInt64>(data_file.total_bytes));
-                file_statistics.push_back(&partition_files.statistics[i]);
-                partition_rows += data_file.total_rows;
-            }
+            auto [manifest_entry_name, storage_manifest_entry_name] = filename_generator.generateManifestEntryName();
+            manifest_entries_in_storage->push_back(storage_manifest_entry_name);
+            manifest_entries.push_back(manifest_entry_name);
 
-            auto manifest_entry_path = filename_generator.generateManifestEntryName();
-            manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
-            manifest_entries.push_back(manifest_entry_path);
-            per_entry_content_types.push_back(content_type);
-            manifest_entry_row_counts.push_back(partition_rows);
-            manifest_entry_file_counts.push_back(static_cast<Int64>(partition_files.files.size()));
-
+            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (chunk_partitioner)
             {
-                ManifestPartitionSummary partition_summary(chunk_partitioner->getResultTypes());
-                partition_summary.add(partition_key);
+                const auto & partition_types = chunk_partitioner->getResultTypes();
+                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+                partition_summary.reserve(partition_key.size());
+                for (size_t i = 0; i < partition_key.size(); ++i)
+                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
                 entry_partition_summaries.push_back(std::move(partition_summary));
             }
 
             auto buffer_manifest_entry = object_storage->writeObject(
-                StoredObject(path_resolver.resolve(manifest_entry_path)),
+                StoredObject(storage_manifest_entry_name),
                 WriteMode::Rewrite,
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -699,34 +457,19 @@ static bool writeMetadataFiles(
                 generateManifestFile(
                     metadata,
                     chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
-                    std::vector<Row>(file_paths.size(), partition_key),
-                    chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
-                    file_paths,
-                    file_row_counts,
-                    file_byte_counts,
-                    /* data_file_statistics */ std::nullopt,
+                    partition_key,
+                    chunk_partitioner ? chunk_partitioner->getResultTypes() : std::vector<DataTypePtr>{},
+                    {delete_filename.path.path_in_metadata},
+                    delete_filenames.delete_statistic.at(partition_key),
                     sample_block,
                     new_snapshot,
                     write_format,
                     partititon_spec,
                     partition_spec_id,
                     *buffer_manifest_entry,
-                    content_type,
-                    /* user_defined_sequence_number */ std::nullopt,
-                    /* user_defined_snapshot_id */ std::nullopt,
-                    /* data_file_formats */ {},
-                    /* per_file_statistics */ {},
-                    /* data_file_sort_order_ids */ {},
-                    /* per_file_entry_lineage */ {},
-                    /* schema_to_serialize */ nullptr,
-                    &file_statistics);
+                    content_type);
                 buffer_manifest_entry->finalize();
-                auto size = buffer_manifest_entry->count();
-                if (size == 0)
-                {
-                    size = object_storage->getObjectMetadata(path_resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
-                }
-                manifest_entry_sizes.push_back(size);
+                manifest_lengths += buffer_manifest_entry->count();
             }
             catch (...)
             {
@@ -734,12 +477,6 @@ static bool writeMetadataFiles(
                 throw;
             }
         }
-    };
-
-    try
-    {
-        write_manifest_entries(delete_files, Iceberg::FileContentType::POSITION_DELETE, delete_sample_block);
-        write_manifest_entries(data_files, Iceberg::FileContentType::DATA, data_sample_block);
 
         {
             auto buffer_manifest_list = object_storage->writeObject(
@@ -749,68 +486,67 @@ static bool writeMetadataFiles(
                 DBMS_DEFAULT_BUFFER_SIZE,
                 context->getWriteSettings());
 
-            chassert(!per_entry_content_types.empty());
-            generateManifestList(
-                path_resolver,
-                metadata,
-                object_storage,
-                context,
-                manifest_entries,
-                new_snapshot,
-                manifest_entry_sizes,
-                *buffer_manifest_list,
-                /* content_type */ Iceberg::FileContentType::POSITION_DELETE,
-                /* use_previous_snapshots */ true,
-                per_entry_content_types,
-                /* entry_counts */ {},
-                /* carry_forward_manifest_paths */ {},
-                /* entry_partition_spec_ids */ {},
-                entry_partition_summaries,
-                manifest_entry_row_counts,
-                manifest_entry_file_counts);
-            buffer_manifest_list->finalize();
-        }
-
-        /// An UPDATE adds the new versions of the updated rows, a DELETE keeps the parent's sketches.
-        if (write_statistics)
-            statistics_file_path = writeIcebergTableStatisticsNdv(
-                updated_rows_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, path_resolver,
-                object_storage, context);
-
-        std::string json_representation = stringifyJSON(metadata, 4);
-
-        fiu_do_on(FailPoints::iceberg_writes_cleanup,
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
-        });
-
-        const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        if (!catalog_writes_metadata_file)
-        {
-            if (!writeMetadataFileAndVersionHint(
-                    path_resolver,
-                    metadata_info,
-                    json_representation,
-                    hint_path,
+            try
+            {
+                generateManifestList(
+                    filename_generator,
+                    metadata,
                     object_storage,
                     context,
-                    use_version_hint))
+                    manifest_entries,
+                    new_snapshot,
+                    manifest_lengths,
+                    *buffer_manifest_list,
+                    content_type,
+                    /* use_previous_snapshots */ true,
+                    entry_partition_summaries);
+                buffer_manifest_list->finalize();
+            }
+            catch (...)
+            {
+                cleanup();
+                throw;
+            }
+        }
+
+        if (write_metadata_json_file)
+        {
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+            std::string json_representation = removeEscapedSlashes(oss.str());
+
+            fiu_do_on(FailPoints::iceberg_writes_cleanup,
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
+            });
+
+            auto hint = filename_generator.generateVersionHint();
+            if (!writeMetadataFileAndVersionHint(
+                    storage_metadata_name,
+                    json_representation,
+                    hint.path_in_storage,
+                    storage_metadata_name,
+                    object_storage,
+                    context,
+                    compression_method,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 cleanup();
                 return false;
             }
-        }
 
-        if (catalog)
-        {
-            auto catalog_filename = path_resolver.resolveForCatalog(metadata_info.path);
-            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
-            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_snapshot, metadata))
+            if (catalog)
             {
-                if (!catalog_writes_metadata_file)
-                    removeRejectedMetadataFile(path_resolver, metadata_info, object_storage);
-                cleanup();
-                return false;
+                String catalog_filename = metadata_name;
+                if (!catalog_filename.starts_with(blob_storage_type_name))
+                    catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + metadata_name;
+
+                const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+                if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, new_snapshot))
+                {
+                    cleanup();
+                    return false;
+                }
             }
         }
     }
@@ -822,141 +558,44 @@ static bool writeMetadataFiles(
     return true;
 }
 
-void validateMutationWriteFormat(const String & write_format)
-{
-    /// Fast early-reject for tables whose configured `write_format` is not Parquet.
-    /// The deeper per-data-file check runs inside the `mutate` retry loop below
-    /// and also handles mixed-format tables where `write_format` is Parquet but
-    /// existing data files are not. See issue #102508.
-    if (Poco::toLower(write_format) != "parquet")
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Iceberg DELETE and UPDATE are only supported for tables with Parquet data file format, but got {}",
-            write_format);
-}
-
-namespace
-{
-/// Validates that the current snapshot can be mutated by ClickHouse. Iceberg
-/// permits mixed-format tables, but ClickHouse mutations write Parquet position
-/// delete files. A snapshot containing non-Parquet data files or deletion vectors
-/// would produce delete files that the read side cannot safely apply. Called inside
-/// the `mutate` retry loop so validation is bound to the exact metadata version
-/// that will be written, closing the TOCTOU gap where a concurrent writer commits
-/// incompatible files after a pre-check. See issue #102508 and the PR #105893 review.
-void validateSnapshotForMutation(
-    Poco::JSON::Object::Ptr metadata,
-    ObjectStoragePtr object_storage,
-    const PersistentTableComponents & persistent_table_components,
-    ContextPtr context,
-    LoggerPtr log,
-    Int32 current_schema_id)
-{
-    if (!metadata->has(f_current_snapshot_id) || metadata->isNull(f_current_snapshot_id))
-        return;
-    Int64 current_snapshot_id = metadata->getValue<Int64>(f_current_snapshot_id);
-    if (current_snapshot_id < 0)
-        return;
-    if (!metadata->has(f_snapshots))
-        return;
-
-    auto snapshots = metadata->getArray(f_snapshots);
-    Poco::JSON::Object::Ptr current_snapshot;
-    for (size_t i = 0; i < snapshots->size(); ++i)
-    {
-        auto snapshot_obj = snapshots->getObject(static_cast<UInt32>(i));
-        if (snapshot_obj->has(f_metadata_snapshot_id)
-            && snapshot_obj->getValue<Int64>(f_metadata_snapshot_id) == current_snapshot_id)
-        {
-            current_snapshot = snapshot_obj;
-            break;
-        }
-    }
-    if (!current_snapshot || !current_snapshot->has(f_manifest_list))
-        return;
-
-    auto manifest_list_path = IcebergPathFromMetadata::deserialize(current_snapshot->getValue<String>(f_manifest_list));
-    auto manifest_list_entries = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
-    for (const auto & manifest_list_entry : manifest_list_entries)
-    {
-        auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_table_components, context, log, manifest_list_entry, current_schema_id);
-
-        for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
-        {
-            const String & file_format = file_entry->parsed_entry->file_format;
-            if (Poco::toLower(file_format) != "parquet")
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Iceberg DELETE and UPDATE require all data files in the current snapshot to be Parquet, "
-                    "but data file `{}` has format `{}`",
-                    file_entry->parsed_entry->file_path_key.serialize(),
-                    file_format);
-        }
-
-        for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-        {
-            if (file_entry->parsed_entry->isDeletionVector())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Iceberg DELETE and UPDATE are not supported for snapshots containing deletion vectors");
-        }
-    }
-}
-}
-
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
-    StoragePtr storage_ptr,
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components,
+    PersistentTableComponents & persistent_table_components,
     const String & write_format,
     const std::optional<FormatSettings> & format_settings,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & blob_storage_type_name,
+    const String & blob_storage_namespace_name)
 {
-    validateMutationWriteFormat(write_format);
-
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
 
-    const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
     {
+        FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergMutations");
-
-        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage,
-            catalog,
-            storage_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
             context,
             log.get(),
-            persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.table_uuid);
 
-        FileNamesGenerator filename_generator(
-            persistent_table_components.path_resolver.getTableLocation(),
-            /* use_uuid_in_metadata */ catalog != nullptr,
-            CompressionMethod::None,
-            write_format);
-        filename_generator.setBaseMetadataFile(last_version, metadata_path);
+        filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
-
-        const auto format_version = metadata->getValue<Int32>(f_format_version);
-        if (format_version < 2)
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations are supported only for the second version of iceberg format");
-        if (format_version >= 3)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg DELETE and UPDATE are not supported for format-version 3 tables");
         auto partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
         Poco::JSON::Object::Ptr partititon_spec;
@@ -981,66 +620,74 @@ void mutate(
             }
         }
 
-        /// Validate against the freshly-fetched snapshot. Bound to this exact
-        /// metadata version, so a concurrent writer that commits non-Parquet
-        /// data files between iterations is caught by the next retry.
-        validateSnapshotForMutation(
-            metadata, object_storage, persistent_table_components, context, log, static_cast<Int32>(current_schema_id));
-
-        TableStateSnapshot current_iceberg_snapshot;
-        current_iceberg_snapshot.metadata_file_path = metadata_path;
-        current_iceberg_snapshot.metadata_version = last_version;
-        current_iceberg_snapshot.schema_id = static_cast<Int32>(current_schema_id);
-        if (metadata->has(Iceberg::f_current_snapshot_id))
-        {
-            Int64 snapshot_id_val = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
-            if (snapshot_id_val >= 0)
-                current_iceberg_snapshot.snapshot_id = snapshot_id_val;
-        }
-        auto fresh_storage_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_metadata);
-        fresh_storage_metadata->setDataLakeTableState(DataLakeTableStateSnapshot{current_iceberg_snapshot});
-
-        const auto sample_block = std::make_shared<const Block>(fresh_storage_metadata->getSampleBlock());
+        const auto sample_block = std::make_shared<const Block>(storage_metadata->getSampleBlock());
         std::optional<ChunkPartitioner> chunk_partitioner;
         if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
-            chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context, sample_block);
+            chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema, context, sample_block);
 
         auto mutation_files = writeDataFiles(
             commands,
             context,
-            fresh_storage_metadata,
-            storage_ptr,
+            storage_metadata,
+            storage_id,
             object_storage,
             write_format,
             filename_generator,
-            persistent_table_components.path_resolver,
             format_settings,
             chunk_partitioner,
             current_schema,
-            write_statistics);
+            blob_storage_namespace_name);
 
         if (mutation_files)
         {
-            if (!writeMetadataFiles(
-                    mutation_files->delete_file,
-                    mutation_files->data_file,
-                    mutation_files->updated_rows_sketches.get(),
-                    write_statistics,
+            auto result_delete_files_metadata = writeMetadataFiles(
+                mutation_files->delete_file,
+                object_storage,
+                context,
+                filename_generator,
+                data_lake_settings,
+                write_format,
+                catalog,
+                storage_id,
+                metadata,
+                partititon_spec,
+                static_cast<Int32>(partition_spec_id),
+                chunk_partitioner,
+                Iceberg::FileContentType::POSITION_DELETE,
+                std::make_shared<const Block>(getPositionDeleteFileSampleBlock()),
+                compression_method,
+                !mutation_files->data_file,
+                blob_storage_type_name,
+                blob_storage_namespace_name);
+            if (!result_delete_files_metadata)
+                continue;
+
+            if (mutation_files->data_file)
+            {
+                auto result_data_files_metadata = writeMetadataFiles(
+                    *mutation_files->data_file,
                     object_storage,
                     context,
                     filename_generator,
-                    persistent_table_components.path_resolver,
                     data_lake_settings,
                     write_format,
                     catalog,
                     storage_id,
                     metadata,
-                    base_catalog_metadata_location,
                     partititon_spec,
                     static_cast<Int32>(partition_spec_id),
                     chunk_partitioner,
-                    sample_block))
-                continue;
+                    Iceberg::FileContentType::DATA,
+                    sample_block,
+                    compression_method,
+                    true,
+                    blob_storage_type_name,
+                    blob_storage_namespace_name);
+                if (!result_data_files_metadata)
+                {
+                    continue;
+                }
+            }
         }
         break;
     }
@@ -1049,95 +696,36 @@ void mutate(
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to create iceberg snapshot");
 }
 
-/// Iceberg (`TableMetadata.Builder.build`) requires each source column of the default partition spec and of the default
-/// sort order to be in `schema`; a `void` partition field, which format version 1 keeps for a removed field, needs none.
-static std::optional<String> findFieldWithoutSourceColumn(const Poco::JSON::Object::Ptr & metadata, const Poco::JSON::Object::Ptr & schema)
-{
-    const auto columns = IcebergSchemaProcessor::collectIcebergPrimitiveTypesById(schema->getArray(Iceberg::f_fields));
-    auto find_missing_source_id = [&](const Poco::JSON::Object::Ptr & field) -> std::optional<Int64>
-    {
-        if (field->has(Iceberg::f_source_id) && !columns.contains(field->getValue<Int64>(Iceberg::f_source_id)))
-            return field->getValue<Int64>(Iceberg::f_source_id);
-        if (const auto source_ids = field->getArray(Iceberg::f_source_ids))
-            for (UInt32 i = 0; i < source_ids->size(); ++i)
-                if (!columns.contains(source_ids->getElement<Int64>(i)))
-                    return source_ids->getElement<Int64>(i);
-        return std::nullopt;
-    };
-
-    if (metadata->has(Iceberg::f_partition_specs) && metadata->has(Iceberg::f_default_spec_id))
-    {
-        const auto default_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
-        const auto specs = metadata->getArray(Iceberg::f_partition_specs);
-        for (UInt32 i = 0; i < specs->size(); ++i)
-        {
-            const auto spec = specs->getObject(i);
-            if (spec->getValue<Int64>(Iceberg::f_spec_id) != default_spec_id)
-                continue;
-            const auto fields = spec->getArray(Iceberg::f_fields);
-            for (UInt32 j = 0; j < fields->size(); ++j)
-            {
-                const auto field = fields->getObject(j);
-                if (Poco::toLower(field->getValue<String>(Iceberg::f_transform)) == "void")
-                    continue;
-                if (auto id = find_missing_source_id(field))
-                    return fmt::format(
-                        "the partition field '{}' of the default partition spec has no source column with field id {}",
-                        field->getValue<String>(Iceberg::f_name), *id);
-            }
-        }
-    }
-
-    if (metadata->has(Iceberg::f_sort_orders) && metadata->has(Iceberg::f_default_sort_order_id))
-        if (const auto fields = getDefaultSortOrderFields(metadata))
-            for (UInt32 i = 0; i < fields->size(); ++i)
-                if (auto id = find_missing_source_id(fields->getObject(i)))
-                    return fmt::format("the default sort order has no source column with field id {}", *id);
-
-    return std::nullopt;
-}
-
 void alter(
     const AlterCommands & params,
     ContextPtr context,
-    StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components,
-    const String & write_format,
-    std::shared_ptr<DataLake::ICatalog> catalog)
+    PersistentTableComponents & persistent_table_components,
+    const String & write_format)
 {
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
     size_t i = 0;
-    bool succeeded = false;
-    while (i < MAX_TRANSACTION_RETRIES)
+    while (i++ < MAX_TRANSACTION_RETRIES)
     {
+        FileNamesGenerator filename_generator(
+            persistent_table_components.table_path, persistent_table_components.table_path, false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergMutations");
-        auto [last_version, metadata_path, compression_method, base_catalog_metadata_location] = getLatestMetadataFileAndVersionWithCatalog(
+        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage,
-            catalog,
-            storage_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
             context,
             log.get(),
-            persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.table_uuid);
 
-        FileNamesGenerator filename_generator(
-            persistent_table_components.path_resolver.getTableLocation(),
-            /* use_uuid_in_metadata */ catalog != nullptr,
-            CompressionMethod::None,
-            write_format);
-        filename_generator.setBaseMetadataFile(last_version, metadata_path);
+        filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
 
-        auto metadata = deepCopy(getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid));
-
-        const auto previous_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+        auto metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
         auto metadata_json_generator = MetadataGenerator(metadata);
 
@@ -1160,75 +748,700 @@ void alter(
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
         }
-        setFormatVersion1SchemaAndPartitionSpec(metadata);
 
-        const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
-        Poco::JSON::Object::Ptr new_schema;
-        auto schemas = metadata->getArray(Iceberg::f_schemas);
-        for (UInt32 schema_index = 0; schema_index < schemas->size(); ++schema_index)
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+        std::string json_representation = removeEscapedSlashes(oss.str());
+
+        auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
+
+        auto hint = filename_generator.generateVersionHint();
+        if (writeMetadataFileAndVersionHint(
+                storage_metadata_name,
+                json_representation,
+                hint.path_in_storage,
+                storage_metadata_name,
+                object_storage,
+                context,
+                compression_method,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            break;
+    }
+
+    if (i == MAX_TRANSACTION_RETRIES)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+}
+
+/// Table-level snapshot retention policy read from Iceberg table properties.
+struct RetentionPolicy
+{
+    Int32 min_snapshots_to_keep = Iceberg::default_min_snapshots_to_keep;
+    Int64 max_snapshot_age_ms = Iceberg::default_max_snapshot_age_ms;
+    Int64 max_ref_age_ms = Iceberg::default_max_ref_age_ms;
+};
+
+static RetentionPolicy readRetentionPolicy(const Poco::JSON::Object::Ptr & metadata, ContextPtr context, const ExpireSnapshotsOptions & options)
+{
+    RetentionPolicy policy;
+    const auto & settings = context->getSettingsRef();
+    Int64 min_keep_from_settings = settings[Setting::iceberg_expire_default_min_snapshots_to_keep].value;
+    Int64 max_snapshot_age_from_settings = settings[Setting::iceberg_expire_default_max_snapshot_age_ms].value;
+    Int64 max_ref_age_from_settings = settings[Setting::iceberg_expire_default_max_ref_age_ms].value;
+
+    if (min_keep_from_settings <= 0 || min_keep_from_settings > std::numeric_limits<Int32>::max())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "iceberg_expire_default_min_snapshots_to_keep must be in range [1, {}], got {}",
+            std::numeric_limits<Int32>::max(),
+            min_keep_from_settings);
+    if (max_snapshot_age_from_settings < 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "iceberg_expire_default_max_snapshot_age_ms must be non-negative, got {}",
+            max_snapshot_age_from_settings);
+    if (max_ref_age_from_settings < 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "iceberg_expire_default_max_ref_age_ms must be non-negative, got {}",
+            max_ref_age_from_settings);
+
+    policy.min_snapshots_to_keep = static_cast<Int32>(min_keep_from_settings);
+    policy.max_snapshot_age_ms = max_snapshot_age_from_settings;
+    policy.max_ref_age_ms = max_ref_age_from_settings;
+
+    if (metadata->has(Iceberg::f_properties))
+    {
+        auto props = metadata->getObject(Iceberg::f_properties);
+        if (props->has(Iceberg::f_min_snapshots_to_keep))
+            policy.min_snapshots_to_keep = std::stoi(props->getValue<String>(Iceberg::f_min_snapshots_to_keep));
+        if (props->has(Iceberg::f_max_snapshot_age_ms))
+            policy.max_snapshot_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_snapshot_age_ms));
+        if (props->has(Iceberg::f_max_ref_age_ms))
+            policy.max_ref_age_ms = std::stoll(props->getValue<String>(Iceberg::f_max_ref_age_ms));
+    }
+
+    /// Per-invocation overrides (only affect table-level defaults, not per-ref overrides).
+    if (options.retain_last.has_value())
+        policy.min_snapshots_to_keep = *options.retain_last;
+    if (options.retention_period_ms.has_value())
+        policy.max_snapshot_age_ms = *options.retention_period_ms;
+
+    return policy;
+}
+
+/// Snapshot parent graph built from metadata, used for branch ancestor traversal.
+class SnapshotGraph
+{
+public:
+    explicit SnapshotGraph(const Poco::JSON::Array::Ptr & snapshots)
+    {
+        for (UInt32 i = 0; i < snapshots->size(); ++i)
         {
-            if (schemas->getObject(schema_index)->getValue<Int32>(Iceberg::f_schema_id) == new_schema_id)
-            {
-                new_schema = schemas->getObject(schema_index);
+            auto snapshot = snapshots->getObject(i);
+            Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            timestamps[snap_id] = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+            if (snapshot->has(Iceberg::f_parent_snapshot_id) && !snapshot->isNull(Iceberg::f_parent_snapshot_id))
+                parent_chain[snap_id] = snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id);
+        }
+    }
+
+    bool hasSnapshot(Int64 snap_id) const { return timestamps.contains(snap_id); }
+
+    Int64 getTimestamp(Int64 snap_id) const { return timestamps.at(snap_id); }
+
+    std::optional<Int64> getParent(Int64 snap_id) const
+    {
+        auto it = parent_chain.find(snap_id);
+        return it != parent_chain.end() ? std::optional(it->second) : std::nullopt;
+    }
+
+    /// Retain ancestors from head_id while min-keep or max-age is satisfied.
+    void walkBranchAncestors(Int64 now_ms, Int64 head_id, Int32 min_keep, Int64 max_age_ms, std::set<Int64> & retained) const
+    {
+        Int64 walk_id = head_id;
+        Int32 count = 0;
+        while (hasSnapshot(walk_id))
+        {
+            bool within_min_keep = (count < min_keep);
+            bool within_max_age = (now_ms - getTimestamp(walk_id) <= max_age_ms);
+            if (!within_min_keep && !within_max_age)
                 break;
-            }
+            retained.insert(walk_id);
+            ++count;
+            auto parent = getParent(walk_id);
+            if (!parent)
+                break;
+            walk_id = *parent;
         }
-        if (new_schema)
+    }
+
+private:
+    std::unordered_map<Int64, Int64> parent_chain;
+    std::unordered_map<Int64, Int64> timestamps;
+};
+
+/// Apply Iceberg Snapshot Retention Policy. Returns (retained IDs, expired ref names).
+static std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
+    const Poco::JSON::Object::Ptr & metadata,
+    Int64 current_snapshot_id,
+    const SnapshotGraph & graph,
+    const RetentionPolicy & policy,
+    Int64 now_ms)
+{
+    std::set<Int64> retained;
+    Strings expired_ref_names;
+    bool main_branch_walked = false;
+    if (metadata->has(Iceberg::f_refs))
+    {
+        auto refs = metadata->getObject(Iceberg::f_refs);
+        for (const auto & ref_name : refs->getNames())
         {
-            auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true);
-            if (!violation)
-                violation = findFieldWithoutSourceColumn(metadata, new_schema);
-            if (violation)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
-        }
+            auto ref_obj = refs->getObject(ref_name);
+            Int64 ref_snap_id = ref_obj->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            String ref_type = ref_obj->getValue<String>(Iceberg::f_type);
 
-        std::string json_representation = stringifyJSON(metadata, 4);
+            Int64 ref_max_ref_age = ref_obj->has(Iceberg::f_ref_max_ref_age_ms)
+                ? ref_obj->getValue<Int64>(Iceberg::f_ref_max_ref_age_ms)
+                : policy.max_ref_age_ms;
 
-        auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+            bool is_main = (ref_name == Iceberg::f_main);
 
-        auto hint_path = filename_generator.generateVersionHint();
-
-        const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
-        if (!catalog_writes_metadata_file)
-        {
-            if (!writeMetadataFileAndVersionHint(
-                    persistent_table_components.path_resolver,
-                    metadata_info,
-                    json_representation,
-                    hint_path,
-                    object_storage,
-                    context,
-                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            if (!is_main && !graph.hasSnapshot(ref_snap_id))
             {
-                ++i;
+                LOG_WARNING(getLogger("IcebergExpireSnapshots"),
+                    "Removing invalid ref {}: snapshot {} does not exist", ref_name, ref_snap_id);
+                expired_ref_names.push_back(ref_name);
                 continue;
             }
+
+            bool ref_expired = !is_main && (now_ms - graph.getTimestamp(ref_snap_id)) > ref_max_ref_age;
+
+            if (ref_expired)
+            {
+                expired_ref_names.push_back(ref_name);
+                continue;
+            }
+
+            if (ref_type == Iceberg::f_branch)
+            {
+                Int32 min_keep = ref_obj->has(Iceberg::f_ref_min_snapshots_to_keep)
+                    ? ref_obj->getValue<Int32>(Iceberg::f_ref_min_snapshots_to_keep)
+                    : policy.min_snapshots_to_keep;
+                Int64 max_age = ref_obj->has(Iceberg::f_ref_max_snapshot_age_ms)
+                    ? ref_obj->getValue<Int64>(Iceberg::f_ref_max_snapshot_age_ms)
+                    : policy.max_snapshot_age_ms;
+                graph.walkBranchAncestors(now_ms, ref_snap_id, min_keep, max_age, retained);
+                if (is_main)
+                    main_branch_walked = true;
+            }
+            else if (ref_type == Iceberg::f_tag)
+            {
+                retained.insert(ref_snap_id);
+            }
+            else
+            {
+                UNREACHABLE();
+            }
+        }
+    }
+
+    if (!main_branch_walked)
+        graph.walkBranchAncestors(now_ms, current_snapshot_id, policy.min_snapshots_to_keep, policy.max_snapshot_age_ms, retained);
+
+    return {retained, expired_ref_names};
+}
+
+static void collectAllFilePaths(
+    const Iceberg::ManifestFileIterator::ManifestFileEntriesHandle & entries_handle,
+    std::set<String> & out)
+{
+    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        out.insert(entry->file_path);
+    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+        out.insert(entry->file_path);
+    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
+        out.insert(entry->file_path);
+}
+
+/// Collect all file paths (manifest lists, manifests, data/delete files)
+/// referenced by retained snapshots.
+///
+/// NOTE: We only collect files with status ADDED/EXISTING (via getFilesWithoutDeleted).
+/// Files with status DELETED are being removed by that snapshot and don't need retention
+/// from it. A DELETED entry's data file was ADDED in an earlier snapshot — if that snapshot
+/// is retained, the file is in the retained set from there; if expired, it will be collected
+/// for cleanup from that snapshot's ADDED/EXISTING entries.
+///
+/// TODO: To handle partially-failed prior expire_snapshots (where the ADDED snapshot
+/// was removed but its data files were not cleaned up), we could also traverse DELETED
+/// entries in expired manifests. This requires extending ManifestFileIterator to expose
+/// DELETED entries.
+static void collectRetainedFiles(
+    const Poco::JSON::Array::Ptr & retained_snapshots,
+    ObjectStoragePtr object_storage,
+    PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log,
+    Int32 current_schema_id,
+    std::set<String> & retained_manifest_paths,
+    std::set<String> & retained_data_file_paths,
+    std::set<String> & retained_manifest_list_paths)
+{
+    for (UInt32 i = 0; i < retained_snapshots->size(); ++i)
+    {
+        auto snapshot = retained_snapshots->getObject(i);
+        if (!snapshot->has(Iceberg::f_manifest_list))
+            continue;
+
+        String manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
+        retained_manifest_list_paths.insert(manifest_list_path);
+
+        String storage_manifest_list_path = getProperFilePathFromMetadataInfo(
+            manifest_list_path, persistent_table_components.table_path, persistent_table_components.table_location);
+
+        auto manifest_keys = getManifestList(
+            object_storage, persistent_table_components, context, storage_manifest_list_path, log);
+
+        for (const auto & mf_key : manifest_keys)
+        {
+            retained_manifest_paths.insert(mf_key.manifest_file_path);
+            auto entries_handle = getManifestFileEntriesHandle(
+                object_storage, persistent_table_components, context, log,
+                mf_key, current_schema_id);
+            collectAllFilePaths(entries_handle, retained_data_file_paths);
+        }
+    }
+}
+
+struct ExpiredFiles
+{
+    Strings all_paths;
+    Int64 data_files = 0;
+    Int64 position_delete_files = 0;
+    Int64 equality_delete_files = 0;
+    Int64 manifest_files = 0;
+    Int64 manifest_lists = 0;
+};
+
+/// Collect files from expired snapshots that are not referenced by any retained snapshot.
+static ExpiredFiles collectExpiredFiles(
+    const std::vector<String> & expired_manifest_list_paths,
+    const std::set<String> & retained_manifest_list_paths,
+    const std::set<String> & retained_manifest_paths,
+    const std::set<String> & retained_data_file_paths,
+    ObjectStoragePtr object_storage,
+    PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log,
+    Int32 current_schema_id)
+{
+    ExpiredFiles result;
+    std::set<String> seen_expired_manifest_list_paths;
+    std::set<String> seen_expired_manifest_paths;
+    for (const auto & ml_path : expired_manifest_list_paths)
+    {
+        if (retained_manifest_list_paths.contains(ml_path))
+            continue;
+
+        if (seen_expired_manifest_list_paths.contains(ml_path))
+            continue;
+
+        String storage_ml_path = getProperFilePathFromMetadataInfo(
+            ml_path, persistent_table_components.table_path, persistent_table_components.table_location);
+
+        ManifestFileCacheKeys manifest_keys;
+        try
+        {
+            manifest_keys = getManifestList(
+                object_storage, persistent_table_components, context, storage_ml_path, log);
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Failed to read manifest list {}, skipping", storage_ml_path);
+            continue;
+        }
+
+        for (const auto & mf_key : manifest_keys)
+        {
+            if (retained_manifest_paths.contains(mf_key.manifest_file_path))
+                continue;
+
+            if (seen_expired_manifest_paths.contains(mf_key.manifest_file_path))
+                continue;
+
+            try
+            {
+                auto entries_handle = getManifestFileEntriesHandle(
+                    object_storage, persistent_table_components, context, log,
+                    mf_key, current_schema_id);
+
+                for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
+                    if (!retained_data_file_paths.contains(entry->file_path))
+                    {
+                        result.all_paths.push_back(entry->file_path);
+                        ++result.data_files;
+                    }
+                for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
+                    if (!retained_data_file_paths.contains(entry->file_path))
+                    {
+                        result.all_paths.push_back(entry->file_path);
+                        ++result.position_delete_files;
+                    }
+                for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
+                    if (!retained_data_file_paths.contains(entry->file_path))
+                    {
+                        result.all_paths.push_back(entry->file_path);
+                        ++result.equality_delete_files;
+                    }
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed to read manifest file {}, skipping", mf_key.manifest_file_path);
+                continue;
+            }
+
+            seen_expired_manifest_paths.insert(mf_key.manifest_file_path);
+            result.all_paths.push_back(mf_key.manifest_file_path);
+            ++result.manifest_files;
+        }
+
+        seen_expired_manifest_list_paths.insert(ml_path);
+        result.all_paths.push_back(storage_ml_path);
+        ++result.manifest_lists;
+    }
+    return result;
+}
+
+/// Trim snapshot-log to the suffix of entries referencing only retained snapshots.
+static void trimSnapshotLog(
+    Poco::JSON::Object::Ptr metadata,
+    const std::set<Int64> & expired_snapshot_ids)
+{
+    if (!metadata->has(Iceberg::f_snapshot_log))
+        return;
+
+    auto snapshot_log = metadata->get(Iceberg::f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+    Int32 suffix_start = static_cast<Int32>(snapshot_log->size());
+    for (Int32 j = static_cast<Int32>(snapshot_log->size()) - 1; j >= 0; --j)
+    {
+        auto entry = snapshot_log->getObject(static_cast<UInt32>(j));
+        Int64 snap_id = entry->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        if (expired_snapshot_ids.contains(snap_id))
+            break;
+        suffix_start = j;
+    }
+    Poco::JSON::Array::Ptr retained_log = new Poco::JSON::Array;
+    for (UInt32 j = static_cast<UInt32>(suffix_start); j < snapshot_log->size(); ++j)
+        retained_log->add(snapshot_log->getObject(j));
+    metadata->set(Iceberg::f_snapshot_log, retained_log);
+}
+
+struct SnapshotPartition
+{
+    Poco::JSON::Array::Ptr retained_snapshots = new Poco::JSON::Array;
+    std::set<Int64> expired_snapshot_ids;
+    std::vector<String> expired_manifest_list_paths;
+};
+
+/// Split snapshots into retained and expired.
+/// A snapshot is retained if the retention policy selected it, or if the
+/// user-provided fuse timestamp protects it (snapshot newer than fuse).
+static SnapshotPartition partitionSnapshots(
+    const Poco::JSON::Array::Ptr & snapshots,
+    const std::set<Int64> & retention_retained_ids,
+    std::optional<Int64> expire_before_ms)
+{
+    SnapshotPartition result;
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(i);
+        Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+
+        bool is_retained_by_policy = retention_retained_ids.contains(snap_id);
+        bool is_protected_by_fuse = expire_before_ms.has_value() && (snap_ts >= *expire_before_ms);
+
+        if (is_retained_by_policy || is_protected_by_fuse)
+        {
+            result.retained_snapshots->add(snapshot);
+        }
+        else
+        {
+            result.expired_snapshot_ids.insert(snap_id);
+            if (snapshot->has(Iceberg::f_manifest_list))
+                result.expired_manifest_list_paths.push_back(snapshot->getValue<String>(Iceberg::f_manifest_list));
+        }
+    }
+    return result;
+}
+
+static SnapshotPartition partitionSnapshotsByIds(
+    const Poco::JSON::Object::Ptr & metadata,
+    const Poco::JSON::Array::Ptr & snapshots,
+    const std::vector<Int64> & snapshot_ids,
+    Int64 current_snapshot_id,
+    std::optional<Int64> expire_before_ms)
+{
+    std::unordered_set<Int64> requested_ids(snapshot_ids.begin(), snapshot_ids.end());
+    std::unordered_set<Int64> existing_ids;
+    std::unordered_set<Int64> ref_protected_ids;
+    SnapshotPartition result;
+
+    if (metadata->has(Iceberg::f_refs))
+    {
+        auto refs = metadata->getObject(Iceberg::f_refs);
+        for (const auto & ref_name : refs->getNames())
+        {
+            auto ref = refs->getObject(ref_name);
+            if (ref->has(Iceberg::f_metadata_snapshot_id))
+                ref_protected_ids.insert(ref->getValue<Int64>(Iceberg::f_metadata_snapshot_id));
+        }
+    }
+
+    ref_protected_ids.insert(current_snapshot_id);
+
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(i);
+        Int64 snap_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        Int64 snap_ts = snapshot->getValue<Int64>(Iceberg::f_timestamp_ms);
+
+        existing_ids.insert(snap_id);
+        bool requested = requested_ids.contains(snap_id);
+        bool is_protected_by_fuse = expire_before_ms.has_value() && (snap_ts >= *expire_before_ms);
+
+        if (requested && ref_protected_ids.contains(snap_id))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "expire_snapshots cannot expire snapshot {} because it is referenced by current snapshot, branch, or tag",
+                snap_id);
+
+        if (requested && !is_protected_by_fuse)
+        {
+            result.expired_snapshot_ids.insert(snap_id);
+            if (snapshot->has(Iceberg::f_manifest_list))
+                result.expired_manifest_list_paths.push_back(snapshot->getValue<String>(Iceberg::f_manifest_list));
+        }
+        else
+        {
+            result.retained_snapshots->add(snapshot);
+        }
+    }
+
+    for (Int64 requested_id : requested_ids)
+    {
+        if (!existing_ids.contains(requested_id))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots snapshot id {} does not exist", requested_id);
+    }
+
+    return result;
+}
+
+/// Mutate metadata: remove expired refs, update snapshots, trim log, bump timestamp.
+static void updateMetadataForExpiration(
+    Poco::JSON::Object::Ptr metadata,
+    const Strings & expired_ref_names,
+    const Poco::JSON::Array::Ptr & retained_snapshots,
+    const std::set<Int64> & expired_snapshot_ids)
+{
+    for (const auto & ref_name : expired_ref_names)
+        metadata->getObject(Iceberg::f_refs)->remove(ref_name);
+
+    metadata->set(Iceberg::f_snapshots, retained_snapshots);
+    trimSnapshotLog(metadata, expired_snapshot_ids);
+
+    auto now = std::chrono::system_clock::now();
+    auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    metadata->set(Iceberg::f_last_updated_ms, ms.count());
+}
+
+static void deleteExpiredFiles(
+    const Strings & files_to_delete,
+    ObjectStoragePtr object_storage,
+    LoggerPtr log)
+{
+    for (const auto & file_path : files_to_delete)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(file_path));
+            LOG_DEBUG(log, "Deleted expired file {}", file_path);
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
+        }
+    }
+}
+
+/// Expire old Iceberg snapshots following the spec's Snapshot Retention Policy.
+///
+/// The process:
+///   1. Read retention policy from table properties (with spec defaults).
+///   2. Build the snapshot parent graph and determine which snapshots to retain
+///      based on branch/tag refs and their min-snapshots-to-keep / max-snapshot-age-ms.
+///   3. If the caller provided expire_before_ms, it acts as an additional safety
+///      fuse — snapshots newer than this timestamp are never expired regardless
+///      of retention policy.
+///   4. Collect files exclusively owned by expired snapshots and delete them.
+///   5. Write updated metadata with optimistic concurrency (retry on conflict).
+ExpireSnapshotsResult expireSnapshots(
+    const ExpireSnapshotsOptions & options,
+    ContextPtr context,
+    ObjectStoragePtr object_storage,
+    const DataLakeStorageSettings & data_lake_settings,
+    PersistentTableComponents & persistent_table_components,
+    const String & write_format,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & blob_storage_type_name,
+    const String & blob_storage_namespace_name,
+    const String & table_name)
+{
+    auto common_path = persistent_table_components.table_path;
+    if (!common_path.starts_with('/'))
+        common_path = "/" + common_path;
+
+    int max_retries = MAX_TRANSACTION_RETRIES;
+    while (--max_retries > 0)
+    {
+        FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, write_format);
+        auto log = getLogger("IcebergExpireSnapshots");
+        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context,
+            log.get(),
+            persistent_table_components.table_uuid);
+
+        filename_generator.setVersion(last_version + 1);
+        filename_generator.setCompressionMethod(compression_method);
+
+        auto metadata = getMetadataJSONObject(
+            metadata_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+
+        if (metadata->getValue<Int32>(f_format_version) < 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
+
+        if (!metadata->has(Iceberg::f_current_snapshot_id))
+        {
+            LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");
+            return {.dry_run = options.dry_run};
+        }
+
+        Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+        if (current_snapshot_id < 0)
+        {
+            LOG_INFO(log, "No snapshots to expire (table has no current snapshot)");
+            return {.dry_run = options.dry_run};
+        }
+
+        auto snapshots = metadata->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        auto now_ms = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+        Strings expired_ref_names;
+        SnapshotPartition partition;
+        if (options.snapshot_ids.has_value())
+        {
+            partition = partitionSnapshotsByIds(metadata, snapshots, *options.snapshot_ids, current_snapshot_id, options.expire_before_ms);
+        }
+        else
+        {
+            auto policy = readRetentionPolicy(metadata, context, options);
+            SnapshotGraph graph(snapshots);
+            auto [retention_retained_ids, retention_expired_ref_names] = applyRetentionPolicy(metadata, current_snapshot_id, graph, policy, now_ms);
+            expired_ref_names = std::move(retention_expired_ref_names);
+            partition = partitionSnapshots(snapshots, retention_retained_ids, options.expire_before_ms);
+        }
+
+        if (partition.expired_snapshot_ids.empty())
+        {
+            LOG_INFO(log, "No snapshots to expire");
+            return {.dry_run = options.dry_run};
+        }
+        LOG_INFO(log, "Expiring {} snapshots", partition.expired_snapshot_ids.size());
+
+        Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+
+        std::set<String> retained_manifest_paths;
+        std::set<String> retained_data_file_paths;
+        std::set<String> retained_manifest_list_paths;
+        collectRetainedFiles(
+            partition.retained_snapshots, object_storage, persistent_table_components, context, log,
+            current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
+        auto expired_files = collectExpiredFiles(
+            partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
+            object_storage, persistent_table_components, context, log, current_schema_id);
+
+        if (options.dry_run)
+        {
+            LOG_INFO(log, "Dry-run mode: skip metadata commit and file deletion");
+            return ExpireSnapshotsResult{
+                .deleted_data_files_count = expired_files.data_files,
+                .deleted_position_delete_files_count = expired_files.position_delete_files,
+                .deleted_equality_delete_files_count = expired_files.equality_delete_files,
+                .deleted_manifest_files_count = expired_files.manifest_files,
+                .deleted_manifest_lists_count = expired_files.manifest_lists,
+                .dry_run = true,
+            };
+        }
+
+        updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
+        std::string json_representation = removeEscapedSlashes(oss.str());
+        auto [metadata_name, storage_metadata_name] = filename_generator.generateMetadataName();
+        auto hint = filename_generator.generateVersionHint();
+        if (!writeMetadataFileAndVersionHint(
+                storage_metadata_name,
+                json_representation,
+                hint.path_in_storage,
+                storage_metadata_name,
+                object_storage,
+                context,
+                compression_method,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        {
+            LOG_WARNING(log, "Metadata commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
+            continue;
         }
 
         if (catalog)
         {
-            auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
-            const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, base_catalog_metadata_location, new_schema, previous_schema_id))
+            String catalog_filename = metadata_name;
+            if (!catalog_filename.starts_with(blob_storage_type_name))
+                catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + metadata_name;
+
+            const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
+            if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
             {
-                if (!catalog_writes_metadata_file)
-                    removeRejectedMetadataFile(persistent_table_components.path_resolver, metadata_info, object_storage);
-                ++i;
-                continue;
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Failed to update catalog metadata after writing new metadata file. "
+                    "The table metadata may be in an inconsistent state");
             }
         }
 
-        succeeded = true;
-        break;
+        LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
+        deleteExpiredFiles(expired_files.all_paths, object_storage, log);
+        LOG_INFO(log, "Expired {} snapshots, deleted {} files", partition.expired_snapshot_ids.size(), expired_files.all_paths.size());
+
+        return ExpireSnapshotsResult{
+            .deleted_data_files_count = expired_files.data_files,
+            .deleted_position_delete_files_count = expired_files.position_delete_files,
+            .deleted_equality_delete_files_count = expired_files.equality_delete_files,
+            .deleted_manifest_files_count = expired_files.manifest_files,
+            .deleted_manifest_lists_count = expired_files.manifest_lists,
+            .dry_run = false,
+        };
     }
 
-    if (!succeeded)
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+    if (max_retries == 0)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessful retries to expire iceberg snapshots");
 
-    /// Invalidate the metadata files cache so that subsequent operations on this table see the
-    /// schema we just wrote. See `PersistentTableComponents::invalidateMetadataCache` for the
-    /// rationale.
-    persistent_table_components.invalidateMetadataCache();
+    UNREACHABLE();
 }
 
 #endif

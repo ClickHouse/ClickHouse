@@ -1,13 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
-
-UInt64 getCacheTokenHash(const String & token)
-{
-    return token.empty() ? 0 : sipHash64(token);
-}
 
 size_t getTotalSize(const StoredObjects & objects)
 {

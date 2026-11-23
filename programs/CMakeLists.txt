@@ -109,8 +109,6 @@ add_subdirectory (keeper-data-dumper)
 add_subdirectory (keeper-utils)
 add_subdirectory (local)
 add_subdirectory (obfuscator)
-add_subdirectory (oom-canary)
-add_subdirectory (packed-io)
 add_subdirectory (server)
 add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
@@ -186,8 +184,6 @@ clickhouse_program_install(clickhouse-format format)
 clickhouse_program_install(clickhouse-git-import git-import)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
-clickhouse_program_install(clickhouse-oom-canary oom-canary)
-clickhouse_program_install(clickhouse-packed-io packed-io)
 clickhouse_program_install(clickhouse-server server)
 clickhouse_program_install(clickhouse-static-files-disk-uploader static-files-disk-uploader)
 clickhouse_program_install(clickhouse-su su)
@@ -207,6 +203,7 @@ if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
     endif()
 
     # otherwise we don't build keeper
@@ -229,8 +226,6 @@ add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
 if (USE_BINARY_HASH)
     add_dependencies(clickhouse hash-binary)
-    # The section for the hash is reserved at link time and filled in place by `hash-binary --write-section`.
-    target_sources(clickhouse PRIVATE binary_hash_section.S)
 
     # When cross-compiling, use the native-built hash-binary; otherwise use the regular build output
     if (CMAKE_CROSSCOMPILING)
@@ -240,8 +235,8 @@ if (USE_BINARY_HASH)
     endif()
 
     add_custom_command(TARGET clickhouse POST_BUILD
-        COMMAND ${HASH_BINARY_PATH} --write-section clickhouse > hash 2> /dev/null
-        COMMENT "Writing hash of clickhouse binary to section '.clickhouse.hash'" VERBATIM)
+        COMMAND ${HASH_BINARY_PATH} clickhouse > hash 2> /dev/null
+        COMMENT "Computing hash of clickhouse binary" VERBATIM)
 
     if (NOT CMAKE_CROSSCOMPILING)
         add_custom_command(TARGET clickhouse POST_BUILD
@@ -250,6 +245,10 @@ if (USE_BINARY_HASH)
             COMMAND ${CMAKE_COMMAND} -E rm hash.verify
             COMMENT "Verifying hash-binary output matches clickhouse hash-binary" VERBATIM)
     endif()
+
+    add_custom_command(TARGET clickhouse POST_BUILD
+        COMMAND ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse
+        COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
 endif()
 
 if (CHECK_LARGE_OBJECT_SIZES)

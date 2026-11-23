@@ -110,11 +110,6 @@ namespace
         CNFQuery::OrGroup result;
         for (const auto & atom : group)
         {
-            /// A negated ordered comparison - `NOT (A < C)`, which is not `A >= C` when an argument can
-            /// be a `NaN` - says nothing about where `A` sits relative to `C`, so no hint follows from it.
-            if (atom.negative)
-                return {};
-
             const auto * func = atom.ast->as<ASTFunction>();
             if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
             {
@@ -125,7 +120,7 @@ namespace
 
                     for (const auto & primary_key_ast : primary_key_only_asts)
                     {
-                        ComparisonGraphCompareResult actual_result = {};
+                        ComparisonGraphCompareResult actual_result;
                         if (index == 0)
                             actual_result = graph.compare(primary_key_ast, func->arguments->children[index]);
                         else

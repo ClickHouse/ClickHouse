@@ -1,11 +1,10 @@
-#include <utility>
-
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
@@ -26,41 +25,22 @@ extern const int NOT_IMPLEMENTED;
 extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-void ColumnConst::setValue(const ColumnPtr & value)
-{
-    ColumnPtr new_data = value;
-    /// Squash Const of Const.
-    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(new_data.get()))
-        new_data = const_data->getDataColumnPtr();
-
-    if (new_data->size() != 1)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-                        "Incorrect size of nested column in ColumnConst::setValue: {}, must be 1.", new_data->size());
-
-    data = new_data;
-}
-
 ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
     : data(data_), s(s_)
 {
     /// Squash Const of Const.
-    /// Use const access: the data column is shared with the caller (use_count > 1),
-    /// so the non-const `WrappedPtr::get` would trip the `use_count == 1` assertion.
-    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(std::as_const(data).get()))
+    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(data.get()))
         data = const_data->getDataColumnPtr();
 
-    /// `data` stays shared with the caller after the loop, so dereferences must
-    /// also use the const path to avoid the same assertion.
-    const auto & const_data = std::as_const(data);
-    if (const_data->size() != 1)
+    if (data->size() != 1)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", const_data->size());
+                        "Incorrect size of nested column in constructor of ColumnConst: {}, must be 1.", data->size());
 
     /// Check that the value is initialized. We do it earlier, before it will be used, to ease debugging.
 #if defined(MEMORY_SANITIZER)
-    if (const_data->isFixedAndContiguous())
+    if (data->isFixedAndContiguous())
     {
-        auto value = const_data->getDataAt(0);
+        auto value = data->getDataAt(0);
         __msan_check_mem_is_initialized(value.data(), value.size());
     }
 #endif
@@ -143,15 +123,15 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
             selector.size(), toString(s));
 
-    VectorWithMemoryTracking<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+    std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
-    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+    MutableColumns res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         res[i] = cloneResized(counts[i]);
 
@@ -183,21 +163,10 @@ void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, Perm
 {
 }
 
-size_t ColumnConst::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+WeakHash32 ColumnConst::getWeakHash32() const
 {
-    return begin < end ? end : begin;
-}
-
-void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
-{
-    UInt32 value = 0;
-    data->computeHashInto(0, 1, &value, true);
-
-    for (size_t i = row_begin; i < row_end; ++i)
-    {
-        UInt32 & out = hash_out[i - row_begin];
-        out = initial ? value : combineWeakHash32(value, out);
-    }
+    WeakHash32 element_hash = data->getWeakHash32();
+    return WeakHash32(s, element_hash.getData()[0]);
 }
 
 void ColumnConst::compareColumn(
@@ -229,14 +198,5 @@ ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr & column)
     return ColumnConst::create(std::move(data), 1);
 }
 
-void intrusive_ptr_add_ref(const ColumnConst * c)
-{
-    intrusive_ptr_add_ref(static_cast<const IColumn *>(c));
-}
-
-void intrusive_ptr_release(const ColumnConst * c)
-{
-    intrusive_ptr_release(static_cast<const IColumn *>(c));
-}
 
 }

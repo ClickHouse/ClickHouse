@@ -18,6 +18,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
 }
@@ -25,30 +26,37 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3HexAreaM2 final : public IFunction
+class FunctionH3HexAreaM2 : public IFunction
 {
 public:
     static constexpr auto name = "h3HexAreaM2";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3HexAreaM2>(); }
 
-    [[nodiscard]] std::string getName() const override { return name; }
+    std::string getName() const override { return name; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt8) -> Float64";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt8())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                arg->getName(), 1, getName());
+
+        return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
@@ -80,8 +88,7 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            double res = 0;
-            getHexagonAreaAvgM2(resolution, &res);
+            Float64 res = getHexagonAreaAvgM2(resolution);
 
             dst_data[row] = res;
         }
@@ -110,9 +117,9 @@ Returns average hexagon area in square meters at the given [H3](#h3-index) resol
             "Get hexagon area at resolution 13",
             "SELECT h3HexAreaM2(13) AS area",
             R"(
-┌──────────────area─┐
-│ 43.87026794728301 │
-└───────────────────┘
+┌─area─┐
+│ 43.9 │
+└──────┘
             )"
         }
     };
