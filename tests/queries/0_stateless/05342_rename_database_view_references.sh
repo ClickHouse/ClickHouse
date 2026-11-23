@@ -137,7 +137,8 @@ ${CLICKHOUSE_CLIENT} -q "
 [ "$(${CLICKHOUSE_CLIENT} -q "SHOW CREATE TABLE ${EXT}.unrelated_v")" = "${unrelated_ext_before}" ] && echo "unchanged: ${EXT}.unrelated_v" | sed "s/${CLICKHOUSE_DATABASE}//"
 
 echo "-- after a reload"
-${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${DST} SYNC; ATTACH DATABASE ${DST}; DETACH DATABASE ${EXT} SYNC; ATTACH DATABASE ${EXT}"
+# Attaching a materialized view with a CTE warns that it replaces the view's dependencies, also without a rename.
+${CLICKHOUSE_CLIENT} --send_logs_level=error -q "DETACH DATABASE ${DST} SYNC; ATTACH DATABASE ${DST}; DETACH DATABASE ${EXT} SYNC; ATTACH DATABASE ${EXT}"
 check
 ${CLICKHOUSE_CLIENT} -q "
     SELECT arraySort(arrayMap((d, t) -> concat(replaceOne(d, '${CLICKHOUSE_DATABASE}', ''), '.', t), dependencies_database, dependencies_table))
