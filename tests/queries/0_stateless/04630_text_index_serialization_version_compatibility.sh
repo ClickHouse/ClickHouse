@@ -43,7 +43,9 @@ SELECT count() FROM tab WHERE hasPhrase(str, 'qux quux');
 
 echo '-- the part merged under the pin contains the positions substream'
 part_path=$($CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'tab' AND active")
-if [ -f "${part_path}skp_idx_text_idx.pos.idx" ]; then
+# The file name is hashed on case-insensitive file systems.
+hashed_name=$($CLICKHOUSE_LOCAL -q "SELECT lower(hex(reverse(sipHash128('skp_idx_text_idx.pos'))))")
+if [ -f "${part_path}skp_idx_text_idx.pos.idx" ] || [ -f "${part_path}${hashed_name}.idx" ]; then
     echo 'positions file exists'
 else
     echo "no positions file in $part_path:"

@@ -68,7 +68,7 @@ public:
     }
 
     /// Throws an exception if not found.
-    /// `is_replayed_definition`: see `ITableFunction::setReplayedDefinition`.
+    /// `is_replayed_definition` is passed on to `ITableFunction::setReplayedDefinition`.
     [[nodiscard]] TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context, bool is_replayed_definition = false) const;
 
     /// Returns nullptr if not found.

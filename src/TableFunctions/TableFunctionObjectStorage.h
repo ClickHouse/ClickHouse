@@ -56,7 +56,7 @@ public:
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
         auto configuration_to_initialize = getConfiguration(context);
-        configuration_to_initialize->is_replayed_definition = is_replayed_table_definition;
+        configuration_to_initialize->is_replayed_definition = arguments_from_stored_definition;
         StorageObjectStorageConfiguration::initialize(*configuration_to_initialize, args, context, true);
     }
 
