@@ -214,7 +214,7 @@ private:
     size_t shift = 0;
     UInt64 mask = 0;
 
-    static UInt64 splitMix64(UInt64 & state)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt64 splitMix64(UInt64 & state)
     {
         UInt64 z = (state += 0x9E3779B97F4A7C15ULL);
         z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -243,7 +243,7 @@ private:
     }
 
     template <bool mixed, typename Key>
-    [[nodiscard]] std::pair<size_t, size_t> places(const Key & key) const
+    [[nodiscard]] NO_SANITIZE_UNSIGNED_OVERFLOW std::pair<size_t, size_t> places(const Key & key) const
     {
         static constexpr size_t num_words = sizeof(Key) <= sizeof(UInt64) ? 1 : sizeof(Key) / sizeof(UInt64);
         auto word = [&](size_t i) -> UInt64
@@ -472,7 +472,7 @@ private:
         const size_t s = shift;
         [[maybe_unused]] const UInt64 m = mask;
         /// Must match `places`.
-        auto places_of = [&](Key v) -> std::pair<size_t, size_t>
+        auto places_of = [&](Key v) NO_SANITIZE_UNSIGNED_OVERFLOW -> std::pair<size_t, size_t>
         {
             if constexpr (mixed)
             {
