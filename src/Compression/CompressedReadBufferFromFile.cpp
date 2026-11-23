@@ -3,6 +3,7 @@
 
 #include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ByteRangeSet.h>
 
 
 namespace DB
@@ -84,8 +85,12 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
         return;
 
     /// Our seek is within working_buffer, so just move the position
+    /// Compare by subtracting from the current position, guarded against wrap-around: a corrupt mark near
+    /// `SIZE_MAX` must not alias the current position through a wrapped sum.
+    const size_t current_position_in_compressed_file = static_cast<size_t>(file_in.getPosition());
     if (size_compressed &&
-        offset_in_compressed_file == file_in.getPosition() - size_compressed &&
+        offset_in_compressed_file <= current_position_in_compressed_file &&
+        current_position_in_compressed_file - offset_in_compressed_file == size_compressed &&
         offset_in_decompressed_block <= working_buffer.size())
     {
         pos = working_buffer.begin() + offset_in_decompressed_block;
@@ -196,6 +201,12 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         addDiagnostics(e);
         throw;
     }
+}
+
+
+void CompressedReadBufferFromFile::setRequestMap(ByteRangeSet ranges)
+{
+    file_in.setRequestMap(std::move(ranges));
 }
 
 }

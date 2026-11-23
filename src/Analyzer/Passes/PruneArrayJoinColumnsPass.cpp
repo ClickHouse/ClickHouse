@@ -48,7 +48,7 @@ struct ExpressionUsage
     /// Filled after pruning: old 1-based tupleElement index -> new 1-based index.
     std::unordered_map<UInt64, UInt64> index_remap;
 
-    bool hasNested() const { return !nested_subcolumn_names.empty(); }
+    [[nodiscard]] bool hasNested() const { return !nested_subcolumn_names.empty(); }
 
     /// `type` resolves the name to a substream path, as `getSubcolumn` does. The first tuple element of the path is the used subcolumn.
     void markUsedBySubcolumn(const IDataType & type, const String & subcolumn_name)
@@ -66,7 +66,7 @@ struct ExpressionUsage
         fully_used = true;
     }
 
-    bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
+    [[nodiscard]] bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
 };
 
 struct ArrayJoinUsage
