@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -195,12 +196,28 @@ static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
     return normalized->getOutputs()[0]->getHash();
 }
 
+static bool hasRowDependentFunctions(const ActionsDAG & dag);
+
 /// An expensive function like `aiFilter` is stateful only to count its calls, so it may run on the rows that passed PREWHERE.
+/// A lambda is stateful if any function in its body is, and expensive if any is, so it can be both while none of its functions is.
+static bool isRowDependentFunction(const IFunctionBase & function)
+{
+    if (!function.isStateful())
+        return false;
+    if (!function.isExpensive())
+        return true;
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return hasRowDependentFunctions(expression->getAcionsDAG());
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return hasRowDependentFunctions(capture->getAcionsDAG());
+    return false;
+}
+
 static bool hasRowDependentFunctions(const ActionsDAG & dag)
 {
     return std::ranges::any_of(dag.getNodes(), [](const ActionsDAG::Node & node)
     {
-        return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isStateful() && !node.function_base->isExpensive();
+        return !allNodeFunctions(node, [](const IFunctionBase & function) { return !isRowDependentFunction(function); });
     });
 }
 

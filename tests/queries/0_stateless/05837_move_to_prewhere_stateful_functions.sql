@@ -22,6 +22,23 @@ SELECT '-- stateful filter over a filtered subquery';
 SELECT a FROM (SELECT a FROM t_prewhere_stateful WHERE a % 2 = 0) WHERE rowNumberInAllBlocks() < 3 ORDER BY a;
 SELECT a FROM (SELECT a FROM t_prewhere_stateful WHERE a % 2 = 0) WHERE rowNumberInAllBlocks() < 3 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
 
+SELECT '-- stateful function in a lambda with an expensive function';
+-- The AI branch is never taken, so no AI provider is called.
+SELECT a, n FROM
+(
+    SELECT a, arrayMap(x -> if(x = 100, toUInt32(aiFilter(toString(x), 'test')),
+        runningConcurrency(toDateTime(x), toDateTime(x + 100))), [a]) AS n
+    FROM t_prewhere_stateful
+)
+WHERE a >= 5 ORDER BY a;
+SELECT a, n FROM
+(
+    SELECT a, arrayMap(x -> if(x = 100, toUInt32(aiFilter(toString(x), 'test')),
+        runningConcurrency(toDateTime(x), toDateTime(x + 100))), [a]) AS n
+    FROM t_prewhere_stateful
+)
+WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
+
 DROP TABLE t_prewhere_stateful;
 
 DROP TABLE IF EXISTS t_prewhere_stateful_default;
