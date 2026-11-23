@@ -114,11 +114,11 @@ namespace DB
             IFileCachePriority::ObservedQueue observed_queue;
         };
 
-        /// `HOTTEST` and `COLDEST`: the copied entries in the walk order. `RANDOM`: the reservoir.
+        /// The copied entries in the walk order
         std::vector<ObservedEntry> entries;
-        /// `HOTTEST` and `COLDEST`: the sum of the sizes of the copied entries, as the queue entries see them.
+        /// The sum of the sizes of the copied entries
         UInt64 copied_size = 0;
-        /// `HOTTEST` and `COLDEST`: set when `query_max_elements` entries are copied, or `copied_size` passes `query_max_total_size`.
+        /// Set when `query_max_elements` entries are copied, or `copied_size` passes `query_max_total_size`
         /// The next sub-queue (SLRU's second one, Split's second one) is then not walked at all.
         bool limit_reached{false};
         /// Set by the query to stop the walk early, e.g. on `KILL QUERY` or `max_execution_time`, so that the priority lock
