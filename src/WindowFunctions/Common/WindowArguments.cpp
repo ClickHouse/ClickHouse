@@ -85,9 +85,11 @@ ArgumentValue WindowArguments::at(size_t argument, Int64 row) const
 {
     /// `argument` is chosen by the window function, not by the data, so it is checked only in debug builds.
     chassert(argument < static_cast<size_t>(num_arguments));
+    size_t * last_used_block_data = last_used_block.data();
     const Int64 position = first_row_position + row;
-    const Block & block = blockAt(blocks, last_used_block.data()[argument], position);
-    return ArgumentValue(*block.columns.data()[argument], position - block.begin_position);
+    const Block & block = blockAt(blocks, last_used_block_data[argument], position);
+    const IColumn * const * columns_data = block.columns.data();
+    return ArgumentValue(*columns_data[argument], position - block.begin_position);
 }
 
 ArgumentsSegment WindowArguments::segment(Int64 begin_row, Int64 end_row) const
