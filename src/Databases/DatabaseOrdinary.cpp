@@ -410,23 +410,6 @@ bool DatabaseOrdinary::dropLeftoverOfInterruptedReplace(
     if (!create_query || create_query->uuid == UUIDHelpers::Nil)
         return keep_table("its metadata has no UUID");
 
-    if (db_disk->isReadOnly())
-        return keep_table("the disk of the database is read-only");
-
-    if (db_disk->existsFile(full_path + detached_suffix))
-        return keep_table("it is permanently detached");
-
-    /// An interrupted EXCHANGE of the temporary table with the replaced table may have left the metadata of the replaced
-    /// table under the temporary name.
-    for (const String & exchange_leftover_path : {
-             full_path + "_tmp_rename_exchange",
-             full_path + ".tmp_exchange",
-             (fs::path(getMetadataPath()) / ("." + file_name + ".exchange")).string()})
-    {
-        if (db_disk->existsFile(exchange_leftover_path))
-            return keep_table(fmt::format("{} is a leftover of an interrupted exchange of tables", exchange_leftover_path));
-    }
-
     /// Only the leftovers of `CREATE TABLE ... AS SELECT` and `CREATE OR REPLACE TABLE` are dropped.
     if (create_query->isView() || create_query->is_dictionary)
         return keep_table("it is a view or a dictionary");
@@ -439,6 +422,12 @@ bool DatabaseOrdinary::dropLeftoverOfInterruptedReplace(
     /// On ATTACH DATABASE the UUIDs of the tables are already locked. The table will be dropped at the next startup.
     if (!is_startup)
         return keep_table("it is not the startup of the server; it will be dropped at the next startup");
+
+    if (db_disk->isReadOnly())
+        return keep_table("the disk of the database is read-only");
+
+    if (db_disk->existsFile(full_path + detached_suffix))
+        return keep_table("it is permanently detached");
 
     /// For example, the UUID may be locked by a table from `metadata_dropped`.
     const UUID uuid = create_query->uuid;
