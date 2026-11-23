@@ -128,7 +128,7 @@ void JWTProvider::applyClientAuthentication(Poco::Net::HTTPRequest & request, st
             break;
         case OAuthClientAuthMethod::Basic:
         {
-            Poco::Net::HTTPBasicCredentials credentials(oauth_client_id, oauth_client_secret);
+            Poco::Net::HTTPBasicCredentials credentials(encodeFormComponent(oauth_client_id), encodeFormComponent(oauth_client_secret));
             credentials.authenticate(request);
             break;
         }
