@@ -2817,7 +2817,7 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     /// recomputed values while the reader compares its own placeholders against it, which can drop
     /// rows that belong to the top-K. A column with no default expression is never rewritten above
     /// the reader, so for it the two values always agree.
-    return !info.columns_description.hasDefault(sort_column.name);
+    return !info.columns_description.hasDefault(sort_column.name) && !info.defaultsDependOnTheirBlock(getContext());
 }
 
 bool ReadFromFile::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const

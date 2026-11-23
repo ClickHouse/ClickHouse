@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -462,6 +463,36 @@ bool ReadFromFormatInfo::hasDefaultOfColumnOrParent(const String & name) const
         if (columns_description.hasDefault(name.substr(0, pos)))
             return true;
     return false;
+}
+
+bool ReadFromFormatInfo::defaultsDependOnTheirBlock(const ContextPtr & context) const
+{
+    Block available;
+    NamesAndTypesList with_defaults;
+    NameSet added;
+    for (const auto & column : format_header)
+    {
+        String column_with_default;
+        if (columns_description.hasDefault(column.name))
+            column_with_default = column.name;
+        for (size_t pos = column.name.find('.'); column_with_default.empty() && pos != String::npos; pos = column.name.find('.', pos + 1))
+            if (columns_description.hasDefault(column.name.substr(0, pos)))
+                column_with_default = column.name.substr(0, pos);
+
+        if (column_with_default.empty())
+            available.insert(column.cloneEmpty());
+        else if (added.insert(column_with_default).second)
+            with_defaults.emplace_back(column_with_default, columns_description.get(column_with_default).type);
+    }
+
+    if (with_defaults.empty())
+        return false;
+
+    if (!available.columns())
+        available.insert({DataTypeUInt8().createColumn(), std::make_shared<DataTypeUInt8>(), "_dummy"});
+
+    auto dag = evaluateMissingDefaults(available, with_defaults, columns_description, context, false);
+    return dag && dag->hasNonDeterministicOrStatefulFunctions();
 }
 
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
