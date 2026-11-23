@@ -16,8 +16,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <fmt/ranges.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -148,24 +153,42 @@ DataTypePtr withExplicitTimezone(const DataTypePtr & datetime_type, const String
     return std::make_shared<DataTypeDateTime>(timezone);
 }
 
-ASTPtr castCollectionWithTimezone(Array elements, const DataTypePtr & datetime_type, const String & timezone)
-{
-    auto array_type = std::make_shared<DataTypeArray>(withExplicitTimezone(datetime_type, timezone));
-    return makeASTFunction(
-        "CAST",
-        make_intrusive<ASTLiteral>(std::move(elements)),
-        make_intrusive<ASTLiteral>(array_type->getName()));
-}
-
-/// An `IN` set parses a string member more strictly than `CAST` and `toDateTime` do, so a string the set
-/// rejects fails the mutation with the error the identical `SELECT` gets.
-void checkConvertibleAsSetMember(const Field & value, const DataTypePtr & type)
+/// The value the `IN` set of the identical `SELECT` gives a string, or nullopt if the set drops it. `CAST` and
+/// `toDateTime` read strings more leniently, and some differently: `'20000101'` is an epoch to the set, a date to them.
+std::optional<Field> convertAsSetMember(const Field & value, const DataTypePtr & zoned_type)
 {
     const auto string_type = std::make_shared<DataTypeString>();
-    getSetElementsForConstantValue(type, string_type->createColumnConst(1, value), string_type, {});
+    const auto elements = getSetElementsForConstantValue(zoned_type, string_type->createColumnConst(1, value), string_type, {});
+    const auto & column = *elements.front().column;
+    if (column.empty())
+        return std::nullopt;
+    return column[0];
 }
 
-/// A mixed collection has no common element type, so only an all-string one can be cast as a whole.
+/// A `DateTime64` set value is stored as decimal seconds read through this type, which, unlike a date-time text, depends
+/// on no parsing mode and keeps the sign of an instant in the second before 1970. A `DateTime` one is its epoch.
+DataTypePtr decimalSecondsType(const DataTypePtr & datetime_type)
+{
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(datetime_type.get()))
+        return std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, dt64->getScale());
+    return nullptr;
+}
+
+String toDecimalSeconds(const Field & datetime64)
+{
+    const auto & decimal = datetime64.safeGet<DecimalField<DateTime64>>();
+    WriteBufferFromOwnString buf;
+    writeText(decimal.getValue(), decimal.getScale(), buf);
+    return buf.str();
+}
+
+ASTPtr castLiteral(Field value, const DataTypePtr & type)
+{
+    return makeASTFunction("CAST", make_intrusive<ASTLiteral>(std::move(value)), make_intrusive<ASTLiteral>(type->getName()));
+}
+
+/// Replaces each string with its set value. A `DateTime64` value needs a cast, so a collection that also holds other
+/// elements is expanded to `expanded_function_name`.
 template <typename Collection>
 ASTPtr rewriteCollectionWithTimezone(
     const Collection & elements,
@@ -174,30 +197,41 @@ ASTPtr rewriteCollectionWithTimezone(
     const String & timezone)
 {
     const auto zoned_type = withExplicitTimezone(datetime_type, timezone);
+    const auto decimal_type = decimalSecondsType(datetime_type);
+
+    /// Every string of `converted` is the decimal seconds of a `DateTime64` set value.
+    Collection converted;
     size_t strings = 0;
     for (const auto & element : elements)
     {
         if (element.getType() != Field::Types::String)
+        {
+            converted.push_back(element);
             continue;
-        checkConvertibleAsSetMember(element, zoned_type);
+        }
         ++strings;
+        if (auto value = convertAsSetMember(element, zoned_type))
+            converted.push_back(decimal_type ? Field(toDecimalSeconds(*value)) : std::move(*value));
     }
 
     if (strings == 0)
         return nullptr;
 
+    if (!decimal_type)
+        return make_intrusive<ASTLiteral>(converted.empty() ? Field(Array{}) : Field(std::move(converted)));
+
     if (strings == elements.size())
-        return castCollectionWithTimezone(Array(elements.begin(), elements.end()), datetime_type, timezone);
+        return castLiteral(Array(converted.begin(), converted.end()), std::make_shared<DataTypeArray>(decimal_type));
 
     auto function = makeASTFunction(expanded_function_name);
     auto & arguments = function->arguments->children;
-    arguments.reserve(elements.size());
-    for (const auto & element : elements)
+    arguments.reserve(converted.size());
+    for (auto & value : converted)
     {
-        ASTPtr element_ast = make_intrusive<ASTLiteral>(element);
-        if (element.getType() == Field::Types::String)
-            element_ast = wrapWithTimezone(element_ast, datetime_type, timezone);
-        arguments.push_back(std::move(element_ast));
+        if (value.getType() == Field::Types::String)
+            arguments.push_back(castLiteral(std::move(value), decimal_type));
+        else
+            arguments.push_back(make_intrusive<ASTLiteral>(std::move(value)));
     }
     return function;
 }
@@ -227,21 +261,41 @@ bool tryWrapInLiterals(
         return false;
 
     bool wrapped = false;
+    const auto zoned_type = withExplicitTimezone(dt, timezone);
+    const auto decimal_type = decimalSecondsType(dt);
 
     /// The right side of IN can be an ASTFunction (tuple) or ASTExpressionList.
-    /// Walk its children and wrap string literals.
+    /// Walk its children and rewrite string literals.
     auto wrap_children = [&](ASTs & children)
     {
-        for (auto & child : children)
+        ASTs rewritten;
+        rewritten.reserve(children.size());
+        for (const auto & child : children)
         {
-            if (const auto * lit = child->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
+            const auto * lit = child->as<ASTLiteral>();
+            if (!lit || lit->value.getType() != Field::Types::String)
             {
-                if (!bound_by_lambda)
-                    checkConvertibleAsSetMember(lit->value, withExplicitTimezone(dt, timezone));
-                child = wrapWithTimezone(child, dt, timezone);
-                wrapped = true;
+                rewritten.push_back(child);
+                continue;
             }
+
+            wrapped = true;
+            if (bound_by_lambda)
+            {
+                rewritten.push_back(wrapWithTimezone(child, dt, timezone));
+                continue;
+            }
+
+            auto value = convertAsSetMember(lit->value, zoned_type);
+            if (!value)
+                continue;
+
+            if (decimal_type)
+                rewritten.push_back(castLiteral(toDecimalSeconds(*value), decimal_type));
+            else
+                rewritten.push_back(make_intrusive<ASTLiteral>(std::move(*value)));
         }
+        children = std::move(rewritten);
     };
 
     if (auto * tuple_func = right->as<ASTFunction>(); tuple_func && tuple_func->name == "tuple" && tuple_func->arguments)

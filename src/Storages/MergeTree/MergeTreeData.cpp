@@ -11767,38 +11767,21 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
 namespace
 {
 
-/// A DateTime that pins no timezone is resolved against the timezone of the server that reads it,
-/// so the same expression can mean different instants on two replicas.
-bool isExplicitlyZonedDateTimeArray(const String & type_name)
+/// A literal cast to `Decimal` or to an array of it reads its strings as numbers, whatever the date and the server.
+bool isLiteralCastToDecimal(const ASTFunction & cast)
 {
-    const auto type = DataTypeFactory::instance().tryGet(type_name);
-    if (!type)
+    const auto & arguments = cast.arguments->children;
+    if (arguments.size() != 2 || !arguments[0]->as<ASTLiteral>())
         return false;
 
-    const auto * array = typeid_cast<const DataTypeArray *>(type.get());
-    if (!array)
+    const auto * type_name = arguments[1]->as<ASTLiteral>();
+    if (!type_name || type_name->value.getType() != Field::Types::String)
         return false;
 
-    const auto * nested = array->getNestedType().get();
-    if (const auto * dt = typeid_cast<const DataTypeDateTime *>(nested))
-        return dt->hasExplicitTimeZone();
-    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(nested))
-        return dt64->hasExplicitTimeZone();
-    return false;
-}
-
-/// `toDateTime(<literal>, '<tz>')` or `toDateTime64(<literal>, <scale>, '<tz>')`.
-bool isExplicitlyZonedDateTimeOfLiteral(const ASTFunction & function)
-{
-    const auto & arguments = function.arguments->children;
-    if (arguments.size() != (function.name == "toDateTime64" ? 3 : 2))
-        return false;
-
-    if (!std::ranges::all_of(arguments, [](const ASTPtr & argument) { return argument->as<ASTLiteral>() != nullptr; }))
-        return false;
-
-    const auto & timezone = arguments.back()->as<const ASTLiteral &>().value;
-    return timezone.getType() == Field::Types::String && !timezone.safeGet<String>().empty();
+    auto type = DataTypeFactory::instance().tryGet(type_name->value.safeGet<String>());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        type = array->getNestedType();
+    return type && isDecimal(type);
 }
 
 }
@@ -11897,25 +11880,10 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                         return true;
 
                     const auto * rhs_function = node->as<ASTFunction>();
-                    if (!rhs_function || !rhs_function->arguments)
-                        return false;
+                    if (rhs_function && rhs_function->arguments && (rhs_function->name == "CAST" || rhs_function->name == "_CAST"))
+                        return isLiteralCastToDecimal(*rhs_function);
 
-                    /// A cast of literals to a timezone-pinned DateTime array is as stable as the literals.
-                    if (rhs_function->name == "CAST" || rhs_function->name == "_CAST")
-                    {
-                        const auto & cast_arguments = rhs_function->arguments->children;
-                        if (cast_arguments.size() != 2 || !literal_self(cast_arguments[0], literal_self))
-                            return false;
-
-                        const auto * type_name = cast_arguments[1]->as<ASTLiteral>();
-                        return type_name && type_name->value.getType() == Field::Types::String
-                            && isExplicitlyZonedDateTimeArray(type_name->value.safeGet<String>());
-                    }
-
-                    if (rhs_function->name == "toDateTime" || rhs_function->name == "toDateTime64")
-                        return isExplicitlyZonedDateTimeOfLiteral(*rhs_function);
-
-                    if (rhs_function->name != "tuple" && rhs_function->name != "array")
+                    if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
                         return false;
 
                     return std::ranges::all_of(rhs_function->arguments->children, [&](const auto & child)

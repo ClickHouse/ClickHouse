@@ -10,7 +10,9 @@
 -- table- or database-qualified column name, DateTime64, Nullable and
 -- LowCardinality columns, and lightweight DELETE. Columns that declare their own
 -- timezone are deliberately left alone, and a string an IN set rejects is not
--- converted, so the mutation is rejected as the identical SELECT is.
+-- converted, so the mutation is rejected as the identical SELECT is. A string the
+-- set accepts is replaced by the value the set gives it, so a rewritten command no
+-- longer holds the string.
 
 SET session_timezone = 'America/Denver'; -- UTC-7 (far from typical UTC server default)
 SET mutations_sync = 2;
@@ -230,7 +232,7 @@ INSERT INTO mut_tz_in_explicit VALUES (1, '2000-01-01 01:00:00'), (9, '2000-01-0
 SELECT 'in explicit selected', arraySort(groupArray(id)) FROM mut_tz_in_explicit WHERE time IN ('2000-01-01 01:00:00');
 ALTER TABLE mut_tz_in_explicit DELETE WHERE time IN ('2000-01-01 01:00:00');
 SELECT 'in explicit survivors', arraySort(groupArray(id)) FROM mut_tz_in_explicit;
-SELECT 'in explicit rewritten', countIf(command LIKE '%America/Denver%') FROM system.mutations
+SELECT 'in explicit rewritten', countIf(command NOT LIKE '%2000-01-01 01:00:00%') FROM system.mutations
     WHERE database = currentDatabase() AND table = 'mut_tz_in_explicit';
 
 -- A dotted name that resolves to a subcolumn keeps that subcolumn's own timezone.
@@ -252,7 +254,7 @@ SELECT 'sub qual selected', arraySort(groupArray(id)) FROM mut_tz_sub_qual WHERE
 ALTER TABLE mut_tz_sub_qual DELETE WHERE mut_tz_sub_qual.x.time IN ('2000-01-01 01:00:00');
 SELECT 'sub qual survivors', arraySort(groupArray(id)) FROM mut_tz_sub_qual;
 
-SELECT 'sub rewritten', countIf(command LIKE '%America/Denver%') FROM system.mutations
+SELECT 'sub rewritten', countIf(command NOT LIKE '%2000-01-01 01:00:00%') FROM system.mutations
     WHERE database = currentDatabase() AND table IN ('mut_tz_sub', 'mut_tz_sub_qual');
 
 -- A list holding both a string and a number has no common element type, so each
@@ -305,6 +307,53 @@ SELECT id FROM mut_tz_in_strict WHERE time IN tuple('2000-01-01T01:00:00Z'); -- 
 ALTER TABLE mut_tz_in_strict DELETE WHERE time IN tuple('2000-01-01T01:00:00Z'); -- { serverError TYPE_MISMATCH }
 SELECT 'strict survivors', arraySort(groupArray(id)) FROM mut_tz_in_strict;
 
+-- A numeric string is an epoch to the IN set and a date to CAST and toDateTime, so the
+-- mutation must keep the set's reading: id 1 holds that epoch, id 9 the date.
+DROP TABLE IF EXISTS mut_tz_in_numeric SYNC;
+CREATE TABLE mut_tz_in_numeric (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_numeric VALUES (1, 20000101), (9, toDateTime('2000-01-01 00:00:00'));
+SELECT 'in numeric selected', arraySort(groupArray(id)) FROM mut_tz_in_numeric WHERE time IN ('20000101');
+ALTER TABLE mut_tz_in_numeric DELETE WHERE time IN ('20000101');
+SELECT 'in numeric survivors', arraySort(groupArray(id)) FROM mut_tz_in_numeric;
+
+DROP TABLE IF EXISTS mut_tz_in_numeric64 SYNC;
+CREATE TABLE mut_tz_in_numeric64 (id UInt32, time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_numeric64 VALUES (1, 20000101), (9, toDateTime64('2000-01-01 00:00:00', 3));
+SELECT 'in numeric dt64 selected', arraySort(groupArray(id)) FROM mut_tz_in_numeric64 WHERE time IN ('20000101');
+ALTER TABLE mut_tz_in_numeric64 DELETE WHERE time IN ('20000101');
+SELECT 'in numeric dt64 survivors', arraySort(groupArray(id)) FROM mut_tz_in_numeric64;
+
+-- The same in the explicit tuple spelling, which takes a separate path.
+DROP TABLE IF EXISTS mut_tz_in_numeric_tuple SYNC;
+CREATE TABLE mut_tz_in_numeric_tuple (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_numeric_tuple VALUES (1, 20000101), (9, toDateTime('2000-01-01 00:00:00'));
+SELECT 'in numeric tuple selected', arraySort(groupArray(id)) FROM mut_tz_in_numeric_tuple WHERE time IN tuple('20000101');
+ALTER TABLE mut_tz_in_numeric_tuple DELETE WHERE time IN tuple('20000101');
+SELECT 'in numeric tuple survivors', arraySort(groupArray(id)) FROM mut_tz_in_numeric_tuple;
+
+DROP TABLE IF EXISTS mut_tz_in_numeric64_tuple SYNC;
+CREATE TABLE mut_tz_in_numeric64_tuple (id UInt32, time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_numeric64_tuple VALUES (1, 20000101), (9, toDateTime64('2000-01-01 00:00:00', 3));
+SELECT 'in numeric dt64 tuple selected', arraySort(groupArray(id)) FROM mut_tz_in_numeric64_tuple WHERE time IN tuple('20000101');
+ALTER TABLE mut_tz_in_numeric64_tuple DELETE WHERE time IN tuple('20000101');
+SELECT 'in numeric dt64 tuple survivors', arraySort(groupArray(id)) FROM mut_tz_in_numeric64_tuple;
+
+-- A DateTime64 instant in the second before 1970 has a negative fraction.
+DROP TABLE IF EXISTS mut_tz_in_dt64_before_1970 SYNC;
+CREATE TABLE mut_tz_in_dt64_before_1970 (id UInt32, time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_dt64_before_1970 VALUES (1, toDateTime64('1969-12-31 16:59:59.500', 3)), (9, toDateTime64('1969-12-31 16:59:59.500', 3, 'UTC'));
+SELECT 'in dt64 before 1970 selected', arraySort(groupArray(id)) FROM mut_tz_in_dt64_before_1970 WHERE time IN ('1969-12-31 16:59:59.500');
+ALTER TABLE mut_tz_in_dt64_before_1970 DELETE WHERE time IN ('1969-12-31 16:59:59.500');
+SELECT 'in dt64 before 1970 survivors', arraySort(groupArray(id)) FROM mut_tz_in_dt64_before_1970;
+
+-- A DateTime64 list mixing a string and a number. 946688400 is the instant id 9 holds.
+DROP TABLE IF EXISTS mut_tz_in_dt64_mixed SYNC;
+CREATE TABLE mut_tz_in_dt64_mixed (id UInt32, time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_dt64_mixed VALUES (1, toDateTime64('2000-01-01 01:00:00', 3)), (9, toDateTime64('2000-01-01 01:00:00', 3, 'UTC'));
+SELECT 'in dt64 mixed selected', arraySort(groupArray(id)) FROM mut_tz_in_dt64_mixed WHERE time IN ('2000-01-01 01:00:00', 946688400);
+ALTER TABLE mut_tz_in_dt64_mixed DELETE WHERE time IN ('2000-01-01 01:00:00', 946688400);
+SELECT 'in dt64 mixed survivors', arraySort(groupArray(id)) FROM mut_tz_in_dt64_mixed;
+
 -- ---------------------------------------------------------------------------
 -- A lambda parameter shadowing a DateTime column
 --
@@ -327,7 +376,7 @@ SELECT 'lambda shadow in selected', arraySort(groupArray(id)) FROM mut_tz_lambda
 ALTER TABLE mut_tz_lambda_in DELETE WHERE arrayExists(time -> time IN ('2000-01-01 01:00:00'), arr);
 SELECT 'lambda shadow in survivors', arraySort(groupArray(id)) FROM mut_tz_lambda_in;
 
-SELECT 'lambda shadow rewritten', countIf(command LIKE '%America/Denver%') FROM system.mutations
+SELECT 'lambda shadow rewritten', countIf(command NOT LIKE '%2000-01-01 01:00:00%') FROM system.mutations
     WHERE database = currentDatabase() AND table = 'mut_tz_lambda_in';
 
 -- The same shadowed name written as an explicit tuple: that spelling resolves the name
@@ -381,12 +430,12 @@ SELECT 'lambda column selected', arraySort(groupArray(id)) FROM mut_tz_lambda_co
     WHERE arrayExists(x -> x = 'k' AND time IN ('2000-01-01 01:00:00'), arr);
 ALTER TABLE mut_tz_lambda_column DELETE WHERE arrayExists(x -> x = 'k' AND time IN ('2000-01-01 01:00:00'), arr);
 SELECT 'lambda column survivors', arraySort(groupArray(id)) FROM mut_tz_lambda_column;
-SELECT 'lambda column rewritten', countIf(command LIKE '%America/Denver%') FROM system.mutations
+SELECT 'lambda column rewritten', countIf(command NOT LIKE '%2000-01-01 01:00:00%') FROM system.mutations
     WHERE database = currentDatabase() AND table = 'mut_tz_lambda_column';
 
 -- The bound name must stop binding when the lambda ends: the occurrence inside
 -- it is left alone while the trailing top-level one is rewritten, so the stored
--- command carries exactly one converted literal.
+-- command keeps exactly one of the two strings.
 DROP TABLE IF EXISTS mut_tz_lambda_pop SYNC;
 CREATE TABLE mut_tz_lambda_pop (id UInt32, time DateTime, arr Array(String)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO mut_tz_lambda_pop VALUES (1, toDateTime('2000-01-01 01:00:00'), ['2000-01-01 01:00:00']),
@@ -395,7 +444,7 @@ SELECT 'lambda scope pop selected', arraySort(groupArray(id)) FROM mut_tz_lambda
     WHERE arrayExists(time -> time IN ('2000-01-01 01:00:00'), arr) AND time IN ('2000-01-01 01:00:00');
 ALTER TABLE mut_tz_lambda_pop DELETE WHERE arrayExists(time -> time IN ('2000-01-01 01:00:00'), arr) AND time IN ('2000-01-01 01:00:00');
 SELECT 'lambda scope pop survivors', arraySort(groupArray(id)) FROM mut_tz_lambda_pop;
-SELECT 'lambda scope pop rewrites', sum(countMatches(command, 'America/Denver')) FROM system.mutations
+SELECT 'lambda scope pop strings kept', sum(countMatches(command, '2000-01-01 01:00:00')) FROM system.mutations
     WHERE database = currentDatabase() AND table = 'mut_tz_lambda_pop';
 
 -- One case under a second session timezone, so that the file stays discriminating
@@ -442,6 +491,12 @@ DROP TABLE mut_tz_in_mixed SYNC;
 DROP TABLE mut_tz_in_null SYNC;
 DROP TABLE mut_tz_in_ops SYNC;
 DROP TABLE mut_tz_in_strict SYNC;
+DROP TABLE mut_tz_in_numeric SYNC;
+DROP TABLE mut_tz_in_numeric64 SYNC;
+DROP TABLE mut_tz_in_numeric_tuple SYNC;
+DROP TABLE mut_tz_in_numeric64_tuple SYNC;
+DROP TABLE mut_tz_in_dt64_before_1970 SYNC;
+DROP TABLE mut_tz_in_dt64_mixed SYNC;
 DROP TABLE mut_tz_lambda_in SYNC;
 DROP TABLE mut_tz_lambda_tuple SYNC;
 DROP TABLE mut_tz_lambda_dt SYNC;

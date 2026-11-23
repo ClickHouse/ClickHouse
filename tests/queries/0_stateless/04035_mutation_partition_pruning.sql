@@ -296,8 +296,8 @@ FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_mut_prune_13' AND NOT is_killed
 ORDER BY mutation_id;
 
--- The same cast with the timezone pinned in the target type prunes, which shows test 13
--- turns on the missing timezone and not on the cast
+-- A string without a year takes the current or the previous one depending on the date, in
+-- CAST and toDateTime alike, so neither prunes even with the timezone pinned
 DROP TABLE IF EXISTS t_mut_prune_13b;
 CREATE TABLE t_mut_prune_13b (key UInt64, time DateTime)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mut_prune_13b', '1')
@@ -306,9 +306,10 @@ PARTITION BY toYYYYMM(time) ORDER BY key;
 INSERT INTO t_mut_prune_13b SELECT number * 10 + 1, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00')) FROM numbers(3);
 INSERT INTO t_mut_prune_13b SELECT number * 10 + 9, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 'UTC') FROM numbers(3);
 
-ALTER TABLE t_mut_prune_13b DELETE WHERE time IN CAST(['2024-06-15 12:00:00'], 'Array(DateTime(\'UTC\'))');
+ALTER TABLE t_mut_prune_13b DELETE WHERE time IN CAST(['Nov 24 12:00:00'], 'Array(DateTime(\'UTC\'))');
+ALTER TABLE t_mut_prune_13b DELETE WHERE time IN tuple(toDateTime('Nov 24 12:00:00', 'UTC'));
 
-SELECT 'test 13b: affected partitions';
+SELECT 'test 13b: affected partitions (should be all)';
 SELECT arraySort(block_numbers.partition_id) as partitions
 FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_mut_prune_13b' AND NOT is_killed
@@ -342,3 +343,30 @@ WHERE database = currentDatabase() AND table = 't_mut_prune_14' AND NOT is_kille
 ORDER BY mutation_id;
 
 DROP TABLE t_mut_prune_14 SYNC;
+
+-- Test 15: a DateTime64 list keeps pruning once rewritten, whole or mixed with a number
+DROP TABLE IF EXISTS t_mut_prune_15;
+CREATE TABLE t_mut_prune_15 (key UInt64, time DateTime64(3))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mut_prune_15', '1')
+PARTITION BY toYYYYMM(time) ORDER BY key;
+
+INSERT INTO t_mut_prune_15 SELECT number * 10 + 1, toDateTime64(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 3) FROM numbers(3);
+INSERT INTO t_mut_prune_15 SELECT number * 10 + 9, toDateTime64(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 3, 'UTC') FROM numbers(3);
+
+SELECT 'test 15: rows the identical SELECT matches';
+SELECT key FROM t_mut_prune_15 WHERE time IN ('2024-06-15 12:00:00') ORDER BY key;
+SELECT key FROM t_mut_prune_15 WHERE time IN ('2024-11-15 12:00:00', 1705320000) ORDER BY key;
+
+ALTER TABLE t_mut_prune_15 DELETE WHERE time IN ('2024-06-15 12:00:00');
+ALTER TABLE t_mut_prune_15 DELETE WHERE time IN ('2024-11-15 12:00:00', 1705320000);
+
+SELECT 'test 15: survivors';
+SELECT key FROM t_mut_prune_15 ORDER BY key;
+
+SELECT 'test 15: affected partitions';
+SELECT arraySort(block_numbers.partition_id) as partitions
+FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_prune_15' AND NOT is_killed
+ORDER BY mutation_id;
+
+DROP TABLE t_mut_prune_15 SYNC;
