@@ -5143,6 +5143,7 @@ void Server::updateServers(
         {
             std::string port_name = server->getPortName();
             bool has_host = false;
+            bool has_explicit_host = false;
             bool is_http = false;
             bool is_non_keeper_prometheus = false;
             bool is_prometheus = false;
@@ -5152,7 +5153,8 @@ void Server::updateServers(
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
-                has_host = config.has(protocol + ".host");
+                has_explicit_host = config.has(protocol + ".host");
+                has_host = has_explicit_host && config.getString(protocol + ".host") == server->getListenHost();
 
                 /// Whether any handler in the `impl` chain actually consumes the default session
                 /// user, so that a `default_session_user` change does not restart listeners that
@@ -5247,12 +5249,13 @@ void Server::updateServers(
                 is_non_keeper_prometheus = is_prometheus && !server_settings[ServerSetting::prometheus_keeper_metrics_only];
             }
 
-            if (!has_host)
+            if (!has_explicit_host)
             {
                 const auto & server_listen_hosts =
 #if USE_GRPC || USE_ARROWFLIGHT
                     (port_name == "grpc_port" || port_name == "arrowflight_port") ? grpc_listen_hosts :
 #endif
+                    (port_name == "interserver_http_port" || port_name == "interserver_https_port") ? interserver_listen_hosts :
                     listen_hosts;
                 has_host = std::find(server_listen_hosts.begin(), server_listen_hosts.end(), server->getListenHost()) != server_listen_hosts.end();
             }
