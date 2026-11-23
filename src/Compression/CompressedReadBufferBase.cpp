@@ -44,6 +44,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// `PODArray::resize` rounds the capacity up to a power of two, so a block whose size is just above half of
+/// `DBMS_MAX_COMPRESSED_SIZE` would make us allocate twice `DBMS_MAX_COMPRESSED_SIZE`, and that happens before
+/// the bytes of the block arrive, so a corrupted block header in a tiny input is enough for it.
+/// Grow the buffer exactly for such large blocks: they are rare, so the lack of amortized growth does not matter.
+void resizeCompressedBuffer(PODArray<char> & buffer, size_t size)
+{
+    if (size > DBMS_MAX_COMPRESSED_SIZE / 2)
+        buffer.resize_exact(size);
+    else
+        buffer.resize(size);
+}
+
+}
+
 CompressedReadBufferBase::Checksum CompressedReadBufferBase::readChecksum(const char * source)
 {
     return {unalignedLoadLittleEndian<UInt64>(source), unalignedLoadLittleEndian<UInt64>(source + sizeof(UInt64))};
@@ -230,7 +247,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         /// We read directly from compressed_in but we can't get the full buffer now. We need to copy it, so we'll read everything,
         /// including the header and checksum again as it's simpler than regenerating it
-        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_in->position() -= size_header_plus_checksum;
         compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
         own_compressed_buffer_header_init = true;
@@ -238,7 +255,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     }
     else
     {
-        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        resizeCompressedBuffer(own_compressed_buffer, sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_in->readStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
