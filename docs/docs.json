@@ -105,6 +105,10 @@
                 ]
               },
               {
+                "href": "https://clickhouse.com/docs/cloud/clickhouse-private",
+                "item": "Private"
+              },
+              {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
                 "item": "Applications"
