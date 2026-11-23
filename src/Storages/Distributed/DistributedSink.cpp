@@ -19,6 +19,7 @@
 #include <Formats/NativeWriter.h>
 #include <Processors/Sinks/RemoteSink.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <QueryPipeline/UnavailableShardTracker.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -95,8 +96,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ABORTED;
-    extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
 }
 
 namespace FailPoints
@@ -111,7 +110,7 @@ namespace
 /// according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
 /// This is checked while establishing the connection and sending the query to the shard,
 /// i.e. before any data has been pushed, so `unavailable_or_exception_before_processing` applies here.
-bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
+bool shouldSkipShardOnInsert(const Settings & settings, const Exception & e, const StorageID & remote_table, const String & default_database)
 {
     if (!settings[Setting::skip_unavailable_shards])
         return false;
@@ -120,7 +119,7 @@ bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
     /// connection pool, an empty connection) rather than an error reported by the shard. Never
     /// silence it as a shard skip, even in the catch-all `unavailable_or_exception_before_processing`
     /// mode, otherwise genuine programming/configuration errors would be hidden and rows silently dropped.
-    if (exception_code == ErrorCodes::LOGICAL_ERROR)
+    if (e.code() == ErrorCodes::LOGICAL_ERROR)
         return false;
 
     const SkipUnavailableShardsMode mode = settings[Setting::skip_unavailable_shards_mode];
@@ -129,7 +128,8 @@ bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
         case SkipUnavailableShardsMode::UNAVAILABLE:
             return false;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
-            return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
+            /// If another table is missing, such as the target of a materialized view, the shard is healthy.
+            return isTableMissingOnShard(e, remote_table, default_database);
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
             return true;
     }
@@ -514,7 +514,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 }
                 catch (const Exception & e)
                 {
-                    if (!shouldSkipShardOnInsert(settings, e.code()))
+                    const String & default_database = job.connection_entry.isNull()
+                        ? addresses.at(job.shard_index).at(job.replica_index).default_database
+                        : job.connection_entry->getDefaultDatabase();
+
+                    if (!shouldSkipShardOnInsert(settings, e, storage.remote_storage, default_database))
                         throw;
 
                     LOG_WARNING(log,

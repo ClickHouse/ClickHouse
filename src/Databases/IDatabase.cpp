@@ -42,6 +42,7 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
     /// hint is a pair which holds a single database_name and table_name suggestion for the given table name.
     auto hint = hints.getHintForTable(name);
 
+    /// The text is matched by `isTableMissingOnShard`.
     if (hint.first.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
     throw Exception(

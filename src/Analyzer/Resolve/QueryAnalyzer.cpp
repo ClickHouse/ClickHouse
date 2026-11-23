@@ -5151,6 +5151,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                     /// `system.functions` for a bare `functions`), matching the old analyzer's hint.
                     auto [hint_database_name, hint_table_name]
                         = IdentifierResolver::tryGetTableNameHint(from_table_identifier.getIdentifier(), scope.context);
+                    /// The text is matched by `isTableMissingOnShard`.
                     if (!hint_database_name.empty())
                         throw Exception(ErrorCodes::UNKNOWN_TABLE,
                             "Unknown table expression identifier '{}'. Maybe you meant {}.{}? In scope {}",

@@ -1528,6 +1528,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
     if (!lock)
     {
+        /// The text is matched by `isTableMissingOnShard`.
         if (current == init_table_id)
             throw Exception(
                 ErrorCodes::UNKNOWN_TABLE,

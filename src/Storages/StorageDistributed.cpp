@@ -1489,12 +1489,19 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
                     shard_info.shard_num);
             }
 
+            String default_database = connections.front()->getDefaultDatabase();
+
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
                 = std::make_shared<RemoteQueryExecutor>(
                     std::move(connections), new_query_str, std::make_shared<Block>(Block{}), query_context,
                     /*throttler=*/nullptr, Scalars{}, Tables{}, QueryProcessingStage::Complete,
                     /*query_plan=*/nullptr, /*extension=*/std::nullopt, shard_info.pool);
+            remote_query_executor->setShardDefaultDatabase(std::move(default_database));
+            remote_query_executor->addShardTable(src_distributed.remote_storage);
+            remote_query_executor->addShardTable(remote_storage);
+            /// With `parallel_distributed_insert_select = 1` it is this table, the shard writes through it.
+            remote_query_executor->addShardTable(new_query->table_id);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
@@ -1673,6 +1680,10 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 nullptr,
                 RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)},
                 replicas.pool);
+            remote_query_executor->setShardDefaultDatabase(try_result->getDefaultDatabase());
+            remote_query_executor->addShardTable(src_storage_cluster.getStorageID());
+            remote_query_executor->addShardTable(remote_storage);
+            remote_query_executor->addShardTable(new_query->table_id);
 
             Pipe pipe{std::make_shared<RemoteSource>(
                 remote_query_executor,
@@ -2771,7 +2782,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `fsync_after_insert`                       | Do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.                                                             | `false`       |
 | `fsync_directories`                        | Do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).                        | `false`       |
 | `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards, unless a read skipped every shard before any of them returned data, in which case the query throws `ALL_CONNECTION_TRIES_FAILED`. Which errors count as unavailable is controlled by the `skip_unavailable_shards_mode` parameter.                                                                                   | `false`       |
-| `skip_unavailable_shards_mode`             | Controls which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled: `unavailable` ignores only connection errors; `unavailable_or_table_missing` also ignores a missing table or database; `unavailable_or_exception_before_processing` also ignores any exception received before the shard returned data. | `unavailable_or_table_missing` |
+| `skip_unavailable_shards_mode`             | Controls which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled: `unavailable` ignores only connection errors; `unavailable_or_table_missing` also ignores a missing underlying table or its database; `unavailable_or_exception_before_processing` also ignores any exception received before the shard returned data. | `unavailable_or_table_missing` |
 | `bytes_to_throw_insert`                    | If more than this number of compressed bytes will be pending for background `INSERT`, an exception will be thrown. `0` - do not throw.                                                                                                | `0`           |
 | `bytes_to_delay_insert`                    | If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.                                                                                                      | `0`           |
 | `max_delay_to_insert`                      | Max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send.                                                                                                               | `60`          |

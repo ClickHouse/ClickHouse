@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <base/scope_guard.h>
@@ -1768,9 +1769,14 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     }
 
     String formatted_query;
+    StorageID source_table = StorageID::createEmpty();
     {
         InterpreterSelectQueryAnalyzer analyzer(query_ast.select, new_context, {});
         const auto & query_tree = analyzer.getQueryTree();
+        if (const auto * query_node = query_tree->as<QueryNode>())
+            if (const auto * table_node = query_node->getJoinTreeNode()->as<TableNode>())
+                source_table = table_node->getStorageID();
+
         auto select_ast = query_tree->toAST();
 
         auto new_query_ast = query_ast.clone();
@@ -1847,6 +1853,8 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             QueryProcessingStage::Complete,
             RemoteQueryExecutor::Extension{.parallel_reading_coordinator = *coordinator, .replica_info = replica_info});
         remote_query_executor->setLogger(logger);
+        remote_query_executor->addShardTable(query_ast.table_id);
+        remote_query_executor->addShardTable(source_table);
         // TODO: check if source table is present on remote, similar to reading with PR
 
         QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(

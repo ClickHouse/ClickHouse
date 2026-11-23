@@ -861,6 +861,10 @@ void ReadFromRemote::addLazyPipe(
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
         remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
+        remote_query_executor->setShardDefaultDatabase(my_shard.shard_info.default_database);
+
+        if (!my_table_func_ptr)
+            remote_query_executor->addShardTable(my_shard.main_table ? my_shard.main_table : my_main_table);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -956,6 +960,7 @@ void ReadFromRemote::addPipe(
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(tracker);
+            remote_query_executor->setShardDefaultDatabase(shard.shard_info.default_database);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -988,6 +993,7 @@ void ReadFromRemote::addPipe(
         remote_query_executor->setQueryPlanFallbackStage(stage);
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(tracker);
+        remote_query_executor->setShardDefaultDatabase(shard.shard_info.default_database);
 
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,

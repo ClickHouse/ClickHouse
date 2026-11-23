@@ -486,6 +486,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             {
                 TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
                 auto [hint_db_name, hint_table_name] = hints.getHintForTable(table_id.getTableName());
+                /// The text is matched by `isTableMissingOnShard`.
                 if (hint_db_name.empty())
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
                 else
@@ -553,6 +554,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         {
             DatabaseNameHints hints(*this);
             auto names = hints.getHints(table_id.getDatabaseName());
+            /// The text is matched by `isTableMissingOnShard`.
             if (names.empty())
             {
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
@@ -586,6 +588,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     {
         TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
         auto [hint_db_name, hint_table_name] = hints.getHintForTable(table_id.getTableName());
+        /// The text is matched by `isTableMissingOnShard`.
         if (hint_db_name.empty())
         {
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
@@ -661,6 +664,7 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     {
         DatabaseNameHints hints(*this);
         auto names = hints.getHints(database_name);
+        /// The text is matched by `isTableMissingOnShard`.
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -931,6 +935,7 @@ DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
     {
         DatabaseNameHints hints(*this);
         auto names = hints.getHints(std::string{database_name});
+        /// The text is matched by `isTableMissingOnShard`.
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
