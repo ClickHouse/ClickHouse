@@ -29,8 +29,8 @@ extern const int BAD_ARGUMENTS;
 
 class Aggregator;
 struct AggregatedDataVariants;
-class CountedCompressedBlocks;
-using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;
+class ReadRangesRegistry;
+using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;
 
 struct RuntimeDataflowStatistics
 {
@@ -172,7 +172,7 @@ struct RuntimeDataflowStatisticsBlock
 
     std::atomic_bool unsupported_case{false};
 
-    /// The compressed bytes the readers loaded, see `CountedCompressedBlocks`.
+    /// The compressed bytes the readers loaded, see `ReadRangesRegistry`.
     std::atomic_size_t input_bytes_read{0};
     std::atomic_size_t duplicated_bytes_read{0};
     std::array<Statistics, MaxOutputType> output_bytes_statistics;
@@ -225,8 +225,8 @@ public:
     /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
     void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
 
-    /// See `IMergeTreeReader::countCompressedBytesRead`.
-    [[nodiscard]] const CountedCompressedBlocksPtr & getCountedCompressedBlocks() const { return counted_compressed_blocks; }
+    /// See `IMergeTreeReader::setReadRangesRegistry`.
+    [[nodiscard]] const ReadRangesRegistryPtr & getReadRangesRegistry() const { return read_ranges_registry; }
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.
@@ -256,7 +256,7 @@ private:
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
-    const CountedCompressedBlocksPtr counted_compressed_blocks;
+    const ReadRangesRegistryPtr read_ranges_registry;
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

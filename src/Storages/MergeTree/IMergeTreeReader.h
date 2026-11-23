@@ -105,18 +105,18 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
-    /// Counts the compressed blocks loaded since the previous call (from the uncompressed cache too) by the
-    /// `CountedCompressedBlocks` of `countCompressedBytesRead`.
-    virtual void flushCompressedBlocksRead() = 0;
+    /// Registers the ranges of the compressed blocks loaded since the previous call (from the uncompressed cache too) in the
+    /// `ReadRangesRegistry` of `setReadRangesRegistry`.
+    virtual void registerReadRanges() = 0;
 
-    /// Enables `flushCompressedBlocksRead`. The readers of a read share `counted`, so a block several of them load is counted
-    /// once. A reader is reused only for the tasks of its read, so `counted` doesn't change.
+    /// Enables `registerReadRanges`. The readers of a read share `registry`, so a block several of them load is counted
+    /// once. A reader is reused only for the tasks of its read, so `registry` doesn't change.
     /// A granule served from the columns cache loads nothing from the part and could not be measured, so the reader stops
     /// reading from the cache; it still writes to it.
-    virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+    virtual void setReadRangesRegistry(ReadRangesRegistryPtr registry)
     {
-        chassert(!counted_compressed_blocks || counted_compressed_blocks == counted);
-        counted_compressed_blocks = std::move(counted);
+        chassert(!read_ranges_registry || read_ranges_registry == registry);
+        read_ranges_registry = std::move(registry);
         columns_cache_reads_possible = false;
     }
 
@@ -181,8 +181,8 @@ protected:
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
-    /// See `countCompressedBytesRead`.
-    CountedCompressedBlocksPtr counted_compressed_blocks;
+    /// See `setReadRangesRegistry`.
+    ReadRangesRegistryPtr read_ranges_registry;
 
     [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 

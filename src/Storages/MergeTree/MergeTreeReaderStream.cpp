@@ -164,7 +164,7 @@ void MergeTreeReaderStream::init()
     }
 
     if (compressed_data_buffer)
-        compressed_data_buffer->setBlocksReadSink(blocks_read);
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 
     announceReadRequestMap();
 
@@ -339,20 +339,20 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-CountedCompressedBlocks::CountedCompressedBlocks(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
+ReadRangesRegistry::ReadRangesRegistry(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
     : block(std::move(block_))
     , duplicated(duplicated_)
 {
 }
 
-CountedCompressedBlocks::CountedRanges & CountedCompressedBlocks::getCountedRanges(const String & path)
+ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String & path)
 {
     std::lock_guard lock(mutex);
     /// References to the elements of an unordered map stay valid when it grows.
     return counted[path];
 }
 
-size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & ranges)
+size_t ReadRangesRegistry::ReadRanges::unite(CompressedBlockRanges & ranges)
 {
     std::lock_guard lock(mutex);
     size_t bytes = 0;
@@ -360,13 +360,13 @@ size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & rang
     {
         chassert(begin <= end);
         /// The first counted range that overlaps or touches the range.
-        auto it = counted.upper_bound(begin);
-        if (it != counted.begin() && std::prev(it)->second >= begin)
+        auto it = united_ranges.upper_bound(begin);
+        if (it != united_ranges.begin() && std::prev(it)->second >= begin)
             --it;
-        if (it == counted.end() || it->first > end)
+        if (it == united_ranges.end() || it->first > end)
         {
             bytes += end - begin;
-            counted.emplace_hint(it, begin, end);
+            united_ranges.emplace_hint(it, begin, end);
             continue;
         }
 
@@ -375,7 +375,7 @@ size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & rang
         const auto first = it;
         size_t covered = 0;
         size_t merged_end = end;
-        for (; it != counted.end() && it->first <= end; ++it)
+        for (; it != united_ranges.end() && it->first <= end; ++it)
         {
             if (it->second > begin && it->first < end)
                 covered += std::min(end, it->second) - std::max(begin, it->first);
@@ -383,37 +383,37 @@ size_t CountedCompressedBlocks::CountedRanges::take(CompressedBlockRanges & rang
         }
         bytes += end - begin - covered;
         first->second = merged_end;
-        counted.erase(std::next(first), it);
+        united_ranges.erase(std::next(first), it);
         if (begin < first->first)
         {
-            auto node = counted.extract(first);
+            auto node = united_ranges.extract(first);
             node.key() = begin;
-            counted.insert(std::move(node));
+            united_ranges.insert(std::move(node));
         }
     }
     ranges.clear();
     return bytes;
 }
 
-void CountedCompressedBlocks::count(CountedRanges & file_ranges, CompressedBlockRanges & ranges)
+void ReadRangesRegistry::count(ReadRanges & file_ranges, CompressedBlockRanges & ranges)
 {
     if (ranges.empty())
         return;
 
     Stopwatch watch;
-    const size_t bytes = file_ranges.take(ranges);
+    const size_t bytes = file_ranges.unite(ranges);
     (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(bytes, std::memory_order_relaxed);
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
 }
 
-void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
+void MergeTreeReaderStream::setRangesReadSink(CompressedBlockRanges * ranges_read_)
 {
     if (!settings.is_compressed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
     /// The buffer is created on the first read, see `init`.
-    blocks_read = blocks_read_;
+    ranges_read = ranges_read_;
     if (compressed_data_buffer)
-        compressed_data_buffer->setBlocksReadSink(blocks_read);
+        compressed_data_buffer->setRangesReadSink(ranges_read);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)

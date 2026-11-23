@@ -120,10 +120,10 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        const auto & counted = updater->getCountedCompressedBlocks();
-        readers.main->countCompressedBytesRead(counted);
+        const auto & registry = updater->getReadRangesRegistry();
+        readers.main->setReadRangesRegistry(registry);
         for (auto & reader : readers.prewhere)
-            reader->countCompressedBytesRead(counted);
+            reader->setReadRangesRegistry(registry);
     }
 }
 

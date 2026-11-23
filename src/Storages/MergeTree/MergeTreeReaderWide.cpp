@@ -1170,16 +1170,16 @@ CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream
     return ranges_read[stream_name].ranges;
 }
 
-void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+void MergeTreeReaderWide::setReadRangesRegistry(ReadRangesRegistryPtr registry)
 {
-    IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+    IMergeTreeReader::setReadRangesRegistry(std::move(registry));
     /// The streams created later get their sink in `getOrAddStream`.
-    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
+    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setRangesReadSink(&getRangesRead(stream_name)); });
 }
 
-void MergeTreeReaderWide::flushCompressedBlocksRead()
+void MergeTreeReaderWide::registerReadRanges()
 {
-    if (!counted_compressed_blocks)
+    if (!read_ranges_registry)
         return;
 
     std::lock_guard lock(ranges_read_mutex);
@@ -1188,9 +1188,9 @@ void MergeTreeReaderWide::flushCompressedBlocksRead()
         if (stream_ranges.ranges.empty())
             continue;
         if (!stream_ranges.counted)
-            stream_ranges.counted = &counted_compressed_blocks->getCountedRanges(
+            stream_ranges.counted = &read_ranges_registry->getReadRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-        counted_compressed_blocks->count(*stream_ranges.counted, stream_ranges.ranges);
+        read_ranges_registry->count(*stream_ranges.counted, stream_ranges.ranges);
     }
 }
 
@@ -1254,8 +1254,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
-            if (counted_compressed_blocks)
-                stream->setBlocksReadSink(&getRangesRead(stream_name));
+            if (read_ranges_registry)
+                stream->setRangesReadSink(&getRangesRead(stream_name));
             return stream;
         };
 

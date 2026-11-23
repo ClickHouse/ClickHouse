@@ -25,7 +25,7 @@ public:
                     bool continue_reading, size_t max_rows_to_read,
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
-    void flushCompressedBlocksRead() override;
+    void registerReadRanges() override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override
     {
@@ -47,10 +47,10 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStream> stream;
-    /// Read since the last `flushCompressedBlocksRead`, see `CompressedReadBufferBase::setBlocksReadSink`.
+    /// Read since the last `registerReadRanges`, see `CompressedReadBufferBase::setRangesReadSink`.
     CompressedBlockRanges ranges_read;
-    /// Of `counted_compressed_blocks`, looked up at the first flush.
-    CountedCompressedBlocks::CountedRanges * counted_ranges = nullptr;
+    /// Of `read_ranges_registry`, looked up at the first flush.
+    ReadRangesRegistry::ReadRanges * counted_ranges = nullptr;
 };
 
 }
