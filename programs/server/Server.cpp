@@ -3287,7 +3287,7 @@ try
             return global_context->getConfigRef();
         };
 
-        /// updateServers() does not recreate Keeper listeners, so a config reload must not stop them.
+        /// `updateServers` does not recreate Keeper listeners, so a config reload must not stop them.
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
