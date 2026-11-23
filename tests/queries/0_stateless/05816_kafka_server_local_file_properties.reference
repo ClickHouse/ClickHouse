@@ -1,4 +1,4 @@
---- All properties are rejected in a collection created by SQL
+--- File properties are rejected in a collection created by SQL
 kafka.ssl_key_location: Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
 kafka.ssl_certificate_location: Kafka property `ssl.certificate.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.certificate.pem` instead. (BAD_ARGUMENTS)
 kafka.ssl_ca_location: Kafka property `ssl.ca.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.ca.pem` instead. (BAD_ARGUMENTS)
@@ -15,9 +15,12 @@ kafka.sasl_oauthbearer_assertion_private_key_file: Kafka property `sasl.oauthbea
 kafka.sasl_oauthbearer_assertion_jwt_template_file: Kafka property `sasl.oauthbearer.assertion.jwt.template.file` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.plugin_library_paths: Kafka property `plugin.library.paths` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.offset_store_path: Kafka property `offset.store.path` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+--- Unlisted properties are server-local by default
+kafka.future_option: Kafka property `future.option` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+kafka.consumer.future.fetch_min_bytes: Kafka property `future.fetch.min.bytes` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 --- Other spellings and sections
 kafka.ssl.key.location: Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
-kafka.topic.offset.store.path: Kafka property `offset.store.path` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+kafka.topic.offset.store.path: Kafka property `topic.offset.store.path` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 kafka.consumer.ssl_key_location: Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
 kafka.producer.ssl_ca_location: Kafka property `ssl.ca.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.ca.pem` instead. (BAD_ARGUMENTS)
 kafka.kafka_topic.offset_store_path: Kafka property `offset.store.path` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
@@ -29,18 +32,20 @@ kafka.client_rack\0suffix: Kafka property name `kafka.client_rack\0suffix` conta
 --- The contents of the file are accepted, and also the value that is not a path
 kafka.ssl_ca_location: OK
 kafka.ssl_key_pem: OK
+kafka.consumer.fetch.min.bytes: OK
 --- A collection from the server configuration file is accepted
 OK
 --- Consumers are created for the accepted properties
+Consumer set property fetch.min.bytes:456
 kafka_config_table: OK 0
 kafka_pem_table: OK 0
 kafka_probe_table: OK 0
 --- A property that is added after the table is created
 kafka.ssl_key_pem: OK
-kafka.ssl_key_location:
-Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
-Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
-Kafka property `ssl.key.location` can only be specified in a named collection defined in the server configuration file. Pass the contents of the file in the property `ssl.key.pem` instead. (BAD_ARGUMENTS)
+kafka.future_option:
+Kafka property `future.option` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+Kafka property `future.option` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
+Kafka property `future.option` can only be specified in a named collection defined in the server configuration file. (BAD_ARGUMENTS)
 OK
 kafka.ssl_key_pem: OK
 kafka.ssl_key_location\0suffix:

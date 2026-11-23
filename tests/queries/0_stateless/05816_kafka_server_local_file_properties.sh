@@ -20,7 +20,7 @@ collection="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 required_keys="kafka_broker_list = '127.0.0.1:1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow'"
 table_settings="SETTINGS kafka_poll_timeout_ms = 100, kafka_flush_interval_ms = 100"
 all_collections=()
-all_tables=(kafka_table kafka_probe_table kafka_pem_table kafka_config_table kafka_altered_table kafka_altered_null_table)
+all_tables=(kafka_table kafka_probe_table kafka_pem_table kafka_config_table kafka_scoped_table kafka_altered_table kafka_altered_null_table)
 
 function cleanup()
 {
@@ -85,7 +85,7 @@ function alter_collection_of_existing_table()
     run "ATTACH TABLE ${table}"
 }
 
-echo '--- All properties are rejected in a collection created by SQL'
+echo '--- File properties are rejected in a collection created by SQL'
 for key in \
     ssl_key_location ssl_certificate_location ssl_ca_location ssl_crl_location ssl_keystore_location \
     ssl_engine_location ssl_engine_id ssl_providers https_ca_location \
@@ -95,6 +95,10 @@ for key in \
 do
     create_table "kafka.${key}" '/etc/passwd'
 done
+
+echo '--- Unlisted properties are server-local by default'
+create_table 'kafka.future_option' '1'
+create_table 'kafka.consumer.future.fetch_min_bytes' '1'
 
 echo '--- Other spellings and sections'
 create_table 'kafka.ssl.key.location' '/etc/passwd'
@@ -114,6 +118,9 @@ create_table 'kafka.client_rack\0suffix' 'rack'
 echo '--- The contents of the file are accepted, and also the value that is not a path'
 create_table 'kafka.ssl_ca_location' 'probe' kafka_probe_table
 create_table 'kafka.ssl_key_pem' 'contents of the file' kafka_pem_table
+create_table 'kafka.consumer.fetch.min.bytes' '123' kafka_scoped_table
+$CLICKHOUSE_CLIENT -q "ALTER NAMED COLLECTION ${all_collections[-1]} SET
+    \`kafka.consumer.kafka_topic.name\` = 'topic', \`kafka.consumer.kafka_topic.fetch_min_bytes\` = '456'"
 
 echo '--- A collection from the server configuration file is accepted'
 run "CREATE TABLE kafka_config_table (x UInt64) ENGINE = Kafka(kafka_config_file_paths) ${table_settings}"
@@ -125,9 +132,11 @@ echo '--- Consumers are created for the accepted properties'
     do
         echo "${table}: $(run "SELECT count() FROM ${table} SETTINGS stream_like_engine_allow_direct_select = 1")" &
     done
+    $CLICKHOUSE_CLIENT --send_logs_level=trace -q 'SELECT count() FROM kafka_scoped_table SETTINGS stream_like_engine_allow_direct_select = 1' 2>&1 \
+        | grep -o 'Consumer set property fetch.min.bytes:456' | sort -u &
     wait
 } | sort
 
 echo '--- A property that is added after the table is created'
-alter_collection_of_existing_table 'kafka.ssl_key_location' kafka_altered_table
+alter_collection_of_existing_table 'kafka.future_option' kafka_altered_table
 alter_collection_of_existing_table 'kafka.ssl_key_location\0suffix' kafka_altered_null_table
