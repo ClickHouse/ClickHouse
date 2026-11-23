@@ -169,6 +169,12 @@ private:
         const ASTPtr & ast,
         LoadingStrictnessLevel mode);
 
+    /// Drops (instead of loading) the temporary table of a `CREATE OR REPLACE` or `CREATE TABLE ... AS SELECT` that
+    /// was interrupted before the table was renamed to its final name. Returns false if it is not safe, then the
+    /// table has to be loaded as usual.
+    bool dropLeftoverOfInterruptedReplace(
+        const String & file_name, const String & full_path, const ASTCreateQuery * create_query, bool is_startup);
+
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
     /// The flag lives in the table's data directory. Take the create query for a table that is not

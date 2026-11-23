@@ -387,6 +387,80 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     );
 }
 
+bool DatabaseOrdinary::dropLeftoverOfInterruptedReplace(
+    const String & file_name, const String & full_path, const ASTCreateQuery * create_query, bool is_startup)
+{
+    auto db_disk = getDisk();
+    const String table_name = unescapeForFileName(file_name.substr(0, file_name.size() - strlen(".sql")));
+
+    auto keep_table = [&](std::string_view reason)
+    {
+        LOG_WARNING(log, "Table {} (metadata file {}) looks like the temporary table of an interrupted `CREATE OR REPLACE`, "
+            "but it is loaded as a usual table, because {}.", backQuote(table_name), full_path, reason);
+        return false;
+    };
+
+    /// A replica of a `Replicated` database finds that the leftover is not in its metadata in Keeper and recovers itself:
+    /// it renames a replicated table with the same UUID to the name in Keeper, and moves other tables to a separate
+    /// database (see `DatabaseReplicated::recoverLostReplica`).
+    if (getEngineName() == "Replicated")
+        return keep_table("the replica recovery of the `Replicated` database handles it");
+
+    /// The background drop finds the data of a table by its UUID.
+    if (!create_query || create_query->uuid == UUIDHelpers::Nil)
+        return keep_table("its metadata has no UUID");
+
+    if (db_disk->isReadOnly())
+        return keep_table("the disk of the database is read-only");
+
+    if (db_disk->existsFile(full_path + detached_suffix))
+        return keep_table("it is permanently detached");
+
+    /// An interrupted EXCHANGE of the temporary table with the replaced table may have left the metadata of the replaced
+    /// table under the temporary name.
+    for (const String & exchange_leftover_path : {
+             full_path + "_tmp_rename_exchange",
+             full_path + ".tmp_exchange",
+             (fs::path(getMetadataPath()) / ("." + file_name + ".exchange")).string()})
+    {
+        if (db_disk->existsFile(exchange_leftover_path))
+            return keep_table(fmt::format("{} is a leftover of an interrupted exchange of tables", exchange_leftover_path));
+    }
+
+    /// Only the leftovers of `CREATE TABLE ... AS SELECT` and `CREATE OR REPLACE TABLE` are dropped.
+    if (create_query->isView() || create_query->is_dictionary)
+        return keep_table("it is a view or a dictionary");
+
+    /// The drop of a `TimeSeries` table drops only those of its inner tables which are already loaded. The background
+    /// drop can start before the inner tables are loaded, and then they would be left without the table.
+    if (create_query->storage && create_query->storage->engine && create_query->storage->engine->name == "TimeSeries")
+        return keep_table("its inner tables may be not loaded yet when it is dropped");
+
+    /// On ATTACH DATABASE the UUIDs of the tables are already locked. The table will be dropped at the next startup.
+    if (!is_startup)
+        return keep_table("it is not the startup of the server; it will be dropped at the next startup");
+
+    /// For example, the UUID may be locked by a table from `metadata_dropped`.
+    const UUID uuid = create_query->uuid;
+    if (DatabaseCatalog::instance().hasUUIDMapping(uuid))
+        return keep_table(fmt::format("its UUID {} is already in use", uuid));
+
+    const StorageID table_id(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name, uuid);
+    const String dropped_metadata_path = DatabaseCatalog::instance().getPathForDroppedMetadata(table_id);
+
+    LOG_WARNING(log, "Table {} (UUID {}, metadata file {}) is a leftover of an interrupted `CREATE OR REPLACE` or "
+        "`CREATE TABLE ... AS SELECT`: it was never renamed to its final name. Dropping it.",
+        table_id.getNameForLogs(), uuid, full_path);
+
+    db_disk->createDirectories(fs::path(dropped_metadata_path).parent_path());
+    db_disk->replaceFile(full_path, dropped_metadata_path);
+
+    /// The tables from `metadata_dropped` were already enqueued by `DatabaseCatalog::loadMarkedAsDroppedTables`
+    /// before the databases were loaded, so this one is enqueued here.
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table_id, nullptr, db_disk, dropped_metadata_path);
+    return true;
+}
+
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
     auto db_disk = getDisk();
@@ -534,7 +608,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
         if (!duplicate_of_path)
         {
-            process_metadata(file_name);
+            if (!dropLeftoverOfInterruptedReplace(file_name, full_path, create_query, is_startup))
+                process_metadata(file_name);
             continue;
         }
 
