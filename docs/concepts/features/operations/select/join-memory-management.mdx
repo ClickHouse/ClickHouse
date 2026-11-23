@@ -25,7 +25,7 @@ Two settings change this behavior:
 
 The limits act differently for other algorithms:
 
-- For [`ie_join`](/concepts/features/operations/select/join-algorithms#ie-join), the limits apply to the accumulated input of both sides together.
+- For [`inequality`](/concepts/features/operations/select/join-algorithms#inequality), the limits apply to the accumulated input of both sides together.
 - For the [block nested loop fallback](/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), the limits apply to the materialized right-hand side, including spilled blocks.
 - For [`partial_merge`](/concepts/features/operations/select/join-algorithms#partial-merge), reaching a limit changes the execution strategy instead of stopping the query: the JOIN starts writing its sorted right-hand blocks to disk.
 
@@ -46,7 +46,7 @@ Each algorithm that can spill writes a different part of its state to temporary 
 - **`partial_merge`.** The sorted right-hand blocks and their min-max indexes are written to temporary files after the right-hand side reaches a hard limit.
 - **Block nested loop fallback.** The right-hand blocks are compressed in memory and then written to temporary files after the spill threshold is reached.
 
-The [`direct`](/concepts/features/operations/select/join-algorithms#direct) and [`ie_join`](/concepts/features/operations/select/join-algorithms#ie-join) algorithms do not spill to disk.
+The [`direct`](/concepts/features/operations/select/join-algorithms#direct) and [`inequality`](/concepts/features/operations/select/join-algorithms#inequality) algorithms do not spill to disk.
 
 Temporary files are written to the storage that the [`tmp_path`](/reference/settings/server-settings/settings/tmp#tmp_path), [`tmp_policy`](/reference/settings/server-settings/settings/tmp#tmp_policy), or [`temporary_data_in_cache`](/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache) server setting configures. Reading and writing temporary files adds disk I/O, so a spilling JOIN is slower than the same JOIN in memory.
 
