@@ -727,11 +727,15 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             return {};
 
         if (auto total_rows = storage->totalRows(reading->getContext()))
+        {
+            const bool rows_exact = !filter && !mayStopReadingEarly(reading->getQueryInfo());
             return RelationStats{
                 .estimated_rows = *total_rows,
                 .table_name = storage->getStorageID().getTableName(),
-                .imprecise_estimate = filter != nullptr,
+                .imprecise_estimate = !rows_exact,
+                .rows_exact = rows_exact,
                 .source = RowEstimateSource::Statistics};
+        }
         return {};
     }
 
