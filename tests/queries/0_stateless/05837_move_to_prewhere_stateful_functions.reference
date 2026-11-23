@@ -107,3 +107,14 @@
 7
 8
 9
+-- pending mutation that cannot be applied on fly in a partition the query does not read
+1	1	1
+1	3	3
+1	5	5
+1	7	7
+1	9	9
+1	1	1
+1	3	3
+1	5	5
+1	7	7
+1	9	9

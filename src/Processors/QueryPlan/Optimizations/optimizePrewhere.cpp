@@ -250,8 +250,13 @@ static bool hasStatefulDefaultOfMissingColumn(
         String name_in_part = name_in_storage;
         if (mutations_snapshot)
         {
-            AlterConversions conversions(
-                mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part), PatchPartsForReader{}, context);
+            /// Only renames and drops matter here, and data mutations may throw if they cannot be applied on fly.
+            MutationCommands metadata_commands;
+            for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part))
+                if (AlterConversions::isSupportedMetadataMutation(command.type))
+                    metadata_commands.push_back(command);
+
+            AlterConversions conversions(metadata_commands, PatchPartsForReader{}, context);
             if (conversions.isColumnRenamed(name_in_storage))
                 name_in_part = conversions.getColumnOldName(name_in_storage);
             if (conversions.isColumnDropped(name_in_part) || conversions.isColumnDropped(name_in_storage))

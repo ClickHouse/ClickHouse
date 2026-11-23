@@ -109,3 +109,15 @@ SELECT n FROM t_prewhere_stateful_nullable WHERE a >= 5 ORDER BY a;
 SELECT n FROM t_prewhere_stateful_nullable WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
 
 DROP TABLE t_prewhere_stateful_nullable;
+
+DROP TABLE IF EXISTS t_prewhere_stateful_excluded;
+CREATE TABLE t_prewhere_stateful_excluded (p UInt64, n UInt64 DEFAULT 0, b String) ENGINE = MergeTree PARTITION BY p ORDER BY tuple();
+INSERT INTO t_prewhere_stateful_excluded SELECT number % 2, number, toString(number) FROM numbers(10);
+SYSTEM STOP MERGES t_prewhere_stateful_excluded;
+ALTER TABLE t_prewhere_stateful_excluded UPDATE n = rand() IN PARTITION 0 WHERE 1;
+
+SELECT '-- pending mutation that cannot be applied on fly in a partition the query does not read';
+SELECT p, n, b FROM t_prewhere_stateful_excluded WHERE p = 1 ORDER BY n SETTINGS apply_mutations_on_fly = 1;
+SELECT p, n, b FROM t_prewhere_stateful_excluded WHERE p = 1 ORDER BY n SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0;
+
+DROP TABLE t_prewhere_stateful_excluded;
