@@ -483,7 +483,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     return false;
                 }
 
-                /// Keep the set instead of copying every element into a `Tuple` only to turn it back into ranges below.
                 set_for_ranges = prepared_set;
                 set_for_ranges_is_mutable = future_set->isMutableDuringQuery();
                 column_name = func.getArgumentAt(0).getColumnName();
@@ -811,7 +810,6 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
                     rows += *estimate;
                 const Selectivity result = selectivityOfRows(rows);
 #ifndef NDEBUG
-                /// Heavy: builds the ranges that this path avoids.
                 const Selectivity from_ranges = estimateRanges(ranges.get());
                 chassert(result.true_sel == from_ranges.true_sel && result.null_sel == from_ranges.null_sel);
 #endif
