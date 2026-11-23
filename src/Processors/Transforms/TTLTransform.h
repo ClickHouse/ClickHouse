@@ -60,6 +60,7 @@ private:
         DataTypePtr type;
         ExpressionActionsPtr default_expression;
         String default_column_name;
+        bool shares_nested_offsets;
     };
     std::unordered_map<String, ExpiredColumnData> expired_columns_data;
 
