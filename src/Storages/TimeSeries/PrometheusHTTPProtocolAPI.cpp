@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/Hex.h>
 #include <Common/StringUtils.h>
@@ -8,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
@@ -574,6 +576,11 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
         }
 
         finishExecutedQuery(io, {});
+
+        /// The chunks share the thread group of the request, and a chunk is charged to the quotas with the counters of the group,
+        /// so they start from zero for the next chunk. The memory tracker of the group still accounts the whole request.
+        if (auto thread_group = CurrentThread::getGroup())
+            thread_group->performance_counters.resetCounters();
 
         limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW);
         chunk_start = next_chunk_start;

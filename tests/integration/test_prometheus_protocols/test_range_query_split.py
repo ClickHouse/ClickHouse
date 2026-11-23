@@ -390,3 +390,58 @@ def test_subqueries_of_cached_chunk_are_not_cached(params):
     query_range("node_load1", H, H + 6 * 3600, 60, params)
     assert query_range(query, H, H + 6 * 3600, 60, params) == expected
     assert node.query("SELECT is_subquery, count() FROM system.query_cache GROUP BY is_subquery") == "0\t12\n"
+
+
+def test_quota_charges_events_of_each_chunk_once():
+    # The chunks share the thread group of the request, so a chunk must not be charged again with the events of the previous ones.
+    user, quota = "range_split_quota", "range_split_quota"
+    node.query(f"CREATE USER IF NOT EXISTS {user}")
+    node.query(f"GRANT SELECT, CREATE TEMPORARY TABLE ON *.* TO {user}")
+    node.query("SYSTEM DROP QUERY CACHE")
+
+    def create_quota(max_cache_hits):
+        # The limit on SelectedRows only makes system.quotas_usage track it.
+        node.query(f"DROP QUOTA IF EXISTS {quota}")
+        node.query(f"CREATE QUOTA {quota} FOR INTERVAL 100 year MAX SelectedRows = 1000000000000, QueryCacheHits = {max_cache_hits} TO {user}")
+
+    def assert_quota_usage(query_id, errors, hits):
+        # Each chunk has its own row in query_log with the rows it read, from the tables or from the query cache.
+        chunks = f"SELECT sum(read_rows), countIf(query_cache_usage = 'Read') FROM system.query_log WHERE query_id = '{query_id}' AND type != 'QueryStart'"
+        rows, chunk_hits = node.query(chunks).split()
+        assert int(rows) > 0 and int(chunk_hits) == hits
+        # The last chunk is charged after the response is sent.
+        usage = f"SELECT errors, profile_events['SelectedRows'], profile_events['QueryCacheHits'] FROM system.quotas_usage WHERE quota_name = '{quota}'"
+        assert_eq_with_retry(node, usage, f"{errors}\t{rows}\t{hits}\n")
+
+    # Three chunks; the first two cover a whole interval and are cached, the last one is cut by the end and isn't.
+    start, end, step = H + 3600, H + 3 * 3600 + 1800, 60
+    params = {
+        "user": user,
+        "promql_range_query_split_interval": INTERVAL,
+        "promql_range_query_cache_min_age": 600,
+        "query_cache_ttl": 3600,
+    }
+    try:
+        create_quota(1000)
+        query_id = f"range-split-{uuid.uuid4()}"
+        expected = query_range("node_load1", start, end, step, params, query_id)
+        assert_executed_queries(query_id, 3)
+        assert int(node.query("SELECT count() FROM system.query_cache")) == 2
+        assert_quota_usage(query_id, errors=0, hits=0)
+
+        # Two chunks come from the query cache: two hits, not 1 + 2 + 2, so the limit of two hits lets the last chunk run.
+        create_quota(2)
+        query_id = f"range-split-{uuid.uuid4()}"
+        assert query_range("node_load1", start, end, step, params, query_id) == expected
+        assert_executed_queries(query_id, 3)
+        assert_quota_usage(query_id, errors=0, hits=2)
+
+        # After two hits over the limit of one, the last chunk is rejected and is charged only with its own events.
+        create_quota(1)
+        query_id = f"range-split-{uuid.uuid4()}"
+        response = send_query_range("node_load1", start, end, step, params, query_id)
+        assert response.status_code == 400 and "has been exceeded" in response.text, response.text
+        assert_executed_queries(query_id, 2)
+        assert_quota_usage(query_id, errors=1, hits=2)
+    finally:
+        node.query(f"DROP QUOTA IF EXISTS {quota}")
