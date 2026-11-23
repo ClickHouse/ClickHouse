@@ -66,7 +66,7 @@ public:
     DatabaseRenamingInViewDefinition(ASTPtr create_query_, String old_database_name_, String new_database_name_, QualifiedTableName view_name_);
 
     /// The tables whose columns `check` reads.
-    std::vector<QualifiedTableName> getTablesToCheck() const;
+    [[nodiscard]] std::vector<QualifiedTableName> getTablesToCheck() const;
 
     /// Throws AMBIGUOUS_IDENTIFIER unless the rename provably keeps what every name of the definition refers to
     /// and the names of the columns of the view (`view_columns`).
@@ -107,8 +107,8 @@ private:
     void collectIdentifier(ASTIdentifier & identifier, NamePosition position);
     void addName(const Strings & parts, bool multi_component = false);
     void addTableArgument(const ASTFunction & function, const IAST & argument);
-    std::optional<size_t> findTableExpressionScope(const String & table_name) const;
-    std::vector<QualifiedTableName> getScopeTables(bool throw_if_not_table) const;
+    [[nodiscard]] std::optional<size_t> findTableExpressionScope(const String & table_name) const;
+    [[nodiscard]] std::vector<QualifiedTableName> getScopeTables(bool throw_if_not_table) const;
     [[noreturn]] void throwAmbiguous(const String & reason) const;
 
     ASTPtr create_query;
