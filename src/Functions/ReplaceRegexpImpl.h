@@ -360,6 +360,59 @@ struct ReplaceRegexpImpl
         }
     }
 
+    /// `replaceRegexpOne` with a JIT matcher and a single-group replacement ('\1'): a row's result is never
+    /// longer than the row, so the block's result is sized once and written with overflow-15 copies.
+    static void vectorFirstSingleGroupJIT(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count,
+        const RegexpJITMatcher & matcher,
+        int group,
+        const uint8_t ** capture_starts,
+        const uint8_t ** capture_ends,
+        CancellationBudget & budget)
+    {
+        res_data.resize(haystack_data.size());
+        UInt8 * const res_begin = res_data.data();
+        UInt8 * out = res_begin;
+        const auto * const haystack_begin = reinterpret_cast<const uint8_t *>(haystack_data.data());
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const uint8_t * row_begin = haystack_begin + haystack_offsets[i - 1];
+            const uint8_t * row_end = haystack_begin + haystack_offsets[i];
+
+            if (callJITFunction(matcher.func, row_begin, row_end, row_begin, capture_starts, capture_ends) == 1)
+            {
+                memcpySmallAllowReadWriteOverflow15(out, row_begin, capture_starts[0] - row_begin);
+                out += capture_starts[0] - row_begin;
+
+                /// A group that did not participate in the match is substituted by an empty string.
+                if (capture_starts[group] != nullptr && capture_ends[group] != nullptr)
+                {
+                    chassert(capture_starts[0] <= capture_starts[group] && capture_ends[group] <= capture_ends[0]);
+                    memcpySmallAllowReadWriteOverflow15(out, capture_starts[group], capture_ends[group] - capture_starts[group]);
+                    out += capture_ends[group] - capture_starts[group];
+                }
+
+                memcpySmallAllowReadWriteOverflow15(out, capture_ends[0], row_end - capture_ends[0]);
+                out += row_end - capture_ends[0];
+            }
+            else
+            {
+                memcpySmallAllowReadWriteOverflow15(out, row_begin, row_end - row_begin);
+                out += row_end - row_begin;
+            }
+
+            res_offsets[i] = out - res_begin;
+            budget.charge(row_end - row_begin);
+        }
+
+        res_data.resize(out - res_begin);
+    }
+
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -423,6 +476,17 @@ struct ReplaceRegexpImpl
             const size_t n = std::max<size_t>(matcher.num_captures, num_captures);
             capture_starts.resize(n);
             capture_ends.resize(n);
+        }
+
+        if constexpr (replace == ReplaceRegexpTraits::First)
+        {
+            if (matcher && instructions.size() == 1 && instructions[0].substitution_num >= 0)
+            {
+                vectorFirstSingleGroupJIT(
+                    haystack_data, haystack_offsets, res_data, res_offsets, input_rows_count, matcher,
+                    instructions[0].substitution_num, capture_starts.data(), capture_ends.data(), budget);
+                return;
+            }
         }
 
         for (size_t i = 0; i < input_rows_count; ++i)
