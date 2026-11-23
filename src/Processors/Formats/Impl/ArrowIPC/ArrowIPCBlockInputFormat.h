@@ -143,6 +143,8 @@ namespace ArrowIPC
 /// reinterprets raw bytes and casts to the requested types. A header column absent from the batch is filled
 /// with defaults when `allow_missing_columns`, and an exception otherwise. Used by the native `Arrow` formats and
 /// by the formats that receive Arrow data through the C data interface.
+/// `requested_types` and `visibility_only_structs` are the ones the columns were decoded with: the requested
+/// types the decoder was given, and the result of `RecordBatchDecoder::collectVisibilityOnlyStructs` for them.
 Chunk buildChunk(
     const Block & header,
     RecordBatchDecoder::DecodedColumns & decoded,
@@ -150,7 +152,9 @@ Chunk buildChunk(
     const FormatSettings & format_settings,
     bool allow_missing_columns,
     const UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> & geo_columns,
-    BlockMissingValues * block_missing_values);
+    BlockMissingValues * block_missing_values,
+    const RequestedTypes & requested_types,
+    const RecordBatchDecoder::VisibilityOnlyStructs & visibility_only_structs);
 
 }
 

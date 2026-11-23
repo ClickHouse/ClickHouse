@@ -2596,7 +2596,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
 }
 
 RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeExternalBatch(
-    const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types_)
+    const ExternalBatch & batch, const RequestedTypes * target_types_)
 {
     if (batch.length < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow record batch has a negative length {}", batch.length);

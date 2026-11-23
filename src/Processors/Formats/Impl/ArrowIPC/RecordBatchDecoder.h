@@ -251,7 +251,7 @@ public:
     /// Decodes all fields of an external batch, as `decodeBatch` does with a message. The buffers must stay valid
     /// for the duration of the call only: the decoded columns own their data.
     DecodedColumns decodeExternalBatch(
-        const ExternalBatch & batch, const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
+        const ExternalBatch & batch, const RequestedTypes * target_types = nullptr);
 
     /// Decodes a `DictionaryBatch` value column at the referencing field's position and requested type
     /// hint (`use`), following the same rules as inline values. `target_types_` supplies requested subcolumn

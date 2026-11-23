@@ -322,7 +322,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
                 piece.missing_values = BlockMissingValues(getPort().getHeader().columns());
                 BlockMissingValues * missing_values_ptr = format_settings.defaults_for_omitted_fields ? &piece.missing_values : nullptr;
                 piece.chunk = ArrowIPC::buildChunk(
-                    getPort().getHeader(), piece_columns, length, format_settings, /* allow_missing_columns */ true, geo_columns, missing_values_ptr);
+                    getPort().getHeader(), piece_columns, length, format_settings, /* allow_missing_columns */ true, geo_columns, missing_values_ptr,
+                    requested_types, visibility_only_structs);
                 if (row_index)
                     piece.row_numbers = row_index->cut(begin, length);
 
@@ -411,6 +412,7 @@ void VortexBlockInputFormat::closeReader()
             scan = nullptr;
         }
         scan_schema.reset();
+        visibility_only_structs.clear();
     }
     {
         std::lock_guard lock(delivery_mutex);
@@ -491,7 +493,11 @@ void VortexBlockInputFormat::prepareReader()
         String name = header_column.name;
         if (format_settings.arrow.case_insensitive_column_matching)
             boost::to_lower(name);
-        requested_types[name] = header_column.type;
+        /// With case-insensitive matching, header columns of different types can share a name. They are all
+        /// taken from the one decoded field, so it must not be decoded for the type of any one of them.
+        auto [it, inserted] = requested_types.try_emplace(std::move(name), ArrowIPC::RequestedType{.type = header_column.type});
+        if (!inserted && !it->second.type->equals(*header_column.type))
+            it->second.shared = true;
     }
 
     const VortexScanPlan plan = planVortexScan(getPort().getHeader(), *file_schema, format_filter_info.get(), format_settings, log);
@@ -569,6 +575,12 @@ void VortexBlockInputFormat::prepareReader()
         new_scan_schema->fields.push_back(*it);
     }
     scan_schema = std::move(new_scan_schema);
+    {
+        /// The batches are decoded with all the fields of the scan schema (see `importRecordBatchFromC`).
+        ArrowIPC::DictionaryRegistry registry;
+        visibility_only_structs = ArrowIPC::RecordBatchDecoder(*scan_schema, format_settings, registry)
+            .collectVisibilityOnlyStructs(/*keep_top_level_fields=*/nullptr, &requested_types);
+    }
 
     char * error = nullptr;
     auto * new_scan = vortex_ffi_scan_create(reader, &options, &callbacks, &error);
@@ -656,7 +668,8 @@ Chunk VortexBlockInputFormat::readWithoutColumns()
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     ArrowIPC::RecordBatchDecoder::DecodedColumns no_columns;
     auto chunk = ArrowIPC::buildChunk(
-        getPort().getHeader(), no_columns, num_rows, format_settings, /* allow_missing_columns */ true, geo_columns, block_missing_values_ptr);
+        getPort().getHeader(), no_columns, num_rows, format_settings, /* allow_missing_columns */ true, geo_columns, block_missing_values_ptr,
+        requested_types, /* visibility_only_structs */ {});
 
     if (row_index_column)
         chunk.getChunkInfos().add(rowNumbersWithoutColumns(first_delivered, num_rows));

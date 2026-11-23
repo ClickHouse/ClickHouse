@@ -99,7 +99,7 @@ RecordBatchDecoder::DecodedColumns importRecordBatchFromC(
     ::ArrowArray & array,
     const ArrowIPC::ArrowSchema & schema,
     const FormatSettings & settings,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr);
+    const RequestedTypes * target_types = nullptr);
 
 }
 

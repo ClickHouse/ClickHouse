@@ -1671,7 +1671,9 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         format_settings,
         format_settings.arrow.allow_missing_columns,
         geo_columns,
-        format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+        format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr,
+        requested_field_target_types,
+        visibility_only_structs);
 }
 
 Chunk ArrowIPC::buildChunk(
@@ -1681,7 +1683,9 @@ Chunk ArrowIPC::buildChunk(
     const FormatSettings & format_settings,
     bool allow_missing_columns,
     const UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> & geo_columns,
-    BlockMissingValues * block_missing_values_ptr)
+    BlockMissingValues * block_missing_values_ptr,
+    const RequestedTypes & requested_field_target_types,
+    const RecordBatchDecoder::VisibilityOnlyStructs & visibility_only_structs)
 {
     /// Map decoded column name -> index (lower-cased when case-insensitive matching is on).
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
@@ -1752,7 +1756,7 @@ Chunk ArrowIPC::buildChunk(
                 /// The conversion is specific to this column, so the extractor is not cached.
                 const auto & source = decoded[nested_it->second];
                 ColumnWithTypeAndName source_column(source.column, source.type, nested_table_name);
-                reinterpretRawByteColumns(source_column, key_lookup_hint, /*field=*/nullptr);
+                reinterpretRawByteColumnsImpl(source_column, key_lookup_hint, /*field=*/nullptr, format_settings);
                 /// The values are converted, so the null maps kept only for that are not needed anymore.
                 if (auto visibility_only_it = visibility_only_structs.find(source.field); visibility_only_it != visibility_only_structs.end())
                     std::tie(source_column.column, source_column.type) = dropVisibilityOnlyNulls(
@@ -1815,7 +1819,7 @@ Chunk ArrowIPC::buildChunk(
                     {
                         if (auto own = helper->extractColumn(header_column.name))
                         {
-                            reinterpretRawByteColumns(column, header_column.type, /*field=*/nullptr);
+                            reinterpretRawByteColumnsImpl(column, header_column.type, /*field=*/nullptr, format_settings);
                             std::tie(column.column, column.type) = restoreOwnNulls(column.column, column.type, own->column, own->type);
                         }
                     }

@@ -1028,7 +1028,7 @@ RecordBatchDecoder::DecodedColumns importRecordBatchFromC(
     ::ArrowArray & array,
     const ArrowIPC::ArrowSchema & schema,
     const FormatSettings & settings,
-    const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types)
+    const RequestedTypes * target_types)
 {
     if (!array.release)
         throwBadArray("the array is released");
