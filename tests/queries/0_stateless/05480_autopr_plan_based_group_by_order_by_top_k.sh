@@ -1,10 +1,21 @@
--- A plan-based parallel replicas plan splits the aggregation into the partial one and the merge, and ships the partial
--- one to the replicas. Both the local and the shipped partial aggregation must get the `GROUP BY` top-K heap of the
--- single-node aggregation: automatic parallel replicas matches the two plans, and prices the output of each replica by
--- the output of the single-node aggregation. Every replica keeps its own `n` groups, so the cost model must not divide
--- that output between the replicas, the same as for `LIMIT n`. The same for `GROUP BY ... LIMIT` without `ORDER BY`.
--- Query-based parallel replicas are priced and switched the same way.
+#!/usr/bin/env bash
+# A plan-based parallel replicas plan splits the aggregation into the partial one and the merge, and ships the partial
+# one to the replicas. Both the local and the shipped partial aggregation must get the `GROUP BY` top-K heap of the
+# single-node aggregation: automatic parallel replicas matches the two plans, and prices the output of each replica by
+# the output of the single-node aggregation. Every replica keeps its own `n` groups, so the cost model must not divide
+# that output between the replicas, the same as for `LIMIT n`. The same for `GROUP BY ... LIMIT` without `ORDER BY`.
+# Query-based parallel replicas are priced and switched the same way.
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+# The formula is read from the server logs the client receives, because `system.text_log` can lose a line.
+server_logs_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_05480_server_logs.txt"
+rm -f "$server_logs_file"
+CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
+
+$CLICKHOUSE_CLIENT_TRACE --server_logs_file="$server_logs_file" -q "
 DROP TABLE IF EXISTS t_05480;
 CREATE TABLE t_05480 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY v;
 INSERT INTO t_05480 SELECT intHash64(number) % 100000, number FROM numbers(1000000);
@@ -69,7 +80,7 @@ SETTINGS automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_ignor
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
-SYSTEM FLUSH LOGS query_log, text_log;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT q.log_comment, sum(r.ProfileEvents['AggregationTopKRowsSkipped']) > 0
 FROM system.query_log AS r
@@ -110,20 +121,19 @@ WHERE (r.event_date >= yesterday()) AND (r.event_time >= NOW() - INTERVAL '15 MI
 GROUP BY q.log_comment
 ORDER BY q.log_comment;
 
--- The divisor of the output bytes in `The applied formula: in / threads ? (in / threads + out / divisor)`.
-SELECT q.log_comment, extract(t.message, '\\+ \\d+ / (\\d+)\\)') AS output_divisor
-FROM system.text_log AS t
-INNER JOIN
-(
-    SELECT query_id, log_comment
+DROP TABLE t_05480;
+"
+
+# The divisor of the output bytes in `The applied formula: in / threads ? (in / threads + out / divisor)`.
+$CLICKHOUSE_CLIENT -q "
+    SELECT log_comment, query_id
     FROM system.query_log
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
         AND (current_database = currentDatabase()) AND startsWith(log_comment, 'q05480_priced_') AND (type = 'QueryFinish')
         AND is_initial_query
-) AS q ON t.query_id = q.query_id
-WHERE (t.event_date >= yesterday()) AND (t.event_time >= NOW() - INTERVAL '15 MINUTES')
-    AND (t.logger_name = 'AutoParallelReplicas') AND (t.message LIKE 'The applied formula%')
-ORDER BY q.log_comment
-SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
+    ORDER BY log_comment" | while read -r log_comment query_id; do
+    grep -F "{$query_id}" "$server_logs_file" | grep -F 'AutoParallelReplicas: The applied formula' \
+        | sed -nE 's/.*\+ [0-9]+ \/ ([0-9]+)\).*/\1/p' | sed "s/^/$log_comment\t/"
+done
 
-DROP TABLE t_05480;
+rm -f "$server_logs_file"
