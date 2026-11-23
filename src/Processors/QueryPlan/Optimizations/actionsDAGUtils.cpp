@@ -535,7 +535,24 @@ static bool keepsNullAndNaN(const DataTypePtr & argument_type, const DataTypePtr
     if (isNullableOrLowCardinalityNullable(argument_type) && !isNullableOrLowCardinalityNullable(result_type))
         return false;
 
-    return !isFloat(removeLowCardinalityAndNullable(argument_type)) || isFloat(removeLowCardinalityAndNullable(result_type));
+    const auto argument = removeLowCardinalityAndNullable(argument_type);
+    if (!isFloat(argument))
+        return true;
+
+    /// A conversion to `BFloat16` keeps only the high half of a `Float32`, so a NaN whose payload is
+    /// in the low half (for example a signaling NaN) becomes an infinity.
+    const auto result = removeLowCardinalityAndNullable(result_type);
+    return isFloat(result) && (!WhichDataType(result).isBFloat16() || WhichDataType(argument).isBFloat16());
+}
+
+/// The range of the argument is not known here, so it can include the minimum of a signed integer type.
+/// A decreasing function such as `negate` maps it to itself if the result is not wider than the argument
+/// (`-x` is `x` for the minimum of `Int64`), and then the result is not sorted.
+static bool canOverflowAtMinimum(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+{
+    const auto argument = removeLowCardinalityAndNullable(argument_type);
+    const auto result = removeLowCardinalityAndNullable(result_type);
+    return isInt(argument) && isInteger(result) && result->getSizeOfValueInMemory() <= argument->getSizeOfValueInMemory();
 }
 
 /// Check whether all the function in chain are monotonic
@@ -563,7 +580,11 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
             break;
 
         if (!monotonicity.is_positive)
+        {
+            if (canOverflowAtMinimum(type, node->result_type))
+                break;
             chain.changes_order = !chain.changes_order;
+        }
 
         chain.is_strict = chain.is_strict && monotonicity.is_strict && !hasNullConstantArgument(*node);
 

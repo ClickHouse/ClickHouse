@@ -52,3 +52,30 @@ SELECT sign(x) AS n FROM (SELECT x FROM t_sort_prop_sign ORDER BY x DESC LIMIT 1
 SELECT sign(x) AS n FROM (SELECT x FROM t_sort_prop_sign ORDER BY x DESC LIMIT 10) ORDER BY n DESC LIMIT 2 SETTINGS optimize_sorting_by_input_stream_properties = 0;
 
 DROP TABLE t_sort_prop_sign;
+
+-- `-x` is `x` for the minimum of `Int64`, so the result of `negate` is not sorted if the stream can contain it.
+DROP TABLE IF EXISTS t_sort_prop_int_min;
+CREATE TABLE t_sort_prop_int_min (x Int64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_sort_prop_int_min VALUES (-9223372036854775808), (1), (2);
+
+SELECT 'negate of the minimum of a signed integer type';
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int_min ORDER BY x LIMIT 10) ORDER BY n DESC;
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int_min ORDER BY x LIMIT 10) ORDER BY n DESC SETTINGS optimize_sorting_by_input_stream_properties = 0;
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int_min ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1;
+SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int_min ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1 SETTINGS optimize_sorting_by_input_stream_properties = 0;
+
+DROP TABLE t_sort_prop_int_min;
+
+-- `toBFloat16` keeps only the high half of a `Float32`, so a signaling NaN, whose payload is in the low half, becomes infinity.
+DROP TABLE IF EXISTS t_sort_prop_bfloat16;
+CREATE TABLE t_sort_prop_bfloat16 (x Float32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_sort_prop_bfloat16 SELECT reinterpretAsFloat32(toUInt32(4286578689));
+INSERT INTO t_sort_prop_bfloat16 VALUES (-1), (1);
+
+SELECT 'a conversion to BFloat16 that turns NaN into infinity';
+SELECT toBFloat16(-x) AS n FROM (SELECT x FROM t_sort_prop_bfloat16 ORDER BY x LIMIT 10) ORDER BY n DESC;
+SELECT toBFloat16(-x) AS n FROM (SELECT x FROM t_sort_prop_bfloat16 ORDER BY x LIMIT 10) ORDER BY n DESC SETTINGS optimize_sorting_by_input_stream_properties = 0;
+SELECT toBFloat16(-x) AS n FROM (SELECT x FROM t_sort_prop_bfloat16 ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1;
+SELECT toBFloat16(-x) AS n FROM (SELECT x FROM t_sort_prop_bfloat16 ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1 SETTINGS optimize_sorting_by_input_stream_properties = 0;
+
+DROP TABLE t_sort_prop_bfloat16;
