@@ -1475,6 +1475,35 @@ def test_required_privileges():
     instance.query(f"RESTORE ALL FROM {backup_name}", user="u1")
 
 
+def test_restore_materialized_view_checks_source_rights():
+    create_and_fill_table(n=5)
+    instance.query("CREATE TABLE test.secret (x UInt32, y String) ENGINE = MergeTree ORDER BY y")
+    instance.query("CREATE TABLE test.sink (x UInt32, y String) ENGINE = MergeTree ORDER BY y")
+    instance.query("CREATE MATERIALIZED VIEW test.mv TO test.sink AS SELECT x, y FROM test.table")
+
+    instance.query("CREATE USER u1")
+    instance.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    instance.query("GRANT SELECT, INSERT, BACKUP ON test.table TO u1")
+    instance.query("GRANT SELECT, INSERT, CREATE VIEW, BACKUP ON test.mv TO u1")
+    instance.query("GRANT SELECT, INSERT ON test.sink TO u1")
+
+    # The backup names `test.secret` as the table that the view reads.
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.mv, TABLE test.table AS test.secret TO {backup_name}", user="u1")
+    definition = open(os.path.join(get_path_to_backup(backup_name), "metadata/test/mv.sql")).read()
+    assert "FROM test.secret" in definition, definition
+    instance.query("DROP TABLE test.mv")
+
+    # As for `CREATE MATERIALIZED VIEW`, the rights for that table are needed.
+    expected_error = "necessary to have the grant SELECT ON test.secret"
+    assert expected_error in instance.query_and_get_error(f"RESTORE TABLE test.mv FROM {backup_name}", user="u1")
+    assert instance.query("EXISTS test.mv") == "0\n"
+
+    instance.query("GRANT SELECT ON test.secret TO u1")
+    instance.query(f"RESTORE TABLE test.mv FROM {backup_name}", user="u1")
+    assert instance.query("EXISTS test.mv") == "1\n"
+
+
 def test_system_table():
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE system.numbers TO {backup_name}")

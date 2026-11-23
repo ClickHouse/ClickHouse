@@ -2438,6 +2438,26 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties);
     }
+    else if (create.select && create.is_materialized_view && is_restore_from_backup && !is_secondary_query)
+    {
+        /// A restore does not validate the view, but checks the rights for the tables that its query reads, as `CREATE` does.
+        try
+        {
+            auto select_context = Context::createCopy(getContext());
+            select_context->setQueryKindInitial();
+            if (create.refresh_strategy)
+                select_context->setCurrentDatabaseUnchecked(create.getDatabase());
+
+            InterpreterSelectQueryAnalyzer::getSampleBlock(
+                create.select->clone(), select_context, SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
+        }
+        catch (Exception & e)
+        {
+            /// A table of the query can be missing, as with `allow_materialized_view_with_bad_select`.
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                throw;
+        }
+    }
 
     bool is_storage_replicated = false;
     if (create.storage && isReplicated(*create.storage))
