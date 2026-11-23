@@ -1064,6 +1064,11 @@ bool QueryStatus::updateProgressIn(const Progress & value)
     return !is_killed.load(std::memory_order_relaxed);
 }
 
+void QueryStatus::accountProgressIn(const Progress & value)
+{
+    progress_in.incrementPiecewiseAtomically(value);
+}
+
 bool QueryStatus::updateProgressOut(const Progress & value)
 {
     CurrentThread::updateProgressOut(value);

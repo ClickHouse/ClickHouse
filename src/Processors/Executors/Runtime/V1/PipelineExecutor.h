@@ -87,6 +87,10 @@ private:
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
 
+    /// Adds the progress that the sources reported while being cancelled to the counters of the query.
+    /// Must be called after all the jobs have finished.
+    void accountReadProgressOfCancelledQuery();
+
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
     void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);

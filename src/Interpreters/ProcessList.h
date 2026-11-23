@@ -294,6 +294,11 @@ public:
     }
 
     bool updateProgressIn(const Progress & value);
+
+    /// Only adds `value` to the read progress of the query. Unlike `updateProgressIn`, it neither waits
+    /// for the queries with a higher priority nor attributes the progress to the calling thread, so it
+    /// can be called while the query is being cancelled, including from a thread of another query.
+    void accountProgressIn(const Progress & value);
     bool updateProgressOut(const Progress & value);
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;

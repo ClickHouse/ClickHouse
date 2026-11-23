@@ -33,6 +33,12 @@ public:
 
     bool onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits);
 
+    /// Accounts the progress of a query that is being cancelled or has failed: it is added to the
+    /// counters of the query (`system.processes`, `system.query_log`), to the quota and to the profile
+    /// events, but no limit is checked and nothing is sent to the client, because the query is not
+    /// going to continue anyway.
+    void accountProgressOfCancelledQuery(uint64_t read_rows, uint64_t read_bytes);
+
 private:
     std::shared_ptr<const EnabledQuota> quota;
     UInt64 normalized_query_hash = 0;
