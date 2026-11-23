@@ -2077,7 +2077,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
             return std::forward<ColTo>(col_to);
         }
     }
-    /// Scalar fallback for remaining conversions (decimal-to-number, DateTime64, Time64)
+    /// Scalar fallback for remaining conversions (accurate decimal-to-number, DateTime64, Time64)
     else if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
     {
         using ToFieldType = typename ToDataType::FieldType;
@@ -2131,14 +2131,18 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertDecimal(ColTo && col_to, ColFrom &
 
         return std::forward<ColTo>(col_to);
     }
+    /// Batch path for decimal-to-number, also from DateTime64 and Time64, with the default overflow behavior (an exception)
+    else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+    {
+        convertFromDecimalBatch<FromDataType, ToDataType>(vec_from.data(), vec_to.data(), input_rows_count, col_from->getScale());
+        return std::forward<ColTo>(col_to);
+    }
     else
     {
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-            else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale());
             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                 vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
             else

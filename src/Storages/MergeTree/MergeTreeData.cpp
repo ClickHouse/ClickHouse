@@ -1495,6 +1495,35 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
     }
 }
 
+void MergeTreeData::addColumnSizesOfParts(
+    const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result)
+{
+    std::vector<std::vector<std::pair<String, ColumnSize>>> sizes_of_parts(parts.size());
+    loadStatisticsOfPartsInParallel(
+        parts.size(),
+        max_threads,
+        [&](size_t part_index)
+        {
+            auto sizes = parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ true);
+            if (!sizes)
+                return false;
+            sizes_of_parts[part_index] = std::move(*sizes);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            sizes_of_parts[part_index]
+                = *parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ false);
+        },
+        [&](size_t part_index)
+        {
+            /// Moved out, so that the memory of a consumed part is released.
+            const auto sizes = std::move(sizes_of_parts[part_index]);
+            for (const auto & [name, size] : sizes)
+                result[name].add(size);
+        });
+}
+
 bool MergeTreeData::isInsertOrderSensitive() const
 {
     /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
@@ -10127,15 +10156,13 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
-    for (const auto & part : parts)
-    {
-        for (const auto & col_name : subcolumn_names)
-        {
-            auto column = part->tryGetColumn(col_name);
-            if (column && column->isSubcolumn())
-                result[col_name].add(part->getSubcolumnSize(col_name));
-        }
-    }
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    addColumnSizesOfParts(
+        parts,
+        subcolumn_names,
+        /* with_columns = */ false,
+        query_context ? static_cast<size_t>(query_context->getSettingsRef()[Setting::max_threads]) : 1,
+        result);
 
     return result;
 }
@@ -15775,10 +15802,32 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
 }
 
-SerializationInfoByName MergeTreeData::getSerializationHints() const
+SerializationInfoByName MergeTreeData::getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const
 {
     auto lock = readLockParts();
-    return serialization_hints.clone();
+
+    /// `setPropertiesAndResetSerializationHints` publishes the new column types and the hints built for them under one `parts_lock`,
+    /// so under the lock `serialization_hints` match the current metadata. The snapshot of the caller may be taken before
+    /// a concurrent `ALTER` (or after it, if the lock is taken later), so keep only the hints of the columns
+    /// whose types are the same in both. For example, the hint of a `String` column must not be given to the `Tuple` type
+    /// it had before `ALTER TABLE ... MODIFY COLUMN`.
+    const auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    if (&*current_metadata == &metadata_snapshot)
+        return serialization_hints.clone();
+
+    const auto & current_columns = current_metadata->getColumns();
+    const auto & snapshot_columns = metadata_snapshot.getColumns();
+
+    SerializationInfoByName res(serialization_hints.getSettings());
+    for (const auto & [name, info] : serialization_hints)
+    {
+        auto current_column = current_columns.tryGetPhysical(name);
+        auto snapshot_column = snapshot_columns.tryGetPhysical(name);
+        if (current_column && snapshot_column && current_column->type->equals(*snapshot_column->type))
+            res.emplace(name, info->clone());
+    }
+
+    return res;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
