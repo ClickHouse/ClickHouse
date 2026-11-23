@@ -1881,11 +1881,12 @@ void StorageObjectStorageQueue::alter(
         {
             if (!ObjectStorageQueueTableMetadata::isStoredInKeeper(setting.name) || !isSettingChangeable(setting.name, mode))
                 return false;
-            if (local_shared_metadata_settings.get(setting.name) != setting.value)
+            const Field value = ObjectStorageQueueSettings::castValueUtil(setting.name, setting.value);
+            if (local_shared_metadata_settings.get(setting.name) != value)
                 return true;
             if (!settings_in_keeper)
                 settings_in_keeper.emplace(read_settings_in_keeper());
-            return settings_in_keeper->get(setting.name) != setting.value;
+            return settings_in_keeper->get(setting.name) != value;
         };
 
         for (auto & setting : new_settings)
