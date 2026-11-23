@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/logger_useful.h>
+#include <Common/SecretString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
@@ -20,7 +21,7 @@ public:
         String after_processing_move_prefix;
         bool after_processing_move_preserve_path = false;
         String after_processing_move_access_key_id;
-        String after_processing_move_secret_access_key;
+        SecretString after_processing_move_secret_access_key;
         String after_processing_move_connection_string;
         String after_processing_move_container;
         String after_processing_tag_key;
@@ -45,7 +46,7 @@ public:
         UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
-    String getName() const { return engine_name; }
+    [[nodiscard]] String getName() const { return engine_name; }
 
     void doWithRetries(std::function<void()> action) const;
 

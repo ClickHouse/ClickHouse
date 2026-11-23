@@ -1,5 +1,6 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ClientSlashCommands.h>
+#include <Client/HistoryPicker.h>
 #include <Client/ReplxxLineReader.h>
 #include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
@@ -16,23 +17,22 @@
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
+
+#if defined(OS_DARWIN)
+#    include <dlfcn.h>
+#endif
 #include <functional>
+#include <limits>
 #include <sys/file.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <csignal>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include "config.h" // USE_SKIM
-
-#if USE_SKIM
-#include <skim.h>
-#endif
 
 namespace
 {
@@ -89,28 +89,24 @@ std::string getEditor()
 }
 
 /// See comments in ShellCommand::executeImpl()
-/// (for the vfork via dlsym())
 int executeCommand(char * const argv[])
 {
-#if !defined(USE_MUSL)
-    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of symbols in the shared library
-      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-      * Therefore, separate the resolving of the symbol from the call.
-      */
+#if defined(OS_DARWIN)
+    /// x86_64 macOS binds library symbols lazily (there is no `-z now` there), and binding `vfork` in the call itself
+    /// can deadlock in a multithreaded program. So resolve it before the call. Elsewhere everything is bound at startup.
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
-#endif
     if (!real_vfork)
         throw std::runtime_error("Cannot find vfork symbol");
-
     pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+#else
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
+#endif
 
     if (-1 == pid)
         throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
 
+    /// The child only calls async-signal-safe functions before `exec`.
+    // NOLINTBEGIN(clang-analyzer-unix.Vfork)
     /// Child
     if (0 == pid)
     {
@@ -122,6 +118,7 @@ int executeCommand(char * const argv[])
         execvp(argv[0], argv);
         _exit(-1);
     }
+    // NOLINTEND(clang-analyzer-unix.Vfork)
 
     int status = 0;
     do
@@ -354,7 +351,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     if (!history_file_path.empty())
     {
-        history_file_fd = open(history_file_path.c_str(), O_RDWR);
+        history_file_fd = open(history_file_path.c_str(), O_RDWR | O_CREAT, 0666);
         if (history_file_fd < 0)
         {
             rx.print("Open of history file failed: %s\n", errnoToString().c_str());
@@ -769,10 +766,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     if (options.interactive_history_legacy_keymap)
         std::swap(key_fuzzy, key_regular);
 
-#if USE_SKIM
     if (!options.embedded_mode)
     {
-        auto interactive_history_search = [this, key_regular](char32_t code)
+        auto interactive_history_search = [this, key_regular, in_fd = options.in_fd, out_fd = options.out_fd](char32_t code)
         {
             std::vector<std::string> words;
             {
@@ -782,18 +778,23 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             }
 
             std::string current_query(rx.get_state().text());
+            const int cursor_position = rx.get_state().cursor_position();
             std::string new_query;
+            /// Keep the input visible and open the picker below its end.
+            rx.set_state(replxx::Replxx::State(current_query.c_str(), std::numeric_limits<int>::max()));
+            suppress_hints_once = true;
+            rx.invoke(Replxx::ACTION::CLEAR_SELF, code);
+            rx.invoke(Replxx::ACTION::REPAINT, code);
             try
             {
-                new_query = std::string(skim(current_query, words));
+                new_query = DB::pickFromHistory(in_fd, out_fd, current_query, words);
             }
             catch (const std::exception & e)
             {
-                rx.print("skim failed: %s (consider using Ctrl-%c for a regular non-fuzzy reverse search)\n", e.what(), key_regular);
+                rx.print("\nHistory search failed: %s (consider using Ctrl-%c for a regular non-fuzzy reverse search)\n", e.what(), key_regular);
+                /// Draw the prompt below the message.
+                rx.invoke(Replxx::ACTION::REPAINT, code);
             }
-
-            /// REPAINT before to avoid prompt overlap by the query
-            rx.invoke(Replxx::ACTION::REPAINT, code);
 
             const bool selected_query = !new_query.empty();
             if (selected_query)
@@ -802,6 +803,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 /// (see historyNavigate).
                 suppress_hints_once = true;
                 rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+            }
+            else
+            {
+                /// Nothing picked: the cursor goes back to where it was.
+                rx.set_state(replxx::Replxx::State(current_query.c_str(), cursor_position));
             }
 
             if (bracketed_paste_enabled)
@@ -816,7 +822,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
         bind_non_editing_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
     }
-#endif
 
     /// Rebind regular incremental search.
     ///

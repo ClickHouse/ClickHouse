@@ -171,7 +171,8 @@ void refreshSettingsDerivedMetadata(
 
     MergeTreeSettings effective_settings = *settings_defaults;
     SettingsChanges builtin_changes;
-    for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
+    const auto settings_changes_ast = metadata.getSettingsChanges();
+    for (const auto & change : settings_changes_ast->as<ASTSetQuery &>().changes)
     {
         if (MergeTreeSettings::hasBuiltin(change.name))
             builtin_changes.push_back(change);
@@ -1325,14 +1326,15 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_SETTING)
     {
-        if (!metadata.settings_changes)
+        auto settings_changes_ast = metadata.getSettingsChanges();
+        if (!settings_changes_ast)
         {
             auto changes = make_intrusive<ASTSetQuery>();
             changes->is_standalone = false;
-            metadata.settings_changes = std::move(changes);
+            settings_changes_ast = std::move(changes);
         }
 
-        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        auto & settings_from_storage = settings_changes_ast->as<ASTSetQuery &>().changes;
         resetSettings(settings_from_storage, settings_resets);
 
         for (const auto & change : settings_changes)
@@ -1355,14 +1357,17 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
+        metadata.setSettingsChanges(settings_changes_ast);
         refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RESET_SETTING)
     {
-        if (!metadata.settings_changes)
+        if (!metadata.hasSettingsChanges())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
-        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        auto settings_changes_ast = metadata.getSettingsChanges();
+        resetSettings(settings_changes_ast->as<ASTSetQuery &>().changes, settings_resets);
+        metadata.setSettingsChanges(settings_changes_ast);
         refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RENAME_COLUMN)
@@ -1372,6 +1377,8 @@ void AlterCommand::apply(
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
+        RenameColumnData key_rename_data{column_name, rename_to, /*rename_subcolumns=*/true, &metadata.columns};
+        RenameColumnVisitor key_rename_visitor(key_rename_data);
         for (const auto & column : metadata.columns)
         {
             metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
@@ -1391,16 +1398,16 @@ void AlterCommand::apply(
         metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
-            rename_visitor.visit(metadata.sorting_key.definition_ast);
+            key_rename_visitor.visit(metadata.sorting_key.definition_ast);
 
         if (metadata.isPrimaryKeyDefined())
-            rename_visitor.visit(metadata.primary_key.definition_ast);
+            key_rename_visitor.visit(metadata.primary_key.definition_ast);
 
         if (metadata.isSamplingKeyDefined())
-            rename_visitor.visit(metadata.sampling_key.definition_ast);
+            key_rename_visitor.visit(metadata.sampling_key.definition_ast);
 
         if (metadata.isPartitionKeyDefined())
-            rename_visitor.visit(metadata.partition_key.definition_ast);
+            key_rename_visitor.visit(metadata.partition_key.definition_ast);
 
         if (metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to))
             metadata.dropImplicitIndicesForColumn(column_name);
@@ -1837,6 +1844,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     }
 
     result.ast_text = ast->formatWithSecretsOneLine();
+    result.has_partition = isCommandScopedToPartitions(ast->as<const ASTAlterCommand &>());
     const auto & settings = context->getSettingsRef();
     result.max_parser_depth = settings[Setting::max_parser_depth];
     result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
@@ -2144,13 +2152,16 @@ void AlterCommands::apply(
     {
         try
         {
+            /// A codec of `RECOMPRESS` that this `ALTER` defines was checked against the settings of the query when its
+            /// `MODIFY TTL` command was applied; one that was already stored is trusted, as an unchanged column `CODEC` is.
             metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 metadata_copy.table_ttl.definition_ast,
                 metadata_copy.columns,
                 context,
                 metadata_copy.primary_key,
                 context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                                     : TTLValidationMode::Validate);
+                                                                                     : TTLValidationMode::Validate,
+                /*trust_recompression_codec=*/ true);
         }
         catch (const Exception & exception)
         {
@@ -2683,7 +2694,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
-            if (metadata->settings_changes == nullptr)
+            if (!metadata->hasSettingsChanges())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
@@ -2939,6 +2950,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                 .max_parser_depth = max_parser_depth,
                 .max_parser_backtracks = max_parser_backtracks,
                 .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
+                .has_partition = isCommandScopedToPartitions(alter_cmd.ast->as<const ASTAlterCommand &>()),
             });
         }
     }

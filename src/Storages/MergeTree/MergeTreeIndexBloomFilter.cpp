@@ -35,6 +35,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/StringUtils.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -950,6 +951,21 @@ static std::optional<size_t> findArrayJoinIndexPosition(
     return findIndexPosition(header, index_nodes, node.toFunctionNode().getArgumentAt(0));
 }
 
+/// True if `column` holds the element LEFT ARRAY JOIN pads an empty array with: the default of `element_type`.
+static bool containsPaddedElement(const IColumn & column, const IDataType & element_type)
+{
+    if (element_type.isDefaultInsertTrivial())
+        return column.getNumberOfDefaultRows() != 0;
+
+    auto padded_column = element_type.createColumn();
+    element_type.insertDefaultInto(*padded_column);
+    const Field padded_element = (*padded_column)[0];
+    for (size_t row = 0; row < column.size(); ++row)
+        if (column[row] == padded_element)
+            return true;
+    return false;
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & wrapped_key_node,
@@ -1149,7 +1165,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    if (padded && converted_column->getNumberOfDefaultRows() != 0)
+    if (padded && containsPaddedElement(*converted_column, *array_nested_type))
         return false;
 
     out.predicate.emplace_back(
@@ -1188,7 +1204,7 @@ static Field coerceStringFieldLikeSearchFunction(
         if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
             return {};
 
-        value.resize(value.find_last_not_of('\0') + 1);
+        trimRight(value, '\0');
     }
 
     if (fixed_string_type)
@@ -1231,7 +1247,7 @@ static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field
 
     String name = value_field.safeGet<String>();
     if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-        name.resize(name.find_last_not_of('\0') + 1);
+        trimRight(name, '\0');
 
     return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
 }
@@ -1419,7 +1435,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    if (padded && array_type->getNestedType()->createColumnConst(1, converted_field)->isDefaultAt(0))
+                    if (padded && containsPaddedElement(*array_type->getNestedType()->createColumnConst(1, converted_field), *array_type->getNestedType()))
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;
