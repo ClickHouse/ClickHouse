@@ -1,6 +1,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
@@ -211,6 +212,14 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
 
     if (!fallback_columns_list.empty())
     {
+        /// Read as the columns of a read step: resolved by the table, with the columns the part needs to produce them.
+        auto names = fallback_columns_list.getNames();
+        injectRequiredColumns(*main_reader->data_part_info_for_read, main_reader->storage_snapshot, /*with_subcolumns=*/ true, names);
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+            .withSubcolumns();
+        fallback_columns_list = main_reader->storage_snapshot->getColumnsByNames(options, names);
+
         /// The physical columns of the fallback expression are discovered here, long after
         /// `MergeTreeReadPoolBase` sized the query's columns cache write estimate over the
         /// columns of the read task. Writing them to the cache would therefore write bytes no
@@ -528,16 +537,26 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         MutableColumns fallback_cols(fallback_columns_list.size());
         Columns fallback_shared_cols(fallback_columns_list.size());
-        fallback_reader->readRows(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, fallback_cols, fallback_shared_cols);
+        size_t fallback_rows = fallback_reader->readRows(
+            from_mark, current_range_last_mark, continue_reading, max_rows_to_read, fallback_cols, fallback_shared_cols);
+
+        Columns columns(fallback_columns_list.size());
+        for (size_t col_idx = 0; col_idx < columns.size(); ++col_idx)
+            columns[col_idx] = fallback_cols[col_idx] ? std::move(fallback_cols[col_idx]) : fallback_shared_cols[col_idx];
+
+        bool should_evaluate_missing_defaults = false;
+        fallback_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, fallback_rows);
+        fallback_reader->performRequiredConversions(columns);
+        if (should_evaluate_missing_defaults)
+        {
+            Block additional_columns;
+            addDummyColumnWithRowCount(additional_columns, fallback_rows);
+            fallback_reader->evaluateMissingDefaults(additional_columns, columns);
+        }
+
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
-        {
-            if (fallback_cols[col_idx])
-                fallback_block.insert({std::move(fallback_cols[col_idx]), col_name_type.type, col_name_type.name});
-            else
-                fallback_block.insert({fallback_shared_cols[col_idx], col_name_type.type, col_name_type.name});
-            ++col_idx;
-        }
+            fallback_block.insert({columns[col_idx++], col_name_type.type, col_name_type.name});
     }
 
     size_t fallback_offset = 0;

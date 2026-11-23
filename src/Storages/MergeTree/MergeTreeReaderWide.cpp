@@ -91,7 +91,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         {
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
             auto & kind = column_kinds[i];
-            kind.skipped = isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i);
+            kind.skipped = isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i) || isSubcolumnExtractedFromConvertedColumn(i);
             if (!kind.skipped)
                 addStreams(columns_to_read[i], serializations[i], kind);
             has_columns_read_only_from_part = has_columns_read_only_from_part || kind.read_only_from_part;
@@ -1402,7 +1402,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (isColumnSkipped(pos))
                 continue;
 
             try
