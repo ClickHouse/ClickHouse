@@ -6790,27 +6790,78 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     NamesAndTypesList columns_to_check_conversion;
 
     /// Rejects a type change of a column that a key MATERIALIZED column is computed from (see key_materialized_columns).
+    /// Whether the original expression of @column_name refers to the ALIAS column @alias_name, directly or through
+    /// other ALIAS and MATERIALIZED columns. The dependency graph expands aliases to the columns they read, so it
+    /// does not see that changing the type of the alias, which casts its value, changes the result.
+    auto reads_alias = [&](const String & column_name, const String & alias_name)
+    {
+        const auto & old_columns_desc = old_metadata.getColumns();
+        NameSet visited;
+        auto reads = [&](const String & name, auto && self) -> bool
+        {
+            if (!visited.insert(name).second)
+                return false;
+
+            const auto * column = old_columns_desc.tryGet(name);
+            if (!column || !column->default_desc.expression
+                || (column->default_desc.kind != ColumnDefaultKind::Alias && column->default_desc.kind != ColumnDefaultKind::Materialized))
+                return false;
+
+            std::vector<const IAST *> to_visit{column->default_desc.expression.get()};
+            while (!to_visit.empty())
+            {
+                const auto * node = to_visit.back();
+                to_visit.pop_back();
+                if (const auto * identifier = node->as<ASTIdentifier>())
+                {
+                    const auto & identifier_name = identifier->name();
+                    if (identifier_name == alias_name || identifier_name.starts_with(alias_name + ".") || self(identifier_name, self))
+                        return true;
+                }
+                for (const auto & child : node->children)
+                    to_visit.push_back(child.get());
+            }
+            return false;
+        };
+        return reads(column_name, reads);
+    };
+
     auto check_key_materialized_sources = [&](const AlterCommand & command)
     {
         if (!command.data_type)
             return;
 
-        auto it = old_types.find(command.column_name);
-        if (it == old_types.end() || it->second->equals(*command.data_type))
+        /// An ALIAS column is not in old_types, which holds physical columns only.
+        const IDataType * old_type = nullptr;
+        bool is_alias = false;
+        if (auto it = old_types.find(command.column_name); it != old_types.end())
+        {
+            old_type = it->second;
+        }
+        else if (const auto * column = old_metadata.getColumns().tryGet(command.column_name);
+                 column && column->default_desc.kind == ColumnDefaultKind::Alias)
+        {
+            old_type = column->type.get();
+            is_alias = true;
+        }
+
+        if (!old_type || old_type->equals(*command.data_type))
             return;
 
         for (const auto & key_materialized : key_materialized_columns)
         {
             /// Also through other MATERIALIZED columns, and also when the key column reads an EPHEMERAL column,
             /// which findColumnsToRecalculate leaves out because such a column is never recalculated.
-            if (!materialized_dependencies.dependsOn(key_materialized, command.column_name))
+            bool depends = is_alias ? reads_alias(key_materialized, command.column_name)
+                                    : materialized_dependencies.dependsOn(key_materialized, command.column_name);
+            if (!depends)
                 continue;
 
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "ALTER of column {} from type {} to type {} is forbidden because it is used by "
                             "the MATERIALIZED column {}, which is part of a key expression and cannot be "
                             "recalculated", backQuoteIfNeed(command.column_name),
-                            it->second->getName(), command.data_type->getName(),
+                            old_type->getName(), command.data_type->getName(),
                             backQuoteIfNeed(key_materialized));
         }
     };

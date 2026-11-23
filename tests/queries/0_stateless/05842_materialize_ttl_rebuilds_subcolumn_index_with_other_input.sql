@@ -25,4 +25,14 @@ SELECT t, y FROM t_ttl_index;
 SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 0;
 
+-- The same when an ordinary UPDATE of the TTL source makes the TTL reset `t`.
+TRUNCATE TABLE t_ttl_index;
+INSERT INTO t_ttl_index VALUES (1, '2100-01-01 00:00:00', tuple(100), 7, 'payload');
+
+ALTER TABLE t_ttl_index UPDATE d = toDateTime('2000-01-01 00:00:00') WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT t, y FROM t_ttl_index;
+SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_ttl_index WHERE t.a + y = 7 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_ttl_index;

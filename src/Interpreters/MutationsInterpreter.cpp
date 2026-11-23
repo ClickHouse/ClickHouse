@@ -1180,6 +1180,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 type_changed_affected_materialized.insert(column_name);
         }
     }
+    bool type_changed_recompute_emitted = false;
 
     /// Recomputed MATERIALIZED columns also invalidate their stored artifacts.
     NameSet all_affected_materialized;
@@ -1242,7 +1243,14 @@ void MutationsInterpreter::prepare(bool dry_run)
         columns_for_dependencies.insert(type_changed_columns.begin(), type_changed_columns.end());
         columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
         dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
-        add_index_dependencies_of_changed_columns(columns_for_dependencies);
+
+        /// The collection above adds columns the mutation writes as well, e.g. the target of a column TTL
+        /// whose source is updated, so an index over their subcolumns needs its other inputs too.
+        NameSet columns_written_by_mutation = columns_for_dependencies;
+        for (const auto & dependency : dependencies)
+            if (!dependency.isReadOnly())
+                columns_written_by_mutation.insert(dependency.column_name);
+        add_index_dependencies_of_changed_columns(columns_written_by_mutation);
     }
 
     bool need_rebuild_indexes = false;
@@ -1736,6 +1744,15 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
             materialized_statistics.insert(command.column_name);
 
+            /// A later command of the same mutation can read a MATERIALIZED column computed from the converted
+            /// one (`UPDATE y = m`), so recompute those at this point, in command order. The source column is
+            /// converted when it is read, so these stages already see its new values.
+            if (!type_changed_recompute_emitted && type_changed_columns.contains(command.column_name))
+            {
+                emit_materialized_recompute_stages(type_changed_affected_materialized, std::nullopt);
+                type_changed_recompute_emitted = true;
+            }
+
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
                 /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
@@ -1905,9 +1922,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         for (const auto & name : getColumnsRequiredToRecalculateTTL(*metadata_snapshot))
             dependencies.emplace(name, ColumnDependency::TTL_EXPRESSION);
     }
-
-    /// After the read_columns stage above, so these are recomputed from the converted values.
-    emit_materialized_recompute_stages(type_changed_affected_materialized, std::nullopt);
 
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
