@@ -238,6 +238,7 @@ private:
     void cancelBuffers();
     /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
+    void removeManifests();
     bool initializeMetadata();
 
     FileNamesGenerator filename_generator;
@@ -257,7 +258,8 @@ private:
     std::vector<Int64> manifest_entry_row_counts;
     std::vector<Int64> manifest_entry_file_counts;
     std::vector<ManifestPartitionSummary> entry_partition_summaries;
-    Strings merged_manifests_in_storage;
+    std::vector<ManifestListEntryCounts> manifest_entry_counts;
+    std::unordered_set<String> replaced_manifest_paths;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;

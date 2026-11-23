@@ -2,9 +2,11 @@
 
 #include "config.h"
 
+#include <limits>
+#include <unordered_set>
+
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -34,55 +36,32 @@ struct ManifestMergeSettings
 
 std::optional<ManifestMergeSettings> getManifestMergeSettings(const Poco::JSON::Object::Ptr & metadata, const Settings & settings);
 
-struct NewManifest
+struct CarriedOverDataFiles
 {
-    IcebergPathFromMetadata path;
-    Int64 size_bytes = 0;
-    Int64 files_count = 0;
-    const ManifestPartitionSummary * partition_summary = nullptr;
+    std::unordered_set<String> manifest_paths;
+    std::vector<IcebergPathFromMetadata> paths;
+    std::vector<Row> partition_values;
+    std::vector<UInt64> row_counts;
+    std::vector<UInt64> byte_counts;
+    std::vector<String> formats;
+    std::vector<DataFileColumnStatistics> statistics;
+    std::vector<std::optional<Int32>> sort_order_ids;
+    std::vector<DataFileEntryLineage> lineage;
+    Int64 rows_count = 0;
+    Int64 min_sequence_number = std::numeric_limits<Int64>::max();
 };
 
-struct MergedManifest
-{
-    IcebergPathFromMetadata path;
-    Int64 size_bytes = 0;
-    ManifestListEntryCounts counts;
-    std::optional<ManifestPartitionSummary> partition_summary;
-};
-
-struct ManifestMergeResult
-{
-    std::vector<MergedManifest> merged_manifests;
-    std::vector<bool> is_new_manifest_merged;
-    std::unordered_set<String> replaced_manifest_paths;
-
-    bool empty() const { return replaced_manifest_paths.empty() && merged_manifests.empty(); }
-};
-
-struct ManifestMergeTarget
-{
-    Poco::JSON::Object::Ptr metadata;
-    Poco::JSON::Object::Ptr new_snapshot;
-    Poco::JSON::Object::Ptr partition_spec;
-    Int32 partition_spec_id = 0;
-    std::vector<String> partition_columns;
-    DataTypes partition_types;
-    Int32 schema_id = 0;
-    SharedHeader sample_block;
-    String write_format;
-    bool single_manifest_for_all_partitions = false;
-};
-
-ManifestMergeResult mergeManifestsOnAppend(
+CarriedOverDataFiles collectDataFilesToMerge(
     const ManifestMergeSettings & merge_settings,
-    const ManifestMergeTarget & target,
     const ManifestFileCacheKeys & parent_manifests,
-    const std::vector<NewManifest> & new_manifests,
-    FileNamesGenerator & filename_generator,
+    const ManifestPartitionSummary * new_manifest_partition_summary,
+    size_t partition_fields_count,
+    bool single_manifest_for_all_partitions,
+    Int32 partition_spec_id,
+    Int32 schema_id,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
-    ContextPtr context,
-    Strings & written_manifests_in_storage);
+    ContextPtr context);
 
 }
 

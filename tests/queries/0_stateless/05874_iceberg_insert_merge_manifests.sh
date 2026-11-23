@@ -88,7 +88,7 @@ describe_manifest_list "$(latest_manifest_list "${TABLE_PATH}")"
 describe_merged_manifest "${TABLE_PATH}"
 ${CLICKHOUSE_CLIENT} --query "SELECT p, groupArraySorted(10)(v) FROM ${TABLE} GROUP BY p ORDER BY p"
 
-echo "--- the manifests written by the merging inserts and replaced right away are removed"
+echo "--- each insert writes one data manifest, nothing to clean up"
 count_manifests "${TABLE_PATH}"
 
 echo "--- time travel to a snapshot before the merge"

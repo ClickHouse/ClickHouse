@@ -19,7 +19,7 @@
 1	\N	\N	(1)	1
 1	[1,3,4,5]
 2	[10]
---- the manifests written by the merging inserts and replaced right away are removed
+--- each insert writes one data manifest, nothing to clean up
 7
 --- time travel to a snapshot before the merge
 1	1
