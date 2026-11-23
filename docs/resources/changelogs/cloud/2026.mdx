@@ -18,13 +18,13 @@ This week's releases strengthen safeguards for production databases, improve sec
 
 ### Deletion protection for Managed Postgres {#deletion-protection-for-managed-postgres}
 
-You can now enable deletion protection for a ClickHouse Managed Postgres service from its **Settings** page or through the OpenAPI. While protection is enabled, deletion requests from the console or API are rejected with `409` until protection is turned off, helping prevent accidental deletion of production databases. Deletion protection is not yet available for read replicas.
+You can now enable deletion protection for a [ClickHouse Managed Postgres](/cloud/managed-postgres) service from its **Settings** page or through the OpenAPI. While protection is enabled, deletion requests from the console or API are rejected with `409` until protection is turned off, helping prevent accidental deletion of production databases. Deletion protection is not yet available for read replicas.
 
 ## Integrations {#2026-11-23-integrations}
 
 ### Linked billing with Anthropic's Claude Platform {#linked-billing-with-anthropics-claude-platform}
 
-ClickHouse Cloud organizations can now link their Claude Platform organization under **Organization settings → Claude organization**. Once linked, Anthropic bills Claude usage in [ClickHouse Agents](/agents/index) and AI Functions directly to that organization, drawing down the existing Anthropic commitment. You approve the link in Claude without sharing an API key, set a monthly spend limit that you can change in the Claude Console, and can unlink from either side. Linked organizations can use the Claude models in ClickHouse's catalog, including Opus 5.5 and Haiku 5.5. This opt-in feature is available to all eligible organizations; see [linked billing with Claude Platform](/products/cloud/features/ai-ml/linked-billing-claude-platform) for details.
+ClickHouse Cloud organizations can now link their Claude Platform organization under **Organization settings → Claude organization**. Once linked, Anthropic bills Claude usage in [ClickHouse Agents](/agents/index) and [AI Functions](/reference/functions/regular-functions/ai-functions) directly to that organization, drawing down the existing Anthropic commitment. You approve the link in Claude without sharing an API key, set a monthly spend limit that you can change in the Claude Console, and can unlink from either side. Linked organizations can use the Claude models in ClickHouse's catalog, including Opus 5.5 and Haiku 5.5. This opt-in feature is available to all eligible organizations; see [linked billing with Claude Platform](/products/cloud/features/ai-ml/linked-billing-claude-platform) for details.
 
 ## Security {#2026-11-23-security}
 
