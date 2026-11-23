@@ -38,7 +38,7 @@ def request(protocol, query, query_id, **settings):
         return result.returncode == 0, result.stdout + result.stderr
     connection = http.client.HTTPConnection(os.environ['CLICKHOUSE_HOST'], int(os.environ['CLICKHOUSE_PORT_HTTP']), timeout=60)
     try:
-        settings.update(user=user, query_id=query_id)
+        settings.update(user=user, query_id=query_id, database=os.environ['CLICKHOUSE_DATABASE'])
         connection.request('POST', '/?' + urllib.parse.urlencode(settings), query)
         response = connection.getresponse()
         return response.status == 200, response.read().decode()
@@ -77,7 +77,7 @@ try:
             wait_until_finished(query_id)
             admin('SYSTEM FLUSH LOGS')
             row = admin("SELECT memory_usage, length(log_comment) FROM system.query_log "
-                        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'").split('\t')
+                        f"WHERE current_database = currentDatabase() AND query_id = '{query_id}' AND type = 'QueryFinish'").split('\t')
             assert int(row[0]) >= payload_size and int(row[1]) == 0, (protocol, batching_limit, row)
         print(protocol, 'preserves setup peak after override')
 

@@ -33,6 +33,7 @@ def admin(query):
 
 
 def http_request(query, expect_error=False, **settings):
+    settings['database'] = os.environ['CLICKHOUSE_DATABASE']
     connection = http.client.HTTPConnection(os.environ['CLICKHOUSE_HOST'], int(os.environ['CLICKHOUSE_PORT_HTTP']), timeout=60)
     try:
         connection.request('POST', '/?' + urllib.parse.urlencode(settings), query)
@@ -57,7 +58,7 @@ def wait_for(query, expected):
 def check_peak(query_id):
     admin('SYSTEM FLUSH LOGS')
     row = admin("SELECT memory_usage, length(log_comment) FROM system.query_log "
-                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'").split('\t')
+                f"WHERE current_database = currentDatabase() AND query_id = '{query_id}' AND type = 'QueryFinish'").split('\t')
     assert int(row[0]) >= payload_size and int(row[1]) == 0, row
 
 
