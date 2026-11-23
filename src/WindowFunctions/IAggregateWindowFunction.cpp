@@ -1,6 +1,7 @@
 #include <WindowFunctions/IAggregateWindowFunction.h>
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.h>
 #include <WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.h>
+#include <WindowFunctions/Aggregate/AggregateWindowFunctionSliding.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -18,6 +19,8 @@ AggregateWindowFunctionPtr createAggregateWindowFunction(AggregateFunctionPtr fu
 {
     if (auto prefix = tryCreateAggregateWindowFunctionPrefix(function, window))
         return prefix;
+    else if (auto sliding = tryCreateAggregateWindowFunctionSliding(function, window))
+        return sliding;
     else if (auto recalculate = tryCreateAggregateWindowFunctionRecalculate(function, window))
         return recalculate;
     else
