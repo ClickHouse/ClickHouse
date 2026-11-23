@@ -30,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_READ_MAP_FROM_TEXT;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -934,6 +935,16 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
     return state;
 }
 
+void SerializationMap::checkBucketsHaveSameNumberOfRows(const VectorWithMemoryTracking<ColumnPtr> & buckets)
+{
+    for (size_t bucket = 1; bucket < buckets.size(); ++bucket)
+    {
+        if (buckets[bucket]->size() != buckets[0]->size())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Bucket {} of a Map column has {} rows, but bucket 0 has {} rows",
+                bucket, buckets[bucket]->size(), buckets[0]->size());
+    }
+}
+
 void SerializationMap::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -1211,6 +1222,7 @@ void collectMapFromBucketsWithOrderImpl(
 
     const auto & bucket_index_data = bucket_index_col.getData();
     std::vector<size_t> bucket_positions(map_buckets.size());
+    std::vector<size_t> bucket_ends(map_buckets.size());
     size_t bucket_index_offset = 0;
 
     for (size_t i = 0; i != num_rows; ++i)
@@ -1221,6 +1233,7 @@ void collectMapFromBucketsWithOrderImpl(
             size_t offset_start = (*map_offsets_buckets[bucket])[ssize_t(i) - 1];
             size_t offset_end = (*map_offsets_buckets[bucket])[ssize_t(i)];
             bucket_positions[bucket] = offset_start;
+            bucket_ends[bucket] = offset_end;
             total_size += offset_end - offset_start;
         }
 
@@ -1229,6 +1242,10 @@ void collectMapFromBucketsWithOrderImpl(
             size_t bucket_idx = bucket_index_data[bucket_index_offset++];
             if (bucket_idx >= map_buckets.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, map_buckets.size());
+            if (bucket_positions[bucket_idx] >= bucket_ends[bucket_idx])
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Bucket indexes of row {} of a Map column refer to bucket {} more times than it has key-value pairs in this row",
+                    i, bucket_idx);
             size_t pos = bucket_positions[bucket_idx]++;
             map_keys_column.insertFrom(*map_keys_buckets[bucket_idx], pos);
             map_values_column.insertFrom(*map_values_buckets[bucket_idx], pos);
@@ -1462,6 +1479,8 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
+        checkBucketsHaveSameNumberOfRows(map_buckets);
+
         if (map_state->has_bucket_index)
         {
             /// Compute total key-value pairs from per-bucket offsets.
@@ -1480,6 +1499,10 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             map_state->bucket_index_serialization->deserializeBinaryBulkWithMultipleStreams(
                 *bucket_index_column, total_kv_pairs, settings, map_state->bucket_index_state, cache);
             settings.path.pop_back();
+
+            if (bucket_index_column->size() != total_kv_pairs)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all bucket indexes of a Map column: read {} of {}",
+                    bucket_index_column->size(), total_kv_pairs);
 
             collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, column_map);
         }
