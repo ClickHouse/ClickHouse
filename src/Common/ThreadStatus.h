@@ -85,8 +85,15 @@ class ThreadGroup
 
 public:
     using FatalErrorCallback = std::function<void()>;
+    ThreadGroup();
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     ~ThreadGroup();
+
+    void initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+
+    /// The request must be idle until the background group has completed admission.
+    /// Keep its setup bytes charged until their original owners release them.
+    void reparentQuerySetup(ThreadGroupPtr background_group);
 
     /// The group this one is nested in, if any (see `parent`).
     ThreadGroupPtr getParent() const { return parent; }
@@ -94,17 +101,17 @@ public:
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 
-    /// Set up at creation, no race when reading
-    const ContextWeakPtr query_context;
-    const ContextWeakPtr global_context;
+    /// Set up before the first attachment, no race when reading.
+    ContextWeakPtr query_context;
+    ContextWeakPtr global_context;
 
     /// False for a group from `createWithoutQueryContext` and the groups nested in it: attaching them does not set up
     /// query profilers, so detaching keeps the profilers of the thread (e.g. the global profiler of a pool thread).
     const bool with_query_context = true;
 
-    const FatalErrorCallback fatal_error_callback;
+    FatalErrorCallback fatal_error_callback;
 
-    const Int32 os_threads_nice_value;
+    Int32 os_threads_nice_value = 0;
 
     MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
