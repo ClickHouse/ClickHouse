@@ -38,6 +38,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1234,10 +1235,12 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
 /// NULL as a value of a `Variant` key and NULL fields as values of a tuple key, while `equals` returns NULL
 /// for them. And the set compares floating-point values by their bits, also inside `Array` and `Map`: a NaN
 /// is a member of a set that holds it, and `-0.0` is not a member of a set of `0.0`, while `equals` compares
-/// the numbers. So the rewrite keeps the semantics only when every key has the type of its column, is
-/// neither a tuple nor a `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable`
-/// element of the left tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element,
-/// neither does `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
+/// the numbers. The set also accepts a key that is not comparable for equality, such as an `AggregateFunction`
+/// state, while `equals` rejects it, even inside a `Variant`. So the rewrite keeps the semantics only when every
+/// key has the type of its column, holds only types comparable for equality, is neither a tuple nor a
+/// `Variant`, holds no floating-point type, and its column is not `Bool`. A `Nullable` element of the left
+/// tuple is fine, unlike a `Nullable` left operand: the set never matches a NULL element, neither does
+/// `equals`, and `IN` of a plain tuple returns 0 rather than NULL.
 static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const NamesAndTypes & subquery_columns)
 {
     if (left_type->hasDynamicStructure() || isNullableOrLowCardinalityNullable(left_type))
@@ -1252,6 +1255,7 @@ static bool existsRewriteKeepsInSemantics(const DataTypePtr & left_type, const N
         const auto key_type_without_nullable = removeNullable(key_types[i]);
         const DataTypePtr & column_type = subquery_columns[i].type;
         if (isTuple(key_type_without_nullable) || isVariant(key_type_without_nullable) || !key_types[i]->equals(*column_type)
+            || anyInTypeTree(*column_type, [](const IDataType & node) { return !node.isComparableForEquality(); })
             || hasTypeThatCanContainFloat(column_type) || isBool(removeNullable(removeLowCardinality(column_type))))
             return false;
     }
@@ -1794,7 +1798,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (is_special_function_dict_get)
             {
-                scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
+                /// Check access before reading the dictionary definition, so that a user without access learns nothing
+                /// about the dictionary.
+                const auto & external_loader = scope.context->getExternalDictionariesLoader();
+                (void)external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(identifier.getFullName(), scope.context));
             }
             else
             {
@@ -3092,7 +3099,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getColumn();
+            /// A deferred right side of `IN` needs no column: it becomes a set, unless the call is folded with a constant left side.
+            if (!(is_special_function_in && function_argument_index == 1 && !all_arguments_constants
+                  && constant_node->tryGetDeferredField()))
+                argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
@@ -3295,7 +3305,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 function_name);
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
         for (size_t i = 0; i < argument_types.size(); ++i)
@@ -3366,11 +3377,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
         /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
         /// is the documented way to ask for two different constants in one query.
+        ///
+        /// Server-constant functions (`hostName`, `tcpPort`, `serverUUID`, ...) capture
+        /// `context->isDistributed()` when they are built, and it decides whether they are folded to a
+        /// constant (see `FunctionConstantBase::isSuitableForConstantFolding`). A sub-SELECT over
+        /// `clusterAllReplicas` and the outer query disagree on it, so a base shared between them makes
+        /// the shard query and the local plan disagree on the header. Hence for them the flag is a part
+        /// of the key. Other functions (`randConstant`, `now64`, ...) do not depend on it and must keep
+        /// a single value for the whole query, so they are shared regardless of the flag.
         if (function && !function->isDeterministic() && !function->isStateful()
             && function->isDeterministicInScopeOfQuery())
         {
             auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
-            function_base_cache = &functions_cache[hash];
+            bool distributed = function->isServerConstant() && scope.context->isDistributed();
+            function_base_cache = &functions_cache[{hash, distributed}];
         }
     }
 
@@ -3417,7 +3437,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 backQuote(function_name));
 
         auto action = function_node_ptr->getNullsAction();
-        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+        std::string aggregate_function_name
+            = rewriteAggregateFunctionNameIfNeeded(function_name, action, argument_types, parameters, scope.context);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
@@ -3649,6 +3670,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto & cached_function = *function_base_cache;
             if (!cached_function)
                 cached_function = function->build(argument_columns);
+            else
+            {
+                /// The cache is shared by all scopes of the query, but the access rights depend on the settings
+                /// of the scope (for example, `allow_introspection_functions` in the `SETTINGS` of a subquery).
+                /// `build` checks them, so check them also when the cached function is reused.
+                function->checkAccessOnBuild();
+            }
 
             function_base = cached_function;
         }

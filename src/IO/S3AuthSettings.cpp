@@ -15,7 +15,6 @@
 namespace DB
 {
 
-
 #define CLIENT_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
@@ -28,14 +27,15 @@ namespace DB
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
     DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
+    DECLARE(S3RequestPayer, request_payer, S3RequestPayer::NONE, "", 0) \
     DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
 
 #define AUTH_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, access_key_id, "", "", 0) \
-    DECLARE(String, secret_access_key, "", "", 0) \
-    DECLARE(String, session_token, "", "", 0) \
+    DECLARE(SecretString, secret_access_key, "", "", 0) \
+    DECLARE(SecretString, session_token, "", "", 0) \
     DECLARE(String, region, "", "", 0) \
-    DECLARE(String, server_side_encryption_customer_key_base64, "", "", 0) \
+    DECLARE(SecretString, server_side_encryption_customer_key_base64, "", "", 0) \
     DECLARE(String, role_arn, "", "", 0) \
     DECLARE(String, role_session_name, "", "", 0) \
     DECLARE(String, external_id, "", "", 0) \
@@ -44,9 +44,9 @@ namespace DB
     DECLARE(String, metadata_service, "", "", 0) \
     DECLARE(String, request_token_path, "", "", 0) \
     DECLARE(String, google_adc_client_id, "", "", 0) \
-    DECLARE(String, google_adc_client_secret, "", "", 0) \
-    DECLARE(String, google_adc_refresh_token, "", "", 0) \
-    DECLARE(String, google_service_account_key, "", "", 0) \
+    DECLARE(SecretString, google_adc_client_secret, "", "", 0) \
+    DECLARE(SecretString, google_adc_refresh_token, "", "", 0) \
+    DECLARE(SecretString, google_service_account_key, "", "", 0) \
 
 /// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
 /// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
@@ -257,6 +257,14 @@ NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
     result.append(access_headers);
 
     return result;
+}
+
+HTTPHeaderEntries S3AuthSettings::getRequestPayerHeaders() const
+{
+    if ((*this)[S3AuthSetting::request_payer] == S3RequestPayer::NONE)
+        return {};
+
+    return {{"x-amz-request-payer", "requester"}};
 }
 
 

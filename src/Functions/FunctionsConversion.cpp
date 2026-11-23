@@ -3298,7 +3298,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(
 
 FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
 {
-    if (isUInt8(from_type) && isBool(to_type))
+    if (isUInt8(from_type) && (isBool(to_type) || isSimpleAggregateFunctionOfBool(*to_type)))
         return createUInt8ToBoolWrapper(from_type, to_type);
 
     /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
@@ -3545,6 +3545,18 @@ FunctionBasePtr createFunctionBaseCast(
             return true;
         }))
     {
+    }
+    else if (isBool(monotonicity_result_type) || isSimpleAggregateFunctionOfBool(*monotonicity_result_type))
+    {
+        /// Every nonzero value becomes 1, so the cast is not injective, and unlike the cast into `UInt8`
+        /// it does not throw for a `DateTime64` outside of the `UInt8` range.
+        monotonicity = [](const IDataType & type, const Field & left, const Field & right)
+        {
+            auto result = detail::ToNumberMonotonicity<UInt8>::get(type, left, right);
+            result.is_strict = false;
+            result.is_always_monotonic_where_defined = false;
+            return result;
+        };
     }
     else if (castTypeToEither<
         DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
@@ -3793,7 +3805,7 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                 using LeftFieldType = typename LeftDataType::FieldType;
                 using RightFieldType = typename RightDataType::FieldType;
 
-                if (isBool(right.getPtr()))
+                if (isBool(right.getPtr()) || isSimpleAggregateFunctionOfBool(right))
                 {
                     /// nativeBoolCast returns i1, but Bool (UInt8) needs i8
                     auto * bool_value = nativeBoolCast(builder, left.getPtr(), input_value);
