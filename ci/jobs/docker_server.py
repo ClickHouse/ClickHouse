@@ -512,10 +512,15 @@ def main():
             label in info.pr_labels
             for label in (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
         ):
+            # Every variant: a bug can reproduce on one of them only, e.g. in `entrypoint.sh` of the Ubuntu image,
+            # which is not the default server variant.
             master_images = [
-                f"{repo}:head{suffix}"
-                for repo in ("clickhouse/clickhouse-server", "clickhouse/clickhouse-keeper")
-                for suffix in ("", "-alpine", "-distroless")
+                f"{repo}:head{'' if variant == repo_variants[0] else '-' + variant}"
+                for repo, repo_variants in (
+                    ("clickhouse/clickhouse-server", SERVER_VARIANTS),
+                    ("clickhouse/clickhouse-keeper", KEEPER_VARIANTS),
+                )
+                for variant in repo_variants
             ]
             validate_bugfix_tests(test_results, master_images, bugfix_tests)
 

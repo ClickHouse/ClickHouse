@@ -83,10 +83,12 @@ void shutdownHandler(int sig)
 }
 
 /// Get an environment variable value, returning default_value if not set.
+/// An empty variable is the same as an unset one, as `${VAR:-default}` in entrypoint.sh: e.g. `CLICKHOUSE_USER=`
+/// is the user `default`, and `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=` is `0`.
 std::string getEnv(const char * name, const std::string & default_value = "")
 {
     const char * val = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
-    return val ? std::string(val) : default_value;
+    return (val && *val) ? std::string(val) : default_value;
 }
 
 /// Build an execvp-compatible argv array from a vector of strings.
@@ -481,13 +483,28 @@ std::string getUsersConfigFile(const std::string & config_file)
         return path;
     };
 
-    if (std::string path = extractConfigValue(config_file, "users_config"); !path.empty())
+    DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
+    if (loaded.has_zk_includes)
+        throw Poco::Exception("the configuration has elements included from ZooKeeper (`from_zk`), "
+            "so its users configuration file cannot be found without ZooKeeper");
+    const auto & config = *loaded.configuration;
+
+    if (std::string path = config.getString("users_config", ""); !path.empty())
         return resolve(path);
-    for (const char * storage : {"users_xml", "users_config"})
-        if (std::string path = extractConfigValue(config_file, std::string("user_directories.") + storage + ".path"); !path.empty())
-            return resolve(path);
-    if (getConfigChildren(config_file, "user_directories").empty())
+    if (!config.has("user_directories"))
         return config_file;
+
+    /// The storages of `user_directories` as `AccessControl::addStoragesFromUserDirectoriesConfig` reads them: the first
+    /// one of the `users_xml` type, under any of its names, possibly repeated (`users_xml[1]`).
+    Poco::Util::AbstractConfiguration::Keys storages;
+    config.keys("user_directories", storages);
+    for (const auto & storage : storages)
+    {
+        std::string type = storage.substr(0, storage.find('['));
+        if (type == "users_xml" || type == "users.xml" || type == "users_config")
+            return resolve(config.getString("user_directories." + storage + ".path"));
+    }
     return {};
 }
 
