@@ -119,7 +119,9 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if ((chunks.size() > 1
         && limit
-        && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
+        /// Equivalent to `limit * 2 < sum_rows_in_blocks`, which wraps for the huge limits that
+        /// mean "no limit" and then spuriously asks for a remerge. 2 is just a guess.
+        && limit < (sum_rows_in_blocks + 1) / 2
         && remerge_is_useful
         && max_bytes_before_remerge
         && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
@@ -153,9 +155,10 @@ ProcessorMemoryStats MergeSortingTransform::getMemoryStats() const
 
     ProcessorMemoryStats res;
     res.spillable_memory_bytes = sum_bytes_in_blocks;
-    /// One merged block is alive while it is being written
+    /// One merged block is alive while it is being written. It has no more rows than are held, which also keeps the
+    /// estimate from overflowing for a huge `max_block_size`.
     if (sum_rows_in_blocks)
-        res.need_reserved_memory_bytes = sum_bytes_in_blocks / sum_rows_in_blocks * max_merged_block_size;
+        res.need_reserved_memory_bytes = sum_bytes_in_blocks / sum_rows_in_blocks * std::min<size_t>(max_merged_block_size, sum_rows_in_blocks);
     return res;
 }
 
@@ -194,7 +197,7 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
         formatReadableSizeWithBinarySuffix(max_bytes_in_query_before_external_sort));
 
     /// If there's less free disk space than reserve_size, an exception will be thrown
-    size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
+    size_t reserve_size = getTemporaryFileReserveSize(sum_bytes_in_blocks, min_free_disk_space);
     SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
     TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
     merge_sorter = std::make_unique<MergeSorter>(
