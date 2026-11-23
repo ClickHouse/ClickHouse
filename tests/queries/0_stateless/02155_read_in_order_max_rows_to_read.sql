@@ -15,7 +15,9 @@ SET use_top_k_dynamic_filtering = 0;
 
 SELECT a FROM t_max_rows_to_read WHERE a = 10 SETTINGS max_rows_to_read = 4;
 
-SELECT a FROM t_max_rows_to_read ORDER BY a LIMIT 5 SETTINGS max_rows_to_read = 12;
+-- With parallel replicas, every replica reads its own range in order until its own LIMIT is satisfied, so the total read
+-- depends on how many replicas get a range and can exceed the limit.
+SELECT a FROM t_max_rows_to_read ORDER BY a LIMIT 5 SETTINGS max_rows_to_read = 12, enable_parallel_replicas = 0;
 
 SELECT a FROM t_max_rows_to_read WHERE a = 10 OR a = 20 SETTINGS max_rows_to_read = 12;
 
