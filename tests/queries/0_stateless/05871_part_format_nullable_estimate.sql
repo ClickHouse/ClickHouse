@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_part_format_nullable_estimate;
 CREATE TABLE t_part_format_nullable_estimate (k UInt32, s Nullable(String))
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 6000000, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_part_format_nullable_estimate;
 
 INSERT INTO t_part_format_nullable_estimate SELECT number, NULL FROM numbers(1000000);
 INSERT INTO t_part_format_nullable_estimate SELECT number, toString(number) FROM numbers(1000000);

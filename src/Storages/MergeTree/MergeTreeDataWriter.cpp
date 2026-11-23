@@ -133,29 +133,28 @@ bool isOptimizeRowOrderExplicitlySet(const SettingsChanges & settings_changes)
     return settings_changes.tryGet("optimize_row_order") != nullptr;
 }
 
-/// Prediction of the part size for choosing its format: like `Block::bytes`, but the default values inside a `Nullable`
-/// column (normally the payload of its NULL rows) are not counted, because they compress to nothing.
-size_t estimatePartSize(const Block & block)
+}
+
+size_t MergeTreeDataWriter::estimateColumnSize(const IColumn & column)
+{
+    size_t bytes = column.byteSize();
+    size_t nested_defaults = 0;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        auto one_default = nullable->getNestedColumn().cloneEmpty();
+        one_default->insertDefault();
+        nested_defaults = nullable->getNestedColumn().getNumberOfDefaultRows() * one_default->byteSize();
+    }
+    return bytes - std::min(bytes, nested_defaults);
+}
+
+size_t MergeTreeDataWriter::estimatePartSize(const Block & block)
 {
     size_t res = 0;
     for (const auto & elem : block)
-    {
-        if (!elem.column)
-            continue;
-
-        size_t bytes = elem.column->byteSize();
-        size_t nested_defaults = 0;
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
-        {
-            auto one_default = nullable->getNestedColumn().cloneEmpty();
-            one_default->insertDefault();
-            nested_defaults = nullable->getNestedColumn().getNumberOfDefaultRows() * one_default->byteSize();
-        }
-        res += bytes - std::min(bytes, nested_defaults);
-    }
+        if (elem.column)
+            res += estimateColumnSize(*elem.column);
     return res;
-}
-
 }
 
 void buildScatterSelector(
