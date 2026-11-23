@@ -98,10 +98,14 @@ public:
 
     struct BloomFilterData
     {
-        using HashesForColumns = std::vector<VectorWithMemoryTracking<uint64_t>>;
+        using Hashes = std::shared_ptr<const VectorWithMemoryTracking<uint64_t>>;
+        using HashesForColumns = std::vector<Hashes>;
         HashesForColumns hashes_per_column;
         /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
+
+        /// Sorts and deduplicates `hashes` (an `IN` set can repeat a hash), as `BloomFilter::findAnyHash` receives them.
+        static Hashes makeHashes(VectorWithMemoryTracking<uint64_t> hashes);
     };
 
     struct BloomFilter
@@ -109,7 +113,7 @@ public:
         virtual ~BloomFilter() = default;
 
         /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
-        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
+        /// and deduplicated (see `BloomFilterData::makeHashes`), which lets an implementation with a sorted
         /// value set intersect the two sequences in one pass instead of searching for each hash
         /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) = 0;
@@ -150,7 +154,8 @@ public:
     [[nodiscard]] BoolMask checkInHyperrectangle(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_data_types) const;
+        const DataTypes & sparse_data_types,
+        const DataTypes & key_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -177,6 +182,7 @@ public:
     ///      Information about the entire prefix covered by `equal_boundaries_mask` must be specified.
     /// `sparse_left_keys` and `sparse_right_keys` contain only 3 fields each, corresponding to columns (1, 3, 4).
     /// `sparse_data_types` contain only 3 data types each, corresponding to columns (1, 3, 4).
+    /// `key_types` are the types of all key columns, indexed by key column position.
     /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
     /// partition minmax), indexed by full key column position. A key without a bound defaults to (-inf, +inf).
     /// `sparse_key_indices` may also contain indices >= `equal_boundaries_mask.size()` (e.g. key columns not
@@ -188,6 +194,7 @@ public:
         const FieldRef * sparse_left_keys,
         const FieldRef * sparse_right_keys,
         const DataTypes & sparse_data_types,
+        const DataTypes & key_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds = nullptr) const;
@@ -530,7 +537,7 @@ public:
     [[nodiscard]] bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
+                                std::function<BloomFilterData::Hashes(size_t column_idx, const ColumnPtr &)> hash_many);
 
     /// Split the KeyCondition into single-column conditions AND-ed together, plus a remaining
     /// multi-column KeyCondition.
@@ -563,7 +570,7 @@ private:
     [[nodiscard]] bool mayReadNullKeyValue(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_key_types) const;
+        const DataTypes & key_types) const;
 
     /// The atoms extracted from one predicate leaf, which become one element of the RPN: none makes
     /// `FUNCTION_UNKNOWN`, one is the element itself, and several make a `FUNCTION_ATOM_GROUP` (see
@@ -909,7 +916,6 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
-        bool allow_relaxed_pruning,
         const DataTypePtr & has_element_type);
 
     /// Maps the predicate expression whose values are tested for set membership (the left-hand side

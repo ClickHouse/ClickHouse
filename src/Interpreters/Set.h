@@ -2,7 +2,6 @@
 
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
 #include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -12,6 +11,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/Logger_fwd.h>
 
 
 namespace DB
@@ -19,6 +20,10 @@ namespace DB
 
 struct Range;
 using Ranges = VectorWithMemoryTracking<Range>;
+
+struct NonClearableSet;
+template <typename Variant> struct SetVariantsTemplate;
+using SetVariants = SetVariantsTemplate<NonClearableSet>;
 
 class Context;
 class IFunctionBase;
@@ -113,6 +118,7 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
+    bool insertFromColumns(const Columns & columns, size_t max_keys, size_t & rows_taken);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 
     void fillSetElements();
@@ -148,7 +154,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount()); }
+    bool hasExplicitSetElements() const;
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
@@ -188,7 +194,7 @@ private:
     /// This holds the keys in memory. Spilling releases the table and its arena. Spilling while the set is
     /// used changes how the set stores its keys but not which keys it has, so `execute` stays `const`, and
     /// the members that `spillAfterBuild` replaces are `mutable`.
-    mutable std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
+    mutable std::unique_ptr<SetVariants> data;
 
     /// They are kept after the build, so the set can spill while it is used.
     SetSpillSettings spill_settings;
@@ -241,7 +247,7 @@ private:
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
-    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, size_t & rows_taken);
     ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
     /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
@@ -251,22 +257,24 @@ private:
     ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
 
     template <typename Method>
-    void insertFromBlockImpl(
+    size_t insertFromBlockImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        size_t max_keys);
 
     template <typename Method, bool has_null_map, bool build_filter>
-    void insertFromBlockImplCase(
+    size_t insertFromBlockImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        size_t max_keys);
 
     template <typename Method>
     void executeImpl(
