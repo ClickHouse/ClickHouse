@@ -16,7 +16,9 @@ ENGINE = MergeTree ORDER BY k
 -- The query under `max_memory_usage` below holds up to 16 blocks per stream plus the read buffers, so its memory
 -- depends on the size of a block and of a compressed block, and on the number of read buffers (the packed part
 -- storage on an object storage needs more of them). Do not let the randomized settings enlarge them.
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10M', min_compress_block_size = 65536, max_compress_block_size = 1048576,
+-- A granule is as small as a block of the query (`max_block_size = 1024`), because compact parts are read by whole
+-- granules whatever the `max_block_size`, and the part type depends on the randomized `min_bytes_for_wide_part`.
+SETTINGS index_granularity = 1024, index_granularity_bytes = '10M', min_compress_block_size = 65536, max_compress_block_size = 1048576,
     min_bytes_for_full_part_storage = 0;
 
 -- Every part holds a single key, so each input stream sends all of its rows to one shard for a long time, while
@@ -37,7 +39,7 @@ SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle_skew GROUP BY k
       SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
--- The repartitioning holds a few blocks per stream, not whole parts: the query takes about 30 MB with blocks of
+-- The repartitioning holds a few blocks per stream, not whole parts: the query takes 10 to 40 MB with blocks of
 -- 1024 rows, while a part is about 31 MB in memory (250 MB in total), and seven of the eight streams wait for the
 -- first one.
 SELECT k, sum(v), max(s) = repeat('99999', 60), max(lc), count(d) FROM t_aio_shuffle_skew GROUP BY k ORDER BY k
