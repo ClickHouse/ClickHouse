@@ -6,6 +6,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/MatcherNode.h>
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
@@ -36,6 +37,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool enable_positional_arguments_for_projections;
     extern const SettingsBool prefer_column_name_to_alias;
 }
@@ -147,6 +149,67 @@ bool restoreExpressionsOverColumns(QueryTreeNodePtr & node, const QueryTreeNodeP
             reads_column |= restoreExpressionsOverColumns(child, table_node);
 
     return reads_column;
+}
+
+/// undoes what the analyzer did to the wrapped keys: it folds the wrapper of a key that is a constant,
+/// and it splits a `tuple` that a positional argument refers to
+void restoreWrittenKeys(QueryNode & query_node, const QueryTreeNodes & written_keys)
+{
+    auto & keys = query_node.getGroupBy().getNodes();
+    for (auto & key : keys)
+    {
+        const auto * constant_node = key->as<ConstantNode>();
+        const auto * wrapper = constant_node && constant_node->hasSourceExpression()
+            ? constant_node->getSourceExpression()->as<FunctionNode>()
+            : nullptr;
+        if (wrapper && wrapper->getFunctionName() == "tuple" && wrapper->getArguments().getNodes().size() == 1)
+            key = wrapper->getArguments().getNodes().front();
+    }
+
+    if (!query_node.getContext()->getSettingsRef()[Setting::enable_positional_arguments])
+        return;
+
+    /// `*` gives an unknown number of keys, so the keys after it cannot be found by their position in the list
+    for (const auto & written_key : written_keys)
+        if (written_key->as<MatcherNode>())
+            return;
+
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    QueryTreeNodes restored_keys;
+    size_t key_index = 0;
+    for (const auto & written_key : written_keys)
+    {
+        if (const auto * literal = written_key->as<ConstantNode>())
+        {
+            /// the analyzer checked the range of the position
+            const auto & value = literal->getValue();
+            Int64 position = 0;
+            if (value.getType() == Field::Types::UInt64)
+                position = static_cast<Int64>(value.safeGet<UInt64>());
+            else if (value.getType() == Field::Types::Int64)
+                position = value.safeGet<Int64>();
+
+            size_t projection_index
+                = position > 0 ? static_cast<size_t>(position - 1) : projection_nodes.size() - static_cast<size_t>(-position);
+            if (position != 0 && projection_index < projection_nodes.size())
+            {
+                const auto * function_node = projection_nodes[projection_index]->as<FunctionNode>();
+                if (function_node && function_node->getFunctionName() == "tuple")
+                {
+                    key_index += function_node->getArguments().getNodes().size();
+                    restored_keys.push_back(projection_nodes[projection_index]->clone());
+                    restored_keys.back()->removeAlias();
+                    continue;
+                }
+            }
+        }
+
+        if (key_index >= keys.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A projection has fewer GROUP BY keys than its query writes");
+
+        restored_keys.push_back(keys[key_index++]);
+    }
+    keys = std::move(restored_keys);
 }
 
 /// constant keys are dropped; one key stays if there are no aggregate functions
@@ -283,13 +346,16 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     /// the stored query has no `FROM`: put the source in place of `system.one`
     query_node.getJoinTreeNode() = std::make_shared<TableNode>(source, query_context);
 
-    /// the analyzer splits a `tuple` key into its elements, but the part stores it as one column: wrap it once more
+    /// the analyzer splits a `tuple` key into its elements, but the part stores it as one column
+    /// wrap each key once more: the analyzer removes the wrapper and keeps what the key refers to
+    QueryTreeNodes written_keys;
     if (query_node.hasGroupBy() && !query_node.isGroupByWithGroupingSets())
     {
+        written_keys = query_node.getGroupBy().getNodes();
         for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
         {
-            const auto * function_node = group_by_key_node->as<FunctionNode>();
-            if (!function_node || function_node->getFunctionName() != "tuple")
+            /// a literal can be a positional argument, and `*` is many keys
+            if (group_by_key_node->as<ConstantNode>() || group_by_key_node->as<MatcherNode>())
                 continue;
 
             auto wrapped_key_node = std::make_shared<FunctionNode>("tuple");
@@ -302,6 +368,9 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     addQueryTreePasses(query_tree_pass_manager, only_analyze);
     /// resolve only: an optimization pass can change a stored expression (`GROUP BY -c0` into `GROUP BY c0`)
     query_tree_pass_manager.runOnlyResolve(query_tree);
+
+    if (!written_keys.empty())
+        restoreWrittenKeys(query_node, written_keys);
 
     /// before the passes: they must not remove an expression that reads a column (`count(b IS NOT NULL)`)
     auto table_node = query_node.getJoinTreeNode();
