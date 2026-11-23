@@ -34,7 +34,6 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
