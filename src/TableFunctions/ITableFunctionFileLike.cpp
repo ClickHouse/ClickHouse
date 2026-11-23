@@ -95,7 +95,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     else if (!structure_hint.empty())
         columns = structure_hint;
 
-    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, is_insert_query);
+    const bool is_table_definition = isTableDefinition(cached_columns);
+    StoragePtr storage = getStorage(
+        filename, format, columns, context, table_name, compression_method, is_insert_query, is_table_definition);
 
     /// Without a structure argument, a table reads its stored columns by name from the inferred ones (see
     /// `StorageTableFunctionProxy`). If it has none of them, as `CREATE TABLE t (id UInt32, s String) AS file('data.csv', 'CSV')`
@@ -201,8 +203,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
         };
         if (has_other_column && !has_inferred_column && defaults_use_only_stored_columns() && can_parse_data_with_stored_columns())
         {
-            auto storage_with_stored_columns
-                = getStorage(filename, detected_format, stored_columns, context, table_name, compression_method, is_insert_query);
+            auto storage_with_stored_columns = getStorage(
+                filename, detected_format, stored_columns, context, table_name, compression_method, is_insert_query,
+                is_table_definition);
             /// The data of a file descriptor, such as `stdin`, that the first storage has read to infer the columns cannot be
             /// read again.
             if (storage_file)

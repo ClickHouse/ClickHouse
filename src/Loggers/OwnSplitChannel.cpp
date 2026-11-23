@@ -142,6 +142,11 @@ void logToSystemTextLogQueue(
     elem.logger_name = msg.getSource();
     elem.level = msg.getPriority();
     elem.source_file = msg.getSourceFile();
+    if (*msg.getSourceFunction() != '\0')
+    {
+        elem.source_file += "; ";
+        elem.source_file += msg.getSourceFunction();
+    }
 
     elem.source_line = msg.getSourceLine();
     elem.message_format_string = msg.getFormatString();
