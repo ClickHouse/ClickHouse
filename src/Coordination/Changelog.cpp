@@ -656,7 +656,20 @@ public:
             new_description->extension);
 
         LOG_TRACE(log, "Starting new changelog {}", new_description->path);
+        auto latest_log_disk = new_description->disk;
         auto [it, inserted] = existing_changelogs.insert(std::make_pair(new_start_log_index, std::move(new_description)));
+
+        /// An existing changelog at this index is rewritten in place. It must be on the latest log disk:
+        /// on another disk `sync` may not make the entries durable (an object storage disk publishes the
+        /// file only when it is finalized). Startup and `writeAt` remove such changelogs beforehand.
+        if (!inserted && it->second->disk != latest_log_disk)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot start a new changelog at index {}: changelog {} already exists on disk {} instead of the latest log disk {}",
+                new_start_log_index,
+                it->second->path,
+                it->second->disk->getName(),
+                latest_log_disk->getName());
 
         setFile(it->second, WriteMode::Rewrite);
     }
@@ -4454,27 +4467,31 @@ void Changelog::finalizeChangelogsAfterRead(
             last_log_read_outcome->log_start_index, existing_changelogs.at(last_log_read_outcome->log_start_index));
     }
 
+    /// Changelogs that start after the last read index have no readable entries: for example, an
+    /// empty changelog after the changelog the writer resumed, or one at the first index to write.
+    /// The writer reaches their first index sooner or later: at startup below, or by a rotation,
+    /// which can happen at any index when `max_size` is set. `rotate` would then reuse the existing
+    /// description and rewrite the changelog in place, on a disk that may be neither the latest log
+    /// disk nor one where `sync` makes the entries durable. Detach them so that the writer always
+    /// creates its changelog on the latest log disk. Their recovery copies are retained until the
+    /// writer appends.
+    for (auto itr = existing_changelogs.upper_bound(max_log_id.load(std::memory_order_relaxed)); itr != existing_changelogs.end();)
+    {
+        const auto current = itr++;
+        if (current->second->disk == latest_log_disk)
+            continue;
+
+        LOG_INFO(
+            log,
+            "Changelog {} on disk {} has no entries to read and the writer would reach its first index, detaching it",
+            current->second->path,
+            current->second->disk->getName());
+        removeExistingLogs(current, itr, /*remove_recovery_copies=*/false);
+    }
+
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer->isFileSet())
-    {
-        const uint64_t new_start_index = max_log_id.load(std::memory_order_relaxed) + 1;
-        /// A changelog starting at the first index to write has no readable entries: for example, an
-        /// empty changelog. `rotate` would reuse its description and rewrite it in place, on a disk
-        /// that may be neither the latest log disk nor one where `sync` makes the entries durable.
-        /// Detach it so that the new changelog is created on the latest log disk. Its recovery copies
-        /// are retained until the writer appends.
-        if (auto colliding = existing_changelogs.find(new_start_index);
-            colliding != existing_changelogs.end() && colliding->second->disk != getLatestLogDisk())
-        {
-            LOG_INFO(
-                log,
-                "Changelog {} on disk {} has no entries to read and the writer starts at its first index, detaching it",
-                colliding->second->path,
-                colliding->second->disk->getName());
-            removeExistingLogs(colliding, std::next(colliding), /*remove_recovery_copies=*/false);
-        }
-        current_writer->rotate(new_start_index);
-    }
+        current_writer->rotate(max_log_id.load(std::memory_order_relaxed) + 1);
 
     /// Move files to correct disks
     auto latest_start_index = current_writer->getStartIndex();
