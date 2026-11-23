@@ -82,6 +82,8 @@ V_S_SWAPPED=00002        # the names of the fields of `s` swapped
 V_R_REWRITTEN=00006      # `b` renamed to `b_old`, `b` added, the manifest rewritten, the add_files snapshot expired
 
 LAZY="query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_object_storage = 1"
+RUNTIME_FILTER="join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_join_runtime_filters = 1, \
+enable_join_runtime_filters_index_analysis = 1, use_join_runtime_filters_for_iceberg_pruning = 1, use_iceberg_partition_pruning = 1"
 
 $CLICKHOUSE_LOCAL -q "
 SELECT 'struct, list and map fields';
@@ -144,6 +146,11 @@ $CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
 $CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
     -q "SELECT count() FROM $(P $V_P_MAPPED) WHERE d IS NULL SETTINGS use_query_condition_cache = 0" 2>&1 >/dev/null \
     | grep -oE 'IcebergPartitionPrunedFiles: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+# The second read of the same mapping is served from the columns cache.
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -q "
+SELECT id, s FROM $(S $V_S_MAPPED) SETTINGS use_columns_cache = 1 FORMAT Null;
+SELECT id, s FROM $(S $V_S_MAPPED) SETTINGS use_columns_cache = 1 FORMAT Null" 2>&1 >/dev/null \
+    | grep -oE 'ColumnsCacheHits: [1-9][0-9]*' | sed 's/: .*/ > 0/'
 
 # A query condition cache entry written under one mapping is not used under another one. On the server, because
 # `clickhouse-local` has no query condition cache.
@@ -230,9 +237,12 @@ with open(os.path.join(metadata_dir, "00016-swapped.metadata.json"), "w") as f:
     json.dump(metadata, f)
 PY
 cd "$WORK_DIR" || exit 1
+$CLICKHOUSE_LOCAL -q "SELECT id, n, s.z, l FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00015-initial-default.metadata.json') ORDER BY id"
+echo 'join runtime filter'
+# With all fields mapped, the JOIN runtime filter prunes data files by the manifest bounds of `b`.
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
+    -q "SELECT count() FROM $(T $V_BOTH) AS t INNER JOIN (SELECT 999 AS k) AS r ON t.b = r.k SETTINGS $RUNTIME_FILTER" 2>&1 >/dev/null \
+    | grep -oE 'IcebergRuntimeFilterPrunedFiles: [1-9][0-9]*' | sed 's/: .*/ > 0/'
 $CLICKHOUSE_LOCAL -q "
-SELECT id, n, s.z, l FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00015-initial-default.metadata.json') ORDER BY id;
-SELECT 'join runtime filter';
 SELECT t.id, t.b FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00016-swapped.metadata.json') AS t
-INNER JOIN (SELECT 50 AS k) AS r ON t.id = r.k;
-"
+INNER JOIN (SELECT 50 AS k) AS r ON t.id = r.k SETTINGS $RUNTIME_FILTER"

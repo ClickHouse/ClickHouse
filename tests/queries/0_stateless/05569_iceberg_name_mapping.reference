@@ -111,6 +111,7 @@ columns cache
 3	(30,3)
 IcebergMinMaxIndexPrunedFiles > 0
 IcebergPartitionPrunedFiles > 0
+ColumnsCacheHits > 0
 query condition cache
 0
 5
@@ -131,4 +132,5 @@ initial-default
 5	7	\N	[]
 6	7	\N	[]
 join runtime filter
+IcebergRuntimeFilterPrunedFiles > 0
 50	5
