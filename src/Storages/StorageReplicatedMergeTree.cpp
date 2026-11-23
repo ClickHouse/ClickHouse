@@ -6061,6 +6061,8 @@ void StorageReplicatedMergeTree::startup()
         return;
     }
 
+    delayMergesAfterStartup();
+
     if (attach_thread)
     {
         attach_thread->start();
@@ -6656,6 +6658,8 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
             "Table is in readonly mode since table metadata was not found in zookeeper: replica_path={}",
             replica_path);
 
+    stopDelayingMergesAfterStartup();
+
     const auto storage_settings_ptr = getSettings();
     const Settings & query_settings = local_context->getSettingsRef();
 
@@ -6688,6 +6692,7 @@ bool StorageReplicatedMergeTree::optimize(
     auto table_lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     assertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
@@ -7482,6 +7487,7 @@ void StorageReplicatedMergeTree::alter(
         ReplicatedMergeTreeMutationEntry mutation_entry;
         if (have_mutation)
         {
+            stopDelayingMergesAfterStartup();
             delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
             const String mutations_path(fs::path(zookeeper_path) / "mutations");
 
@@ -9169,6 +9175,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     /// the version of this mutation), the mutation is considered done and can be deleted.
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::mutate");
+    stopDelayingMergesAfterStartup();
     delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
 
     /// Fail closed before creating the mutation entry: this replica does not execute mutations,
@@ -9403,6 +9410,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::updateLightweight");
     auto context_copy = Context::createCopy(query_context);
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
+    stopDelayingMergesAfterStartup();
 
     /// Resolve the partitions of the scoped commands once, as in `mutate`: the block numbers are
     /// allocated in the partitions they name, and the patch is produced from the same commands, so
