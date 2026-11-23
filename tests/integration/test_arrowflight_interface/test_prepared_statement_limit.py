@@ -515,6 +515,34 @@ def test_prepared_statement_date64_parameter_keeps_its_date():
     stmt.close()
 
 
+def test_prepared_statement_float_parameter_is_a_float_literal_from_1e10():
+    """A floating-point number is bound as Arrow formats it: in the scientific notation from 1e10, so that its
+    literal is a `Float64`. Below that the text has no exponent, and a whole number is an integer literal."""
+    client = get_client()
+
+    stmt = client.prepare(
+        "SELECT toTypeName(?) AS type, ? + toUInt64(18446744073709551615) AS sum, toTypeName(?) AS type32, toTypeName(?) AS type_below"
+    )
+    stmt.bind_parameters(
+        pa.record_batch(
+            [
+                pa.array([1e10], type=pa.float64()),
+                pa.array([1e10], type=pa.float64()),
+                pa.array([1e10], type=pa.float32()),
+                pa.array([9999999999.0], type=pa.float64()),
+            ],
+            names=["0", "1", "2", "3"],
+        )
+    )
+    result = stmt.execute()
+    assert result.column("type").to_pylist() == ["Float64"]
+    assert result.column("sum").to_pylist() == [pytest.approx(1.8446744083709552e19)]
+    assert result.column("type32").to_pylist() == ["Float64"]
+    assert result.column("type_below").to_pylist() == ["UInt64"]
+
+    stmt.close()
+
+
 def test_prepared_statement_timestamp_parameters_do_not_depend_on_time_zones():
     """A timestamp is bound as Arrow formats it: in UTC, and with `Z` if its type has a time zone. Neither the
     time zone of the type nor the one of the session changes the value."""

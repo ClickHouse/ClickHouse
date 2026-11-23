@@ -23,6 +23,12 @@ enum class ArrowTimeUnit : UInt8
     Nanosecond = 3,
 };
 
+/// `float` and `double`: the shortest text that reads back as the value, in the scientific notation below 1e-6 and
+/// from 1e+10 (`1e+10`, while `9999999999` has no exponent), `inf`, `nan`. A `halffloat` is formatted as the
+/// `double` with its value.
+String formatArrowFloat32(Float32 value);
+String formatArrowFloat64(Float64 value);
+
 /// `date32`, a number of days since 1970-01-01: `YYYY-MM-DD`.
 String formatArrowDate32(Int32 days);
 

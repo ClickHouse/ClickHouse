@@ -4,6 +4,7 @@
 #include <base/wide_integer_to_string.h>
 #include <Common/Exception.h>
 
+#include <double-conversion/double-conversion.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -26,6 +27,24 @@ constexpr Int64 MIN_DAY = -12687428;
 constexpr Int64 END_DAY = 11248738;
 
 constexpr Int64 SECONDS_PER_DAY = 86400;
+
+/// The parameters of the converter the Apache Arrow library formats floating-point numbers with.
+const double_conversion::DoubleToStringConverter & floatConverter()
+{
+    static const double_conversion::DoubleToStringConverter converter(
+        double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN,
+        "inf",
+        "nan",
+        'e',
+        /* decimal_in_shortest_low */ -6,
+        /* decimal_in_shortest_high */ 10,
+        /* max_leading_padding_zeroes_in_precision_mode */ 6,
+        /* max_trailing_padding_zeroes_in_precision_mode */ 0);
+    return converter;
+}
+
+/// Enough for the shortest text of any `double`.
+constexpr size_t FLOAT_BUFFER_SIZE = 50;
 
 String outOfRange(Int64 value)
 {
@@ -73,6 +92,24 @@ String formatTimeOfDay(Int64 since_midnight, ArrowTimeUnit unit)
     return result;
 }
 
+}
+
+String formatArrowFloat32(Float32 value)
+{
+    char buffer[FLOAT_BUFFER_SIZE];
+    double_conversion::StringBuilder builder(buffer, sizeof(buffer));
+    if (!floatConverter().ToShortestSingle(value, &builder))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot format a floating-point number");
+    return String(buffer, static_cast<size_t>(builder.position()));
+}
+
+String formatArrowFloat64(Float64 value)
+{
+    char buffer[FLOAT_BUFFER_SIZE];
+    double_conversion::StringBuilder builder(buffer, sizeof(buffer));
+    if (!floatConverter().ToShortest(value, &builder))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot format a floating-point number");
+    return String(buffer, static_cast<size_t>(builder.position()));
 }
 
 String formatArrowDate32(Int32 days)

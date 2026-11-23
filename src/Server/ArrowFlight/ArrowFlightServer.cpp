@@ -297,10 +297,15 @@ namespace
                 return "NULL";
             case TypeKind::Bool:
                 return column.column->getBool(0) ? "1" : "0";
-            /// Numbers: their text is a valid numeric literal.
+            /// Integers: their text is a valid numeric literal.
             case TypeKind::Int:
-            case TypeKind::FloatingPoint:
                 return value;
+            /// Floating-point numbers, as the Apache Arrow library formats them: the text of ClickHouse has no
+            /// exponent up to 1e+21, so the literal of `1e10` would be an integer.
+            case TypeKind::FloatingPoint:
+                if (field.type.float_precision == ArrowIPC::flatbuf::Precision_SINGLE)
+                    return ArrowFlight::formatArrowFloat32(column.column->getFloat32(0));
+                return ArrowFlight::formatArrowFloat64(column.column->getFloat64(0));
             case TypeKind::Utf8:
             case TypeKind::LargeUtf8:
             case TypeKind::Utf8View:
