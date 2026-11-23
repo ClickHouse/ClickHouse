@@ -1,0 +1,20 @@
+partial overlap, guard disabled
+(2,0)
+(2,0)
+(2,0)
+partial overlap, guard enabled
+0
+schema expansion
+(2,1,0)
+(2,1,0)
+(2,1,0)
+containers
+[(2,1)]	{'k':(4,3)}	(6,5)
+[(2,1)]	{'k':(4,3)}	(6,5)
+[(2,1)]	{'k':(4,3)}	(6,5)
+containers, guard
+0
+containers, guard disabled
+[(2,0)]	{'k':(4,0)}	(6,0)
+[(2,0)]	{'k':(4,0)}	(6,0)
+[(2,0)]	{'k':(4,0)}	(6,0)
