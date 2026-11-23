@@ -283,6 +283,14 @@ def process_results(
     return test_results, additional_files
 
 
+def has_sanitizer_report(result_path: Path) -> bool:
+    """Whether a stderr log has a sanitizer report. A sanitizer that recovers (the CFI
+    diagnostics build) keeps the server running, so its reports leave no other trace."""
+    return Shell.check(
+        f"rg -qa -e ': runtime error: ' -e 'SUMMARY: [A-Za-z]+Sanitizer:' {result_path}/stderr*.log"
+    )
+
+
 def select_replica_failures(
     replica_log_pairs: List[Tuple[str, Path, Path]],
 ) -> List[Tuple[str, str, List[str]]]:
@@ -439,7 +447,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         if not test_result.is_ok():
             failed_results.append(test_result)
 
-    if server_died or crash_evidence:
+    if server_died or crash_evidence or has_sanitizer_report(result_path):
         # Build log pairs for each replica: (replica_name, server_err_log, stderr_log)
         # Main replica: all *.err.* logs without sc1/sc2 in name, paired with stderr.log
         # sc1/sc2: their dedicated server log + matching stderr log
