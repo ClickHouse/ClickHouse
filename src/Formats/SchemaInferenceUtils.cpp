@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -184,7 +185,7 @@ namespace
             /// Store path to this node for better exception message in case of ambiguous paths.
             String path;
 
-            DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
+            [[nodiscard]] DataTypePtr getType(bool use_string_type_for_ambiguous_paths) const
             {
                 if (nodes.empty())
                     return leaf_type;
@@ -275,10 +276,16 @@ namespace
         {
             if (WhichDataType(type).isInt64())
             {
-                bool is_negative = json_info && json_info->negative_integers.contains(type.get());
+                bool is_negative = json_info && json_info->isNegativeInteger(*type);
                 have_negative_integers |= is_negative;
                 if (!is_negative)
-                    type = std::make_shared<DataTypeUInt64>();
+                {
+                    auto new_type = std::make_shared<DataTypeUInt64>();
+                    if (json_info && json_info->isNumberParsedFromString(*type))
+                        type = json_info->getNumberParsedFromString(new_type);
+                    else
+                        type = new_type;
+                }
             }
         }
 
@@ -300,9 +307,10 @@ namespace
             if (which.isInt64() || which.isUInt64())
             {
                 auto new_type = std::make_shared<DataTypeFloat64>();
-                if (json_info && json_info->numbers_parsed_from_json_strings.erase(type.get()))
-                    json_info->numbers_parsed_from_json_strings.insert(new_type.get());
-                type = new_type;
+                if (json_info && json_info->isNumberParsedFromString(*type))
+                    type = json_info->getNumberParsedFromString(new_type);
+                else
+                    type = new_type;
             }
         }
 
@@ -393,7 +401,7 @@ namespace
         {
             if (isNumber(type)
                 && (settings.json.read_numbers_as_strings || !json_info
-                    || json_info->numbers_parsed_from_json_strings.contains(type.get())))
+                    || json_info->isNumberParsedFromString(*type)))
                 type = std::make_shared<DataTypeString>();
         }
 
@@ -844,17 +852,17 @@ namespace
         }
     }
 
-    bool tryInferDateTime64(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"))
+    bool tryInferDateTime64(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone = DateLUT::instance(), const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC"), UInt32 scale = 9)
     {
         ReadBufferFromString buf(field);
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                return tryReadDateTime64Text(date_time, 9, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
+                return tryReadDateTime64Text(date_time, scale, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                return tryParseDateTime64BestEffortStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+                return tryParseDateTime64BestEffortStrict(date_time, scale, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                return tryParseDateTime64BestEffortUSStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
+                return tryParseDateTime64BestEffortUSStrict(date_time, scale, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
         }
     }
 
@@ -974,18 +982,21 @@ namespace
         skipWhitespaceIfAny(buf);
 
         DataTypes nested_types;
-        bool first = true;
+        size_t num_elements = 0;
         bool have_invalid_nested_type = false;
         while (!buf.eof() && *buf.position() != ')')
         {
-            if (!first)
+            if (num_elements)
             {
                 if (!checkChar(',', buf))
                     return nullptr;
                 skipWhitespaceIfAny(buf);
+
+                /// A one-element tuple can be written with a trailing comma: (1,).
+                if (num_elements == 1 && !buf.eof() && *buf.position() == ')')
+                    break;
             }
-            else
-                first = false;
+            ++num_elements;
 
             auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1);
             if (nested_type)
@@ -1044,8 +1055,7 @@ namespace
     /// type inference has always reported there, and the deserializers accept the same text.
     DataTypePtr tryInferNumberFromEmptyField(const FormatSettings & settings)
     {
-        /// The integer parsers read no sign either, so the type is never a negative integer and is not
-        /// registered in json_info->negative_integers.
+        /// The integer parsers read no sign either, so the type is never a negative integer.
         if (settings.try_infer_integers)
             return std::make_shared<DataTypeInt64>();
         return std::make_shared<DataTypeFloat64>();
@@ -1086,10 +1096,9 @@ namespace
             ReadBufferFromMemory int_buf(span);
             if (tryReadIntText(tmp_int, int_buf) && int_buf.eof())
             {
-                auto type = std::make_shared<DataTypeInt64>();
                 if (json_info && tmp_int < 0)
-                    json_info->negative_integers.insert(type.get());
-                return type;
+                    return json_info->getNegativeInt64();
+                return std::make_shared<DataTypeInt64>();
             }
 
             /// In case of Int64 overflow we can try to infer UInt64.
@@ -1175,10 +1184,9 @@ namespace
             Int64 tmp_int = 0;
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
-                auto type = std::make_shared<DataTypeInt64>();
                 if (json_inference_info && tmp_int < 0)
-                    json_inference_info->negative_integers.insert(type.get());
-                return type;
+                    return json_inference_info->getNegativeInt64();
+                return std::make_shared<DataTypeInt64>();
             }
 
             /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
@@ -1197,7 +1205,7 @@ namespace
         bool has_fractional = false;
         /// The whole field is already in contiguous memory here, so validate it directly.
         /// Keep returning nullptr on rejection: the caller falls through to String, and a String
-        /// returned from here would be registered in json_info->numbers_parsed_from_json_strings.
+        /// returned from here would be marked as a number parsed from a string.
         if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof() && preciseParserAcceptsWholeSpan(field))
             return std::make_shared<DataTypeFloat64>();
 
@@ -1234,10 +1242,7 @@ namespace
             if (settings.json.try_infer_numbers_from_strings)
             {
                 if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info))
-                {
-                    json_info->numbers_parsed_from_json_strings.insert(number_type.get());
-                    return number_type;
-                }
+                    return json_info->getNumberParsedFromString(number_type);
             }
         }
 
@@ -1484,6 +1489,42 @@ namespace
         /// Number
         return tryInferNumber<is_json>(buf, field_start_count, settings, json_info);
     }
+
+    template <typename T>
+    DataTypePtr getOrCreate(DataTypePtr & instance)
+    {
+        if (!instance)
+            instance = std::make_shared<T>();
+        return instance;
+    }
+}
+
+DataTypePtr JSONInferenceInfo::getNegativeInt64()
+{
+    return getOrCreate<DataTypeInt64>(negative_int64);
+}
+
+DataTypePtr JSONInferenceInfo::getNumberParsedFromString(const DataTypePtr & number_type)
+{
+    WhichDataType which(number_type);
+    if (which.isInt64())
+        return getOrCreate<DataTypeInt64>(isNegativeInteger(*number_type) ? negative_int64_from_string : int64_from_string);
+    if (which.isUInt64())
+        return getOrCreate<DataTypeUInt64>(uint64_from_string);
+    if (which.isFloat64())
+        return getOrCreate<DataTypeFloat64>(float64_from_string);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type {} of a number parsed from a string", number_type->getName());
+}
+
+bool JSONInferenceInfo::isNegativeInteger(const IDataType & type) const
+{
+    return &type == negative_int64.get() || &type == negative_int64_from_string.get();
+}
+
+bool JSONInferenceInfo::isNumberParsedFromString(const IDataType & type) const
+{
+    return &type == int64_from_string.get() || &type == negative_int64_from_string.get() || &type == uint64_from_string.get()
+        || &type == float64_from_string.get();
 }
 
 bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings)
@@ -1717,11 +1758,11 @@ bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, cons
     return tryInferDateTime(field, date_time, settings, time_zone, utc_time_zone);
 }
 
-bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt32 scale)
 {
     if (fastCheckForInvalidDateTimeOrDateTime64(field))
         return false;
-    return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone);
+    return tryInferDateTime64(field, date_time, settings, time_zone, utc_time_zone, scale);
 }
 
 bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64)

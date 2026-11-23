@@ -209,7 +209,7 @@ private:
             return std::make_shared<DeserializeBinaryBulkStateObjectSharedDataStructure>(*this);
         }
 
-        bool checkIfPathMatchesAnyRequestedPrefix(const String & path) const
+        [[nodiscard]] bool checkIfPathMatchesAnyRequestedPrefix(const String & path) const
         {
             return std::ranges::any_of(requested_paths_prefixes, [&](const auto & prefix) { return path.starts_with(prefix); });
         }
