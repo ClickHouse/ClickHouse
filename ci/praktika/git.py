@@ -62,7 +62,7 @@ class Git:
     @staticmethod
     def push(
         repo: str,
-        refspec: str,
+        refspec: "str | list[str]",
         force: bool = False,
         dry_run: bool = False,
         strict: bool = False,
@@ -78,6 +78,9 @@ class Git:
         commits onto its new tip — using `git_prefix` for the committer identity
         — then retry, up to `rebase_retries` times. Requires `refspec` to be
         `HEAD:refs/heads/<branch>`.
+
+        A list of refspecs is pushed with `--atomic`: the remote updates all of
+        them or none.
 
         A dry run runs `git push --dry-run`: it contacts the remote and reports
         what would happen (including a non-fast-forward) without updating any
@@ -102,7 +105,9 @@ class Git:
         # Log the files changed by the pushed commit, so it is visible whether
         # the push touches .github/workflows (the trigger for GitHub's
         # workflows-scope check).
-        src_ref = refspec.split(":", 1)[0]
+        refspecs = [refspec] if isinstance(refspec, str) else list(refspec)
+        assert len(refspecs) == 1 or not rebase_retries, f"rebase_retries needs one refspec, got {refspecs}"
+        src_ref = refspecs[0].split(":", 1)[0]
         commit = Shell.get_output(
             f"git rev-list -n1 {shlex.quote(src_ref)}", verbose=False
         )
@@ -118,17 +123,21 @@ class Git:
         repo_url = (
             "https://x-access-token:${token}@github.com/" + shlex.quote(repo) + ".git"
         )
-        flags = ("--force " if force else "") + ("--dry-run " if dry_run else "")
+        flags = (
+            ("--force " if force else "")
+            + ("--dry-run " if dry_run else "")
+            + ("--atomic " if len(refspecs) > 1 else "")
+        )
         push_cmd = (
             'token="${GH_TOKEN:-$(gh auth token)}" && '
             "git -c http.https://github.com/.extraheader= push "
-            f"{flags}{repo_url} {shlex.quote(refspec)}"
+            f"{flags}{repo_url} {' '.join(shlex.quote(r) for r in refspecs)}"
         )
         # Verbose first push logs the command and any rejection; strict is the single failure contract, checked once at the end, so the push never raises here.
         result = Shell.check(push_cmd, strict=False, verbose=verbose, retries=retries)
         if not result and rebase_retries and not dry_run:
             # Non-fast-forward: rebase the local commits onto origin's new tip and retry (rebase_retries assumes origin tracks `repo`).
-            branch = refspec.split(":", 1)[-1]
+            branch = refspecs[0].split(":", 1)[-1]
             if branch.startswith("refs/heads/"):
                 branch = branch[len("refs/heads/") :]
             for attempt in range(1, rebase_retries + 1):
@@ -154,6 +163,20 @@ class Git:
         return result
 
     @staticmethod
+    def create_tag(
+        tag: str, commit: str, message: str, user_name: str, user_email: str
+    ) -> None:
+        """Create (force, so reruns are idempotent) the local annotated tag `tag` at `commit`, unsigned."""
+        Shell.check(
+            f"git -c user.name={shlex.quote(user_name)}"
+            f" -c user.email={shlex.quote(user_email)} -c commit.gpgsign=false"
+            f" tag -f -a -m {shlex.quote(message)}"
+            f" {shlex.quote(tag)} {shlex.quote(commit)}",
+            strict=True,
+            verbose=True,
+        )
+
+    @staticmethod
     def push_tag(
         repo: str,
         tag: str,
@@ -175,14 +198,7 @@ class Git:
         `git rev-parse <tag>`), so a dry run that skipped the local tag would
         fail on a tag the real run would have created.
         """
-        Shell.check(
-            f"git -c user.name={shlex.quote(user_name)}"
-            f" -c user.email={shlex.quote(user_email)} -c commit.gpgsign=false"
-            f" tag -f -a -m {shlex.quote(message)}"
-            f" {shlex.quote(tag)} {shlex.quote(commit)}",
-            strict=True,
-            verbose=True,
-        )
+        Git.create_tag(tag, commit, message, user_name, user_email)
         Git.push(
             repo,
             f"refs/tags/{tag}:refs/tags/{tag}",

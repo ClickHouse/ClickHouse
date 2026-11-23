@@ -1,10 +1,10 @@
 """ClickHouse new-release-branch pipeline job.
 
-Cuts a new release branch off the master tip: pushes the release tag and the
-branch, then bumps the version (on the branch and on master, opening the master
-version-bump PR). Run by the `CreateReleaseBranch` workflow; the patch release is
-the separate `release_job.py` / `CreateRelease` workflow. Each flow is a single
-linear step sequence in its own file.
+Cuts a new release branch off the master tip: pushes the release tag, the
+branch and the master version bump in one atomic push, then bumps the branch
+version and opens the release PR. Run by the `CreateReleaseBranch` workflow;
+the patch release is the separate `release_job.py` / `CreateRelease` workflow.
+Each flow is a single linear step sequence in its own file.
 
 INVARIANT: every run starts in a clean, empty GitHub Actions `_work` directory -
 the runner is ephemeral and the workspace is a fresh `actions/checkout` (a depth-1
@@ -106,17 +106,11 @@ def main():
         workdir=REPO_PATH,
     )
 
-    def _push_git_tag_for_release():
+    def _publish_cut():
         with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
+            release_progress="publish the cut"
         ) as release_info:
-            release_info.push_release_tag(dry_run=dry_run)
-
-    def _push_new_release_branch():
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=dry_run)
+            release_info.publish_cut(dry_run=dry_run)
 
     def _bump_version():
         with ReleaseContextManager(
@@ -125,19 +119,12 @@ def main():
             release_info.update_version_and_contributors_list(dry_run=dry_run)
 
     step(
-        name="Push Git Tag for the Release",
-        command=_push_git_tag_for_release,
+        name="Publish the Cut: Tag, Branch and Master Bump",
+        command=_publish_cut,
         workdir=REPO_PATH,
     )
 
-    step(
-        name="Push New Release Branch",
-        command=_push_new_release_branch,
-        workdir=REPO_PATH,
-    )
-
-    # Bumps the branch and master versions and opens the master version-bump PR
-    # in one call; idempotent, so a rerun self-skips a landed bump.
+    # Bumps the branch version and opens the release PR; a rerun skips a landed bump.
     step(
         name="Bump CH Version and Update Contributors' List",
         command=_bump_version,
