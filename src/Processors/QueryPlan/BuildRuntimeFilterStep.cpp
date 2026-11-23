@@ -358,7 +358,7 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
 
             /// A persisted exchange has no serializer.
             SharedHeader stream_header = partials_header;
-            if (auto serializer = settings.exchange_lookup->createSerializer(partials_header, destination_stream.exchange_id))
+            if (auto serializer = settings.exchange_lookup->createSerializer(partials_header, destination_stream.exchange_id, /*advisory=*/ true))
             {
                 connect(*partial_output, serializer->getInputs().front());
                 partial_output = &serializer->getOutputs().front();

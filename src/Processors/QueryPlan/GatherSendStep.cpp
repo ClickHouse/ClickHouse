@@ -58,7 +58,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
                 /* blocks_are_granules_size */ false));
     }
 
-    /// Combine small chunks: every chunk becomes one packet. A sorted gather sends every chunk at
+    /// Combine small chunks: every chunk becomes at least one packet. A sorted gather sends every chunk at
     /// once, because `GatherReceiveStep` merges the streams in order and waits for the rows it needs next.
     if (!maintain_sort_description)
         ProgressiveSquashingChunksTransform::addToPipeline(pipeline, settings.max_block_size);
@@ -67,7 +67,7 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     /// left, and its serializer is the only one.
     pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        return settings.exchange_lookup->createSerializer(header, exchange_id);
+        return settings.exchange_lookup->createSerializer(header, exchange_id, /*advisory=*/ false);
     });
     pipeline.resize(1);
 

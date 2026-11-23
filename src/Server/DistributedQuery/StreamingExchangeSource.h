@@ -30,6 +30,9 @@ using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancella
 /// With `output_is_serialized` the source does not deserialize: it hands every packet on as one row
 /// of a `String` column, for the `StreamingExchangeDeserializingTransform` on every stream behind
 /// it, and only reads the end-of-stream marker itself.
+///
+/// A packet that states a body larger than `max_packet_body_bytes` is rejected. The body is allocated
+/// as its bytes arrive, so a large stated size alone does not allocate memory.
 class StreamingExchangeSource final : public ISource
 {
 public:
@@ -42,10 +45,12 @@ public:
         DistributedQueryCancellationPtr cancellation_,
         String auth_token_ = {},
         bool output_is_serialized_ = false,
-        bool advisory_ = false)
+        bool advisory_ = false,
+        UInt64 max_packet_body_bytes_ = StreamingExchangeProtocol::DEFAULT_MAX_DATA_PACKET_BODY_BYTES)
         : ISource(output_is_serialized_ ? StreamingExchangeProtocol::packetStreamHeader() : header_)
         , output_is_serialized(output_is_serialized_)
         , advisory(advisory_)
+        , max_packet_body_bytes(max_packet_body_bytes_)
         , host(std::move(host_))
         , port(port_)
         , query_id(std::move(query_id_))
@@ -101,6 +106,7 @@ private:
 
     const bool output_is_serialized;
     const bool advisory;
+    const UInt64 max_packet_body_bytes;
     const String host;
     const UInt16 port;
     const String query_id;
@@ -130,6 +136,10 @@ private:
 
     ColumnString::Chars current_packet_body;
     size_t current_packet_body_bytes_filled = 0;
+    /// The size of the whole packet being received: the header and the body.
+    size_t current_packet_bytes = 0;
+    /// The first allocation for a packet body; the buffer doubles as more bytes arrive.
+    static constexpr size_t INITIAL_RECEIVE_BUFFER_BYTES = 1024 * 1024;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::unique_ptr<ReadBufferFromMemory> packet_in;    /// One full packet

@@ -11613,6 +11613,12 @@ Possible values:
 - Integer from 1 to 22. Higher levels compress better and slower.
 )", EXPERIMENTAL, \
         {"26.11", 1, 1, "New setting for the level of ZSTD compression of the streaming exchange of a distributed query plan."}) \
+    DECLARE(NonZeroUInt64, distributed_plan_exchange_max_packet_bytes, 256_MiB, R"(
+The largest body of one packet of the streaming exchange between the tasks of a distributed query plan, in bytes after compression. A sender sends a large chunk as several packets, each with a range of its rows. A row that does not fit in one packet makes the query fail, except for a runtime filter, which is then not used. A receiver rejects a packet that states a larger size.
+
+Versions without this setting accept at most the default, so use a larger value only when all servers that run the tasks of the query have this setting.
+)", EXPERIMENTAL, \
+        {"26.12", 268435456, 268435456, "New setting for the largest packet of the streaming exchange of a distributed query plan; it was a fixed limit before."}) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.

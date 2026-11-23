@@ -26,14 +26,14 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
     /// Send copies of data to num_buckets outputs
     auto & pipeline = *pipelines.front();
 
-    /// Combine small chunks: every chunk becomes one packet for each destination.
+    /// Combine small chunks: every chunk becomes at least one packet for each destination.
     ProgressiveSquashingChunksTransform::addToPipeline(pipeline, settings.max_block_size);
 
     /// Serialize once on every stream; the copies for the destinations share the packets instead of
     /// serializing them again.
     pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        return settings.exchange_lookup->createSerializer(header, exchange_id);
+        return settings.exchange_lookup->createSerializer(header, exchange_id, /*advisory=*/ false);
     });
     pipeline.resize(1);
     if (num_buckets > 1)

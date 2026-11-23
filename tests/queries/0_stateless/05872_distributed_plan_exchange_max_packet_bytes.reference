@@ -1,0 +1,8 @@
+-- the expected result
+10000	495976821
+-- packets of at most 4 KiB: the rows go in many packets, the filter is not sent
+10000	495976821
+-- a row larger than one packet
+-- a limit too small for the end-of-stream packet
+-- the filter state was not sent because of its size
+1

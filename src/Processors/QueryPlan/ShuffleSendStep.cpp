@@ -39,7 +39,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
     if (pipeline.getNumStreams() > max_scatter_streams)
         pipeline.resize(max_scatter_streams);
 
-    /// Combine small chunks: every chunk becomes one packet for each destination. This is ahead of the
+    /// Combine small chunks: every chunk becomes at least one packet for each destination. This is ahead of the
     /// scatter, so a destination that does not read cannot hold back the rows that the transform keeps.
     ProgressiveSquashingChunksTransform::addToPipeline(pipeline, settings.max_block_size);
 
@@ -47,7 +47,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
     /// sink would serialize its whole bucket alone.
     auto serializer = [&](const SharedHeader & header) -> ProcessorPtr
     {
-        return settings.exchange_lookup->createSerializer(header, exchange_id);
+        return settings.exchange_lookup->createSerializer(header, exchange_id, /*advisory=*/ false);
     };
 
     if (key_names.empty())

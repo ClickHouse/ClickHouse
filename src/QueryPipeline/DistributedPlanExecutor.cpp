@@ -48,7 +48,6 @@
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
-#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Interpreters/Cluster.h>
 #include <Access/ContextAccess.h>
@@ -92,11 +91,9 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// The comment at `MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES` explains why the two limits are equal.
-static_assert(MAX_TRANSPORTED_RUNTIME_FILTER_STATE_BYTES == StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES);
-
 namespace Setting
 {
+    extern const SettingsNonZeroUInt64 distributed_plan_exchange_max_packet_bytes;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
@@ -602,9 +599,9 @@ public:
             .createSource(std::move(output_header), exchange_stream_id, output_is_serialized, advisory);
     }
 
-    std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
+    std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id, bool advisory) override
     {
-        return lookupFor(exchange_id).createSerializer(std::move(input_header), exchange_id);
+        return lookupFor(exchange_id).createSerializer(std::move(input_header), exchange_id, advisory);
     }
 
     std::shared_ptr<IProcessor> createDeserializer(SharedHeader output_header, const String & exchange_id) override
@@ -785,7 +782,8 @@ ExchangeLookupPtr createExchangeLookup(
     /// the query context (empty when connection authentication is not configured).
     auto streaming_exchanges = createStreamingExchangeLookup(
         query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation), /*auth_token=*/ String{},
-        streamingExchangeCompressionCodec(context->getSettingsRef()));
+        streamingExchangeCompressionCodec(context->getSettingsRef()),
+        streamingExchangeMaxPacketBytes(context->getSettingsRef()));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
     UNUSED(exchange_stream_sources, context, cancellation);
@@ -1150,6 +1148,12 @@ static SettingsChanges getTaskSettingsChanges(const ContextPtr & context)
 
     if (!user_capped_max_threads)
         std::erase_if(changes, [](const SettingChange & change) { return change.name == "max_threads"; });
+
+    /// The sender and the receiver of a packet must use the same limit, also when a worker's profile
+    /// has another default.
+    std::erase_if(changes, [](const SettingChange & change) { return change.name == "distributed_plan_exchange_max_packet_bytes"; });
+    changes.emplace_back("distributed_plan_exchange_max_packet_bytes",
+        context->getSettingsRef()[Setting::distributed_plan_exchange_max_packet_bytes].value);
     return changes;
 }
 

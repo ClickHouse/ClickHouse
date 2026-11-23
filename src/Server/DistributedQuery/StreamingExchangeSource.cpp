@@ -337,12 +337,13 @@ void StreamingExchangeSource::tryReadHeader()
         if (current_packet_header.packet_type != StreamingExchangeProtocol::PacketType::Data)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", current_packet_header.packet_type);
 
-        if (current_packet_header.bytes_size > StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES)
+        if (current_packet_header.bytes_size > max_packet_body_bytes)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                 "Data packet body size {} exceeds limit {} on exchange stream {}",
-                current_packet_header.bytes_size, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES, stream_name);
+                current_packet_header.bytes_size, max_packet_body_bytes, stream_name);
 
-        current_packet_body.resize(sizeof(current_packet_header) + current_packet_header.bytes_size);
+        current_packet_bytes = sizeof(current_packet_header) + current_packet_header.bytes_size;
+        current_packet_body.resize_exact(std::min(current_packet_bytes, sizeof(current_packet_header) + INITIAL_RECEIVE_BUFFER_BYTES));
         memcpy(current_packet_body.data(), &current_packet_header, sizeof(current_packet_header));
         current_packet_body_bytes_filled = sizeof(current_packet_header);
         packet_receive_state = ReceivingBody;
@@ -355,9 +356,16 @@ void StreamingExchangeSource::tryReadBody()
 {
     /// Read remaining size of the packet
     const size_t body_bytes_before = current_packet_body_bytes_filled;
-    readFromSocket(reinterpret_cast<char *>(current_packet_body.data()), current_packet_body.size(), current_packet_body_bytes_filled);
+    while (true)
+    {
+        readFromSocket(reinterpret_cast<char *>(current_packet_body.data()), current_packet_body.size(), current_packet_body_bytes_filled);
+        /// The socket has no more bytes now, or the packet is complete.
+        if (current_packet_body_bytes_filled < current_packet_body.size() || current_packet_body.size() == current_packet_bytes)
+            break;
+        current_packet_body.resize_exact(std::min(current_packet_bytes, 2 * current_packet_body.size()));
+    }
     ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveBytes, current_packet_body_bytes_filled - body_bytes_before);
-    if (current_packet_body_bytes_filled == current_packet_body.size())
+    if (current_packet_body_bytes_filled == current_packet_bytes)
     {
         packet_receive_state = ReceivingHeader;
         current_packet_header_bytes_filled = 0;
@@ -503,8 +511,12 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
 
     packet_in.reset();
     packet_receive_state = ReceivingHeader;
+    /// Keep the buffer of a small packet for the next one, but not the memory of a large packet.
+    if (current_packet_body.capacity() > sizeof(current_packet_header) + INITIAL_RECEIVE_BUFFER_BYTES)
+        ColumnString::Chars().swap(current_packet_body);
     current_packet_body.clear();
     current_packet_body_bytes_filled = 0;
+    current_packet_bytes = 0;
 
     return result;
 }

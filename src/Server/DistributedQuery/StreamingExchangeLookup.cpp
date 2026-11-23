@@ -21,6 +21,7 @@ namespace Setting
 {
     extern const SettingsString distributed_plan_exchange_compression_method;
     extern const SettingsInt64 distributed_plan_exchange_zstd_compression_level;
+    extern const SettingsNonZeroUInt64 distributed_plan_exchange_max_packet_bytes;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -53,6 +54,17 @@ CompressionCodecPtr streamingExchangeCompressionCodec(const Settings & settings)
     return CompressionCodecFactory::instance().get(method, level);
 }
 
+UInt64 streamingExchangeMaxPacketBytes(const Settings & settings)
+{
+    constexpr UInt64 min_bytes = 1024;
+    constexpr UInt64 max_bytes = 1ULL << 40;
+    const UInt64 value = settings[Setting::distributed_plan_exchange_max_packet_bytes];
+    if (value < min_bytes || value > max_bytes)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `distributed_plan_exchange_max_packet_bytes` must be from {} to {}, got {}", min_bytes, max_bytes, value);
+    return value;
+}
+
 class StreamingExchangeLookup : public IExchangeLookup
 {
 public:
@@ -62,13 +74,15 @@ public:
         const ExchangeStreamSources & exchange_stream_sources_,
         DistributedQueryCancellationPtr cancellation_,
         const String & auth_token_,
-        CompressionCodecPtr codec_)
+        CompressionCodecPtr codec_,
+        UInt64 max_packet_body_bytes_)
         : query_id(query_id_)
         , connections(connections_)
         , exchange_stream_sources(exchange_stream_sources_)
         , cancellation(std::move(cancellation_))
         , auth_token(auth_token_)
         , codec(std::move(codec_))
+        , max_packet_body_bytes(max_packet_body_bytes_)
     {
     }
 
@@ -79,9 +93,9 @@ public:
         return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name, advisory);
     }
 
-    std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String &) override
+    std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String &, bool advisory) override
     {
-        return std::make_shared<StreamingExchangeSerializingTransform>(std::move(input_header), codec);
+        return std::make_shared<StreamingExchangeSerializingTransform>(std::move(input_header), codec, max_packet_body_bytes, advisory);
     }
 
     std::shared_ptr<IProcessor> createDeserializer(SharedHeader output_header, const String & exchange_id) override
@@ -108,7 +122,8 @@ public:
             cancellation,
             auth_token,
             output_is_serialized,
-            advisory);
+            advisory,
+            max_packet_body_bytes);
     }
 
 private:
@@ -118,6 +133,7 @@ private:
     const DistributedQueryCancellationPtr cancellation;
     const String auth_token;
     const CompressionCodecPtr codec;
+    const UInt64 max_packet_body_bytes;
 };
 
 ExchangeLookupPtr createStreamingExchangeLookup(
@@ -126,9 +142,11 @@ ExchangeLookupPtr createStreamingExchangeLookup(
     const ExchangeStreamSources & exchange_stream_sources,
     DistributedQueryCancellationPtr cancellation,
     const String & auth_token,
-    CompressionCodecPtr codec)
+    CompressionCodecPtr codec,
+    UInt64 max_packet_body_bytes)
 {
-    return std::make_shared<StreamingExchangeLookup>(query_id, connections, exchange_stream_sources, std::move(cancellation), auth_token, std::move(codec));
+    return std::make_shared<StreamingExchangeLookup>(
+        query_id, connections, exchange_stream_sources, std::move(cancellation), auth_token, std::move(codec), max_packet_body_bytes);
 }
 
 }

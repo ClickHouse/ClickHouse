@@ -804,7 +804,8 @@ ExchangeLookupPtr makeLookup(ExchangeConnectionsPtr connections, const ExchangeS
         sources,
         /*cancellation=*/ nullptr,
         /*auth_token=*/ String{},
-        CompressionCodecFactory::instance().getDefaultCodec());
+        CompressionCodecFactory::instance().getDefaultCodec(),
+        StreamingExchangeProtocol::DEFAULT_MAX_DATA_PACKET_BODY_BYTES);
 }
 
 /// Like `receiveFrom`, with the source built as a receive step builds it: by `receiveExchangeStreams`
@@ -861,7 +862,7 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an unknown packet type";
         }
         {
-            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES + 1)));
+            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, StreamingExchangeProtocol::DEFAULT_MAX_DATA_PACKET_BODY_BYTES + 1)));
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an oversized body";
         }
         {
@@ -1480,7 +1481,7 @@ QueryPipeline makeBuildTaskPipeline(LoopbackExchange & exchange, const ExchangeS
     auto lookup = makeLookup(exchange.connections, ExchangeStreamSources{});
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(runtimeFilterPartialsHeader(), makePartialChunk(10))));
-    builder.addSimpleTransform([&](const SharedHeader & header) { return lookup->createSerializer(header, stream.exchange_id); });
+    builder.addSimpleTransform([&](const SharedHeader & header) { return lookup->createSerializer(header, stream.exchange_id, /*advisory=*/ true); });
     builder.setSinks([&](const SharedHeader & header, Pipe::StreamType) { return lookup->createSink(header, stream, /*advisory=*/ true); });
     return QueryPipelineBuilder::getPipeline(std::move(builder));
 }
@@ -1579,6 +1580,61 @@ TEST(RuntimeFilterMergeTask, AReceiverThatNeverConnectsDoesNotHoldBackTheOthers)
     EXPECT_EQ(build.cancel(), std::nullopt);
     EXPECT_EQ(countRows(sink->chunks), 1u);
     EXPECT_EQ(merge.cancel(), std::nullopt);
+}
+
+/// A chunk much larger than one packet should be is sent as several packets, each with a part of its rows,
+/// so that neither end holds the whole chunk serialized. The values arrive complete and in order.
+TEST(StreamingExchangeTransport, LargeChunkIsSentAsSeveralPackets)
+{
+    MainThreadStatus::getInstance();
+
+    /// 40 MiB of values that do not compress.
+    constexpr size_t rows = 5 * 1024 * 1024;
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        UInt64 state = 42;
+        Chunk chunk = makeIncompressibleChunk(rows, state);
+        const auto expected = chunk.getColumns().front();
+
+        std::vector<Chunks> chunks_per_stream_list(1);
+        chunks_per_stream_list[0].push_back(std::move(chunk));
+
+        auto header = makeHeader();
+        LoopbackExchange exchange;
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, 1); });
+        const auto receiving_code = run(receiving, 1);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+
+        size_t data_chunks = 0;
+        size_t received_rows = 0;
+        bool same_values = true;
+        const auto & expected_values = assert_cast<const ColumnUInt64 &>(*expected).getData();
+        for (const auto & received : sink->chunks)
+        {
+            if (received.getNumRows() == 0)
+                continue;
+            ++data_chunks;
+            const auto & values = assert_cast<const ColumnUInt64 &>(*received.getColumns().front()).getData();
+            for (size_t row = 0; row < values.size() && same_values; ++row)
+                same_values = received_rows + row < expected_values.size() && values[row] == expected_values[received_rows + row];
+            received_rows += values.size();
+        }
+
+        EXPECT_GE(data_chunks, 2u);
+        EXPECT_EQ(received_rows, rows);
+        EXPECT_TRUE(same_values);
+    }
 }
 
 #endif
