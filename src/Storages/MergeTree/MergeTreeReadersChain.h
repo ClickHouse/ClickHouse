@@ -132,6 +132,8 @@ private:
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 
+    NameSet columns_computed_by_mutation_steps;
+
     /// PREWHERE granule ProfileEvents (GranulesReadByPrewhereReaders / GranulesSkippedByPrewhereReaders).
     /// Each granule is fed in mark order from each block with three flags: `was_read` (rows reached the user
     /// predicate), `survived` (a row survived the user predicate), and `contaminated` (a synthesized dynamic
