@@ -741,8 +741,8 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
     fs::path parent = original_path.parent_path();
     fs::path grandparent = parent.parent_path();
 
-    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/v<i>-metadata.json
-    /// We should drop `metadata/v<i>-metadata.json` suffix to get location.
+    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/<i>-<uuid>.metadata.json
+    /// We should drop `metadata/<i>-<uuid>.metadata.json` suffix to get location.
     sd.SetLocation(grandparent.c_str());
 
     table_input.SetStorageDescriptor(sd);
