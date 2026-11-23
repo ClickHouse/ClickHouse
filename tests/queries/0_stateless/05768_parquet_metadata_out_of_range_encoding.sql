@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Random settings limits: output_format_parquet_max_dictionary_size=(1048576, None)
 -- no-fasttest: the ParquetMetadata format needs the Arrow library
 
 -- The ParquetMetadata format shows a column chunk encoding that is not a known Parquet encoding as `UNDEFINED`.

@@ -53,8 +53,12 @@ public:
     [[nodiscard]] RenameTableResult renameTable(
         const IcebergNamespaceName & source_ns, const String & source, const IcebergNamespaceName & dest_ns, const String & dest) const;
     using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
-    [[nodiscard]] UpdateTableResult updateTable(
-        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const;
+    using TableUpdate = KeeperIcebergRESTCatalogStore::TableUpdate;
+    using UpdateTablesResult = KeeperIcebergRESTCatalogStore::UpdateTablesResult;
+    [[nodiscard]] UpdateTablesResult updateTables(const std::vector<TableUpdate> & updates) const;
+
+    /// Checks that the role was assumed, then lists one key under `base_location`. This proves that the role can read the location.
+    void checkStorageAccess() const;
 
 private:
     void validateLocation(const S3Location & location) const;
