@@ -1198,8 +1198,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
-    /// Not for a full-definition `ATTACH` either, so an existing table with such an expression stays loadable.
-    if (is_fresh_definition && !expectsExistingState(args.mode) && !is_ddl_replay && !is_stored_definition && !args.columns.empty()
+    /// Not for a full-definition `ATTACH` or a `RESTORE` either, so an existing table with such an expression stays loadable.
+    if (args.mode == LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty()
         && !(*storage_settings)[MergeTreeSetting::allow_suspicious_indices])
         MergeTreeData::checkKeyExpressionNamesForCollision(metadata, nullptr);
 
