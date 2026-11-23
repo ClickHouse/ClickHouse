@@ -200,14 +200,7 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 
 bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
 {
-    const auto & name_in_storage = columns_to_read[pos].getNameInStorage();
-
-    /// The stored `_block_offset` of such part is read regardless of whether it is ignored: patches written
-    /// before are matched with it. `MergeTreeRangeReader` replaces it with the row position if it is ignored.
-    if (name_in_storage == BlockOffsetColumn::name && data_part_info_for_read->storesBlockOffsetWithoutBlockNumber())
-        return false;
-
-    return data_part_info_for_read->isSystemColumnInvalidated(name_in_storage);
+    return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const

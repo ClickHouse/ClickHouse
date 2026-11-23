@@ -16,8 +16,8 @@ using namespace DB;
 TEST(PatchPartIndexRead, ConsumesExactlyTheIndex)
 {
     PatchPartIndex index(MergeTreePatchPartsVersion::V1, "");
-    index.addSourcePart("all_1_1_0", 2);
-    index.addSourcePart("all_2_2_0", 3);
+    index.addSourcePart("all_1_1_0", 2, PatchBlockOffsets::Stored);
+    index.addSourcePart("all_2_2_0", 3, PatchBlockOffsets::Stored);
 
     String written;
     {

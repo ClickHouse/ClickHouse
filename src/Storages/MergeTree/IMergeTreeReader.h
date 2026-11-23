@@ -225,8 +225,7 @@ protected:
     /// Such columns should not be read from the part; defaults should be used instead.
     [[nodiscard]] bool isColumnDroppedByPendingMutation(size_t pos) const;
 
-    /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated,
-    /// so its stored values must not be read.
+    /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     [[nodiscard]] bool isSystemColumnInvalidated(size_t pos) const;
 
     /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without

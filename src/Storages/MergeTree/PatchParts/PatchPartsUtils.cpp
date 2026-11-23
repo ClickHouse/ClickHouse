@@ -32,7 +32,6 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool apply_patches_on_merge;
-    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 void throwDuplicateRowIdentity(UInt64 block_number, UInt64 block_offset)
@@ -95,22 +94,6 @@ String getColumnsHashWithTypes(const ColumnsDescription & columns_desc)
     return getColumnsHash(getColumnNamesWithTypes(columns_desc));
 }
 
-/// Patches that store the row position as `_block_offset` of parts that store `_block_offset` without
-/// `_block_number` are put to other partitions than patches written by older versions, so they are never merged.
-static String getPatchStructureHash(Names names, bool block_offsets_are_row_positions)
-{
-    auto hash = getColumnsHash(std::move(names));
-    if (!block_offsets_are_row_positions)
-        return hash;
-
-    SipHash hash_with_flag;
-    hash_with_flag.update(hash.size());
-    hash_with_flag.update(hash.data(), hash.size());
-    static constexpr std::string_view suffix = "block_offsets_are_row_positions";
-    hash_with_flag.update(suffix.data(), suffix.size());
-    return getSipHash128AsHexString(hash_with_flag);
-}
-
 static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
 {
     /// Apply for these columns the same codecs as for the virtual columns in the original parts.
@@ -133,13 +116,13 @@ static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
     }
 }
 
-StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, bool block_offsets_are_row_positions, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
-    return getPatchPartMetadataV1(std::move(columns_desc), block_offsets_are_row_positions, local_context);
+    return getPatchPartMetadataV1(std::move(columns_desc), local_context);
 }
 
-StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, bool block_offsets_are_row_positions, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context)
 {
     StorageInMemoryMetadata part_metadata;
 
@@ -149,7 +132,7 @@ StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, bo
 
     /// Use hash of column names to put patch parts with different structure to different partitions.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
-    auto columns_hash = getPatchStructureHash(patch_part_desc.getNamesOfPhysical(), block_offsets_are_row_positions);
+    auto columns_hash = getColumnsHash(patch_part_desc.getNamesOfPhysical());
     auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
 
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
@@ -177,8 +160,7 @@ StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, bo
     return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));
 }
 
-StorageMetadataPtr getPatchPartMetadataV2(
-    ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, bool block_offsets_are_row_positions, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context)
 {
     StorageInMemoryMetadata part_metadata;
 
@@ -197,7 +179,7 @@ StorageMetadataPtr getPatchPartMetadataV2(
     /// types go to different partitions: one patch partition must have one schema.
     auto names_for_hash = getColumnNamesWithTypes(patch_part_desc);
     names_for_hash.emplace_back(sorting_key_expr_list ? sorting_key_expr_list->formatWithSecretsOneLine() : "");
-    auto columns_hash = getPatchStructureHash(std::move(names_for_hash), block_offsets_are_row_positions);
+    auto columns_hash = getColumnsHash(std::move(names_for_hash));
     auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
 
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
@@ -231,18 +213,16 @@ StorageMetadataPtr getPatchPartMetadataV2(
     return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));
 }
 
-StorageMetadataPtr getPatchPartMetadataV2(
-    Block sample_block, const KeyDescription & sorting_key, bool block_offsets_are_row_positions, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescription & sorting_key, ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
-    return getPatchPartMetadataV2(std::move(columns_desc), sorting_key, block_offsets_are_row_positions, local_context);
+    return getPatchPartMetadataV2(std::move(columns_desc), sorting_key, local_context);
 }
 
-StorageMetadataPtr getPatchPartMetadataV2(
-    ColumnsDescription patch_part_desc, const String & sorting_key_str, bool block_offsets_are_row_positions, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context)
 {
     auto sorting_key = KeyDescription::parse(sorting_key_str, patch_part_desc, /*virtuals=*/ {}, local_context, /*allow_order=*/ true);
-    return getPatchPartMetadataV2(std::move(patch_part_desc), sorting_key, block_offsets_are_row_positions, local_context);
+    return getPatchPartMetadataV2(std::move(patch_part_desc), sorting_key, local_context);
 }
 
 size_t getEffectivePatchSortingKeySize(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata)
@@ -432,43 +412,7 @@ bool shouldApplyPatchesOnMerge(const PartsRange & parts, const MergeTreeSettings
     if (settings[MergeTreeSetting::apply_patches_on_merge])
         return true;
 
-    if (parts.empty())
-        return false;
-
-    /// The merge replaces the `_block_offset` of such part with what it reads now.
-    if (std::ranges::any_of(parts, [](const auto & part) { return part.stores_block_offset_without_block_number; }))
-        return true;
-
-    /// The merged part stores `_block_offset` without `_block_number`. Patches pending for it then must be written
-    /// for the part itself, because they are matched with its row position or its stored `_block_offset` depending
-    /// only on how they were written (see `PatchPartIndex::blockOffsetsAreRowPositions`).
-    return settings[MergeTreeSetting::enable_block_offset_column]
-        && !MergeTreeData::shouldPersistBlockNumberColumn(settings)
-        && parts.front().info.min_block != parts.back().info.max_block;
-}
-
-const Block & getBlockForPatchMatching(const Block & block, PatchBlockOffset block_offset, Block & holder)
-{
-    std::string_view column_name;
-    switch (block_offset)
-    {
-        case PatchBlockOffset::AsRead:
-            return block;
-        case PatchBlockOffset::Stored:
-            column_name = STORED_BLOCK_OFFSET_FOR_PATCHES;
-            break;
-        case PatchBlockOffset::RowPosition:
-            column_name = ROW_POSITION_FOR_PATCHES;
-            break;
-    }
-
-    const auto * column = block.findByName(column_name);
-    if (!column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} to match patch is not found in block: {}", column_name, block.dumpStructure());
-
-    holder = block;
-    holder.getByName(BlockOffsetColumn::name).column = column->column;
-    return holder;
+    return std::ranges::any_of(parts, [](const auto & part) { return part.stores_block_offset_without_block_number; });
 }
 
 NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata)

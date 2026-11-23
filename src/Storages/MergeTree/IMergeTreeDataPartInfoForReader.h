@@ -93,10 +93,6 @@ public:
 
     [[nodiscard]] virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
 
-    /// See `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber` and `IMergeTreeDataPart::ignoresStoredBlockOffset`.
-    [[nodiscard]] virtual bool storesBlockOffsetWithoutBlockNumber() const { return false; }
-    [[nodiscard]] virtual bool ignoresStoredBlockOffset() const { return false; }
-
     [[nodiscard]] virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
 
     /// Name of the parent part when this is a projection part, empty otherwise.

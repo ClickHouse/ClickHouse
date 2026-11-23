@@ -587,12 +587,9 @@ void applyPatchesToBlockLegacy(
                 const auto & patch_data = typeid_cast<const PatchJoinReadResult &>(*read_result);
                 auto columns_hash = getNamesHash(updated_columns);
 
-                Block result_block_holder;
-                const auto & result_block_for_patch = getBlockForPatchMatching(result_block, patch.block_offset, result_block_holder);
-
                 for (const auto & entry : patch_data.entries)
                 {
-                    auto patch_indices = applyPatchJoin(result_block_for_patch, *entry);
+                    auto patch_indices = applyPatchJoin(result_block, *entry);
 
                     if (!patch_indices->empty())
                         patches_indices[columns_hash].push_back(std::move(patch_indices));

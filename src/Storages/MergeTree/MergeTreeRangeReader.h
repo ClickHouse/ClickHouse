@@ -548,8 +548,7 @@ public:
     static void filterBlock(Block & block, const FilterWithCachedCount & filter);
 
 private:
-    /// `is_first_step` is true for the first reader of the chain, whose result columns for patches are filled here.
-    void fillVirtualColumns(Columns & columns, ReadResult & result, bool is_first_step);
+    void fillVirtualColumns(Columns & columns, ReadResult & result);
     ColumnPtr createPartOffsetColumn(ReadResult & result);
     ColumnPtr createPartGranuleOffsetColumn(ReadResult & result);
 
@@ -572,10 +571,6 @@ private:
     std::optional<size_t> block_offset_position;
     std::optional<size_t> part_granule_offset_position;
     std::optional<size_t> distance_position;
-    /// See `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber` and `IMergeTreeDataPart::ignoresStoredBlockOffset`.
-    /// Evaluated once, so that all blocks of the reader read `_block_offset` the same way.
-    bool stores_block_offset_without_block_number = false;
-    bool ignores_stored_block_offset = false;
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     FilterWithCachedCount part_offsets_filter_for_vector_search;

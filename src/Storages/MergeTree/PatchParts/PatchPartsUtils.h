@@ -24,18 +24,14 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
 
 /// Returns metadata snapshot of a legacy (v1) patch part.
 /// Sort key is `(_part, _part_offset)`.
-/// `block_offsets_are_row_positions` (see `PatchPartIndex::blockOffsetsAreRowPositions`) is a part of the partition id.
-StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, bool block_offsets_are_row_positions, ContextPtr local_context);
-StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, bool block_offsets_are_row_positions, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
 /// Returns metadata snapshot of a v2 patch part.
 /// Sort key is `(<sorting_key>..., _block_number, _block_offset)`.
-StorageMetadataPtr getPatchPartMetadataV2(
-    Block sample_block, const KeyDescription & sorting_key, bool block_offsets_are_row_positions, ContextPtr local_context);
-StorageMetadataPtr getPatchPartMetadataV2(
-    ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, bool block_offsets_are_row_positions, ContextPtr local_context);
-StorageMetadataPtr getPatchPartMetadataV2(
-    ColumnsDescription patch_part_desc, const String & sorting_key_str, bool block_offsets_are_row_positions, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescription & sorting_key, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context);
 
 /// The effective sorting key for applying a v2 patch part is the longest common prefix
 /// of the patch part's sorting key and the table's current sorting key, so it is fully
@@ -60,14 +56,10 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
 /// Returns virtual and sorting key columns that should be read from the regular part to apply the patch.
 Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch);
 
-/// Whether a merge of `parts` applies patches. Besides `apply_patches_on_merge`, it applies them if one of the parts or
-/// the merged part stores `_block_offset` without `_block_number`, because patches are matched with the `_block_offset`
-/// of such part as they were written (see `PatchBlockOffset`), which the merge can change.
+/// Whether a merge of `parts` applies patches. Besides `apply_patches_on_merge`, it applies them if one of the parts
+/// stores `_block_offset` without `_block_number`: the merge writes its `_block_offset` as it is read now, after which
+/// the patches that store another `_block_offset` for its rows could not be rejected (see `PatchBlockOffsets`).
 bool shouldApplyPatchesOnMerge(const PartsRange & parts, const MergeTreeSettings & settings);
-
-/// Returns `block` with `_block_offset` replaced by the column that the patch is matched with (see `PatchBlockOffset`).
-/// Returns `block` itself if it is `_block_offset` as read, otherwise its copy kept in `holder`.
-const Block & getBlockForPatchMatching(const Block & block, PatchBlockOffset block_offset, Block & holder);
 
 /// Returns the sorting key columns physically stored in the patch part (only v2 patches store them).
 NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata);

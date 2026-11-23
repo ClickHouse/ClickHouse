@@ -478,13 +478,11 @@ public:
     /// Old versions stored `_block_offset` on merges with `enable_block_number_column = 0`. Then `_block_number`
     /// reads as the constant `min_block`, and a part merged from several insert blocks has duplicate
     /// `(_block_number, _block_offset)` pairs, which make lightweight updates change rows they did not match.
-    /// True for a non-patch part of several blocks that stores `_block_offset` without `_block_number`,
-    /// unless `_block_offset` is in `invalidated_system_columns`.
+    /// True for a non-patch part of several blocks that stores `_block_offset` without `_block_number`.
     bool storesBlockOffsetWithoutBlockNumber() const;
     /// The stored `_block_offset` of such part is ignored and reads as the row position in the part,
     /// if `use_block_offset_only_with_block_number` is enabled. This is derived from the columns of the part
-    /// and is never written to `invalidated_system_columns.txt`. The stored values are still read to apply
-    /// patches written before (see `PatchBlockOffset`).
+    /// and is never written to `invalidated_system_columns.txt`.
     bool ignoresStoredBlockOffset() const;
     static NameSet getSystemColumnsToInvalidate(const MergeTreePartInfo & part_info);
     static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);

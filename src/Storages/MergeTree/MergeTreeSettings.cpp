@@ -2518,8 +2518,9 @@ identifies a row. If enabled:
 - If a part covers several blocks and stores `_block_offset` without `_block_number`, its stored `_block_offset` is ignored and read as the row position in the part.
   Older versions wrote such parts on merges with `enable_block_offset_column = 1` and `enable_block_number_column = 0`.
   `_block_number` of such a part reads as the same value for all rows, so rows can have equal pairs, and lightweight updates and deletes can change rows they did not match.
-  Lightweight updates written while the setting is disabled (or by older versions) keep matching the stored `_block_offset`, and those written while it is enabled match the row position,
-  regardless of the current value. A merge of such a part applies the pending lightweight updates even with `apply_patches_on_merge = 0`.
+  A lightweight update written with another value of the setting (or by an older version) stores another `_block_offset` for the rows of such a part.
+  It is not applied to the part: reading the part throws an exception until the patch part is dropped or the data is read with `apply_patch_parts = 0`.
+  A merge of such a part applies the pending lightweight updates even with `apply_patches_on_merge = 0`.
 
 Disable it only while some replicas still run an older version: replicas with different values write different merged parts
 and apply lightweight updates to different rows.

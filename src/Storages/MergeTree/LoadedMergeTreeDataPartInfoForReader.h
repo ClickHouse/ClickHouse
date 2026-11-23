@@ -66,10 +66,6 @@ public:
 
     [[nodiscard]] bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
 
-    [[nodiscard]] bool storesBlockOffsetWithoutBlockNumber() const override { return data_part->storesBlockOffsetWithoutBlockNumber(); }
-
-    [[nodiscard]] bool ignoresStoredBlockOffset() const override { return data_part->ignoresStoredBlockOffset(); }
-
     [[nodiscard]] AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
     [[nodiscard]] String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override

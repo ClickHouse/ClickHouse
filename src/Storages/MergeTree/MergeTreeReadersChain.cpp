@@ -788,13 +788,6 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
             to.insert(from.getByName(column.name));
     }
 
-    /// Both `_block_offset` of a part that stores `_block_offset` without `_block_number` (see `PatchBlockOffset`).
-    for (const auto * name : {STORED_BLOCK_OFFSET_FOR_PATCHES, ROW_POSITION_FOR_PATCHES})
-    {
-        if (!to.has(name) && from.has(name))
-            to.insert(from.getByName(name));
-    }
-
     /// Save sorting key columns required for applying MergeOnKey patches.
     for (const auto & patch_reader : patch_readers)
     {
@@ -912,23 +905,19 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
         return;
 
     auto main_block = executeSortingKeyExpressions(result_header, read_result);
-    addPatchVirtuals(main_block, read_result.columns_for_patches);
 
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
         auto & patch_results = patches_results[i];
 
-        Block main_block_holder;
-        const auto & main_block_for_patch = getBlockForPatchMatching(main_block, patch_readers[i]->getPatchPart().block_offset, main_block_holder);
-
         /// Remove patches that are not needed for current block anymore.
-        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), main_block_for_patch))
+        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), main_block))
         {
             patch_results.pop_front();
         }
 
         const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
-        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, main_block_for_patch, last_read_patch);
+        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, main_block, last_read_patch);
         patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }

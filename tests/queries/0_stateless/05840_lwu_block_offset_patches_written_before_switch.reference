@@ -1,35 +1,50 @@
-v2
+v2, written before
 0	a	0
-0	b	1
-1	c	2
-1	X	3
-0	Y
-0	a
-1	X
-1	c
-0	Y
-0	a
-1	X
-1	c
-2
-0	Y	1
-0	a	0
-1	X	3
-1	c	2
-1
-v1, Join
-a
-b
-X
-0	a	0
-0	b	1
+0	b	0
+1	c	1
 1	X	2
-ambiguous
-a
-b
-c
+0	a	0
+0	b	1
+1	c	2
+1	d	3
+0	a	0
+0	b	0
+1	c	1
+1	X	2
+v2, written after
+0	a	0
+0	b	1
+1	c	2
+1	X	3
+0	a	0
+0	b	1
+1	c	2
+1	X	3
+0	a	0
+0	b	1
+1	c	2
+1	X	3
+1
+v1, Merge
+0	a	0
+0	b	1
+1	c	2
+1	X	3
+0	a	0
+0	b	1
+1	c	2
+1	X	3
+v1, Join
+0	a	0
+0	b	0
+1	X	1
+both columns
+0	a	1	0
+0	b	2	0
+1	c	1	1
+1	X	1	2
 replicated
-0	Y
 0	a
+0	b
 1	X
 1	c

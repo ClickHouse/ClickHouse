@@ -2121,10 +2121,6 @@ bool IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber() const
     if (info.min_block == info.max_block)
         return false;
 
-    /// The stored offsets of such part are not read at all.
-    if (invalidated_system_columns.contains(BlockOffsetColumn::name))
-        return false;
-
     return getColumnPosition(BlockOffsetColumn::name).has_value() && !getColumnPosition(BlockNumberColumn::name).has_value();
 }
 

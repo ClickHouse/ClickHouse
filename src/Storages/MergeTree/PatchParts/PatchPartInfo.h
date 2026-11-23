@@ -84,25 +84,18 @@ enum class PatchMode
     MergeOnKey,
 };
 
-/// The `_block_offset` of the original part that a patch is matched with. A patch stores the `_block_offset`
-/// read when it was written. It differs from the stored one only for a part that stores `_block_offset`
-/// without `_block_number` (see `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber`), whose
-/// `_block_offset` reads as the row position if `use_block_offset_only_with_block_number` is enabled.
-enum class PatchBlockOffset : UInt8
+/// Which `_block_offset` a patch stores for the rows of a source part. It matters only for a part that stores
+/// `_block_offset` without `_block_number` (see `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber`):
+/// its `_block_offset` reads as the row position in the part with `use_block_offset_only_with_block_number`,
+/// and as the stored value without it.
+enum class PatchBlockOffsets : UInt8
 {
-    /// `_block_offset` as it is read now.
-    AsRead,
-    /// The `_block_offset` stored in the part. Used by patches written by older versions or with the setting disabled.
-    Stored,
-    /// The row position in the part (see `PatchPartIndex::blockOffsetsAreRowPositions`).
-    RowPosition,
+    /// The stored value. Also in all patches written by older versions.
+    Stored = 0,
+    RowPositions = 1,
+    /// Both, in a patch merged from patches with different values.
+    Mixed = 2,
 };
-
-/// Internal columns with the stored `_block_offset` and the row position of the rows of a part that stores
-/// `_block_offset` without `_block_number`. `MergeTreeRangeReader` keeps them in `columns_for_patches`,
-/// and patches are matched with one of them depending on `PatchBlockOffset`.
-inline constexpr auto STORED_BLOCK_OFFSET_FOR_PATCHES = "__stored_block_offset";
-inline constexpr auto ROW_POSITION_FOR_PATCHES = "__row_position";
 
 template <typename TDataPartPtr>
 struct PatchPartInfoBase
@@ -118,8 +111,6 @@ struct PatchPartInfoBase
     std::shared_ptr<const KeyDescription> sorting_key;
     /// Columns of the sorting key persisted in the patch part.
     NameSet stored_sorting_key_columns;
-    /// The `_block_offset` of the original part that the patch is matched with in `Join` and `MergeOnKey` modes.
-    PatchBlockOffset block_offset = PatchBlockOffset::AsRead;
 
     [[nodiscard]] String describe() const;
 };
@@ -138,8 +129,8 @@ struct PatchPartMetadata
 {
     MergeTreePatchPartsVersion version{MergeTreePatchPartsVersion::V2};
     StorageMetadataPtr metadata;
-    /// See `PatchPartIndex::blockOffsetsAreRowPositions`.
-    bool block_offsets_are_row_positions = false;
+    /// Set only for a patch that is being written.
+    PatchBlockOffsets block_offsets = PatchBlockOffsets::Stored;
 };
 
 }
