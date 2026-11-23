@@ -210,83 +210,84 @@ void MergeWindowDataFiles::appendToManifest(ManifestEntries & entries, ManifestL
     counts.min_sequence_number = std::min(counts.min_sequence_number, min_sequence_number);
 }
 
-std::unique_ptr<MergeWindowDataFiles> MergeWindowDataFiles::collect(
+std::vector<const ManifestFileCacheKey *> selectManifestsToMerge(
     const ManifestMergeSettings & merge_settings,
     const ManifestFileCacheKeys & parent_manifests,
     const Row & partition_value,
     const DataTypes & partition_types,
-    Int32 partition_spec_id,
-    Int32 schema_id,
-    const String & write_format,
-    const PersistentTableComponents & persistent_table_components,
-    ObjectStoragePtr object_storage,
-    ContextPtr context)
+    Int32 partition_spec_id)
 {
     const auto partition = getSinglePartition(partition_value, partition_types);
     if (!partition)
-        return nullptr;
+        return {};
 
-    std::vector<const ManifestFileCacheKey *> candidates;
-    size_t candidates_size = 0;
+    std::vector<const ManifestFileCacheKey *> selected;
+    size_t selected_size = 0;
     for (auto it = parent_manifests.rbegin(); it != parent_manifests.rend(); ++it)
     {
         if (it->content_type != ManifestFileContentType::DATA || it->partition_spec_id != partition_spec_id)
             continue;
         if (getSinglePartition(it->partition_summaries) != partition)
             continue;
-        if (candidates_size + it->manifest_file_byte_size > merge_settings.target_size_bytes)
+        if (selected_size + it->manifest_file_byte_size > merge_settings.target_size_bytes)
             break;
-        candidates.push_back(&*it);
-        candidates_size += it->manifest_file_byte_size;
+        selected.push_back(&*it);
+        selected_size += it->manifest_file_byte_size;
     }
-    if (candidates.empty() || candidates.size() + 1 < merge_settings.min_count_to_merge)
-        return nullptr;
+    if (selected.size() + 1 < merge_settings.min_count_to_merge)
+        return {};
+    return selected;
+}
 
-    auto result = std::make_unique<MergeWindowDataFiles>();
-    auto & window = result->window;
+MergeWindowDataFiles::MergeWindowDataFiles(
+    Row partition_value_,
+    Int32 schema_id_,
+    String write_format_,
+    const PersistentTableComponents & persistent_table_components_,
+    ObjectStoragePtr object_storage_,
+    ContextPtr context_)
+    : partition_value(std::move(partition_value_))
+    , schema_id(schema_id_)
+    , write_format(std::move(write_format_))
+    , persistent_table_components(persistent_table_components_)
+    , object_storage(std::move(object_storage_))
+    , context(std::move(context_))
+{
+}
+
+void MergeWindowDataFiles::addManifest(const ManifestFileCacheKey & manifest)
+{
     auto log = getLogger("IcebergManifestMerge");
-    for (const auto * manifest : candidates)
+    auto manifest_file = getManifestFile(object_storage, persistent_table_components, context, log, manifest.manifest_file_path);
+    if (manifestHasKeyMetadata(*manifest_file.getDeserializer()))
+        return;
+
+    auto files_handle = getManifestFileEntriesHandle(manifest_file, persistent_table_components, context, manifest, schema_id);
+    const auto & files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
+    if (std::any_of(
+            files.begin(),
+            files.end(),
+            [&](const auto & file)
+            { return file->resolved_schema_id != schema_id || Poco::icompare(file->parsed_entry->file_format, write_format) != 0; }))
+        return;
+
+    replaced_manifest_paths.insert(manifest.manifest_file_path.serialize());
+    for (const auto & file : files)
     {
-        auto manifest_file = getManifestFile(object_storage, persistent_table_components, context, log, manifest->manifest_file_path);
-        if (manifestHasKeyMetadata(*manifest_file.getDeserializer()))
-            continue;
-
-        auto files_handle = getManifestFileEntriesHandle(manifest_file, persistent_table_components, context, *manifest, schema_id);
-        const auto & files = files_handle.getFilesWithoutDeleted(FileContentType::DATA);
-        if (std::any_of(
-                files.begin(),
-                files.end(),
-                [&](const auto & file)
-                { return file->resolved_schema_id != schema_id || Poco::icompare(file->parsed_entry->file_format, write_format) != 0; }))
-            continue;
-
-        result->replaced_manifest_paths.insert(manifest->manifest_file_path.serialize());
-        for (const auto & file : files)
-        {
-            const auto & entry = *file->parsed_entry;
-            auto lineage = getEntryLineageForRewrite(entry, *manifest);
-            result->min_sequence_number = std::min(result->min_sequence_number, *lineage.sequence_number);
-            result->rows_count += entry.record_count;
-            window.paths.push_back(entry.file_path_key);
-            window.row_counts.push_back(static_cast<UInt64>(entry.record_count));
-            window.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
-            window.partition_values.push_back(partition_value);
-            window.fresh_statistics.push_back(nullptr);
-            window.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
-            window.sort_order_ids.push_back(entry.sort_order_id);
-            window.lineage.push_back(std::move(lineage));
-        }
+        const auto & entry = *file->parsed_entry;
+        auto lineage = getEntryLineageForRewrite(entry, manifest);
+        min_sequence_number = std::min(min_sequence_number, *lineage.sequence_number);
+        rows_count += entry.record_count;
+        window.paths.push_back(entry.file_path_key);
+        window.row_counts.push_back(static_cast<UInt64>(entry.record_count));
+        window.byte_counts.push_back(static_cast<UInt64>(entry.file_size_in_bytes));
+        window.partition_values.push_back(partition_value);
+        window.fresh_statistics.push_back(nullptr);
+        window.carried_over_statistics.push_back(getColumnStatisticsForRewrite(entry));
+        window.sort_order_ids.push_back(entry.sort_order_id);
+        window.lineage.push_back(std::move(lineage));
     }
-
-    if (result->replaced_manifest_paths.empty())
-        return nullptr;
-
-    LOG_DEBUG(
-        log,
-        "Merging {} manifest files with {} data files into the new manifest",
-        result->replaced_manifest_paths.size(),
-        window.paths.size());
-    return result;
+    LOG_DEBUG(log, "Merging manifest file {} with {} data files into the new manifest", manifest.manifest_file_path.serialize(), files.size());
 }
 
 }

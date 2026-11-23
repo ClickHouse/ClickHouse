@@ -1931,18 +1931,22 @@ bool IcebergStorageSink::initializeMetadata()
             {
                 if (merge_settings)
                 {
-                    auto merge_window = Iceberg::MergeWindowDataFiles::collect(
+                    auto to_merge = Iceberg::selectManifestsToMerge(
                         *merge_settings,
                         parent_manifests,
                         partition_key,
                         partitioner ? partitioner->getResultTypes() : DataTypes{},
-                        static_cast<Int32>(partition_spec_id),
+                        static_cast<Int32>(partition_spec_id));
+                    auto merge_window = std::make_unique<Iceberg::MergeWindowDataFiles>(
+                        partition_key,
                         static_cast<Int32>(current_schema_id),
                         write_format,
                         persistent_table_components,
                         object_storage,
                         context);
-                    if (merge_window)
+                    for (const auto * manifest : to_merge)
+                        merge_window->addManifest(*manifest);
+                    if (!merge_window->empty())
                     {
                         replaced_manifest_paths.insert(
                             merge_window->getReplacedManifestPaths().begin(), merge_window->getReplacedManifestPaths().end());

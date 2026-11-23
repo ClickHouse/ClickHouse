@@ -72,26 +72,40 @@ private:
     const std::optional<Int32> sort_order_id;
 };
 
+std::vector<const ManifestFileCacheKey *> selectManifestsToMerge(
+    const ManifestMergeSettings & merge_settings,
+    const ManifestFileCacheKeys & parent_manifests,
+    const Row & partition_value,
+    const DataTypes & partition_types,
+    Int32 partition_spec_id);
+
 class MergeWindowDataFiles final : public IManifestEntriesSource
 {
 public:
-    static std::unique_ptr<MergeWindowDataFiles> collect(
-        const ManifestMergeSettings & merge_settings,
-        const ManifestFileCacheKeys & parent_manifests,
-        const Row & partition_value,
-        const DataTypes & partition_types,
-        Int32 partition_spec_id,
-        Int32 schema_id,
-        const String & write_format,
-        const PersistentTableComponents & persistent_table_components,
-        ObjectStoragePtr object_storage,
-        ContextPtr context);
+    MergeWindowDataFiles(
+        Row partition_value_,
+        Int32 schema_id_,
+        String write_format_,
+        const PersistentTableComponents & persistent_table_components_,
+        ObjectStoragePtr object_storage_,
+        ContextPtr context_);
+
+    void addManifest(const ManifestFileCacheKey & manifest);
+
+    bool empty() const { return replaced_manifest_paths.empty(); }
 
     void appendToManifest(ManifestEntries & entries, ManifestListEntryCounts & counts) const override;
 
     const std::unordered_set<String> & getReplacedManifestPaths() const { return replaced_manifest_paths; }
 
 private:
+    const Row partition_value;
+    const Int32 schema_id;
+    const String write_format;
+    const PersistentTableComponents & persistent_table_components;
+    const ObjectStoragePtr object_storage;
+    const ContextPtr context;
+
     std::unordered_set<String> replaced_manifest_paths;
     ManifestEntries window;
     Int64 rows_count = 0;
