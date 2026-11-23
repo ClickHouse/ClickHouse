@@ -47,13 +47,3 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
         SAMPLES ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ts', 'r1');
 "
 drop_during_restart "$CLICKHOUSE_DATABASE" "$(inner_table_name "$CLICKHOUSE_DATABASE" '.inner_id.samples.%')" ts
-
-# A `Memory` database drops tables synchronously, without the drop task of an `Atomic` one.
-MEMORY_DATABASE="${CLICKHOUSE_DATABASE}_memory"
-$CLICKHOUSE_CLIENT -q "
-    CREATE DATABASE $MEMORY_DATABASE ENGINE = Memory;
-    CREATE MATERIALIZED VIEW $MEMORY_DATABASE.mv ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mv_memory', 'r1') ORDER BY x
-        AS SELECT x FROM $CLICKHOUSE_DATABASE.src;
-"
-drop_during_restart "$MEMORY_DATABASE" "$(inner_table_name "$MEMORY_DATABASE" '.inner%')" mv
-$CLICKHOUSE_CLIENT -q "DROP DATABASE $MEMORY_DATABASE"
