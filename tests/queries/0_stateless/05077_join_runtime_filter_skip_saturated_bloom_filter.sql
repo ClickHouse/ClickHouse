@@ -53,7 +53,7 @@ SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k) SETTINGS max_
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
 
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['RuntimeFiltersCreated'], ProfileEvents['RuntimeFilterBloomFilterBuildsSkipped'] > 0, ProfileEvents['RuntimeFilterRowsChecked'] > 0
+SELECT ProfileEvents['RuntimeFiltersCreated'], ProfileEvents['RuntimeFilterBloomFilterBuildsSkipped'] > 0, ProfileEvents['RuntimeFilterRowsChecked'] > 0, ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE '%SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest%'
     AND query NOT LIKE '%query_log%'
