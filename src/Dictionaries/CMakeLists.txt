@@ -7,7 +7,6 @@ add_headers_and_sources(clickhouse_dictionaries "${CMAKE_CURRENT_BINARY_DIR}/gen
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
 # TUs where libcxx hardening needs to be disabled are specified here.
 set(LIBCPP_HARDENING_DISABLE_FILES
-    HashedDictionary.cpp
     HashedArrayDictionary.cpp
 )
 set_property(SOURCE ${LIBCPP_HARDENING_DISABLE_FILES}
