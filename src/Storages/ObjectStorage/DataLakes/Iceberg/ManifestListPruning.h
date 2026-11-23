@@ -8,6 +8,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 namespace DB::Iceberg
@@ -28,13 +29,14 @@ public:
         DB::ContextPtr context,
         bool require_ready_sets = false);
 
-    bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
+    [[nodiscard]] bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
 
 private:
     struct SpecCondition
     {
         DB::KeyDescription partition_key;
         DB::KeyCondition condition;
+        std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
         /// Index-aligned with the spec fields: the source column is one the name mapping leaves unbound.
         std::vector<bool> unbound_fields;
     };

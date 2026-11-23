@@ -33,6 +33,7 @@ class GenericDatum;
 namespace DB
 {
 struct StorageID;
+struct FormatSettings;
 struct IcebergNameMapping;
 }
 
@@ -43,6 +44,10 @@ class ICatalog;
 
 namespace DB::Iceberg
 {
+
+/// The Iceberg timestamps are UTC instants: the reference implementation reads and writes ORC with `useUTCTimestamp`,
+/// so the ORC time zones of the query do not apply.
+void useUTCForORCTimestamps(FormatSettings & settings);
 
 void writeMessageToFile(
     const String & data,
@@ -84,6 +89,13 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// Removes the metadata file written by `writeMetadataFileAndVersionHint` after the catalog definitively rejected
+/// the commit pointing to it, so that the next attempt, which takes the version from the catalog, can reuse its name.
+void removeRejectedMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    DB::ObjectStoragePtr object_storage);
+
 struct TransformAndArgument
 {
     String transform_name;
@@ -97,6 +109,7 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
+/// The metadata file of the table, checked with validateTableMetadata and IcebergSchemaProcessor::checkTableSchemas.
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -114,7 +127,11 @@ String readMetadataJSONString(
     LoggerPtr log,
     CompressionMethod compression_method);
 
-Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str);
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str, const String & metadata_file_path);
+
+/// Throws ICEBERG_SPECIFICATION_VIOLATION if the metadata file lacks a field that the Iceberg spec requires for its format version,
+/// or has a field of the wrong type.
+void validateTableMetadata(const Poco::JSON::Object & metadata, const String & metadata_file_path);
 
 /// The table property `schema.name-mapping.default` of the metadata, or nullptr when it is absent.
 std::shared_ptr<const IcebergNameMapping> getNameMapping(const Poco::JSON::Object::Ptr & metadata_object);
@@ -128,6 +145,8 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+bool isIcebergVariantType(const DataTypePtr & type);
+void checkIcebergTypeSupportedByFormatVersion(const Poco::Dynamic::Var & type, Int64 format_version, const String & column_name);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
@@ -138,6 +157,11 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ASTPtr order_by,
     ContextPtr context,
     UInt64 format_version = 2);
+
+/// Adds the metadata compression codec from the settings to the table properties.
+/// A catalog that writes the first metadata file reads the codec from there.
+/// Returns the compression method.
+CompressionMethod setMetadataCompressionCodecProperty(Poco::JSON::Object::Ptr metadata_object, const ContextPtr & context);
 
 /// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
 void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
@@ -160,7 +184,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     bool force_fetch_latest_metadata = true,
     bool ignore_metadata_pointer_overrides = false);
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
+struct CatalogMetadataFilePath
+{
+    /// Exactly as the catalog returned it, for a commit to check that the catalog still points to it.
+    String location;
+    /// `location` relative to the table location, for reading the file.
+    String path;
+};
+
+CatalogMetadataFilePath getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
 
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
@@ -194,9 +226,14 @@ enum class FileCategory : uint8_t
 
 FileCategory inspectFileCategory(const String & relative_path);
 
+/// The fields of the table's default sort order; null if it has none.
+Poco::JSON::Array::Ptr getDefaultSortOrderFields(const Poco::JSON::Object::Ptr & metadata_object);
+
+/// If `sort_description` is set, it receives the order over the key columns `sortBlockByKeyDescription` appends, NULLs placed per `null-order`.
 KeyDescription getSortingKeyDescriptionFromMetadata(
-    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
-void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context, SortDescription * sort_description = nullptr);
+/// Sorts the block by the key `sort_description`, appending computed key columns under names no block column has; `result_sort_description` is pointed at the sort columns.
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, SortDescription & result_sort_description, ContextPtr context);
 
 void forEachAvroEntry(
     const String & filename,

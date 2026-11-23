@@ -1,16 +1,12 @@
 -- Tags: distributed, no-replicated-database
 -- Tag no-replicated-database: ON CLUSTER is not allowed
 
--- The oldest DDL entry format carries no settings, so a legacy `toTime` in a standalone
--- UPDATE / DELETE must be canonicalized before the query text is enqueued: the replaying
--- host would otherwise resolve it with its own default.
+-- A legacy `toTime` in a standalone UPDATE / DELETE ON CLUSTER resolves as in the session.
 
 SET distributed_ddl_output_mode = 'none';
-SET distributed_ddl_entry_format_version = 1;
 SET use_legacy_to_time = 1;
 SET enable_lightweight_update = 1;
--- The synchronous lowering: with entry format 1 the worker does not receive `mutations_sync`
--- either, so an `ALTER`-lowered delete would race the count below.
+-- The synchronous lowering, so that the count below sees the delete.
 SET lightweight_delete_mode = 'lightweight_update_force';
 
 DROP TABLE IF EXISTS t_totime_lwu;
