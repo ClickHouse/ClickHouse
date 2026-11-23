@@ -725,10 +725,10 @@ private:
     bool finalized = false;
 };
 
-class RowCollector
+class RowFilter
 {
 public:
-    __host__ RowCollector(GPUSpan<GPUElementType> values_, cuda::stream_ref stream_)
+    __host__ RowFilter(GPUSpan<GPUElementType> values_, cuda::stream_ref stream_)
         : values(values_.begin(), values_.end())
         , stream(stream_)
         , filter_mask(0, stream_)
@@ -737,74 +737,41 @@ public:
     {
     }
 
-    __host__ void addBatch(GPUSpan<DeviceColumnView> batch_values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
+    __host__ size_t filter(GPUSpan<DeviceColumnView> batch_values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
     {
         if (batch_values.size() != values.size())
-            throwGPUError(("a batch of " + std::to_string(batch_values.size()) + " columns to collect, expected " + std::to_string(values.size())).c_str());
+            throwGPUError(("a batch of " + std::to_string(batch_values.size()) + " columns to filter, expected " + std::to_string(values.size())).c_str());
 
+        kept.reset();
+        whole.clear();
+        for (const DeviceColumnView & column : batch_values)
+            whole.push_back(column);
         const size_t rows = batch_values[0].rows();
-        if (rows == 0)
-            return;
+        if (rows == 0 || !filter)
+            return rows;
 
+        const std::vector<GPUExpressionInput> inputs = inputsOf(*filter, filter_columns, rows);
+        const DeviceBitmask mask = evaluateMask(*filter, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, filter_mask, stream);
+        const cudf::size_type left_out = leftOutBy(mask, stream);
+        if (left_out == 0)
+            return rows;
+
+        whole.clear();
+        if (static_cast<size_t>(left_out) == rows)
+            return 0;
         std::vector<cudf::column_view> columns;
         appendColumns(columns, batch_values, values, rows);
-        const cudf::table_view batch(columns);
-
-        if (filter)
-        {
-            const std::vector<GPUExpressionInput> inputs = inputsOf(*filter, filter_columns, rows);
-            const DeviceBitmask kept = evaluateMask(
-                *filter, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, filter_mask, stream);
-            const cudf::size_type left_out = leftOutBy(kept, stream);
-            if (static_cast<size_t>(left_out) == rows)
-                return;
-            if (left_out != 0)
-            {
-                collected.push_back(keptRows(batch, kept, left_out, all_true, stream));
-                return;
-            }
-        }
-
-        /// A copy, as the batch's columns are freed once it is added.
-        collected.push_back(guarded("keeping " + std::to_string(rows) + " rows", [&] { return std::make_unique<cudf::table>(batch, stream); }));
-    }
-
-    __host__ size_t collectedRows() const
-    {
-        size_t rows = 0;
-        for (const auto & table : collected)
-            rows += static_cast<size_t>(table->num_rows());
-        return rows;
-    }
-
-    __host__ size_t take()
-    {
-        taken.reset();
-        if (collected.size() == 1)
-        {
-            taken = std::move(collected.front());
-        }
-        else if (!collected.empty())
-        {
-            std::vector<cudf::table_view> views;
-            views.reserve(collected.size());
-            for (const auto & table : collected)
-                views.push_back(table->view());
-            taken = guarded("concatenating " + std::to_string(views.size()) + " batches of collected rows", [&]
-            {
-                return cudf::concatenate(views, stream);
-            });
-        }
-        /// Freed in the order of the stream, after the concatenation has read them.
-        collected.clear();
-        return taken ? static_cast<size_t>(taken->num_rows()) : 0;
+        kept = keptRows(cudf::table_view(columns), mask, left_out, all_true, stream);
+        return static_cast<size_t>(kept->num_rows());
     }
 
     __host__ DeviceColumnView value(size_t index) const
     {
         if (index >= values.size())
-            throwGPUError(("column " + std::to_string(index) + " of " + std::to_string(values.size()) + " collected").c_str());
-        return viewOf(taken.get(), index, values[index], widened_offsets[index], stream);
+            throwGPUError(("column " + std::to_string(index) + " of " + std::to_string(values.size()) + " filtered").c_str());
+        if (!whole.empty())
+            return whole[index];
+        return viewOf(kept.get(), index, values[index], widened_offsets[index], stream);
     }
 
 private:
@@ -812,8 +779,9 @@ private:
     const cuda::stream_ref stream;
     rmm::device_buffer filter_mask;
     rmm::device_buffer all_true;
-    std::vector<std::unique_ptr<cudf::table>> collected;
-    std::unique_ptr<cudf::table> taken;
+    /// The columns of the batch, where the filter keeps all of its rows; else the rows it keeps.
+    std::vector<DeviceColumnView> whole;
+    std::unique_ptr<cudf::table> kept;
     mutable std::vector<std::unique_ptr<cudf::column>> widened_offsets;
 };
 
@@ -882,38 +850,28 @@ __host__ DeviceColumnView CudfGroupBy::value(size_t index) const
     return guarded("viewing an aggregate of a `GROUP BY`", [&] { return impl->value(index); });
 }
 
-__host__ CudfRowCollector::CudfRowCollector(GPUSpan<GPUElementType> values, cuda::stream_ref stream)
+__host__ CudfRowFilter::CudfRowFilter(GPUSpan<GPUElementType> values, cuda::stream_ref stream)
 {
     if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
-        throwGPUError("a collection of rows on the device's default stream");
+        throwGPUError("a filter of rows on the device's default stream");
     if (values.empty())
-        throwGPUError("a collection of rows of no columns");
-    impl = guarded("making a collection of rows", [&] { return new cudf_group_by::RowCollector(values, stream); });
+        throwGPUError("a filter of rows of no columns");
+    impl = guarded("making a filter of rows", [&] { return new cudf_group_by::RowFilter(values, stream); });
 }
 
-__host__ CudfRowCollector::~CudfRowCollector()
+__host__ CudfRowFilter::~CudfRowFilter()
 {
     delete impl;
 }
 
-__host__ void CudfRowCollector::addBatch(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
+__host__ size_t CudfRowFilter::filter(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression * filter)
 {
-    guarded("collecting the rows of a batch", [&] { impl->addBatch(values, filter_columns, filter); });
+    return guarded("filtering the rows of a batch", [&] { return impl->filter(values, filter_columns, filter); });
 }
 
-__host__ size_t CudfRowCollector::collectedRows() const
+__host__ DeviceColumnView CudfRowFilter::value(size_t index) const
 {
-    return guarded("counting the collected rows", [&] { return impl->collectedRows(); });
-}
-
-__host__ size_t CudfRowCollector::take()
-{
-    return guarded("taking the collected rows", [&] { return impl->take(); });
-}
-
-__host__ DeviceColumnView CudfRowCollector::value(size_t index) const
-{
-    return guarded("viewing a column of the collected rows", [&] { return impl->value(index); });
+    return guarded("viewing a column of the filtered rows", [&] { return impl->value(index); });
 }
 
 }

@@ -791,8 +791,8 @@ GPUGroupingLane::GPUGroupingLane(
     if (aggregates.empty())
     {
         if (!computed.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows collected on the GPU with computed arguments");
-        collector = std::make_unique<CudfRowCollector>(values, stream());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows filtered on the GPU with computed arguments");
+        row_filter = std::make_unique<CudfRowFilter>(values, stream());
         return;
     }
 
@@ -809,19 +809,13 @@ GPUGroupingLane::GPUGroupingLane(
 CudfGroupBy & GPUGroupingLane::groupByOrThrow() const
 {
     if (!group_by)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU lane that collects rows");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The groups of a GPU lane that filters rows");
     return *group_by;
-}
-
-CudfRowCollector & GPUGroupingLane::collectorOrThrow() const
-{
-    if (!collector)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The collected rows of a GPU lane that groups them");
-    return *collector;
 }
 
 void GPUGroupingLane::add(GPUDeviceBatch batch)
 {
+    CudfGroupBy & groups = groupByOrThrow();
     batch.moveTo(stream());
     const std::vector<DeviceColumnView> key_columns = batch.keys();
     const std::vector<DeviceColumnView> value_columns = batch.values();
@@ -843,12 +837,10 @@ void GPUGroupingLane::add(GPUDeviceBatch batch)
     const GPUExpression * const filter = where ? &where->expression : nullptr;
 
     Stopwatch watch;
-    if (collector)
-        collector->addBatch(value_columns, filter_columns, filter);
-    else if (computed.empty())
-        group_by->addBatch(key_columns, value_columns, filter_columns, filter);
+    if (computed.empty())
+        groups.addBatch(key_columns, value_columns, filter_columns, filter);
     else
-        group_by->addBatch(key_columns, withComputedArguments(value_columns, rows), filter_columns, filter);
+        groups.addBatch(key_columns, withComputedArguments(value_columns, rows), filter_columns, filter);
 
     ProfileEvents::increment(ProfileEvents::GPUAggregationRows, rows);
     ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
@@ -875,39 +867,45 @@ std::vector<DeviceColumnView> GPUGroupingLane::withComputedArguments(const std::
     return all_values;
 }
 
-size_t GPUGroupingLane::collectedRows() const
+MutableColumns GPUGroupingLane::filterRows(GPUDeviceBatch batch, const DataTypes & types)
 {
-    return collectorOrThrow().collectedRows();
-}
-
-MutableColumns GPUGroupingLane::takeCollected(const DataTypes & types)
-{
-    CudfRowCollector & rows_collector = collectorOrThrow();
+    if (!row_filter)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows filtered by a GPU lane that groups them");
     if (types.size() != values.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} types of {} columns collected on the GPU", types.size(), values.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} types of {} columns filtered on the GPU", types.size(), values.size());
+
+    batch.moveTo(stream());
+    const std::vector<DeviceColumnView> value_columns = batch.values();
+    const std::vector<DeviceFixedColumn> filter_columns = batch.filterColumns();
+    const size_t num_where_columns = where ? where->columns.size() : 0;
+    if (value_columns.size() != values.size() || filter_columns.size() != num_where_columns)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "A GPU batch of {} values and {} filter columns for a lane of {} and {}",
+            value_columns.size(),
+            filter_columns.size(),
+            values.size(),
+            num_where_columns);
 
     Stopwatch watch;
     MutableColumns columns;
-    const size_t rows = rows_collector.take();
-    if (rows == 0)
-        return columns;
-
-    std::vector<DeviceColumnView> from;
-    std::vector<IColumn *> to;
-    columns.reserve(types.size());
-    from.reserve(types.size());
-    to.reserve(types.size());
-    for (size_t i = 0; i < types.size(); ++i)
+    const size_t rows = row_filter->filter(value_columns, filter_columns, where ? &where->expression : nullptr);
+    if (rows != 0)
     {
-        const DeviceColumnView value = rows_collector.value(i);
-        if (value.rows() != rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of column {} of {} collected", value.rows(), i, rows);
-        columns.push_back(types[i]->createColumn());
-        from.push_back(value);
-        to.push_back(columns.back().get());
+        std::vector<DeviceColumnView> from;
+        std::vector<IColumn *> to;
+        columns.reserve(types.size());
+        for (size_t i = 0; i < types.size(); ++i)
+        {
+            from.push_back(row_filter->value(i));
+            columns.push_back(types[i]->createColumn());
+            to.push_back(columns.back().get());
+        }
+        copyDeviceToHost(from, to, stream());
     }
 
-    copyDeviceToHost(from, to, stream());
+    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, batch.rows());
+    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
     return columns;
 }

@@ -231,9 +231,9 @@ public:
 
     void add(GPUDeviceBatch batch);
 
-    size_t collectedRows() const;
-
-    MutableColumns takeCollected(const DataTypes & types);
+    /// Without aggregates: the rows of the batch that the `WHERE` keeps, on the host as columns of `types`, none if it
+    /// keeps none.
+    MutableColumns filterRows(GPUDeviceBatch batch, const DataTypes & types);
 
     /// Only for a lane that took no batch; `other` must take no more batches.
     void absorbPart(const GPUGroupingLane & other, size_t part);
@@ -248,7 +248,6 @@ public:
 private:
     CudfGroupBy & groupByOrThrow() const;
     std::vector<DeviceColumnView> withComputedArguments(const std::vector<DeviceColumnView> & value_columns, size_t rows);
-    CudfRowCollector & collectorOrThrow() const;
 
     const std::vector<GPUElementType> keys;
     const std::vector<GPUElementType> values;
@@ -261,7 +260,7 @@ private:
     /// After `lane_stream`, in whose order they are freed.
     std::vector<DeviceBuffer> computed_values;
     std::unique_ptr<CudfGroupBy> group_by;
-    std::unique_ptr<CudfRowCollector> collector;
+    std::unique_ptr<CudfRowFilter> row_filter;
 
     std::optional<size_t> num_groups;
 };

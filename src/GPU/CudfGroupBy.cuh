@@ -13,7 +13,7 @@ namespace DB::GPU
 namespace cudf_group_by
 {
 class GroupBy;
-class RowCollector;
+class RowFilter;
 }
 
 /// A device `GROUP BY` split by a hash of the keys into parts; of plain types, as both ClickHouse and the cuDF island include it.
@@ -53,27 +53,24 @@ private:
     cudf_group_by::GroupBy * impl = nullptr;
 };
 
-/// Collects the rows of a batch that its `WHERE` keeps, as they are, rather than grouping them.
-class CudfRowCollector
+/// The rows of a batch that its `WHERE` keeps, rather than groups of them.
+class CudfRowFilter
 {
 public:
-    __host__ CudfRowCollector(GPUSpan<GPUElementType> values, cuda::stream_ref stream);
-    __host__ ~CudfRowCollector();
+    __host__ CudfRowFilter(GPUSpan<GPUElementType> values, cuda::stream_ref stream);
+    __host__ ~CudfRowFilter();
 
-    CudfRowCollector(const CudfRowCollector &) = delete;
-    CudfRowCollector & operator=(const CudfRowCollector &) = delete;
+    CudfRowFilter(const CudfRowFilter &) = delete;
+    CudfRowFilter & operator=(const CudfRowFilter &) = delete;
 
-    __host__ void addBatch(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns = {}, const GPUExpression * filter = nullptr);
-
-    __host__ size_t collectedRows() const;
-
-    /// The rows collected so far, which `value` views until the next call.
-    __host__ size_t take();
+    /// Returns how many rows `filter` keeps, which `value` views until the next call: the columns of the batch themselves
+    /// if it keeps them all, which must stay alive until then.
+    __host__ size_t filter(GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns = {}, const GPUExpression * filter = nullptr);
 
     __host__ DeviceColumnView value(size_t index) const;
 
 private:
-    cudf_group_by::RowCollector * impl = nullptr;
+    cudf_group_by::RowFilter * impl = nullptr;
 };
 
 }
