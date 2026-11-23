@@ -741,7 +741,9 @@ static Coordination::Error preprocess(
 
     KeeperNodeStats new_parent_stats = parent_node->stats;
 
-    Coordination::Error error = Coordination::Error::ZNOTEMPTY;
+    /// Replicas visit the subtree in different orders, so do not stop at the first node without Delete permission:
+    /// the result may depend only on the subtree size and the set of its nodes.
+    bool has_node_without_delete_permission = false;
     std::deque<std::pair<std::string, typename Storage::UncommittedNodeRef>> nodes_to_remove;
     bool visited_all = storage.nodes.visitUncommittedRecursive(zk_request.path, zk_request.remove_nodes_limit,
             [&](std::string_view path, typename Storage::UncommittedNodeRef && uncommitted_ref)
@@ -752,16 +754,17 @@ static Coordination::Error preprocess(
                 ///  to defer these calls until after unlocking the mutex.)
 
                 if (check_acl && !storage.checkACL(uncommitted_ref.get()->stats.acl_id, Coordination::ACL::Delete, session_id, /*committed=*/false))
-                {
-                    error = Coordination::Error::ZNOAUTH;
-                    return false;
-                }
-                nodes_to_remove.emplace_back(std::string{path}, std::move(uncommitted_ref));
+                    has_node_without_delete_permission = true;
+                else
+                    nodes_to_remove.emplace_back(std::string{path}, std::move(uncommitted_ref));
                 return true;
             });
 
     if (!visited_all)
-        return error;
+        return Coordination::Error::ZNOTEMPTY;
+
+    if (has_node_without_delete_permission)
+        return Coordination::Error::ZNOAUTH;
 
     if (nodes_to_remove.empty())
         /// The node doesn't exist. Don't update parent.
