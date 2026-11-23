@@ -66,11 +66,4 @@ private:
     AggregateDescriptions aggregates;
 };
 
-/// the context for the analysis of the query of a projection: the settings of the session do not change the meaning of the query
-ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context);
-
-/// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
-/// With `only_analyze` a scalar subquery is not calculated, it gets a default value.
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze = true);
-
 }

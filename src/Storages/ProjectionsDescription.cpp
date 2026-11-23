@@ -16,22 +16,19 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
-#include <Analyzer/Utils.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Planner/PlannerProjection.h>
+#include <Planner/PlannerProjectionAnalysis.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -223,88 +220,6 @@ private:
 StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, VirtualColumnsDescription virtuals)
 {
     return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals));
-}
-
-bool hasSubquery(const ASTPtr & ast)
-{
-    if (ast->as<ASTSubquery>())
-        return true;
-
-    for (const auto & child : ast->children)
-        if (child && hasSubquery(child))
-            return true;
-
-    return false;
-}
-
-using ScalarSubqueryValues = std::unordered_map<const IAST *, ASTPtr>;
-
-void collectScalarSubqueryValues(const QueryTreeNodePtr & node, ScalarSubqueryValues & values)
-{
-    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
-    {
-        const auto & source_expression = constant_node->getSourceExpression();
-        if (isQueryOrUnionNode(source_expression))
-        {
-            if (!source_expression->hasOriginalAST())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Scalar subquery {} of a projection has no original AST", source_expression->formatASTForErrorMessage());
-
-            /// the cast keeps the type of the value
-            values.emplace(
-                source_expression->getOriginalAST().get(),
-                makeASTFunction(
-                    "_CAST",
-                    make_intrusive<ASTLiteral>(constant_node->getValue()),
-                    make_intrusive<ASTLiteral>(constant_node->getResultType()->getName())));
-            return;
-        }
-
-        collectScalarSubqueryValues(source_expression, values);
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectScalarSubqueryValues(child, values);
-}
-
-/// The analysis makes the tree from a copy of the query, so `analyzed_ast` is that copy: it has the structure of `ast`.
-size_t replaceScalarSubqueries(const ASTPtr & ast, const ASTPtr & analyzed_ast, const ScalarSubqueryValues & values)
-{
-    if (ast->children.size() != analyzed_ast->children.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The analysis changed the structure of the query of a projection: {}", ast->formatForErrorMessage());
-
-    size_t replaced = 0;
-    for (size_t i = 0; i < ast->children.size(); ++i)
-    {
-        auto & child = ast->children[i];
-        if (!child)
-            continue;
-
-        if (auto it = values.find(analyzed_ast->children[i].get()); it != values.end())
-        {
-            it->second->setAlias(child->tryGetAlias());
-            child = it->second;
-            ++replaced;
-        }
-        else
-            replaced += replaceScalarSubqueries(child, analyzed_ast->children[i], values);
-    }
-
-    return replaced;
-}
-
-/// A scalar subquery is calculated one time, and the stored query keeps its value.
-void storeValuesOfScalarSubqueries(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
-{
-    if (!hasSubquery(query_ast))
-        return;
-
-    auto query_tree = buildProjectionQueryTree(query_ast, source, createProjectionAnalysisContext(query_ast, context), /*only_analyze=*/false);
-    ScalarSubqueryValues values;
-    collectScalarSubqueryValues(query_tree, values);
-
-    if (replaceScalarSubqueries(query_ast, query_tree->getOriginalAST(), values) != values.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A scalar subquery of a projection is not in the query {}", query_ast->formatForErrorMessage());
 }
 
 /// The parts store the columns of the table in the order of the table.
