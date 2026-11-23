@@ -356,3 +356,28 @@ TEST(SIEVECache, RemoveLastEntryUnderHand)
     assertQueue(sieve_cache_policy.dumpQueue(), {5});
     ASSERT_EQ(sieve_cache_policy.getHand().value(), 5);
 }
+
+TEST(SIEVECache, containsValue)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    using Flags = DB::VectorWithMemoryTracking<bool>;
+    auto cache = SimpleCacheBase("SIEVE", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 2, /*max_count*/ 0, /*size_ratio*/ 0.5);
+
+    const auto value = std::make_shared<int>(1);
+    const auto other = std::make_shared<int>(1);
+
+    cache.set(1, value);
+    EXPECT_EQ(cache.containsMany({1, 1, 2}, {value.get(), other.get(), value.get()}), Flags({true, false, false}));
+
+    /// The same key with another value.
+    cache.remove(1);
+    EXPECT_EQ(cache.containsMany({1}, {value.get()}), Flags({false}));
+    cache.set(1, other);
+    EXPECT_EQ(cache.containsMany({1, 1, 2}, {value.get(), other.get(), value.get()}), Flags({false, true, false}));
+
+    /// This is not an access.
+    cache.set(2, value);
+    cache.set(3, value);
+    EXPECT_FALSE(cache.contains(1));
+    EXPECT_TRUE(cache.contains(2));
+}

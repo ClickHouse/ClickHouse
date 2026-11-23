@@ -725,14 +725,57 @@ void MemoryTracker::settleDriftOnQueryEnd()
 }
 
 
+static void checkLimitBeforeMove(const MemoryTracker & tracker, Int64 size)
+{
+    Int64 limit = tracker.getHardLimit();
+    Int64 will_be = tracker.get() + size;
+    if (limit && will_be > limit)
+    {
+        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+        const auto * description = tracker.getDescription();
+        throw DB::Exception(
+            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+            "{}{}exceeded: would use {} (attempt to move {} already allocated), maximum: {}",
+            description ? description : "",
+            description ? " memory limit " : "Memory limit ",
+            ReadableSize(will_be),
+            ReadableSize(size),
+            ReadableSize(limit));
+    }
+}
+
+
+void MemoryTracker::takeOverFromServer(Int64 size)
+{
+    auto for_each_tracker = [&](auto && function)
+    {
+        for (auto * tracker = this; tracker && tracker->level != VariableContext::Global; tracker = tracker->getParent())
+        {
+            if (tracker->level != VariableContext::Thread)
+                function(*tracker);
+        }
+    };
+
+    /// All limits are checked before anything changes, so there is nothing to roll back. Concurrent calls can exceed a limit
+    /// together, but they allocate nothing, and the next allocation with a check fails.
+    for_each_tracker([&](MemoryTracker & tracker) { checkLimitBeforeMove(tracker, size); });
+    for_each_tracker([&](MemoryTracker & tracker) { tracker.adjustLocally(-size); });
+}
+
+
 void MemoryTracker::handOverToServer(Int64 size)
 {
     for (auto * tracker = this; size > 0 && tracker && tracker->level != VariableContext::Global;
          tracker = tracker->parent.load(std::memory_order_relaxed))
     {
         /// A thread's tracker counts what the thread allocated, not what the query holds.
-        if (tracker->level != VariableContext::Thread)
-            size = tracker->adjustLocally(size);
+        if (tracker->level == VariableContext::Thread)
+            continue;
+
+        /// As in `free`: a nested tracker holds less if it freed memory of the query above it, which still holds all of `size`.
+        Int64 removed = tracker->adjustLocally(size);
+        if (auto * next = tracker->getParent(); next && next->level == VariableContext::User)
+            size = removed;
     }
 }
 
@@ -812,22 +855,7 @@ void MemoryTracker::reparent(MemoryTracker * new_parent)
 
     /// Moving is not an allocation, so check the limits here, before anything changes.
     for (const auto * tracker = new_parent; size > 0 && tracker && tracker != common; tracker = tracker->parent.load(std::memory_order_relaxed))
-    {
-        Int64 limit = tracker->hard_limit.load(std::memory_order_relaxed);
-        Int64 will_be = tracker->amount.load(std::memory_order_relaxed) + size;
-        if (limit && will_be > limit)
-        {
-            const auto * description = tracker->description_ptr.load(std::memory_order_relaxed);
-            throw DB::Exception(
-                DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                "{}{}exceeded: would use {} (attempt to move {} already allocated), maximum: {}",
-                description ? description : "",
-                description ? " memory limit " : "Memory limit ",
-                ReadableSize(will_be),
-                ReadableSize(size),
-                ReadableSize(limit));
-        }
-    }
+        checkLimitBeforeMove(*tracker, size);
 
     setParent(new_parent);
 

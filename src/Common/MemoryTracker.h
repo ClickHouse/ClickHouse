@@ -234,9 +234,13 @@ public:
 
     /// `size` bytes charged to this tracker now belong to the server, which goes on holding them (e.g. an
     /// entry of a cache): take them off this tracker and its parents up to the global one, which keeps them.
-    /// Each takes at most what its child gave up, so a tracker that holds less does not go below zero.
+    /// A tracker that holds less does not go below zero, and a user gives up at most what its query gave up.
     /// The release has to be server-owned as well, under `MemoryTrackerBlockerInThread`.
     void handOverToServer(Int64 size);
+
+    /// The opposite of `handOverToServer`: charges `size` bytes that the server already holds to this tracker and its
+    /// parents up to the global one, which is not changed or checked. Their hard limits are checked first, without overcommit.
+    void takeOverFromServer(Int64 size);
 
     /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
     /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.

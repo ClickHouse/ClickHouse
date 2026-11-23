@@ -6,6 +6,10 @@
 #include <base/sort.h>
 
 #include <Core/Field.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -13,8 +17,10 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
@@ -23,14 +29,19 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
 
 #include <algorithm>
+#include <array>
 #include <list>
+#include <numeric>
 #include <ranges>
 
 #include <boost/functional/hash.hpp>
+#include <boost/noncopyable.hpp>
 
 #include <fmt/ranges.h>
 
@@ -54,6 +65,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+namespace FailPoints
+{
+    extern const char parts_splitter_pause_before_index[];
 }
 
 /** We rely that FieldVisitorAccurateLess will have strict weak ordering for any Field values including
@@ -177,33 +193,149 @@ void checkPartRangeMatchesKeyOrder(
         range.end);
 }
 
-/// Adaptor to access PK values from index.
-class IndexAccess
+/// Accounts memory that the server already holds as memory usage of the query and of the user.
+class QueryMemoryCharge : private boost::noncopyable
 {
 public:
-    explicit IndexAccess(const RangesInDataParts & parts_, size_t max_columns_in_index = std::numeric_limits<size_t>::max())
-        : parts(parts_), loaded_columns(max_columns_in_index)
+    explicit QueryMemoryCharge(Int64 size_) : size(size_)
     {
-        /// Indices might be reloaded during the process and the reload might produce a different value
-        /// (change in `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). Also, some suffix of index
-        /// columns might not be loaded (same setting) so we keep a reference to the current indices and
-        /// track the minimal subset of loaded columns across all parts.
-        indices.reserve(parts.size());
-        for (const auto & part : parts)
-            indices.push_back(part.data_part->getIndex());
-
-        for (const auto & index : indices)
-            loaded_columns = std::min(loaded_columns, index->size());
+        if (group)
+            group->memory_tracker.takeOverFromServer(size);
     }
 
-    [[nodiscard]] Values getValue(size_t part_idx, size_t mark) const
+    ~QueryMemoryCharge()
     {
-        const auto & index = indices[part_idx];
-        chassert(index->size() >= loaded_columns);
-        Values values(loaded_columns);
-        for (size_t i = 0; i < loaded_columns; ++i)
+        if (group)
+            group->memory_tracker.handOverToServer(size);
+    }
+
+private:
+    /// With the memory tracker blocked (for example, while a `Buffer` table is flushed), a copy is not charged either.
+    const ThreadGroupPtr group = MemoryTrackerBlockerInThread::isBlocked(VariableContext::Process) ? nullptr : CurrentThread::getGroup();
+    const Int64 size;
+};
+
+/// The parts with the index in the cache go first, because loading of the other indexes can evict it.
+VectorWithMemoryTracking<size_t> getOrderToLoadIndexes(const RangesInDataParts & parts)
+{
+    VectorWithMemoryTracking<size_t> order(parts.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::ranges::stable_partition(order, [&](size_t part_index)
+    {
+        const auto & part = *parts[part_index].data_part;
+        auto cache = part.storage.getPrimaryIndexCache();
+        return cache && cache->contains(part.getIndexCacheKey());
+    });
+    return order;
+}
+
+/// Adaptor to access PK values from the index of one part.
+class PartIndexAccess
+{
+public:
+    /// An index that only the query holds is not accounted as its memory usage, so this must not be done for many parts at the same
+    /// time without `copyRanges`.
+    explicit PartIndexAccess(const IMergeTreeDataPart & part)
+    {
+        /// The index can be loaded from a disk, and a query can do this for many parts.
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto query_status = query_context->getProcessListElementSafe())
+                query_status->checkTimeLimit();
+
+        FailPointInjection::pauseFailPoint(FailPoints::parts_splitter_pause_before_index);
+        index = part.getIndex();
+    }
+
+    [[nodiscard]] bool isCopy() const { return is_copy; }
+
+    [[nodiscard]] const IMergeTreeDataPart::IndexPtr & getIndex() const { return index; }
+
+    /// Replaces the index with a copy of the values for the marks of the ranges, which is accounted as memory usage of the query.
+    void copyRanges(const MarkRanges & ranges, size_t max_columns)
+    {
+        chassert(!is_copy);
+        is_copy = true;
+
+        if (index->empty())
+            return;
+
+        const size_t index_rows = index->front()->size();
+
+        /// The begins of the granules, and the end of the last one unless this is the end of a part without the final mark.
+        auto get_rows = [&](const MarkRange & range) { return std::min(range.end + 1, index_rows) - range.begin; };
+
+        size_t rows = 0;
+        for (const auto & range : ranges)
+            rows += get_rows(range);
+
+        /// A copy of almost all values saves nothing, while the index itself can be shared with other queries. Account it as a copy.
+        if (rows * 8 >= index_rows * 7 && max_columns >= index->size())
         {
-            index->at(i)->get(mark, values[i]);
+            charge.emplace(PrimaryIndexWeightFunction{}(*index));
+            return;
+        }
+
+        has_all_values = rows >= index_rows;
+        if (!has_all_values)
+        {
+            size_t row = 0;
+            copied_ranges.reserve(ranges.size());
+            for (const auto & range : ranges)
+            {
+                chassert(copied_ranges.empty() || copied_ranges.back().marks.end <= range.begin);
+                copied_ranges.push_back({range, row});
+                row += get_rows(range);
+            }
+        }
+
+        Columns copy;
+        for (const auto & column : *index)
+        {
+            if (copy.size() == max_columns)
+                break;
+
+            if (has_all_values)
+            {
+                copy.push_back(column->cloneResized(index_rows));
+                continue;
+            }
+
+            auto column_copy = column->cloneEmpty();
+            column_copy->reserve(rows);
+            for (const auto & range : ranges)
+                column_copy->insertRangeFrom(*column, range.begin, get_rows(range));
+            column_copy->shrinkToFit();
+            copy.push_back(std::move(column_copy));
+        }
+        index = std::make_shared<const Columns>(std::move(copy));
+    }
+
+    /// Some suffix of index columns might not be loaded, see `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`.
+    [[nodiscard]] size_t getColumns() const { return index->size(); }
+
+    /// Returns true if there are values for the marks of the ranges.
+    [[nodiscard]] bool hasRanges(const MarkRanges & ranges_to_check) const
+    {
+        if (has_all_values)
+            return true;
+
+        return std::ranges::all_of(
+            ranges_to_check,
+            [&](const MarkRange & range)
+            {
+                const auto * copied = findRange(range.begin);
+                return copied && range.end <= copied->marks.end;
+            });
+    }
+
+    [[nodiscard]] Values getValue(size_t mark, size_t columns) const
+    {
+        chassert(index->size() >= columns);
+        const size_t row = getRow(mark);
+        Values values(columns);
+        for (size_t i = 0; i < columns; ++i)
+        {
+            index->at(i)->get(row, values[i]);
             if (values[i].isNull())
                 values[i] = POSITIVE_INFINITY;
         }
@@ -211,7 +343,7 @@ public:
     }
 
     [[nodiscard]] std::optional<size_t> findRightmostMarkLessThanValueInRange(
-        size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
+        const Values & value, size_t range_begin, size_t range_end, size_t columns, bool in_reverse_order) const
     {
         size_t left = range_begin;
         size_t right = range_end;
@@ -219,7 +351,7 @@ public:
         while (left < right)
         {
             size_t middle = left + (right - left) / 2;
-            int compare_result = compareValues(getValue(part_index, middle), value, in_reverse_order);
+            int compare_result = compareValues(getValue(middle, columns), value, in_reverse_order);
             if (compare_result != -1)
                 right = middle;
             else
@@ -232,14 +364,8 @@ public:
         return right - 1;
     }
 
-    [[nodiscard]] std::optional<size_t>
-    findRightmostMarkLessThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
-    {
-        return findRightmostMarkLessThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
-    }
-
     [[nodiscard]] std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
-        size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
+        const Values & value, size_t range_begin, size_t range_end, size_t columns, bool in_reverse_order) const
     {
         size_t left = range_begin;
         size_t right = range_end;
@@ -247,7 +373,7 @@ public:
         while (left < right)
         {
             size_t middle = left + (right - left) / 2;
-            int compare_result = compareValues(getValue(part_index, middle), value, in_reverse_order);
+            int compare_result = compareValues(getValue(middle, columns), value, in_reverse_order);
             if (compare_result != 1)
                 left = middle + 1;
             else
@@ -260,10 +386,127 @@ public:
         return left;
     }
 
-    [[nodiscard]] std::optional<size_t>
-    findLeftmostMarkGreaterThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
+private:
+    struct CopiedRange
     {
-        return findLeftmostMarkGreaterThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
+        MarkRange marks;
+        size_t row;
+    };
+
+    [[nodiscard]] const CopiedRange * findRange(size_t mark) const
+    {
+        auto next = std::ranges::upper_bound(copied_ranges, mark, {}, [](const CopiedRange & range) { return range.marks.begin; });
+        return next == copied_ranges.begin() ? nullptr : &*std::prev(next);
+    }
+
+    [[nodiscard]] size_t getRow(size_t mark) const
+    {
+        if (has_all_values)
+            return mark;
+
+        const auto * range = findRange(mark);
+        chassert(range && mark <= range->marks.end);
+        return range->row + mark - range->marks.begin;
+    }
+
+    IMergeTreeDataPart::IndexPtr index;
+    std::optional<QueryMemoryCharge> charge;
+    bool is_copy = false;
+    bool has_all_values = true;
+    /// Sorted, if there are not all values.
+    VectorWithMemoryTracking<CopiedRange> copied_ranges;
+};
+
+using PartIndexAccessPtr = std::shared_ptr<PartIndexAccess>;
+using PartIndexes = UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, PartIndexAccessPtr>;
+
+/// Adaptor to access PK values for the marks of the ranges of all parts.
+class IndexAccess
+{
+public:
+    /// Takes the indexes from `part_indexes` if they have the needed values, loads the others, and leaves all of them there.
+    explicit IndexAccess(
+        const RangesInDataParts & parts_, PartIndexes & part_indexes, size_t max_columns_in_index = std::numeric_limits<size_t>::max())
+        : parts(parts_), loaded_columns(max_columns_in_index)
+    {
+        /// The primary index cache does not necessarily keep the indexes of all parts, so copy the needed values of those that it does
+        /// not keep any more. After a check, the others are in the cache all at the same time, so they are not larger than the cache.
+        /// Check each time when they have become larger by a quarter, so they do not become much larger than that, and the number of
+        /// checks of one index does not depend on the number of parts on average. What other queries evict after the last check is not
+        /// copied, so a query can hold indexes that are not larger than the cache, but not in it.
+        /// The indexes that their parts keep are counted separately and checked in the same way, because a part can unload its index.
+        /// If it does so after the last check, the index is not accounted until the ranges are calculated.
+        static constexpr size_t min_bytes_between_checks = 16 << 20;
+        VectorWithMemoryTracking<HeldIndex> not_copied;
+        std::array<size_t, 2> not_copied_bytes{};
+        std::array<size_t, 2> checked_bytes{};
+        auto copy_evicted = [&]
+        {
+            for (const auto & evicted : removeEvicted(not_copied))
+            {
+                not_copied_bytes[evicted.was_kept_by_part] -= evicted.bytes;
+                indices[evicted.part_index]->copyRanges(parts[evicted.part_index].ranges, max_columns_in_index);
+            }
+            checked_bytes = not_copied_bytes;
+        };
+
+        indices.resize(parts.size());
+        for (size_t part_index : getOrderToLoadIndexes(parts))
+        {
+            const auto & part = parts[part_index];
+
+            /// A part can be there twice, with different ranges.
+            PartIndexAccessPtr index;
+            if (auto it = part_indexes.find(part.data_part.get()); it != part_indexes.end())
+            {
+                if (it->second->hasRanges(part.ranges))
+                    index = std::move(it->second);
+                part_indexes.erase(it);
+            }
+
+            if (!index)
+                index = std::make_shared<PartIndexAccess>(*part.data_part);
+
+            indices[part_index] = index;
+            if (index->isCopy())
+                continue;
+
+            const bool is_kept = part.data_part->keepsIndex(index->getIndex());
+            not_copied.push_back({part_index, PrimaryIndexWeightFunction{}(*index->getIndex()), is_kept});
+            not_copied_bytes[is_kept] += not_copied.back().bytes;
+            if (not_copied_bytes[is_kept] - checked_bytes[is_kept] > std::max(checked_bytes[is_kept] / 4, min_bytes_between_checks))
+                copy_evicted();
+        }
+        copy_evicted();
+
+        /// Indices might be reloaded during the process and the reload might produce a different value
+        /// (change in `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`). Also, some suffix of index
+        /// columns might not be loaded (same setting) so we keep a reference to the current indices, or a copy of their values, and
+        /// track the minimal subset of loaded columns across all parts.
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            loaded_columns = std::min(loaded_columns, indices[part_index]->getColumns());
+            part_indexes[parts[part_index].data_part.get()] = indices[part_index];
+        }
+    }
+
+    [[nodiscard]] Values getValue(size_t part_idx, size_t mark) const
+    {
+        return indices[part_idx]->getValue(mark, loaded_columns);
+    }
+
+    [[nodiscard]] std::optional<size_t>
+    findRightmostMarkLessThanValueInRange(size_t part_index, const Values & value, MarkRange mark_range, bool in_reverse_order) const
+    {
+        return indices[part_index]->findRightmostMarkLessThanValueInRange(
+            value, mark_range.begin, mark_range.end, loaded_columns, in_reverse_order);
+    }
+
+    [[nodiscard]] std::optional<size_t>
+    findLeftmostMarkGreaterThanValueInRange(size_t part_index, const Values & value, MarkRange mark_range, bool in_reverse_order) const
+    {
+        return indices[part_index]->findLeftmostMarkGreaterThanValueInRange(
+            value, mark_range.begin, mark_range.end, loaded_columns, in_reverse_order);
     }
 
     [[nodiscard]] size_t getMarkRows(size_t part_idx, size_t mark) const
@@ -271,8 +514,52 @@ public:
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
 private:
+    struct HeldIndex
+    {
+        size_t part_index;
+        size_t bytes;
+        bool was_kept_by_part;
+    };
+
+    /// Removes those indexes that neither the part nor the cache keeps, and returns them.
+    /// The settings of a table do not tell that, because they can change while the indexes are loaded.
+    VectorWithMemoryTracking<HeldIndex> removeEvicted(VectorWithMemoryTracking<HeldIndex> & held) const
+    {
+        /// The parts are asked first, because an index can be moved from the part to the cache.
+        const auto not_kept = std::ranges::partition(held, [&](const HeldIndex & index)
+        {
+            return parts[index.part_index].data_part->keepsIndex(indices[index.part_index]->getIndex());
+        });
+        if (not_kept.empty())
+            return {};
+
+        VectorWithMemoryTracking<UInt128> keys;
+        VectorWithMemoryTracking<const PrimaryIndex *> values;
+        keys.reserve(not_kept.size());
+        values.reserve(not_kept.size());
+        for (const auto & index : not_kept)
+        {
+            keys.push_back(parts[index.part_index].data_part->getIndexCacheKey());
+            values.push_back(indices[index.part_index]->getIndex().get());
+        }
+        const auto cache = parts.front().data_part->storage.getContext()->getPrimaryIndexCache();
+        const auto is_cached = cache ? cache->containsMany(keys, values) : VectorWithMemoryTracking<bool>(keys.size());
+
+        VectorWithMemoryTracking<HeldIndex> evicted;
+        auto kept_end = not_kept.begin();
+        for (size_t i = 0; i < is_cached.size(); ++i)
+        {
+            if (is_cached[i])
+                *kept_end++ = not_kept[i];
+            else
+                evicted.push_back(not_kept[i]);
+        }
+        held.erase(kept_end, held.end());
+        return evicted;
+    }
+
     const RangesInDataParts & parts;
-    VectorWithMemoryTracking<IMergeTreeDataPart::IndexPtr> indices;
+    VectorWithMemoryTracking<PartIndexAccessPtr> indices;
     size_t loaded_columns;
 };
 
@@ -443,7 +730,8 @@ String toString(const VectorWithMemoryTracking<PartsRangesIterator> & ranges_ite
     return buffer.str();
 }
 
-SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
+SplitPartsRangesResult splitPartsRangesImpl(
+    RangesInDataParts ranges_in_data_parts, PartIndexes & part_indexes, bool in_reverse_order, const LoggerPtr & logger)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -502,7 +790,7 @@ SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_par
       * 2. If non intersecting range is small, it is better to not add it to non intersecting ranges, to avoid expensive seeks.
       */
 
-    IndexAccess index_access(ranges_in_data_parts);
+    IndexAccess index_access(ranges_in_data_parts, part_indexes);
     VectorWithMemoryTracking<PartsRangesIterator> parts_ranges;
 
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
@@ -729,7 +1017,8 @@ namespace DB
 
 SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
 {
-    return splitPartsRangesImpl(std::move(ranges_in_data_parts), in_reverse_order, logger);
+    PartIndexes part_indexes;
+    return splitPartsRangesImpl(std::move(ranges_in_data_parts), part_indexes, in_reverse_order, logger);
 }
 
 
@@ -738,8 +1027,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
+static SplitPartsByRanges splitIntersectingPartsRangesIntoLayersImpl(
     RangesInDataParts ranges_in_data_parts,
+    PartIndexes & part_indexes,
     size_t max_layers,
     size_t max_columns_in_index,
     bool in_reverse_order,
@@ -753,7 +1043,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
       * We use PartRangeIndex to track currently processing ranges, because after sort, RangeStart event is always placed
       * before Range End event and it is possible to encounter overlapping Range Start events for the same part.
       */
-    IndexAccess index_access(ranges_in_data_parts, max_columns_in_index);
+    IndexAccess index_access(ranges_in_data_parts, part_indexes, max_columns_in_index);
 
     using PartsRangesIteratorWithIndex = std::pair<PartsRangesIterator, PartRangeIndex>;
     std::priority_queue<PartsRangesIteratorWithIndex, VectorWithMemoryTracking<PartsRangesIteratorWithIndex>, std::greater<>> parts_ranges_queue;
@@ -898,6 +1188,18 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
     return {std::move(result_layers), std::move(borders), in_reverse_order};
 }
 
+SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
+    RangesInDataParts ranges_in_data_parts,
+    size_t max_layers,
+    size_t max_columns_in_index,
+    bool in_reverse_order,
+    const LoggerPtr & logger)
+{
+    PartIndexes part_indexes;
+    return splitIntersectingPartsRangesIntoLayersImpl(
+        std::move(ranges_in_data_parts), part_indexes, max_layers, max_columns_in_index, in_reverse_order, logger);
+}
+
 
 /// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
 static ASTs buildFilters(const KeyDescription & primary_key, const VectorWithMemoryTracking<Values> & borders, bool in_reverse_order)
@@ -979,10 +1281,10 @@ static ASTs buildFilters(const KeyDescription & primary_key, const VectorWithMem
 /// Granules of a part are sorted by the primary key, so the granules of a part that intersect a given
 /// interval form one contiguous range of marks, found by two binary searches. A part only visits the
 /// intervals that overlap its key range, and the work does not depend on the number of rejected granules.
+///
+/// Only the index of the current part is kept, see `PartIndexAccess`.
 static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
-    IndexAccess index_access(ranges_in_data_parts);
-
     RangesInDataPartsBuilder result(ranges_in_data_parts);
 
     auto return_ranges_selected_by_primary_key = [&]()
@@ -1014,28 +1316,42 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     VectorWithMemoryTracking<Interval> intervals;
     size_t selected_marks = 0;
 
-    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    for (const auto & part : ranges_in_data_parts)
     {
-        const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+        const auto & index_granularity = part.data_part->index_granularity;
 
         /// The optimization's logic needs the final mark to get the primary key upper bound of this part.
         /// The final mark may not be written under some situations e.g index_granularity_bytes = 0.
         if (!index_granularity->hasFinalMark())
         {
             LOG_TRACE(logger, "use_skip_indexes_if_final_exact_mode processing is not applied, because {} does not have the final mark",
-                        ranges_in_data_parts[part_index].data_part->name);
+                        part.data_part->name);
             return return_ranges_selected_by_primary_key();
         }
 
-        for (const auto & range : ranges_in_data_parts[part_index].ranges)
+        for (const auto & range : part.ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
             {
                 return return_ranges_selected_by_primary_key();
             }
+        }
+    }
 
-            intervals.push_back({index_access.getValue(part_index, range.begin), index_access.getValue(part_index, range.end)});
+    size_t columns = std::numeric_limits<size_t>::max();
+    for (size_t part_index : getOrderToLoadIndexes(ranges_in_data_parts))
+    {
+        const auto & part = ranges_in_data_parts[part_index];
+        if (part.ranges.empty())
+            continue;
+
+        const PartIndexAccess index_access(*part.data_part);
+        columns = std::min(columns, index_access.getColumns());
+
+        for (const auto & range : part.ranges)
+        {
+            intervals.push_back({index_access.getValue(range.begin, columns), index_access.getValue(range.end, columns)});
             selected_marks += range.getNumberOfMarks();
         }
     }
@@ -1043,6 +1359,13 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     const size_t selected_ranges = intervals.size();
     if (intervals.empty())
         return result.getCurrentRangesInDataParts();
+
+    /// Values with different numbers of columns cannot be sorted.
+    for (auto & interval : intervals)
+    {
+        interval.lower.resize(columns);
+        interval.upper.resize(columns);
+    }
 
     /// Merge the intervals into a sorted list of disjoint intervals.
     ::sort(intervals.begin(), intervals.end(), [](const Interval & lhs, const Interval & rhs) { return compareValues(lhs.lower, rhs.lower, false) < 0; });
@@ -1066,7 +1389,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
 
     /// Only the ranges selected by the primary key analysis are candidates, the other ranges are
     /// already rejected by the primary key and don't need to be checked again for intersection.
-    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    for (size_t part_index : getOrderToLoadIndexes(ranges_in_data_parts))
     {
         if (!ranges_in_data_parts[part_index].ranges_snapshot_after_pk_analysis)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
@@ -1079,8 +1402,11 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
         const size_t part_begin = candidate_ranges.front().begin;
         const size_t part_end = candidate_ranges.back().end;
 
+        const PartIndexAccess index_access(*ranges_in_data_parts[part_index].data_part);
+        const size_t part_columns = std::min(columns, index_access.getColumns());
+
         /// The intervals are sorted and disjoint, so their upper bounds are sorted.
-        const Values part_begin_value = index_access.getValue(part_index, part_begin);
+        const Values part_begin_value = index_access.getValue(part_begin, part_columns);
         const auto first_interval = std::ranges::partition_point(
             intervals, [&](const Interval & interval) { return compareValues(interval.upper, part_begin_value, false) < 0; });
 
@@ -1092,12 +1418,13 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
             /// Granule `m` intersects the interval if value(m) <= upper and value(m + 1) >= lower.
             /// The first such mark is the rightmost mark with value < lower, because the next mark has value >= lower.
             /// The value at `part_end` is defined, because `part_end` is at most the index of the final mark.
-            const size_t begin = index_access.findRightmostMarkLessThanValueInRange(part_index, interval.lower, search_begin, part_end + 1, false)
-                .value_or(search_begin);
+            const size_t begin
+                = index_access.findRightmostMarkLessThanValueInRange(interval.lower, search_begin, part_end + 1, part_columns, false)
+                      .value_or(search_begin);
             if (begin >= part_end)
                 break;
 
-            const size_t end = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, interval.upper, begin, part_end, false)
+            const size_t end = index_access.findLeftmostMarkGreaterThanValueInRange(interval.upper, begin, part_end, part_columns, false)
                 .value_or(part_end);
             if (begin >= end)
                 continue;
@@ -1241,11 +1568,18 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     }
     bool in_reverse_order = *in_reverse_order_opt;
 
+    PartIndexes part_indexes;
+
     if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
     {
-        SplitPartsRangesResult split_result = splitPartsRangesImpl(intersecting_parts_ranges, in_reverse_order, logger);
+        SplitPartsRangesResult split_result = splitPartsRangesImpl(intersecting_parts_ranges, part_indexes, in_reverse_order, logger);
         result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
+
+        PartIndexes intersecting_part_indexes;
+        for (const auto & part : intersecting_parts_ranges)
+            intersecting_part_indexes.insert(part_indexes.extract(part.data_part.get()));
+        part_indexes = std::move(intersecting_part_indexes);
     }
 
     if (!split_intersecting_parts_ranges_into_layers || max_layers == 1)
@@ -1255,8 +1589,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         return result;
     }
 
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
-        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayersImpl(
+        intersecting_parts_ranges, part_indexes, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    part_indexes.clear();
     result.borders = split_ranges.borders;
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
