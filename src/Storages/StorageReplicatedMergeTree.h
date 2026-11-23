@@ -150,7 +150,6 @@ public:
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
-    bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
     bool supportsStreaming() const override { return true; }
@@ -236,7 +235,7 @@ public:
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
     /// Add a part to the queue of parts whose data you want to check in the background thread.
-    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
+    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0, bool after_read_error = false);
 
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;

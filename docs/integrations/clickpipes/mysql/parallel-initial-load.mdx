@@ -19,7 +19,7 @@ However, the MySQL ClickPipe can parallelize this process, which can significant
 
 ### Partition key column {#key-mysql-snapshot}
 
-Once we've enabled the feature flag, you should see the below setting in the ClickPipe table picker (both during creation and editing of a ClickPipe):
+You can see the below setting in the ClickPipe table picker (both during creation and editing of a ClickPipe):
 <div className="ch-image-md">
 
 <Frame>
@@ -57,11 +57,7 @@ This setting controls how many rows constitute a partition. The ClickPipe will r
 This setting controls how many partitions are processed in parallel. The default value is 4, which means that the ClickPipe will read 4 partitions of the source table in parallel. This can be increased to speed up the initial load, but it is recommended to keep it to a reasonable value depending on your source instance specs to avoid overwhelming the source database. The ClickPipe will automatically adjust the number of partitions based on the size of the source table and the number of rows per partition.
 
 #### Snapshot number of tables in parallel {#tables-parallel-mysql-snapshot}
-Not really related to parallel snapshot, but this setting controls how many tables are processed in parallel during the initial load. The default value is 1. Note that is on top of the parallelism of the partitions, so if you have 4 partitions and 2 tables, the ClickPipe will read 8 partitions in parallel.
+Not really related to parallel snapshot, but this setting controls how many tables are processed in parallel during the initial load. The default value is 1. Note that is on top of the parallelism of the partitions, so if the initial load parallelism is 4 and you have 2 tables, the ClickPipe will read 8 partitions in parallel.
 
 ### Monitoring parallel snapshot in MySQL {#monitoring-parallel-mysql-snapshot}
-You can run **SHOW processlist** in MySQL to see the parallel snapshot in action. The ClickPipe will create multiple connections to the source database, each reading a different partition of the source table. If you see **SELECT** queries with different ranges, it means that the ClickPipe is reading the source tables. You can also see the COUNT(*) and the partitioning query in here.
-
-### Limitations {#limitations-parallel-mysql-snapshot}
-- The snapshot parameters can't be edited after pipe creation. If you want to change them, you will have to create a new ClickPipe.
-- When adding tables to an existing ClickPipe, you can't change the snapshot parameters. The ClickPipe will use the existing parameters for the new tables.
+You can run **SHOW processlist** in MySQL to see the parallel snapshot in action. The ClickPipe will create multiple connections to the source database, each reading a different partition of the source table. If you see **SELECT** queries with different ranges, it means that the ClickPipe is reading the source tables.
