@@ -356,7 +356,7 @@ public:
                 /// wait until it calls notify(*waiter) object before we destroy it.
                 waitForNotify(waiter, UINT64_MAX);
                 result = 0;
-            }   
+            }
         }
         mutex.lock();
         return result;

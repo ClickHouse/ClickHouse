@@ -20,7 +20,7 @@ file(GLOB SILK_UTIL_SOURCES CONFIGURE_DEPENDS "${SILK_SOURCE_DIR}/src/util/*.cpp
 add_library(_silk_util STATIC ${SILK_UTIL_SOURCES})
 target_include_directories(_silk_util SYSTEM
     PUBLIC "${SILK_SOURCE_DIR}/include"
-    PRIVATE "${SILK_SOURCE_DIR}/src"
+    PRIVATE "${SILK_SOURCE_DIR}/src" $<TARGET_PROPERTY:ch_contrib::librseq,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_link_libraries(_silk_util
     PUBLIC boost::headers_only
