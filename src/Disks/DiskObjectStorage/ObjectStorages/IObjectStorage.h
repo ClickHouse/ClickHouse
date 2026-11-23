@@ -316,7 +316,7 @@ public:
     /// Whether `listObjectsSingleLevel` is implemented for this storage.
     /// When true, the listing of a glob can be parallelized by walking the "directory" tree
     /// (common prefixes) concurrently instead of listing the whole prefix in a single serial stream.
-    virtual bool supportsDelimitedListing() const { return false; }
+    [[nodiscard]] virtual bool supportsDelimitedListing() const { return false; }
 
     /// Whether the parallel delimiter walk (see `supportsDelimitedListing`) may start from `key_prefix`.
     /// The walk issues `ListObjectsV2` with `Delimiter='/'` from the glob's fixed prefix, and S3 Express /
@@ -324,20 +324,20 @@ public:
     /// delimiter walk from an earlier '/' boundary when a glob's fixed prefix ends mid-component, provided
     /// that doing so still leaves a directory level to walk. The empty prefix (the bucket root) is always
     /// allowed. Storages without this restriction just answer `supportsDelimitedListing`.
-    virtual bool supportsDelimitedListingFromPrefix(const std::string & /*key_prefix*/) const { return supportsDelimitedListing(); }
+    [[nodiscard]] virtual bool supportsDelimitedListingFromPrefix(const std::string & /*key_prefix*/) const { return supportsDelimitedListing(); }
 
     /// Whether `listObjectsSingleLevel` may resume strictly after an arbitrary key (`start_after`, i.e. the
     /// `StartAfter` parameter of `ListObjectsV2`). Some endpoints (e.g. S3 Express / directory buckets) reject
     /// it outright, so every listing path that would resume by key must first ask this: such a listing has to
     /// be expressed with the '/' delimiter and continuation tokens only (see `ObjectStorageParallelListingIterator`).
-    virtual bool supportsStartAfterListing() const { return false; }
+    [[nodiscard]] virtual bool supportsStartAfterListing() const { return false; }
 
     /// Whether `listObjectsSingleLevel` returns entries in ascending lexicographic (UTF-8 binary) order across
     /// all pages of a listing, as general-purpose S3 buckets do. S3 Express / directory buckets do not
     /// guarantee any order, so the parallel listing must not use the shortcuts that depend on it: stopping a
     /// range once a key passes its upper bound, resuming a budget-trimmed parent after its last kept child,
     /// and stopping a directory-marker range after its first page (see `ObjectStorageParallelListingIterator`).
-    virtual bool listsKeysInLexicographicOrder() const { return true; }
+    [[nodiscard]] virtual bool listsKeysInLexicographicOrder() const { return true; }
 
     /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
     /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
@@ -346,7 +346,7 @@ public:
     /// `supportsStartAfterListing`) must answer false here, and flat ranges then fall back to serial
     /// pagination (the hierarchical delimiter walk, which uses only '/' and continuation tokens, stays
     /// available).
-    virtual bool supportsListingKeyspaceSplit() const { return supportsStartAfterListing(); }
+    [[nodiscard]] virtual bool supportsListingKeyspaceSplit() const { return supportsStartAfterListing(); }
 
     /// The page size that list requests actually use when the caller passes `max_keys = 0`
     /// ("use the storage-configured default", see `iterate` and `listObjectsSingleLevel`).
@@ -354,7 +354,7 @@ public:
     /// the zero through this, or the derived bound collapses to nothing while every response
     /// still carries a full page. The base value matches the standard maximum page size of the
     /// common object storages (S3, GCS, Azure) and the defaults of the corresponding settings.
-    virtual size_t getListObjectsDefaultPageSize() const { return 1000; }
+    [[nodiscard]] virtual size_t getListObjectsDefaultPageSize() const { return 1000; }
 
     /// A hard upper bound on the bytes one object returned by `listObjectsSingleLevel` may add to a listed
     /// batch beyond its fixed-size wrapper: its key plus its `ObjectMetadata` payload (`etag`, and `tags`
@@ -363,7 +363,7 @@ public:
     /// that the parallel listing can reserve its buffered-object byte budget for a page before listing it,
     /// whatever the sizes of the objects listed so far. Storages implementing `listObjectsSingleLevel`
     /// must override it.
-    virtual size_t getListedObjectPayloadBytesUpperBound(bool with_tags) const;
+    [[nodiscard]] virtual size_t getListedObjectPayloadBytesUpperBound(bool with_tags) const;
 
     /// List a single "directory level" under `path_prefix`, grouping deeper keys by `delimiter`.
     /// Unlike `listObjects`/`iterate` (which list recursively), this returns only the keys directly
@@ -372,7 +372,7 @@ public:
     /// the first request of a listing (when `continuation_token` is empty), and lets a caller list an
     /// arbitrary sub-range of the keyspace. One call corresponds to one page; pass the returned
     /// continuation token back to fetch the next page.
-    virtual ObjectStorageListResult listObjectsSingleLevel(
+    [[nodiscard]] virtual ObjectStorageListResult listObjectsSingleLevel(
         const std::string & path_prefix,
         const std::string & delimiter,
         size_t max_keys,

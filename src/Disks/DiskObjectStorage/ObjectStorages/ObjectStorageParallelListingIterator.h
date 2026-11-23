@@ -291,7 +291,7 @@ private:
 
         /// Is `key` past this range's upper bound (and therefore, since a listing returns keys in
         /// ascending order, is every key following it)? Always false for an unbounded range.
-        bool isPastEnd(const std::string & key) const
+        [[nodiscard]] bool isPastEnd(const std::string & key) const
         {
             if (end.empty())
                 return false;
