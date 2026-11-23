@@ -37,12 +37,7 @@
 #if USE_AWS_S3 && USE_SSL
 #include <Databases/DataLake/S3TablesCatalog.h>
 #endif
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
@@ -177,46 +172,6 @@ namespace FailPoints
 
 namespace
 {
-
-DataTypePtr setTimezoneForTimestamptz(const DataTypePtr & type, const String & timezone)
-{
-    if (const auto * datetime = typeid_cast<const DataTypeDateTime64 *>(type.get()))
-    {
-        if (datetime->hasExplicitTimeZone() && datetime->getTimeZone().getTimeZone() == "UTC")
-            return std::make_shared<DataTypeDateTime64>(datetime->getScale(), timezone);
-        return type;
-    }
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-        return makeNullable(setTimezoneForTimestamptz(nullable->getNestedType(), timezone));
-    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(setTimezoneForTimestamptz(array->getNestedType(), timezone));
-    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
-        return std::make_shared<DataTypeMap>(
-            setTimezoneForTimestamptz(map->getKeyType(), timezone), setTimezoneForTimestamptz(map->getValueType(), timezone));
-    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        DataTypes elements;
-        for (const auto & element : tuple->getElements())
-            elements.push_back(setTimezoneForTimestamptz(element, timezone));
-        if (tuple->hasExplicitNames())
-            return std::make_shared<DataTypeTuple>(elements, tuple->getElementNames());
-        return std::make_shared<DataTypeTuple>(elements);
-    }
-    return type;
-}
-
-NamesAndTypesList getTableSchema(
-    const DataLake::ICatalog & catalog, const DataLake::TableMetadata & table_metadata, const DatabaseDataLakeSettings & settings)
-{
-    const String & timezone = settings[DatabaseDataLakeSetting::iceberg_timezone_for_timestamptz];
-    auto schema = table_metadata.getSchema();
-    if (catalog.getTableEngineName(table_metadata) != "Iceberg" || timezone == "UTC")
-        return schema;
-    NamesAndTypesList result;
-    for (const auto & column : schema)
-        result.emplace_back(column.name, setTimezoneForTimestamptz(column.type, timezone));
-    return result;
-}
 
 /// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
 /// catalog and Azure storage requests, so the scope must be the Azure storage audience.
@@ -1330,6 +1285,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
+    table_metadata.withTimezoneForTimestamptz(settings[DatabaseDataLakeSetting::iceberg_timezone_for_timestamptz].value);
     if (settings[DatabaseDataLakeSetting::force_add_bucket])
         table_metadata.withForceAddBucket();
 
@@ -1376,7 +1332,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto storage_type = table_engine_args.storage_type;
     const bool static_credentials_applied = table_engine_args.static_credentials_applied;
 
-    const auto columns = ColumnsDescription(getTableSchema(*catalog, table_metadata, settings));
+    const auto columns = ColumnsDescription(table_metadata.getSchema());
 
     const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
 
@@ -1980,6 +1936,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
+    table_metadata.withTimezoneForTimestamptz(settings[DatabaseDataLakeSetting::iceberg_timezone_for_timestamptz].value);
     if (settings[DatabaseDataLakeSetting::force_add_bucket])
         table_metadata.withForceAddBucket();
 
@@ -2016,7 +1973,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    auto columns = getTableSchema(*catalog, table_metadata, settings);
+    auto columns = table_metadata.getSchema();
     if (columns.empty() && table_metadata.isDefaultReadableTable())
     {
         /// The catalog left the schema to the table storage, which reads it from the table metadata.

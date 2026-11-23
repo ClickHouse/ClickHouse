@@ -11,7 +11,7 @@ String trim(const String & str);
 
 std::vector<String> splitTypeArguments(const String & type_str);
 
-DB::DataTypePtr getType(const String & type_name, bool nullable, const String & prefix = "");
+DB::DataTypePtr getType(const String & type_name, bool nullable, const String & prefix = "", const String & timezone_for_timestamptz = "UTC");
 
 /// Converts Iceberg types to Glue/Hive strings; ClickHouse reads exact types from `metadata.json`.
 String icebergTypeToGlueType(const Poco::Dynamic::Var & type);

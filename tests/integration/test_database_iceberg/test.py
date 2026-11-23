@@ -997,6 +997,10 @@ def test_timestamps(started_cluster):
     assert node.query(
         f"SELECT count() FROM {berlin_table} WHERE timestamptz = '2024-01-01 13:00:00'"
     ) == "1\n"
+    assert node.query(
+        f"SELECT toTypeName(timestamp), timestamp FROM {berlin_table}"
+    ) == "Nullable(DateTime64(6, \\'UTC\\'))\t2024-01-01 12:00:00.000000\n"
+    assert node.query(f"SHOW CREATE TABLE {berlin_table}") == f"CREATE TABLE {berlin_table}\\n(\\n    `timestamp` Nullable(DateTime64(6, \\'UTC\\')),\\n    `timestamptz` Nullable(DateTime64(6, \\'Europe/Berlin\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     node.query(f"DROP DATABASE {berlin_catalog}")
 
 

@@ -482,7 +482,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 if (column_type == "timestamp_nano")
                     column_type = DB::Iceberg::f_timestamp_ns;
 
-                schema.push_back({String(column.GetName()), getType(column_type, can_be_nullable)});
+                schema.push_back({String(column.GetName()), getType(column_type, can_be_nullable, "", result.getTimezoneForTimestamptz())});
             }
             result.setSchema(schema);
         }
