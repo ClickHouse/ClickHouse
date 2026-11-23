@@ -232,6 +232,17 @@ void checkSelectAccess(const ASTPtr & statement, const ContextPtr & context)
     InterpreterSelectQueryAnalyzer::getSampleBlock(statement->clone(), context, SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
 }
 
+/// The context the query of a handler with `DEFINER = <the current user>` runs in, see `HTTPHandler::makeSQLSecurityQueryContext`:
+/// the default roles and the settings profiles of the user, without the roles, the external roles and the settings of this session.
+ContextPtr makeSelfDefinerContext(const ContextPtr & context)
+{
+    auto definer_context = Context::createCopy(context->getGlobalContext());
+    definer_context->makeQueryContext();
+    definer_context->setClientInfo(context->getClientInfo());
+    definer_context->setUser(*context->getUserID());
+    return definer_context;
+}
+
 void replaceHandlerQuery(ASTCreateHandlerQuery & handler, ASTPtr query)
 {
     for (auto & child : handler.children)
@@ -282,6 +293,7 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
 
     const String database = context->getCurrentDatabase();
     const AddDefaultDatabaseVisitor visitor(context, database);
+    ContextPtr self_definer_context;
 
     for (ASTPtr * statement_ptr : getExecutedStatements(handler.query))
     {
@@ -314,8 +326,14 @@ void validateHandlerQuery(ASTCreateHandlerQuery & handler, const ContextPtr & co
                 qualifyStatement(statement, visitor, database, context);
             }
             /// The privileges for a parameterized SELECT and for an INSERT are checked when the query runs as the definer.
+            /// The other SELECT is checked here as it will run: a role enabled only in this session (`SET ROLE`, an external
+            /// role) does not make a handler pass that every request would then fail with `ACCESS_DENIED`.
             if (!full_access && is_select && analyzeReceiveQueryParams(statement).empty())
-                checkSelectAccess(statement, context);
+            {
+                if (!self_definer_context)
+                    self_definer_context = makeSelfDefinerContext(context);
+                checkSelectAccess(statement, self_definer_context);
+            }
             continue;
         }
 
