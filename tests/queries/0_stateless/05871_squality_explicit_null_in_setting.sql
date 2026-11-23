@@ -15,3 +15,7 @@ SELECT
 SELECT
     nullIn(tuple(toUInt8(1), toUInt8(2)), (tuple(toUInt8(1), toUInt8(2)))),
     notNullIn(tuple(toUInt8(1), toUInt8(2)), (tuple(toUInt8(1), toUInt8(2))));
+
+SELECT
+    nullIn(CAST(NULL AS Nullable(UInt8)), (SELECT CAST(NULL AS Nullable(UInt8)))),
+    notNullIn(CAST(NULL AS Nullable(UInt8)), (SELECT CAST(NULL AS Nullable(UInt8))));

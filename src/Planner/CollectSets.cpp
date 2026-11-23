@@ -28,6 +28,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -83,6 +84,13 @@ public:
             || function_node->getFunctionOrThrow()->useNullAsUnknownSemanticsForIn();
 
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
+        std::optional<Settings> explicit_null_in_settings;
+        if (!use_null_as_unknown && settings[Setting::in_null_as_unknown])
+        {
+            explicit_null_in_settings.emplace(settings);
+            explicit_null_in_settings->set("in_null_as_unknown", Field(0u));
+        }
+        const Settings & set_settings = explicit_null_in_settings ? *explicit_null_in_settings : settings;
         auto & sets = planner_context.getPreparedSets();
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
@@ -160,7 +168,7 @@ public:
                 set_key,
                 std::move(ast),
                 std::move(set),
-                settings,
+                set_settings,
                 use_null_as_unknown ? std::optional<bool>{source_info.is_empty} : std::nullopt,
                 use_null_as_unknown && source_info.has_null);
         }
@@ -183,7 +191,7 @@ public:
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(static_pointer_cast<TableNode>(subquery_to_execute), planner_context.getQueryContext());
 
             auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
-            auto subquery_set = sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
+            auto subquery_set = sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), set_settings);
             if (external_table_expected)
                 subquery_set->markExternalTableExpected();
         }
