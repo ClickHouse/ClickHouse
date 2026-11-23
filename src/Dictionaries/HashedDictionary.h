@@ -200,7 +200,7 @@ private:
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
+        AttributeUnderlyingType type{};
         std::optional<NullableSets> is_nullable_sets;
 
         std::variant<

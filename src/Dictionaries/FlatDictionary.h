@@ -113,38 +113,54 @@ private:
     {
         explicit ColumnAttributeKeyToRow(const DictionaryAttribute & dictionary_attribute) : values(dictionary_attribute) {}
 
-        size_t size() const { return key_to_row.size(); }
-        size_t capacity() const { return key_to_row.capacity(); }
+        [[nodiscard]] size_t size() const { return key_to_row.size(); }
+        [[nodiscard]] size_t capacity() const { return key_to_row.capacity(); }
         ColumnAttributeValue<Value> operator[](size_t key) const { return values[key_to_row[key]]; }
 
-        /// A key loaded again appends a new row, so remove the rows no key points to anymore if there are more than `max_rows`.
-        void removeReplacedRows(const VectorWithMemoryTracking<bool> & is_key_loaded, size_t max_rows)
+        void insert(UInt64 key, const Field & value)
         {
-            if (values.size() <= max_rows)
-                return;
+            UInt64 row = key_to_row[key];
+            if (row < row_to_key.size() && row_to_key[row] == key)
+                ++replaced_rows;
 
-            IColumn::Filter mask(values.size(), 0);
-            for (size_t key = 0; key < key_to_row.size(); ++key)
-                if (is_key_loaded[key])
-                    mask[key_to_row[key]] = 1;
+            values.insert(value);
+            key_to_row[key] = row_to_key.size();
+            row_to_key.push_back(key);
+        }
 
-            PaddedPODArray<UInt64> new_rows(values.size());
-            UInt64 kept_rows = 0;
-            for (size_t row = 0; row < mask.size(); ++row)
+        /// Removes the rows of replaced values once they are the majority, so loading keeps at most twice the live rows.
+        /// When loading is finished, removes all of them and drops `row_to_key`, which is only needed for loading.
+        void removeReplacedRows(bool loading_finished)
+        {
+            if (replaced_rows != 0 && (loading_finished || replaced_rows * 2 > row_to_key.size()))
             {
-                new_rows[row] = kept_rows;
-                kept_rows += mask[row];
+                IColumn::Filter mask(row_to_key.size());
+                size_t kept_rows = 0;
+                for (size_t row = 0; row < row_to_key.size(); ++row)
+                {
+                    UInt64 key = row_to_key[row];
+                    mask[row] = key_to_row[key] == row;
+                    if (mask[row])
+                    {
+                        key_to_row[key] = kept_rows;
+                        row_to_key[kept_rows] = key;
+                        ++kept_rows;
+                    }
+                }
+
+                row_to_key.resize(kept_rows);
+                values.filter(mask, kept_rows);
+                replaced_rows = 0;
             }
 
-            for (size_t key = 0; key < key_to_row.size(); ++key)
-                if (is_key_loaded[key])
-                    key_to_row[key] = new_rows[key_to_row[key]];
-
-            values.filter(mask, kept_rows);
+            if (loading_finished)
+                row_to_key = {};
         }
 
         ColumnAttributeContainer<Value> values;
         PaddedPODArray<UInt64> key_to_row;
+        PaddedPODArray<UInt64> row_to_key;
+        size_t replaced_rows = 0;
     };
 
     template <typename Value>
@@ -192,8 +208,7 @@ private:
 
     void blockToAttributes(const Block & block);
 
-    template <typename GetMaxRows>
-    void removeReplacedRows(GetMaxRows && get_max_rows);
+    void removeReplacedRows(bool loading_finished);
 
     void updateData();
 

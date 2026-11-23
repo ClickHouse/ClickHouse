@@ -471,19 +471,17 @@ void FlatDictionary::blockToAttributes(const Block & block)
         keys_extractor.reset();
     }
 
-    /// Bound the replaced rows kept while loading.
-    removeReplacedRows([](const auto & container) { return 2 * container.key_to_row.size(); });
+    removeReplacedRows(false);
 }
 
-template <typename GetMaxRows>
-void FlatDictionary::removeReplacedRows(GetMaxRows && get_max_rows)
+void FlatDictionary::removeReplacedRows(bool loading_finished)
 {
     for (auto & attribute : attributes)
     {
         std::visit([&](auto & container)
         {
-            if constexpr (requires { container.removeReplacedRows(loaded_keys, 0); })
-                container.removeReplacedRows(loaded_keys, get_max_rows(container));
+            if constexpr (requires { container.removeReplacedRows(loading_finished); })
+                container.removeReplacedRows(loading_finished);
         }, attribute.container);
     }
 }
@@ -559,7 +557,7 @@ void FlatDictionary::loadData()
     for (size_t i = 0; i < loaded_keys_size; ++i)
         element_count += loaded_keys[i];
 
-    removeReplacedRows([&](const auto &) { return element_count; });
+    removeReplacedRows(true);
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
@@ -755,8 +753,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
         /// A null key still gets a row: lookups copy the row before the null map is applied.
         if constexpr (is_column_attribute_value<ValueType>)
         {
-            container.key_to_row[key] = container.values.size();
-            container.values.insert(value);
+            container.insert(key, value);
         }
         else if (!value_is_null)
         {

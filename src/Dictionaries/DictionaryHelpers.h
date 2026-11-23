@@ -411,8 +411,8 @@ public:
     {
     }
 
-    size_t size() const { return column->size(); }
-    size_t capacity() const { return column->capacity(); }
+    [[nodiscard]] size_t size() const { return column->size(); }
+    [[nodiscard]] size_t capacity() const { return column->capacity(); }
     ColumnAttributeValue<Value> operator[](size_t index) const { return {*column, index}; }
     void filter(const IColumn::Filter & mask, size_t result_size) { column = IColumn::mutate(column->filter(mask, result_size)); }
     /// A `Null` still takes a row to keep row numbers aligned; nullability is tracked by the layout.
@@ -424,7 +424,7 @@ public:
             column->insert(value);
     }
 
-    size_t allocatedBytes() const { return column->allocatedBytes(); }
+    [[nodiscard]] size_t allocatedBytes() const { return column->allocatedBytes(); }
 
 private:
     IColumn::MutablePtr column;
