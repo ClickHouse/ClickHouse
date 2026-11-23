@@ -1243,6 +1243,8 @@ The server successfully detected this situation and will download merged part fr
     M(KafkaCommitFailures, "Number of failed commits of consumed offsets to Kafka (usually is a sign of some data duplication)", ValueType::Number) \
     M(KafkaConsumerErrors, "Number of errors reported by librdkafka during polls", ValueType::Number) \
     M(KafkaMVNotReady, "Number of failed attempts to stream data to a materialized view that is not ready", ValueType::Number) \
+    M(KafkaConsumerShortStall, "Number of Kafka consumer cycles that ended with a short stall (the Keeper session has ended or a Keeper operation failed) and were rescheduled after kafka_consumer_reschedule_ms / 10 instead of the full interval, so that the session is restored quickly", ValueType::Number) \
+    M(KafkaConsumerShortStallStreakStart, "Number of Kafka consumer cycles that started a streak of consecutive short stalls, i.e. the first short stall after a cycle without one. Compare with KafkaConsumerShortStall: close values mean rare isolated stalls, while a much larger KafkaConsumerShortStall means consumers are stuck in the fast reschedule mode", ValueType::Number) \
     M(KafkaWrites, "Number of writes (inserts) to Kafka tables ", ValueType::Number) \
     M(KafkaRowsWritten, "Number of rows inserted into Kafka tables", ValueType::Number) \
     M(KafkaProducerFlushes, "Number of explicit flushes to Kafka producer", ValueType::Number) \
