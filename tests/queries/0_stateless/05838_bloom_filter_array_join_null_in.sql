@@ -155,3 +155,57 @@ WHERE nint::Dynamic::Int64 = 0
 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_query_condition_cache = 0;
 
 DROP TABLE bloom_array_join_types;
+
+DROP TABLE IF EXISTS bloom_array_join_padding;
+
+CREATE TABLE bloom_array_join_padding
+(
+    id UInt64,
+    tags Array(LowCardinality(Nullable(String))),
+    INDEX idx_tags tags TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO bloom_array_join_padding VALUES (1, []), (2, ['other']);
+
+-- A conversion under emptyArrayToSingle changes the padded element from NULL to ''.
+SELECT groupArray(id)
+FROM bloom_array_join_padding
+WHERE arrayJoin(emptyArrayToSingle(CAST(tags, 'Array(String)'))) = ''
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_query_condition_cache = 0;
+
+SELECT groupArray(id)
+FROM bloom_array_join_padding
+WHERE arrayJoin(emptyArrayToSingle(CAST(tags, 'Array(String)'))) IN ('')
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_query_condition_cache = 0;
+
+DROP TABLE bloom_array_join_padding;
+
+DROP TABLE IF EXISTS bloom_array_join_tuple;
+
+CREATE TABLE bloom_array_join_tuple
+(
+    id UInt64,
+    tags Array(String),
+    INDEX idx_tags tags TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO bloom_array_join_tuple VALUES (1, ['target']), (2, ['other']);
+
+-- A NULL inside a tuple member of the set matches no element.
+SELECT groupArray(id)
+FROM bloom_array_join_tuple
+WHERE (tuple(arrayJoin(tags)), id) IN (SELECT tuple(v), i FROM values('v Nullable(String), i UInt64', ('target', 1), (NULL, 2)))
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_query_condition_cache = 0;
+
+SELECT groupArray(id)
+FROM bloom_array_join_tuple
+WHERE (tuple(arrayJoin(CAST(tags, 'Array(Nullable(String))'))), id) IN (SELECT tuple(v), i FROM values('v Nullable(String), i UInt64', ('target', 1), (NULL, 2)))
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_query_condition_cache = 0;
+
+DROP TABLE bloom_array_join_tuple;

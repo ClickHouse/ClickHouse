@@ -957,7 +957,18 @@ static std::optional<size_t> findArrayJoinIndexPosition(
     if (!node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
         return std::nullopt;
     padded = true;
-    return find(node.toFunctionNode().getArgumentAt(0));
+    auto position = find(node.toFunctionNode().getArgumentAt(0));
+    if (!position)
+        return std::nullopt;
+
+    /// The padded element must be the default of the index element type, which a conversion
+    /// that adds or drops `Nullable` changes.
+    const auto * padded_array_type = typeid_cast<const DataTypeArray *>(node.getDAGNode()->result_type.get());
+    const auto * index_array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(*position).type.get());
+    if (!padded_array_type || !index_array_type
+        || padded_array_type->getNestedType()->getDefault() != index_array_type->getNestedType()->getDefault())
+        return std::nullopt;
+    return position;
 }
 
 /// True if `column` holds the element LEFT ARRAY JOIN pads an empty array with: the default of `element_type`.
@@ -1175,6 +1186,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     const auto & array_nested_type = array_type->getNestedType();
     if (!bloomFilterHashDomainMatches(type, array_nested_type))
+        return false;
+
+    /// A NULL of a set, e.g. inside a tuple element, does not cast to a non-`Nullable` element type and matches no element.
+    const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+    if (nullable_column && !canContainNull(*array_nested_type)
+        && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
