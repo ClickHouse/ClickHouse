@@ -8,6 +8,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <ranges>
 
 namespace ProfileEvents
@@ -74,6 +75,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     , clock_type(clock_type_)
     , has_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
     , deserialization_prefixes_cache(deserialization_prefixes_cache_)
+    , log(getLogger("MergeTreeReaderCompact"))
 {
     marks_loader->startAsyncLoad();
 }
@@ -652,18 +654,30 @@ size_t MergeTreeReaderCompact::readGranules(
 
 void MergeTreeReaderCompact::startColumnsCacheRange(size_t from_mark, size_t end_mark)
 {
-    /// The previous range is over. The granules of it that were copied but not written yet -
-    /// the range ended inside a stripe - are written now.
+    end_mark = std::max(from_mark, std::min(end_mark, data_part_info_for_read->getIndexGranularity().getMarksCount()));
+
+    /// The granules that were copied but not written yet - the range ended or granules were
+    /// skipped inside a stripe - are written now.
     finishAllAccumulations();
     flushPendingColumnsCacheWrites();
 
+    /// The entries looked up for the current range cover [from_mark, end_mark) already: the reader
+    /// re-enters the range after `PREWHERE` filtered granules out, see
+    /// `MergeTreeReaderWide::startColumnsCacheRange`.
+    if (end_mark == range_end_mark && range_first_mark <= from_mark && from_mark < range_end_mark)
+        return;
+
     range_first_mark = from_mark;
-    range_end_mark = std::max(from_mark, std::min(end_mark, data_part_info_for_read->getIndexGranularity().getMarksCount()));
+    range_end_mark = end_mark;
     range_first_stripe = stripes.stripeOf(from_mark);
 
     cached_entries.clear();
     if (columns_cache_reads_possible)
+    {
         cached_entries = lookupColumnsCache(range_first_mark, range_end_mark);
+        LOG_TEST(log, "Range of marks [{}, {}) of part {} is looked up in the columns cache",
+            range_first_mark, range_end_mark, columns_cache_part_name);
+    }
 }
 
 std::vector<std::vector<ColumnsCache::MappedPtr>> MergeTreeReaderCompact::lookupColumnsCache(size_t first_mark, size_t end_mark) const
@@ -847,7 +861,7 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
             if (!columns_mask[pos] || !column_cacheable[pos])
                 continue;
             if (columns_cache_writes_possible && !written_as_is[pos])
-                accumulateGranuleForColumnsCache(pos, mark, *res_columns[pos], sizes_before_reading[pos], granule_rows);
+                accumulateGranuleForColumnsCache(pos, mark, end_mark, *res_columns[pos], sizes_before_reading[pos], granule_rows);
             else
                 finishAccumulation(pos);
         }
@@ -893,7 +907,8 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
     return read_rows;
 }
 
-void MergeTreeReaderCompact::accumulateGranuleForColumnsCache(size_t pos, size_t mark, const IColumn & column, size_t offset, size_t rows)
+void MergeTreeReaderCompact::accumulateGranuleForColumnsCache(
+    size_t pos, size_t mark, size_t block_end_mark, const IColumn & column, size_t offset, size_t rows)
 {
     auto & accumulation = accumulations[pos];
     const size_t stripe = stripes.stripeOf(mark);
@@ -910,8 +925,11 @@ void MergeTreeReaderCompact::accumulateGranuleForColumnsCache(size_t pos, size_t
         accumulation.stripe = stripe;
         accumulation.first_mark = mark;
         accumulation.column = column.cloneEmpty();
-        /// The stripe at most; the copy is shrunk to its rows before it is admitted.
-        accumulation.column->reserve(std::min(ColumnsCacheStripes::TARGET_ROWS * 2, stripes.stripe_marks * std::max<size_t>(rows, 1)));
+        /// The rows of the block from this granule to the end of the stripe, not the whole stripe,
+        /// see `MergeTreeReaderWide::accumulateRowsForColumnsCache`.
+        const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
+        accumulation.column->reserve(index_granularity.getRowsCountInRange(
+            mark, std::min(block_end_mark, stripes.endMark(stripe, index_granularity.getMarksCountWithoutFinal()))));
     }
 
     accumulation.column->insertRangeFrom(column, offset, rows);

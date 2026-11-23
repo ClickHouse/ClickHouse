@@ -1,9 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/IColumn.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -39,14 +38,14 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset must be an integer, '{}' given", argument_types[1]->getName());
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = true};
+        return WindowFunctionRequirements{.frame_start = true, .frame_end = true};
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
-        for (size_t i = 0; i < bounds.rows; ++i)
+        for (Int64 i = 0; i < bounds.rows; ++i)
         {
             const Int64 offset = arguments.at(1, bounds.row[i]).getInt();
             if (offset <= 0)
@@ -57,18 +56,19 @@ public:
             else
                 arguments.at(0, bounds.frame_start[i] + offset - 1).appendTo(result);
         }
+        return bounds.frame_start.back();
     }
 };
 
 }
 
-void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionNthValue(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionNthValue(WindowFunctionFactory & factory);
+void registerWindowFunctionNthValue(WindowFunctionFactory & factory)
 {
     factory.registerFunction("nth_value", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNthValue>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionNthValue>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
@@ -133,7 +133,7 @@ SELECT player, salary, nth_value(player,3) OVER(ORDER BY salary DESC) AS third_h
 7. │ Michael Stanley │ 100000 │ Charles Juarez       │
    └─────────────────┴────────┴──────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }

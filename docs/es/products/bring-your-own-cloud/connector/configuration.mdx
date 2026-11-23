@@ -21,7 +21,7 @@ El conector tiene una superficie de configuración para cada destino de instalac
     `clicklink clctl init` prepara en el directorio de trabajo una superposición de valores denominada `clicklink-values.yaml` y despliega con ella el chart `clicklink-connector`. La superposición constituye el registro persistente de tu implementación: al volver a ejecutar `init`, se conserva salvo que especifiques `--force`, por lo que tus cambios se mantienen tras nuevas ejecuciones y durante la recuperación.
 
     <Note>
-      Los comandos de operaciones posteriores a la instalación de esta página y de [operaciones](/es/products/bring-your-own-cloud/connector/operations) usan la CLI de `helm`. Solo `init` incluye un client de Helm integrado.
+      Para ejecutar los bloques `helm upgrade` de esta página necesitas la CLI de `helm` en tu estación de trabajo; solo `init` y `connector upgrade` incorporan una propia.
     </Note>
 
     Edita la superposición y aplícala:
@@ -36,9 +36,9 @@ El conector tiene una superficie de configuración para cada destino de instalac
       -f clicklink-values.yaml
     ```
 
-    El bloque vuelve a aplicar los valores editados con la versión del chart ya instalada, por lo que un cambio de configuración nunca implica una actualización no planificada. Actualizar a una versión nueva es un paso aparte; consulta [operaciones](/es/products/bring-your-own-cloud/connector/operations). En una instalación reflejada que usa un repositorio de charts, sustituye `--repo` por tu réplica.
+    El bloque vuelve a aplicar los valores editados con la versión del chart ya instalada, por lo que un cambio de configuración nunca implica una actualización no planificada. Actualizar a una versión nueva es un paso aparte; consulta [operaciones](/es/products/bring-your-own-cloud/connector/operations). En una instalación en mirror que usa un repositorio de charts, sustituye `--repo` por tu mirror.
 
-    Una instalación desde una referencia directa al chart (`oci://`, una URL o un archivo o directorio local; consulta [réplicas privadas](#private-mirrors)) no tiene ningún repositorio con el que resolver la referencia. Vuelve a ejecutar la actualización con la referencia desde la que realizaste la instalación:
+    Una instalación desde una referencia directa al chart (`oci://`, una URL o un archivo o directorio local; consulta [mirrors privados](#private-mirrors)) no tiene ningún repositorio con el que resolver la referencia. Vuelve a ejecutar la actualización con la referencia desde la que realizaste la instalación:
 
     ```bash
     helm upgrade clicklink-connector <same-chart-reference> \
