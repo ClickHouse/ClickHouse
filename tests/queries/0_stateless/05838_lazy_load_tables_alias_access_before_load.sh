@@ -53,12 +53,17 @@ $CLICKHOUSE_CLIENT --user "$USER" -q "SHOW COLUMNS FROM alias" > /dev/null 2>&1
 $CLICKHOUSE_CLIENT --user "$USER" -q "SHOW INDEXES FROM alias" > /dev/null 2>&1
 is_loaded
 
-# With the rights on the target, they load it and report its keys and indices.
-$CLICKHOUSE_CLIENT -q "SHOW COLUMNS FROM alias"
+# With the rights on the target, they load it and report its keys and indices. The user is not a superuser,
+# so this is decided by the grants on the target alone.
+$CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS ON \`$DB\`.t TO \`$USER\`"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.data_skipping_indices TO \`$USER\`"
+$CLICKHOUSE_CLIENT --user "$USER" -q "SHOW COLUMNS FROM alias"
 is_loaded
 reattach
-$CLICKHOUSE_CLIENT -q "SHOW INDEXES FROM alias"
+$CLICKHOUSE_CLIENT --user "$USER" -q "SHOW INDEXES FROM alias"
 is_loaded
+$CLICKHOUSE_CLIENT -q "REVOKE SHOW COLUMNS ON \`$DB\`.t FROM \`$USER\`"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON system.data_skipping_indices FROM \`$USER\`"
 
 # With the right on the target, the user loads it through the alias.
 reattach
