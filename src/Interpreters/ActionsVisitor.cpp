@@ -1856,6 +1856,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             removeNullable(removeLowCardinality(left_argument_type)));
                     const bool left_is_numeric = left_argument_type
                         && isNumber(removeNullable(removeLowCardinality(left_argument_type)));
+                    const bool left_is_identifier = left_bare_type
+                        && (isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type));
                     const bool compare_numeric_sources = use_standard_null_semantics
                         && left_argument_type
                         && (isNumber(removeNullable(removeLowCardinality(left_argument_type)))
@@ -1868,11 +1870,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                             || left_is_temporal)
                         && element_types_known
                         && !element_types.empty()
-                        && std::all_of(element_types.begin(), element_types.end(), [left_is_temporal, left_is_numeric](const auto & type)
+                        && std::all_of(element_types.begin(), element_types.end(), [left_is_temporal, left_is_numeric, left_is_identifier, &left_bare_type](const auto & type)
                         {
                             const auto bare_type = removeNullable(removeLowCardinality(type));
                             return type->onlyNull() || isNumber(bare_type) || isStringOrFixedString(bare_type)
                                 || isDynamic(bare_type) || isVariant(bare_type)
+                                || (left_is_identifier && left_bare_type->equals(*bare_type))
                                 || (left_is_temporal && (isDateTime(bare_type) || isDateTime64(bare_type)))
                                 || (left_is_numeric && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_type));
                         });

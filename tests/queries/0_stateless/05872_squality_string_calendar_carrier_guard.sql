@@ -1,5 +1,11 @@
 SET in_null_as_unknown = 1;
 
+SELECT [toDate('2000-01-01')] IN materialize(CAST(NULL AS Nullable(String)));
+SELECT [toDate('2000-01-01')] IN ([toDate('2000-01-01')], materialize(CAST(NULL AS Nullable(String))));
+SELECT map('a', toDate('2000-01-01')) IN materialize(CAST(NULL AS Nullable(String)));
+SELECT map('a', toDate('2000-01-01')) IN
+    (map('a', toDate('2000-01-01')), materialize(CAST(NULL AS Nullable(String))));
+
 SELECT [toDate('2000-01-01')] IN
     (materialize(toString([toDateTime('2000-01-01 00:00:00')])), NULL); -- { serverError NOT_IMPLEMENTED }
 

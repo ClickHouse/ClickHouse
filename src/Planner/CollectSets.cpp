@@ -177,7 +177,8 @@ public:
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
+            auto set_key = PlannerContext::distinguishSetNullMode(
+                in_second_argument->getTreeHash({.ignore_cte = true}), use_null_as_unknown);
             const bool external_table_expected = isNameOfGlobalInFunction(function_node->getFunctionName());
 
             if (auto subquery_set = sets.findSubquery(set_key))

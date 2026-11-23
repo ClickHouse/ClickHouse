@@ -105,6 +105,37 @@ namespace
     return isNumber(left) && isNumber(right) && !left->equals(*right);
 }
 
+[[nodiscard]] bool hasMixedStringDomain(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+    if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
+    {
+        if (const auto * right_array = typeid_cast<const DataTypeArray *>(right.get()))
+            return hasMixedStringDomain(left_array->getNestedType(), right_array->getNestedType());
+    }
+    if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+    {
+        if (const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
+        {
+            for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+                if (hasMixedStringDomain(left_tuple->getElements()[i], right_tuple->getElements()[i]))
+                    return true;
+        }
+    }
+    if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+    {
+        if (const auto * right_map = typeid_cast<const DataTypeMap *>(right.get()))
+            return hasMixedStringDomain(left_map->getKeyType(), right_map->getKeyType())
+                || hasMixedStringDomain(left_map->getValueType(), right_map->getValueType());
+    }
+    const bool left_identifier = isUUID(left) || isIPv4(left) || isIPv6(left);
+    const bool right_identifier = isUUID(right) || isIPv4(right) || isIPv6(right);
+    return (isStringOrFixedString(left) && (isNumber(right) || isBool(right) || isEnum(right) || right_identifier))
+        || (isStringOrFixedString(right) && (isNumber(left) || isBool(left) || isEnum(left) || left_identifier));
+}
+
 [[nodiscard]] bool hasNestedCalendarDateInComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     const auto left = removeNullable(removeLowCardinality(left_type));
@@ -344,13 +375,6 @@ public:
         auto maps = arguments[0].column->convertToFullColumnIfConst();
         auto sources = arguments[1].column->convertToFullColumnIfConst();
         const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
-        /// A textual compound carrier has no element type, so its calendar
-        /// precision cannot be compared safely with a typed map.
-        if (isStringOrFixedString(source_type) && hasCalendarDateType(map_type))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Setting 'in_null_as_unknown' does not yet support comparing {} with a string map carrier",
-                map_type->getName());
         const IColumn * carrier = sources.get();
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(carrier))
             carrier = &nullable->getNestedColumn();
@@ -365,6 +389,13 @@ public:
                 null_values[row] = 1;
                 continue;
             }
+            /// A textual compound carrier has no element type, so its calendar
+            /// precision cannot be compared safely with a typed map.
+            if (isStringOrFixedString(source_type) && hasCalendarDateType(map_type))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a string map carrier",
+                    map_type->getName());
             /// The source column retains the active `Dynamic`/`Variant` alternative and
             /// nested `Bool` tags that extracting a `Field` would discard.
             auto source_row = sources->cut(row, 1);
@@ -441,13 +472,6 @@ public:
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(carrier))
             carrier = &nullable->getNestedColumn();
         const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
-        /// A textual compound carrier has no element type, so its calendar
-        /// precision cannot be compared safely with a typed array.
-        if (isStringOrFixedString(source_type) && hasCalendarDateType(left_type))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Setting 'in_null_as_unknown' does not yet support comparing {} with a string array carrier",
-                left_type->getName());
 
         auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
         auto null_map = ColumnUInt8::create(input_rows_count, UInt8{0});
@@ -462,6 +486,14 @@ public:
             }
             if (left_values->isNullAt(row))
                 continue;
+
+            /// A textual compound carrier has no element type, so its calendar
+            /// precision cannot be compared safely with a typed array.
+            if (isStringOrFixedString(source_type) && hasCalendarDateType(left_type))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting 'in_null_as_unknown' does not yet support comparing {} with a string array carrier",
+                    left_type->getName());
 
             if (isStringOrFixedString(source_type) || isArray(source_type))
             {
@@ -784,13 +816,7 @@ public:
             /// A set containing only `NULL` has no key whose type-sensitive hash
             /// could miss a match. Leave it to the ordinary unknown-result handling.
             const bool only_null_key = set_types[0]->onlyNull() || (set->hasNull() && set->getTotalRowCount() == 1);
-            const bool left_identifier = isUUID(left_type) || isIPv4(left_type) || isIPv6(left_type);
-            const bool key_identifier = isUUID(key_type) || isIPv4(key_type) || isIPv6(key_type);
-            const bool mixed_string_domain =
-                (isStringOrFixedString(left_type)
-                    && (isNumber(key_type) || isBool(key_type) || isEnum(key_type) || key_identifier))
-                || (isStringOrFixedString(key_type)
-                    && (isNumber(left_type) || isBool(left_type) || isEnum(left_type) || left_identifier));
+            const bool mixed_string_domain = hasMixedStringDomain(left_type, key_type);
             if (!isDynamic(left_type) && !isVariant(left_type)
                 && (isDynamic(key_type) || isVariant(key_type)) && !only_null_key)
                 throw Exception(
