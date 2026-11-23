@@ -1923,6 +1923,20 @@ TEST_P(CoordinationTest, TestListWithStatOrDataWatches)
     }
 
     {
+        SCOPED_TRACE("SetWatches fires a children event for a list watch whose children changed");
+        auto set_watches = std::make_shared<ZooKeeperSetWatchesRequest>();
+        set_watches->zxid = 0;
+        set_watches->child_watches = {"/dir"};
+        EXPECT_EQ(run(set_watches, watcher), children_changed);
+
+        auto set_watches2 = std::make_shared<ZooKeeperSetWatches2Request>();
+        set_watches2->zxid = 0;
+        set_watches2->child_watches = {"/dir"};
+        EXPECT_EQ(run(set_watches2, watcher), children_changed);
+        EXPECT_EQ(storage.getTotalWatchesCount(), 0);
+    }
+
+    {
         SCOPED_TRACE("Changes of the children set, below the children and of the listed node");
         list_with("/dir", /*with_stat=*/true, /*with_data=*/true);
         EXPECT_TRUE(create("/dir/child/grandchild2").empty());
