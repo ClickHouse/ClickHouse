@@ -50,7 +50,6 @@ hyperdx:
         {
           "name": "Local ClickHouse",
           "host": "http://your-clickhouse-server:8123",
-          "port": 8123,
           "username": "your-username",
           "password": "your-password"
         }
@@ -69,14 +68,15 @@ helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.y
 For production deployments where you want to keep credentials separate from your Helm configuration:
 
 #### Create your configuration files {#create-configuration}
+
+Include the HTTP(S) port in each connection's `host` URL. This example uses the HTTPS port `8443`; use the port configured on your server.
 ```bash
 # Create connections.json
 cat <<EOF > connections.json
 [
   {
     "name": "Production ClickHouse",
-    "host": "https://your-production-clickhouse.com",
-    "port": 8123,
+    "host": "https://your-production-clickhouse.com:8443",
     "username": "hyperdx_user",
     "password": "your-secure-password"
   }
@@ -101,6 +101,7 @@ cat <<EOF > sources.json
     "bodyExpression": "Body",
     "eventAttributesExpression": "LogAttributes",
     "resourceAttributesExpression": "ResourceAttributes",
+    "defaultTableSelectExpression": "Timestamp,ServiceName,SeverityText,Body",
     "severityTextExpression": "SeverityText",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId"
@@ -119,7 +120,12 @@ cat <<EOF > sources.json
     "serviceNameExpression": "ServiceName",
     "traceIdExpression": "TraceId",
     "spanIdExpression": "SpanId",
-    "durationExpression": "Duration"
+    "durationExpression": "Duration",
+    "durationPrecision": 9,
+    "defaultTableSelectExpression": "Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName",
+    "parentSpanIdExpression": "ParentSpanId",
+    "spanNameExpression": "SpanName",
+    "spanKindExpression": "SpanKind"
   }
 ]
 EOF
@@ -222,7 +228,6 @@ hyperdx:
         {
           "name": "Local ClickHouse",
           "host": "http://your-clickhouse-server:8123",
-          "port": 8123,
           "username": "your-username",
           "password": "your-password"
         }
