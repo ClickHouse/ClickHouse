@@ -203,7 +203,10 @@ void LimitStep::serialize(Serialization & ctx) const
         flags |= 1;
     if (with_ties)
         flags |= 2;
-    if (ctx.step_version >= 1 && is_shard_limit)
+    /// The shard-limit marker only says where the step runs, not what it computes, so it stays out of
+    /// a cache key. Automatic parallel replicas matches the steps of the single-node plan with the
+    /// steps of the plan for replicas by this key, and only the latter marks its limit as a shard limit.
+    if (ctx.step_version >= 1 && is_shard_limit && !ctx.for_cache_key)
         flags |= 4;
     if (ctx.step_version >= 1 && distributed_top_k_candidate_sort_description)
         flags |= 8;
