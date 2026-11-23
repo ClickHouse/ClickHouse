@@ -303,15 +303,23 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     /// resolve only: an optimization pass can change a stored expression (`GROUP BY -c0` into `GROUP BY c0`)
     query_tree_pass_manager.runOnlyResolve(query_tree);
 
-    /// `count(1)` and `sum(1)` are stored as `count()`, `if(1, a, b)` as `a`, a chain of `if` as `multiIf`
-    NormalizeCountVariantsPass().run(query_tree, query_context);
-    IfConstantConditionPass().run(query_tree, query_context);
-    IfChainToMultiIfPass().run(query_tree, query_context);
-
+    /// before the passes: they must not remove an expression that reads a column (`count(b IS NOT NULL)`)
     auto table_node = query_node.getJoinTreeNode();
     for (auto & child : query_node.getChildren())
         if (child)
             restoreExpressionsOverColumns(child, table_node);
+
+    /// the old analysis changed `count` and `sum` only of a literal, not of a folded expression (`count(1 + 1)`)
+    for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_tree))
+        for (auto & argument : aggregate_function_node->as<FunctionNode &>().getArguments().getNodes())
+            if (const auto * constant_node = argument->as<ConstantNode>();
+                constant_node && constant_node->hasSourceExpression() && !isQueryOrUnionNode(constant_node->getSourceExpression()))
+                argument = constant_node->getSourceExpression();
+
+    /// `count(1)` and `sum(1)` are stored as `count()`, `if(1, a, b)` as `a`, a chain of `if` as `multiIf`
+    NormalizeCountVariantsPass().run(query_tree, query_context);
+    IfConstantConditionPass().run(query_tree, query_context);
+    IfChainToMultiIfPass().run(query_tree, query_context);
 
     removeConstantGroupByKeys(query_node, hasAggregateFunctionNodes(query_tree));
 
