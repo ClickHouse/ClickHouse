@@ -95,6 +95,68 @@ Here you can see:
 - `SourceFromSingleChunk` need to wait, because `ExpressionTransform` does not accept any data during execution of `sleep(1)`, so it will be in `PortFull` state for 1e6 us, and so `output_wait_elapsed_us` > 1e6.
 - `LimitsCheckingTransform`/`NullSource`/`LazyOutputFormat` need to wait until `ExpressionTransform` will execute `sleep(1)` to process the result, so `input_wait_elapsed_us` > 1e6.
 
+### Profiling Join Queries {#profiling-join-queries}
+
+When queries join multiple tables, ClickHouse constructs independent read pipelines for the left (probe) and right (build) tables. Summing `input_rows` or `output_rows` across all processors in `system.processors_profile_log` counts intermediate rows multiple times as chunks flow through successive transforms.
+
+To identify and attribute rows to each side of a join:
+
+1. Identify the scan processors associated with each input table using `plan_step_name` and `plan_step_description`. For `MergeTree` tables, the processor name typically begins with `MergeTreeSelect`.
+2. Observe how intermediate rows pass through `FilterTransform`, `ExpressionTransform`, and the join processors.
+3. Note that processor row and byte counters measure in-memory chunk processing rather than raw disk reads (which are tracked in `system.query_log` and `ProfileEvents`).
+
+#### Example {#profiling-join-example}
+
+Create two small `MergeTree` tables of different sizes:
+
+```sql title="Setup"
+CREATE TABLE left_table (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE right_table (id UInt64, category String) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO left_table SELECT number, toString(number) FROM numbers(1000);
+INSERT INTO right_table SELECT number, toString(number % 10) FROM numbers(100);
+```
+
+Inspect the pipeline structure:
+
+```sql title="Inspect Pipeline"
+EXPLAIN PIPELINE
+SELECT l.id, l.value, r.category
+FROM left_table AS l
+INNER JOIN right_table AS r ON l.id = r.id;
+```
+
+Execute the join with processor profiling enabled:
+
+```sql title="Execute Query"
+SELECT l.id, l.value, r.category
+FROM left_table AS l
+INNER JOIN right_table AS r ON l.id = r.id
+SETTINGS log_processors_profiles = 1;
+```
+
+Flush logs and inspect processor statistics:
+
+```sql title="Query system.processors_profile_log"
+SYSTEM FLUSH LOGS;
+
+SELECT
+    name,
+    plan_step_name,
+    plan_step_description,
+    input_rows,
+    output_rows,
+    elapsed_us
+FROM system.processors_profile_log
+WHERE query_id = '<query_id>'
+ORDER BY plan_step, id;
+```
+
+In the output:
+- Processors under the step corresponding to reading `right_table` feed rows into build-side processors such as `FillingRightJoinSideTransform`, which construct the in-memory hash table.
+- Processors under the step corresponding to `left_table` stream rows through `JoiningTransform` to probe for matching keys.
+- To determine rows read per table, look at `output_rows` on the scan step for each respective side rather than aggregate totals.
+
 ## See Also {#see-also}
 
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
