@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 set -e
-CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 --ignore_drop_queries_probability=0"
+CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 --ignore_drop_queries_probability=0 --database_replicated_allow_explicit_uuid=1"
 
 mv_uuid=$($CLIENT -q "SELECT generateUUIDv4()")
 inner_uuid=$($CLIENT -q "SELECT generateUUIDv4()")
