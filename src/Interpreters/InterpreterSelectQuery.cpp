@@ -3256,7 +3256,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         const bool streams_fan_out
             = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == windows_sorted.size());
 
-        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window, window.window_functions, streams_fan_out, sort_settings);
+        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window, window.window_functions, streams_fan_out, sort_settings, WindowFunctionSettings::create(settings));
         window_step->setStepDescription(fmt::format("Window step for window '{}'", window.window_name), options.max_step_description_length);
 
         query_plan.addStep(std::move(window_step));
