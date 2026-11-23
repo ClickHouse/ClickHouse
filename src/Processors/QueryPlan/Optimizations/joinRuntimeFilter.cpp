@@ -146,7 +146,6 @@ static const ActionsDAG::Node & createRuntimeFilterCondition(
 
 struct BuildSideDistinctKeys
 {
-    /// The maximum the statistics keep, see `HashJoinEntry::shouldBeUpdated`.
     std::optional<UInt64> max;
     std::optional<UInt64> last_run;
 };
