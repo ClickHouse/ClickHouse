@@ -521,7 +521,6 @@ void runInit(int server_socket, int exit_status_fd, int signal_fd, const sigset_
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot restore the signal mask");
             }
             /// The notifications go through the supervisor.
-            ::unsetenv("NOTIFY_SOCKET"); // NOLINT(concurrency-mt-unsafe)
             supervisor_socket.store(server_socket, std::memory_order_relaxed);
             return;
         }
