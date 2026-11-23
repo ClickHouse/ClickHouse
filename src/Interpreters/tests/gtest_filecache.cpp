@@ -66,12 +66,14 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCachePriorityQueueElements;
     extern const Metric FilesystemCacheInvalidatedElements;
+    extern const Metric FilesystemCacheDelayedCleanupElements;
 }
 
 namespace ProfileEvents
@@ -4857,3 +4859,235 @@ TEST_F(FileCacheTest, DiskCacheProviderTemporaryModeDropsUnusedSegments)
     EXPECT_TRUE(cached(written_by_normal_writer));
 }
 
+namespace
+{
+
+DB::FileCacheSettings getSettingsForLoadTests(size_t max_size)
+{
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = max_size;
+    settings[FileCacheSetting::max_elements] = 100000;
+    settings[FileCacheSetting::max_file_segment_size] = 50;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::load_metadata_threads] = 4;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    return settings;
+}
+
+fs::path getKeyDirectory(const FileCacheKey & key)
+{
+    const auto key_str = key.toString();
+    return fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
+}
+
+/// The queue is empty once the metric is back at the value it had before the cache was created.
+void waitForCleanupQueue(Int64 delayed_cleanup_elements_before)
+{
+    Stopwatch watch;
+    while (CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements) != delayed_cleanup_elements_before)
+    {
+        ASSERT_LT(watch.elapsedSeconds(), 60) << "The cleanup queue did not become empty";
+        sleepForMilliseconds(10);
+    }
+}
+
+size_t countFilesInKeyDirectories()
+{
+    size_t count = 0;
+    /// Depth 0 is the key prefix directories, depth 1 is the key directories, depth 2 is their files.
+    for (auto it = fs::recursive_directory_iterator(cache_base_path); it != fs::recursive_directory_iterator(); ++it)
+        count += it.depth() == 2 && it->is_regular_file();
+    return count;
+}
+
+/// Loads the cache from `cache_base_path` and returns the final line of the load progress log.
+std::string loadCacheAndGetProgressLine(std::optional<DB::FileCache> & cache, const std::string & name, const DB::FileCacheSettings & settings)
+{
+    /// The progress line is logged at the information level.
+    FileCacheTest::setupLogs("information");
+
+    std::string log_output;
+    testing::internal::CaptureStderr();
+    {
+        /// A capture which is left open makes the next one abort the whole test binary.
+        SCOPE_EXIT({ log_output = testing::internal::GetCapturedStderr(); });
+        cache.emplace(name, settings);
+        cache->initialize();
+    }
+
+    const auto pos = log_output.find("Loaded filesystem cache");
+    if (pos == std::string::npos)
+        return {};
+    return log_output.substr(pos, log_output.find('\n', pos) - pos);
+}
+
+}
+
+TEST_F(FileCacheTest, LoadMetadataLeavesEmptyKeyDirectoriesToCleanupThread)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_loaded_keys = 3;
+    const size_t num_empty_keys = 5;
+    const size_t segment_size = 50;
+    const auto settings = getSettingsForLoadTests(/* max_size */ 100 * segment_size);
+    const auto & user = FileCache::getCommonOrigin();
+
+    std::vector<FileCacheKey> loaded_keys;
+    for (size_t i = 0; i < num_loaded_keys; ++i)
+        loaded_keys.push_back(FileCacheKey::fromPath("loaded_" + std::to_string(i)));
+
+    {
+        auto cache = DB::FileCache("LeavesEmptyKeyDirectories_init", settings);
+        cache.initialize();
+        for (const auto & key : loaded_keys)
+            download(cache.getOrSet(key, 0, segment_size, segment_size, {}, 0, user));
+    }
+
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    /// A key which is used again before its empty directory is removed.
+    const auto returning_key = FileCacheKey::fromPath("returning");
+    fs::create_directories(getKeyDirectory(returning_key));
+
+    fs::path empty_key_prefix_directory;
+    for (size_t i = 0; empty_key_prefix_directory.empty(); ++i)
+    {
+        auto candidate = fs::path(cache_base_path) / fmt::format("{:03x}", i);
+        if (!fs::exists(candidate))
+            empty_key_prefix_directory = candidate;
+    }
+    fs::create_directories(empty_key_prefix_directory);
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+
+    std::optional<DB::FileCache> cache;
+    const auto progress_line = loadCacheAndGetProgressLine(cache, "LeavesEmptyKeyDirectories", settings);
+
+    ASSERT_TRUE(progress_line.contains(", 1 empty key prefix directories removed")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 3 keys with 3 file segments loaded")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 0 keys removed because no file segment was loaded for them")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 0 file segments removed because they do not fit")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 6 empty key directories left for background cleanup")) << progress_line;
+    ASSERT_FALSE(fs::exists(empty_key_prefix_directory));
+
+    download(cache->getOrSet(returning_key, 0, segment_size, segment_size, {}, 0, user));
+
+    waitForCleanupQueue(delayed_cleanup_elements_before);
+    /// Joins the cleanup thread, so a removal that it has already taken from the queue is finished.
+    cache.reset();
+
+    for (const auto & directory : empty_key_directories)
+        ASSERT_FALSE(fs::exists(directory)) << directory;
+    for (const auto & key : loaded_keys)
+        ASSERT_FALSE(fs::is_empty(getKeyDirectory(key))) << key.toString();
+    ASSERT_FALSE(fs::is_empty(getKeyDirectory(returning_key)));
+    ASSERT_EQ(countFilesInKeyDirectories(), num_loaded_keys + 1);
+}
+
+TEST_F(FileCacheTest, LoadMetadataCountsKeysWithoutFileSegments)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_keys = 4;
+    const size_t num_fitting_keys = 2;
+    const size_t segment_size = 50;
+    const auto & user = FileCache::getCommonOrigin();
+
+    {
+        auto cache = DB::FileCache("CountsKeysWithoutFileSegments_init", getSettingsForLoadTests(/* max_size */ num_keys * segment_size));
+        cache.initialize();
+        for (size_t i = 0; i < num_keys; ++i)
+            download(cache.getOrSet(FileCacheKey::fromPath("key_" + std::to_string(i)), 0, segment_size, segment_size, {}, 0, user));
+    }
+
+    /// A key directory which holds only a file of zero size: the file is removed and no file segment is loaded.
+    const auto key_directory_with_empty_file = getKeyDirectory(FileCacheKey::fromPath("only_empty_file"));
+    fs::create_directories(key_directory_with_empty_file);
+    std::ofstream(key_directory_with_empty_file / "0").close();
+
+    std::optional<DB::FileCache> cache;
+    const auto progress_line = loadCacheAndGetProgressLine(
+        cache, "CountsKeysWithoutFileSegments", getSettingsForLoadTests(/* max_size */ num_fitting_keys * segment_size));
+
+    ASSERT_TRUE(progress_line.contains(", 2 keys with 2 file segments loaded")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 3 keys removed because no file segment was loaded for them")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 2 file segments removed because they do not fit")) << progress_line;
+    ASSERT_TRUE(progress_line.contains(", 0 empty key directories left for background cleanup")) << progress_line;
+
+    ASSERT_FALSE(fs::exists(key_directory_with_empty_file));
+    ASSERT_EQ(countFilesInKeyDirectories(), num_fitting_keys);
+    ASSERT_EQ(cache->getUsedCacheSize(), num_fitting_keys * segment_size);
+}
+
+TEST_F(FileCacheTest, EmptiedKeyDirectoryWithUnknownFileIsKept)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t segment_size = 50;
+    const auto & user = FileCache::getCommonOrigin();
+    const auto key_with_unknown_file = FileCacheKey::fromPath("with_unknown_file");
+    const auto plain_key = FileCacheKey::fromPath("plain");
+    const auto unknown_file = getKeyDirectory(key_with_unknown_file) / "unknown";
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+    {
+        auto cache = DB::FileCache("EmptiedKeyDirectoryWithUnknownFile", getSettingsForLoadTests(/* max_size */ 100 * segment_size));
+        cache.initialize();
+
+        download(cache.getOrSet(key_with_unknown_file, 0, segment_size, segment_size, {}, 0, user));
+        download(cache.getOrSet(plain_key, 0, segment_size, segment_size, {}, 0, user));
+        std::ofstream(unknown_file).close();
+
+        cache.removeFileSegment(key_with_unknown_file, 0, user.user_id);
+        cache.removeFileSegment(plain_key, 0, user.user_id);
+
+        waitForCleanupQueue(delayed_cleanup_elements_before);
+    }
+
+    ASSERT_FALSE(fs::exists(getKeyDirectory(plain_key)));
+    ASSERT_TRUE(fs::exists(unknown_file));
+    ASSERT_EQ(countFilesInKeyDirectories(), 1);
+}
+
+TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    /// Enough for helper cleanup threads to start if the keys are queued faster than they are removed.
+    const size_t num_keys = 3000;
+    const size_t segment_size = 10;
+    const auto & user = FileCache::getCommonOrigin();
+
+    std::vector<FileCacheKey> keys;
+    for (size_t i = 0; i < num_keys; ++i)
+        keys.push_back(FileCacheKey::fromPath("emptied_" + std::to_string(i)));
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+    {
+        auto cache = DB::FileCache("ManyEmptiedKeys", getSettingsForLoadTests(/* max_size */ num_keys * segment_size));
+        cache.initialize();
+
+        for (const auto & key : keys)
+            download(cache.getOrSet(key, 0, segment_size, segment_size, {}, 0, user));
+        for (const auto & key : keys)
+            cache.removeFileSegment(key, 0, user.user_id);
+
+        waitForCleanupQueue(delayed_cleanup_elements_before);
+    }
+
+    for (const auto & key : keys)
+        ASSERT_FALSE(fs::exists(getKeyDirectory(key))) << key.toString();
+    ASSERT_EQ(countFilesInKeyDirectories(), 0);
+}

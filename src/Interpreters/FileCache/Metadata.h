@@ -21,6 +21,7 @@ namespace DB
 {
 
 class CleanupQueue;
+struct CleanupTask;
 using CleanupQueuePtr = std::shared_ptr<CleanupQueue>;
 class DownloadQueue;
 using DownloadQueuePtr = std::shared_ptr<DownloadQueue>;
@@ -117,7 +118,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     enum class KeyState : uint8_t
     {
         ACTIVE,
-        REMOVING,
+        QUEUED_FOR_REMOVAL,
         REMOVED,
     };
 
@@ -128,7 +129,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     LockedKeyPtr lock();
 
-    /// Will only fail if key is not in ACTIVE state, e.g. REMOVING or REMOVED.
+    /// Will only fail if key is not in ACTIVE state, e.g. QUEUED_FOR_REMOVAL or REMOVED.
     LockedKeyPtr tryLock();
 
     [[nodiscard]] std::error_code createBaseDirectory();
@@ -242,7 +243,7 @@ public:
     void removeKey(const Key & key, bool if_exists, const UserID & user_id);
 
     /// Hands a key directory that the initial load found empty to the cleanup thread.
-    void addLeftoverEmptyKeyDirectory(const std::string & key_prefix_directory, const Key & key);
+    void addEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key);
 
     /// Returns true if the client was fully purged; false if any key kept
     /// non-releasable (held) segments and survived — retry on a later sweep.
@@ -329,23 +330,19 @@ private:
         const CacheMetadataGuard::Lock &);
 
     /// Does nothing when the key exists again: the directory then belongs to that key.
-    void removeLeftoverEmptyKeyDirectory(const std::string & key_prefix_directory, const Key & key);
+    void removeEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key);
 
-    void removeKeyIfStillRemoving(const Key & key);
+    void removeKeyIfStillQueuedForRemoval(const Key & key);
 
     void downloadThreadFunc(const bool & stop_flag);
 
-    /// Firstly, this cleanup does not delete cache files,
-    /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
-    /// Secondly, it deletes those only if arose as a result of
-    /// (1) eviction in FileCache::tryReserve();
-    /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
-    /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
-    /// triggered by removal of source files from objects storage.
-    /// E.g. number of elements submitted to background cleanup should remain low.
+    /// Never deletes cache files: only removes emptied keys from metadata with their (prefix) directories,
+    /// and the empty key directories which the initial load found. `removeKey` and `removeAllKeys`
+    /// remove their keys at once and do not go through this cleanup.
     void cleanupThreadFunc();
-    /// Removes emptied keys until none is left; started by `cleanupThreadFunc` when they pile up.
-    void helperCleanupThreadFunc();
+    /// Runs cleanup tasks until none is left; started by `cleanupThreadFunc` when they pile up.
+    void cleanupThreadFuncImpl();
+    void runCleanupTask(const CleanupTask & task);
 };
 
 class CacheMetadata::Iterator

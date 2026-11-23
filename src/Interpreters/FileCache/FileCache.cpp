@@ -2078,8 +2078,11 @@ void FileCache::loadMetadata()
 struct FileCache::LoadMetadataProgress
 {
     std::atomic<size_t> listed_key_prefix_directories = 0;
+    std::atomic<size_t> empty_key_prefix_directories = 0;
     std::atomic<size_t> loaded_keys = 0;
+    std::atomic<size_t> keys_without_file_segments = 0;
     std::atomic<size_t> loaded_file_segments = 0;
+    std::atomic<size_t> failed_to_fit_file_segments = 0;
     std::atomic<size_t> empty_key_directories = 0;
 
     void logIfDue(const LoggerPtr & logger)
@@ -2091,10 +2094,13 @@ struct FileCache::LoadMetadataProgress
     void logNow(const LoggerPtr & logger, std::string_view state) const
     {
         LOG_INFO(logger,
-            "{} filesystem cache: {} sec elapsed, {} key prefix directories listed, {} keys with {} file segments loaded, "
-            "{} empty key directories left for background cleanup",
-            state, since_start.elapsedSeconds(), listed_key_prefix_directories.load(), loaded_keys.load(),
-            loaded_file_segments.load(), empty_key_directories.load());
+            "{} filesystem cache: {} sec elapsed, {} key prefix directories listed, {} empty key prefix directories removed, "
+            "{} keys with {} file segments loaded, {} keys removed because no file segment was loaded for them, "
+            "{} file segments removed because they do not fit, {} empty key directories left for background cleanup",
+            state, since_start.elapsedSeconds(), listed_key_prefix_directories.load(),
+            empty_key_prefix_directories.load(), loaded_keys.load(), loaded_file_segments.load(),
+            keys_without_file_segments.load(), failed_to_fit_file_segments.load(),
+            empty_key_directories.load());
     }
 
 private:
@@ -2329,6 +2335,7 @@ void FileCache::loadMetadataImpl()
                         {
                             LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_dir.string());
                             fs::remove(key_prefix_dir);
+                            ++progress.empty_key_prefix_directories;
                             continue;
                         }
 
@@ -2418,7 +2425,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     if (offset_it == fs::directory_iterator())
     {
         /// Not removed here: with many such directories the removal takes most of the load time.
-        metadata.addLeftoverEmptyKeyDirectory(key_directory.parent_path().string(), key);
+        metadata.addEmptyKeyDirectoryFromStartup(key_directory.parent_path().string(), key);
         ++progress.empty_key_directories;
         return;
     }
@@ -2572,6 +2579,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
 
     /// Phase 3: construct FileSegment objects and emplace
     /// (no lock held, because a single key is loaded by a single thread).
+    size_t loaded = 0;
     size_t failed_to_fit = 0;
     for (auto & segment : segments)
     {
@@ -2602,6 +2610,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
 
             if (inserted)
             {
+                ++loaded;
                 LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, segment.offset, segment.size, segment.path.string());
             }
             else
@@ -2627,12 +2636,17 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             size_limit, failed_to_fit, key);
     }
 
-    ++progress.loaded_keys;
-    progress.loaded_file_segments += segments.size() - failed_to_fit;
+    progress.loaded_file_segments += loaded;
+    progress.failed_to_fit_file_segments += failed_to_fit;
 
     if (key_metadata->sizeUnlocked() == 0)
     {
+        ++progress.keys_without_file_segments;
         metadata.removeKey(key, /* if_exists */false, origin_info.user_id);
+    }
+    else
+    {
+        ++progress.loaded_keys;
     }
 }
 
