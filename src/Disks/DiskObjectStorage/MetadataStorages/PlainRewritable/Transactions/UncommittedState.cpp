@@ -46,7 +46,7 @@ public:
             created_directories.insert(*snapshot_path);
     }
 
-    [[nodiscard]] std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
+    std::optional<NormalizedPath> resolveToSnapshotPath(const NormalizedPath & path) const
     {
         auto resolved = path.string();
 
@@ -75,7 +75,7 @@ public:
         return NormalizedPath{resolved};
     }
 
-    [[nodiscard]] bool isCreatedByTransaction(const NormalizedPath & path) const
+    bool isCreatedByTransaction(const NormalizedPath & path) const
     {
         return created_directories.contains(path);
     }

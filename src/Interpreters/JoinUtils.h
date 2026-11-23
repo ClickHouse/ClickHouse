@@ -6,6 +6,7 @@
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
 #include <base/FnTraits.h>
 
@@ -63,9 +64,9 @@ public:
 
     bool hasData() { return column != nullptr || kind != Kind::Unknown; }
 
-    [[nodiscard]] size_t getSize() const { return size; }
+    size_t getSize() const { return size; }
 
-    [[nodiscard]] bool isRowFiltered(size_t row) const
+    bool isRowFiltered(size_t row) const
     {
         chassert(!column || row < size);
         return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
@@ -74,13 +75,13 @@ public:
     /// The raw mask bytes when the mask is a real column (kind `Unknown`), nullptr otherwise.
     /// Lets hot loops hoist the pointer into a local instead of re-reading it through the object.
     /// The bytes are boolean-like: 0 = row filtered, any non-zero value = row passes.
-    [[nodiscard]] const UInt8 * getRawDataOrNull() const
+    const UInt8 * getRawDataOrNull() const
     {
         chassert(kind != Kind::Unknown || column);
         return kind == Kind::Unknown ? assert_cast<const ColumnUInt8 &>(*column).getData().data() : nullptr;
     }
 
-    [[nodiscard]] Kind getKind() const { return kind; }
+    Kind getKind() const { return kind; }
 
 private:
     ColumnPtr column;
@@ -105,10 +106,6 @@ private:
   */
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
-
-/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
-/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
-DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
 
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
@@ -147,11 +144,11 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
 Int64 getCurrentQueryMemoryUsage();
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block);
 
-/// Throw an exception if join condition column cannot be used in boolean context
+/// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
                        const Block & block_right, const String & condition_name_right);
 
-/// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
+/// Throw an exception if blocks have different types of key columns . Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
                       const Block & block_right, const Names & key_names_right);
 
@@ -162,26 +159,9 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
 void createMissedColumns(Block & block);
 void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_join, Block & out_block);
 
-/// The single row of a totals column: `arrayJoin` in the totals expression can leave more or fewer rows than one.
-/// An empty column that is not constant gets the default of `type` where it differs from the column zero (an `Enum`'s smallest value).
-ColumnPtr totalsColumnToSingleRow(const ColumnPtr & column, const DataTypePtr & type);
-
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
-
-/** Whether a JOIN on keys of these two types behaves like a plain equality of the key values.
-  *
-  * The JOIN casts both keys to their common type and compares the results. For most type pairs this is what `=`
-  * does too, so `a = b` can be treated as an ordinary equality: it is transitive, and `CAST(a)` is the value `b`
-  * holds in the matched row. `FixedString` vs `String` is different: `=` ignores trailing zero bytes, so
-  * `toFixedString('a', 3)` is equal to both `'a'` and `'a\0\0'`, while `'a' = 'a\0\0'` is false.
-  *
-  * Allowed: equal types (up to `Nullable` and `LowCardinality`), two numbers (the JOIN refuses a lossy mix such as
-  * `Int64` vs `Float64`), two date or time types, two `FixedString`. Any other pair is declined, so new types are
-  * safe by default.
-  */
-bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type);
 
 /// Return mask array of type ColumnUInt8 for specified column. Source should have type UInt8 or Nullable(UInt8).
 JoinMask getColumnAsMask(const Block & block, const String & column_name);
@@ -213,9 +193,8 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
-/// Insert default values for rows marked in filter; the defaults of `default_type` if it is set.
-ColumnPtr filterWithBlanks(
-    ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false, const DataTypePtr & default_type = nullptr);
+/// Insert default values for rows marked in filter
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
 
 }
 

@@ -28,12 +28,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// The temporary-cache mode is a variant of the bypass in which misses are still cached.
-bool skipCacheOnMiss(const FilesystemCacheSettings & settings)
-{
-    return settings.read_if_exists_otherwise_bypass && !settings.cache_temporarily;
-}
-
 /// Shared zero-copy pread of `[overlap_start, overlap_start + overlap_size)`
 /// (object-local) out of `segment`, appending a single file-level `ChainedBufferNode`
 /// (logical offset `overlap_start + object_file_offset`) to `result`. Opens a fresh
@@ -172,14 +166,12 @@ DiskCacheReader::DiskCacheReader(
     ByteRange range_in_file,
     size_t object_file_offset_,
     ThrottlerPtr local_throttler_,
-    ReaderAnchorCache * anchors_,
-    bool counts_hits_)
+    ReaderAnchorCache * anchors_)
     : segment_holder(std::move(segment_holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
-    , counts_hits(counts_hits_)
 {
     chassert(segment_holder && segment_holder->size() == 1);
     /// The hit range (file-space) must fall inside this segment's file-space span.
@@ -233,7 +225,7 @@ DiskCacheWriter::DiskCacheWriter(
 
 size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
 {
-    if (skipCacheOnMiss(cache_settings))
+    if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
 
     /// `FileSegment::range()` is object-local; shift `data` so `ChainedBuffers::copyTo`
@@ -439,7 +431,7 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & file_segment, char * data,
     /// quota are fail-open; other errors honour `skipCacheOnDiskFailure`.
     try
     {
-        file_segment.write(data, size, offset, /*keep_temporary=*/cache_settings.cache_temporarily);
+        file_segment.write(data, size, offset);
         return true;
     }
     catch (ErrnoException & e)
@@ -474,7 +466,7 @@ DiskCacheReader::~DiskCacheReader()
     /// fresh inserts isn't aged below them. A segment still DOWNLOADING (another thread fills its
     /// tail) is skipped; the fill itself gives it insert priority. The `segment_holder` member then
     /// completes the segment as it is destroyed.
-    if (!served || !segment_holder || !counts_hits)
+    if (!served || !segment_holder)
         return;
     try
     {
@@ -494,6 +486,7 @@ DiskCacheReader::~DiskCacheReader()
 DiskCacheProvider::DiskCacheProvider(
     FileCachePtr cache_,
     const FilesystemCacheSettings & cache_settings_,
+    const String & query_id_,
     ThrottlerPtr local_throttler_,
     std::optional<FileCacheKey> custom_cache_key_,
     std::optional<FileCacheOriginInfo> custom_origin_)
@@ -506,6 +499,9 @@ DiskCacheProvider::DiskCacheProvider(
     /// byte cap an entry count.
     , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
 {
+    /// Register a per-query context; null when no download budget is configured
+    /// (`filesystem_cache_max_download_size == 0` / no query limit), the unbounded path.
+    query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
 }
 
 /// The disk tier's residency walk. One `resolve` = one cache transaction, no per-call state (shared
@@ -541,11 +537,9 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
         ICacheProvider::CacheResolution hit;
         hit.kind = ICacheProvider::CacheResolution::Kind::Hit;
         hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
-        /// In the temporary-cache mode the reader counts no hit and keeps no open fd: a segment it reads can be
-        /// removed at its last release.
         hit.reader = std::make_unique<DiskCacheReader>(
-            seg_holder, hit.range, object_file_offset, local_throttler,
-            cache_settings.cache_temporarily ? nullptr : &reader_anchors, !cache_settings.cache_temporarily);
+            seg_holder, hit.range, object_file_offset,
+            local_throttler, &reader_anchors);
         out.push_back(std::move(hit));
     };
 
@@ -554,7 +548,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
     /// the ask. The bypass side never fills, so a miss carries no fill geometry - it only tells
     /// the executor which bytes to read from source. Nothing created/reserved/evicted, so a bypass
     /// read (a merge) never perturbs the cache.
-    if (skipCacheOnMiss(cache_settings))
+    if (cache_settings.read_if_exists_otherwise_bypass)
     {
         auto got_holder = cache->get(
             resolved_key, ask_lo_obj, ask_hi_obj - ask_lo_obj,
@@ -600,14 +594,12 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> DiskCacheProvider::res
     /// back whole, virgin territory comes back as demand-shaped segments cut by
     /// the cache's `splitRange` on its own grid - the edge overhang is the
     /// grid rounding `getOrSet` itself applies.
-    CreateFileSegmentSettings create_settings;
-    create_settings.temporary = cache_settings.cache_temporarily;
     auto got_holder = cache->getOrSet(
         resolved_key,
         ask_lo_obj,
         ask_hi_obj - ask_lo_obj,
         object_size,
-        create_settings,
+        CreateFileSegmentSettings{},
         /*file_segments_limit=*/0,
         resolved_origin,
         cache_settings.boundary_alignment);

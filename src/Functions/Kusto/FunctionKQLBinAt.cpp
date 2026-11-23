@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -48,13 +47,13 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionKQLDateTimeBinAt>(std::move(context_)); }
 
-    [[nodiscard]] String getName() const override { return name; }
-    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
-    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
-    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 3; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isDateTime64(removeNullable(arguments[0])) || !isInterval(removeNullable(arguments[1]))
             || !isDateTime64(removeNullable(arguments[2])))
@@ -67,7 +66,7 @@ public:
         return makeNullable(std::make_shared<DataTypeDateTime64>(result_scale, value_type));
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
     {
         struct Operand
         {
@@ -125,7 +124,7 @@ public:
     }
 
 private:
-    const FormatSettingsEnums::DateTimeOverflowBehavior overflow_behavior;
+    const FormatSettings::DateTimeOverflowBehavior overflow_behavior;
 
     static Int128 nanosecondsAt(const IColumn & column, const IDataType & type, size_t row)
     {
@@ -159,13 +158,13 @@ private:
 
             if (value < min || value > max)
             {
-                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
+                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
                     throw Exception(
                         ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                         "The result of {} is out of bounds of type DateTime64({})",
                         getName(),
                         datetime64->getScale());
-                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
+                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
                     value = std::clamp<Int128>(value, min, max);
             }
 
@@ -201,7 +200,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
@@ -226,11 +224,10 @@ private:
         return std::move(plan).finish(name, arguments);
     }
 
-    /// `LowCardinality(Nullable(T))` reports itself as not nullable, so strip the wrapper first.
     static DataTypePtr retypedAsTicks(const DataTypePtr & original)
     {
         const DataTypePtr ticks = std::make_shared<DataTypeInt64>();
-        return removeLowCardinality(original)->isNullable() ? makeNullable(ticks) : ticks;
+        return original->isNullable() ? makeNullable(ticks) : ticks;
     }
 
     FunctionBasePtr delegate(const ColumnsWithTypeAndName & arguments) const
@@ -238,9 +235,9 @@ private:
         if (arguments.size() != 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires exactly 3 arguments", getName());
 
-        const DataTypePtr value_type = removeLowCardinalityAndNullable(arguments[0].type);
-        const DataTypePtr bin_type = removeLowCardinalityAndNullable(arguments[1].type);
-        const DataTypePtr fixed_type = removeLowCardinalityAndNullable(arguments[2].type);
+        const DataTypePtr value_type = removeNullable(arguments[0].type);
+        const DataTypePtr bin_type = removeNullable(arguments[1].type);
+        const DataTypePtr fixed_type = removeNullable(arguments[2].type);
 
         /// A NULL literal argument makes the whole result a NULL literal; the numeric chain
         /// below short-circuits it, so it must get the query regardless of the other types.

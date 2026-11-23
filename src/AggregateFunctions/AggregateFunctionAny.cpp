@@ -32,7 +32,7 @@ public:
 
     using IAggregateFunction::argument_types;
 
-    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
         /// Large types are: String, FixedString (N > 20), Array, Map, Object, Variant, Dynamic
@@ -47,7 +47,7 @@ public:
         return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
-    [[nodiscard]] String getName() const override { return "any"; }
+    String getName() const override { return "any"; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -138,7 +138,7 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
-    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return singleValueSerializedSizeBound<Data>();
     }
@@ -159,7 +159,7 @@ public:
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -167,7 +167,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    [[nodiscard]] bool isCompilable() const override
+    bool isCompilable() const override
     {
         if constexpr (!Data::is_compilable)
             return false;
@@ -234,7 +234,7 @@ public:
 
     using IAggregateFunction::argument_types;
 
-    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         /// For types that are potentially large, we use SingleValueReference to avoid unnecessary memory allocations during merging final
         /// Large types are: String, FixedString (N >= 20), Array, Map, Object, Variant, Dynamic
@@ -249,7 +249,7 @@ public:
         return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
-    [[nodiscard]] String getName() const override { return "anyLast"; }
+    String getName() const override { return "anyLast"; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -342,7 +342,7 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
-    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return singleValueSerializedSizeBound<Data>();
     }
@@ -363,7 +363,7 @@ public:
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
-    [[nodiscard]] bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -371,7 +371,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    [[nodiscard]] bool isCompilable() const override
+    bool isCompilable() const override
     {
         if constexpr (!Data::is_compilable)
             return false;

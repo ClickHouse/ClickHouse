@@ -58,7 +58,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
-    extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
     extern const int NOT_IMPLEMENTED;
 }
@@ -147,13 +146,13 @@ public:
     }
 
     /// Check if it is enough place to write key in block
-    [[nodiscard]] bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
+    bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
     {
         return (current_block_offset + (sizeof(cache_key.key) + sizeof(cache_key.size) + cache_key.size)) <= block_size;
     }
 
     /// Check if it is enough place to write key in block
-    [[nodiscard]] bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
+    bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
         std::string_view key = cache_key.key;
         size_t complex_key_size = sizeof(key.size()) + key.size();
@@ -229,26 +228,7 @@ public:
         return true;
     }
 
-    /// Serialized columns of the record at offset_in_block. Their size is the size_t stored
-    /// immediately before the payload (see the block layout above); the record must fit the block.
-    [[nodiscard]] std::string_view getRecordView(size_t offset_in_block) const
-    {
-        if (offset_in_block < block_header_size + sizeof(size_t) || offset_in_block > block_size)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Cache data corrupted. Record offset {} is outside a block of size {}",
-                offset_in_block, block_size);
-
-        size_t size = unalignedLoad<size_t>(block_data + offset_in_block - sizeof(size_t));
-
-        if (size > block_size - offset_in_block)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Cache data corrupted. Record of size {} at offset {} does not fit a block of size {}",
-                size, offset_in_block, block_size);
-
-        return {block_data + offset_in_block, size};
-    }
-
-    [[nodiscard]] size_t getKeysSize() const { return keys_size; }
+    size_t getKeysSize() const { return keys_size; }
 
     /// Write keys size into block header
     void writeKeysSize()
@@ -258,10 +238,10 @@ public:
     }
 
     /// Get check sum from block header
-    [[nodiscard]] size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
+    size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
 
     /// Calculate check sum in block
-    [[nodiscard]] size_t calculateCheckSum() const
+    size_t calculateCheckSum() const
     {
         size_t calculated_check_sum = static_cast<size_t>(CityHash_v1_0_2::CityHash64(block_data + block_header_check_sum_size, block_size - block_header_check_sum_size));
 
@@ -269,7 +249,7 @@ public:
     }
 
     /// Check if check sum from block header matched calculated check sum in block
-    [[nodiscard]] bool checkCheckSum() const
+    bool checkCheckSum() const
     {
         size_t calculated_check_sum = calculateCheckSum();
         size_t check_sum = getCheckSum();
@@ -284,7 +264,10 @@ public:
         std::memcpy(block_data, &check_sum, sizeof(size_t));
     }
 
-    [[nodiscard]] size_t getBlockSize() const { return block_size; }
+    size_t getBlockSize() const { return block_size; }
+
+    /// Returns block data
+    char * getBlockData() const { return block_data; }
 
     /// Read keys that were serialized in block
     /// It is client responsibility to ensure that simple or complex keys were written in block
@@ -295,9 +278,7 @@ public:
 
         static constexpr size_t key_prefix_size = sizeof(UInt64) + sizeof(size_t);
 
-        /// Compared as a distance: block_start can reach block_end exactly, and forming
-        /// block_start + key_prefix_size there would be an out of range pointer
-        while (static_cast<size_t>(block_end - block_start) > key_prefix_size)
+        while (block_start + key_prefix_size < block_end)
         {
             UInt64 key = unalignedLoad<UInt64>(block_start);
             block_start += sizeof(UInt64);
@@ -308,14 +289,6 @@ public:
             /// If we read empty allocated size that means it is end of block
             if (allocated_size == 0)
                 break;
-
-            /// A record cannot extend past its block. The bytes after the last record are zeros, so these bytes
-            /// are corrupted. Returning the keys read so far is not enough: the caller evicts from the index
-            /// exactly the returned keys before it overwrites the block.
-            if (allocated_size > static_cast<size_t>(block_end - block_start))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Cache data corrupted. Record of size {} does not fit the rest of the block ({} bytes)",
-                    allocated_size, static_cast<size_t>(block_end - block_start));
 
             simple_keys.emplace_back(key);
             block_start += allocated_size;
@@ -329,19 +302,10 @@ public:
 
         static constexpr size_t key_prefix_size = sizeof(size_t) + sizeof(size_t);
 
-        /// Compared as a distance: block_start can reach block_end exactly, and forming
-        /// block_start + key_prefix_size there would be an out of range pointer
-        while (static_cast<size_t>(block_end - block_start) > key_prefix_size)
+        while (block_start + key_prefix_size < block_end)
         {
             size_t key_size = unalignedLoad<size_t>(block_start);
             block_start += sizeof(key_size);
-
-            /// The key and the data size that follows it must both still be inside the block (see above).
-            const size_t remaining = static_cast<size_t>(block_end - block_start);
-            if (remaining < sizeof(size_t) || key_size > remaining - sizeof(size_t))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Cache data corrupted. Key of size {} does not fit the rest of the block ({} bytes)",
-                    key_size, remaining);
 
             std::string_view complex_key (block_start, key_size);
 
@@ -353,11 +317,6 @@ public:
             /// If we read empty allocated size that means it is end of block
             if (allocated_size == 0)
                 break;
-
-            if (allocated_size > static_cast<size_t>(block_end - block_start))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Cache data corrupted. Record of size {} does not fit the rest of the block ({} bytes)",
-                    allocated_size, static_cast<size_t>(block_end - block_start));
 
             complex_keys.emplace_back(complex_key);
             block_start += allocated_size;
@@ -451,18 +410,16 @@ public:
         current_write_block.writeCheckSum();
     }
 
-    [[nodiscard]] std::string_view getRecordView(SSDCacheIndex index) const
+    char * getPlace(SSDCacheIndex index) const
     {
-        SSDCacheBlock block(block_size);
-        block.reset(buffer.m_data + index.block_index * block_size);
-        return block.getRecordView(index.offset_in_block);
+        return buffer.m_data + index.block_index * block_size + index.offset_in_block;
     }
 
-    [[nodiscard]] size_t getCurrentBlockIndex() const { return current_block_index; }
+    size_t getCurrentBlockIndex() const { return current_block_index; }
 
-    [[nodiscard]] const char * getData() const { return buffer.m_data; }
+    const char * getData() const { return buffer.m_data; }
 
-    [[nodiscard]] size_t getSizeInBytes() const { return block_size * partition_blocks_size; }
+    size_t getSizeInBytes() const { return block_size * partition_blocks_size; }
 
     void readKeys(PaddedPODArray<KeyType> & keys) const
     {
@@ -823,7 +780,7 @@ public:
                         calculated_check_sum, expected_check_sum, file_path);
                 }
 
-                func(blocks_to_fetch[block_to_fetch_index], block);
+                func(blocks_to_fetch[block_to_fetch_index], block.getBlockData());
 
                 processed[block_to_fetch_index] = true;
             }
@@ -846,8 +803,7 @@ public:
         }
     }
 
-    [[nodiscard]] size_t getCurrentBlockIndex() const { return current_block_index; }
-    [[nodiscard]] size_t getCurrentBlocksSize() const { return current_blocks_size; }
+    size_t getCurrentBlockIndex() const { return current_block_index; }
 
     void reset()
     {
@@ -965,9 +921,9 @@ public:
         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
     }
 
-    [[nodiscard]] bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
+    bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "SSDCache";
@@ -975,7 +931,7 @@ public:
         return "SSDComplexKeyCache";
     }
 
-    [[nodiscard]] bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
@@ -1004,7 +960,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for complex key storage");
     }
 
-    [[nodiscard]] PaddedPODArray<UInt64> getCachedSimpleKeys() const override
+    PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return getCachedKeysImpl();
@@ -1012,7 +968,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    [[nodiscard]] bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<std::string_view> & keys,
@@ -1041,7 +997,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for simple key storage");
     }
 
-    [[nodiscard]] PaddedPODArray<std::string_view> getCachedComplexKeys() const override
+    PaddedPODArray<std::string_view> getCachedComplexKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
@@ -1049,9 +1005,9 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for simple key storage");
     }
 
-    [[nodiscard]] size_t getSize() const override { return index.size(); }
+    size_t getSize() const override { return index.size(); }
 
-    [[nodiscard]] double getLoadFactor() const override
+    double getLoadFactor() const override
     {
         size_t partitions_size = memory_buffer_partitions.size();
 
@@ -1070,7 +1026,7 @@ public:
         return load_factor;
     }
 
-    [[nodiscard]] size_t getBytesAllocated() const override
+    size_t getBytesAllocated() const override
     {
         size_t memory_partitions_bytes_size = memory_buffer_partitions.size() * configuration.write_buffer_blocks_size * configuration.block_size;
         size_t file_partitions_bytes_size = memory_buffer_partitions.size() * configuration.file_blocks_size * configuration.block_size;
@@ -1096,9 +1052,9 @@ private:
         size_t in_memory_partition_index{};
         CellState state{};
 
-        [[nodiscard]] bool isInMemory() const { return state == in_memory; }
-        [[nodiscard]] bool isOnDisk() const { return state == on_disk; }
-        [[nodiscard]] bool isDefaultValue() const { return state == default_value; }
+        bool isInMemory() const { return state == in_memory; }
+        bool isOnDisk() const { return state == on_disk; }
+        bool isDefaultValue() const { return state == default_value; }
     };
 
     struct KeyToBlockOffset
@@ -1182,7 +1138,10 @@ private:
                     ++fetched_columns_index_without_default;
 
                     const auto & partition = memory_buffer_partitions[cell.in_memory_partition_index];
-                    ReadBufferFromString in(partition.getRecordView(cell.index));
+                    char * serialized_columns_place = partition.getPlace(cell.index);
+                    /// This is larger size than necessary but we don't know the exact size of serialized columns
+                    size_t size = partition.block_size;
+                    ReadBufferFromString in({serialized_columns_place, size});
                     deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
                     break;
                 }
@@ -1223,13 +1182,16 @@ private:
         ::sort(blocks_to_request.begin(), blocks_to_request.end());
 
         file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request,
-            [&](size_t block_index, const SSDCacheBlock & block)
+            [&](size_t block_index, char * block_data)
         {
             auto & keys_in_block = block_to_keys_map[block_index];
 
             for (auto & key_in_block : keys_in_block)
             {
-                ReadBufferFromString in(block.getRecordView(key_in_block.offset_in_block));
+                char * key_data = block_data + key_in_block.offset_in_block;
+                /// The serialized columns are within the block, but we don't know their exact size.
+                size_t size = configuration.block_size - key_in_block.offset_in_block;
+                ReadBufferFromString in({key_data, size});
                 deserializeAndInsertIntoColumns(result.fetched_columns, fetch_request, in);
 
                 result.key_index_to_state[key_in_block.key_index].setFetchedColumnIndex(
@@ -1266,12 +1228,6 @@ private:
             {
                 temporary_values_pool.allocContinue(sizes_header_size, block_start);
                 allocated_size_for_columns += sizes_header_size;
-            }
-            else
-            {
-                /// A record of size 0 marks the end of the block, so a record without columns takes one byte
-                *temporary_values_pool.allocContinue(1, block_start) = 0;
-                allocated_size_for_columns = 1;
             }
 
             for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
@@ -1344,7 +1300,7 @@ private:
         }
     }
 
-    [[nodiscard]] PaddedPODArray<KeyType> getCachedKeysImpl() const
+    PaddedPODArray<KeyType> getCachedKeysImpl() const
     {
         PaddedPODArray<KeyType> result;
         result.reserve(index.size());
@@ -1452,8 +1408,8 @@ private:
                         auto key_to_update = keys_to_update[i];
                         auto * it = index.find(key_to_update);
 
-                        /// Skip absent keys and keys whose live cell is not in this partition's buffer
-                        if (!it || it->getMapped().state != Cell::in_memory || it->getMapped().in_memory_partition_index != current_partition_index)
+                        /// If there are no key to update or key to update not in memory
+                        if (!it || it->getMapped().state != Cell::in_memory)
                             continue;
 
                         /// If there were duplicated keys in memory buffer partition
@@ -1496,12 +1452,6 @@ private:
                     }
                     else
                     {
-                        if (file_buffer.getCurrentBlockIndex() == 0)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Cannot flush write buffer of {} blocks into cache file of {} blocks",
-                                configuration.write_buffer_blocks_size,
-                                file_buffer.getCurrentBlocksSize());
-
                         /// Start reusing old partitions
                         current_partition_index = (current_partition_index + 1) % memory_buffer_partitions.size();
                         file_buffer.reset();

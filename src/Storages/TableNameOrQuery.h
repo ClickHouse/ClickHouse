@@ -29,16 +29,16 @@ public:
     TableNameOrQuery() : type(Type::TABLE) {}
     TableNameOrQuery(Type type_, const String & target_) : type(type_), target(target_) {}
 
-    [[nodiscard]] Type getType() const { return type; }
+    Type getType() const { return type; }
 
-    [[nodiscard]] const String & getTableName() const;
-    [[nodiscard]] const String & getQuery() const;
+    const String & getTableName() const;
+    const String & getQuery() const;
 
-    [[nodiscard]] bool isTable() const { return type == Type::TABLE; }
-    [[nodiscard]] bool isQuery() const { return type == Type::QUERY; }
+    bool isTable() const { return type == Type::TABLE; }
+    bool isQuery() const { return type == Type::QUERY; }
 
     /// Human-readable representation for error messages and logging.
-    [[nodiscard]] String format() const;
+    String format() const;
 
 private:
     Type type;

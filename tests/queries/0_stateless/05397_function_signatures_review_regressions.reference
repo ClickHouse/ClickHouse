@@ -1,8 +1,0 @@
-missing	Variant(Float64, String)
-1
-24	IntervalHour
-1	2
-3	3
-5
-Map(String, UInt64)
-Array(Tuple(\n    key String,\n    value UInt8))

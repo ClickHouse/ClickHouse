@@ -1,7 +1,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionAccessCheck.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,6 +15,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -31,7 +31,6 @@ class FunctionGetMacro final : public IFunction
 private:
     MultiVersion<Macros>::Version macros;
     bool is_distributed;
-    FunctionAccessCheck access_check;
 
 public:
     static constexpr auto name = "getMacro";
@@ -39,44 +38,42 @@ public:
     /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionGetMacro>(context);
+        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros", Strings{"macro", "substitution"});
+        return std::make_shared<FunctionGetMacro>(context->getMacros(), context->isDistributed());
     }
 
-    explicit FunctionGetMacro(const ContextPtr & context)
-        : macros(context->getMacros()), is_distributed(context->isDistributed()), access_check(context)
+    explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_, bool is_distributed_)
+        : macros(std::move(macros_)), is_distributed(is_distributed_)
     {
     }
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    void checkAccessOnBuild() const override
-    {
-        access_check.check(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros", Strings{"macro", "substitution"});
-    }
+    bool isDeterministic() const override { return false; }
 
-    [[nodiscard]] bool isDeterministic() const override { return false; }
-
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
-    [[nodiscard]] bool isSuitableForConstantFolding() const override { return !is_distributed; }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
-    [[nodiscard]] bool isServerConstant() const override { return true; }
+    bool isServerConstant() const override { return true; }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    [[nodiscard]] String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String) -> String";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must have String type", getName());
+        return std::make_shared<DataTypeString>();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * arg_column = arguments[0].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);

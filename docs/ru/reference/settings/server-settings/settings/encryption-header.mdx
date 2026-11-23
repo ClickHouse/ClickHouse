@@ -12,11 +12,15 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки предназначены для конфигурации сервера ClickHouse и автоматически сгенерированы из исходного кода ClickHouse.
 
-## encryption_header_cache_policy {#encryption_header_cache_policy}
+<div id="encryption_header_cache_policy">
+  ## encryption_header_cache_policy
+</div>
 
-<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики вытеснения кэша заголовков шифрования. Возможные значения: `LRU`, `SLRU`, `SIEVE`.
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Имя политики кэша заголовков шифрования.
 
-## encryption_header_cache_size {#encryption_header_cache_size}
+<div id="encryption_header_cache_size">
+  ## encryption_header_cache_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="52428800" changeable_without_restart="Yes" />
 
@@ -26,7 +30,9 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
   Этот параметр можно изменять во время выполнения, и изменения вступят в силу немедленно.
 </Note>
 
-## encryption_header_cache_size_ratio {#encryption_header_cache_size_ratio}
+<div id="encryption_header_cache_size_ratio">
+  ## encryption_header_cache_size_ratio
+</div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />Размер защищённой очереди (при SLRU policy) в кэше заголовков шифрования относительно общего размера кэша.
 

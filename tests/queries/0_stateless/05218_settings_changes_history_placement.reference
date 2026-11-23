@@ -49,3 +49,6 @@ backported to 26.3 and 26.5, not to 26.4
 60000
 1000
 60000
+iceberg_manifest_decode_concurrency backported to 26.8
+4
+2

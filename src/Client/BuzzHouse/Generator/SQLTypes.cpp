@@ -1,7 +1,7 @@
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#include <base/wide_integer.h>
-#include <base/wide_integer_to_string.h>
+#include <Client/BuzzHouse/Utils/HugeInt.h>
+#include <Client/BuzzHouse/Utils/UHugeInt.h>
 
 namespace BuzzHouse
 {
@@ -245,15 +245,9 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
             case 16: return std::to_string(rg.nextRandomUInt16());
             case 32: return std::to_string(rg.nextRandomUInt32());
             case 64: return std::to_string(rg.nextRandomUInt64());
-            case 128: {
-                const ::UInt64 upper = rg.nextRandomUInt64();
-                return wide::to_string(::UInt128{rg.nextRandomUInt64(), upper});
-            }
             default: {
-                const ::UInt64 l3 = rg.nextRandomUInt64();
-                const ::UInt64 l2 = rg.nextRandomUInt64();
-                const ::UInt64 l1 = rg.nextRandomUInt64();
-                return wide::to_string(::UInt256{rg.nextRandomUInt64(), l1, l2, l3});
+                const UHugeInt val(rg.nextRandomUInt64(), rg.nextRandomUInt64());
+                return val.toString();
             }
         }
     }
@@ -265,15 +259,9 @@ String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &)
             case 16: return std::to_string(rg.nextRandomInt16());
             case 32: return std::to_string(rg.nextRandomInt32());
             case 64: return std::to_string(rg.nextRandomInt64());
-            case 128: {
-                const ::UInt64 upper = static_cast<::UInt64>(rg.nextRandomInt64());
-                return wide::to_string(::Int128{rg.nextRandomUInt64(), upper});
-            }
             default: {
-                const ::UInt64 l3 = static_cast<::UInt64>(rg.nextRandomInt64());
-                const ::UInt64 l2 = rg.nextRandomUInt64();
-                const ::UInt64 l1 = rg.nextRandomUInt64();
-                return wide::to_string(::Int256{rg.nextRandomUInt64(), l1, l2, l3});
+                const HugeInt val(rg.nextRandomInt64(), rg.nextRandomUInt64());
+                return val.toString();
             }
         }
     }
@@ -570,8 +558,7 @@ std::unique_ptr<SQLType> DecimalType::typeDeepCopy() const
 String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func, const DecimalType * dt)
 {
     const uint32_t right = dt->scale.value_or(0);
-    /// A bare `Decimal` is `Decimal(10, 0)`
-    const uint32_t left = dt->precision.value_or(10) - right;
+    const uint32_t left = dt->precision.value_or(9) - right;
 
     return appendDecimal(rg, use_func, left, right);
 }
@@ -685,33 +672,6 @@ String UUIDType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & ge
     return appendRandomRawValue(rg, gen);
 }
 
-/// Appends `str` to `ret`, escaped to go inside a quoted string when `escape` is set
-static void appendEscaped(String & ret, const String & str, const bool escape)
-{
-    if (!escape)
-    {
-        ret += str;
-        return;
-    }
-    for (const auto & c : str)
-    {
-        switch (c)
-        {
-            case '\'': ret += "\\'"; break;
-            case '\\': ret += "\\\\"; break;
-            case '\b': ret += "\\b"; break;
-            case '\f': ret += "\\f"; break;
-            case '\r': ret += "\\r"; break;
-            case '\n': ret += "\\n"; break;
-            case '\t': ret += "\\t"; break;
-            case '\0': ret += "\\0"; break;
-            case '\a': ret += "\\a"; break;
-            case '\v': ret += "\\v"; break;
-            default: ret += c;
-        }
-    }
-}
-
 String EnumType::typeName(const bool escape, const bool) const
 {
     String ret;
@@ -727,7 +687,30 @@ String EnumType::typeName(const bool escape, const bool) const
         {
             ret += ", ";
         }
-        appendEscaped(ret, v.val, escape);
+        for (const auto & c : v.val)
+        {
+            if (escape)
+            {
+                switch (c)
+                {
+                    case '\'': ret += "\\'"; break;
+                    case '\\': ret += "\\\\"; break;
+                    case '\b': ret += "\\b"; break;
+                    case '\f': ret += "\\f"; break;
+                    case '\r': ret += "\\r"; break;
+                    case '\n': ret += "\\n"; break;
+                    case '\t': ret += "\\t"; break;
+                    case '\0': ret += "\\0"; break;
+                    case '\a': ret += "\\a"; break;
+                    case '\v': ret += "\\v"; break;
+                    default: ret += c;
+                }
+            }
+            else
+            {
+                ret += c;
+            }
+        }
         ret += " = ";
         ret += std::to_string(v.number);
     }
@@ -866,7 +849,13 @@ std::unique_ptr<SQLType> DynamicType::typeDeepCopy() const
 
 String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    const auto next = gen.randomNextTypeWithMask(rg, gen.fc.type_mask & ~(allow_dynamic | allow_nested), nullptr);
+    uint32_t col_counter = 0;
+    const uint64_t type_mask_backup = gen.next_type_mask;
+
+    gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
+    auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
+    gen.next_type_mask = type_mask_backup;
+
     String ret = next->appendRandomRawValue(rg, gen);
     if (rg.nextMediumNumber() < 4)
     {
@@ -879,8 +868,13 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
 String DynamicType::insertNumberEntry(
     RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
 {
-    return gen.randomNextTypeWithMask(rg, gen.fc.type_mask & ~(allow_dynamic | allow_nested), nullptr)
-        ->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+    uint32_t col_counter = 0;
+    const uint64_t type_mask_backup = gen.next_type_mask;
+
+    gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
+    auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
+    gen.next_type_mask = type_mask_backup;
+    return next->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
 }
 
 String JSONType::typeName(const bool escape, const bool simplified) const
@@ -892,7 +886,30 @@ String JSONType::typeName(const bool escape, const bool simplified) const
         return "String";
     }
     ret += "JSON";
-    appendEscaped(ret, desc, escape);
+    for (const auto & c : desc)
+    {
+        if (escape)
+        {
+            switch (c)
+            {
+                case '\'': ret += "\\'"; break;
+                case '\\': ret += "\\\\"; break;
+                case '\b': ret += "\\b"; break;
+                case '\f': ret += "\\f"; break;
+                case '\r': ret += "\\r"; break;
+                case '\n': ret += "\\n"; break;
+                case '\t': ret += "\\t"; break;
+                case '\0': ret += "\\0"; break;
+                case '\a': ret += "\\a"; break;
+                case '\v': ret += "\\v"; break;
+                default: ret += c;
+            }
+        }
+        else
+        {
+            ret += c;
+        }
+    }
     return ret;
 }
 
@@ -1073,8 +1090,14 @@ String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) co
             break;
         }
     }
-    chassert(nsubtype);
-    return nsubtype->PostgreSQLtypeName(rg, escape) + "[]";
+    if (nsubtype)
+    {
+        return nsubtype->PostgreSQLtypeName(rg, escape) + "[]";
+    }
+    else
+    {
+        return "INT[]";
+    }
 }
 
 String ArrayType::SQLitetypeName(RandomGenerator &, const bool) const
@@ -1767,11 +1790,11 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     std::string aggr = agg.fname;
     uint32_t nargs = agg.min_args == agg.max_args ? agg.min_args : rg.randomInt<uint32_t>(agg.min_args, agg.max_args);
 
-    /// Optional parameters only sometimes
-    if (agg.max_params > 0 && (agg.min_params > 0 || rg.nextBool()))
+    if (agg.min_params > 0)
     {
-        const uint32_t nparams = rg.randomInt<uint32_t>(agg.min_params, std::max(agg.min_params, std::min(agg.max_params, UINT32_C(5))));
-
+        const uint32_t nparams = agg.min_params == agg.max_params
+            ? agg.min_params
+            : rg.randomInt<uint32_t>(agg.min_params, std::min(agg.max_params, UINT32_C(5)));
         for (uint32_t i = 0; i < nparams; i++)
         {
             AggregateParam p;
@@ -2002,9 +2025,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                   }
                   if (noption < 4)
                   {
-                      /// Up to the default 1024, sometimes up to the limit 10000
-                      const uint32_t max_dpaths = rg.nextBool() ? (rg.nextMediumNumber() % 5)
-                                                                : rg.randomInt<uint32_t>(0, rg.nextSmallNumber() < 9 ? 1024 : 10000);
+                      const uint32_t max_dpaths = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextLargeNumber() % 1025);
 
                       if (tp)
                       {
@@ -2026,20 +2047,11 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                   }
                   else
                   {
+                      uint32_t col_counter2 = 0;
                       const uint32_t ncols = rg.randomInt<uint32_t>(1, 4);
                       JSONPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
                       ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
                       String npath;
-
-                      /// A `SHARED` typed path is stored with the other shared paths in a constant number of files
-                      if (rg.nextSmallNumber() < 4)
-                      {
-                          if (tp)
-                          {
-                              jpt->set_shared(true);
-                          }
-                          desc += "SHARED ";
-                      }
 
                       for (uint32_t j = 0; j < ncols; j++)
                       {
@@ -2063,8 +2075,11 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                       }
                       desc += " ";
 
-                      auto jtp
-                          = randomNextTypeWithMask(rg, fc.type_mask & ~(allow_nested | allow_enum), tp ? jpt->mutable_type() : nullptr);
+                      const uint64_t type_mask_backup = this->next_type_mask;
+                      this->next_type_mask = fc.type_mask & ~(allow_nested | allow_enum);
+                      auto jtp = randomNextType(rg, this->next_type_mask, col_counter2, tp ? jpt->mutable_type() : nullptr);
+                      this->next_type_mask = type_mask_backup;
+
                       desc += jtp->typeName(false, false);
                       subcols.emplace_back(JSubType(npath, std::move(jtp)));
                   }
@@ -2084,8 +2099,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
 
               if (rg.nextBool())
               {
-                  /// The limit is 254
-                  ntypes = std::optional<uint32_t>(rg.randomInt<uint32_t>(0, rg.nextBool() ? 10 : 254));
+                  ntypes = std::optional<uint32_t>(rg.randomInt<uint32_t>(0, rg.nextBool() ? 10 : 100));
                   if (dyn)
                   {
                       dyn->set_ntypes(ntypes.value());
@@ -2111,7 +2125,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
               /// Occasionally generate a strided QBit. Constraints: dimension % stride == 0 and stride % 8 == 0.
               if (rg.nextSmallNumber() < 3)
               {
-                  const uint32_t num_groups = rg.nextSmallNumber();
+                  const uint32_t num_groups = std::max<uint32_t>(1, rg.nextSmallNumber());
                   stride = 8;
                   dimension = stride * num_groups;
               }
@@ -2232,8 +2246,9 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               TupleTypeDef * tt = tp ? tp->mutable_tuple() : nullptr;
               TupleWithColumnNames * twcn = (tp && with_names) ? tt->mutable_with_names() : nullptr;
               TupleWithOutColumnNames * twocn = (tp && !with_names) ? tt->mutable_no_names() : nullptr;
-              /// Up to 5 elements, the width left included
-              const uint32_t ncols = rg.nextMediumNumber() % (std::min<uint32_t>(5, remainingWidth()) + 1);
+              const uint32_t ncols = this->width >= this->fc.max_width
+                  ? 0
+                  : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
               const bool is_nullable = rg.nextSmallNumber() < 4;
 
               if (tt)
@@ -2267,7 +2282,10 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               /// Variant
               std::vector<std::unique_ptr<SQLType>> subtypes;
               TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
-              const uint32_t ncols = (remainingWidth() == 0 ? 0 : (rg.nextMediumNumber() % std::min<uint32_t>(5, remainingWidth()))) + 1;
+              const uint32_t ncols
+                  = (this->width >= this->fc.max_width ? 0
+                                                       : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width)))
+                  + UINT32_C(1);
 
               this->depth++;
               for (uint32_t i = 0; i < ncols; i++)
@@ -2286,7 +2304,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               /// Nested
               std::vector<NestedSubType> subtypes;
               NestedTypeDef * nt = tp ? tp->mutable_nested() : nullptr;
-              const uint32_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(5, remainingWidth())) + 1;
+              const uint32_t ncols = (rg.nextMediumNumber() % (std::min<uint32_t>(5, this->fc.max_width - this->width))) + UINT32_C(1);
 
               this->depth++;
               for (uint32_t i = 0; i < ncols; i++)
@@ -2306,17 +2324,6 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               result = std::make_unique<NestedType>(std::move(subtypes));
           }}});
     return result;
-}
-
-std::unique_ptr<SQLType> StatementGenerator::randomNextTypeWithMask(RandomGenerator & rg, const uint64_t mask, TopTypeName * tp)
-{
-    uint32_t col_counter = 0;
-    const uint64_t type_mask_backup = this->next_type_mask;
-
-    this->next_type_mask = mask;
-    auto res = randomNextType(rg, mask, col_counter, tp);
-    this->next_type_mask = type_mask_backup;
-    return res;
 }
 
 EnumType * getColumnEnumType(SQLType * tp)
@@ -2388,16 +2395,21 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
                 ret += rg.nextBool() ? "-1.0" : "1.0";
                 break;
             case 2:
-                /// Maximum representable value: all nines, `0.99...` when there are no integer digits
+                /// Maximum representable value: all nines
                 ret += rg.nextBool() ? "-" : "";
-                ret += left == 0 ? "0" : String(left, '9');
+                for (uint32_t j = 0; j < std::max(1u, left); j++)
+                    ret += '9';
                 ret += '.';
-                ret += right == 0 ? "0" : String(right, '9');
+                for (uint32_t j = 0; j < std::max(1u, right); j++)
+                    ret += '9';
                 break;
             case 3:
                 /// Smallest non-zero: 0.00...01 (or 1.0 when scale == 0)
                 ret += rg.nextBool() ? "-" : "";
-                ret += right == 0 ? "1.0" : ("0." + String(right - 1, '0') + "1");
+                ret += "0.";
+                for (uint32_t j = 0; j + 1 < std::max(1u, right); j++)
+                    ret += '0';
+                ret += '1';
                 break;
             default: UNREACHABLE();
         }

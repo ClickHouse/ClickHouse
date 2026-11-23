@@ -81,8 +81,6 @@ public:
 private:
     SelectQueryInfo buildSelectQueryInfo() const;
 
-    void markDistributedPlanContext();
-
     void buildPlanForUnionNode();
 
     void buildPlanForQueryNode();

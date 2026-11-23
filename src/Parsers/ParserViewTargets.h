@@ -22,9 +22,9 @@ public:
     }
 
 protected:
-    [[nodiscard]] const char * getName() const override { return "ViewTargets"; }
+    const char * getName() const override { return "ViewTargets"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    [[nodiscard]] bool canAccept(ViewTarget::Kind kind) const;
+    bool canAccept(ViewTarget::Kind kind) const;
 
     std::vector<ViewTarget::Kind> accept_kinds;
 };

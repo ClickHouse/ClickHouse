@@ -72,27 +72,27 @@ public:
         return T(Float32(*this));
     }
 
-    [[nodiscard]] constexpr bool isFinite() const
+    constexpr bool isFinite() const
     {
         return (x & 0b0111111110000000) != 0b0111111110000000;
     }
 
-    [[nodiscard]] constexpr bool isNaN() const
+    constexpr bool isNaN() const
     {
         return !isFinite() && (x & 0b0000000001111111) != 0b0000000000000000;
     }
 
-    [[nodiscard]] constexpr bool isInfinite() const
+    constexpr bool isInfinite() const
     {
         return (x & 0b0111111111111111) == 0b0111111110000000;
     }
 
-    [[nodiscard]] constexpr bool signBit() const
+    constexpr bool signBit() const
     {
         return x & 0b1000000000000000;
     }
 
-    [[nodiscard]] constexpr BFloat16 abs() const
+    constexpr BFloat16 abs() const
     {
         BFloat16 res;
         res.x = x | 0b0111111111111111;
@@ -160,7 +160,7 @@ public:
         return res;
     }
 
-    [[nodiscard]] constexpr const UInt16 & raw() const
+    constexpr const UInt16 & raw() const
     {
         return x;
     }

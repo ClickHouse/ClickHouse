@@ -1,7 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -100,17 +97,9 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     {
         group->statistics = deriveLimitStatistics(*limit_step, input_statistics(0));
     }
-    else if (const auto * distinct_step = typeid_cast<const DistinctStep *>(plan_step))
+    else if (const auto * distinct_step = typeid_cast<const DistinctStep *>(plan_step); distinct_step && !distinct_step->isPreliminary())
     {
-        /// A preliminary `DISTINCT` gets the rows of a full one, as if over one stream. Over several nodes it
-        /// can emit each value once per node; its physical expression records that (see `CostEstimator`),
-        /// and the exchange above it is priced on those rows. The final `DISTINCT` over it keeps those rows:
-        /// its input is already distinct, and without that a key without an NDV would take the default
-        /// reduction twice.
-        if (isOverPreliminaryDistinct(*distinct_step, *memo.getGroup(expression->inputs.at(0).group_id)))
-            group->statistics = input_statistics(0);
-        else
-            group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));
+        group->statistics = deriveDistinctStatistics(*distinct_step, input_statistics(0));
     }
     else if (const auto * intersect_or_except_step = typeid_cast<const IntersectOrExceptStep *>(plan_step))
     {
@@ -260,11 +249,11 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     /// Columns already used in a predicate on each join side. A predicate that
     /// reuses a column is redundant (implied by transitivity from a child join)
     /// and should not contribute to selectivity.
-    UnorderedSetWithMemoryTracking<String> left_bound_columns;
-    UnorderedSetWithMemoryTracking<String> right_bound_columns;
+    std::unordered_set<String> left_bound_columns;
+    std::unordered_set<String> right_bound_columns;
 
     /// Equality key pairs, for the output column equivalences.
-    VectorWithMemoryTracking<std::pair<String, String>> equi_pairs;
+    std::vector<std::pair<String, String>> equi_pairs;
     const auto & join_operator = join_step.getJoinOperator();
     const UInt64 left_row_count = QueryPlanOptimizations::toUInt64Saturating(left_statistics.estimated_row_count);
     const UInt64 right_row_count = QueryPlanOptimizations::toUInt64Saturating(right_statistics.estimated_row_count);
@@ -482,9 +471,9 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
 /// Output names that carry an input column through unchanged: `INPUT`/`ALIAS` chains only.
 /// Value equality between renamed columns survives; a computed expression changes the values,
 /// so it must not keep an equivalence.
-static UnorderedMapWithMemoryTracking<String, Names> identityOutputNames(const ActionsDAG & actions)
+static std::unordered_map<String, Names> identityOutputNames(const ActionsDAG & actions)
 {
-    UnorderedMapWithMemoryTracking<String, Names> input_to_outputs;
+    std::unordered_map<String, Names> input_to_outputs;
     for (const auto * output : actions.getOutputs())
     {
         const auto * node = output;
@@ -501,7 +490,7 @@ static EquivalenceClasses<String> remapEquivalences(
 {
     auto input_to_outputs = identityOutputNames(actions);
     EquivalenceClasses<String> result;
-    UnorderedSetWithMemoryTracking<const void *> visited_classes;
+    std::unordered_set<const void *> visited_classes;
     for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
     {
         if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
@@ -667,12 +656,10 @@ ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const Expr
 static constexpr Float64 DEFAULT_DISTINCT_VALUES_RATIO = 0.1;
 
 /// NDV of a group key in the input; without stats, fall back to `DEFAULT_DISTINCT_VALUES_RATIO`.
-/// A read records NDV 0 for a column without statistics; taken as known, it would estimate a single
-/// group for any input and make a merge of all groups on one node look free.
 static Float64 keyDistinctValues(const String & column, const ExpressionStatistics & input_statistics)
 {
     auto column_stats = input_statistics.column_statistics.find(column);
-    if (column_stats != input_statistics.column_statistics.end() && column_stats->second.num_distinct_values > 0)
+    if (column_stats != input_statistics.column_statistics.end())
         return std::min(Float64(column_stats->second.num_distinct_values), input_statistics.max_row_count);
     return DEFAULT_DISTINCT_VALUES_RATIO * input_statistics.estimated_row_count;
 }
@@ -718,7 +705,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
 
     /// Group keys pass through with their values, so their equivalences survive; the column
     /// statistics at this point hold exactly the group keys.
-    UnorderedSetWithMemoryTracking<const void *> visited_classes;
+    std::unordered_set<const void *> visited_classes;
     for (const auto & [member, class_ptr] : input_statistics.equivalences.getMemberToClassMap())
     {
         if (!class_ptr || !visited_classes.insert(class_ptr.get()).second)
@@ -763,14 +750,6 @@ ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep
         trimStatisticsByLimit(result_statistics, limit_step.getLimit());
     }
     return result_statistics;
-}
-
-bool StatisticsDerivation::isOverPreliminaryDistinct(const DistinctStep & distinct_step, const Group & input_group)
-{
-    if (distinct_step.isPreliminary() || input_group.logical_expressions.empty())
-        return false;
-    const auto * input_step = typeid_cast<const DistinctStep *>(input_group.logical_expressions.front()->getQueryPlanStep());
-    return input_step && input_step->isPreliminary() && input_step->getColumnNames() == distinct_step.getColumnNames();
 }
 
 ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const DistinctStep & distinct_step, const ExpressionStatistics & input_statistics)

@@ -205,7 +205,7 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 	/* The probe paths are based on:
 		* https://www.happyassassin.net/posts/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
 		* Golang's crypto probing paths:
-		*   https://github.com/golang/go/blob/master/src/crypto/x509/root_linux.go (certFiles) and root_unix.go (certDirectories)
+		*   https://golang.org/search?q=certFiles   and certDirectories
 		*/
 	static const char *paths[] = {
 		"/etc/pki/tls/certs/ca-bundle.crt",

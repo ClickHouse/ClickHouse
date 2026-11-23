@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# Random settings limits: input_format_parquet_preserve_order=(0, 0)
 # Tag no-fasttest: needs Parquet and Delta Lake
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so `deltaLakeLocal` is absent.
 
