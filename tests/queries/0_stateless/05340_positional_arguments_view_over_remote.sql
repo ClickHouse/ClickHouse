@@ -1,4 +1,5 @@
 -- Tags: distributed
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 
 -- `ORDER BY ALL` expands to the whole projection, so the constant `3` reaches the shard query as a
 -- bare literal. The local replica of a `remote` read inside a view, and a `Merge` child re-analyzed

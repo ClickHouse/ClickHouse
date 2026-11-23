@@ -801,12 +801,17 @@ bool transplantAnalysisToAllReads(
             && single_node_read->getMutationsSnapshot() == replicas_read->getMutationsSnapshot();
         if (!same_snapshot)
         {
-            /// With a query-wide snapshot cache, every read of a table in the query is given the same one,
-            /// except for projection reads, which are declined above.
-            [[maybe_unused]] const auto & context = replicas_read->getContext();
-            chassert(
-                !context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !context->hasQueryContext()
-                || !context->getQueryMetadataCache());
+            /// A read takes its snapshot from the query-wide cache when its own context enables it, and a
+            /// `SETTINGS` clause of a subquery may disable it for some reads only. Two reads that both took
+            /// it from the cache have the same snapshot; projection reads, which have their own, are
+            /// declined above.
+            [[maybe_unused]] const auto shares_cached_snapshot = [](const ReadFromMergeTree & read)
+            {
+                const auto & context = read.getContext();
+                return context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] && context->hasQueryContext()
+                    && context->getQueryMetadataCache();
+            };
+            chassert(!shares_cached_snapshot(*single_node_read) || !shares_cached_snapshot(*replicas_read));
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
                 "Read of {} in the replicas plan has another storage snapshot than its counterpart in the "
