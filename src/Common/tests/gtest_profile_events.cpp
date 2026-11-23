@@ -29,6 +29,7 @@ namespace ProfileEvents
     extern const Event Query;
     extern const Event SelectQuery;
     extern const Event ZooKeeperWatchResponse;
+    extern const Event S3GetObject;
 #if defined(OS_LINUX)
     extern const Event PerfCPUCycles;
     extern const Event PerfTaskClock;
@@ -403,6 +404,84 @@ TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
     EXPECT_EQ(thread[event], 1);
     EXPECT_EQ(process[event], 1);
     EXPECT_EQ(user[event], 1);
+}
+
+TEST(ProfileEvents, ReservationsSurviveResetMoveAndReparent)
+{
+    const auto event = ProfileEvents::ZooKeeperWatchResponse;
+    ProfileEvents::Counters old_parent(VariableContext::Process, nullptr);
+    ProfileEvents::Counters original(VariableContext::Thread, &old_parent);
+    original.preallocate(event);
+    original.incrementNonAllocating(event);
+    original.reset();
+    ProfileEvents::Counters moved(std::move(original));
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        moved.preallocate(event);
+    }
+
+    /// A reservation in the moved child must not hide a newly attached parent's missing pages.
+    ProfileEvents::Counters new_parent(VariableContext::User, nullptr);
+    moved.setParent(&new_parent);
+    moved.preallocate(event);
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        moved.resetCounters();
+        moved.preallocate(event);
+        moved.incrementNonAllocating(event);
+    }
+    EXPECT_EQ(moved[event], 1);
+    EXPECT_EQ(old_parent[event], 1);
+    EXPECT_EQ(new_parent[event], 1);
+
+    /// The previous parent's reservation also remains reusable without allocating.
+    moved.setParent(&old_parent);
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        moved.preallocate(event);
+        moved.incrementNonAllocating(event);
+    }
+    EXPECT_EQ(moved[event], 2);
+    EXPECT_EQ(old_parent[event], 2);
+    EXPECT_EQ(new_parent[event], 1);
+}
+
+TEST(ProfileEvents, ConcurrentReservationsForDifferentColdEvents)
+{
+    /// These unrelated event families occupy different cold pages.
+    const std::array events = {ProfileEvents::ZooKeeperWatchResponse, ProfileEvents::S3GetObject};
+    ProfileEvents::Counters parent(VariableContext::User, nullptr);
+    constexpr size_t num_threads = 8;
+    std::barrier<> start(num_threads);
+    std::vector<std::thread> workers;
+    for (size_t i = 0; i < num_threads; ++i)
+    {
+        workers.emplace_back([&, i]
+        {
+            ProfileEvents::Counters counters(VariableContext::Thread, &parent);
+            const auto event = events[i % events.size()];
+            start.arrive_and_wait();
+            counters.preallocate(event);
+            {
+                DENY_ALLOCATIONS_IN_SCOPE;
+                counters.preallocate(event);
+                counters.incrementNonAllocating(event);
+            }
+        });
+    }
+    for (auto & worker : workers)
+        worker.join();
+    {
+        DENY_ALLOCATIONS_IN_SCOPE;
+        for (auto event : events)
+            parent.preallocate(event);
+    }
+    const auto snapshot = parent.getPartiallyAtomicSnapshot();
+    for (auto event : events)
+    {
+        EXPECT_EQ(parent[event], num_threads / events.size());
+        EXPECT_EQ(snapshot[event], num_threads / events.size());
+    }
 }
 
 /// These checks do not depend on allocator interception or debug-only allocation guards.

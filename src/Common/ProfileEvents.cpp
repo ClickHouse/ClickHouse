@@ -2143,6 +2143,9 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
 {
     mutable std::array<Count, hot_counter_count> hot{};
     std::array<std::atomic<Count *>, cold_page_count> pages{};
+    /// Only row zero is used: a bit publishes that every CPU row of this `Counters` owns the page.
+    /// Keep this with the backing so moves retain it and resets do not invalidate reservations.
+    std::array<std::atomic<UInt64>, (cold_page_count + 63) / 64> reserved_pages{};
 
     /// Only owned rows are reclaimed. Global backing remains valid during static teardown.
     void destroy()
@@ -2182,13 +2185,6 @@ struct alignas(DB::CH_CACHE_LINE_SIZE) Counters::CounterRow
                 page = expected;
         }
         return page;
-    }
-
-    void preallocate(Event event, MemoryTracking tracking)
-    {
-        const size_t slot = counter_layout.slot_of[event];
-        if (slot >= hot_counter_count)
-            ensurePage((slot - hot_counter_count) / cold_page_size, tracking);
     }
 
     void incrementHot(Event event, Count amount) noexcept
@@ -2409,16 +2405,26 @@ Count Counters::load(Event event) const
 void Counters::preallocate(Event event)
 {
     /// Hot cells are already present at every level, including any future parent.
-    if (counter_layout.slot_of[event] < hot_counter_count)
+    const size_t slot = counter_layout.slot_of[event];
+    if (slot < hot_counter_count)
         return;
+    const size_t page = (slot - hot_counter_count) / cold_page_size;
+    const UInt64 mask = UInt64{1} << (page % 64);
     for (Counters * current = this; current; current = current->parent.load(std::memory_order_acquire))
     {
+        auto & reserved = current->counters[0].reserved_pages[page / 64];
+        /// A completed local reservation does not imply that a newly attached parent is ready.
+        if (reserved.load(std::memory_order_acquire) & mask)
+            continue;
         auto rows = current->cpus.load(std::memory_order_relaxed);
         /// A reservation made before static initialization must survive enabling CPU sharding.
         if (!rows && current == &global_counters)
             rows = PerCPU::MAX_CPUS;
         for (uint32_t row = 0; row < std::max(1U, rows); ++row)
-            current->counters[row].preallocate(event, current->memory_tracking);
+            current->counters[row].ensurePage(page, current->memory_tracking);
+        /// Publish completion only after every row is ready. Concurrent reservations may do
+        /// redundant work on their first call; a failed allocation leaves the bit unset.
+        reserved.fetch_or(mask, std::memory_order_release);
     }
 }
 

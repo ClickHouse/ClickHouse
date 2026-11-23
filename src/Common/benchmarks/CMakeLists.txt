@@ -18,6 +18,10 @@ clickhouse_add_microbenchmark(wrap_in_nullable
     SOURCES wrap_in_nullable.cpp
     LIBRARIES dbms)
 
+clickhouse_add_microbenchmark(profile_events_reservations
+    SOURCES profile_events_reservations.cpp
+    LIBRARIES dbms)
+
 clickhouse_add_microbenchmark(profile_events
     SOURCES profile_events.cpp
     LIBRARIES clickhouse_common_io)
@@ -26,6 +30,7 @@ if (ENABLE_BENCHMARKS AND (OS_LINUX OR OS_FREEBSD))
     # `FiberLocal` accesses this TLS object through inline assembly.
     # Retain its definition in the standalone benchmark link.
     target_link_options (profile_events PRIVATE "LINKER:--undefined=FiberLocalStorageThreadStorage")
+    target_link_options (profile_events_reservations PRIVATE "LINKER:--undefined=FiberLocalStorageThreadStorage")
 endif ()
 
 clickhouse_add_microbenchmark(benchmark_stack_trace
