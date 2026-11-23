@@ -14,7 +14,7 @@ SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_mi
     min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1;
 
 INSERT INTO t_shadow_lazy (id, k, a) SELECT number, 1000 - number, range(number % 3) FROM numbers(1000);
-SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_lazy' AND active ORDER BY column;
+SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_lazy' AND active AND NOT startsWith(column, '_') ORDER BY column;
 
 SET optimize_use_projections = 1, query_plan_optimize_lazy_materialization = 1,
     query_plan_max_limit_for_lazy_materialization = 100, optimize_move_to_prewhere = 0;
@@ -38,7 +38,7 @@ SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_mi
 
 -- Every mutation gets a new part that does not hold `a.x`.
 INSERT INTO t_shadow_mutate (id, a, b) VALUES (1, '{"x" : 11}', 1), (2, '{"x" : 22}', 2);
-SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active ORDER BY column;
+SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active AND NOT startsWith(column, '_') ORDER BY column;
 SELECT id, a, `a.x`, b FROM t_shadow_mutate ORDER BY id;
 
 ALTER TABLE t_shadow_mutate MODIFY COLUMN `a.x` UInt32 SETTINGS mutations_sync = 2;
@@ -46,13 +46,13 @@ SELECT id, a, `a.x`, toTypeName(`a.x`), b FROM t_shadow_mutate ORDER BY id;
 
 TRUNCATE TABLE t_shadow_mutate;
 INSERT INTO t_shadow_mutate (id, a, b) VALUES (1, '{"x" : 11}', 1), (2, '{"x" : 22}', 2);
-SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active ORDER BY column;
+SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active AND NOT startsWith(column, '_') ORDER BY column;
 ALTER TABLE t_shadow_mutate UPDATE `a.x` = 9 WHERE id = 1 SETTINGS mutations_sync = 2;
 SELECT id, a, `a.x`, b FROM t_shadow_mutate ORDER BY id;
 
 TRUNCATE TABLE t_shadow_mutate;
 INSERT INTO t_shadow_mutate (id, a, b) VALUES (1, '{"x" : 11}', 1), (2, '{"x" : 22}', 2);
-SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active ORDER BY column;
+SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active AND NOT startsWith(column, '_') ORDER BY column;
 ALTER TABLE t_shadow_mutate CLEAR COLUMN `a.x` SETTINGS mutations_sync = 2;
 SELECT id, a, `a.x`, b FROM t_shadow_mutate ORDER BY id;
 
@@ -62,10 +62,10 @@ SELECT id, a, `a.x`, b FROM t_shadow_mutate ORDER BY id;
 TRUNCATE TABLE t_shadow_mutate;
 INSERT INTO t_shadow_mutate (id, a, b) VALUES (1, '{"x" : 11}', 1), (2, '{"x" : 22}', 2);
 ALTER TABLE t_shadow_mutate MODIFY COLUMN `a.x` UInt32 DEFAULT 7 SETTINGS mutations_sync = 2;
-SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active ORDER BY column;
+SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active AND NOT startsWith(column, '_') ORDER BY column;
 SELECT id, a, `a.x`, b FROM t_shadow_mutate ORDER BY id;
 ALTER TABLE t_shadow_mutate MATERIALIZE COLUMN `a.x` SETTINGS mutations_sync = 2;
-SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active ORDER BY column;
+SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_mutate' AND active AND NOT startsWith(column, '_') ORDER BY column;
 SELECT id, a, `a.x`, b FROM t_shadow_mutate ORDER BY id;
 
 DROP TABLE t_shadow_mutate;
@@ -95,7 +95,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
     min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1;
 INSERT INTO t_shadow_index (id, a) VALUES (1, '{"x" : {"y" : 11}}'), (2, '{"x" : {"y" : 22}}');
-SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_index' AND active ORDER BY column;
+SELECT DISTINCT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_shadow_index' AND active AND NOT startsWith(column, '_') ORDER BY column;
 SELECT id, `a.x.y` FROM t_shadow_index ORDER BY id;
 SELECT count() FROM t_shadow_index WHERE `a.x.y` = 0 SETTINGS use_skip_indexes = 1, optimize_move_to_prewhere = 0;
 SELECT count() FROM t_shadow_index WHERE `a.x.y` = 0 SETTINGS use_skip_indexes = 0, optimize_move_to_prewhere = 0;
