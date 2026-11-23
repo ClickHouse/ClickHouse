@@ -156,7 +156,7 @@ inline UInt128 sipHash128AtRowConsistentWithEquals(const IColumn & column, size_
 /// alone, and for a `Nullable` float column.
 PaddedPODArray<UInt128> sipHash128OfRowsConsistentWithEquals(const IColumn & column, bool normalize_float_zero)
 {
-    if (!ColumnsHashing::Hash128ManyRows({&column}).buildsManyRowsAtOnce())
+    if (!ColumnsHashing::Hash128ManyRows({&column}).hashesRowsInBatches())
         return {};
 
     MutableColumnPtr normalized;

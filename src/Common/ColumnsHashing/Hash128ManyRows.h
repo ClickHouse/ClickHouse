@@ -23,8 +23,12 @@ public:
     /// left unset. `skip` may be nullptr, then no row is skipped.
     void buildRange(size_t begin, size_t end, UInt128 * __restrict keys, const UInt8 * skip);
 
-    /// False if `buildRange` calls `build` for each row.
-    [[nodiscard]] bool buildsManyRowsAtOnce() const { return layout != Layout::PerRow; }
+    /// Whether `buildRange` hashes the rows in batches, rather than with `build` for each row.
+    [[nodiscard]] bool hashesRowsInBatches() const { return layout != Layout::PerRow; }
+
+    /// Sets `skip[i]` for the rows [begin, end) whose hashed bytes are those of the last row before them that is not
+    /// skipped, so that their `build` is that of this row. Requires `hashesRowsInBatches`.
+    void markRepeatedRows(size_t begin, size_t end, UInt8 * skip) const;
 
 private:
     enum class Layout : uint8_t
