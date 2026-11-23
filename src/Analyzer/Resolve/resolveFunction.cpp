@@ -1695,6 +1695,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         /// also becomes NULL, but only a source NULL makes an unmatched result unknown.
         auto source_array = array_arg;
         const auto * source_array_type = typeid_cast<const DataTypeArray *>(removeNullable(source_array->getResultType()).get());
+        bool source_aware_scalar_array = false;
         if (source_array_type)
         {
             const auto left_type = removeNullable(removeLowCardinality(element_arg->getResultType()));
@@ -1707,6 +1708,20 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
 
             const auto target_type = removeNullable(recursiveRemoveLowCardinality(element_arg->getResultType()));
             const auto source_element_type = source_array_type->getNestedType();
+            const auto bare_target_type = removeNullable(removeLowCardinality(target_type));
+            const auto bare_source_type = removeNullable(removeLowCardinality(source_element_type));
+            const bool scalar_target = isNumber(bare_target_type) || isBool(bare_target_type)
+                || isStringOrFixedString(bare_target_type) || isEnum(bare_target_type)
+                || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_target_type)
+                || isUUID(bare_target_type) || isIPv4(bare_target_type) || isIPv6(bare_target_type);
+            const bool scalar_source = isNumber(bare_source_type) || isBool(bare_source_type)
+                || isStringOrFixedString(bare_source_type) || isEnum(bare_source_type)
+                || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(bare_source_type)
+                || isUUID(bare_source_type) || isIPv4(bare_source_type) || isIPv6(bare_source_type);
+            source_aware_scalar_array = scalar_target
+                && (isDynamic(bare_source_type) || isVariant(bare_source_type)
+                    || (scalar_source && !bare_target_type->equals(*bare_source_type)
+                        && !(isNumber(bare_target_type) && isNumber(bare_source_type))));
             const bool both_numeric = isNumber(removeNullable(removeLowCardinality(target_type)))
                 && isNumber(removeNullable(removeLowCardinality(source_element_type)));
             const bool calendar_cast_required = needsCalendarDateInCast(source_element_type, target_type);
@@ -1714,6 +1729,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             if (!target_type->onlyNull()
                 && target_type->canBeInsideNullable()
                 && !both_numeric
+                && !source_aware_scalar_array
                 && (calendar_cast_required
                     || exact_cast_required
                     || !tryGetLeastSupertype(DataTypes{element_arg->getResultType(), source_element_type})))
@@ -1783,17 +1799,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             any_match->getArguments().getNodes() = {std::move(lambda), source_array->clone()};
             match_result = std::move(any_match);
         }
-        else if (source_array_type
-            && (isNumber(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isBool(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isStringOrFixedString(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isEnum(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isUUID(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isIPv4(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isIPv6(removeNullable(removeLowCardinality(element_arg->getResultType())))
-                || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(removeNullable(removeLowCardinality(element_arg->getResultType()))))
-            && (isDynamic(removeNullable(removeLowCardinality(source_array_type->getNestedType())))
-                || isVariant(removeNullable(removeLowCardinality(source_array_type->getNestedType())))))
+        else if (source_aware_scalar_array)
         {
             const String candidate_name = "__in_scalar_carrier_array_candidate";
             auto comparison = std::make_shared<FunctionNode>("__scalarCarrierValueEqualsForIn");
