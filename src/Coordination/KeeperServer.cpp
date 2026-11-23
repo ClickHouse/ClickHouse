@@ -17,6 +17,7 @@
 #include <Disks/DiskLocal.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <base/sleep.h>
 #include <boost/algorithm/string.hpp>
 #include <libnuraft/callback.hxx>
 #include <libnuraft/cluster_config.hxx>
@@ -81,6 +82,7 @@ namespace FailPoints
 {
     extern const char keeper_local_logs_preprocessing_wait[];
     extern const char keeper_never_pause_appending_entries[];
+    extern const char keeper_shutdown_delay_before_asio_stop[];
 }
 
 namespace CoordinationSetting
@@ -894,6 +896,12 @@ void KeeperServer::shutdownRaftServer()
             asio_listener->shutdown();
         }
     }
+
+    fiu_do_on(FailPoints::keeper_shutdown_delay_before_asio_stop,
+    {
+        LOG_INFO(log, "Delaying the stop of the Raft asio service");
+        sleepForMilliseconds(3000);
+    });
 
     if (asio_service)
     {
