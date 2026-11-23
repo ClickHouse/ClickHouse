@@ -1914,7 +1914,15 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
         *metadata_version = metadata_stat.version;
 
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
-    if (columns_from_zk == old_columns && is_metadata_equal)
+
+    /// Compare the stored forms of both sides: `columns_from_zk` is parsed from the serialized text,
+    /// so the local columns go through the same serialization first. The in-memory expressions
+    /// keep state that the text does not carry, and the ASTs would differ although the definitions
+    /// are the same. For example, `AddDefaultDatabaseVisitor` turns the table of
+    /// `ALIAS p IN some_table` into an `ASTTableIdentifier`, which is written as `p IN (db.some_table)`
+    /// and parsed back as a plain `ASTIdentifier`.
+    auto stored_old_columns = ColumnsDescription::parse(old_columns.toString(false));
+    if (columns_from_zk == stored_old_columns && is_metadata_equal)
         return true;
 
     if (!strict_check && metadata_stat.version != 0)
