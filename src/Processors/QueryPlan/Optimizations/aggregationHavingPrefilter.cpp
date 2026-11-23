@@ -186,9 +186,8 @@ size_t tryPushHavingPrefilterIntoAggregation(
 }
 
 
-/// Runs behind `tryPushHavingPrefilterIntoAggregation`, whose bound it reads: that pass sets one only on a final
-/// aggregation of its own whole groups. Expressions and filters below it pass each row on at most once, so a group
-/// whose rows the granules of the read cannot hold `min_count` times is rejected by the bound whatever else is read.
+/// The prefilter pass sets a bound only on a final aggregation of its own whole groups, and the expressions and filters
+/// below pass each row on at most once, so a group the read's granules cannot give `min_count` rows is rejected anyway.
 size_t tryPushHavingCountBoundIntoReading(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (settings.make_distributed_plan || settings.serialize_query_plan)
@@ -228,7 +227,6 @@ size_t tryPushHavingCountBoundIntoReading(QueryPlan::Node * parent_node, QueryPl
         if (!dag || node->children.size() != 1 || dag->hasArrayJoin() || isSensitiveToEvaluationCount(*dag))
             return 0;
 
-        /// Follow the keys down to the input columns they are passed on from unchanged.
         NameSet input_keys;
         for (const auto * output : dag->getOutputs())
         {

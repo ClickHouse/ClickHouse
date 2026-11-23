@@ -5871,8 +5871,7 @@ void ReadFromMergeTree::setKeyCountLowerBound(const NameSet & key_columns, UInt6
     if (!reverse_flags.empty() && reverse_flags.front())
         return;
 
-    /// The index orders NULL and NaN by conventions the comparisons of the sweep would have to repeat, also inside
-    /// `Tuple`, `Array`, ...
+    /// The index orders NULL and NaN, also nested, by conventions the comparisons of the sweep would have to repeat.
     const auto type = removeLowCardinality(primary_key.data_types.front());
     if (!type->isComparable() || anyInTypeTree(*type, [](const IDataType & node) { return node.isNullable() || isFloat(node); }))
         return;

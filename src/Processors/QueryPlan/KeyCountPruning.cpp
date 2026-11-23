@@ -34,27 +34,21 @@ namespace Setting
     extern const SettingsUInt64 max_threads_for_indexes;
 }
 
-/// The rows of the read that have a value of the first primary key column lie in the granules whose value interval
-/// contains it. Within a part, sorted by the key, granule `g` holds values from its first key in the primary index up
-/// to the first key of granule `g + 1` (the last key of the part for the last granule of a part with a final mark,
-/// any larger value otherwise). The rows of the selected granules whose interval contains a value therefore bound how
-/// many rows of the read have it, and a granule whose whole interval stays below `min_count` can only hold
-/// groups that the HAVING bound rejects.
+/// Within a part, granule `g` holds the first primary key column's values from its index key to the index key of
+/// `g + 1` (the part's last key for a last granule with a final mark, any larger value otherwise). So the granules
+/// whose interval contains a value bound its rows, and a granule whose values all stay below `min_count` is skipped.
 std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
     const RangesInDataParts & parts, UInt64 min_count, const ContextPtr & context, const LoggerPtr & log)
 {
-    /// The sweep below runs in this thread before reading and costs about 10-30 ns and 4-20 bytes plus at most one key
-    /// value per selected mark. Bound it, and keep it small against reading the marks: a mark of 4096 rows of the cheapest column
-    /// still takes about 1 us of a 16-thread read.
+    /// The sweep runs in this thread before reading: bound it, and keep it small next to reading the marks.
     static constexpr size_t max_marks_to_sweep = 1 << 20;
     static constexpr size_t min_rows_per_mark_to_sweep = 4096;
     const size_t selected_marks = parts.getMarksCountAllParts();
     if (selected_marks > max_marks_to_sweep || parts.getRowsCountAllParts() < selected_marks * min_rows_per_mark_to_sweep)
         return {};
 
-    /// The values of a granule include its first one, which the granule alone gives as many rows as it has, and the
-    /// first one of the next granule, which the next granule has too. So a granule can only be skipped if it has fewer
-    /// rows than the bound, also together with each neighbour it shares a value with.
+    /// A granule shares its first value with the previous granule and its last one with the next, so it can only be
+    /// skipped if it has fewer rows than the bound together with each neighbour.
     bool has_candidate = false;
     for (const auto & part : parts)
     {
@@ -86,7 +80,6 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
 
     Stopwatch watch;
 
-    /// Load the primary indexes like the index analysis does: in parallel, and checking the query's limits.
     auto query_status = context->getProcessListElement();
     VectorWithMemoryTracking<IMergeTreeDataPart::IndexPtr> part_indexes(num_parts);
     {
@@ -164,10 +157,8 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
     };
 
     /// A part whose selected granules form one run of at least two gives each value from the run's first key to the
-    /// first key of its last granule at least the rows of its smallest granule but the last one. If that adds up to the
-    /// bound over the values common to such parts, a granule reaching into them holds a value that reaches the bound,
-    /// and only the granules reaching out of them hold the other values. The sweep then goes over these alone, which
-    /// saves most of it when many parts each cover most of the key range.
+    /// first key of its last granule at least the rows of its smallest granule but the last one. If these add up to the
+    /// bound over the values common to such parts, a granule reaching into them is kept, and only the others are swept.
     struct Run
     {
         size_t part;
@@ -224,7 +215,6 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
         }
     }
 
-    /// The selected granules to sweep over: all of them, or those that reach out of the common values.
     VectorWithMemoryTracking<MarkRanges> sweep_ranges(num_parts);
     for (size_t part_index = 0; part_index < num_parts; ++part_index)
     {
@@ -253,10 +243,9 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
         }
     }
 
-    /// The points are the first keys of the selected granules and, after each run of consecutive selected granules,
-    /// the first key of the next granule, which ends the run's last granule; the last granule of a part without that
-    /// key ends after every value. Calls `f(part, begin, end, has_end_point, first_point)` for the runs [begin, end) in
-    /// the order of the parts and their ranges; false if the ranges are not ascending or not covered by the index.
+    /// Calls `f(part, begin, end, has_end_point, first_point)` for each run [begin, end) of consecutive granules to
+    /// sweep, in order. Its points are the granules' first keys and, if `has_end_point`, the next granule's first key,
+    /// which ends the run. False if the ranges are not ascending or not covered by the index.
     auto for_each_run = [&](auto && f)
     {
         size_t first_point = 0;
@@ -285,9 +274,7 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
         || !num_points)
         return {};
 
-    /// Rank the points by value. Consecutive points of a part are often equal, for a value that spans granules, so the
-    /// typed sort gets the first point of each run of equal ones. Comparing each point with the previous one of its
-    /// part also checks that the part ascends.
+    /// Rank the points by value; equal consecutive points are inserted once, and each part is checked to ascend.
     VectorWithMemoryTracking<UInt32> rank(num_points);
     size_t num_values = 0;
     {
@@ -335,7 +322,6 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
     {
         for_each_run([&](size_t part_index, size_t begin, size_t end, bool has_end_point, size_t first_point)
         {
-            /// The first value of the next granule, or every value after the last one of the part.
             auto last_value = [&](size_t mark)
             {
                 return mark + 1 < end || has_end_point ? rank[first_point + mark - begin + 1] : static_cast<UInt32>(num_values - 1);
@@ -354,9 +340,8 @@ std::optional<RangesInDataParts> pruneRangesByKeyCountLowerBound(
         });
     };
 
-    /// The rows that can have each value, from the change at the first and after the last value of each granule. A
-    /// value between two points has at most the rows of the point below it, which is in every granule it is in, so only
-    /// the points need checking. The array then turns into the number of values below each one that can reach the bound.
+    /// A difference array of the rows that can have each value. A value between two points needs no check: the point
+    /// below it is in every granule it is in. It then becomes the number of values below each one that reach the bound.
     VectorWithMemoryTracking<UInt64> reaching_below(num_values + 1, 0);
     for_each_granules([&](size_t part_index, size_t begin, size_t end, UInt32 first, UInt32 last)
     {
