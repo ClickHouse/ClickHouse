@@ -7766,6 +7766,17 @@ Maximal number of partitions in table to apply independent `DISTINCT` per partit
 Maximal number of partitions in table to apply independent evaluation of window functions per partition. Part of the cost heuristic of [allow_window_partitions_independently](#allow_window_partitions_independently).
 )", 0, \
         {"26.8", 128, 128, "New setting: maximal number of partitions to apply independent per-partition evaluation of window functions."}) \
+    DECLARE(UInt64, window_sliding_aggregation_min_frame_rows, 1000, R"(
+The smallest window frame, in rows, for which an aggregate function over a frame with a moving start, for example `sum(x) OVER (ORDER BY t ROWS BETWEEN 10000 PRECEDING AND CURRENT ROW)`, is calculated from merged partial aggregation states instead of adding all rows of the frame again for every row. With it the cost per row does not grow with the frame size.
+
+It is used for aggregate functions with a small state of a fixed size, such as `sum`, `avg`, `min`, `max` or `stddevPop` of numbers. Other functions, frames that start at `UNBOUNDED PRECEDING` and shorter frames are calculated as before. The results of functions over floating-point values can differ in the last digits, as between `GROUP BY` on one thread and on several threads.
+
+Possible values:
+
+- 0 — Disabled.
+- A positive integer — The smallest frame, in rows, that is calculated from partial aggregation states.
+)", 0, \
+        {"26.12", 0, 1000, "New setting. Aggregate functions over long sliding window frames are calculated from merged partial aggregation states."}) \
     DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
 )", 0) \
