@@ -708,6 +708,17 @@ Int32 getElementBytesSize(const IDataType * column_type)
     return static_cast<Int32>(size);
 }
 
+/// Non-throwing counterpart of `getElementBytesSize`: the codec is applicable to the fixed-size types
+/// with an element of 2 to `MAX_ELEMENT_WIDTH` bytes. It is used by `FirstApplicable` to select an alternative.
+bool isApplicableToType(const IDataType & column_type)
+{
+    if (!column_type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return false;
+
+    size_t size = column_type.getSizeOfValueInMemory();
+    return size >= 2 && size <= MAX_ELEMENT_WIDTH;
+}
+
 } // anonymous namespace
 
 
@@ -872,7 +883,7 @@ void registerCodecByteStreamSplit(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecByteStreamSplit>(4);
     };
 
-    factory.registerCompressionCodecWithType("ByteStreamSplit", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("ByteStreamSplit", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
 }
 
 CompressionCodecPtr getCompressionCodecByteStreamSplit(UInt8 element_bytes_size)

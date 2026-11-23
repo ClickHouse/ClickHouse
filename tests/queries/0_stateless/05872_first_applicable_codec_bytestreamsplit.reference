@@ -1,0 +1,13 @@
+10000	49995000	7142142.9	49995000349965000	995000	38890	20000	20000	16665000	19000	495000
+a	a	['ByteStreamSplit(4), LZ4']
+a	a.size0	['ZSTD(1)']
+b	b	['ZSTD(1)']
+c	c	['ByteStreamSplit(4), LZ4']
+cb	cb	['ZSTD(1)']
+cs	cs	['ZSTD(1)']
+cs	cs.size	['ZSTD(1)']
+f	f	['ByteStreamSplit(4), LZ4']
+i	i	['ByteStreamSplit(4), LZ4']
+s	s	['ZSTD(1)']
+s	s.size	['ZSTD(1)']
+u	u	['ByteStreamSplit(4), LZ4']
