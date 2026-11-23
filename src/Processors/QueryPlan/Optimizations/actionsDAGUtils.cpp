@@ -14,8 +14,14 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/IFunctionDateOrDateTime.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 
@@ -35,6 +41,54 @@ namespace DB
 static bool hasNullConstantArgument(const ActionsDAG::Node & node)
 {
     return std::ranges::any_of(node.children, [](const ActionsDAG::Node * child) { return child->column && child->column->onlyNull(); });
+}
+
+/// `IFunction::getMonotonicityForRange` only receives the input type, so for a date/time function with an
+/// explicit constant time zone argument (e.g. `toRelativeHourNum(d, 'America/New_York')`) it would evaluate
+/// in the type's (or the default) time zone instead of the requested one, and could report the function as
+/// monotonic when it is not in the requested zone. Bind the constant time zone argument to the input type
+/// here, the same way `FunctionWithOptionalConstArg::getMonotonicityForRange` does for key conditions and the
+/// same way `extractTimeZoneFromFunctionArguments` resolves it at execution time. Input types that cannot
+/// carry a time zone (`Date`, `Date32`, ...) are conservatively reported as not monotonic when an explicit
+/// time zone argument is present.
+static IFunctionBase::Monotonicity getMonotonicityForRangeBindingConstTimeZone(
+    const ActionsDAG::Node & node, const IDataType & input_type, const Field & left, const Field & right)
+{
+    const auto & func = node.function_base;
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get());
+    if (!adaptor || !dynamic_cast<const FunctionDateOrDateTimeBase *>(adaptor->getFunction()))
+        return func->getMonotonicityForRange(input_type, left, right);
+
+    for (const auto * child : node.children)
+    {
+        if (!child->column || !isStringOrFixedString(child->result_type))
+            continue;
+
+        try
+        {
+            const auto time_zone = extractTimeZoneNameFromColumn(child->column.get(), child->name);
+
+            const IDataType * type_ptr = &input_type;
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+                type_ptr = low_cardinality_type->getDictionaryType().get();
+            if (type_ptr->isNullable())
+                type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
+
+            if (const auto * date_time_type = typeid_cast<const DataTypeDateTime *>(type_ptr))
+                return func->getMonotonicityForRange(DataTypeDateTime(time_zone), left, right);
+            if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
+                return func->getMonotonicityForRange(DataTypeDateTime64(date_time64_type->getScale(), time_zone), left, right);
+
+            /// `Date`, `Date32` and the other types cannot carry the time zone: not monotonic.
+            return {};
+        }
+        catch (const Exception &)
+        {
+            return {};
+        }
+    }
+
+    return func->getMonotonicityForRange(input_type, left, right);
 }
 
 using InputNameMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_view>;
@@ -440,7 +494,7 @@ static MatchedTrees::Matches matchTreesImpl(
                         const auto & child_match = matches[monotonic_child];
                         if (child_match.node)
                         {
-                            auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, {}, {});
+                            auto info = getMonotonicityForRangeBindingConstTimeZone(*frame.node, *monotonic_child->result_type, {}, {});
                             if (info.is_monotonic)
                             {
                                 MatchedTrees::Monotonicity monotonicity;
@@ -551,7 +605,7 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
 
         const auto & type = node->children[pos]->result_type;
         const Field field{};
-        auto monotonicity = node->function_base->getMonotonicityForRange(*type, field, field);
+        auto monotonicity = getMonotonicityForRangeBindingConstTimeZone(*node, *type, field, field);
         if (!monotonicity.is_monotonic)
             break;
 

@@ -3034,6 +3034,10 @@ struct ToRelativeHourNumImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+
+    /// A time before the Unix epoch is counted with another bias than a time after it, see `DateLUTImpl::toRelativeHourNum`
+    /// and `IFunctionDateOrDateTime::getMonotonicityOnEachSideOfEpoch`.
+    static constexpr bool is_monotonic_only_on_each_side_of_epoch = true;
 };
 
 template <ResultPrecision precision_>
