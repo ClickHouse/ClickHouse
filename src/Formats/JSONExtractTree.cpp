@@ -981,6 +981,16 @@ public:
         }
         else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
+            /// 999:59:59, the largest `Time` value.
+            constexpr Int64 max_time_seconds = 999 * 3600 + 59 * 60 + 59;
+            const bool out_of_range = element.isInt64()
+                ? element.getInt64() < -max_time_seconds || element.getInt64() > max_time_seconds
+                : element.getUInt64() > static_cast<UInt64>(max_time_seconds);
+            if (out_of_range)
+            {
+                error = fmt::format("value {} is out of bounds of type Time", jsonElementToStringForError<JSONParser>(element, format_settings));
+                return false;
+            }
             value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
@@ -2094,10 +2104,9 @@ private:
                 return DataTypeFactory::instance().get("Bool");
             case ElementType::INT64:
             {
-                auto type = std::make_shared<DataTypeInt64>();
                 if (element.getInt64() < 0)
-                    json_inference_info.negative_integers.insert(type.get());
-                return type;
+                    return json_inference_info.getNegativeInt64();
+                return std::make_shared<DataTypeInt64>();
             }
             case ElementType::UINT64:
                 return std::make_shared<DataTypeUInt64>();
@@ -2113,10 +2122,7 @@ private:
                 if (format_settings.json.try_infer_numbers_from_strings)
                 {
                     if (auto type = tryInferJSONNumberFromString(data, format_settings, &json_inference_info))
-                    {
-                        json_inference_info.numbers_parsed_from_json_strings.insert(type.get());
-                        return type;
-                    }
+                        return json_inference_info.getNumberParsedFromString(type);
                 }
 
                 return std::make_shared<DataTypeString>();

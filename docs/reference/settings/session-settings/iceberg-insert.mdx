@@ -54,6 +54,15 @@ Max allowed partitions count per one insert operation for Iceberg table engine.
 
 Max rows of iceberg parquet data file on insert operation.
 
+## iceberg_insert_max_sort_buffer_bytes {#iceberg_insert_max_sort_buffer_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.12"},{"label": "1073741824"},{"label": "New setting."}]}]}/>
+
+Max uncompressed bytes an `INSERT` into an Iceberg table with a sort order buffers across all partitions before
+writing them sorted. Past it, the largest buffer is written early as a smaller sorted data file. 0 means unlimited.
+
 ## iceberg_insert_single_manifest_for_all_partitions {#iceberg_insert_single_manifest_for_all_partitions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

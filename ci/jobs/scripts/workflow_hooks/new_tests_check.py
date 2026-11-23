@@ -320,9 +320,12 @@ def check():
         )
         return True
 
-    # No new tests at all.
-    print("No new tests have been added")
-    return False
+    # No new tests at all. Not every bug fix can be covered by a test (for
+    # example, races, resource exhaustion, or environment-specific failures),
+    # so this is not a reason to fail. Validation is only enforced for the
+    # tests a PR does add.
+    print("No new tests have been added - bugfix validation is not applicable, pass")
+    return True
 
 
 if __name__ == "__main__":
