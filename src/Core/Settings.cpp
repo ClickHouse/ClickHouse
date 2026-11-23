@@ -7233,7 +7233,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0, \
-        {"26.11", false, false, "New setting."}) \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.

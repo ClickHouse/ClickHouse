@@ -48,7 +48,7 @@ struct SnapshotDataFiles
 {
     std::vector<ScannedDataFilePtr> files;
 
-    static size_t getFileWeight(const ScannedDataFile & file)
+    [[nodiscard]] static size_t getFileWeight(const ScannedDataFile & file)
     {
         return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity();
     }
@@ -73,9 +73,9 @@ public:
         data_files.files.push_back(file);
     }
 
-    bool isActive() const { return active; }
+    [[nodiscard]] bool isActive() const { return active; }
 
-    std::shared_ptr<SnapshotDataFiles> release() { return std::make_shared<SnapshotDataFiles>(std::move(data_files)); }
+    [[nodiscard]] std::shared_ptr<SnapshotDataFiles> release() { return std::make_shared<SnapshotDataFiles>(std::move(data_files)); }
 
 private:
     const size_t max_weight;
