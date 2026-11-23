@@ -699,7 +699,8 @@ private:
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
                 Block(to_convert),
                 adding_missing_defaults_dag.getRequiredColumnsNames(),
-                local_context);
+                local_context,
+                &result_metadata->getColumns());
 
             return ActionsDAG::merge(
                 std::move(converting_types_dag),
@@ -1876,7 +1877,8 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
         Block(to_convert),
         adding_missing_defaults_dag.getRequiredColumnsNames(),
-        insert_context);
+        insert_context,
+        &inner_metadata->getColumns());
 
     auto merged_dag = ActionsDAG::merge(
         std::move(converting_types_dag),

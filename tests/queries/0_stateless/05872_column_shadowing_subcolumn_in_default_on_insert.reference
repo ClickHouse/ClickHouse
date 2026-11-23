@@ -1,0 +1,8 @@
+-- INSERT ... VALUES
+1	44	44	44
+-- INSERT ... SELECT
+2	55	55	55
+-- defaults of the fields omitted in the input format
+3	66	66	66
+-- INSERT through a materialized view
+4	77	77	77
