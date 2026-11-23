@@ -798,7 +798,9 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
             auto rename = make_intrusive<ASTRenameQuery>();
             rename->addElement(inner_table_id.database_name, inner_table_id.table_name,
                                new_table_id.database_name, new_inner_table_name);
-            InterpreterRenameQuery(rename, getContext()).execute();
+            InterpreterRenameQuery interpreter(rename, getContext());
+            interpreter.setSkipDatabaseLocks(true);
+            interpreter.execute();
         }
     }
 
@@ -1017,8 +1019,8 @@ CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 Then this table can be used with the following protocols (a port must be assigned in the server configuration):
-- [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
-- [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
+- [prometheus remote-write](/concepts/features/connect-to-clickhouse/prometheus#remote-write)
+- [prometheus remote-read](/concepts/features/connect-to-clickhouse/prometheus#remote-read)
 
 ### Outer columns {#outer-columns}
 
