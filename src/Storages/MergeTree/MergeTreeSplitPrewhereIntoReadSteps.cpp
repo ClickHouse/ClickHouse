@@ -77,7 +77,8 @@ void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const Ind
 void fillRequiredColumns(
     const ActionsDAG::Node * node,
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
-    const IndexReadTasks * index_read_tasks)
+    const IndexReadTasks * index_read_tasks,
+    bool force_lazy_execution)
 {
     if (nodes_info.contains(node))
         return;
@@ -92,7 +93,7 @@ void fillRequiredColumns(
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info, index_read_tasks);
+        fillRequiredColumns(child, nodes_info, index_read_tasks, force_lazy_execution);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
         node_info.required_table_columns.insert(child_info.required_table_columns.begin(), child_info.required_table_columns.end());
@@ -107,8 +108,10 @@ void fillRequiredColumns(
     /// functions that do throw while parsing row values (for example addDays(String, ...) via
     /// FunctionDateOrDateTimeAddInterval). Step 4 of `tryBuildPrewhereSteps` clears the flag with `prewhereConditionCannotThrow`.
     /// Splitting an alias also checks the stricter `IFunctionBase::canThrow` contract below.
+    /// With `force_enable` every function is guarded.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-        && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
+        && (force_lazy_execution
+            || node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
             || node->function_base->isExpensive()))
         node_info.may_throw = true;
 }
@@ -597,9 +600,10 @@ bool tryBuildPrewhereSteps(
 
     /// 2. Collect the set of columns that are used in the condition
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
+    const bool force_lazy_execution = actions_settings.short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info, index_read_tasks);
+        fillRequiredColumns(node, nodes_info, index_read_tasks, force_lazy_execution);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns

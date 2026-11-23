@@ -349,13 +349,13 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
 }
 
 template <typename ProcessBatch>
-void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
+void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch, size_t first_row = 0)
 {
     const size_t row_count = column.size();
-    if (row_count == 0)
+    if (row_count <= first_row)
         return;
 
-    VectorWithMemoryTracking<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
+    VectorWithMemoryTracking<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count - first_row));
 
     if (!isColumnConst(column) && column.isFixedAndContiguous())
     {
@@ -364,7 +364,7 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
 
         chassert(value_size == 0 || raw_data.size() / value_size >= row_count);
 
-        size_t start_row = 0;
+        size_t start_row = first_row;
         while (start_row < row_count)
         {
             const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
@@ -376,7 +376,7 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
         return;
     }
 
-    size_t start_row = 0;
+    size_t start_row = first_row;
     while (start_row < row_count)
     {
         const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
@@ -470,18 +470,21 @@ ColumnPtr ExactSetRuntimeFilter<negate>::toFilterColumnType(const ColumnPtr & se
 }
 
 template <bool negate>
-void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
+size_t ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 {
     if (is_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter exact set after it was marked as finished");
 
     if (is_full)
-        return;
+        return 0;
 
     auto & set = getExactValues();
-    set.insertFromColumns({values});
+    size_t rows_taken = 0;
+    /// A full positive set is dropped, while `NOT IN` filters by every key it took.
+    set.insertFromColumns({values}, negate ? std::numeric_limits<size_t>::max() : exact_values_limit, rows_taken);
     const size_t set_bytes = bound_key_bytes ? set.getSetElementsBytes() : set.getTotalByteCount();
     is_full = set.getTotalRowCount() > exact_values_limit || set_bytes > bytes_limit;
+    return rows_taken;
 }
 
 template <bool negate>
@@ -665,18 +668,19 @@ ApproximateSetRuntimeFilter::ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UI
 {
 }
 
-void ApproximateSetRuntimeFilter::insert(ColumnPtr values)
+void ApproximateSetRuntimeFilter::insert(ColumnPtr values, size_t first_row)
 {
-    insertIntoBloomFilter(values);
+    insertIntoBloomFilter(values, first_row);
 }
 
-void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values)
+void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values, size_t first_row)
 {
     forEachColumnHashBatch(
         *values,
         bloom_filter.getSeed(),
         [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
-        { bloom_filter.addHashPairs(hash_pairs, count); });
+        { bloom_filter.addHashPairs(hash_pairs, count); },
+        first_row);
 }
 
 ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
@@ -789,13 +793,13 @@ DenseBitsetRuntimeFilter::DenseBitsetRuntimeFilter(const DataTypePtr & filter_co
     chassert(isDataTypeSupported(filter_column_target_type));
 }
 
-void DenseBitsetRuntimeFilter::insert(const ColumnPtr & values)
+void DenseBitsetRuntimeFilter::insert(const ColumnPtr & values, size_t first_row)
 {
     visitDenseBitsetKeys(filter_column_target_type, values, [&](const auto & keys)
     {
-        for (const auto key : keys)
+        for (size_t row = first_row; row < keys.size(); ++row)
         {
-            const size_t index = denseBitsetIndex(key);
+            const size_t index = denseBitsetIndex(keys[row]);
             words[index / 64] |= 1ULL << (index % 64);
         }
     });
@@ -896,6 +900,10 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 {
+    /// A full exact set means the switch from it threw and the caller went on inserting. It holds the keys it took, so retry.
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter_); exact_filter && exact_filter->isFull())
+        switchFromExactFilter(filter_);
+
     if (std::holds_alternative<KeySetDropped>(filter_))
         return;
 
@@ -915,24 +923,26 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
     if (!exact_filter || exact_filter->isFull())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
 
-    exact_filter->insert(std::move(values));
+    const size_t rows_taken = exact_filter->insert(values);
 
     if (exact_filter->isFull())
-        switchFromExactFilter(filter_);
+        switchFromExactFilter(filter_, values, rows_taken);
 }
 
-void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_)
+void AdaptiveSetRuntimeFilter::switchFromExactFilter(Filter & filter_, const ColumnPtr & block, size_t first_row)
 {
     if (dense_bitset_allowed && DenseBitsetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
-        switchToDenseBitset(filter_);
+        switchToDenseBitset(filter_, block, first_row);
     else
-        switchToApproximateFilter(filter_);
+        switchToApproximateFilter(filter_, block, first_row);
 }
 
-void AdaptiveSetRuntimeFilter::switchToDenseBitset(Filter & filter_)
+void AdaptiveSetRuntimeFilter::switchToDenseBitset(Filter & filter_, const ColumnPtr & block, size_t first_row)
 {
     DenseBitsetRuntimeFilter bitset_filter(filter_column_target_type);
     bitset_filter.insert(std::get<ExactFilter>(filter_).getValuesColumn());
+    if (block)
+        bitset_filter.insert(block, first_row);
     filter_.emplace<DenseBitsetRuntimeFilter>(std::move(bitset_filter));
     ProfileEvents::increment(ProfileEvents::RuntimeFilterDenseBitsetsBuilt);
 }
@@ -1050,7 +1060,7 @@ void AdaptiveSetRuntimeFilter::dropKeySet(Filter & filter_, RuntimeFilterDisable
     filter_.emplace<KeySetDropped>(reason);
 }
 
-ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilter(Filter & filter_)
+ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilter(Filter & filter_, const ColumnPtr & block, size_t first_row)
 {
     if (auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter_))
         return approximate_filter;
@@ -1092,10 +1102,13 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         }
     }
 
-    auto & approximate_filter
-        = filter_.emplace<ApproximateSetRuntimeFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions);
+    /// Filled before it replaces the keys, so a refused allocation leaves the filter as it was.
+    ApproximateSetRuntimeFilter approximate_filter(grown_bloom_filter_bytes, bloom_filter_hash_functions);
     approximate_filter.insert(values);
-    return &approximate_filter;
+    if (block)
+        approximate_filter.insert(block, first_row);
+    static_assert(std::is_nothrow_move_constructible_v<ApproximateSetRuntimeFilter>);
+    return &filter_.emplace<ApproximateSetRuntimeFilter>(std::move(approximate_filter));
 }
 
 void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
