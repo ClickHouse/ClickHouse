@@ -24,7 +24,6 @@ ICEBERG_SPECIFICATION_VIOLATION
 {\'sub_3\', NULL}
 field ids of the partition record are incomplete, invalid or not unique
 ICEBERG_SPECIFICATION_VIOLATION
-field ids of the partition spec are incomplete, invalid or not unique
 ICEBERG_SPECIFICATION_VIOLATION
 deleted_data_files_count	0
 deleted_position_delete_files_count	0
