@@ -349,7 +349,7 @@ ReadRangesRegistry::ReadRanges & ReadRangesRegistry::getReadRanges(const String 
 {
     std::lock_guard lock(mutex);
     /// References to the elements of an unordered map stay valid when it grows.
-    return counted[path];
+    return read_ranges_by_path[path];
 }
 
 size_t ReadRangesRegistry::ReadRanges::add(CompressedBlockRanges & ranges)

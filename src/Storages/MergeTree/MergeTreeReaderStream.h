@@ -54,7 +54,7 @@ private:
     const bool duplicated;
 
     std::mutex mutex;
-    UnorderedMapWithMemoryTracking<String, ReadRanges> counted TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, ReadRanges> read_ranges_by_path TSA_GUARDED_BY(mutex);
 };
 
 using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;
