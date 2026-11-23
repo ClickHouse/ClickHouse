@@ -163,7 +163,8 @@ private:
     void seekToRowGroup(size_t row_group);
     [[nodiscard]] UInt64 advanceToNextRowGroup(UInt64 current_row) const;
     [[nodiscard]] UInt64 computeBatchSize(UInt64 requested, UInt64 current_row) const;
-    [[nodiscard]] bool evaluateStatistics(const VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const;
+    [[nodiscard]] bool evaluateStatistics(const VectorWithMemoryTracking<Proto::ColumnStatistics> & stats, bool timestamps_shifted) const;
+    [[nodiscard]] bool areTimestampsShifted(const DateLUTImpl & writer_timezone) const;
     [[nodiscard]] const DateLUTImpl & getWriterTimezone(const Proto::StripeFooter & stripe_footer) const;
 
     Reader & reader;
@@ -179,6 +180,7 @@ private:
     UInt64 batch_first_row = 0;
     bool file_statistics_evaluated = false;
     bool file_statistics_result = true;
+    bool current_timestamps_shifted = false;
 
     std::unique_ptr<StripeStreamsImpl> stripe_streams;
     std::unique_ptr<ColumnReader> column_reader;

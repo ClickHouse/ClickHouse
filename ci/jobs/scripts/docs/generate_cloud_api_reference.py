@@ -59,6 +59,7 @@ API_REF_GROUP = "API reference"
 # single navigation fragment that defines the whole "API reference" group.
 API_REF_DIR = "products/cloud/api-reference"
 FRAGMENT_REL = f"{API_REF_DIR}/navigation.json"
+REDIRECTS_REL = "_site/redirects.json"
 LOCALE_DIRS = ("ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh")
 
 # Pinned copy of the spec, committed to the repo. The navigation and the
@@ -203,6 +204,66 @@ def operation_slug_map(spec: dict) -> dict:
         leaf = file_slug(entry["operation_id"]) if needs_page(entry) else dir_slug(entry["summary"])
         slugs[entry["operation_id"]] = f"/{API_REF_DIR}/{dir_slug(entry['tag'])}/{leaf}"
     return slugs
+
+
+def operation_url(entry: dict, locale: str | None = None) -> str:
+    """Return the public documentation URL for an OpenAPI operation.
+
+    GA operations are generated separately for each locale, while operations
+    with a badge use a single English MDX page referenced by every locale.
+    """
+    leaf = file_slug(entry["operation_id"]) if needs_page(entry) else dir_slug(entry["summary"])
+    prefix = API_REF_DIR if needs_page(entry) or locale is None else f"{locale}/{API_REF_DIR}"
+    return f"/{prefix}/{dir_slug(entry['tag'])}/{leaf}"
+
+
+def operation_url_map(spec: dict) -> dict[str, str]:
+    """Map stable method/path operation keys to their public documentation URLs."""
+    return {
+        f"{entry['method']} {entry['path']}": operation_url(entry)
+        for entry in iter_operations(spec)
+    }
+
+
+def operation_urls(spec: dict) -> set[str]:
+    """Return all public endpoint URLs generated from the OpenAPI spec."""
+    return {
+        operation_url(entry, locale)
+        for entry in iter_operations(spec)
+        for locale in (None, *LOCALE_DIRS)
+    }
+
+
+def operation_url_changes(previous_spec: dict, spec: dict) -> dict[str, str]:
+    """Map each changed public operation URL in the pinned and new specs.
+
+    OpenAPI operation IDs identify the same operation across spec refreshes,
+    while the public Mintlify URL incorporates its tag and, for GA operations,
+    its summary. Comparing the two specs preserves links when either changes.
+    """
+    previous_entries = {
+        entry["operation_id"]: entry for entry in iter_operations(previous_spec)
+    }
+    changes = {}
+    for entry in iter_operations(spec):
+        previous_entry = previous_entries.get(entry["operation_id"])
+        if previous_entry is None:
+            continue
+        previous_url = operation_url(previous_entry)
+        current_url = operation_url(entry)
+        if previous_url != current_url:
+            changes[previous_url] = current_url
+        for locale in LOCALE_DIRS:
+            previous_localized_url = operation_url(previous_entry, locale)
+            # Badge pages are shared English pages, so a transition from a
+            # badge must retain its sole English alias rather than overwrite it
+            # with a redirect to every localized GA page.
+            if previous_localized_url == previous_url:
+                continue
+            current_localized_url = operation_url(entry, locale)
+            if previous_localized_url != current_localized_url:
+                changes[previous_localized_url] = current_localized_url
+    return changes
 
 
 def rewrite_spec_links(text: str, slugs: dict) -> str:
@@ -371,6 +432,58 @@ def group_page_refs(group: dict, ref_keys: dict[str, str]) -> set[str]:
     return refs
 
 
+def page_operation_key(page: Path) -> str | None:
+    """Return the method/path key from a generated badge page's frontmatter.
+
+    Badge pages are removed when an operation becomes GA. The frontmatter keeps
+    the stable operation reference that lets us redirect the page's old slug to
+    the Mintlify-generated GA page, whose summary-based slug can differ.
+    """
+    match = re.search(
+        r'^openapi: ("(?:[^"\\]|\\.)*")$', page.read_text(encoding="utf-8"), re.MULTILINE
+    )
+    if match is None:
+        return None
+    try:
+        reference = json.loads(match.group(1))
+    except json.JSONDecodeError as ex:
+        raise SystemExit(f"Invalid OpenAPI reference in generated page {page}: {ex}") from ex
+    reference_match = re.fullmatch(rf"/{re.escape(SPEC_PIN)} ([A-Z]+) (/\S+)", reference)
+    if reference_match is None:
+        return None
+    return f"{reference_match.group(1)} {reference_match.group(2)}"
+
+
+def stale_page_redirects(
+    docs_dir: Path,
+    api_ref_dir: Path,
+    expected_files: dict[Path, str],
+    operation_urls: dict[str, str],
+) -> list[dict[str, str]]:
+    """Return redirects for generated pages which are no longer needed.
+
+    A newly GA operation changes from its operation-ID badge-page URL to a
+    summary-derived URL. Keep the former URL public by recording a redirect
+    before deleting its generated page. Existing redirects are intentionally
+    never removed, so later syncs retain mappings created by earlier ones.
+    """
+    redirects = []
+    for page in sorted(api_ref_dir.rglob("*.mdx")):
+        rel = page.relative_to(docs_dir)
+        if rel in expected_files:
+            continue
+        operation_key = page_operation_key(page)
+        if operation_key is None:
+            continue
+        destination = operation_urls.get(operation_key)
+        if destination is None:
+            continue
+        source = f"/{rel.with_suffix('').as_posix()}"
+        if source != destination:
+            redirects.append({"source": source, "destination": destination})
+    return redirects
+
+
 def localize_fragment(
     generated_groups: list, current_groups: list, ref_keys: dict[str, str]
 ) -> list:
@@ -521,7 +634,9 @@ def main() -> int:
     api_ref_dir = docs_dir / API_REF_DIR
 
     spec = load_spec(args.spec)
+    previous_spec = load_spec(str(docs_dir / SPEC_PIN))
     op_slugs = operation_slug_map(spec)
+    op_urls = operation_url_map(spec)
 
     # Group operations by OpenAPI tag, preserving spec traversal order.
     entries_by_tag: dict[str, list] = {}
@@ -612,6 +727,65 @@ def main() -> int:
             if path.relative_to(docs_dir) not in expected_files:
                 changes.append(("delete", path.relative_to(docs_dir)))
 
+    # Preserve public endpoint URLs when an operation changes maturity, tag or
+    # summary. Badge-page URLs are derived from an operation ID, while GA URLs
+    # are derived from the summary; compare the new spec with the pinned one to
+    # keep both prior canonical URLs and generated aliases current.
+    redirects_path = docs_dir / REDIRECTS_REL
+    redirects_text = redirects_path.read_text(encoding="utf-8")
+    redirects = json.loads(redirects_text)
+    if not isinstance(redirects, list) or not all(
+        isinstance(item, dict) for item in redirects
+    ):
+        raise SystemExit(f"Redirects file must contain a list of objects: {redirects_path}")
+    url_changes = operation_url_changes(previous_spec, spec)
+    generated_url_prefixes = (
+        f"/{API_REF_DIR}/",
+        *(f"/{locale}/{API_REF_DIR}/" for locale in LOCALE_DIRS),
+    )
+    canonical_urls = operation_urls(spec)
+    # A former alias can become canonical again when an operation regains a
+    # badge or restores an earlier summary. Remove it rather than publishing a
+    # self-redirect or a redirect cycle.
+    redirects_without_canonical_sources = [
+        redirect
+        for redirect in redirects
+        if not (
+            str(redirect.get("source", "")).startswith(generated_url_prefixes)
+            and redirect.get("source") in canonical_urls
+        )
+    ]
+    redirects_changed = len(redirects_without_canonical_sources) != len(redirects)
+    redirects = redirects_without_canonical_sources
+    redirects_by_source = {item.get("source"): item for item in redirects}
+    for redirect in redirects:
+        if not str(redirect.get("source", "")).startswith(generated_url_prefixes):
+            continue
+        current_destination = url_changes.get(redirect.get("destination"))
+        if current_destination is not None:
+            redirect["destination"] = current_destination
+            redirects_changed = True
+
+    new_redirects = stale_page_redirects(docs_dir, api_ref_dir, expected_files, op_urls)
+    new_redirects.extend(
+        {"source": source, "destination": destination}
+        for source, destination in sorted(url_changes.items())
+        if source not in canonical_urls
+    )
+    for redirect in new_redirects:
+        existing = redirects_by_source.get(redirect["source"])
+        if existing is None:
+            redirects.append(redirect)
+            redirects_by_source[redirect["source"]] = redirect
+            redirects_changed = True
+        elif existing.get("destination") != redirect["destination"]:
+            raise SystemExit(
+                f"Redirect conflict for {redirect['source']}: "
+                f"{existing.get('destination')} != {redirect['destination']}"
+            )
+    if redirects_changed:
+        changes.append(("redirect", Path(REDIRECTS_REL)))
+
     # Rewire the consuming files to the fragment via $ref (idempotent).
     consumer_updates = {}
     for rel, ref_path in CONSUMERS.items():
@@ -655,6 +829,10 @@ def main() -> int:
     # Rewire consumers.
     for path, new_text in consumer_updates.items():
         path.write_text(new_text, encoding="utf-8")
+    if redirects_changed:
+        redirects_path.write_text(
+            json.dumps(redirects, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
 
     print(f"Wrote {total_pages} pages + fragment; rewired {len(consumer_updates)} consumer(s)")
     return 0
