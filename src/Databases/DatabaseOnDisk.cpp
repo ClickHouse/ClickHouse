@@ -30,6 +30,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
@@ -138,21 +142,32 @@ void checkArgumentsLoadPassively(const ASTFunction * function, const ASTCreateQu
     if (!function || !function->arguments || !context->getServerSettings()[ServerSetting::load_tables_readonly])
         return;
     const auto & arguments = function->arguments->children;
+    static const std::unordered_set<String> remote_names{"Remote", "RemoteSecure", "remote", "remoteSecure", "cluster", "clusterAllReplicas"};
+    const bool reads_through_table_function = remote_names.contains(function->name);
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         /// The sharding key of `Distributed` runs per row, so only its calls on constants are folded at load.
         const bool per_row = function->name == "Distributed" && i == 3;
-        std::vector<const IAST *> stack{arguments[i].get()};
+        /// The table function that `remote` and its like read through is not run at load, and neither is a query inside an argument.
+        const auto * nested = arguments[i]->as<ASTFunction>();
+        const bool not_run = i == 1 && reads_through_table_function && nested
+            && TableFunctionFactory::instance().isTableFunctionName(nested->name);
+        std::vector<std::pair<const IAST *, bool>> stack{{arguments[i].get(), not_run}};
         while (!stack.empty())
         {
-            const IAST * node = stack.back();
+            const auto [node, in_not_run] = stack.back();
             stack.pop_back();
             if (const auto * call = node->as<ASTFunction>(); call && runsWhenFolded(*call, context) && !(per_row && readsColumn(*call)))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot load {} with `load_tables_readonly`: the argument {} of {} would run when the table is loaded",
                     backQuote(create.getTable()), call->formatForErrorMessage(), function->name);
+            if (!in_not_run && node->as<ASTSubquery>())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load {} with `load_tables_readonly`: the subquery {} in the arguments of {} would run when the table is loaded",
+                    backQuote(create.getTable()), node->formatForErrorMessage(), function->name);
+            const bool child_not_run = in_not_run || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectQuery>();
             for (const auto & child : node->children)
-                stack.push_back(child.get());
+                stack.emplace_back(child.get(), child_not_run);
         }
     }
 }
@@ -181,6 +196,14 @@ void checkExpressionsLoadPassively(const ASTCreateQuery & create, const ContextP
                 backQuote(create.getTable()), call->formatForErrorMessage());
         for (const auto & child : node->children)
             stack.push_back(child.get());
+        /// The key and the assignments of `GROUP BY ... SET` are kept apart from the children.
+        if (const auto * ttl_element = node->as<ASTTTLElement>())
+        {
+            for (const auto & key : ttl_element->group_by_key)
+                stack.push_back(key.get());
+            for (const auto & assignment : ttl_element->group_by_assignments)
+                stack.push_back(assignment.get());
+        }
     }
 }
 
@@ -268,7 +291,11 @@ std::pair<String, StoragePtr> createTableFromAST(
         else
         {
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
-            constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
+            /// Analyzing a constraint runs its scalar subqueries, so `load_tables_readonly` takes the stored constraints as they are.
+            if (!context->getServerSettings()[ServerSetting::load_tables_readonly])
+                constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
+            else if (ast_create_query.columns_list->constraints)
+                constraints = ConstraintsDescription{ast_create_query.columns_list->constraints->clone()->children};
         }
     }
 

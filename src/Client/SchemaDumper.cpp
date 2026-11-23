@@ -1646,6 +1646,9 @@ void collectFunctionArgumentReferences(
                         return literal->value.safeGet<String>();
                     if (const auto * identifier = arg->as<ASTIdentifier>())
                         return identifier->name();
+                    /// A nested table function is not a name, and folding it would run the scalar subqueries of its query.
+                    if (dependsOnUnstoredContext(*arg, clusters.context))
+                        return std::nullopt;
                     try
                     {
                         auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg->clone(), clusters.context);
