@@ -273,6 +273,17 @@ bool equalsCanDisagreeWithHashTable(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
 }
 
+/// The JOIN compares the bytes, while `Set` converts a key to a `Bool` member type, turning every nonzero byte into 1.
+DataTypePtr setTypeComparingBytes(const DataTypePtr & type)
+{
+    if (!isBool(removeLowCardinalityAndNullable(type)))
+        return type;
+    return rewriteTypeTree(
+        type,
+        [](const DataTypePtr & nested) -> DataTypePtr { return isBool(nested) ? std::make_shared<DataTypeUInt8>() : nested; },
+        CustomizationPolicy::Keep);
+}
+
 /// A runtime filter key comes from an `=` predicate, which never matches NULL, so a `Nullable` integer key keeps
 /// only its non-NULL values, in the set of the nested type.
 bool canDropNullKeys(const DataTypePtr & type)
@@ -385,7 +396,7 @@ ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
     , exact_values_limit(exact_values_limit_)
     , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls && !drop_null_keys)})
 {
-    ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type_, String())};
+    ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(setTypeComparingBytes(filter_column_target_type_), String())};
     getExactValues().setHeader(set_header);
     getExactValues().fillSetElements(); /// Save the values, not just hashes.
 }
@@ -1351,14 +1362,8 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
 
     if (exact_values)
     {
-        /// The JOIN compares the bytes, while `Set` converts a key to a `Bool` member type, turning every nonzero byte into 1.
-        auto set_type = key_casted.result_type;
-        if (isBool(removeLowCardinalityAndNullable(set_type)))
-            set_type = rewriteTypeTree(
-                set_type,
-                [](const DataTypePtr & type) -> DataTypePtr { return isBool(type) ? std::make_shared<DataTypeUInt8>() : type; },
-                CustomizationPolicy::Keep);
-        ColumnWithTypeAndName set_values(exact_values, set_type, "__runtime_filter_in_values_" + column_name);
+        ColumnWithTypeAndName set_values(
+            exact_values, setTypeComparingBytes(key_casted.result_type), "__runtime_filter_in_values_" + column_name);
         auto future_set = std::make_shared<FutureSetFromTuple>(
             CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, false, SizeLimits{});
         auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);

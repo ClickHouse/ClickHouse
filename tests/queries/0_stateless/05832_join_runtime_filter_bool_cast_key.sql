@@ -22,6 +22,8 @@ DROP TABLE IF EXISTS probe_date32;
 DROP TABLE IF EXISTS build_true;
 DROP TABLE IF EXISTS build_false;
 DROP TABLE IF EXISTS build_two;
+DROP TABLE IF EXISTS build_two_three;
+DROP TABLE IF EXISTS build_bool_both;
 DROP TABLE IF EXISTS build_u8;
 DROP TABLE IF EXISTS build_u8_two;
 DROP TABLE IF EXISTS build_variant;
@@ -84,6 +86,12 @@ INSERT INTO build_false VALUES (false);
 -- `RowBinary` keeps the byte 2 in a `Bool` column.
 CREATE TABLE build_two (flag Bool) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_two SELECT * FROM format(RowBinary, 'flag Bool', unhex('02'));
+
+CREATE TABLE build_two_three (flag Bool) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO build_two_three SELECT * FROM format(RowBinary, 'flag Bool', unhex('0203'));
+
+CREATE TABLE build_bool_both (flag Bool) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO build_bool_both VALUES (false), (true);
 
 CREATE TABLE build_u8 (u UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO build_u8 VALUES (1);
@@ -165,6 +173,15 @@ SELECT 'bool_byte_bool_byte_build_set', count() FROM probe_bool_set AS p JOIN bu
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
     enable_join_seal_gated_reading = 0, log_comment = '05832_bool_byte_bool_byte_build_set';
 
+-- The runtime filter itself, with two build values, so it looks the probe key up in a `Set`. Seal-gated reading
+-- builds it before the probe side is read.
+SELECT 'bool_byte_two_bytes_build_filter', count() FROM probe_bool_set AS p JOIN build_two_three AS b ON p.x = b.flag
+SETTINGS enable_join_runtime_filters_index_analysis = 0, join_runtime_filter_from_fixed_hash_table = 0,
+    enable_join_seal_gated_reading = 1, max_threads = 1, log_comment = '05832_bool_byte_two_bytes_build_filter';
+SELECT 'bool_byte_anti_bool_build_filter', count() FROM probe_bool_set AS p LEFT ANTI JOIN build_bool_both AS b ON p.x = b.flag
+SETTINGS enable_join_runtime_filters_index_analysis = 0, enable_join_seal_gated_reading = 1, max_threads = 1,
+    log_comment = '05832_bool_byte_anti_bool_build_filter';
+
 -- A `Variant` key holding both `Bool` and `UInt8`.
 SELECT 'variant_bool_u8', count() FROM probe_variant AS p JOIN build_variant AS b ON p.x = b.k
 SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1,
@@ -197,6 +214,13 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         '05832_u16_u8_bool_byte_build_set')
 ORDER BY log_comment;
 
+SELECT log_comment, ProfileEvents['RuntimeFilterRowsChecked'] > 0
+    AND ProfileEvents['RuntimeFilterRowsPassed'] < ProfileEvents['RuntimeFilterRowsChecked']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+    AND log_comment IN ('05832_bool_byte_anti_bool_build_filter', '05832_bool_byte_two_bytes_build_filter')
+ORDER BY log_comment;
+
 DROP TABLE probe_u8;
 DROP TABLE probe_u8_si;
 DROP TABLE probe_u8_null;
@@ -211,6 +235,8 @@ DROP TABLE probe_date32;
 DROP TABLE build_true;
 DROP TABLE build_false;
 DROP TABLE build_two;
+DROP TABLE build_two_three;
+DROP TABLE build_bool_both;
 DROP TABLE build_u8;
 DROP TABLE build_u8_two;
 DROP TABLE build_variant;

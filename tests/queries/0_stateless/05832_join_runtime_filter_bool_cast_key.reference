@@ -13,6 +13,8 @@ u16_u8_bool_build	16
 u16_u8_bool_byte_build_set	16
 bool_byte_u8_byte_build_set	16
 bool_byte_bool_byte_build_set	16
+bool_byte_two_bytes_build_filter	32
+bool_byte_anti_bool_build_filter	4064
 variant_bool_u8	8
 date_utc_tokyo_build	48
 date32_overflow	256
@@ -26,3 +28,5 @@ decimal_precision	16
 05832_datetime_time_zone	1
 05832_decimal_precision	1
 05832_u16_u8_bool_byte_build_set	1
+05832_bool_byte_anti_bool_build_filter	1
+05832_bool_byte_two_bytes_build_filter	1
