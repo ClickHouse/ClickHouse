@@ -381,16 +381,27 @@ void blockSignals([[maybe_unused]] const std::vector<int> & signals)
 #endif
 }
 
-const std::vector<int> & asynchronousHandledSignals()
+const std::vector<int> & processDirectedHandledSignals()
 {
     /// Keep in sync with the handlers installed by `BaseDaemon::initializeTerminationAndSignalProcessing`:
-    /// `SIGTSTP` from `setupCommonDeadlySignalHandlers` (it is the only asynchronous one there),
     /// `SIGINT`/`SIGQUIT`/`SIGTERM` from `setupCommonTerminateRequestSignalHandlers`, plus `SIGHUP` and `SIGCHLD`.
-    static const std::vector<int> signals{SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP};
+    static const std::vector<int> signals{SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGCHLD};
     return signals;
 }
 
-BlockSignalsScope::BlockSignalsScope(const std::vector<int> & signals)
+const std::vector<int> & asynchronousHandledSignals()
+{
+    /// Plus `SIGTSTP` from `setupCommonDeadlySignalHandlers`: it prints the stack of the thread that receives it.
+    static const std::vector<int> signals = []
+    {
+        std::vector<int> result = processDirectedHandledSignals();
+        result.push_back(SIGTSTP);
+        return result;
+    }();
+    return signals;
+}
+
+BlockSignalsScope::BlockSignalsScope(const std::vector<int> & signals, int how)
 {
     sigset_t sig_set;
 
@@ -407,7 +418,7 @@ BlockSignalsScope::BlockSignalsScope(const std::vector<int> & signals)
             throw Poco::Exception("Cannot block signal.");
 #endif
 
-    if (pthread_sigmask(SIG_BLOCK, &sig_set, &saved_mask))
+    if (pthread_sigmask(how, &sig_set, &saved_mask))
         throw Poco::Exception("Cannot block signal.");
 }
 
@@ -493,8 +504,17 @@ void SignalListener::run()
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
     ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], sizeof(buf), buf);
 
-    while (!in.eof())
+    while (true)
     {
+        {
+            /// A daemon's process-directed signals are delivered to this thread only, and only while it waits for a record.
+            std::optional<BlockSignalsScope> take_process_signals;
+            if (daemon)
+                take_process_signals.emplace(processDirectedHandledSignals(), SIG_UNBLOCK);
+            if (in.eof())
+                break;
+        }
+
         int sig = 0;
         readBinary(sig, in);
         // We may log some specific signals afterwards, with different log

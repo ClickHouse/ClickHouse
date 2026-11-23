@@ -73,6 +73,10 @@ bool isCrashed();
 
 void blockSignals(const std::vector<int> & signals);
 
+/// The handled signals a sender directs at the whole process. A daemon blocks them in every thread but the signal
+/// listener, which takes them only while it waits for the next record (see `SignalListener::run`).
+const std::vector<int> & processDirectedHandledSignals();
+
 /// The handled signals that are delivered asynchronously, as opposed to the deadly signals
 /// (`SIGSEGV`, `SIGBUS`, ...) that are raised synchronously by the faulting instruction and therefore
 /// cannot be usefully blocked. Their handlers only write to the signal pipe, so blocking them in every
@@ -80,13 +84,12 @@ void blockSignals(const std::vector<int> & signals);
 /// some thread unblocks it again.
 const std::vector<int> & asynchronousHandledSignals();
 
-/// Blocks the given signals in the calling thread and restores the previous signal mask on destruction.
-/// Threads created while the scope is active inherit the mask, which is how the signal listener thread
-/// is kept out of the signal handling path.
+/// Blocks (or, with `how = SIG_UNBLOCK`, unblocks) the given signals in the calling thread and restores the previous
+/// signal mask on destruction. Threads created while the scope is active inherit the mask.
 class BlockSignalsScope
 {
 public:
-    explicit BlockSignalsScope(const std::vector<int> & signals);
+    explicit BlockSignalsScope(const std::vector<int> & signals, int how = SIG_BLOCK);
     ~BlockSignalsScope();
 
     BlockSignalsScope(const BlockSignalsScope &) = delete;

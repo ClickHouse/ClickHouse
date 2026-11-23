@@ -1213,8 +1213,7 @@ try
         /// through Server::main is logged by a fully running logger (a stopped channel falls back to
         /// synchronous delivery, but anything already queued waits until the threads run again).
         /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
-        /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
-        /// during a normal startup.
+        /// signal-blocking scope: the mask is restored first, and the logging threads inherit this thread's mask.
         std::exception_ptr remap_exception;
         size_t remapped_size = 0;
 #if USE_JEMALLOC
@@ -1223,8 +1222,7 @@ try
         {
             /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
             /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
-            /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
-            /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
+            /// thread first. Once the listener is stopped below, they stay pending for the process: nothing is lost.
             BlockSignalsScope block_signals(asynchronousHandledSignals());
 
 #if USE_JEMALLOC
@@ -1281,8 +1279,8 @@ try
         startAsyncLoggingThreads();
 
         /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
-        /// A pending signal delivered when the mask was restored above only writes a record into the signal
-        /// pipe; the record waits there until the restarted listener thread picks it up, so it is not lost.
+        /// A pending process-directed signal waits for the restarted listener thread to take it, and a `SIGTSTP`
+        /// delivered when the mask was restored above only queues a record for it, so nothing is lost.
         startSignalListener();
 
         if (remap_exception)

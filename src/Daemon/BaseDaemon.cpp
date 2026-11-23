@@ -492,6 +492,8 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
     blockSignals({SIGPIPE});
+    /// Inherited by every thread created from here on: only the signal listener unblocks them (see `SignalListener::run`).
+    blockSignals(processDirectedHandledSignals());
 
     /// Setup signal handlers.
     HandledSignals::instance().setupTerminateHandler();
@@ -528,7 +530,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 void BaseDaemon::startSignalListener()
 {
 #if defined(OS_HAS_SIGNAL_HANDLERS)
-    /// The signal listener thread only drains the signal pipe; it must never run a signal handler itself.
+    /// The signal listener thread drains the signal pipe; it unblocks the process-directed signals only while it waits.
     /// Poco already blocks `SIGQUIT`, `SIGTERM` and `SIGPIPE` in every thread it starts, but not the rest
     /// of the asynchronously delivered handled signals. Block them here, so that the thread inherits the
     /// mask at creation (doing it inside `SignalListener::run` would leave a window right after the start),
@@ -608,7 +610,6 @@ void BaseDaemon::onTerminateRequestSignal()
 void BaseDaemon::waitForTerminationRequest()
 {
 #if defined(OS_HAS_SIGNAL_HANDLERS)
-    /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
     signal_listener->waitForTerminationRequest();
 #else
     /// There is no listener without signals, and nothing could deliver a termination request to it
