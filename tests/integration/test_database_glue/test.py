@@ -2811,7 +2811,7 @@ def test_glue_commit_response_lost_keeps_committed_pointer(started_cluster):
 
 def test_glue_commit_unknown_keeps_files(started_cluster):
     # The read-back cannot resolve, so the outcome is unknown: the query fails and nothing is
-    # deleted. UpdateTable has no precondition, so this is the only safe answer.
+    # deleted.
     node = started_cluster.instances["node1"]
     root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
         started_cluster, node, f"test_glue_commit_unknown_{uuid.uuid4()}"
@@ -2998,3 +2998,90 @@ def test_glue_commit_update_throw_applied_keeps_committed_pointer(started_cluste
     assert after != before, (before, after)
     assert _s3_uri_exists(started_cluster.minio_client, after), after
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
+def test_glue_commit_unknown_after_retried_conflict_keeps_files(started_cluster):
+    # The SDK retried an UpdateTable that the stale VersionId then refused, so an earlier attempt may have
+    # applied it. The pointer now names a commit not built on ours, which says nothing about whether ours
+    # landed first, so the outcome is unknown and the staged files are kept.
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    test_ref = uuid.uuid4().hex
+    db_name = f"glue_cas_unknown_{test_ref}"
+    root_namespace = f"cas_{test_ref}"
+    # The table location is derived from the name alone, so it must not be shared with other tests.
+    table_name = f"t_{test_ref}"
+    table_ref = f"{db_name}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+    pause = "glue_catalog_pause_before_update_table"
+    retried = "iceberg_catalog_commit_retried"
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        create_clickhouse_glue_table(
+            started_cluster, node, root_namespace, table_name, "(x String)", catalog_name=db_name
+        )
+        glue_client = _glue_client(started_cluster)
+
+        node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+        base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        base_location = base["Parameters"]["metadata_location"]
+        external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+        manifest_lists_before = _glue_manifest_lists(started_cluster, base_location)
+
+        def s3_url(location):
+            return "http://minio1:9001/" + location.split("://", 1)[1]
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {pause}")
+        node.query(f"SYSTEM ENABLE FAILPOINT {retried}")
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            paused_insert = executor.submit(
+                node.query_and_get_error, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {pause} PAUSE", timeout=60)
+
+            # Another engine commits a copy of the base after the insert has read the `VersionId` it sends.
+            node.query(
+                f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+                f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+            )
+            glue_client.update_table(
+                DatabaseName=root_namespace,
+                TableInput={
+                    "Name": table_name,
+                    "TableType": base["TableType"],
+                    "StorageDescriptor": {
+                        "Location": base["StorageDescriptor"]["Location"],
+                        "Columns": base["StorageDescriptor"]["Columns"],
+                    },
+                    "Parameters": {
+                        **base["Parameters"],
+                        "metadata_location": external_location,
+                        "previous_metadata_location": base_location,
+                    },
+                },
+            )
+
+            node.query(f"SYSTEM DISABLE FAILPOINT {pause}")
+            error = paused_insert.result(timeout=120)
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {pause}")
+            node.query(f"SYSTEM DISABLE FAILPOINT {retried}")
+            executor.shutdown(wait=False)
+
+        assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+        assert "Unknown outcome of commit" in error, error
+        injected = started_cluster.exec_in_container(
+            proxy, ["curl", "-s", f"http://localhost:8081/injected/{root_namespace}"]
+        )
+        assert int(injected) == 1
+
+        after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+        assert after["Parameters"]["metadata_location"] == external_location
+        # The other commit copies the base, so the only new manifest list is the one staged by the insert.
+        assert len(_glue_manifest_lists(started_cluster, external_location)) == len(manifest_lists_before) + 1
+        assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

@@ -1009,7 +1009,7 @@ bool GlueCatalog::commitTableUpdate(
                 return true;
 
             throw DB::Exception(
-                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
                 "Unknown outcome of commit of {} to Glue table {}.{}: it now points to {}",
                 new_metadata_path, namespace_name, table_name, current_metadata_path);
         }
