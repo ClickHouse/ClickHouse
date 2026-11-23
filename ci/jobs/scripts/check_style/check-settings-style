@@ -52,10 +52,12 @@ FNR == 1 {
 
 # Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
 # Disabled for some old settings because it requires changing the type of existing settings and that breaks compatibility with
-# previous releases, which is more important than consistency
+# previous releases, which is more important than consistency.
+# `join_algorithm` is `QueryPlanJoinAlgorithm` in `QueryPlanSerializationSettings`: the same list as `JoinAlgorithm`,
+# but it writes the inequality join as `ie_join`, so that servers released before its rename to `inequality` accept the plan.
 for setting in $(
       awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
-      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size" | grep -vx "mode"
+      sort | uniq | awk '{ print $1 }' | uniq -d | grep -v "connect_timeout" | grep -v "max_connections" | grep -v "max_block_size" | grep -vx "mode" | grep -vx "join_algorithm"
     );
 do
     echo "# Found multiple definitions of setting ${setting} with different types: "
