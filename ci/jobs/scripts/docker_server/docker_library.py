@@ -10,6 +10,7 @@ import re
 import shlex
 import tempfile
 import traceback
+from contextlib import contextmanager
 from pathlib import Path
 
 from ci.praktika.result import Result
@@ -103,6 +104,25 @@ def write_shell_free_docker_library_config(
         raise
 
 
+@contextmanager
+def docker_library_config_args(repo_path: Path, image: str, image_os: str):
+    """The `-c` arguments of the official-images runner for `image` of the variant `image_os`: the runner's own
+    `config.sh`, ours, and, for a variant without a shell, a generated mapping of the image to its tests."""
+    configs = [repo_path / "test/config.sh", CONFIG_OVERRIDE]
+    tests_var = shell_free_tests_variable(image, image_os)
+    generated_config = None
+    try:
+        if tests_var:
+            generated_config = write_shell_free_docker_library_config(
+                image, tests_var, CONFIG_OVERRIDE.parent
+            )
+            configs.append(generated_config)
+        yield " ".join(f"-c {shlex.quote(config.as_posix())}" for config in configs)
+    finally:
+        if generated_config:
+            generated_config.unlink(missing_ok=True)
+
+
 def test_docker_library(test_results, check_images=None, image_os=None) -> None:
     """we test our images vs the official docker library repository to track integrity
 
@@ -131,27 +151,15 @@ def test_docker_library(test_results, check_images=None, image_os=None) -> None:
             raise RuntimeError(f"Failed to clone {repo}")
         run_sh = repo_path / "test/run.sh"
         for image in check_images:
-            generated_config = None
-            try:
-                configs = [repo_path / "test/config.sh", CONFIG_OVERRIDE]
-                tests_var = shell_free_tests_variable(image, image_os.get(image, ""))
-                if tests_var:
-                    generated_config = write_shell_free_docker_library_config(
-                        image, tests_var, CONFIG_OVERRIDE.parent
-                    )
-                    configs.append(generated_config)
-                config_args = " ".join(
-                    f"-c {shlex.quote(config.as_posix())}" for config in configs
-                )
+            with docker_library_config_args(
+                repo_path, image, image_os.get(image, "")
+            ) as config_args:
                 cmd = f"{shlex.quote(run_sh.as_posix())} {shlex.quote(image)} {config_args}"
                 test_results.append(
                     Result.from_commands_run(
                         name=f"{test_name} ({image})", command=cmd, with_info=True
                     )
                 )
-            finally:
-                if generated_config:
-                    generated_config.unlink(missing_ok=True)
 
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
@@ -167,13 +175,14 @@ def test_docker_library(test_results, check_images=None, image_os=None) -> None:
 def validate_bugfix_tests(test_results, master_images, tests) -> None:
     """Run a bug fix's changed tests on the images built from master, where they must fail.
 
+    `master_images` maps each image to its variant (`Dockerfile.<variant>`), which selects the tests of the variants
+    without a shell, as `image_os` of `test_docker_library`.
     A test that passes on every image whose `config.sh` list has it does not reproduce the bug. Like the functional
     tests' Bugfix validation, failing on one image is enough: a bug can be in one variant only.
     """
     # Cloned by `test_docker_library`, which reports a failed clone itself.
     repo_path = TEMP_PATH / OFFICIAL_IMAGES_REPO
     run_sh = repo_path / "test/run.sh"
-    configs = f"-c {shlex.quote((repo_path / 'test/config.sh').as_posix())} -c {shlex.quote(CONFIG_OVERRIDE.as_posix())}"
     failed_on = {test: [] for test in tests}
     passed_on = {test: [] for test in tests}
     logs = {test: [] for test in tests}
@@ -192,8 +201,13 @@ def validate_bugfix_tests(test_results, master_images, tests) -> None:
             pulled_all = False
             continue
         for test in tests:
-            cmd = f"{shlex.quote(run_sh.as_posix())} -t {shlex.quote(test)} {shlex.quote(image)} {configs}"
-            exit_code, stdout, stderr = Shell.get_res_stdout_stderr(cmd, verbose=True)
+            with docker_library_config_args(
+                repo_path, image, master_images[image]
+            ) as config_args:
+                cmd = f"{shlex.quote(run_sh.as_posix())} -t {shlex.quote(test)} {shlex.quote(image)} {config_args}"
+                exit_code, stdout, stderr = Shell.get_res_stdout_stderr(
+                    cmd, verbose=True
+                )
             if "image has no tests" in stdout:
                 continue
             if exit_code == 0:

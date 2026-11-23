@@ -29,6 +29,8 @@
 #include <vector>
 
 #include <Poco/AutoPtr.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Element.h>
 #include <Poco/Exception.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -469,11 +471,34 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
     return true;
 }
 
+/// Whether an element included from ZooKeeper (`from_zk`) under `element` can change the users configuration file
+/// the server selects: the root, an `<include>` directly under it (its contents are spliced into the root), or
+/// `users_config`, `user_directories`, and anything inside them. Others, e.g. `<macros from_zk="..."/>`, cannot.
+bool hasZooKeeperIncludeSelectingUsersFile(const Poco::XML::Element & element, bool is_root, bool in_selector)
+{
+    if ((is_root || in_selector) && element.hasAttribute("from_zk"))
+        return true;
+    for (const Poco::XML::Node * child = element.firstChild(); child; child = child->nextSibling())
+    {
+        if (child->nodeType() != Poco::XML::Node::ELEMENT_NODE)
+            continue;
+        const Poco::XML::XMLString & name = child->nodeName();
+        bool child_in_selector = in_selector
+            || (is_root && (name == "users_config" || name == "user_directories" || name == "include"));
+        if (hasZooKeeperIncludeSelectingUsersFile(
+                *static_cast<const Poco::XML::Element *>(child), /* is_root = */ false, child_in_selector))
+            return true;
+    }
+    return false;
+}
+
 /// The users configuration file the server loads the users from, as `AccessControl::addStoragesFromMainConfig`
 /// finds it: `users_config`, else the main configuration itself if it has no `user_directories`, else the path of
 /// the `users.xml` storage in `user_directories`. A relative path is taken from the directory of the main
 /// configuration if it exists there. Empty if the configuration has no users configuration file.
-std::string getUsersConfigFile(const std::string & config_file)
+/// The configuration is `config_file` with the properties of the server arguments (`extra_args`) over it, e.g.
+/// `-- --user_directories.users_xml.path=...`, as the server combines them.
+std::string getUsersConfigFile(const std::string & config_file, const std::vector<std::string> & extra_args)
 {
     const fs::path config_dir = fs::path(config_file).parent_path();
     auto resolve = [&](const std::string & path)
@@ -485,10 +510,19 @@ std::string getUsersConfigFile(const std::string & config_file)
 
     DB::ConfigProcessor processor(config_file, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
     auto loaded = processor.loadConfig(/* allow_zk_includes = */ true);
-    if (loaded.has_zk_includes)
-        throw Poco::Exception("the configuration has elements included from ZooKeeper (`from_zk`), "
-            "so its users configuration file cannot be found without ZooKeeper");
-    const auto & config = *loaded.configuration;
+    /// Without ZooKeeper, its elements are left as they are in the configuration, with the `from_zk` attribute.
+    if (loaded.has_zk_includes
+        && hasZooKeeperIncludeSelectingUsersFile(*loaded.preprocessed_xml->documentElement(), /* is_root = */ true, /* in_selector = */ false))
+        throw Poco::Exception("the users configuration file is selected by elements included from ZooKeeper (`from_zk`), "
+            "so it cannot be found without ZooKeeper");
+
+    /// The server parses its whole command line with `argsToConfig` into a layer that takes precedence over the files.
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> layered = new Poco::Util::LayeredConfiguration;
+    layered->add(loaded.configuration, /* priority = */ 0);
+    std::vector<std::string> server_args = {"--config-file=" + config_file};
+    server_args.insert(server_args.end(), extra_args.begin(), extra_args.end());
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *layered, /* priority = */ -100);
+    const auto & config = *layered;
 
     if (std::string path = config.getString("users_config", ""); !path.empty())
         return resolve(path);
@@ -514,6 +548,7 @@ std::string getUsersConfigFile(const std::string & config_file)
 /// is invalid or the file cannot be written — caller should treat this as fatal.
 bool manageClickHouseUser(
     const std::string & config_file,
+    const std::vector<std::string> & extra_args,
     const std::string & clickhouse_user,
     const std::string & clickhouse_password,
     const std::string & access_management,
@@ -533,7 +568,7 @@ bool manageClickHouseUser(
     std::string abs_users_xml;
     try
     {
-        abs_users_xml = getUsersConfigFile(config_file);
+        abs_users_xml = getUsersConfigFile(config_file, extra_args);
     }
     catch (...)
     {
@@ -1440,7 +1475,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     std::string access_management = getEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "0");
     bool skip_user_setup = (getEnv("CLICKHOUSE_SKIP_USER_SETUP") == "1");
 
-    if (!manageClickHouseUser(config_file, clickhouse_user, clickhouse_password, access_management, skip_user_setup))
+    if (!manageClickHouseUser(config_file, extra_args, clickhouse_user, clickhouse_password, access_management, skip_user_setup))
         return 1;
 
     /// Install signal handlers so `docker stop` during init triggers graceful shutdown.

@@ -1,9 +1,9 @@
 #!/bin/bash
 # Verify that the requested password applies when the configuration selects another users file
-# (`user_directories.users_xml.path`): the server merges `<users file>.d` into it, not `users.d`, so
-# `clickhouse docker-init` has to write the generated user there. Otherwise the shipped `default` user stays
-# open to the network without a password. `entrypoint.sh` of the Ubuntu image always writes to `users.d`,
-# so the test runs only on the `FROM scratch` image.
+# (`user_directories.users_xml.path`), in a configuration file or in the server arguments after `--`: the server
+# merges `<users file>.d` into it, not `users.d`, so `clickhouse docker-init` has to write the generated user there.
+# Otherwise the shipped `default` user stays open to the network without a password. `entrypoint.sh` of the Ubuntu
+# image always writes to `users.d`, so the test runs only on the `FROM scratch` image.
 set -eo pipefail
 
 dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
@@ -29,27 +29,42 @@ cat > "$config/custom-users-path.xml" <<'XML'
 XML
 chmod -R a+rX "$config"
 
-cid="$(
-  docker run -d \
-    -e CLICKHOUSE_PASSWORD="$password" \
-    -v "$config/custom-users.xml":/etc/clickhouse-server/custom-users.xml:ro \
-    -v "$config/custom-users-path.xml":/etc/clickhouse-server/config.d/custom-users-path.xml:ro \
-    --name "$(cname)" \
-    "$image"
-)"
-
 remoteQuery() {
   docker run --rm --link "$cid":clickhouse "$image" \
     clickhouse-client --host clickhouse "$@"
 }
 
-# shellcheck source=../../../../../tmp/docker-library/official-images/test/retry.sh
-. "$TESTS_LIB_DIR/retry.sh" \
-  --tries "$CLICKHOUSE_TEST_TRIES" \
-  --sleep "$CLICKHOUSE_TEST_SLEEP" \
-  remoteQuery --password "$password" --query 'SELECT 1'
+# Start the server with the docker arguments before the image ($1) and the server arguments after it (the rest).
+checkPassword() {
+  local docker_args="$1"
+  shift
+  # shellcheck disable=SC2086 # `docker_args` is a list of options.
+  cid="$(
+    docker run -d \
+      -e CLICKHOUSE_PASSWORD="$password" \
+      -v "$config/custom-users.xml":/etc/clickhouse-server/custom-users.xml:ro \
+      $docker_args \
+      --name "$(cname)" \
+      "$image" "$@"
+  )"
 
-if remoteQuery --query 'SELECT 1' > /dev/null 2>&1; then
-  echo "the server accepts a remote connection of user 'default' without the requested password" >&2
-  exit 1
-fi
+  # shellcheck source=../../../../../tmp/docker-library/official-images/test/retry.sh
+  . "$TESTS_LIB_DIR/retry.sh" \
+    --tries "$CLICKHOUSE_TEST_TRIES" \
+    --sleep "$CLICKHOUSE_TEST_SLEEP" \
+    remoteQuery --password "$password" --query 'SELECT 1'
+
+  if remoteQuery --query 'SELECT 1' > /dev/null 2>&1; then
+    echo "the server accepts a remote connection of user 'default' without the requested password" >&2
+    exit 1
+  fi
+
+  docker rm -vf "$cid" > /dev/null
+  cid=
+}
+
+# Selected in a configuration file.
+checkPassword "-v $config/custom-users-path.xml:/etc/clickhouse-server/config.d/custom-users-path.xml:ro"
+
+# Selected in the server arguments.
+checkPassword "" -- --user_directories.users_xml.path=/etc/clickhouse-server/custom-users.xml

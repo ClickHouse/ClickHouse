@@ -514,14 +514,16 @@ def main():
         ):
             # Every variant: a bug can reproduce on one of them only, e.g. in `entrypoint.sh` of the Ubuntu image,
             # which is not the default server variant.
-            master_images = [
-                f"{repo}:head{'' if variant == repo_variants[0] else '-' + variant}"
+            # Mapped to the variant, which selects the tests of the variants without a shell, e.g. the
+            # `clickhouse-scratch-*` ones for `head` of the server.
+            master_images = {
+                f"{repo}:head{'' if variant == repo_variants[0] else '-' + variant}": variant
                 for repo, repo_variants in (
                     ("clickhouse/clickhouse-server", SERVER_VARIANTS),
                     ("clickhouse/clickhouse-keeper", KEEPER_VARIANTS),
                 )
                 for variant in repo_variants
-            ]
+            }
             validate_bugfix_tests(test_results, master_images, bugfix_tests)
 
     test_results.append(check_server_readme(image.path))
