@@ -41,14 +41,15 @@ DROP TABLE t_lwu_block_offset_index;
 
 -- The same for a projection that stores `_block_offset`. Such a projection is not loaded for a part whose stored `_block_offset`
 -- is ignored, so after a restart (here `DETACH` and `ATTACH`) the mutation must still rebuild it instead of hardlinking its stale copy.
--- The mutation changes only `w`, which the projection does not read.
+-- The mutation changes only `w`, which the projection does not read. The projection is built by the merge, as a projection
+-- with `_block_offset` and without `_block_number` cannot be calculated on insert.
 
 DROP TABLE IF EXISTS t_lwu_block_offset_projection;
 
 CREATE TABLE t_lwu_block_offset_projection (uid UInt64, v UInt64, w UInt64, PROJECTION p (SELECT uid, v, _block_offset ORDER BY v))
 ENGINE = MergeTree ORDER BY uid
 SETTINGS enable_block_number_column = 0, enable_block_offset_column = 1, use_block_offset_only_with_block_number = 0,
-    allow_commit_order_projection = 1, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    allow_commit_order_projection = 1, materialize_projections_on_insert = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 INSERT INTO t_lwu_block_offset_projection SELECT number, number, 0 FROM numbers(4);
 INSERT INTO t_lwu_block_offset_projection SELECT number + 4, number + 4, 0 FROM numbers(4);
