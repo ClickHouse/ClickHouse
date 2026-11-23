@@ -134,6 +134,18 @@ namespace
         || ((isDate(right) || isDate32(right)) && (isDateTime(left) || isDateTime64(left)));
 }
 
+[[nodiscard]] bool hasCalendarDateType(const DataTypePtr & type)
+{
+    const auto bare_type = removeNullable(removeLowCardinality(type));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(bare_type.get()))
+        return hasCalendarDateType(array_type->getNestedType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(bare_type.get()))
+        return std::any_of(tuple_type->getElements().begin(), tuple_type->getElements().end(), hasCalendarDateType);
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(bare_type.get()))
+        return hasCalendarDateType(map_type->getKeyType()) || hasCalendarDateType(map_type->getValueType());
+    return isDate(bare_type) || isDate32(bare_type) || isDateTime(bare_type) || isDateTime64(bare_type);
+}
+
 [[nodiscard]] bool accurateEqualsCompoundFields(
     const Field & left, const Field & right, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
@@ -332,6 +344,13 @@ public:
         auto maps = arguments[0].column->convertToFullColumnIfConst();
         auto sources = arguments[1].column->convertToFullColumnIfConst();
         const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
+        /// A textual compound carrier has no element type, so its calendar
+        /// precision cannot be compared safely with a typed map.
+        if (isStringOrFixedString(source_type) && hasCalendarDateType(map_type))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' does not yet support comparing {} with a string map carrier",
+                map_type->getName());
         const IColumn * carrier = sources.get();
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(carrier))
             carrier = &nullable->getNestedColumn();
@@ -422,6 +441,13 @@ public:
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(carrier))
             carrier = &nullable->getNestedColumn();
         const auto source_type = removeNullable(removeLowCardinality(arguments[1].type));
+        /// A textual compound carrier has no element type, so its calendar
+        /// precision cannot be compared safely with a typed array.
+        if (isStringOrFixedString(source_type) && hasCalendarDateType(left_type))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' does not yet support comparing {} with a string array carrier",
+                left_type->getName());
 
         auto result = ColumnUInt8::create(input_rows_count, UInt8{0});
         auto null_map = ColumnUInt8::create(input_rows_count, UInt8{0});
@@ -562,6 +588,7 @@ public:
 
     void updateHash(SipHash & hash) const override { hash.update(in_null_as_unknown); }
     [[nodiscard]] bool useNullAsUnknownSemanticsForIn() const override { return in_null_as_unknown; }
+    [[nodiscard]] bool isInMembershipFunction() const override { return true; }
 
     /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
     /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
@@ -1079,9 +1106,9 @@ Checks if the left operand is a member of the right operand set. Unlike `in`, NU
         documentation_nullIn.description = String(documentation_nullIn.description) + ignore_set_description_suffix;
     String full_name_nullIn = "nullIn";
     full_name_nullIn += suffix;
-    factory.registerFunction(full_name_nullIn, [ignore_set, n = full_name_nullIn](ContextPtr context)
+    factory.registerFunction(full_name_nullIn, [ignore_set, n = full_name_nullIn](ContextPtr)
     {
-        return FunctionIn::create(n, false, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, false, false, ignore_set, false);
     }, std::move(documentation_nullIn));
 
     /// globalNullIn
@@ -1099,9 +1126,9 @@ Same as `nullIn`, but uses global set distribution in distributed queries. The s
         documentation_globalNullIn.description = String(documentation_globalNullIn.description) + ignore_set_description_suffix;
     String full_name_globalNullIn = "globalNullIn";
     full_name_globalNullIn += suffix;
-    factory.registerFunction(full_name_globalNullIn, [ignore_set, n = full_name_globalNullIn](ContextPtr context)
+    factory.registerFunction(full_name_globalNullIn, [ignore_set, n = full_name_globalNullIn](ContextPtr)
     {
-        return FunctionIn::create(n, false, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, false, false, ignore_set, false);
     }, std::move(documentation_globalNullIn));
 
     /// notNullIn
@@ -1119,9 +1146,9 @@ Checks if the left operand is NOT a member of the right operand set. Unlike `not
         documentation_notNullIn.description = String(documentation_notNullIn.description) + ignore_set_description_suffix;
     String full_name_notNullIn = "notNullIn";
     full_name_notNullIn += suffix;
-    factory.registerFunction(full_name_notNullIn, [ignore_set, n = full_name_notNullIn](ContextPtr context)
+    factory.registerFunction(full_name_notNullIn, [ignore_set, n = full_name_notNullIn](ContextPtr)
     {
-        return FunctionIn::create(n, true, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, true, false, ignore_set, false);
     }, std::move(documentation_notNullIn));
 
     /// globalNotNullIn
@@ -1139,9 +1166,9 @@ Same as `notNullIn`, but uses global set distribution in distributed queries. Th
         documentation_globalNotNullIn.description = String(documentation_globalNotNullIn.description) + ignore_set_description_suffix;
     String full_name_globalNotNullIn = "globalNotNullIn";
     full_name_globalNotNullIn += suffix;
-    factory.registerFunction(full_name_globalNotNullIn, [ignore_set, n = full_name_globalNotNullIn](ContextPtr context)
+    factory.registerFunction(full_name_globalNotNullIn, [ignore_set, n = full_name_globalNotNullIn](ContextPtr)
     {
-        return FunctionIn::create(n, true, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
+        return FunctionIn::create(n, true, false, ignore_set, false);
     }, std::move(documentation_globalNotNullIn));
 }
 
