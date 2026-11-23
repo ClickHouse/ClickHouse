@@ -1,0 +1,70 @@
+-- the projection filters the read
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+Lazily read columns: payload
+Lazily read columns: v
+-- the projection is read with the offsets of the parent part
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+ReadFromMergeTree (p)
+ReadFromMergeTree (default.r)
+Lazily read columns: payload
+Lazily read columns: v
+-- the projection is read, and the payload from it
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+ReadFromMergeTree (p)
+ReadFromMergeTree (default.r)
+Lazily read columns: payload
+Lazily read columns: v
+-- the projection serves some of the parts
+5	id5	payload5	v5
+7	id7	payload7	v7
+1005	id5	payload1005	v1005
+1007	id7	payload1007	v1007
+2005	id5	payload2005	v2005
+5	id5	payload5	v5
+7	id7	payload7	v7
+1005	id5	payload1005	v1005
+1007	id7	payload1007	v1007
+2005	id5	payload2005	v2005
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+19007	id7	payload19007	v19007
+19005	id5	payload19005	v19005
+18007	id7	payload18007	v18007
+18005	id5	payload18005	v18005
+17007	id7	payload17007	v17007
+Union
+ReadFromMergeTree (default.t_partial)
+ReadFromMergeTree (p)
+ReadFromMergeTree (default.r)
+Lazily read columns: payload
+Lazily read columns: v
