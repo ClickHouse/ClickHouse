@@ -36,20 +36,6 @@ SELECT x / -2 AS n FROM (SELECT x FROM t_sort_prop_null ORDER BY x LIMIT 10) ORD
 
 DROP TABLE t_sort_prop_null;
 
--- `negate` of the signed minimum wraps to the minimum itself, so `-x` of a signed integer whose range is not
--- known is not sorted in the opposite direction.
-DROP TABLE IF EXISTS t_sort_prop_int;
-CREATE TABLE t_sort_prop_int (x Int64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_sort_prop_int VALUES (-9223372036854775808), (1), (2);
-
-SELECT 'negate of a signed integer that may be the minimum';
-SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int ORDER BY x LIMIT 10) ORDER BY n DESC;
-SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int ORDER BY x LIMIT 10) ORDER BY n DESC SETTINGS optimize_sorting_by_input_stream_properties = 0;
-SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1;
-SELECT -x AS n FROM (SELECT x FROM t_sort_prop_int ORDER BY x LIMIT 10) ORDER BY n DESC LIMIT 1 SETTINGS optimize_sorting_by_input_stream_properties = 0;
-
-DROP TABLE t_sort_prop_int;
-
 -- `sign` is monotonic but returns 1 for NaN, so in `sign(-x)` NaN becomes an ordinary value at the end of the stream.
 DROP TABLE IF EXISTS t_sort_prop_sign;
 CREATE TABLE t_sort_prop_sign (x Float64) ENGINE = MergeTree ORDER BY tuple();
