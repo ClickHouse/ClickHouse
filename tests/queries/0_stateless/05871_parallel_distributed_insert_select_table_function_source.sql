@@ -31,7 +31,8 @@ SELECT arraySort(groupArray(x)) FROM dst;
 TRUNCATE TABLE dst;
 
 SELECT 'two shards';
-INSERT INTO FUNCTION remote('127.0.0.{1,2}', currentDatabase(), dst, x) SELECT number * 10 AS x FROM remote('127.0.0.{1,2}', numbers(10)) WHERE number % 2 = 0 SETTINGS parallel_distributed_insert_select = 2;
+-- No sharding key: only the parallel path can write to two shards, the ordinary INSERT SELECT throws.
+INSERT INTO FUNCTION remote('127.0.0.{1,2}', currentDatabase(), dst) SELECT number * 10 AS x FROM remote('127.0.0.{1,2}', numbers(10)) WHERE number % 2 = 0 SETTINGS parallel_distributed_insert_select = 2;
 SELECT arraySort(groupArray(x)) FROM dst;
 
 DROP TABLE dst_remote;
