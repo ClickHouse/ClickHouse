@@ -19,6 +19,20 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
+}
+
+namespace
+{
+
+/// A write torn by a crash leaves a truncated entry at the end of the log. Any other error, such as an I/O error,
+/// says nothing about the contents of the log, so it must not be treated as one: the log would be rewritten without the unread entries.
+bool isTornWrite(const Exception & e)
+{
+    return e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA;
+}
+
 }
 
 PersistentRemovalQueue::PersistentRemovalQueue(DiskPtr disk_, const std::string & directory_, size_t compaction_threshold_)
@@ -55,9 +69,11 @@ bool PersistentRemovalQueue::readLog()
     {
         readBinaryLittleEndian(version, *buf);
     }
-    catch (...)
+    catch (const Exception & e)
     {
-        LOG_WARNING(log, "Truncated version header in {}, starting with empty queue: {}", log_path, getCurrentExceptionMessage(false));
+        if (!isTornWrite(e))
+            throw;
+        LOG_WARNING(log, "Truncated version header in {}, starting with empty queue: {}", log_path, e.message());
         return true;
     }
 
@@ -94,11 +110,13 @@ bool PersistentRemovalQueue::readLog()
                 LOG_WARNING(log, "Skipping unknown entry type '{}' in {}", static_cast<UInt16>(entry_type), log_path);
             }
         }
-        catch (...)
+        catch (const Exception & e)
         {
+            if (!isTornWrite(e))
+                throw;
             /// Truncated entry from a partial write (e.g. crash mid-append). Stop reading — everything
             /// loaded so far is valid. Compaction will rewrite the file cleanly.
-            LOG_WARNING(log, "Truncated entry in {}, stopping: {}", log_path, getCurrentExceptionMessage(false));
+            LOG_WARNING(log, "Truncated entry in {}, stopping: {}", log_path, e.message());
             needs_compaction = true;
             break;
         }

@@ -2,12 +2,16 @@
 
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PersistentRemovalQueue.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/Exception.h>
 #include <Common/getRandomASCIIString.h>
 
 #include <filesystem>
 #include <fstream>
+#include <optional>
+#include <sstream>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -15,10 +19,37 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 namespace
 {
+
+/// Returns the given bytes of a file, then fails as an I/O error does.
+class FailingReadBuffer : public DB::ReadBufferFromFileBase
+{
+public:
+    explicit FailingReadBuffer(std::string data_)
+        : data(std::move(data_))
+    {
+        BufferBase::set(data.data(), data.size(), 0);
+    }
+
+    [[nodiscard]] String getFileName() const override { return "failing"; }
+    off_t seek(off_t, int) override { fail(); }
+    off_t getPosition() override { return count(); }
+    std::optional<size_t> tryGetFileSize() override { return {}; }
+
+private:
+    bool nextImpl() override { fail(); }
+
+    [[noreturn]] static void fail()
+    {
+        throw DB::Exception(DB::ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Injected read failure");
+    }
+
+    std::string data;
+};
 
 /// Fails a write after the file is opened, as a write error such as `ENOSPC` does: the file is created but stays empty.
 class FailingDisk : public DB::DiskLocal
@@ -27,6 +58,22 @@ public:
     using DiskLocal::DiskLocal;
 
     bool fail_next_write = false;
+    /// The next read of a file returns this many bytes of it and then fails.
+    mutable std::optional<size_t> fail_next_read_after;
+
+    std::unique_ptr<DB::ReadBufferFromFileBase> readFileIfExists(
+        const String & path, const DB::ReadSettings & settings, std::optional<size_t> read_hint) const override
+    {
+        auto buf = DiskLocal::readFileIfExists(path, settings, read_hint);
+        auto fail_after = std::exchange(fail_next_read_after, std::nullopt);
+        if (!buf || !fail_after)
+            return buf;
+
+        std::string data;
+        DB::readStringUntilEOF(data, *buf);
+        data.resize(std::min(data.size(), *fail_after));
+        return std::make_unique<FailingReadBuffer>(std::move(data));
+    }
 
     std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
         const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
@@ -50,14 +97,14 @@ public:
 
     void TearDown() override { fs::remove_all(path); }
 
-    std::unique_ptr<DB::PersistentRemovalQueue> open(size_t compaction_threshold = 1000) const
+    [[nodiscard]] std::unique_ptr<DB::PersistentRemovalQueue> open(size_t compaction_threshold = 1000) const
     {
         auto queue = std::make_unique<DB::PersistentRemovalQueue>(disk, ".metadata", compaction_threshold);
         queue->load();
         return queue;
     }
 
-    std::string logPath() const { return fs::path(path) / ".metadata" / "blobs_to_remove.log"; }
+    [[nodiscard]] std::string logPath() const { return fs::path(path) / ".metadata" / "blobs_to_remove.log"; }
 
     std::string path;
     std::shared_ptr<FailingDisk> disk;
@@ -151,4 +198,28 @@ TEST_F(PersistentRemovalQueueTest, LogIsRepairedAfterFailedAppend)
 
     auto queue = open();
     EXPECT_EQ(keys(*queue), (Keys{"key1", "key2"}));
+}
+
+TEST_F(PersistentRemovalQueueTest, ReadErrorKeepsLog)
+{
+    open()->submitForRemoval(blobs({"key1", "key2"}));
+
+    auto read_log = [&]
+    {
+        std::ifstream file(logPath(), std::ios::binary);
+        std::stringstream contents;
+        contents << file.rdbuf();
+        return contents.str();
+    };
+    const auto log_before = read_log();
+
+    /// In the version header, and in the middle of the first entry.
+    for (size_t fail_after : {0, 6})
+    {
+        disk->fail_next_read_after = fail_after;
+        EXPECT_ANY_THROW(std::ignore = open());
+        EXPECT_EQ(read_log(), log_before);
+    }
+
+    EXPECT_EQ(keys(*open()), (Keys{"key1", "key2"}));
 }
