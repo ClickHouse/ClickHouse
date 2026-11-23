@@ -16,3 +16,5 @@ Nullable(DateTime64(6, \'UTC\'))
 1
 --- manifest partition field type ---
 "adjust-to-utc":false
+--- manifest partition field type, timestamptz promoted from unknown ---
+"adjust-to-utc":true

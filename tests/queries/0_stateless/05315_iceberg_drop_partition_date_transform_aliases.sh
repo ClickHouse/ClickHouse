@@ -11,8 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# An Iceberg `timestamp` column is read back as `DateTime64(6)` in the session time zone, so the timestamps
-# are inserted as explicit UTC instants.
+# An Iceberg `timestamp` column is read back as `DateTime64(6, 'UTC')`, so the timestamps are inserted as
+# explicit UTC values.
 PATHS=()
 trap 'rm -rf "${PATHS[@]}" 2>/dev/null' EXIT
 

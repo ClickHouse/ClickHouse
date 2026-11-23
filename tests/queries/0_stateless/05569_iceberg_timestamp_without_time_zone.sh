@@ -32,8 +32,9 @@ $CLICKHOUSE_LOCAL --session_timezone Asia/Shanghai -q "
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}_ts"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
+EVOLVED_PATH="${USER_FILES_PATH}/${TABLE}_evolved/"
 
-trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
+trap 'rm -rf "${TABLE_PATH}" "${EVOLVED_PATH}" 2>/dev/null' EXIT
 
 # Identity partitioning puts the timestamp into every manifest as a partition field, and the two INSERTs
 # write two data files. Background Iceberg compaction would rewrite the manifests, so it is pinned off.
@@ -68,4 +69,40 @@ ${CLICKHOUSE_CLIENT} --query "
 echo "--- manifest partition field type ---"
 grep -aho '"adjust-to-utc":[a-z]*' "${TABLE_PATH}metadata/"*.avro | sort -u
 
+# Iceberg v3 lets an `unknown` field become any type. The flag follows the field's type in the current
+# schema, `timestamptz` here, not the `unknown` of the older one.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE}_evolved (ts Nullable(DateTime64(6)), id Int32)
+    ENGINE = IcebergLocal('${EVOLVED_PATH}', 'Parquet') PARTITION BY (ts)
+    SETTINGS iceberg_format_version = 3, allow_experimental_iceberg_compaction = 0;
+"
+python3 - "${EVOLVED_PATH}metadata" <<'PY'
+import json, os, re, sys
+
+metadata_dir = sys.argv[1]
+latest = max((f for f in os.listdir(metadata_dir) if re.match(r"v\d+\.metadata\.json$", f)), key=lambda f: int(f[1:].split(".")[0]))
+with open(os.path.join(metadata_dir, latest)) as fh:
+    metadata = json.load(fh)
+
+older = metadata["schemas"][0]
+current = json.loads(json.dumps(older))
+current["schema-id"] = older["schema-id"] + 1
+for schema, ts_type in ((older, "unknown"), (current, "timestamptz")):
+    for field in schema["fields"]:
+        if field["name"] == "ts":
+            field["type"] = ts_type
+metadata["schemas"] = [older, current]
+metadata["current-schema-id"] = current["schema-id"]
+
+version = int(latest[1:].split(".")[0]) + 1
+with open(os.path.join(metadata_dir, f"v{version}.metadata.json"), "w") as fh:
+    json.dump(metadata, fh)
+PY
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+    INSERT INTO ${TABLE}_evolved SETTINGS session_timezone = 'UTC' VALUES ('2024-06-11 12:34:56.123456', 1);"
+
+echo "--- manifest partition field type, timestamptz promoted from unknown ---"
+grep -aho '"adjust-to-utc":[a-z]*' "${EVOLVED_PATH}metadata/"*.avro | sort -u
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE} SYNC"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}_evolved SYNC"
