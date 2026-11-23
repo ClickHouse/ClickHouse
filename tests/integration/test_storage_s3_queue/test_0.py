@@ -2513,7 +2513,8 @@ def test_tags_of_the_generation_rewritten_between_head_and_tagging_unversioned(
 def test_tags_of_the_version_a_byte_reading_format_consumed(started_cluster):
     """A format that reads bytes learns its version only from the response, after the tags are fetched. Rows must never
     be returned with the tags of another version than the one whose bytes they were read from."""
-    node = started_cluster.instances["instance"]
+    # The object is consumed by a query, which does not retry a commit failed by the keeper fault injection.
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"
     table_name = f"tags_csv_format_{token}"
@@ -2551,23 +2552,25 @@ def test_tags_of_the_version_a_byte_reading_format_consumed(started_cluster):
         file_format="CSV",
         after_processing="delete",
         bucket=bucket,
-        # The reset file is read again by the next poll.
-        additional_settings={
-            "polling_min_timeout_ms": 100,
-            "polling_max_timeout_ms": 100,
-        },
+        additional_settings={"commit_on_select": 1},
     )
     node.query(
         f"CREATE TABLE {table_name}_dst (generation String) ENGINE = MergeTree ORDER BY tuple()"
     )
+    # The object is consumed by a query, so that it can read without the prefetch. The prefetch is submitted when the
+    # read buffer is created, before the tags are fetched, and it could read the temporary new version while it exists:
+    # its bytes and its tags do belong together, so its rows would be accepted. Without it, the first byte is requested
+    # only after both failpoints.
+    consume = (
+        f"INSERT INTO {table_name}_dst SELECT _tags['generation'] FROM {table_name} "
+        "SETTINGS remote_filesystem_read_prefetch = 0"
+    )
 
     node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
     node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_TAGS_FETCH_FAILPOINT}")
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        node.query(
-            f"CREATE MATERIALIZED VIEW {table_name}_mv TO {table_name}_dst "
-            f"AS SELECT _tags['generation'] AS generation FROM {table_name}"
-        )
+        first_read = pool.submit(node.query, consume)
         wait_failpoint_paused(node, PAUSE_BEFORE_TAGS_FETCH_FAILPOINT)
         # The same bytes are uploaded again with other tags, so the tags are fetched from the new version.
         replaced = client.put_object(
@@ -2582,9 +2585,19 @@ def test_tags_of_the_version_a_byte_reading_format_consumed(started_cluster):
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_TAGS_FETCH_FAILPOINT}")
         node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_TAGS_FETCH_FAILPOINT}")
+    first_read.result(timeout=60)
+    pool.shutdown()
+
+    # The rows read from the old version were not returned with the tags of the new one, and the file was reset.
+    assert node.query(f"SELECT count() FROM {table_name}_dst") == "0\n"
+    assert source_versions() == {ingested}
 
     # The file is read again with its own tags, and the version that was read is deleted.
-    wait_until(lambda: source_versions() == set(), timeout=60)
+    def consumed():
+        node.query(consume)
+        return source_versions() == set()
+
+    wait_until(consumed, timeout=60)
     assert node.query(f"SELECT generation FROM {table_name}_dst") == "old\n"
 
 
