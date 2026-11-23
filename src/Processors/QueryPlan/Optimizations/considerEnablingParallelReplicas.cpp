@@ -781,11 +781,30 @@ bool transplantAnalysisToAllReads(
     /// metadata it was captured with.
     for (const auto & [replicas_read, single_node_read] : paired_by_replicas_read)
     {
+        /// A read that a projection answered selects that projection's parts and columns. The
+        /// candidate is built with `optimize_projection` off, so its reads are of the base table and
+        /// none of that applies to them. The pairing cannot tell the two apart: a projection read
+        /// keeps the table and the table expression name of the base read it replaced. The hash of the
+        /// matched node tells them apart only inside its subtree; a projection read outside it, such as
+        /// the other side of a `JOIN`, gets here. It has a snapshot of its own, so it is checked before
+        /// the snapshots are compared. A projection read is always built with its analysis, so this
+        /// needs no new one.
+        if (const auto & analyzed = single_node_read->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
+        {
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Read of {} in the single-node plan is answered from a projection, which the plan for parallel "
+                "replicas does not use; not transplanting index analysis. Skipping optimization",
+                single_node_read->getStorageID().getNameForLogs());
+            return false;
+        }
+
         const bool same_snapshot = single_node_read->getStorageSnapshot()->data == replicas_read->getStorageSnapshot()->data
             && single_node_read->getMutationsSnapshot() == replicas_read->getMutationsSnapshot();
         if (!same_snapshot)
         {
-            /// With a query-wide snapshot cache, every read of a table in the query is given the same one.
+            /// With a query-wide snapshot cache, every read of a table in the query is given the same one,
+            /// except for projection reads, which are declined above.
             [[maybe_unused]] const auto & context = replicas_read->getContext();
             chassert(
                 !context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !context->hasQueryContext()
@@ -807,25 +826,6 @@ bool transplantAnalysisToAllReads(
         /// read either way, and this way it is done once and shared instead of being repeated by the
         /// replicas plan.
         auto analyzed = single_node_read->getOrCreateAnalyzedResult();
-
-        /// A read that a projection answered selects that projection's parts and columns. The
-        /// candidate is built with `optimize_projection` off, so its reads are of the base table and
-        /// none of that applies to them. The pairing cannot tell the two apart: a projection read
-        /// keeps the table and the table expression name of the base read it replaced. What keeps them
-        /// apart today is the hash of the node the decision is matched on, taken bottom-up over its
-        /// subtree: a read contributes only its name, its table and its `PREWHERE`, but the steps above
-        /// a projection read serialize differently and the hash disagrees, so the optimization stops
-        /// long before here. Decline rather than rest on that, for a read outside that subtree would
-        /// reach this point.
-        if (analyzed && analyzed->readFromProjection())
-        {
-            LOG_TRACE(
-                getLogger("AutoParallelReplicas"),
-                "Read of {} in the single-node plan is answered from a projection, which the plan for parallel "
-                "replicas does not use; not transplanting index analysis. Skipping optimization",
-                single_node_read->getStorageID().getNameForLogs());
-            return false;
-        }
 
         if (analyzed)
         {
