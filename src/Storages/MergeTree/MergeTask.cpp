@@ -670,6 +670,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
         global_ctx->new_data_part->ttl_infos.table_ttl = {};
 
+    const bool may_reduce_rows_without_ttl = !global_ctx->future_part->patch_parts.empty() || global_ctx->cleanup
+        || global_ctx->deduplicate || hasLightweightDelete(global_ctx->future_part)
+        || global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+
+    /// The rows TTL bound stays `NEVER` while a row with TTL 0 remains, so a merge that may remove such rows recalculates it.
+    if (may_reduce_rows_without_ttl && global_ctx->new_data_part->ttl_infos.table_ttl.max == MergeTreeDataPartTTLInfo::NEVER)
+    {
+        ctx->need_remove_expired_values = true;
+        ctx->force_ttl = true;
+    }
+
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
@@ -885,13 +896,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ///
     /// This is necessary in cases such as TTL expiration, cleanup merges, deduplication,
     /// or special merge modes like Collapsing/Replacing.
-    global_ctx->merge_may_reduce_rows =
-        ctx->need_remove_expired_values ||
-        !patch_parts.empty() ||
-        global_ctx->cleanup ||
-        global_ctx->deduplicate ||
-        hasLightweightDelete(global_ctx->future_part) ||
-        global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+    global_ctx->merge_may_reduce_rows = ctx->need_remove_expired_values || may_reduce_rows_without_ttl;
 
     /// Merging text indexes maps rows to source parts by the `_part_index` virtual column, which a table column of that name shadows.
     global_ctx->rebuild_text_indexes = global_ctx->merge_may_reduce_rows || global_ctx->metadata_snapshot->getColumns().has("_part_index");

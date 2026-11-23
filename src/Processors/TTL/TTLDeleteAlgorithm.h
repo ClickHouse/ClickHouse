@@ -16,8 +16,13 @@ public:
     void finalize(const MutableDataPartPtr & data_part) const override;
     [[nodiscard]] size_t getNumberOfRemovedRows() const { return rows_removed; }
 
+    /// Take the TTL bound from the blocks passed to `updateBound` instead of from the rows `execute` keeps.
+    void setBoundFromOutput();
+    void updateBound(const Block & block);
+
 private:
     size_t rows_removed = 0;
+    bool bound_from_output = false;
 };
 
 }
