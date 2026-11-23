@@ -73,25 +73,25 @@ ORDER BY r.key;
 
 SELECT '-- left is a Memory table: only the right side is distributed';
 SELECT countIf(explain ILIKE '%JoinLogical%'), countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT * FROM (SELECT key FROM t_inel_mem) AS l
+    EXPLAIN distributed = 1 SELECT * FROM (SELECT key FROM t_inel_mem) AS l
     RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key);
 
 SELECT '-- the same with a local join';
 SELECT countIf(explain ILIKE '%JoinLogical%'), countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT * FROM (SELECT key FROM t_inel_mem) AS l
+    EXPLAIN distributed = 1 SELECT * FROM (SELECT key FROM t_inel_mem) AS l
     RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key
     SETTINGS parallel_replicas_prefer_local_join = 1);
 
 SELECT '-- left joins a Memory table to a table';
 SELECT countIf(explain ILIKE '%JoinLogical%'), countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT * FROM (
+    EXPLAIN distributed = 1 SELECT * FROM (
         SELECT b.key AS key FROM t_inel_mem AS a LEFT JOIN t_inel_mid AS b ON a.key = b.key
     ) AS l
     RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key);
 
 SELECT '-- both sides eligible: the join is shipped';
 SELECT countIf(explain ILIKE '%JoinLogical%'), countIf(explain ILIKE '%ParallelReplicas%') FROM (
-    EXPLAIN SELECT * FROM (SELECT key FROM t_inel_left) AS l
+    EXPLAIN distributed = 1 SELECT * FROM (SELECT key FROM t_inel_left) AS l
     RIGHT JOIN (SELECT key FROM t_inel_right) AS r ON l.key = r.key);
 
 -- Whether the join was shipped or not, the answer is the one a run without parallel replicas gives.

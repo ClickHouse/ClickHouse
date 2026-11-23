@@ -22,7 +22,7 @@ SET explain_query_plan_default = 'legacy';
 -- The join is inside the shipped fragment, so the fragment carries a `JoinLogical` step.
 SELECT 'the join is shipped to the replicas';
 SELECT countIf(explain ILIKE '%JoinLogical%') FROM (
-    EXPLAIN SELECT count(), sum(r.key) FROM system.one AS l RIGHT JOIN t_one_join AS r ON l.dummy = r.key);
+    EXPLAIN distributed = 1 SELECT count(), sum(r.key) FROM system.one AS l RIGHT JOIN t_one_join AS r ON l.dummy = r.key);
 
 -- The `RIGHT JOIN` keeps every row of the table whatever the broadcast side produced. With `join_use_nulls`
 -- the unmatched rows get `NULL`, so `count(l.dummy)` counts the rows joined to the single row of `system.one`.
