@@ -4745,7 +4745,6 @@ static UInt64 processRepDefLevelsForArray(
     ///  * `def[i] == array_def - 1` means this array is empty,
     ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
     ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-    ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
     /// `def` equals the level's index in `levels`, so array levels have strictly increasing def and
     /// `def[i] >= array_def` implies `def[i] >= parent_array_def`; the element count below therefore
     /// needs no separate check against parent_array_def.
