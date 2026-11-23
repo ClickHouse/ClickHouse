@@ -146,8 +146,8 @@ ORDER BY [...]
 
 These HNSW-specific parameters are available:
 - `<quantization>` controls the quantization of the vectors in the proximity graph. Possible values are `f64`, `f32`, `f16`, `bf16`, `i8`, or `b1`. The default value is `bf16`. Note that this parameter does not affect the representation of the vectors in the underlying column.
-- `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value.
-- `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value.
+- `<hnsw_max_connections_per_layer>` controls the number of neighbors per graph node, also known as HNSW hyperparameter `M`. The default value is `32`. Value `0` means using the default value. The maximum value is `512`.
+- `<hnsw_candidate_list_size_for_construction>` controls the size of the dynamic candidate list during construction of the HNSW graph, also known as HNSW hyperparameter `ef_construction`. The default value is `128`. Value `0` means using the default value. The maximum value is `3200`.
 
 The default values of all HNSW-specific parameters work reasonably well in the majority of use cases.
 We therefore do not recommend customizing the HNSW-specific parameters.
@@ -158,6 +158,7 @@ Further restrictions apply:
 - Vector similarity indexes may be build on calculated expressions (e.g., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`) but such indexes cannot be used for approximate neighbor search later on.
 - Vector similarity indexes require that all arrays in the underlying column have `<dimension>`-many elements - this is checked during index creation. To detect violations of this requirement as early as possible, users can add a [constraint](/reference/statements/create/table#constraints) for the vector column, e.g., `CONSTRAINT same_length CHECK length(vectors) = 256`.
 - Likewise, array values in the underlying column must not be empty (`[]`) or have a default value (also `[]`).
+- Vector similarity indexes can only be created on tables with engine `MergeTree` or `ReplicatedMergeTree`. Other engines of the family, e.g. `ReplacingMergeTree` or `CollapsingMergeTree`, are refused because `SELECT ... FINAL` may return wrong results with the index. MergeTree setting `allow_vector_similarity_index_in_specialized_merge_tree` allows it anyway.
 
 **Estimating storage and memory consumption**
 
@@ -272,7 +273,7 @@ In this case, the vector similarity index dropped two of four granules, i.e. 50%
 The more granules can be dropped, the more effective index usage becomes.
 
 <Tip>
-To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indices](/reference/settings/session-settings/force#force_data_skipping_indices) (provide the index name as setting value).
+To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indices](/reference/settings/session-settings/force#force_data_skipping_indexes) (provide the index name as setting value).
 </Tip>
 
 **Post-filtering and Pre-filtering**
@@ -453,7 +454,11 @@ SELECT queries need to load vector similarity indexes into main memory to use th
 To avoid that the same vector similarity index is loaded repeatedly into main memory, ClickHouse provides a dedicated in-memory cache for such indexes.
 The bigger this cache is, the fewer unnecessary loads will happen.
 The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
-By default, the cache can grow up to 5 GB in size.
+In ClickHouse OSS, the cache can grow up to 5 GB in size by default.
+
+In ClickHouse Cloud, the maximum cache size depends on the pod size.
+The exact size can be checked in [system.server_settings](/reference/system-tables/server_settings).
+As server settings cannot be changed from SQL or the console, contact support to configure a bigger size.
 
 The following log messages (`system.text_log`) indicate that the vector similarity index is being loaded.
 If such messages appear repeatedly for different vector search queries, this indicates that the cache size is too low.
@@ -491,6 +496,13 @@ SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSim
 FROM system.query_log
 WHERE type = 'QueryFinish' AND query_id = '<...>'
 ORDER BY event_time_microseconds;
+```
+
+The statement [`SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE`](/reference/statements/system#drop-vector-similarity-index-cache) removes all vector similarity indexes from the cache.
+To remove only the indexes of a single table from cache, add the `FOR TABLE` clause:
+
+```sql
+SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE FOR TABLE tab;
 ```
 
 For production use-cases, we recommend that the cache is sized large enough so that all vector indexes remain in memory at all times.
@@ -574,6 +586,14 @@ Example output:
 │ default  │ tab   │ idx  │ 348.00 MB                │
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
+
+#### Deleted rows {#deleted-rows}
+
+A vector similarity index is built when a part is written, merged, or mutated, and it does not know about rows deleted later by a [lightweight `DELETE`](/reference/statements/delete) or by an `ALTER TABLE ... DELETE` mutation that is still pending.
+Such rows would still be returned as candidates by the index and then removed after the read, so the query could return fewer than `LIMIT N` rows or miss the nearest remaining neighbors.
+To keep the results correct, ClickHouse does not use the vector similarity index for parts with deleted rows and reads these parts in full (exact search) instead.
+The index is used for the part again after a merge or a mutation rewrites it, for example after `OPTIMIZE TABLE ... FINAL`.
+With setting `apply_deleted_mask = 0`, lightweight-deleted rows are returned by the query, so the index is still used unless the query filters by `_row_exists` explicitly.
 
 #### Differences to regular skipping indexes {#differences-to-regular-skipping-indexes}
 
@@ -672,7 +692,7 @@ The codec is a good fit for ClickHouse because the expensive part (the scan) is 
 
 #### Applying the codec {#quantized-codecs-declaring}
 
-Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)`) column.
+Specify the `Quantized(...)` codec for the `Array(Float32)` (or `Array(Float64)` / `Array(BFloat16)` / `Array(Int8)` / `Array(UInt8)`) column.
 
 ```sql
 SET enable_quantized_codec = 1;
@@ -693,13 +713,17 @@ The codec cannot be added or changed later using `ALTER TABLE`.
 Each quantization method has different size/accuracy trade-offs.
 The `dimensions` argument is the vector length.
 
-- `Quantized('rabitq', dimensions)` — one sign bit per coordinate plus an unbiased cosine-correction factor (`dimensions/8 + 4` bytes). A small, `popcount`-cheap, strong default. `cosineDistance` only.
-- `Quantized('turboquant', dimensions)` — two bits per coordinate (a 1-bit MSE code and a 1-bit residual code) for higher-fidelity candidates (`dimensions/4 + 4` bytes). `cosineDistance` only.
+- `Quantized('rabitq', dimensions)` — one sign bit per coordinate plus an unbiased cosine-correction factor (`dimensions/8 + 4` bytes). A small, `popcount`-cheap, strong default. Estimates the cosine distance only, see below for `L2Distance`.
+- `Quantized('turboquant', dimensions)` — two bits per coordinate (a 1-bit MSE code and a 1-bit residual code) for higher-fidelity candidates (`dimensions/4 + 4` bytes). Estimates the cosine distance only, see below for `L2Distance`.
 - `Quantized('int8', dimensions)` — one `Int8` code per coordinate plus the vector norm (`dimensions + 4` bytes); the largest but most faithful flat code. Supports `L2Distance` and `cosineDistance`.
 - `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: keeps only the `leading_dimensions` leading coordinates, as `Int8` (with a per-vector scale) or `BFloat16`. Tiny codes for embeddings trained with Matryoshka Representation Learning. Supports `L2Distance` and `cosineDistance`.
 - `Quantized('product', dimensions, nbits, m)` — Product Quantization: a per-part codebook trained with k-means; each vector becomes `m` codes of `nbits` bits (so `dimensions` must be a multiple of `m`). The most compact option and highest recall per byte, at the cost of a training step during insert. Supports `L2Distance` and `cosineDistance`.
 
 `rabitq` and `turboquant` require `dimensions` to be a multiple of 8.
+
+For `Array(Int8)` and `Array(UInt8)` columns, methods `int8` and `prefix` with format `int8` are not supported, as their codes are not smaller than the original vectors.
+`UInt8` embeddings are typically signed values shifted by 128. Methods `rabitq` and `turboquant` assume vectors scattered around the origin, so for `Array(UInt8)` columns they subtract 128 from each element of the stored vectors and of the reference vector before encoding.
+As a consequence, the shortlist ranks by the cosine distance of the shifted vectors, whereas the final result is rescored by the exact `cosineDistance` of the original vectors.
 
 #### Using the codec {#quantized-codecs-searching}
 
@@ -717,7 +741,10 @@ SETTINGS vector_search_use_quantized_codes = 1;
 Setting `vector_search_use_quantized_codes = 1` lets the optimizer rewrite the query into a two-phase scan.
 The setting is off by default.
 Without it, the same query runs as a regular exact scan against the original vectors.
-All methods support distance function `cosineDistance`, methods `int8`, `prefix` and `product` additionally support `L2Distance` as distance function.
+All methods support distance functions `cosineDistance` and `L2Distance`.
+Methods `int8`, `prefix` and `product` estimate both distances.
+Methods `rabitq` and `turboquant` do not store the vector norms and estimate only the cosine distance: for `L2Distance`, the shortlist is ranked by the cosine distance and the result is rescored by the exact `L2Distance`.
+The returned distances are exact, but the recall depends on how much the vector norms vary. For normalized vectors, both rankings are the same.
 
 Setting `vector_search_index_fetch_multiplier` specifies how many candidates are shortlisted relative to the query's `LIMIT`.
 Larger multipliers improve recall at the cost of more rescoring.

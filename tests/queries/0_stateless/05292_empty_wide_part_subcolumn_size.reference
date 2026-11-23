@@ -1,0 +1,32 @@
+t_empty_compact	1	Compact	Full	0
+t_empty_compact	2	Compact	Full	1
+t_empty_compact	3	Compact	Full	1
+t_empty_packed	1	Wide	Packed	0
+t_empty_packed	2	Wide	Packed	1
+t_empty_packed	3	Compact	Packed	1
+t_empty_ttl	1	Wide	Full	0
+t_empty_ttl	2	Wide	Full	1
+t_empty_ttl	3	Compact	Full	1
+t_empty_wide	1	Wide	Full	0
+t_empty_wide	2	Wide	Full	1
+t_empty_wide	3	Compact	Full	1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+2

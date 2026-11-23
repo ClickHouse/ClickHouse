@@ -244,7 +244,6 @@
     M(AsynchronousRemoteReadWaitMicroseconds) \
     M(SynchronousRemoteReadWaitMicroseconds) \
 \
-    M(ExternalDataSourceLocalCacheReadBytes) \
 \
     M(MainConfigLoads) \
 \
@@ -282,6 +281,7 @@
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
     M(KeeperReadSnapshotDeferred) \
+    M(KeeperReadSnapshotStreamingSeeks) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -304,6 +304,7 @@
     M(KeeperWatchTriggeredNodeDeleted) \
     M(KeeperWatchTriggeredNodeDataChanged) \
     M(KeeperWatchTriggeredNodeChildrenChanged) \
+    M(KeeperRejectedCommittedLogRollback) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperChangelogStartupReadMicroseconds) \
@@ -408,7 +409,7 @@ namespace ProfileEvents
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Event> keeper_profile_events
+[[clang::no_destroy]] extern const std::vector<Event> keeper_profile_events
 {
     APPLY_FOR_KEEPER_PROFILE_EVENTS(M)
 };
@@ -471,6 +472,7 @@ extern const std::vector<Event> keeper_profile_events
     M(AsynchronousReadWait) \
     M(S3Requests) \
     M(KeeperAliveConnections) \
+    M(KeeperRaftThreadsWaitingForLogsPreprocessing) \
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
     M(KeeperChangelogReadAheadThreads) \
@@ -493,7 +495,7 @@ namespace CurrentMetrics
 #undef M
 
 #define M(NAME) NAME,
-extern const std::vector<Metric> keeper_metrics
+[[clang::no_destroy]] extern const std::vector<Metric> keeper_metrics
 {
     APPLY_FOR_KEEPER_METRICS(M)
 };

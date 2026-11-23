@@ -12,6 +12,11 @@ namespace DB
 
 class VectorSimilarityIndexCache;
 
+size_t getIndexStreamFileSize(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
+    const String & stream_name,
+    const String & extension);
+
 class MergeTreeIndexReader
 {
 public:
@@ -36,7 +41,6 @@ public:
     void adjustRightMark(size_t right_mark);
     void prefetchBeginOfRange(size_t from_mark, Priority priority);
     const StreamMap & getStreams() { return streams; }
-    static MergeTreeReaderSettings patchSettings(MergeTreeReaderSettings settings, MergeTreeIndexSubstream::Type substream);
 
 private:
     MergeTreeIndexPtr index;

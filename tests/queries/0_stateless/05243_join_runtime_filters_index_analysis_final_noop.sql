@@ -15,7 +15,6 @@ INSERT INTO rf_final_fact SELECT number, number FROM numbers(2000);
 INSERT INTO rf_final_fact SELECT number, number * 10 FROM numbers(64);
 INSERT INTO rf_final_dim SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(2000);
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;

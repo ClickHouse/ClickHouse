@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <cerrno>
 #include <ctime>
 #include <algorithm>
@@ -11,10 +12,12 @@
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <IO/preadNoWait.h>
 #include <Common/filesystemHelpers.h>
 #include <poll.h>
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
+#include <base/arithmeticOverflow.h>
 
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -24,6 +27,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
+    extern const Event ReadBufferFromFileDescriptorPageCacheHitBytes;
     extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
 }
@@ -67,12 +71,25 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         ssize_t res = 0;
+        bool from_os_page_cache = false;
         size_t to_read = max_bytes - bytes_read;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
             if (use_pread)
-                res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+            {
+                if (detect_os_page_cache_reads.load(std::memory_order_relaxed))
+                {
+                    /// Fails with `EAGAIN` without waiting for the disk if the data is not in the page cache.
+                    /// In this and any other failure, the regular `pread` below reads the data or reports the error.
+                    res = preadNoWait(fd, to + bytes_read, to_read, offset + bytes_read);
+                    from_os_page_cache = res > 0;
+                    if (res == -1 && isPreadNoWaitUnavailable(errno))
+                        detect_os_page_cache_reads.store(false, std::memory_order_relaxed);
+                }
+                if (!from_os_page_cache)
+                    res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+            }
             else
                 res = ::read(fd, to + bytes_read, to_read);
         }
@@ -90,7 +107,16 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             bytes_read += res;
             if (throttler)
-                throttler->throttle(res);
+            {
+                /// See the comment in `AsynchronousReadBufferFromFileDescriptor::nextImpl`.
+                if (from_os_page_cache)
+                {
+                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorPageCacheHitBytes, res);
+                    throttler->throttleOSPageCacheRead(res);
+                }
+                else
+                    throttler->throttle(res);
+            }
         }
 
 
@@ -117,6 +143,23 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 }
 
 
+void ReadBufferFromFileDescriptor::enableOSPageCacheReadsDetection(int flags)
+{
+    /// `RWF_NOWAIT` is ignored for `O_DIRECT` (see the comment in `ThreadPoolReader::submit`),
+    /// so such a read could reach the device while looking like it was served from the page cache.
+    /// The `O_DIRECT` check comes before `preadNoWaitUnavailableReason` for the same reason as there.
+    /// The detection costs an extra system call for the data that is not in the page cache,
+    /// which is why it is used only when there is a throttler that ignores such reads
+    /// (e.g. not for merges, mutations or backups that are throttled only by their own bandwidth limits).
+    bool enable = use_pread
+        && throttler
+        && throttler->ignoresOSPageCacheReads()
+        && (flags == -1 || !(flags & O_DIRECT))
+        && preadNoWaitUnavailableReason().empty();
+    detect_os_page_cache_reads.store(enable, std::memory_order_relaxed);
+}
+
+
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
@@ -128,7 +171,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
     if (bytes_read)
     {
-        working_buffer = internal_buffer;
+        setWorkingBufferFromInternal();
         working_buffer.resize(bytes_read);
     }
     else
@@ -208,12 +251,17 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
-        chassert(offset >= 0);
-        new_pos = offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {}", offset);
+        new_pos = static_cast<size_t>(offset);
     }
     else if (whence == SEEK_CUR)
     {
-        new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
+        /// Keep the target signed until it is checked, so that a backward seek past the start cannot wrap around.
+        off_t target = 0;
+        if (common::addOverflow(static_cast<off_t>(file_offset_of_buffer_end) - (working_buffer.end() - pos), offset, target) || target < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {} {:+}", file_offset_of_buffer_end - (working_buffer.end() - pos), offset);
+        new_pos = static_cast<size_t>(target);
     }
     else
     {

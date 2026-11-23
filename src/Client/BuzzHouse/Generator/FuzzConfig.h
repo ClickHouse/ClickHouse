@@ -71,7 +71,10 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42),
     allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45),
     allow_backup = (UINT64_C(1) << 46), allow_paimon = (UINT64_C(1) << 47), allow_paimonS3 = (UINT64_C(1) << 48),
-    allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50), allow_remote = (UINT64_C(1) << 51);
+    allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50), allow_remote = (UINT64_C(1) << 51),
+    allow_cluster_database = (UINT64_C(1) << 52), allow_remote_database = (UINT64_C(1) << 53),
+    allow_overlay_database = (UINT64_C(1) << 54), allow_time_series = (UINT64_C(1) << 55),
+    allow_filelog = (UINT64_C(1) << 56), allow_nats = (UINT64_C(1) << 57), allow_rabbitmq = (UINT64_C(1) << 58);
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;
@@ -272,12 +275,15 @@ struct DiskInfo
     bool is_cached = false; /// true when cache_path != '' in system.disks
 };
 
-/// Escape a string for embedding inside a single-quoted SQL literal (doubles single quotes).
-String escapeSQLString(const String & s, char escape_char = '\'');
+/// Escape a string for embedding inside a ClickHouse SQL literal or quoted name by doubling `escape_char`
+/// and the backslash, which the ClickHouse lexer reads as an escape. Other dialects take `escape_backslash = false`.
+String escapeSQLString(const String & s, char escape_char = '\'', bool escape_backslash = true);
 
 /// Percent-encode a string for use as a URL query parameter value.
 /// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
 String urlEncodeQueryParam(const String & s);
+
+class RandomGenerator;
 
 class FuzzConfig
 {
@@ -296,6 +302,7 @@ public:
     DB::Strings out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native", "Null"};
     DB::Strings in_out_formats = {"CSV", "TabSeparated", "Values", "JSONEachRow", "Native"};
     DB::Strings storage_policies;
+    DB::Strings volumes;
     DB::Strings timezones;
     DB::Strings keeper_disks;
     std::vector<DiskInfo> disks;
@@ -310,6 +317,7 @@ public:
     DB::Strings hot_settings;
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
+    DB::Strings hot_formats;
     DB::Strings tokenizers;
 
     std::vector<CHFunction> det_funcs;
@@ -329,6 +337,8 @@ public:
     std::optional<ServerCredentials> http_server;
     std::optional<ServerCredentials> azurite_server;
     std::optional<ServerCredentials> kafka_server;
+    std::optional<ServerCredentials> nats_server;
+    std::optional<ServerCredentials> rabbitmq_server;
     std::optional<ServerCredentials> dolor_server;
 
     std::unordered_map<String, PerformanceMetric> metrics;
@@ -358,6 +368,7 @@ public:
     bool enable_overflow_settings = false;
     bool random_limited_values = false;
     bool set_smt_disk = true;
+    bool has_distributed_cache = false;
     bool allow_query_oracles = true;
     bool allow_health_check = true;
     bool enable_compatibility_settings = false;
@@ -366,6 +377,8 @@ public:
     bool enable_backups = true;
     bool enable_renames = true;
     bool enable_failpoints = true;
+    /// With a dolor connection, also create the lake and `File` tables Spark writes, not only the streaming ones
+    bool dolor_spark_tables = true;
     bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
@@ -385,7 +398,8 @@ public:
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
     uint32_t max_policies = 8;
-    uint32_t max_hypotheticals = 8;
+    uint32_t max_hypothetical_indexes = 4;
+    uint32_t max_hypothetical_projections = 4;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;
@@ -427,6 +441,13 @@ private:
         loadServerSettings(out, desc, query, [](const String & s) -> T { return s; });
     }
 
+    /// Runs `query` into `fuzzer_out_file` and returns the lines of the result, without `\r`, up to the first empty one.
+    /// Nothing when the query fails
+    std::optional<DB::Strings> queryLines(const String & query, bool outlog, const String & format = "TabSeparated");
+
+    /// The first line of the result of `query`, empty when it fails
+    String queryFirstLine(const String & query, bool outlog, const String & format = "TabSeparated");
+
     uint32_t tableCountSystemRows(const String & system_table, const String & database, const String & table);
 
     String tableGetRandomSystemName(uint64_t rand_val, const String & system_table, const String & database, const String & table);
@@ -455,19 +476,28 @@ public:
 
     void loadSystemTables(std::vector<SystemTable> & tables);
 
-    bool hasMutations();
-
     String getRandomMutation(uint64_t rand_val);
 
     String getRandomIcebergHistoryValue(const String & property);
 
     String getRandomFileSystemCacheValue();
 
+    static String getRandomFuzzedPartName(uint64_t rand_val);
+
+    static String getRandomFuzzedPartitionValue(uint64_t rand_val);
+
+    static String getRandomFuzzedPartitionId(uint64_t rand_val);
+
     bool tableHasPartitions(bool detached, const String & database, const String & table);
+
+    /// Whether the system table has a row with these column values, true when the check itself fails
+    bool systemTableHasRow(const String & table, const std::vector<std::pair<String, String>> & filters);
 
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
 
     String tableGetRandomPartitionValue(uint64_t rand_val, const String & database, const String & table);
+
+    String tableGetRandomKeyValue(const String & database, const String & table, const String & key);
 
     uint32_t tableCountIndexes(const String & database, const String & table);
 
@@ -480,6 +510,11 @@ public:
     uint32_t tableCountConstraints(const String & database, const String & table);
 
     String tableGetRandomConstraint(uint64_t rand_val, const String & database, const String & table);
+
+    String getRandomDistributedCacheServer(uint64_t rand_val);
+
+    /// Half of the times one of the hot formats in `formats`, if any
+    String pickFormat(RandomGenerator & rg, const DB::Strings & formats) const;
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 

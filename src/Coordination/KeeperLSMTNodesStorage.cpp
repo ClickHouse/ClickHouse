@@ -3,12 +3,22 @@
 #include <Coordination/Storage/NodeStream.h>
 #include <Coordination/KeeperSnapshotManager.h>
 
+#include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+
+#include <fmt/ranges.h>
+
 #include <shared_mutex>
 
 using namespace Coordination::Storage;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 KeeperLSMTNodesStorage::KeeperLSMTNodesStorage(KeeperContextPtr keeper_context_, SharedMutex * storage_mutex_)
     : KeeperNodesStorage(keeper_context_, storage_mutex_), state(keeper_context_, storage_mutex_)
@@ -115,7 +125,7 @@ bool KeeperLSMTNodesStorage::addCommittedNodeIfNotExists(std::string_view path, 
     node.path_hash = node_path.hash;
 
     if (out_digest)
-        *out_digest += node.getOrCalculateDigest();
+        addToDigest(*out_digest, node.getOrCalculateDigest());
 
     state.appendCommittedNode(node);
 
@@ -127,12 +137,12 @@ bool KeeperLSMTNodesStorage::addCommittedNodeIfNotExists(std::string_view path, 
         FullNode parent_node;
         parent_ref.readWithKnownPath(parent_node, parent_path);
         if (out_digest)
-            *out_digest -= parent_node.getOrCalculateDigest();
+            removeFromDigest(*out_digest, parent_node.getOrCalculateDigest());
         parent_node.action = NodeAction::Update;
         parent_node.stats.increaseNumChildren();
         parent_node.digest = 0;
         if (out_digest)
-            *out_digest += parent_node.getOrCalculateDigest();
+            addToDigest(*out_digest, parent_node.getOrCalculateDigest());
         state.appendCommittedNode(parent_node);
     }
     return true;
@@ -146,7 +156,7 @@ void KeeperLSMTNodesStorage::updateCommittedNode(std::string_view path, std::opt
     FullNode node;
     ref.readWithKnownPath(node, node_path);
     if (out_digest)
-        *out_digest -= node.getOrCalculateDigest();
+        removeFromDigest(*out_digest, node.getOrCalculateDigest());
     node.action = NodeAction::Update;
     if (new_stats)
         node.stats = **new_stats;
@@ -154,7 +164,7 @@ void KeeperLSMTNodesStorage::updateCommittedNode(std::string_view path, std::opt
         node.setData(*new_data);
     node.digest = 0;
     if (out_digest)
-        *out_digest += node.getOrCalculateDigest();
+        addToDigest(*out_digest, node.getOrCalculateDigest());
     state.appendCommittedNode(node);
 }
 
@@ -207,12 +217,58 @@ void KeeperLSMTNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader
             storage->nodeLoadedFromSnapshot(node.path.str(), node.stats);
 
         if (out_digest)
-            *out_digest += node.getOrCalculateDigest();
+            addToDigest(*out_digest, node.getOrCalculateDigest());
 
         state.appendCommittedNode(node);
     }
 
     reader.finishStreams(std::move(streams));
+
+    /// Validate the loaded tree the same way `KeeperMemNodesStorage::loadNodesFromSnapshot` does.
+    /// A root-less snapshot must never be accepted: `KeeperStorage::loadFromSnapshot` would call
+    /// `initializeSystemNodes` afterwards and silently recreate `"/"`, so Keeper would start with a
+    /// damaged (possibly empty) database instead of failing with an actionable error.
+    if (!state.getCommittedNode(NodePath("/").withCalculatedHash()))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Snapshot is missing the root node '/'. Refusing to load it: Keeper would start with a damaged database. "
+            "Restore Keeper from a valid snapshot or from the changelog");
+
+    /// Orphaned nodes (nodes whose parent is absent from the snapshot) mean the snapshot lost part
+    /// of the tree. Automatic cleanup (`keeper_server.remove_orphaned_nodes_on_startup`) is
+    /// implemented only by the in-memory nodes storage (the combination with `use_lsmt_storage` is
+    /// rejected in `KeeperContext::initialize`), so here any orphan is a hard error.
+    size_t orphaned_nodes = 0;
+    std::vector<std::string> orphan_examples;
+    SnapshotWriterNodeStream node_stream(state);
+    while (true)
+    {
+        node_stream.next();
+        if (node_stream.at_end)
+            break;
+
+        const std::string_view path = node_stream.node.path.str();
+        if (path == "/")
+            continue;
+
+        if (!state.getCommittedNode(NodePath(Coordination::parentNodePath(path)).withCalculatedHash()))
+        {
+            ++orphaned_nodes;
+            if (orphan_examples.size() < 10)
+                orphan_examples.emplace_back(path);
+        }
+    }
+
+    if (orphaned_nodes != 0)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Found {} orphaned nodes (nodes whose parent is absent) in snapshot, e.g. [{}]. Automatic removal "
+            "('keeper_server.remove_orphaned_nodes_on_startup') is only supported by the in-memory nodes storage. "
+            "To recover, set 'keeper_server.coordination_settings.use_lsmt_storage' to false, "
+            "'keeper_server.remove_orphaned_nodes_on_startup' to true and 'keeper_server.digest_enabled' to false, then restart; "
+            "'use_lsmt_storage' can be re-enabled after a successful startup",
+            orphaned_nodes,
+            fmt::join(orphan_examples, ", "));
 }
 
 struct KeeperLSMTNodesStorage::NodesReadView final : public KeeperNodesReadView
@@ -222,7 +278,7 @@ struct KeeperLSMTNodesStorage::NodesReadView final : public KeeperNodesReadView
     explicit NodesReadView(const StorageState & state_) : stream(state_) {}
     ~NodesReadView() override = default;
 
-    size_t getNodeCount() const override { return stream.getNodeCount(); }
+    [[nodiscard]] size_t getNodeCount() const override { return stream.getNodeCount(); }
 
     bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override
     {
@@ -263,7 +319,10 @@ void KeeperLSMTNodesStorage::commitDelta(Delta & delta, uint64_t * digest)
     auto & op = std::get<LSMTDelta>(delta.operation);
     op.new_node.path.ptr = delta.path.data();
     if (digest)
-        *digest += op.new_node.getOrCalculateDigest() - op.old_digest;
+    {
+        addToDigest(*digest, op.new_node.getOrCalculateDigest());
+        removeFromDigest(*digest, op.old_digest);
+    }
     state.appendCommittedNode(op.new_node);
 }
 
@@ -366,7 +425,8 @@ void KeeperLSMTNodesStorage::prepareImpl(std::string_view path, UncommittedNodeR
     uint64_t old_digest = node.node.digest;
     node.node.path.ptr = path.data();
     node.node.digest = 0;
-    staging.digest.value += node.node.getOrCalculateDigest() - old_digest;
+    addToDigest(staging.digest.value, node.node.getOrCalculateDigest());
+    removeFromDigest(staging.digest.value, old_digest);
     NodeRef new_ref = state.appendUncommittedNode(node.node, staging.zxid);
     staging.deltas.emplace_back(std::string{path}, staging.zxid, LSMTDelta {new_ref, node.node, node.ref, old_digest, old_acl_id, ephemeral_owner, has_ttl, is_container});
 }

@@ -51,6 +51,7 @@ This system table is used for implementing the `SHOW PROCESSLIST` query.
 - `written_bytes` ([UInt64](/reference/data-types/int-uint)) — The amount of bytes written to the storage.
 - `memory_usage` ([Int64](/reference/data-types/int-uint)) — Amount of RAM the query uses. It might not include some types of dedicated memory
 - `peak_memory_usage` ([Int64](/reference/data-types/int-uint)) — The current peak of memory usage.
+- `spillable_memory_bytes` ([Int64](/reference/data-types/int-uint)) — The current spillable memory.
 - `query` ([String](/reference/data-types/string)) — The query text. For INSERT, it does not include the data to insert.
 - `normalized_query_hash` ([UInt64](/reference/data-types/int-uint)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
 - `query_kind` ([String](/reference/data-types/string)) — The type of the query - SELECT, INSERT, etc.

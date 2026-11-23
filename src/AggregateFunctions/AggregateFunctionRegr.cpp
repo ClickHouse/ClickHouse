@@ -1,10 +1,12 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Moments.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -16,6 +18,7 @@
 #include <type_traits>
 #include <limits>
 #include <memory>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -84,6 +87,7 @@ constexpr std::string_view regrKindName(RegrKind kind)
 /// the whole of their range - UInt64 spans up to 2^64 - and wrapping it would not merely lose
 /// precision, it would flip the sign of the slope.
 template <typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 Float64 exactDelta(T value, T shift)
 {
     if constexpr (is_integer<T>)
@@ -270,7 +274,7 @@ struct RegrMoments
         sxy += rhs.sxy + dx * rhs.sy + dy * rhs.sx + rhs_count * dx * dy;
         sx += rhs.sx + rhs_count * dx;
         sy += rhs.sy + rhs_count * dy;
-        count += rhs.count;
+        count = common::addIgnoreOverflow(count, rhs.count);
     }
 
     void write(WriteBuffer & buf) const
@@ -306,6 +310,12 @@ struct RegrMoments
 /// input, so they are clamped.
 struct RegrResult
 {
+    /// A comparison with a NaN is false, so `std::max(0.0, value)` would answer with the bound and
+    /// turn a NaN into a zero. A zero sum of squares is read below as a constant column, which is
+    /// something else entirely: a NaN or an infinity in the data leaves the fit undefined, and every
+    /// result has to say so rather than report a perfect one.
+    static Float64 clampToZero(Float64 value) { return isNaN(value) ? value : std::max(0.0, value); }
+
     Float64 n;
     Float64 x0;
     Float64 y0;
@@ -326,13 +336,13 @@ struct RegrResult
         , mean_dy(data.sy / n)
         , avg_x(x0 + mean_dx)
         , avg_y(y0 + mean_dy)
-        , sxx(std::max(0.0, data.sxx - data.sx * data.sx / n))
-        , syy(std::max(0.0, data.syy - data.sy * data.sy / n))
+        , sxx(clampToZero(data.sxx - data.sx * data.sx / n))
+        , syy(clampToZero(data.syy - data.sy * data.sy / n))
         , sxy(data.sxy - data.sx * data.sy / n)
     {
     }
 
-    Float64 get(RegrKind kind) const
+    [[nodiscard]] Float64 get(RegrKind kind) const
     {
         static constexpr auto nan = std::numeric_limits<Float64>::quiet_NaN();
 
@@ -358,6 +368,11 @@ struct RegrResult
                 /// the data, and what is left is at the scale of the spread.
                 return sxx == 0 ? nan : (y0 - (sxy / sxx) * x0) + (mean_dy - (sxy / sxx) * mean_dx);
             case RegrKind::regr_r2:
+                /// Both shortcuts below read one sum of squares and conclude from it alone, which
+                /// only holds while the other one is a number: a NaN in either variable leaves the
+                /// fit undefined, and a constant y is not a line explaining data that holds a NaN.
+                if (isNaN(sxx) || isNaN(syy))
+                    return nan;
                 /// A vertical line explains none of the variance, a horizontal one explains all of it.
                 if (sxx == 0)
                     return nan;
@@ -393,9 +408,9 @@ public:
     {
     }
 
-    String getName() const override { return String(regrKindName(kind)); }
+    [[nodiscard]] String getName() const override { return String(regrKindName(kind)); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -558,7 +573,8 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).count += data(rhs).count;
+        /// The count is a modular `UInt64` sum, e.g. for a state multiplied by a large number with repeated merges.
+        data(place).count = common::addIgnoreOverflow(data(place).count, data(rhs).count);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -661,7 +677,8 @@ void registerAggregateFunctionsRegr(AggregateFunctionFactory & factory)
 
     /// Like count, regr_count answers with a number even when every row was NULL, rather than
     /// being wrapped by the generic Null combinator and answering NULL.
-    const AggregateFunctionProperties count_properties = {.returns_default_when_only_null = true};
+    const AggregateFunctionProperties count_properties = {.returns_default_when_only_null = true, .variant_arguments_conversion = VariantArgumentsConversion::All};
+    const AggregateFunctionProperties properties = {.variant_arguments_conversion = VariantArgumentsConversion::All};
 
     factory.registerFunction(
         "regr_count",
@@ -693,7 +710,8 @@ which divides a `Float64` sum.
              "Float64",
              R"(┌─regr_avgx(y, x)─┐
 │             2.5 │
-└─────────────────┘)")},
+└─────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -712,7 +730,8 @@ which divides a `Float64` sum.
              "Float64",
              R"(┌─regr_avgy(y, x)─┐
 │               5 │
-└─────────────────┘)")},
+└─────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -731,7 +750,8 @@ $$
              "Float64",
              R"(┌─regr_sxx(y, x)─┐
 │              5 │
-└────────────────┘)")},
+└────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -750,7 +770,8 @@ $$
              "Float64",
              R"(┌─regr_syy(y, x)─┐
 │             20 │
-└────────────────┘)")},
+└────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -769,7 +790,8 @@ $$
              "Float64",
              R"(┌─regr_sxy(y, x)─┐
 │             10 │
-└────────────────┘)")},
+└────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -790,7 +812,8 @@ Returns `nan` when `x` is constant, because the fitted line is vertical.
              "Float64",
              R"(┌─regr_slope(y, x)─┐
 │                2 │
-└──────────────────┘)")},
+└──────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -811,7 +834,8 @@ Returns `nan` when `x` is constant, because the fitted line is vertical.
              "Float64",
              R"(┌─regr_intercept(y, x)─┐
 │                    0 │
-└──────────────────────┘)")},
+└──────────────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(
@@ -827,7 +851,8 @@ correlation coefficient. Returns `nan` when `x` is constant, and `1` when `y` is
              "Float64",
              R"(┌─regr_r2(y, x)─┐
 │             1 │
-└───────────────┘)")},
+└───────────────┘)"),
+         properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     /// The SQL standard spelling is the name; these are the same functions under the naming the rest

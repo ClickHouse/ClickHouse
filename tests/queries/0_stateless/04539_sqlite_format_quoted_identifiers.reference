@@ -1,0 +1,6 @@
+SQLite schema column names:
+a"b
+c\d
+SQLite format roundtrip:
+a"b	c\\d
+1	2
