@@ -735,7 +735,9 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
     /// Shrinking a tail ends the current delayed read and forces a fresh seek
     /// for the next granule, so it only pays off when enough rows are dropped
     /// to outweigh the extra seek and misaligned filesystem-cache segment.
-    if (2 * total_zero_rows_in_tails > filter.size())
+    /// A chain that cannot read incomplete granules (Compact parts) only has whole-granule tails,
+    /// and its reader seeks to each column of each granule anyway, so dropping one costs no seek.
+    if (2 * total_zero_rows_in_tails > filter.size() || (!can_read_incomplete_granules_ && total_zero_rows_in_tails > 0))
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
         const size_t total_rows_per_granule_previous = total_rows_per_granule;
@@ -1084,7 +1086,7 @@ size_t MergeTreeRangeReader::currentMark() const
     return stream.currentMark();
 }
 
-const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset", "_distance", "_part_granule_offset"};
+[[clang::no_destroy]] const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset", "_distance", "_part_granule_offset"};
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
@@ -1137,7 +1139,9 @@ size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(
     if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
         return rows;
     const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
-    if (rows >= stripe_rows || stripe_rows > 2 * max_block_size_rows)
+    /// `stripe_rows > 2 * max_block_size_rows` without overflowing for a huge `max_block_size`
+    /// (`stripe_rows` is positive here, because `rows >= stripe_rows` otherwise).
+    if (rows >= stripe_rows || (stripe_rows - 1) / 2 >= max_block_size_rows)
         return rows;
     for (auto * reader : columns_cache_readers)
     {
@@ -1446,7 +1450,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
                 --last;
 
             chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
-            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
+            result.max_part_offset = result.granule_offsets[static_cast<ssize_t>(last) - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
         }
     }
 }

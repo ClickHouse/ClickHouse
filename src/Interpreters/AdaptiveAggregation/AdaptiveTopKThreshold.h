@@ -19,7 +19,11 @@ namespace DB
 /// because it holds every record and source cell of its keys. So a group ranked worse than the threshold has
 /// `limit` output groups ahead of it and cannot reach the top: the conversions and the count-first units drop
 /// it, and the count bins skip the bins bounded below a floor (see `AdaptiveTopKPruning`). Before the first
-/// selection, the threshold is the worst rank of the order, which drops nothing.
+/// selection, the threshold is the worst rank of the order, which drops nothing, or for a descending order a floor
+/// that the caller knows `limit` groups to reach. The merge tasks merge their first units before any of them has
+/// converted one, so without a known floor as many units as there are tasks are merged whole. Every producer finds
+/// such a floor with a threshold of its own, to which it offers the ranks of the groups of its table (see
+/// `Aggregator::finishAdaptiveProducer`), and the merge starts from the largest of them.
 ///
 /// Settling: when no group can rank better than `best_possible_rank`, a threshold that reaches it means that
 /// every group the merge has not converted can at best tie with `limit` output groups. `LIMIT` may return any
@@ -49,20 +53,38 @@ class AdaptiveTopKThreshold
 {
 public:
     /// The caller guarantees that `limit_` is positive and, when `best_possible_rank_` is set, that no group
-    /// ranks better than it.
-    AdaptiveTopKThreshold(size_t limit_, bool ascending_, std::optional<UInt64> best_possible_rank_);
+    /// ranks better than it. `known_floor_` is a rank that at least `limit_` groups reach, 0 when none is known,
+    /// and only a descending order takes one.
+    AdaptiveTopKThreshold(size_t limit_, bool ascending_, std::optional<UInt64> best_possible_rank_, UInt64 known_floor_ = 0);
 
-    /// The threshold of the last selection, or the worst rank of the order before the first one. The read
-    /// takes no lock, so it can lag the offers of other threads, which only drops fewer groups.
-    ALWAYS_INLINE UInt64 current() const { return threshold.load(std::memory_order_relaxed); }
+    /// The threshold of the last selection, or before the first one the known floor or the worst rank of the
+    /// order. The read takes no lock, so it can lag the offers of other threads, which only drops fewer groups.
+    [[nodiscard]] ALWAYS_INLINE UInt64 current() const { return threshold.load(std::memory_order_relaxed); }
 
     /// Whether the threshold reached `best_possible_rank`, so that the merge can skip every unit left.
-    bool settled() const { return best_possible_rank && current() == *best_possible_rank; }
+    [[nodiscard]] bool settled() const { return best_possible_rank && current() == *best_possible_rank; }
 
-    /// Offers the ranks of the groups that a converted unit output. The caller guarantees that each rank is
-    /// the final rank of its group, merged from every source, and that every group is offered at most once
-    /// and reaches the output.
+    /// Offers the ranks of groups, each group at most once: the threshold is the worst of the `limit` best
+    /// ranks offered. The merge offers the ranks of the groups that a converted unit output, and guarantees
+    /// that each is the final rank of its group, merged from every source, and that the group reaches the
+    /// output: that is what lets it drop the groups ranked worse than the threshold. A producer offers the
+    /// ranks that the groups have in its own table, which only bound the final ranks from below. Before any
+    /// unit is converted, the merge also offers the NULL key of a method that keeps it in a slot of its own
+    /// (see `AdaptiveTopKNullKey`), with a rank no better than its final one, which the conversion of its
+    /// unit replaces later (see `replaceOffer`). While the threshold keeps that rank, the threshold is no
+    /// better than the NULL key's final rank, so neither the bound check of its unit nor a conversion drops
+    /// the NULL key, and the selection of its unit drops it only behind `limit` output groups that rank at
+    /// least as well. Once a selection drops the offered rank, the threshold no longer counts the NULL key.
     void offer(std::span<const UInt64> ranks);
+
+    /// Replaces `offered`, the rank with which `offer` took a group before its final rank was known, with
+    /// `rank`, the final rank. The caller guarantees that `offered` is no better than `rank`, so the group
+    /// stays counted once, with a rank at least as good. For example, the merge offers the NULL key of a
+    /// descending top-K by `uniqExact` with its largest distinct count in one table before any unit is
+    /// converted, and replaces it with the merged distinct count when its unit is converted. A kept `offered`
+    /// is replaced in place: every kept rank is at least as good as the threshold, so `rank` is too. When a
+    /// selection has already dropped `offered`, `rank` is offered as a new rank.
+    void replaceOffer(UInt64 offered, UInt64 rank);
 
 private:
     template <typename Better>

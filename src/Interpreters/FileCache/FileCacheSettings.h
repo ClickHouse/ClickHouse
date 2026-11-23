@@ -54,7 +54,7 @@ struct FileCacheSettings
 
     void validate();
 
-    bool isPathRelativeInConfig() const { return is_path_relative_in_config; }
+    [[nodiscard]] bool isPathRelativeInConfig() const { return is_path_relative_in_config; }
 
 private:
     void warnAboutObsoleteSettings() const;
