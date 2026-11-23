@@ -1526,6 +1526,7 @@ The following kinds of entities are collected (the value of the `type` column is
 
 - Functions (`Function`)
 - Aggregate functions (`Aggregate Function`)
+- Window functions (`Window Function`)
 - Table functions (`Table Function`)
 - Table engines (`Table Engine`)
 - Database engines (`Database Engine`)
