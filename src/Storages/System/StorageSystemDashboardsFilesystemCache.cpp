@@ -169,6 +169,9 @@ const std::vector<Chart> & getCharts()
                 {"DropCacheThreads", "sum(CurrentMetric_FilesystemCacheDropCacheThreads)"},
                 {"DropCacheThreadsActive", "sum(CurrentMetric_FilesystemCacheDropCacheThreadsActive)"},
                 {"DropCacheThreadsScheduled", "sum(CurrentMetric_FilesystemCacheDropCacheThreadsScheduled)"},
+                {"CleanupHelperThreads", "sum(CurrentMetric_FilesystemCacheCleanupHelperThreads)"},
+                {"CleanupHelperThreadsActive", "sum(CurrentMetric_FilesystemCacheCleanupHelperThreadsActive)"},
+                {"CleanupHelperThreadsScheduled", "sum(CurrentMetric_FilesystemCacheCleanupHelperThreadsScheduled)"},
             },
         },
         {
