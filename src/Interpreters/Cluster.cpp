@@ -53,21 +53,6 @@ namespace
 /// Default shard weight.
 constexpr UInt32 default_weight = 1;
 
-inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
-{
-    /// If there is replica, for which:
-    /// - its port is the same that the server is listening;
-    /// - its host is resolved to set of addresses, one of which is the same as one of addresses of network interfaces of the server machine*;
-    /// then we must go to this shard without any inter-process communication.
-    ///
-    /// * - this criteria is somewhat approximate.
-    ///
-    /// Also, replica is considered non-local, if it has default database set
-    ///  (only reason is to avoid query rewrite).
-
-    return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
-}
-
 }
 
 /// Implementation of Cluster::Address class
@@ -87,10 +72,16 @@ std::optional<Poco::Net::SocketAddress> Cluster::Address::getResolvedAddress() c
 }
 
 
-bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
+bool Cluster::Address::isThisServer(UInt16 clickhouse_port) const
 {
+    /// If there is replica, for which:
+    /// - its port is the same that the server is listening;
+    /// - its host is resolved to set of addresses, one of which is the same as one of addresses of network interfaces of the server machine*;
+    /// then we must go to this shard without any inter-process communication.
+    ///
+    /// * - this criteria is somewhat approximate.
     if (auto resolved = getResolvedAddress())
-        return isLocalImpl(*this, *resolved, clickhouse_port);
+        return isLocalAddress(*resolved, clickhouse_port);
     return false;
 }
 
@@ -147,7 +138,9 @@ Cluster::Address::Address(
     /// in with the default value regardless (see `LocalServer::processConfig`). The port a replica
     /// inherits from the top-level `tcp_port` - the shape of the built-in `remote_servers.default`
     /// cluster - therefore says nothing about this process, exactly like an explicit `<port>`.
-    is_local = !treat_local_port_as_remote && isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    is_this_server = !treat_local_port_as_remote && isThisServer(static_cast<UInt16>(config.getInt(port_type, 0)));
+    /// A replica with a default database is queried over TCP even when it is this server (only reason is to avoid query rewrite).
+    is_local = is_this_server && default_database.empty();
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
@@ -196,7 +189,8 @@ Cluster::Address::Address(
     if (info.is_local.has_value())
         is_local = *info.is_local;
     else
-        is_local = can_be_local && isLocal(params.clickhouse_port);
+        is_local = can_be_local && isThisServer(params.clickhouse_port);
+    is_this_server = is_local;
     shard_index = shard_index_;
     replica_index = replica_index_;
     cluster = params.cluster_name;

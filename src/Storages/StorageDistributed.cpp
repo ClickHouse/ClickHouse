@@ -806,51 +806,57 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     if (remote_table_function_ptr)
         return;
 
-    /// A shard that is this server reads `remote_database.remote_table` from here, whatever
-    /// `prefer_localhost_replica` says, so that table's types are the ones a shard sorts by. Nothing
-    /// is known about the tables behind remote-only shards, and a local table that merely shares
-    /// their name would be unrelated to them.
-    if (cluster->getLocalShardCount() == 0)
-        return;
-
-    /// An empty remote database means the shard's default database, which for this server is the
-    /// query's current database (`createLocalPlan` runs the shard query in a copy of this context).
-    const String & remote_database_name = remote_database.empty() ? local_context->getCurrentDatabase() : remote_database;
-    StorageID remote_table_id{remote_database_name, remote_table};
-    auto remote_table_storage = DatabaseCatalog::instance().tryGetTable(remote_table_id, local_context);
-    if (!remote_table_storage)
-        return;
+    /// A replica that is this server reads `remote_table` from here, whatever `prefer_localhost_replica` says, so that table's
+    /// types are the ones its shard sorts by. Nothing is known about the tables behind the other replicas, and a local table that
+    /// merely shares their name would be unrelated to them. An empty remote database means the replica's default database: the
+    /// query's current database for a local replica (`createLocalPlan` runs the shard query in a copy of this context), and its
+    /// `default_database` for a replica that has one.
+    NameOrderedSet remote_database_names;
+    if (cluster->getLocalShardCount() > 0)
+        remote_database_names.insert(remote_database.empty() ? local_context->getCurrentDatabase() : remote_database);
+    for (const auto & replicas : cluster->getShardsAddresses())
+        for (const auto & replica : replicas)
+            if (replica.is_this_server && !replica.default_database.empty())
+                remote_database_names.insert(remote_database.empty() ? replica.default_database : remote_database);
 
     /// `ALIAS` columns cross the same cast, so they are compared too.
     const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
     const auto & declared_columns = storage_snapshot->metadata->getColumns();
-    const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
-    for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
+    for (const auto & remote_database_name : remote_database_names)
     {
-        /// A column no key reads is converted above the shards' sort and reductions like any other
-        /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
-        /// there is none of this check's business. `std::nullopt` means the key columns are unknown
-        /// and every column has to be checked.
-        if (key_columns && !key_columns->contains(remote_column.name))
+        StorageID remote_table_id{remote_database_name, remote_table};
+        auto remote_table_storage = DatabaseCatalog::instance().tryGetTable(remote_table_id, local_context);
+        if (!remote_table_storage)
             continue;
 
-        auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
-        if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
-            throw Exception(
-                ErrorCodes::INCOMPATIBLE_COLUMNS,
-                "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
-                "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
-                "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
-                "cannot be processed. Declare the column with "
-                "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
-                "a Nullable of it",
-                backQuoteIfNeed(remote_column.name),
-                remote_column.type->getName(),
-                remote_table_id.getNameForLogs(),
-                declared_column->type->getName(),
-                getStorageID().getNameForLogs(),
-                remote_column.type->getName(),
-                declared_column->type->getName());
+        const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
+        for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
+        {
+            /// A column no key reads is converted above the shards' sort and reductions like any other
+            /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
+            /// there is none of this check's business. `std::nullopt` means the key columns are unknown
+            /// and every column has to be checked.
+            if (key_columns && !key_columns->contains(remote_column.name))
+                continue;
+
+            auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
+            if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
+                throw Exception(
+                    ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
+                    "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
+                    "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
+                    "cannot be processed. Declare the column with "
+                    "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
+                    "a Nullable of it",
+                    backQuoteIfNeed(remote_column.name),
+                    remote_column.type->getName(),
+                    remote_table_id.getNameForLogs(),
+                    declared_column->type->getName(),
+                    getStorageID().getNameForLogs(),
+                    remote_column.type->getName(),
+                    declared_column->type->getName());
+        }
     }
 }
 

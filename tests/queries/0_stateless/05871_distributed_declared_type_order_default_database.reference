@@ -1,0 +1,9 @@
+-- String shard tables read as Int8
+200
+-- UInt64 shard tables read as Nullable(String)
+-- only the table of the second shard has a mismatching type
+-- an explicit remote database
+-- the matching type still works
+9
+8
+7
