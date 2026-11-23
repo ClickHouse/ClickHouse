@@ -17,6 +17,7 @@ from ci.jobs.scripts.workflow_hooks.filter_job import (
     should_skip_job,
 )
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
+from ci.workflows.create_release import PR_DRY_RUN_JOBS
 
 # PR sanitizer jobs repeat tests related to the change to find intermittent failures.
 # Debug and plain binary jobs run the full suite. Master keeps the full suite in
@@ -277,6 +278,8 @@ workflow = Workflow.Config(
             3 * 3600
         ),
         *JobConfigs.toolchain_build_jobs,
+        # Release-pipeline dry run; digest-gated, runs only when release code changes.
+        *PR_DRY_RUN_JOBS,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
