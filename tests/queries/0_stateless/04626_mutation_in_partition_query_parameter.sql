@@ -122,3 +122,38 @@ DETACH TABLE t_mutation_param_time64;
 ATTACH TABLE t_mutation_param_time64;
 SELECT k, v FROM t_mutation_param_time64 ORDER BY k;
 DROP TABLE t_mutation_param_time64;
+
+-- A value with more fractional digits than the partition key must not be truncated to another partition.
+
+DROP TABLE IF EXISTS t_mutation_param_lossy;
+CREATE TABLE t_mutation_param_lossy (ts DateTime64(3, 'UTC'), k UInt8, v UInt8)
+ENGINE = MergeTree PARTITION BY ts ORDER BY k;
+INSERT INTO t_mutation_param_lossy VALUES ('2024-01-01 00:00:00.500', 1, 0);
+
+SET param_lossy = '2024-01-01 00:00:00.5009', param_exact = '2024-01-01 00:00:00.5000';
+ALTER TABLE t_mutation_param_lossy DROP PARTITION {lossy:DateTime64(4, 'UTC')}; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_mutation_param_lossy UPDATE v = 1 IN PARTITION {lossy:DateTime64(4, 'UTC')} WHERE 1 SETTINGS mutations_sync = 2; -- { serverError INVALID_PARTITION_VALUE }
+SELECT k, v FROM t_mutation_param_lossy ORDER BY k;
+ALTER TABLE t_mutation_param_lossy UPDATE v = 1 IN PARTITION {exact:DateTime64(4, 'UTC')} WHERE 1 SETTINGS mutations_sync = 2;
+SELECT k, v FROM t_mutation_param_lossy ORDER BY k;
+DROP TABLE t_mutation_param_lossy;
+
+DROP TABLE IF EXISTS t_mutation_param_lossy_tuple;
+CREATE TABLE t_mutation_param_lossy_tuple (ts DateTime64(3, 'UTC'), s String, k UInt8)
+ENGINE = MergeTree PARTITION BY (ts, s) ORDER BY k;
+INSERT INTO t_mutation_param_lossy_tuple VALUES ('2024-01-01 00:00:00.500', 'a', 1);
+
+SET param_lossy_tuple = '(''2024-01-01 00:00:00.5009'',''a'')';
+ALTER TABLE t_mutation_param_lossy_tuple DROP PARTITION {lossy_tuple:Tuple(DateTime64(4, 'UTC'), String)}; -- { serverError INVALID_PARTITION_VALUE }
+SELECT count() FROM t_mutation_param_lossy_tuple;
+DROP TABLE t_mutation_param_lossy_tuple;
+
+DROP TABLE IF EXISTS t_mutation_param_lossy_time64;
+CREATE TABLE t_mutation_param_lossy_time64 (t Time64(3), k UInt8)
+ENGINE = MergeTree PARTITION BY t ORDER BY k;
+INSERT INTO t_mutation_param_lossy_time64 VALUES ('12:00:00.5', 1);
+
+SET param_lossy_time = '12:00:00.5009';
+ALTER TABLE t_mutation_param_lossy_time64 DROP PARTITION {lossy_time:Time64(4)}; -- { serverError INVALID_PARTITION_VALUE }
+SELECT count() FROM t_mutation_param_lossy_time64;
+DROP TABLE t_mutation_param_lossy_time64;

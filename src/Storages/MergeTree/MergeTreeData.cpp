@@ -11140,12 +11140,28 @@ static std::string_view getDatePartOfDateText(std::string_view text)
 /// `date_time_overflow_behavior = 'throw'`, and the date and time it spells must be the ones of the parsed value.
 /// This also rejects a local time that does not exist in the time zone of a `DateTime` key because of a daylight
 /// saving time shift (`'2024-03-31 02:30:00'` in `Europe/Berlin` is read as `01:30:00`): no row can have that value.
-static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & type)
+static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & value_type, const DataTypePtr & type)
 {
     const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
     const WhichDataType which(nested_type);
     if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
-        return convertFieldToTypeOrThrow(value, *type);
+    {
+        Field converted = convertFieldToTypeOrThrow(value, *type);
+
+        /// A `Decimal`, `DateTime64` or `Time64` value is truncated to the scale of the key, so `.5009` of a
+        /// `DateTime64(4)` value would name the `.500` partition of a `DateTime64(3)` key.
+        if (value_type && !value.isNull())
+        {
+            const WhichDataType which_value(removeLowCardinalityAndNullable(value_type));
+            if ((which_value.isDecimal() || which_value.isDateTime64() || which_value.isTime64())
+                && tryConvertFieldToTypeExact(value, *type, value_type.get()).isNull())
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                                "Partition value {} of type {} is not a valid value of type {}: it is read as {}",
+                                value, value_type->getName(), type->getName(), converted);
+        }
+
+        return converted;
+    }
 
     /// A time of day after a date is ignored the same way as by `toDate`.
     const String & text = value.safeGet<String>();
@@ -11380,7 +11396,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             }
         }
         /// Simple partition key, need to evaluate and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        auto [partition_key_value, partition_key_type] = evaluateConstantExpression(partition_value_ast, local_context);
 
         /// A cast of a one-element tuple (e.g. a substituted query parameter of type `Tuple(T)`)
         /// evaluates to a tuple; unwrap it, unless the partition key column itself is a tuple.
@@ -11391,14 +11407,16 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                                 "Wrong number of fields in the partition expression: {}, must be: 1", tuple_value.size());
             partition_key_value = std::move(tuple_value[0]);
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
+            partition_key_type = tuple_type ? tuple_type->getElement(0) : nullptr;
         }
 
-        partition_row[0] = convertPartitionFieldToType(partition_key_value, key_sample_block.getByPosition(0).type);
+        partition_row[0] = convertPartitionFieldToType(partition_key_value, partition_key_type, key_sample_block.getByPosition(0).type);
     }
     else
     {
         /// Complex key, need to evaluate, untuple and cast
-        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        const auto [partition_key_value, partition_key_type] = evaluateConstantExpression(partition_value_ast, local_context);
         if (partition_key_value.getType() != Field::Types::Tuple)
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                             "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
@@ -11408,8 +11426,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
         for (size_t i = 0; i < fields_count; ++i)
-            partition_row[i] = convertPartitionFieldToType(tuple[i], key_sample_block.getByPosition(i).type);
+            partition_row[i] = convertPartitionFieldToType(
+                tuple[i], tuple_type ? tuple_type->getElement(i) : nullptr, key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
