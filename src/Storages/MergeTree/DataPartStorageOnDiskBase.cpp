@@ -1211,31 +1211,50 @@ std::optional<String> DataPartStorageOnDiskBase::getSharedStorageIdentity() cons
     return getSharedStorageIdentity(*volume->getDisk(), fs::path(root_path) / part_dir);
 }
 
+DataPartStorageOnDiskBase::~DataPartStorageOnDiskBase()
+{
+    /// Owns the identity the storage is bound to, and through it the previous ones.
+    delete pinned_shared_storage_identity.load(std::memory_order_acquire);
+}
+
 void DataPartStorageOnDiskBase::pinSharedStorageIdentity(const String & identity)
 {
-    std::lock_guard lock(shared_storage_identity_mutex);
-    pinned_shared_storage_identity = identity;
-    is_pinned_to_shared_storage_identity.store(true, std::memory_order_release);
+    const auto * current = pinned_shared_storage_identity.load(std::memory_order_acquire);
+    while (!current || current->identity != identity)
+    {
+        auto pinned = std::make_unique<PinnedSharedStorageIdentity>();
+        pinned->identity = identity;
+        /// The previous identity stays alive: another thread may be reading it right now.
+        pinned->previous.reset(current);
+
+        if (pinned_shared_storage_identity.compare_exchange_strong(
+                current, pinned.get(), std::memory_order_release, std::memory_order_acquire))
+        {
+            [[maybe_unused]] const auto * owned_by_the_storage_now = pinned.release();
+            return;
+        }
+
+        /// Another thread has bound the storage in between, and what it published keeps the previous identity
+        /// alive. The object that was not published must not delete it.
+        [[maybe_unused]] const auto * owned_by_the_published_identity = pinned->previous.release();
+    }
 }
 
 bool DataPartStorageOnDiskBase::isPinnedToSharedStorageIdentity() const
 {
-    return is_pinned_to_shared_storage_identity.load(std::memory_order_acquire);
+    return pinned_shared_storage_identity.load(std::memory_order_acquire) != nullptr;
 }
 
 std::optional<DataPartStorageOnDiskBase::SharedStorageIdentityCheck> DataPartStorageOnDiskBase::getSharedStorageIdentityCheck() const
 {
-    if (!is_pinned_to_shared_storage_identity.load(std::memory_order_acquire))
-        return std::nullopt;
-
-    std::lock_guard lock(shared_storage_identity_mutex);
-    if (!pinned_shared_storage_identity)
+    const auto * pinned = pinned_shared_storage_identity.load(std::memory_order_acquire);
+    if (!pinned)
         return std::nullopt;
 
     return SharedStorageIdentityCheck{
         .disk = volume->getDisk(),
         .directory = fs::path(root_path) / part_dir,
-        .identity = *pinned_shared_storage_identity};
+        .identity = pinned->identity};
 }
 
 void DataPartStorageOnDiskBase::SharedStorageIdentityCheck::operator()() const

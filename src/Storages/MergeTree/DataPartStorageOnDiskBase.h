@@ -19,6 +19,7 @@ class DataPartStorageOnDiskBase : public IDataPartStorage
 {
 public:
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_);
+    ~DataPartStorageOnDiskBase() override;
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -290,11 +291,17 @@ protected:
     /// The archive exists but has an unsupported format version; the reader then has an empty index.
     mutable bool skip_indices_packed_unsupported TSA_GUARDED_BY(skip_indices_packed_mutex) = false;
 
-    /// See `pinSharedStorageIdentity`. The flag lets the storages that are not bound, which is all of them
-    /// outside of `leader_election`, skip the mutex when a file is opened.
-    std::atomic<bool> is_pinned_to_shared_storage_identity{false};
-    mutable std::mutex shared_storage_identity_mutex;
-    std::optional<String> pinned_shared_storage_identity TSA_GUARDED_BY(shared_storage_identity_mutex);
+    /// See `pinSharedStorageIdentity`. It is null for the storages that are not bound, which is all of them outside
+    /// of `leader_election`, and it is a single pointer on purpose: a storage is allocated for every part of every
+    /// table, and a few more bytes here move the object to the next size class of the allocator.
+    /// An identity is immutable once it is published. Binding the storage again keeps the previous identity alive
+    /// until the storage is destroyed, so that a thread that has just loaded the pointer can still read it.
+    struct PinnedSharedStorageIdentity
+    {
+        String identity;
+        std::unique_ptr<const PinnedSharedStorageIdentity> previous;
+    };
+    std::atomic<const PinnedSharedStorageIdentity *> pinned_shared_storage_identity{nullptr};
 
     template <typename Op>
     void executeWriteOperation(Op && op)
