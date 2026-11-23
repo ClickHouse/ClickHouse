@@ -9,6 +9,7 @@
 # filter only drives row-group/page pruning, not row-level filtering. Rows for
 # other data files survived inside surviving row groups and broke the streaming
 # merge invariant that positions arrive in ascending order per delete source.
+# ClickHouse writes one delete file per data file since #129159, so the second part reads a Spark-written table whose delete file covers several data files.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,8 +30,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
     "INSERT INTO ${TABLE} SELECT number, char(number + ascii('a')) FROM numbers(10, 10)"
 
-# Two deletes; each delete touches both data files, producing one delete file
-# per ALTER with rows that reference both data files.
+# Two deletes, each touching both data files.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
     "ALTER TABLE ${TABLE} DELETE WHERE a % 2 = 0"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
@@ -48,5 +48,18 @@ for roaring in 0 1; do
     done
 done
 
+SPARK_TABLE_PATH="${USER_FILES_PATH}/${TABLE}_spark"
+cp -r "${CUR_DIR}/data_lake_corpus/iceberg/ice143_v2_position_deletes" "${SPARK_TABLE_PATH}"
+for roaring in 0 1; do
+    for v3 in 0 1; do
+        echo "spark roaring=${roaring} parquet_v3=${v3}:"
+        ${CLICKHOUSE_CLIENT} \
+            --use_roaring_bitmap_iceberg_positional_deletes=${roaring} \
+            --input_format_parquet_use_native_reader_v3=${v3} \
+            --query "SELECT count(), sum(id) FROM icebergLocal('${SPARK_TABLE_PATH}/')"
+    done
+done
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 rm -rf "${TABLE_PATH}"
+rm -rf "${SPARK_TABLE_PATH}"
