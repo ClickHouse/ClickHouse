@@ -679,7 +679,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         {
             Names names;
             DataTypes types;
-            auto start = i ? arr.getOffsets()[i - 1] : 0;
+            auto start = i ? arr.getOffsets()[static_cast<ssize_t>(i) - 1] : 0;
             auto end = arr.getOffsets()[i];
             for (size_t j = 0; j < end - start; ++j)
             {
