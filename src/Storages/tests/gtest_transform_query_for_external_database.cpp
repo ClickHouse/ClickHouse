@@ -1039,6 +1039,79 @@ TEST(TransformQueryForExternalDatabase, RowValueOutsideComparison)
              LiteralEscapingStyle::PostgreSQL);
 }
 
+/// A `boolean` column of PostgreSQL is read as `UInt8`, and PostgreSQL does not compare a `boolean` with
+/// an integer, so 0 and 1 compared with a `UInt8` column are written quoted: PostgreSQL gives such a
+/// literal the type of the column, whether that is a `boolean` or a number.
+TEST(TransformQueryForExternalDatabase, ZeroAndOneComparedWithUInt8ColumnForPostgreSQL)
+{
+    const State & state = State::instance();
+
+    auto check_postgresql = [&](const Names & column_names, const std::string & query, const std::string & expected)
+    {
+        check(state, 1, column_names, query, expected, /*expected_new=*/"", LiteralEscapingStyle::PostgreSQL);
+    };
+
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 1",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = '1')");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 0",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = '0')");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column != 1",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" != '1')");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE 1 = column",
+        R"(SELECT "column" FROM "test"."table" WHERE '1' = "column")");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (0, 1)",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" IN ('0', '1'))");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column NOT IN (0, 1)",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" NOT IN ('0', '1'))");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (1)",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" IN ('1'))");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE NOT (column = 1)",
+        R"(SELECT "column" FROM "test"."table" WHERE NOT ("column" = '1'))");
+    check_postgresql({"column", "apply_id"},
+        "SELECT column, apply_id FROM table WHERE (column = 1 OR column = 0) AND apply_id != 0",
+        R"(SELECT "column", "apply_id" FROM "test"."table" WHERE (("column" = '1') OR ("column" = '0')) AND ("apply_id" != 0))");
+
+    /// A `Bool` column is a `UInt8` column. A `Bool` literal is already written as PostgreSQL reads it.
+    check_postgresql({"is_value"},
+        "SELECT is_value FROM table WHERE is_value = 1",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = '1')");
+    check_postgresql({"is_value"},
+        "SELECT is_value FROM table WHERE is_value = true",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)");
+
+    /// The filter selects the same rows, so the LIMIT is pushed down with it as before.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 1 LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = '1' LIMIT 10)");
+
+    /// Only 0 and 1 have a reading as a `boolean`; another number in the same list stays a number.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column = 2",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = 2)");
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column IN (1, 2)",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" IN ('1', 2))");
+
+    /// The other comparisons, the columns of other types and the other databases are not changed.
+    check_postgresql({"column"},
+        "SELECT column FROM table WHERE column > 0",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" > 0)");
+    check_postgresql({"apply_id"},
+        "SELECT apply_id FROM table WHERE apply_id = 1",
+        R"(SELECT "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
+    check(state, 1, {"column"},
+        "SELECT column FROM table WHERE column = 1",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" = 1)");
+}
+
 /// Parse a user-provided `(SELECT ...)` table argument of an external database engine / table
 /// function and re-serialize it for the external database, the way `StorageMySQL`,
 /// `StoragePostgreSQL` and `StorageSQLite` do for a query-backed source.

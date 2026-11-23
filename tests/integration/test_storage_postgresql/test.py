@@ -900,6 +900,48 @@ def test_filter_pushdown(started_cluster):
     node1.query("DROP TABLE test_filter_pushdown_pg_table")
 
 
+def test_filter_pushdown_boolean_column(started_cluster):
+    # A `boolean` column of PostgreSQL is read as `UInt8`, so a query compares it with a number, and
+    # PostgreSQL does not compare a `boolean` with an integer: the filter failed there with
+    # `operator does not exist: boolean = integer`.
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_boolean_filter")
+    cursor.execute("CREATE TABLE test_boolean_filter (id integer, deleted boolean, num smallint)")
+    cursor.execute(
+        "INSERT INTO test_boolean_filter VALUES (1, false, 0), (2, true, 1), (3, NULL, 2), (4, false, 1)"
+    )
+
+    # The structure is inferred by the table function and declared by the table.
+    inferred = f"postgresql('postgres1:5432', 'postgres', 'test_boolean_filter', 'postgres', '{pg_pass}')"
+    node1.query("DROP TABLE IF EXISTS pg_boolean_filter")
+    node1.query(
+        f"""
+        CREATE TABLE pg_boolean_filter (id Int32, deleted Nullable(Bool), num Nullable(UInt8))
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_boolean_filter', 'postgres', '{pg_pass}');
+    """
+    )
+
+    def ids(table, condition):
+        return node1.query(f"SELECT id FROM {table} WHERE {condition} ORDER BY id").split()
+
+    for table in [inferred, "pg_boolean_filter"]:
+        assert ids(table, "deleted = 0") == ["1", "4"]
+        assert ids(table, "deleted = 1") == ["2"]
+        assert ids(table, "deleted != 1") == ["1", "4"]
+        assert ids(table, "deleted IN (0, 1)") == ["1", "2", "4"]
+        assert ids(table, "deleted NOT IN (1)") == ["1", "4"]
+        assert ids(table, "deleted = 0 AND id > 1") == ["4"]
+
+    # The same numbers compared with a column that is a number in PostgreSQL and `UInt8` in the table.
+    assert ids("pg_boolean_filter", "num = 1") == ["2", "4"]
+    assert ids("pg_boolean_filter", "num != 0") == ["2", "3", "4"]
+    assert ids("pg_boolean_filter", "num IN (0, 1)") == ["1", "2", "4"]
+    assert ids("pg_boolean_filter", "num IN (1, 2)") == ["2", "3", "4"]
+
+    node1.query("DROP TABLE pg_boolean_filter")
+    cursor.execute("DROP TABLE test_boolean_filter")
+
+
 
 def test_limit_pushdown(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()

@@ -461,6 +461,105 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
     return false;
 }
 
+/// Returns true if `node` is a column whose type is `UInt8`, which includes `Bool`.
+bool isUInt8Column(const ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    const auto * identifier = node->as<ASTIdentifier>();
+    if (!identifier)
+        return false;
+
+    for (const auto & column : available_columns)
+        if (column.name == identifier->name())
+            return WhichDataType(removeLowCardinalityAndNullable(column.type)).isUInt8();
+    return false;
+}
+
+/// Replaces the number 0 or 1 with the string '0' or '1'. See `quoteZeroAndOneComparedWithUInt8Column`.
+bool quoteZeroOrOne(Field & field)
+{
+    UInt64 value = 0;
+    if (!field.tryGet<UInt64>(value) || value > 1)
+        return false;
+
+    field = String(value ? "1" : "0");
+    return true;
+}
+
+void quoteZeroOrOne(ASTPtr & node)
+{
+    const auto * literal = node->as<ASTLiteral>();
+    if (!literal)
+        return;
+
+    Field value = literal->value;
+    if (quoteZeroOrOne(value))
+        node = make_intrusive<ASTLiteral>(std::move(value));
+}
+
+/// The same for the list of an `IN`, which is one literal `(0, 1)`, or `(1)` or `tuple(0, 1)`, see `isCompatible`.
+void quoteZeroOrOneInList(ASTPtr & node)
+{
+    if (const auto * literal = node->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Tuple)
+    {
+        Tuple elements = literal->value.safeGet<Tuple>();
+        bool changed = false;
+        for (auto & element : elements)
+            changed |= quoteZeroOrOne(element);
+        if (changed)
+            node = make_intrusive<ASTLiteral>(Field(std::move(elements)));
+    }
+    else if (auto * function = node->as<ASTFunction>();
+             function && (function->name.empty() || function->name == "tuple") && function->arguments)
+    {
+        for (auto & element : function->arguments->children)
+            quoteZeroOrOne(element);
+    }
+    else
+        quoteZeroOrOne(node);
+}
+
+/// A `boolean` column of PostgreSQL is read as `UInt8`, so a query compares it with a number:
+/// `WHERE deleted = 0`. PostgreSQL has no comparison of a `boolean` with an integer and rejects the
+/// filter (`operator does not exist: boolean = integer`). Whether a `UInt8` column is a `boolean` or a
+/// number there is not known here: a table can declare it either way. A quoted literal is right for
+/// both: PostgreSQL gives a literal of an unknown type the type of the column it is compared with, and
+/// reads '0' and '1' as `false` and `true` for a `boolean` and as numbers for a numeric column, and it
+/// still uses an index on the column. So in the equality comparisons and `IN` of a `UInt8` column the
+/// numbers 0 and 1 are written quoted. Other numbers have no reading as a `boolean` and are left as
+/// they are.
+void quoteZeroAndOneComparedWithUInt8Column(ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    /// The depth of the AST is user-controlled: fail with TOO_DEEP_RECURSION instead of exhausting the stack.
+    checkStackSize();
+
+    auto * function = node->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return;
+
+    auto & arguments = function->arguments->children;
+    if (arguments.size() == 2)
+    {
+        if (function->name == "equals" || function->name == "notEquals")
+        {
+            if (isUInt8Column(arguments[0], available_columns))
+                quoteZeroOrOne(arguments[1]);
+            else if (isUInt8Column(arguments[1], available_columns))
+                quoteZeroOrOne(arguments[0]);
+            return;
+        }
+
+        if (function->name == "in" || function->name == "notIn")
+        {
+            if (isUInt8Column(arguments[0], available_columns))
+                quoteZeroOrOneInList(arguments[1]);
+            return;
+        }
+    }
+
+    for (auto & argument : arguments)
+        quoteZeroAndOneComparedWithUInt8Column(argument, available_columns);
+}
+
 /// Returns true if the AST node is a tuple: either an `ASTLiteral` holding a `Tuple` field
 /// (the parser's fast-path literal conversion) or an explicit `tuple(...)` function call.
 bool isTupleNode(const ASTPtr & node)
@@ -1191,6 +1290,14 @@ String transformQueryForExternalDatabaseImpl(
 
     if (limit)
         select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(*limit));
+
+    /// This is done after the `LIMIT` is decided: the filter selects the same rows as before, so it does
+    /// not make the push-down of the `LIMIT` wrong, while it would no longer be equal to the original one.
+    if (literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
+    {
+        if (ASTPtr where = select->where())
+            quoteZeroAndOneComparedWithUInt8Column(where, pushdown_columns);
+    }
 
     ASTPtr select_ptr = select;
     dropAliases(select_ptr);
