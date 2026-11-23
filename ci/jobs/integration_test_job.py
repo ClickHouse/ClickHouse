@@ -1932,7 +1932,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_llvm_coverage
         and not args.test
     ):
-        changed_files = info.get_changed_files()
+        changed_files = info.get_changed_files() or []
         # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
         # when a CI job script changes: `filter_job.py` lets them through for that very reason.
         is_coverage_replacement_with_ci_script_changes = False

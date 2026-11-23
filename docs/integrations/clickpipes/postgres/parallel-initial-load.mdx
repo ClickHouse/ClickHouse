@@ -21,7 +21,7 @@ However, the Postgres ClickPipe can parallelize this process, which can signific
 In Postgres, every row in a table has a unique identifier called the CTID. This is a system column that isn't visible to you by default, but it can be used to uniquely identify rows in a table. The CTID is a combination of the block number and the offset within the block, which allows for efficient access to rows.
 
 ### Logical partitioning {#logical-partitioning-pg-snapshot}
-The Postgres ClickPipe uses the CTID column to logically partition source tables. It obtains the partitions by first performing a COUNT(*) on the source table, followed by a window function partitioning query to get the CTID ranges for each partition. This allows the ClickPipe to read the source table in parallel, with each partition being processed by a separate thread.
+The Postgres ClickPipe uses the CTID column to logically partition source tables. It obtains the partitions by first estimating the row count of the source table from the table statistics, and then dividing the blocks of the table into CTID ranges of equal size, one range per partition. This allows the ClickPipe to read the source table in parallel, with each partition being processed by a separate thread.
 
 Let's talk about the below settings:
 
@@ -45,13 +45,8 @@ This setting controls how many partitions are processed in parallel. The default
 
 #### Snapshot number of tables in parallel {#tables-parallel-pg-snapshot}
 
-Not really related to parallel snapshot, but this setting controls how many tables are processed in parallel during the initial load. The default value is 1. Note that is on top of the parallelism of the partitions, so if you have 4 partitions and 2 tables, the ClickPipe will read 8 partitions in parallel.
+Not really related to parallel snapshot, but this setting controls how many tables are processed in parallel during the initial load. The default value is 1. Note that is on top of the parallelism of the partitions, so if the initial load parallelism is 4 and you have 2 tables, the ClickPipe will read 8 partitions in parallel.
 
 ### Monitoring parallel snapshot in Postgres {#monitoring-parallel-pg-snapshot}
 
-You can analyze **pg_stat_activity** to see the parallel snapshot in action. The ClickPipe will create multiple connections to the source database, each reading a different partition of the source table. If you see **FETCH** queries with different CTID ranges, it means that the ClickPipe is reading the source tables. You can also see the COUNT(*) and the partitioning query in here.
-
-### Limitations {#limitations-parallel-pg-snapshot}
-
-- The snapshot parameters can't be edited after pipe creation. If you want to change them, you will have to create a new ClickPipe.
-- When adding tables to an existing ClickPipe, you can't change the snapshot parameters. The ClickPipe will use the existing parameters for the new tables.
+You can analyze **pg_stat_activity** to see the parallel snapshot in action. The ClickPipe will create multiple connections to the source database, each reading a different partition of the source table. Each connection declares a cursor for its CTID range and then reads from it, so if you see **FETCH** queries of the form `FETCH <n> FROM peerdb_cursor_<id>`, it means that the ClickPipe is reading the source tables.

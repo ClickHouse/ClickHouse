@@ -35,6 +35,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
+#include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -1441,6 +1442,9 @@ void IcebergStorageSink::readLatestMetadata()
             break;
         }
     }
+
+    if (shouldWriteIcebergTableStatisticsNdv(context, catalog))
+        column_sketches.emplace(*sample_block, current_schema->getArray(Iceberg::f_fields));
 }
 
 IcebergStorageSink::~IcebergStorageSink()
@@ -1462,6 +1466,12 @@ void IcebergStorageSink::consume(Chunk & chunk)
         readLatestMetadata();
 
     total_rows += chunk.getNumRows();
+    if (column_sketches)
+        column_sketches->update(chunk.getColumns());
+
+    /// The partitions and the bounds must describe the stored values.
+    if (Poco::toUpper(write_format) == "ORC")
+        ORC::replaceTimestampsStoredAsEpoch(chunk);
 
     size_t start_columns_size = chunk.getNumColumns();
     if (!sort_description.column_names.empty())
@@ -1735,6 +1745,7 @@ bool IcebergStorageSink::initializeMetadata()
         MetadataGenerator::SnapshotOperation::Append,
         refresh_cursor);
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
+    std::optional<String> statistics_file_path;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
     {
@@ -1756,6 +1767,8 @@ bool IcebergStorageSink::initializeMetadata()
 
         /// After a conflict the caller rebases the next attempt with `readLatestMetadata`.
         best_effort_remove(storage_manifest_list_name);
+        if (statistics_file_path)
+            best_effort_remove(*statistics_file_path);
     };
 
     try
@@ -1900,6 +1913,11 @@ bool IcebergStorageSink::initializeMetadata()
                 throw;
             }
         }
+
+        if (column_sketches)
+            statistics_file_path = writeIcebergTableStatisticsNdv(
+                &*column_sketches, /*union_with_parent=*/ true, metadata, new_snapshot, filename_generator, resolver, object_storage,
+                context);
 
         {
             std::string json_representation = stringifyJSON(metadata, 4);
