@@ -100,7 +100,6 @@ namespace ErrorCodes
     extern const int AWS_ERROR;
     extern const int GCP_ERROR;
     extern const int ACCESS_DENIED;
-    extern const int NOT_IMPLEMENTED;
     extern const int S3_ERROR;
 }
 
@@ -1109,9 +1108,20 @@ private:
 
 Aws::Auth::AWSCredentials GeneralHTTPCredentialsProvider::GetAWSCredentials()
 {
-    if (Silk::isInsideFiber())
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ECS container credentials are not implemented for fibers");
-    return Aws::Auth::GeneralHTTPCredentialsProvider::GetAWSCredentials();
+    std::lock_guard lock(get_aws_credentials_mutex);
+    if (m_credentials.IsEmpty() || IsTimeToRefresh(m_loadFrequencyMs) || ExpiresSoon())
+    {
+        /// The SDK reads the authorization token file during refresh.
+        Silk::ThreadModeScope thread_mode;
+        Reload();
+    }
+    return m_credentials;
+}
+
+void GeneralHTTPCredentialsProvider::SetNeedRefresh()
+{
+    std::lock_guard lock(get_aws_credentials_mutex);
+    AWSCredentialsProvider::SetNeedRefresh();
 }
 
 S3CredentialsProviderChain::S3CredentialsProviderChain(
@@ -1214,12 +1224,11 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             auto token = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN);
             const auto token_path = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_AUTHORIZATION_TOKEN_FILE);
 
-            AddProvider(Aws::MakeShared<GeneralHTTPCredentialsProvider>("S3Credentials",
-                relative_uri,
-                absolute_uri,
-                token,
-                token_path
-            ));
+            {
+                /// The SDK constructor may wait for DNS validation of the full URI.
+                Silk::ThreadModeScope thread_mode;
+                AddProvider(Aws::MakeShared<GeneralHTTPCredentialsProvider>("S3Credentials", relative_uri, absolute_uri, token, token_path));
+            }
 
             /// DO NOT log the value of the authorization token for security purposes.
             LOG_INFO(logger, "Added ECS credentials provider with URI: [{}] to the provider chain with a{} authorization token.",

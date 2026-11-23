@@ -26,6 +26,7 @@
 
 #include <Common/Silk/FiberScheduler.h>
 #include <Common/Silk/tests/gtest_silk_scheduler.h>
+#include <Common/tests/gtest_global_context.h>
 
 #if USE_SILK
 #include <silk/fibers/future.h>
@@ -1953,6 +1954,8 @@ public:
     }
     ~FunctionHTTPServer() { server->stop(); }
     [[nodiscard]] std::string getUrl() const { return "http://" + server_socket->address().toString(); }
+    /// The server listens on all addresses; this is its loopback address, which some clients require.
+    [[nodiscard]] std::string getLoopbackUrl() const { return "http://127.0.0.1:" + std::to_string(server_socket->address().port()); }
 
 private:
     static Poco::AutoPtr<Poco::Net::HTTPServerParams> makeServerParams(int max_threads)
@@ -2976,6 +2979,47 @@ TEST(IOTestAwsS3Client, AssumeRoleInvalidationDuringRefreshIsKept)
     const size_t sts_requests_before = sts_requests;
     provider->GetAWSCredentials();
     EXPECT_EQ(sts_requests, sts_requests_before + 1);
+}
+
+/// ECS container credentials in fibers: concurrent callers wait on the provider's `Silk::FiberMutex` while the first one
+/// refreshes inside `Silk::ThreadModeScope`, which the endpoint holds until all fibers have started, and all of them get
+/// the credentials of one refresh.
+TEST(IOTestAwsS3Client, ContainerCredentialsInConcurrentFibers)
+{
+    /// The SDK creates the HTTP client of the ECS provider with the default configuration, which reads the global context
+    /// and needs the SDK initialized by `ClientFactory`.
+    [[maybe_unused]] const auto & context = getContext();
+    [[maybe_unused]] auto & client_factory = DB::S3::ClientFactory::instance();
+    initializeFiberSchedulerForTests();
+
+    Poco::Event release(/* autoReset = */ false);
+    std::atomic<size_t> credentials_requests = 0;
+    std::atomic<size_t> requests_without_token = 0;
+    FunctionHTTPServer ecs([&](Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        ++credentials_requests;
+        if (request.get("Authorization", "") != "ecs_token")
+            ++requests_without_token;
+        /// Holds the refresh until all fibers have started.
+        release.wait();
+        sendHTTPBody(response, Poco::Net::HTTPResponse::HTTP_OK, FIBER_TEST_CREDENTIALS_JSON);
+    });
+
+    /// As `S3CredentialsProviderChain` creates it for `AWS_CONTAINER_CREDENTIALS_FULL_URI`.
+    auto provider = std::make_shared<DB::S3::GeneralHTTPCredentialsProvider>(
+        /* relative_uri = */ "", ecs.getLoopbackUrl() + "/v2/credentials", /* token = */ "ecs_token", /* token_path = */ "");
+
+    const size_t fiber_count = getFiberCountAboveSchedulerThreads();
+    std::vector<Aws::String> access_keys(fiber_count);
+    runFibersAndReleaseWhenAllStarted(fiber_count, release, [&](size_t i)
+    {
+        access_keys[i] = provider->GetAWSCredentials().GetAWSAccessKeyId();
+    });
+
+    for (const auto & access_key : access_keys)
+        EXPECT_EQ(access_key, "fiber_access_key");
+    EXPECT_EQ(credentials_requests, 1);
+    EXPECT_EQ(requests_without_token, 0);
 }
 
 #endif

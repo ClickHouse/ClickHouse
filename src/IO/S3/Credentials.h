@@ -261,6 +261,10 @@ public:
     using Aws::Auth::GeneralHTTPCredentialsProvider::GeneralHTTPCredentialsProvider;
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
+
+private:
+    Silk::FiberMutex get_aws_credentials_mutex;
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
