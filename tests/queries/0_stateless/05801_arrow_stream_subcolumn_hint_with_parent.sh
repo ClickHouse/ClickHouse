@@ -298,6 +298,17 @@ SELECT 'null struct row in an array with string and raw-byte siblings';
 SELECT [CAST(if(number = 1, NULL, tuple('label', 'abcdefghijklmnop')) AS Nullable(Tuple(s String, u String)))] AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1;
 SELECT * FROM file('data.arrows', 'ArrowStream', 't Array(String), `t.s` Array(String), `t.u` Array(Nullable(IPv6))') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
 SELECT * FROM file('data.arrows', 'ArrowStream', 't Array(String), `t.s` Array(Nullable(String)), `t.u` Array(Nullable(IPv6))') SETTINGS enable_nullable_tuple_type = 0, input_format_null_as_default = 0;
+
+SELECT 'null struct row below a struct next to a top-level field with the same dotted path';
+-- The top-level field `t.s` keeps its null map only for the conversion, while the field `s` of the struct `t` keeps
+-- the null map a requested `Tuple` asks for: the subcolumn `t.s.v`, taken from the struct `t`, has its nulls.
+SELECT CAST(tuple(if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Tuple(s Nullable(Tuple(v String)))) AS t, CAST(if(number = 1, NULL, tuple('abcdefghijklmnop')) AS Nullable(Tuple(v String))) AS `t.s` FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream SETTINGS enable_nullable_tuple_type = 1;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(s Tuple(v String)), `t.s` String, `t.s.v` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.s.v` Nullable(IPv6), `t.s` String, t Tuple(s Tuple(v String))') SETTINGS enable_nullable_tuple_type = 0;
+SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(s Tuple(v String)), `t.s.v` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0;
+SELECT CAST(tuple(if(number = 1, NULL, tuple('abcdefghijklmnop'))) AS Tuple(s Nullable(Tuple(v String)))) AS t, CAST(if(number = 1, NULL, tuple('abcdefghijklmnop')) AS Nullable(Tuple(v String))) AS `t.s` FROM numbers(2) INTO OUTFILE 'data.arrow' TRUNCATE FORMAT Arrow SETTINGS enable_nullable_tuple_type = 1;
+SELECT * FROM file('data.arrow', 'Arrow', 't Tuple(s Tuple(v String)), `t.s` String, `t.s.v` Nullable(IPv6)') SETTINGS enable_nullable_tuple_type = 0;
+SELECT * FROM file('data.arrow', 'Arrow', '`t.s.v` Nullable(IPv6), `t.s` String, t Tuple(s Tuple(v String))') SETTINGS enable_nullable_tuple_type = 0;
 EOF
 
 cd "$CLICKHOUSE_TMP" || exit 1

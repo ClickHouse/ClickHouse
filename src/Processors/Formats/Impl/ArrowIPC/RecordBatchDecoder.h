@@ -243,12 +243,20 @@ public:
         const flatbuf::RecordBatch & batch, const PODArray<char> & body, const ArrowField & value_field,
         const DictionaryUse & use, const RequestedTypes * target_types_);
 
-    /// Makes the decoder record in `paths` the dotted path of each nullable struct that keeps its null map only
-    /// to tell the hidden rows to the post-decode raw-byte conversion (see `wrapsInNullable`): the struct is
-    /// decoded for several requested columns, and none of them asks for its nulls. The reader drops such a null
-    /// map from the subcolumns it takes from the struct once they are converted, so that it does not change
-    /// their nulls (see `ArrowIPCBlockInputFormat::buildChunk`).
-    void recordVisibilityOnlyStructs(UnorderedSetWithMemoryTracking<String> * paths) { visibility_only_structs = paths; }
+    /// The structs that keep their null maps only to tell the hidden rows to the post-decode raw-byte conversion
+    /// (see `wrapsInNullable`): such a struct is decoded for several requested columns, and none of them asks
+    /// for its nulls. The reader drops such a null map from the subcolumns it takes from the struct once they
+    /// are converted, so that it does not change their nulls (see `ArrowIPCBlockInputFormat::buildChunk`).
+    ///
+    /// The structs are told by the top-level schema field they are decoded from and by their position in it:
+    /// the indexes of the struct children leading to them, each preceded by `/` (lists, map entries and
+    /// run-end-encoded values add nothing; the top-level field itself is the empty position). The dotted path
+    /// does not tell them: a top-level field named `t.s` and the child `s` of a top-level struct `t` share the
+    /// path `t.s`, but resolve different hints, so one of them can keep the null map a requested `Tuple` asks for.
+    /// The result depends only on the schema and the requested types, which are those of `decodeBatch`.
+    using VisibilityOnlyStructs = UnorderedMapWithMemoryTracking<const ArrowField *, UnorderedSetWithMemoryTracking<String>>;
+    [[nodiscard]] VisibilityOnlyStructs collectVisibilityOnlyStructs(
+        const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields, const RequestedTypes * target_types_) const;
 
     /// Returns a 0/1 mask of the buffers referenced by the requested top-level fields. The `advanceField`
     /// traversal follows decoding's layout so subset reads can load, validate and decompress only the
@@ -385,6 +393,15 @@ private:
     /// converting visible rows, and reads a null row as the default tuple when tuples are not nullable.
     [[nodiscard]] bool wrapsInNullable(
         const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint, const String & path) const;
+    /// Whether a nullable struct `field` at the dotted `path`, resolving `effective_hint`, keeps its null map
+    /// only for the post-decode raw-byte conversion (see `collectVisibilityOnlyStructs`): no requested type
+    /// asks for its nulls, and its leaves keep their bytes for several requested columns. `types` are the
+    /// requested types that apply at the field (null below a union).
+    [[nodiscard]] bool keepsNullMapOnlyForConversion(
+        const ArrowField & field, const DataTypePtr & effective_hint, const String & path, const RequestedTypes * types) const;
+    void collectVisibilityOnlyStructs(
+        const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+        const RequestedTypes * lookup_types, const String & position, UnorderedSetWithMemoryTracking<String> & positions) const;
     /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
     /// run's value repeated for its rows. The nulls are those of the values.
     ColumnPtr decodeRunEndEncoded(
@@ -458,8 +475,6 @@ private:
     /// Requested column types by normalized (dotted) name, for the recursive `date32` numeric type hint;
     /// null when the caller did not provide them. Points at the caller's map for the call's duration.
     const RequestedTypes * target_types = nullptr;
-    /// See `recordVisibilityOnlyStructs`. Null when the caller does not need the paths.
-    UnorderedSetWithMemoryTracking<String> * visibility_only_structs = nullptr;
     /// Set while decoding the children of a union (see `decodeUnion`), and the values of a dictionary used
     /// below one: `target_types` is not consulted there.
     bool decoding_below_union = false;

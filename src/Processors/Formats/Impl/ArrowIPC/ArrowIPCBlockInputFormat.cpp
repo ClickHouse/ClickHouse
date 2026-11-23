@@ -761,7 +761,6 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// Repeated column names were made unique by `parseSchema`.
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
-    decoder->recordVisibilityOnlyStructs(&visibility_only_structs);
 
     /// Collect the dictionaries the requested columns reference and the field positions each one's values
     /// are decoded for; the stream reader skips the DictionaryBatch bodies of dictionaries used only by
@@ -769,6 +768,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// decoding its dictionaries up front; recomputing it here is cheap and keeps the stream path — whose
     /// dictionaries are decoded lazily while reading — correct.)
     dictionary_uses = decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
+    visibility_only_structs = decoder->collectVisibilityOnlyStructs(&requested_top_level_fields, &requested_field_target_types);
 
     prepared = true;
 }
@@ -854,7 +854,6 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         /// Subset reads: only the dictionaries the requested columns reference are decoded; the bodies of
         /// dictionaries used solely by unrequested top-level fields are skipped (see the loop below).
         auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
-        temp_decoder->recordVisibilityOnlyStructs(&visibility_only_structs);
         dictionary_uses = temp_decoder->collectDictionaryUses(&requested_top_level_fields, &requested_field_target_types);
         UnorderedSetWithMemoryTracking<Int64> base_dictionary_ids;
         for (const auto & block : footer.dictionary_blocks)
@@ -1311,13 +1310,14 @@ DataTypePtr requestedTypeOrSubcolumns(
     return nullptr;
 }
 
-/// `column` of type `type`, decoded at the dotted `path`, without the null maps of the structs at the paths in
-/// `visibility_only`: the decoder keeps such a null map only to tell the hidden rows to the post-decode raw-byte
-/// conversion (see `RecordBatchDecoder::recordVisibilityOnlyStructs`), and no requested column asks for it. The
-/// paths are built as the decoder builds them (see `RecordBatchDecoder::structFieldPath`).
+/// `column` of type `type`, decoded at `position` of a top-level field, without the null maps of the structs at
+/// the positions in `visibility_only`: the decoder keeps such a null map only to tell the hidden rows to the
+/// post-decode raw-byte conversion, and no requested column asks for it. The positions are built as
+/// `RecordBatchDecoder::collectVisibilityOnlyStructs` builds them: the elements of a `Tuple` are the children of
+/// the struct, the key and the value of a `Map` are the children of its entries, an `Array` adds nothing.
 std::pair<ColumnPtr, DataTypePtr> dropVisibilityOnlyNulls(
-    const ColumnPtr & column, const DataTypePtr & type, const String & path,
-    const UnorderedSetWithMemoryTracking<String> & visibility_only, bool case_insensitive)
+    const ColumnPtr & column, const DataTypePtr & type, const String & position,
+    const UnorderedSetWithMemoryTracking<String> & visibility_only)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
@@ -1325,8 +1325,8 @@ std::pair<ColumnPtr, DataTypePtr> dropVisibilityOnlyNulls(
         if (!nullable)
             return {column, type};
         auto [nested, nested_type] = dropVisibilityOnlyNulls(
-            nullable->getNestedColumnPtr(), nullable_type->getNestedType(), path, visibility_only, case_insensitive);
-        if (isTuple(nested_type) && visibility_only.contains(path))
+            nullable->getNestedColumnPtr(), nullable_type->getNestedType(), position, visibility_only);
+        if (isTuple(nested_type) && visibility_only.contains(position))
             return {std::move(nested), std::move(nested_type)};
         if (nested.get() == nullable->getNestedColumnPtr().get())
             return {column, type};
@@ -1338,7 +1338,7 @@ std::pair<ColumnPtr, DataTypePtr> dropVisibilityOnlyNulls(
         if (!array)
             return {column, type};
         auto [data, data_type] = dropVisibilityOnlyNulls(
-            array->getDataPtr(), array_type->getNestedType(), path, visibility_only, case_insensitive);
+            array->getDataPtr(), array_type->getNestedType(), position, visibility_only);
         if (data.get() == array->getDataPtr().get())
             return {column, type};
         return {ColumnArray::create(data, array->getOffsetsPtr()), std::make_shared<DataTypeArray>(data_type)};
@@ -1354,8 +1354,7 @@ std::pair<ColumnPtr, DataTypePtr> dropVisibilityOnlyNulls(
         for (size_t i = 0; i < columns.size(); ++i)
         {
             std::tie(columns[i], types[i]) = dropVisibilityOnlyNulls(
-                tuple->getColumnPtr(i), tuple_type->getElement(i),
-                childRequestPath(path, tuple_type->getNameByPosition(i + 1), case_insensitive), visibility_only, case_insensitive);
+                tuple->getColumnPtr(i), tuple_type->getElement(i), fmt::format("{}/{}", position, i), visibility_only);
             changed |= columns[i].get() != tuple->getColumnPtr(i).get();
         }
         if (!changed)
@@ -1371,11 +1370,9 @@ std::pair<ColumnPtr, DataTypePtr> dropVisibilityOnlyNulls(
             return {column, type};
         const auto & entries = map->getNestedData();
         auto [keys, keys_type] = dropVisibilityOnlyNulls(
-            entries.getColumnPtr(0), map_type->getKeyType(), childRequestPath(path, "keys", case_insensitive),
-            visibility_only, case_insensitive);
+            entries.getColumnPtr(0), map_type->getKeyType(), position + "/0", visibility_only);
         auto [values, values_type] = dropVisibilityOnlyNulls(
-            entries.getColumnPtr(1), map_type->getValueType(), childRequestPath(path, "values", case_insensitive),
-            visibility_only, case_insensitive);
+            entries.getColumnPtr(1), map_type->getValueType(), position + "/1", visibility_only);
         if (keys.get() == entries.getColumnPtr(0).get() && values.get() == entries.getColumnPtr(1).get())
             return {column, type};
         return {ColumnMap::create(ColumnArray::create(ColumnTuple::create(Columns{keys, values}), map->getNestedColumn().getOffsetsPtr())),
@@ -1708,9 +1705,9 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 ColumnWithTypeAndName source_column(source.column, source.type, nested_table_name);
                 reinterpretRawByteColumns(source_column, key_lookup_hint, /*field=*/nullptr);
                 /// The values are converted, so the null maps kept only for that are not needed anymore.
-                if (!visibility_only_structs.empty())
+                if (auto visibility_only_it = visibility_only_structs.find(source.field); visibility_only_it != visibility_only_structs.end())
                     std::tie(source_column.column, source_column.type) = dropVisibilityOnlyNulls(
-                        source_column.column, source_column.type, search_nested, visibility_only_structs, case_insensitive);
+                        source_column.column, source_column.type, /*position=*/{}, visibility_only_it->second);
                 const Block block({std::move(source_column)});
                 NestedColumnExtractHelper helper(block, case_insensitive);
                 if (auto nested_column = helper.extractColumn(header_column.name))
@@ -1744,17 +1741,18 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 }
 
                 /// A struct can keep its null map only for the conversion below, which must skip the rows it
-                /// hides (see `RecordBatchDecoder::recordVisibilityOnlyStructs`). No requested column asks for
+                /// hides (see `RecordBatchDecoder::collectVisibilityOnlyStructs`). No requested column asks for
                 /// these nulls, so they must not reach the subcolumn: it is converted with them, and then gets
                 /// the nulls it has in the decoded column without these null maps.
-                if (read_from_nested && !visibility_only_structs.empty())
+                const auto visibility_only_it = visibility_only_structs.find(decoded[nested_it->second].field);
+                if (read_from_nested && visibility_only_it != visibility_only_structs.end())
                 {
                     auto own_nulls_it = own_nulls_extractors.find(search_nested);
                     if (own_nulls_it == own_nulls_extractors.end())
                     {
                         const auto & src = decoded[nested_it->second];
                         auto [own_column, own_type] = dropVisibilityOnlyNulls(
-                            src.column, src.type, search_nested, visibility_only_structs, case_insensitive);
+                            src.column, src.type, /*position=*/{}, visibility_only_it->second);
                         std::shared_ptr<Block> block;
                         std::shared_ptr<NestedColumnExtractHelper> helper;
                         if (own_column.get() != src.column.get())

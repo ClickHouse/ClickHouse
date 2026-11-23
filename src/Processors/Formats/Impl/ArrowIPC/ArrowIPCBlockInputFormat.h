@@ -102,9 +102,9 @@ private:
     /// The distinct types of the header columns that share a normalized name (`RequestedType::shared`), in
     /// header order, for `resolveSharedRequestedTypes`.
     UnorderedMapWithMemoryTracking<String, DataTypes> shared_requested_header_types;
-    /// The dotted paths of the structs whose null maps the decoder keeps only for the post-decode conversion
-    /// (see `RecordBatchDecoder::recordVisibilityOnlyStructs`).
-    UnorderedSetWithMemoryTracking<String> visibility_only_structs;
+    /// The structs whose null maps the decoder keeps only for the post-decode conversion, by the top-level
+    /// schema field they are decoded from (see `RecordBatchDecoder::collectVisibilityOnlyStructs`).
+    ArrowIPC::RecordBatchDecoder::VisibilityOnlyStructs visibility_only_structs;
     /// For each Arrow dictionary id the requested columns reference, the positions of the fields encoding it
     /// with the requested type hint each resolves there (see `RecordBatchDecoder::collectDictionaryUses`),
     /// computed from the requested header before any dictionary batch is decoded. A DictionaryBatch whose id

@@ -2333,21 +2333,26 @@ bool RecordBatchDecoder::wrapsInNullable(
     if (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
             || isTuple(stripHint(effective_hint))))
         return true;
-    if (field.type.kind != TypeKind::Struct)
+    /// Such a null map only tells the hidden rows to the post-decode conversion. It must not change the nulls of
+    /// the subcolumns taken from the struct, so the reader drops it afterwards (see `collectVisibilityOnlyStructs`).
+    return keepsNullMapOnlyForConversion(field, effective_hint, path, decoding_below_union ? nullptr : target_types);
+}
+
+bool RecordBatchDecoder::keepsNullMapOnlyForConversion(
+    const ArrowField & field, const DataTypePtr & effective_hint, const String & path, const RequestedTypes * types) const
+{
+    /// The null map is asked for (see `wrapsInNullable`).
+    if (field.type.kind != TypeKind::Struct || settings.schema_inference_allow_nullable_tuple_type)
+        return false;
+    if (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
+            || isTuple(stripHint(effective_hint))))
         return false;
     /// The leaves of a struct that is decoded for several requested columns, or that carries a requested
     /// subcolumn together with a column enclosing it, keep their bytes for the post-decode conversion, which
     /// must see the rows hidden by the struct's nulls. This holds also when the struct is itself the inner
     /// request (`t Tuple(u String), t.u Tuple(s IPv6)`), a map entry (`t.values`, `t.key_1`), or a name
     /// requested several times with different types.
-    const RequestedTypes * types = decoding_below_union ? nullptr : target_types;
-    if (!carriesNestedRequests(path, types) && !isSharedWithRawByteRequest(path, types))
-        return false;
-    /// This null map only tells the hidden rows to the post-decode conversion. It must not change the nulls of
-    /// the subcolumns taken from the struct, so the reader is told to drop it afterwards.
-    if (visibility_only_structs)
-        visibility_only_structs->insert(path);
-    return true;
+    return carriesNestedRequests(path, types) || isSharedWithRawByteRequest(path, types);
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)
@@ -3095,6 +3100,70 @@ UnorderedMapWithMemoryTracking<Int64, DictionaryUses> RecordBatchDecoder::collec
             field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*below_union=*/false, target_types_, uses);
     }
     return uses;
+}
+
+RecordBatchDecoder::VisibilityOnlyStructs RecordBatchDecoder::collectVisibilityOnlyStructs(
+    const UnorderedSetWithMemoryTracking<String> * keep_top_level_fields, const RequestedTypes * target_types_) const
+{
+    VisibilityOnlyStructs result;
+    const auto shadowed = keep_top_level_fields ? shadowedTopLevelFields() : VectorWithMemoryTracking<char>(schema.fields.size(), 0);
+    for (size_t i = 0; i < schema.fields.size(); ++i)
+    {
+        const ArrowField & field = schema.fields[i];
+        /// The same kept-field test and starting position as `decodeBatch`.
+        const String normalized_name = normalizedName(field.name);
+        if (shadowed[i] || (keep_top_level_fields && !keep_top_level_fields->contains(normalized_name)))
+            continue;
+        UnorderedSetWithMemoryTracking<String> positions;
+        collectVisibilityOnlyStructs(
+            field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, target_types_, /*position=*/{}, positions);
+        if (!positions.empty())
+            result.emplace(&field, std::move(positions));
+    }
+    return result;
+}
+
+void RecordBatchDecoder::collectVisibilityOnlyStructs(
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const RequestedTypes * lookup_types, const String & position, UnorderedSetWithMemoryTracking<String> & positions) const
+{
+    /// The hints, paths and list depths are those of decoding, as in `collectDictionaryUses`.
+    const DataTypePtr effective_hint = resolveHint(target_hint, path, list_depth, lookup_types);
+    /// The declared nullability is not checked: a field declared non-nullable is decoded as a nullable one when
+    /// it has nulls (see `decodeBatchColumn`), and so are the values of a dictionary. A struct that is not
+    /// wrapped has no null map to drop.
+    if (keepsNullMapOnlyForConversion(field, effective_hint, path, lookup_types))
+        positions.insert(position);
+
+    const ArrowType & type = field.type;
+    switch (type.kind)
+    {
+        case TypeKind::List:
+        case TypeKind::LargeList:
+        case TypeKind::FixedSizeList:
+        case TypeKind::ListView:
+        case TypeKind::LargeListView:
+            collectVisibilityOnlyStructs(
+                type.children.at(0), arrayElementHint(effective_hint), path, list_depth + 1, lookup_types, position, positions);
+            break;
+        case TypeKind::Map:
+            collectVisibilityOnlyStructs(
+                type.children.at(0), mapEntriesHint(effective_hint), path, list_depth + 1, lookup_types, position, positions);
+            break;
+        case TypeKind::Struct:
+            for (size_t i = 0; i < type.children.size(); ++i)
+                collectVisibilityOnlyStructs(
+                    type.children[i], structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
+                    lookup_types, fmt::format("{}/{}", position, i), positions);
+            break;
+        case TypeKind::RunEndEncoded:
+            /// The values are decoded with the field's own hint, path and list depth (see `decodeRunEndEncoded`).
+            collectVisibilityOnlyStructs(type.children.at(1), effective_hint, path, list_depth, lookup_types, position, positions);
+            break;
+        default:
+            /// No requested type applies below a union (see `decodeUnion`), so no struct there keeps such a null map.
+            break;
+    }
 }
 
 void RecordBatchDecoder::collectDictionaryUses(
