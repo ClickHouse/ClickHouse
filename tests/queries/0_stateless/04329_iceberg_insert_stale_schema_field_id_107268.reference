@@ -1,9 +1,3 @@
-NO_ERROR
-c9	c1
-1	a
-2	b
-NO_ERROR
-c0	t	toTypeName(t)
-1	(10)	Tuple(b Int32)
-2	(20)	Tuple(b Int32)
+INCORRECT_DATA
+INCORRECT_DATA
 1
