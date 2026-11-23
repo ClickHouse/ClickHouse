@@ -3849,6 +3849,53 @@ std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndType
     return sizes;
 }
 
+std::optional<std::vector<std::pair<String, ColumnSize>>> IMergeTreeDataPart::getColumnAndSubcolumnSizes(
+    const Names & column_names, bool with_columns, bool only_from_memory) const
+{
+    std::vector<std::pair<String, ColumnSize>> sizes;
+    sizes.reserve(column_names.size());
+    /// One reader per column: a reader reads the prefixes of all its columns as soon as one of them needs its prefix.
+    std::vector<NamesAndTypesList> subcolumns_to_calculate;
+    std::unordered_map<String, size_t> column_positions;
+    for (const auto & column_name : column_names)
+    {
+        /// Resolved before the cache lookup: a column may have the name of a subcolumn of another column.
+        auto column = tryGetColumn(column_name);
+        if (!column)
+            continue;
+
+        if (!column->isSubcolumn())
+        {
+            if (with_columns)
+                sizes.emplace_back(column_name, getColumnSize(column_name));
+            continue;
+        }
+
+        if (auto size = subcolumns_sizes_cache.get(column_name))
+        {
+            sizes.emplace_back(column_name, *size);
+            continue;
+        }
+
+        if (only_from_memory && !canCalculateSubcolumnSizeFromMemory(*column))
+            return std::nullopt;
+
+        auto [it, inserted] = column_positions.emplace(column->getNameInStorage(), subcolumns_to_calculate.size());
+        if (inserted)
+            subcolumns_to_calculate.emplace_back();
+        subcolumns_to_calculate[it->second].push_back(std::move(*column));
+    }
+
+    for (const auto & subcolumns : subcolumns_to_calculate)
+    {
+        auto calculated = getSubcolumnSizes(subcolumns);
+        size_t i = 0;
+        for (const auto & subcolumn : subcolumns)
+            sizes.emplace_back(subcolumn.name, calculated[i++]);
+    }
+    return sizes;
+}
+
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
 {
     UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
