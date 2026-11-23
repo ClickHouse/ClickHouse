@@ -40,11 +40,17 @@ wait_until()
 # invalidation value. Otherwise a later reload could pass without comparison.
 $CLIENT -q "SELECT dictGet('dict_sparse_local', 'val', toUInt64(1))"
 $CLIENT -q "SELECT dictGet('dict_sparse_remote', 'val', toUInt64(1))"
-for kind in local remote; do
-    dictionary="dict_sparse_$kind"
-    last_update=$($CLIENT -q "SELECT toUnixTimestamp(last_successful_update_time) FROM system.dictionaries WHERE database = currentDatabase() AND name = '$dictionary'")
-    wait_until "SELECT toUnixTimestamp(last_successful_update_time) > $last_update FROM system.dictionaries WHERE database = currentDatabase() AND name = '$dictionary'"
-done
+# For the local source, the initial background refresh advances the last
+# successful reload timestamp.
+last_update=$($CLIENT -q "SELECT toUnixTimestamp(last_successful_update_time) FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_sparse_local'")
+wait_until "SELECT toUnixTimestamp(last_successful_update_time) > $last_update FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict_sparse_local'"
+
+# A remote invalidate check may leave the reload timestamp unchanged when the
+# response matches the cached value. Observe completed invalidate queries
+# instead, as in the remote-dictionary regression test, to establish a baseline.
+$CLIENT -q "SYSTEM FLUSH LOGS query_log"
+checks_before=$($CLIENT -q "SELECT count() FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT upd FROM%'")
+wait_until "SYSTEM FLUSH LOGS query_log; SELECT count() >= $checks_before + 2 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT upd FROM%'"
 
 $CLIENT -q "ALTER TABLE dict_sparse_src UPDATE upd = 2, val = 'b' WHERE id = 1 SETTINGS mutations_sync = 1"
 for kind in local remote; do
