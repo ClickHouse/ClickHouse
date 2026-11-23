@@ -42,11 +42,13 @@
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/DistributedPlanLocalObject.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -130,6 +132,13 @@ std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(co
 {
 
     if (typeid_cast<const ReadFromMergeTree *>(&step) || dynamic_cast<const LogicalExchangeStep *>(&step))
+        return std::nullopt;
+
+    /// `StreamInQueryResultCacheStep` is a pass-through that writes the rows flowing through it into
+    /// the query result cache, which is node-local and has no serialized representation. It is not a
+    /// reason to keep the plan local: `QueryPlan::convertToDistributed` removes these steps before it
+    /// splits the plan, so only their children decide whether the plan can run on a worker.
+    if (typeid_cast<const StreamInQueryResultCacheStep *>(&step))
         return std::nullopt;
 
     if (typeid_cast<const BlocksMarshallingStep *>(&step) || !step.isSerializable())
@@ -611,14 +620,8 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         Broadcast
     } strategy = Shuffle;
 
-    /// In a broadcast join, the right side is replicated to all workers and the
-    /// left side is scattered.  For RIGHT and FULL joins the right side can
-    /// produce unmatched output rows.  When the right side is replicated, every
-    /// worker independently decides which right rows are unmatched based only on
-    /// its local slice of the left side, producing duplicate unmatched rows.
-    const bool broadcast_unsafe
-        = join_info.kind == JoinKind::Right
-        || join_info.kind == JoinKind::Full;
+    /// In a broadcast join, the right side is replicated to all workers and the left side is scattered.
+    const bool broadcast_unsafe = !JoinCommon::canSplitLeftInput(join_info.kind, join_info.strictness);
 
     /// Check if right table is small enough for broadcast
     if (!broadcast_unsafe && row_count_b && row_count_b <= optimization_settings.distributed_plan_max_rows_to_broadcast)
