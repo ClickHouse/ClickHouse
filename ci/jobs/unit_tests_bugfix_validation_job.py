@@ -465,7 +465,7 @@ def configure_before_binary(info, build_type):
     mistaken for "the test depends on the fix". Only a *compile* failure carries that
     meaning. See main().
     """
-    setup_build_caches_env(info)
+    setup_build_caches_env(info, BUILD_TYPE_TO_CMAKE[build_type])
     os.makedirs(f"{BEFORE_SRC}/build", exist_ok=True)
     if not Shell.check("sccache --start-server", retries=3):
         print("WARNING: sccache server failed to start, build will proceed without it")

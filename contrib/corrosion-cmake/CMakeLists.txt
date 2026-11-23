@@ -486,6 +486,11 @@ function(clickhouse_config_crate_env target_name)
     # sccache seems to be broken and mixes up builds
     if (NOT "${RUSTCWRAPPER}" STREQUAL "")
        corrosion_set_env_vars(${target_name} "CARGO_BUILD_RUSTC_WRAPPER=${RUSTCWRAPPER}")
+       # With SCCACHE_BASEDIRS, a crate that bakes these paths into its code (protoc-bin-vendored) is cached per checkout.
+       corrosion_set_env_vars(${target_name} "SCCACHE_BASEDIRS_VERBATIM_ENV_DEPS=CARGO_MANIFEST_DIR,CARGO_MANIFEST_PATH")
+       if (SCCACHE_BASEDIRS)
+           corrosion_set_env_vars(${target_name} "SCCACHE_BASEDIRS=${SCCACHE_BASEDIRS}" "SCCACHE_DIRECT=false")
+       endif()
     endif()
 
     if (NOT "${RUST_CARGO_BUILD_STD}" STREQUAL "")

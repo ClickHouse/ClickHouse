@@ -34,6 +34,24 @@ endif()
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
+
+if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
+    set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+    message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = ${CMAKE_BUILD_TYPE}")
+endif ()
+message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+
+string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+
+# Reproducible builds.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT OFF)
+else ()
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+endif ()
+
+option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
+
 include (cmake/ccache.cmake)
 include (cmake/clang_tidy.cmake)
 include (cmake/git.cmake)
@@ -63,14 +81,6 @@ option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile t
 if (ENABLE_CHECK_HEAVY_BUILDS)
     enable_heavy_build_check_if_needed()
 endif ()
-
-if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
-    set (CMAKE_BUILD_TYPE "RelWithDebInfo")
-    message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = ${CMAKE_BUILD_TYPE}")
-endif ()
-message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
-
-string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
@@ -346,15 +356,6 @@ if (NOT OS_DARWIN)
     # Enable it explicitly.
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 endif()
-
-# Reproducible builds.
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT OFF)
-else ()
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-endif ()
-
-option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
     # Fix DW_AT_comp_dir to "." regardless of the build directory location, then strip the source

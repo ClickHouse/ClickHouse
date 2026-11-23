@@ -262,7 +262,7 @@ def warn_on_low_sccache_hit_rate(info):
         )
 
 
-def setup_build_caches_env(info):
+def setup_build_caches_env(info, cmake_cmd):
     """Configure compiler/clang-tidy cache environment for a build.
 
     Extracted so that other jobs (e.g. the unit-test bugfix validation job, which
@@ -277,6 +277,9 @@ def setup_build_caches_env(info):
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
+    # Debug builds have no build path mapping, so their cache entries keep the checkout path.
+    if "-DCMAKE_BUILD_TYPE=Debug" not in cmake_cmd:
+        os.environ["SCCACHE_BASEDIRS"] = repo_path_normalized
     # PR builds must not pollute the shared sccache bucket. Only master/release
     # builds (pr_number == 0) and backport PRs from this repository write entries.
     backport_from_repo = (
@@ -349,7 +352,7 @@ def main():
         reference_build and info.pr_number > 0
     ), "performance reference builds are only meant to run on master/release (pr_number == 0)"
 
-    setup_build_caches_env(info)
+    setup_build_caches_env(info, cmake_cmd)
 
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
