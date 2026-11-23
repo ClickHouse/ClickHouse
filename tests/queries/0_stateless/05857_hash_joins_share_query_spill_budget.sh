@@ -18,13 +18,13 @@ $CLICKHOUSE_CLIENT -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.* TO ${USER}"
 
 for i in 0 1 2 3 4 5 6; do
     $CLICKHOUSE_CLIENT -q "CREATE TABLE t${i} (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k"
-    $CLICKHOUSE_CLIENT -q "INSERT INTO t${i} SELECT number, number + ${i} FROM numbers(1000000)"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO t${i} SELECT number, number + ${i} FROM numbers(200000)"
 done
 
 SETTINGS="
     max_threads = 2,
     max_bytes_before_external_join = 0,
-    max_bytes_ratio_before_external_join = 0.2,
+    max_bytes_ratio_before_external_join = 0.06,
     max_bytes_in_join = 0,
     enable_adaptive_memory_spill_scheduler = 0,
     enable_parallel_replicas = 0,
