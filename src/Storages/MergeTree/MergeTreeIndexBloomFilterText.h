@@ -73,7 +73,9 @@ public:
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
             IsShadowingColumn is_column_shadowing_map_subcolumn_,
-            JSONIndexArgumentTypes json_argument_types_);
+            JSONIndexArgumentTypes json_argument_types_,
+            IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
+            ActionsDAG::NodeRawConstPtrs index_nodes_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -143,15 +145,20 @@ private:
         const Field & value_field,
         RPNElement & out);
 
-    std::optional<size_t> getKeyIndex(const std::string & key_column_name);
+    std::optional<size_t> getKeyIndex(const RPNBuilderTreeNode & node) const;
     bool tryPrepareSetBloomFilter(const RPNBuilderTreeNode & left_argument, const RPNBuilderTreeNode & right_argument, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
-    Names index_columns;
-    /// Argument types of the JSON index functions of this index, by position in `index_columns`.
+    Block header;
+    /// Argument types of the JSON index functions of this index, by position in `header`.
     JSONIndexArgumentTypes json_argument_types;
+    IsShadowingJSONSubcolumn is_shadowing_json_subcolumn;
+    /// By position in `header`.
+    ActionsDAG::NodeRawConstPtrs index_nodes;
+    /// Names of `header`, with all but `JSONAllPaths` / `JSONAllValues` of a table column left empty.
+    Names json_index_columns;
     DataTypes index_data_types;
     BloomFilterParameters params;
 

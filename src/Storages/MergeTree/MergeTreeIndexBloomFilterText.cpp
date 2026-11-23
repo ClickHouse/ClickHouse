@@ -18,12 +18,14 @@
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexExpressionMatcher.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
@@ -161,9 +163,14 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
-    JSONIndexArgumentTypes json_argument_types_)
-    : index_columns(index_sample_block.getNames())
+    JSONIndexArgumentTypes json_argument_types_,
+    IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
+    ActionsDAG::NodeRawConstPtrs index_nodes_)
+    : header(index_sample_block)
     , json_argument_types(std::move(json_argument_types_))
+    , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
+    , index_nodes(std::move(index_nodes_))
+    , json_index_columns(collectJSONIndexColumns(header, index_nodes))
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
@@ -322,10 +329,9 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
     return rpn_stack[0].can_be_true;
 }
 
-std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndex(const std::string & key_column_name)
+std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndex(const RPNBuilderTreeNode & node) const
 {
-    const auto it = std::ranges::find(index_columns, key_column_name);
-    return it == index_columns.end() ? std::nullopt : std::make_optional<size_t>(std::ranges::distance(index_columns.cbegin(), it));
+    return findIndexPosition(header, index_nodes, node);
 }
 
 /// The granule tokenizes the raw bytes of the indexed column, so a probe must be built from bytes of
@@ -427,7 +433,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         if (function_name == "isNotNull" && arguments_size == 1)
         {
             auto arg = function_node.getArgumentAt(0);
-            if (auto json_info = tryMatchNodeToJSONIndex(arg, index_columns, "JSONAllPaths", json_argument_types))
+            if (auto json_info = tryMatchNodeToJSONIndex(arg, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
             {
                 auto arg_type = arg.getDAGNode()->result_type;
                 /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
@@ -592,7 +598,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
     if (function_name == "equals")
     {
-        if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths", json_argument_types))
+        if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
         {
             auto key_type = key_node.getDAGNode()->result_type;
             if (!isJSONPathFilterSafe(key_type, value_field, value_type))
@@ -625,9 +631,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         return false;
 
     const auto column_name = key_node.getColumnName();
-    auto key_index = getKeyIndex(column_name);
-    const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
-    const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
+    auto key_index = getKeyIndex(key_node);
+    const auto map_key_index = findMapIndexPosition(header, index_nodes, "mapKeys", column_name, key_node.getDAGNode());
+    const auto map_value_index = findMapIndexPosition(header, index_nodes, "mapValues", column_name, key_node.getDAGNode());
     bool reads_map_element_against_values_index = false;
 
     if (key_node.isFunction())
@@ -649,7 +655,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             auto first_argument = key_function_node.getArgumentAt(0);
             const auto map_column_name = first_argument.getColumnName();
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            if (const auto map_keys_index = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, first_argument.getDAGNode()))
             {
                 auto second_argument = key_function_node.getArgumentAt(1);
                 DataTypePtr const_type;
@@ -669,7 +675,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                     return false;
                 }
             }
-            else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            else if (const auto map_values_exists = findMapIndexPosition(header, index_nodes, "mapValues", map_column_name, first_argument.getDAGNode()))
             {
                 key_index = map_values_exists;
                 reads_map_element_against_values_index = true;
@@ -693,13 +699,13 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (const_value == value_type->getDefault())
                 return false;
 
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            if (const auto map_keys_index = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, nullptr))
             {
                 key_index = map_keys_index;
                 const_value = serialized_key;
                 const_source_type = std::make_shared<DataTypeString>();
             }
-            else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            else if (const auto map_values_idx = findMapIndexPosition(header, index_nodes, "mapValues", map_column_name, nullptr))
             {
                 key_index = map_values_idx;
                 reads_map_element_against_values_index = true;
@@ -718,7 +724,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         && constantIsIndexDomainDefault(index_data_types[*key_index], const_source_type, const_value))
         return false;
 
-    const auto lowercase_key_index = getKeyIndex(fmt::format("lower({})", column_name));
+    const auto lowercase_key_index = findFunctionIndexPosition(header, index_nodes, "lower", column_name, key_node.getDAGNode());
     const auto is_has_token_case_insensitive = function_name.starts_with("hasTokenCaseInsensitive");
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
@@ -955,11 +961,11 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
-            if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument_function_node.getArgumentAt(i)).getColumnName()))
+            if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument_function_node.getArgumentAt(i))))
                 key_tuple_mapping.emplace_back(i, *key);
         }
     }
-    else if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument).getColumnName()))
+    else if (const auto key = getKeyIndex(unwrapLosslessConversion(left_argument)))
         key_tuple_mapping.emplace_back(0, *key);
 
     if (key_tuple_mapping.empty())
@@ -1048,7 +1054,8 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, params, tokenizer.get(), getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
+        getJSONSubcolumnShadowingCheck(), index.expression->getActionsDAG().getOutputs());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

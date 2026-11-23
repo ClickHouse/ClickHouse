@@ -159,6 +159,8 @@ public:
         bool has_positions_,
         IsShadowingColumn is_column_shadowing_map_subcolumn_,
         JSONIndexArgumentTypes json_argument_types_,
+        IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
+        ActionsDAG::NodeRawConstPtrs index_nodes_,
         TextIndexAutomatonBudgetPtr automaton_budget_ = nullptr);
 
     ~MergeTreeIndexConditionText() override = default;
@@ -289,7 +291,10 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
-    [[nodiscard]] bool hasIndexForColumn(const String & column_name) const { return header.has(column_name) || column_name == normalized_index_column_name; }
+    [[nodiscard]] bool hasIndexForColumn(const RPNBuilderTreeNode & node) const;
+    /// Whether the index is `function_name` (`mapKeys` / `mapValues`) of the map `map_node`, or of the table column
+    /// `map_column_name` when `map_node` is nullptr.
+    [[nodiscard]] bool hasMapIndex(const String & function_name, const String & map_column_name, const ActionsDAG::Node * map_node) const;
 
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
@@ -299,11 +304,17 @@ private:
     Block header;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     JSONIndexArgumentTypes json_argument_types;
+    IsShadowingJSONSubcolumn is_shadowing_json_subcolumn;
+    /// By position in `header`.
+    ActionsDAG::NodeRawConstPtrs index_nodes;
+    /// Names of `header`, with all but `JSONAllPaths` / `JSONAllValues` of a table column left empty.
+    Names json_index_columns;
     /// Whether the index is defined over an `Array` column, whose positions restart for every element.
     bool indexed_column_is_array = false;
     /// N when the index is defined over a `FixedString(N)`, directly or as the array element type.
     std::optional<size_t> indexed_fixed_string_size;
-    std::optional<String> normalized_index_column_name;
+    /// `header` with its column renamed to the index expression name after the rewrite of `optimize_empty_string_comparisons`.
+    std::optional<Block> normalized_header;
     IsShadowingColumn is_column_shadowing_map_subcolumn;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
