@@ -613,7 +613,14 @@ public:
         const std::function<void(size_t)> & load_part,
         const std::function<void(size_t)> & consume_part);
 
+    /// Adds the getColumnAndSubcolumnSizes of every part to `result`; the parts that read files are sized on up to `max_threads` threads.
+    static void addColumnSizesOfParts(
+        const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result);
+
     bool supportsFinal() const override;
+
+    bool supportsParallelInsert() const override { return true; }
+    bool isInsertOrderSensitive() const override;
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
@@ -702,6 +709,12 @@ public:
     protected:
         [[nodiscard]] NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+
+        /// Drops the commands that name partitions other than @partition_id: a command with
+        /// `IN PARTITION` applies to the partitions it names alone. Reads the partition ids resolved
+        /// on the command itself (`MutationCommand::partition_ids`) and evaluates nothing.
+        void filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const;
+
         /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
         void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
@@ -1214,6 +1227,12 @@ public:
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
+    /// Throws if an element of the sorting, primary or sampling key, of a skip index or of the sorting key of a projection that
+    /// stores the column is not the column itself but has the name of a stored column: writes and key analysis address columns
+    /// by name, so one would be used for the other.
+    /// With `old_metadata`, only an element that it does not have already is refused.
+    static void checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata);
+
     /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
     /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
     /// which checks the user's access to their functions and rejects functions that are not executed in the background.
@@ -1528,6 +1547,24 @@ public:
     };
 
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
+
+    /** For every command that names partitions (`... IN PARTITION p`), resolves the partition ids into
+      * `MutationCommand::partition_ids`, so that the per-part command selection of a mutations snapshot
+      * can respect the scope without evaluating anything itself.
+      *
+      * A partition expression is arbitrary user SQL (`getPartitionIDFromQuery` ends in
+      * `evaluateConstantExpression`, and the expression may even contain a subquery over the table
+      * being read), so it is resolved exactly once - when the mutation entry is created - and never
+      * while a storage snapshot is being built. The expression is also replaced in `ast_text` with the
+      * `ID '...'` it resolved to, so the persisted entry pins the partitions: loading it again after a
+      * restart or on another replica resolves the same ids and evaluates nothing. Only the commands that
+      * have a partition are parsed, so an entry of the ordinary kind pays nothing here.
+      *
+      * With @only_pinned, which is used when a persisted entry is read back, only the commands whose
+      * partitions are all named as `ID '...'` are resolved; a partition expression of an entry created
+      * by an older version is left unresolved and is not evaluated.
+      */
+    void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned = false) const;
 
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
@@ -2228,7 +2265,7 @@ protected:
     template <typename AddedParts, typename RemovedParts>
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
 
-    SerializationInfoByName getSerializationHints() const override;
+    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
