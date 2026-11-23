@@ -350,6 +350,8 @@ public:
             chassert(file_description->disk == latest_log_disk);
             file_buf = latest_log_disk->writeFile(file_description->path, DBMS_DEFAULT_BUFFER_SIZE, mode);
             chassert(file_buf);
+            /// Record positions are offsets in the file as the disk reads it.
+            initial_file_size = mode == WriteMode::Append ? latest_log_disk->getFileSize(file_description->path) : 0;
             last_index_written.reset();
             current_file_description = std::move(file_description);
             directory_sync_pending = log_file_settings.force_sync;
@@ -610,9 +612,6 @@ private:
     void tryPreallocateForFile()
     {
         const auto * file_buffer = tryGetFileBuffer();
-
-        if (file_buffer)
-            initial_file_size = getSizeFromFileDescriptor(file_buffer->getFD());
 
         if (log_file_settings.max_size == 0 || !file_buffer)
         {

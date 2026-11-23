@@ -13,6 +13,13 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/tests/gtest_global_context.h>
+
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/MapConfiguration.h>
@@ -2584,6 +2591,74 @@ TYPED_TEST(CoordinationChangelogTest, DirectPathEvictedReadsAndByteHints)
     ASSERT_EQ(hint_max->size(), 20u); // a huge hint must not truncate
 }
 
+namespace
+{
+
+/// The disk class a `type=s3` Keeper log disk builds, with local blobs instead of S3.
+DB::DiskPtr createObjectStorageLogDisk(const std::string & metadata_path, const std::string & objects_path)
+{
+    auto object_storage = std::make_shared<DB::LocalObjectStorage>(DB::LocalObjectStorageSettings("LogDisk", objects_path, false));
+    std::unordered_map<DB::Location, DB::LocationInfo> cluster_locations = {{"main", {true, true, ""}}};
+    auto cluster = std::make_shared<DB::ClusterConfiguration>("LogDisk", std::move(cluster_locations));
+    auto router = std::make_shared<DB::ObjectStorageRouter>(
+        std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", object_storage}});
+    auto metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
+        std::make_shared<DB::DiskLocal>("LogMetadataDisk", metadata_path),
+        "",
+        object_storage->createKeyGenerator(),
+        /*persist_removal_queue_=*/false,
+        /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
+    getContext().context->setConfig(config);
+    return std::make_shared<DB::DiskObjectStorage>("LogDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config, "");
+}
+
+}
+
+// Entries appended to a changelog continued after a restart must be read back from their own position
+// once evicted from the cache, also on a disk whose write buffer has no file descriptor.
+TYPED_TEST(CoordinationChangelogTest, EvictedEntriesOfContinuedChangelogOnObjectStorage)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Compressed logs not supported in the read by position";
+
+    ChangelogDirTest metadata_dir("./logs_metadata");
+    ChangelogDirTest objects_dir("./logs_objects");
+    this->keeper_context->setLogDisk(createObjectStorageLogDisk("./logs_metadata", "./logs_objects"));
+
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .latest_logs_cache_size_threshold = 1,
+    };
+
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t i = 1; i <= 5; ++i)
+            writer.appendEntry(i, getLogEntry("entry", i));
+        writer.flush();
+    }
+
+    /// Continues changelog_1_10.bin in append mode, index 11 rotates it.
+    DB::Changelog changelog(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog.readChangelogAndInitWriter(0, 0);
+    for (uint64_t i = 6; i <= 11; ++i)
+        changelog.appendEntry(i, getLogEntry("entry", i));
+    changelog.flush();
+    /// Applies the locations written by the first flush, which evicts 6..10 from the cache.
+    changelog.flush();
+
+    const uint64_t reads_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile];
+    for (uint64_t i = 6; i <= 10; ++i)
+    {
+        auto entry = changelog.entryAt(i);
+        ASSERT_NE(entry, nullptr);
+        EXPECT_EQ(entry->get_term(), i) << "Wrong entry read at index " << i;
+    }
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile] - reads_before, 5u);
+}
 
 
 // Stress: concurrent appends and disk reads detect races under TSan.
