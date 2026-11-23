@@ -2234,7 +2234,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 
         if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (!command.clear && !command.partition && (!command.if_exists || columns.has(command.column_name)))
+            if (has_column && !command.clear && !command.partition)
                 columns.remove(command.column_name);
         }
         else if (command.type == AlterCommand::RENAME_COLUMN && columns.has(command.column_name))
