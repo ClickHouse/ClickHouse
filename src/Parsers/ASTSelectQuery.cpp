@@ -644,7 +644,7 @@ void ASTSelectQuery::addTableFunction(const ASTPtr & table_function_ptr)
     table_expression->setOrReplace(table_expression->table_function, table_function_ptr->clone());
     table_expression->reset(table_expression->database_and_table_name);
 
-    if (table_alias.empty())
+    if (!table_alias.empty())
         table_expression->table_function->setAlias(table_alias);
 }
 
