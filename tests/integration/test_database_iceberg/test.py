@@ -3207,6 +3207,93 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{M}`")
 
 
+def test_namespace_time_series_reads_targets_as_written(started_cluster):
+    """
+    A `TimeSeries` table reads its target tables through generated SQL which names them as
+    `db`.`table`; these names are read as written, not also as table `db.table` of the current
+    database. A two-part name written by the user is still read under the two-part rule.
+    """
+    node = started_cluster.instances["node1"]
+    on = {"allow_experimental_table_namespaces": 1}
+    allow_time_series = {"allow_experimental_time_series_table": 1}
+
+    test_ref = f"test_ns_ts_{uuid.uuid4().hex[:8]}"
+    SAMPLES = f"samples_{test_ref}"
+    TAGS = f"tags_{test_ref}"
+    FAMILIES = f"families_{test_ref}"
+    TS = f"ts_{test_ref}"
+    TS_INNER = f"ts_inner_{test_ref}"
+    targets = (SAMPLES, TAGS, FAMILIES)
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # the catalog has tables `default.SAMPLES`, `default.TAGS`, `default.FAMILIES` of another structure
+    try:
+        catalog.create_namespace("default")
+    except NamespaceAlreadyExistsError:
+        pass
+    for target in targets:
+        create_table(catalog, "default", target).append(pa.Table.from_pylist([generate_record()]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    try:
+        node.query(
+            f"CREATE TABLE default.{SAMPLES} (id UUID, timestamp DateTime64(3), value Float64) "
+            f"ENGINE = MergeTree ORDER BY (id, timestamp)"
+        )
+        node.query(
+            f"CREATE TABLE default.{TAGS} "
+            f"(id UUID, metric_name LowCardinality(String), tags Map(LowCardinality(String), String)) "
+            f"ENGINE = ReplacingMergeTree ORDER BY (metric_name, id)"
+        )
+        node.query(
+            f"CREATE TABLE default.{FAMILIES} "
+            f"(metric_family String, type LowCardinality(String), unit LowCardinality(String), help String) "
+            f"ENGINE = ReplacingMergeTree ORDER BY metric_family"
+        )
+        # external targets need version 9 or earlier; without the recent samples table all samples are in `SAMPLES`
+        node.query(
+            f"CREATE TABLE default.{TS} ENGINE = TimeSeries SETTINGS version = 8, recent_samples_ttl_seconds = 0 "
+            f"SAMPLES default.{SAMPLES} TAGS default.{TAGS} METRIC FAMILIES default.{FAMILIES}",
+            settings=allow_time_series,
+        )
+        node.query(f"CREATE TABLE default.{TS_INNER} ENGINE = TimeSeries", settings=allow_time_series)
+        for table in (TS, TS_INNER):
+            node.query(
+                f"INSERT INTO default.{table} (metric_name, tags, samples, metric_family, type, unit, help) VALUES "
+                f"('up', {{'job': 'kek'}}, [(toDateTime64(100, 3), 1.), (toDateTime64(200, 3), 2.)], "
+                f"'up', 'gauge', '', 'is it up')"
+            )
+
+        reads = {
+            # external targets, each one has a catalog table of the same dotted name
+            f"SELECT arrayMap(s -> s.2, samples) FROM default.{TS}": "[1,2]",
+            f"SELECT metric_name, tags['job'] FROM default.{TS}": "up\tkek",
+            f"SELECT metric_family, type, help FROM default.{TS}": "up\tgauge\tis it up",
+            f"SELECT value FROM timeSeriesSelector(default.{TS}, 'up', 0, 1000, 'timestamp_and_value') "
+            f"ORDER BY timestamp": "1\n2",
+            # inner targets `default`.`.inner_id.<kind>.<uuid>`
+            f"SELECT count() FROM (SELECT metric_name FROM default.{TS_INNER})": "1",
+        }
+        for settings in ({}, on):
+            for query, expected in reads.items():
+                result = node.query(f"USE {CATALOG_NAME}; {query}", settings=settings).strip()
+                assert result == expected, f"{query}, settings {settings}: expected {expected!r}, got {result!r}"
+
+        # a name written by the user is still ambiguous
+        for target in targets:
+            _, err = node.query_and_get_answer_with_error(
+                f"USE {CATALOG_NAME}; SELECT count() FROM default.{target}", settings=on
+            )
+            assert "AMBIGUOUS_IDENTIFIER" in err, f"direct read of default.{target}: {err}"
+    finally:
+        for table in (TS, TS_INNER, *targets):
+            node.query(f"DROP TABLE IF EXISTS default.{table}")
+        for target in targets:
+            node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{target}`")
+
+
 def test_three_part_identifier(started_cluster):
     """
     Test 3-part compound identifier syntax: db.namespace.table
