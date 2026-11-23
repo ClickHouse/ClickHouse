@@ -386,7 +386,6 @@ namespace Setting
     extern const SettingsUInt64 prefer_external_sort_block_bytes;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
-    extern const SettingsBool read_in_order_use_buffering;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
     extern const SettingsBool split_parts_ranges_into_intersecting_and_non_intersecting_final;
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
