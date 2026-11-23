@@ -507,9 +507,10 @@ bool hasZooKeeperIncludeSelectingUsersFile(const Poco::XML::Element & element, b
 }
 
 /// The users configuration file the server loads the users from, as `AccessControl::addStoragesFromMainConfig`
-/// finds it: `users_config`, else the main configuration itself if it has no `user_directories`, else the path of
+/// finds it: `users_config`, else the main configuration itself if it has no `user_directories`, or the path of
 /// the `users.xml` storage in `user_directories`. A relative path is taken from the directory of the main
-/// configuration if it exists there. Empty if the configuration has no users configuration file.
+/// configuration if it exists there. Empty if the configuration has no users configuration file; an exception if it
+/// has several.
 /// The configuration is `config_file` with the properties of the server arguments (`extra_args`) over it, e.g.
 /// `-- --user_directories.users_xml.path=...`, as the server combines them.
 std::string getUsersConfigFile(const std::string & config_file, const std::vector<std::string> & extra_args)
@@ -538,22 +539,35 @@ std::string getUsersConfigFile(const std::string & config_file, const std::vecto
     argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *layered, /* priority = */ -100);
     const auto & config = *layered;
 
+    /// Every users configuration file the server loads: `users_config` (or the main configuration itself without
+    /// `user_directories`), and the storages of the `users_xml` type in `user_directories` under any of their names,
+    /// possibly repeated (`users_xml[1]`), as `AccessControl::addStoragesFromUserDirectoriesConfig` reads them.
+    std::vector<std::string> users_files;
     if (std::string path = config.getString("users_config", ""); !path.empty())
-        return resolve(path);
-    if (!config.has("user_directories"))
-        return config_file;
+        users_files.push_back(resolve(path));
+    else if (!config.has("user_directories"))
+        users_files.push_back(config_file);
 
-    /// The storages of `user_directories` as `AccessControl::addStoragesFromUserDirectoriesConfig` reads them: the first
-    /// one of the `users_xml` type, under any of its names, possibly repeated (`users_xml[1]`).
     Poco::Util::AbstractConfiguration::Keys storages;
     config.keys("user_directories", storages);
     for (const auto & storage : storages)
     {
         std::string type = storage.substr(0, storage.find('['));
         if (type == "users_xml" || type == "users.xml" || type == "users_config")
-            return resolve(config.getString("user_directories." + storage + ".path"));
+            users_files.push_back(resolve(config.getString("user_directories." + storage + ".path")));
     }
-    return {};
+
+    /// The server authenticates against every storage in turn: removing or restricting `default` in one of them would
+    /// leave a `default` of another one as it is, possibly without a password and open to the network.
+    if (users_files.size() > 1)
+    {
+        std::string list;
+        for (const auto & file : users_files)
+            list += (list.empty() ? "" : ", ") + file;
+        throw Poco::Exception("the configuration has several users configuration files (" + list
+            + "), and the user setup can manage only one");
+    }
+    return users_files.empty() ? std::string{} : users_files.front();
 }
 
 /// Write the user management XML to `default-user.xml` in the `.d` directory of the users configuration file
@@ -587,7 +601,8 @@ bool manageClickHouseUser(
     catch (...)
     {
         std::cerr << "docker-init: error: cannot find the users configuration file of " << config_file << ": "
-                  << DB::getCurrentExceptionMessage(false) << "\n";
+                  << DB::getCurrentExceptionMessage(false)
+                  << "; set CLICKHOUSE_SKIP_USER_SETUP=1 to manage the users yourself\n";
         return false;
     }
     if (abs_users_xml.empty())
