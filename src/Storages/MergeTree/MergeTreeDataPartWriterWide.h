@@ -141,6 +141,8 @@ private:
         MergeTreeWriterStream * stream = nullptr;
         /// ArraySizes substream; the columns of a Nested type share it and write it once per block.
         bool is_offsets = false;
+        /// `min_compress_block_size` of this stream, see `addStreams`.
+        UInt64 min_compress_block_size = 0;
     };
     using ResolvedStreams = std::vector<ResolvedStream>;
 
