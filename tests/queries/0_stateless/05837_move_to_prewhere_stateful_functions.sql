@@ -54,3 +54,16 @@ SELECT n FROM t_prewhere_stateful_dropped WHERE a >= 5 ORDER BY a SETTINGS apply
 SELECT n FROM t_prewhere_stateful_dropped WHERE a >= 5 ORDER BY a SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0;
 
 DROP TABLE t_prewhere_stateful_dropped;
+
+DROP TABLE IF EXISTS t_prewhere_stateful_deprecated;
+CREATE TABLE t_prewhere_stateful_deprecated (a UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_stateful_deprecated SELECT number FROM numbers(10);
+SET allow_deprecated_error_prone_window_functions = 1;
+ALTER TABLE t_prewhere_stateful_deprecated ADD COLUMN n Int64 DEFAULT runningDifference(a);
+SET allow_deprecated_error_prone_window_functions = 0;
+
+SELECT '-- stateful default whose function is disabled by the current settings';
+SELECT n FROM t_prewhere_stateful_deprecated WHERE a >= 5 ORDER BY a;
+SELECT n FROM t_prewhere_stateful_deprecated WHERE a >= 5 ORDER BY a SETTINGS optimize_move_to_prewhere = 0;
+
+DROP TABLE t_prewhere_stateful_deprecated;

@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
@@ -210,6 +211,7 @@ static bool hasStatefulDefaultOfMissingColumn(
     const RangesInDataParts & parts,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
+    ContextMutablePtr & defaults_context,
     NameSet & visited_columns)
 {
     checkStackSize();
@@ -235,8 +237,15 @@ static bool hasStatefulDefaultOfMissingColumn(
     if (std::ranges::all_of(parts, is_present_in_part))
         return false;
 
+    /// Like the reader, check the default with all experimental settings on, since they may be disabled in the current context.
+    if (!defaults_context)
+    {
+        defaults_context = Context::createCopy(context);
+        enableAllExperimentalSettings(defaults_context);
+    }
+
     TablesWithColumns tables;
-    ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
+    ExpressionInfoVisitor::Data expression_info{WithContext{defaults_context}, tables};
     ExpressionInfoVisitor(expression_info).visit(column_default->expression);
     if (expression_info.is_stateful_function)
         return true;
@@ -244,7 +253,7 @@ static bool hasStatefulDefaultOfMissingColumn(
     IdentifierNameSet identifiers;
     column_default->expression->collectIdentifierNames(identifiers);
     for (const auto & identifier : identifiers)
-        if (hasStatefulDefaultOfMissingColumn(identifier, columns, parts, mutations_snapshot, context, visited_columns))
+        if (hasStatefulDefaultOfMissingColumn(identifier, columns, parts, mutations_snapshot, context, defaults_context, visited_columns))
             return true;
 
     return false;
@@ -354,11 +363,13 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (read_from_merge_tree_step)
     {
         const auto & columns = storage_snapshot->metadata->getColumns();
+        ContextMutablePtr defaults_context;
         NameSet visited_columns;
         for (const auto & column : queried_columns)
         {
             if (hasStatefulDefaultOfMissingColumn(
-                    column, columns, read_from_merge_tree_step->getParts(), read_from_merge_tree_step->getMutationsSnapshot(), context, visited_columns))
+                    column, columns, read_from_merge_tree_step->getParts(), read_from_merge_tree_step->getMutationsSnapshot(),
+                    context, defaults_context, visited_columns))
                 return;
         }
     }
