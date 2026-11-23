@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['المعالجة المتوازية', 'تحسين الاستعلامات', 'الأداء', 'تعدد الخيوط', 'أفضل الممارسات']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 صُمم ClickHouse [ليكون سريعًا](/ar/get-started/about/why-clickhouse-is-so-fast). فهو ينفّذ الاستعلامات بدرجة عالية من التوازي، مستخدمًا جميع أنوية CPU المتاحة، وموزّعًا البيانات عبر مسارات المعالجة، وغالبًا ما يدفع العتاد إلى الاقتراب من حدوده القصوى.
 
 يوضح هذا الدليل كيفية عمل توازي الاستعلامات في ClickHouse، وكيف يمكنك ضبطه أو مراقبته لتحسين الأداء في أعباء العمل الكبيرة.
@@ -21,7 +19,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 عندما يُشغِّل ClickHouse ① استعلامًا تجميعيًا مع عامل تصفية على المفتاح الأساسي للجدول، فإنه ② يحمّل الفهرس الأساسي إلى الذاكرة من أجل ③ تحديد الحبيبات التي يجب معالجتها وتلك التي يمكن تخطيها بأمان:
 
-<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="تحليل الفهرس" />
+<div className="ch-image-md">
+
+<Frame>
+
+![تحليل الفهرس](/images/guides/best-practices/query-parallelism_01.webp)
+
+</Frame>
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### توزيع العمل عبر مسارات المعالجة
@@ -29,7 +35,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ثم تُوزَّع البيانات المحددة [ديناميكيًا](#load-balancing-across-processing-lanes) على `n` من [مسارات المعالجة](/ar/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) المتوازية، حيث تُمرَّر البيانات وتُعالَج فيها [كتلة](/ar/resources/develop-contribute/introduction/architecture#block) بعد أخرى حتى الوصول إلى النتيجة النهائية:
 
-<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 مسارات معالجة متوازية" />
+<div className="ch-image-md">
+
+<Frame>
+
+![4 مسارات معالجة متوازية](/images/guides/best-practices/query-parallelism_02.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -39,7 +53,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 على جهاز يحتوي على `8` أنوية، ستتضاعف تقريبًا إنتاجية معالجة الاستعلام (لكن استخدام الذاكرة سيزداد أيضًا تبعًا لذلك)، لأن عددًا أكبر من المسارات سيعالج البيانات بالتوازي:
 
-<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 مسارات معالجة متوازية" />
+<div className="ch-image-md">
+
+<Frame>
+
+![8 مسارات معالجة متوازية](/images/guides/best-practices/query-parallelism_03.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -53,7 +75,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 عندما تكون بيانات الجدول موزعة عبر عدة خوادم على شكل [shards](/ar/guides/oss/deployment-and-scaling/shards)، يعالج كل خادم الجزء الخاص به بالتوازي. وداخل كل خادم، تُعالَج البيانات المحلية باستخدام مسارات معالجة متوازية، تمامًا كما هو موضح أعلاه:
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="مسارات موزعة" />
+<div className="ch-image-md">
+
+<Frame>
+
+![مسارات موزعة](/images/guides/best-practices/query-parallelism_04.webp)
+
+</Frame>
+
+</div>
 
 <br />
 
@@ -127,7 +157,15 @@ FROM
 
 يمكن لـ [واجهة الويب المضمّنة](/ar/concepts/features/interfaces/http) في ClickHouse (المتاحة عند نقطة النهاية `/play`) عرض الخطة الفيزيائية أعلاه في شكل تصوّر بياني. في هذا المثال، نضبط `max_threads` على `4` للحفاظ على التصوّر مختصرًا، بحيث يعرض 4 مسارات معالجة متوازية فقط:
 
-<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="مسار تنفيذ الاستعلام" />
+<div className="ch-image-lg">
+
+<Frame>
+
+![مسار تنفيذ الاستعلام](/images/guides/best-practices/query-parallelism_05.webp)
+
+</Frame>
+
+</div>
 
 ملاحظة: اقرأ التصوّر من اليسار إلى اليمين. يمثّل كل صف مسار معالجة متوازيًا يمرّر كتل البيانات كتلةً تلو الأخرى، مع تطبيق تحويلات مثل التصفية والتجميع ومراحل المعالجة النهائية. في هذا المثال، يمكنك رؤية أربعة مسارات متوازية تقابل الإعداد `max_threads = 4`.
 

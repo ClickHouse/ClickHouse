@@ -79,7 +79,7 @@ namespace
             {
                 ASTs equals_args;
                 equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(String(header_value)));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 
@@ -99,19 +99,8 @@ namespace
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
-    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
-    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
-    size_t table_function_arguments_size = table_function_arguments_nodes.size();
-
     VectorWithMemoryTracking<size_t> result;
-
-    for (size_t i = 0; i < table_function_arguments_size; ++i)
-    {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
-    }
-
+    appendNamedArgumentIndexes(query_node_table_function, result, {"headers"});
     return result;
 }
 
@@ -129,6 +118,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
+        is_structure_not_overridable = structure == "auto" && !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -283,6 +273,8 @@ StoragePtr TableFunctionURL::executeImpl(
         ContextMutablePtr delegate_context = Context::createCopy(context);
         delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
 
+        /// The delegate creates the storage, so it needs the `PARTITION BY` expression to write partitions.
+        delegate->setPartitionBy(partition_by);
         return delegate->execute(
             ast_function,
             delegate_context,
@@ -339,12 +331,6 @@ bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
     return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
 }
 
-void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
-{
-    if (delegate)
-        delegate->setPartitionBy(partition_by_);
-}
-
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
@@ -365,7 +351,7 @@ StoragePtr TableFunctionURL::getStorage(
         && !is_insert_query
         && !use_web_wildcard;
 
-    if (can_use_parallel_replicas)
+    if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
         return std::make_shared<StorageURLCluster>(
             context,
@@ -374,7 +360,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(context, true),
+            is_structure_not_overridable ? ColumnsDescription{} : columns,
             ConstraintsDescription{},
             configuration);
     }
@@ -466,7 +452,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context).first;
+                context,
+                globCaller()).first;
         }
         else
         {
@@ -475,7 +462,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context);
+                context,
+                globCaller());
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
@@ -510,9 +498,6 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
-import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
 `url` function may be used in `SELECT` and `INSERT` queries on data in [URL](/reference/engines/table-engines/special/url) tables.
@@ -598,6 +583,24 @@ SELECT count() FROM url('https://example.com/data-{0..10000}-{0..10000}.tsv', TS
 The example above pins the query to a single stream. A query reading in parallel starts several sources up front, and each of them takes an address from the generator before the `LIMIT` cancels the reading, so a few addresses can be read instead of one; the number of them is bounded by the number of streams, not by the size of the pattern.
 
 A `_path` or `_file` predicate is applied to each address as it is generated, so the addresses it rejects are generated and counted against the limit as well; only the reading of the matching ones is skipped.
+
+### Patterns generate addresses, they do not filter a listing {#patterns-generate-addresses}
+
+Plain HTTP offers no way to enumerate the files a server has, so a pattern in `url` is a *generator* of addresses rather than a *filter* over the files that exist. Every address the query reads has to be generated and requested, and their number is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements). Addresses that turn out not to exist are skipped while reading, as long as [http_skip_not_found_url_for_globs](/reference/settings/session-settings/http#http_skip_not_found_url_for_globs) is enabled.
+
+Object storage table functions such as [s3](/reference/functions/table-functions/s3) work the other way round: the pattern is compiled into a regular expression and matched against the listing of the bucket, so a pattern that describes an enormous key space costs nothing extra. The same pattern is therefore read in full by `s3` and rejected by `url`:
+
+```sql
+-- Matched against the bucket listing, so only the objects that exist are read.
+SELECT count() FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+
+-- The same pattern would have to generate 100020001 addresses for `url`, and is rejected.
+SELECT count() FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/pageviews-20200101-{0..10000}{0..10000}00.gz', LineAsString);
+-- Code: 36. DB::Exception: Table function 'url': first argument generates too many result addresses: 100020001,
+-- while at most 1000 are allowed (see the 'glob_expansion_max_elements' setting). ...
+```
+
+Use `s3` (or another object storage table function) when the pattern is meant to be matched against a listing, and raise `glob_expansion_max_elements` only when every generated address really has to be requested.
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 

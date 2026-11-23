@@ -43,7 +43,7 @@ public:
     using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
     using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return "timeSeriesGroupArray";
     }
@@ -183,9 +183,16 @@ public:
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
-        /// With the single argument form the result type is the same as the type of that argument.
         if (argument_types_.size() == 1)
-            return argument_types_[0];
+        {
+            /// This function can be called with `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp_type, value_type)))`
+            /// as its only argument, in this case it should return `Array(Tuple(timestamp_type, value_type))`.
+            const auto & array_type = typeid_cast<const DataTypeArray &>(*argument_types_[0]);
+            const auto & tuple_type = typeid_cast<const DataTypeTuple &>(*array_type.getNestedType());
+            if (tuple_type.hasExplicitNames())
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements(), tuple_type.getElementNames()));
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(tuple_type.getElements()));
+        }
 
         const bool arrays_passed = (argument_types_[1]->getTypeId() == TypeIndex::Array);
         const auto & timestamp_type = arrays_passed ? typeid_cast<const DataTypeArray *>(argument_types_[0].get())->getNestedType() : argument_types_[0];
@@ -193,19 +200,19 @@ public:
         return std::make_shared<DataTypeArray>(make_shared<DataTypeTuple>(DataTypes{timestamp_type, value_type}));
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data>;
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return alignof(Data);
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(Data);
     }
@@ -366,7 +373,7 @@ public:
         for (size_t i = row_begin; i < row_end; ++i)
         {
             /// A flag is per row, and each row holds a whole series
-            if (!flags_data || flags_data[i] == flag_value_to_include)
+            if (!flags_data || (flags_data[i] != 0) == flag_value_to_include)
             {
                 const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
                 const size_t value_array_size = value_offsets[i] - previous_value_offset;
@@ -512,20 +519,25 @@ public:
                 "Expected tuple size 2, got {}",
                 tuple.tupleSize());
 
-        TimestampColumnType & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0));
-        ValueColumnType & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1));
+        auto & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0)).getData();
+        auto & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1)).getData();
 
         Data & data = this->data(place);
 
         data.sort(arena);
 
-        for (const Element & element : data.elements)
+        const size_t num_elements = data.elements.size();
+        const size_t timestamps_offset = timestamps_to.size();
+        const size_t values_offset = values_to.size();
+        timestamps_to.resize(timestamps_offset + num_elements);
+        values_to.resize(values_offset + num_elements);
+        for (size_t i = 0; i != num_elements; ++i)
         {
-            timestamps_to.insert(element.timestamp);
-            values_to.insert(element.value);
+            timestamps_to[timestamps_offset + i] = data.elements[i].timestamp;
+            values_to[values_offset + i] = data.elements[i].value;
         }
 
-        offsets_to.push_back(offsets_to.back() + data.elements.size());
+        offsets_to.push_back(offsets_to.back() + num_elements);
     }
 
 private:

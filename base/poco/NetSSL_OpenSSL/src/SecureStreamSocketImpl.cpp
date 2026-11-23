@@ -39,6 +39,15 @@ SecureStreamSocketImpl::SecureStreamSocketImpl(StreamSocketImpl* pStreamSocket, 
 }
 
 
+SecureStreamSocketImpl::SecureStreamSocketImpl(Poco::AutoPtr<StreamSocketImpl> pStreamSocket, Context::Ptr pContext):
+    underlying_socket(pStreamSocket.get()),
+	_impl(pStreamSocket, pContext),
+	_lazyHandshake(false)
+{
+	reset(_impl.sockfd());
+}
+
+
 SecureStreamSocketImpl::~SecureStreamSocketImpl()
 {
 	try

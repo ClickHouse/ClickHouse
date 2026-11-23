@@ -34,12 +34,18 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader 
     // PostgreSQL uses 't' and 'f' for boolean values
     format_settings.bool_true_representation = "t";
     format_settings.bool_false_representation = "f";
+
+    /// Not in writePrefix: it is skipped when appending to a non-empty file.
+    const auto & header = getPort(PortKind::Main).getHeader();
+    data_types = header.getDataTypes();
+    serializations.reserve(data_types.size());
+    for (const auto & type : data_types)
+        serializations.emplace_back(type->getDefaultSerialization());
 }
 
 void PostgreSQLOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
-    data_types = header.getDataTypes();
 
     if (header.columns())
     {
@@ -50,7 +56,6 @@ void PostgreSQLOutputFormat::writePrefix()
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             columns.emplace_back(column_name, data_types[i]);
-            serializations.emplace_back(data_types[i]->getDefaultSerialization());
         }
         message_transport.send(PostgreSQLProtocol::Messaging::RowDescription(columns));
     }
