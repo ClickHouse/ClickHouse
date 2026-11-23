@@ -116,7 +116,10 @@ namespace
             return true;
         }
 
-        bool merge(const DataTypeJSONPaths & rhs, std::function<void(DataTypePtr & type1, DataTypePtr & type2)> transform_types)
+        bool merge(
+            const DataTypeJSONPaths & rhs,
+            std::function<void(DataTypePtr & type1, DataTypePtr & type2)> transform_types,
+            JSONInferenceInfo * json_info)
         {
             for (const auto & [rhs_path, rhs_type] : rhs.paths)
             {
@@ -133,10 +136,35 @@ namespace
                         if (!type->equals(*rhs_type_copy))
                             return false;
                     }
+                    else if (json_info)
+                    {
+                        type = json_info->mergeNegativeIntegers(type, rhs_type);
+                    }
                 }
             }
 
             return true;
+        }
+
+        DataTypePtr mergeNegativeIntegers(const DataTypeJSONPaths & rhs, JSONInferenceInfo & json_info) const
+        {
+            std::optional<Paths> merged_paths;
+            for (const auto & [path, type] : paths)
+            {
+                auto it = rhs.paths.find(path);
+                if (it == rhs.paths.end())
+                    return nullptr;
+                auto merged_type = json_info.mergeNegativeIntegers(type, it->second);
+                if (merged_type.get() == type.get())
+                    continue;
+                if (!merged_paths)
+                    merged_paths = paths;
+                (*merged_paths)[path] = std::move(merged_type);
+            }
+
+            if (!merged_paths)
+                return nullptr;
+            return std::make_shared<DataTypeJSONPaths>(std::move(*merged_paths));
         }
 
         bool empty() const { return paths.empty(); }
@@ -291,6 +319,32 @@ namespace
 
         if (!have_negative_integers)
             type_indexes.erase(TypeIndex::Int64);
+    }
+
+    /// If one Int64 is negative, make all Int64 negative, so the one kept when these types collapse is negative.
+    void transformNegativeIntegers(DataTypes & data_types, TypeIndexesSet & type_indexes, JSONInferenceInfo * json_info)
+    {
+        if (!json_info || !type_indexes.contains(TypeIndex::Int64))
+            return;
+
+        DataTypePtr negative;
+        for (const auto & type : data_types)
+        {
+            if (json_info->isNegativeInteger(*type))
+            {
+                negative = type;
+                break;
+            }
+        }
+
+        if (!negative)
+            return;
+
+        for (auto & type : data_types)
+        {
+            if (WhichDataType(type).isInt64())
+                type = json_info->mergeNegativeIntegers(type, negative);
+        }
     }
 
     /// If we have both Int64 and Float64 types, convert all Int64 to Float64.
@@ -501,7 +555,7 @@ namespace
     /// For example when we had type Tuple(Int64, Nullable(Nothing)) and we
     /// transformed it to Tuple(Nullable(Int64), Nullable(Int64)) we will
     /// also transform it to Array(Nullable(Int64))
-    void transformTuplesWithEqualNestedTypesToArrays(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    void transformTuplesWithEqualNestedTypesToArrays(DataTypes & data_types, TypeIndexesSet & type_indexes, JSONInferenceInfo * json_info)
     {
         if (!type_indexes.contains(TypeIndex::Tuple))
             return;
@@ -516,7 +570,8 @@ namespace
                     return;
 
                 if (checkIfTypesAreEqual(tuple_type->getElements()))
-                    type = std::make_shared<DataTypeArray>(tuple_type->getElements().back());
+                    type = std::make_shared<DataTypeArray>(
+                        json_info ? json_info->mergeNegativeIntegers(tuple_type->getElements()) : tuple_type->getElements().back());
                 else
                     remove_tuple_index = false;
             }
@@ -638,7 +693,7 @@ namespace
         for (auto & type : data_types)
         {
             const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get());
-            if (json_type && !merged_type->merge(*json_type, transform_func))
+            if (json_type && !merged_type->merge(*json_type, transform_func, json_info))
                 return;
         }
 
@@ -738,6 +793,8 @@ namespace
             if (settings.json.read_bools_as_strings)
                 transformJSONBoolsAndStringsToString(data_types, type_indexes);
 
+            transformNegativeIntegers(data_types, type_indexes, json_info);
+
             if (settings.json.try_infer_objects_as_tuples)
                 mergeJSONPaths(data_types, type_indexes, settings, json_info);
 
@@ -763,7 +820,7 @@ namespace
             }
 
             /// Convert JSON tuples with same nested types to arrays.
-            transformTuplesWithEqualNestedTypesToArrays(data_types, type_indexes);
+            transformTuplesWithEqualNestedTypesToArrays(data_types, type_indexes, json_info);
 
             /// Convert JSON tuples and arrays to arrays if possible.
             transformJSONTuplesAndArraysToArrays(data_types, settings, type_indexes, json_info);
@@ -933,7 +990,7 @@ namespace
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
         if (checkIfTypesAreEqual(nested_types))
-            return std::make_shared<DataTypeArray>(std::move(nested_types.back()));
+            return std::make_shared<DataTypeArray>(json_info ? json_info->mergeNegativeIntegers(nested_types) : std::move(nested_types.back()));
 
         /// If element types are not equal, we should try to find common type.
         /// If after transformation element types are still different, we return Tuple for JSON and
@@ -1526,6 +1583,39 @@ bool JSONInferenceInfo::isNumberParsedFromString(const IDataType & type) const
 {
     return &type == int64_from_string.get() || &type == negative_int64_from_string.get() || &type == uint64_from_string.get()
         || &type == float64_from_string.get();
+}
+
+DataTypePtr JSONInferenceInfo::mergeNegativeIntegers(const DataTypePtr & type, const DataTypePtr & other)
+{
+    if (!negative_int64 && !negative_int64_from_string)
+        return type;
+
+    auto on_leaf = [&](const DataTypePtr & left, const DataTypePtr & right) -> DataTypePtr
+    {
+        if (WhichDataType(left).isInt64() && !isNegativeInteger(*left) && isNegativeInteger(*right))
+            return isNumberParsedFromString(*left) ? getNumberParsedFromString(getNegativeInt64()) : getNegativeInt64();
+
+        const auto * left_paths = typeid_cast<const DataTypeJSONPaths *>(left.get());
+        const auto * right_paths = typeid_cast<const DataTypeJSONPaths *>(right.get());
+        if (left_paths && right_paths)
+        {
+            if (auto merged = left_paths->mergeNegativeIntegers(*right_paths, *this))
+                return merged;
+        }
+
+        return left;
+    };
+
+    auto result = replaceNestedTypesInPair(type, other, on_leaf);
+    return result ? result : type;
+}
+
+DataTypePtr JSONInferenceInfo::mergeNegativeIntegers(const DataTypes & types)
+{
+    DataTypePtr result = types.back();
+    for (const auto & type : types)
+        result = mergeNegativeIntegers(result, type);
+    return result;
 }
 
 bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings)

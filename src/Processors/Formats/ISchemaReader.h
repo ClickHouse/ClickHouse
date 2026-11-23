@@ -42,6 +42,8 @@ public:
     [[nodiscard]] virtual size_t getNumRowsRead() const { return 0; }
 
     virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+    /// Called instead of transformTypesIfNeeded when the types are equal.
+    virtual void transformEqualTypesIfNeeded(DataTypePtr & /*type*/, const DataTypePtr & /*new_type*/) {}
     virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
 
     virtual ~ISchemaReader() = default;
@@ -169,8 +171,14 @@ void chooseResultColumnType(
         return;
     }
 
-    if (!new_type || type->equals(*new_type))
+    if (!new_type)
         return;
+
+    if (type->equals(*new_type))
+    {
+        schema_reader.transformEqualTypesIfNeeded(type, new_type);
+        return;
+    }
 
     schema_reader.transformTypesIfNeeded(type, new_type);
     if (type->equals(*new_type))

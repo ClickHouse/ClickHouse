@@ -25,6 +25,10 @@ struct JSONInferenceInfo
     DataTypePtr getNumberParsedFromString(const DataTypePtr & number_type);
     [[nodiscard]] bool isNegativeInteger(const IDataType & type) const;
     [[nodiscard]] bool isNumberParsedFromString(const IDataType & type) const;
+    /// For equal types: returns `type`, with every Int64 that is negative in `other` negative too.
+    DataTypePtr mergeNegativeIntegers(const DataTypePtr & type, const DataTypePtr & other);
+    /// For equal types: returns the last one, with every Int64 that is negative in any of them negative too.
+    DataTypePtr mergeNegativeIntegers(const DataTypes & types);
 
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;

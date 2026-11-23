@@ -1,0 +1,78 @@
+-- The type inferred for JSON values must not depend on the order of rows or elements when -1 meets 18446744073709551615.
+
+SET input_format_try_infer_variants = 0;
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 1;
+SET input_format_json_read_bools_as_numbers = 1;
+SET input_format_json_read_objects_as_strings = 1;
+SET input_format_json_try_infer_numbers_from_strings = 0;
+SET schema_inference_make_columns_nullable = 1;
+
+-- { echoOn }
+
+DESC format(JSONEachRow, '{"x":0}\n{"x":-1}\n{"x":18446744073709551615}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"x":-1}\n{"x":0}\n{"x":18446744073709551615}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+SELECT x, toTypeName(x) FROM format(JSONEachRow, '{"x":0}\n{"x":-1}\n{"x":18446744073709551615}') SETTINGS input_format_try_infer_variants = 1;
+SELECT x, toTypeName(x) FROM format(JSONEachRow, '{"x":-1}\n{"x":0}\n{"x":18446744073709551615}') SETTINGS input_format_try_infer_variants = 1;
+
+SELECT * FROM format(JSONEachRow, '{"x":0}\n{"x":-1}\n{"x":18446744073709551615}') SETTINGS input_format_allow_errors_num = 10, input_format_parallel_parsing = 0; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+SELECT * FROM format(JSONEachRow, '{"x":-1}\n{"x":0}\n{"x":18446744073709551615}') SETTINGS input_format_allow_errors_num = 10, input_format_parallel_parsing = 0; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"a":[0]}\n{"a":[-1]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"a":[-1]}\n{"a":[0]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"a":[-1,1]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"a":[1,-1]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+SELECT a, toTypeName(a) FROM format(JSONEachRow, '{"a":[-1,1]}\n{"a":[18446744073709551615]}') SETTINGS input_format_try_infer_variants = 1;
+SELECT a, toTypeName(a) FROM format(JSONEachRow, '{"a":[1,-1]}\n{"a":[18446744073709551615]}') SETTINGS input_format_try_infer_variants = 1;
+
+DESC format(JSONEachRow, '{"a":[[-1],[1]]}\n{"a":[[18446744073709551615]]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"a":[[1],[-1]]}\n{"a":[[18446744073709551615]]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"a":[-1,true]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"a":[true,-1]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"x":null}\n{"x":0}\n{"x":-1}\n{"x":18446744073709551615}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"x":null}\n{"x":-1}\n{"x":0}\n{"x":18446744073709551615}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"a":[-1,null]}\n{"a":[null,1]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"a":[1,null]}\n{"a":[null,-1]}\n{"a":[18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"m":{"a":-1,"b":1}}\n{"m":{"c":18446744073709551615}}') SETTINGS input_format_json_try_infer_named_tuples_from_objects = 0, input_format_json_read_objects_as_strings = 0; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"m":{"a":1,"b":-1}}\n{"m":{"c":18446744073709551615}}') SETTINGS input_format_json_try_infer_named_tuples_from_objects = 0, input_format_json_read_objects_as_strings = 0; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"t":{"k":0}}\n{"t":{"k":-1}}\n{"t":{"k":18446744073709551615}}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"t":{"k":-1}}\n{"t":{"k":0}}\n{"t":{"k":18446744073709551615}}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"t":{"k":0}}\n{"t":{"k":-1,"j":1}}\n{"t":{"k":18446744073709551615}}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"t":{"k":-1}}\n{"t":{"k":0,"j":1}}\n{"t":{"k":18446744073709551615}}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+SELECT j, dynamicType(j.a) FROM (SELECT '{"a":[[-1,1],[18446744073709551615]]}'::JSON AS j);
+SELECT j, dynamicType(j.a) FROM (SELECT '{"a":[[1,-1],[18446744073709551615]]}'::JSON AS j);
+SELECT j, dynamicType(j.a) FROM (SELECT '{"a":[[-1,true],[18446744073709551615]]}'::JSON AS j);
+SELECT j, dynamicType(j.a) FROM (SELECT '{"a":[[true,-1],[18446744073709551615]]}'::JSON AS j);
+
+SELECT x, dynamicType(x) FROM format(JSONEachRow, 'x Dynamic', '{"x":[[-1,1],[18446744073709551615]]}');
+SELECT x, dynamicType(x) FROM format(JSONEachRow, 'x Dynamic', '{"x":[[1,-1],[18446744073709551615]]}');
+
+DESC format(JSONColumns, '{"x":[0,-1,18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONColumns, '{"x":[-1,0,18446744073709551615]}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONCompactEachRow, '[0]\n[-1]\n[18446744073709551615]'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONCompactEachRow, '[-1]\n[0]\n[18446744073709551615]'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONObjectEachRow, '{"r1":{"x":0},"r2":{"x":-1},"r3":{"x":18446744073709551615}}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONObjectEachRow, '{"r1":{"x":-1},"r2":{"x":0},"r3":{"x":18446744073709551615}}'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(CustomSeparated, '0\n-1\n18446744073709551615\n') SETTINGS format_custom_escaping_rule = 'JSON'; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(CustomSeparated, '-1\n0\n18446744073709551615\n') SETTINGS format_custom_escaping_rule = 'JSON'; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(Regexp, '0\n-1\n18446744073709551615') SETTINGS format_regexp = '(.*)', format_regexp_escaping_rule = 'JSON'; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(Regexp, '-1\n0\n18446744073709551615') SETTINGS format_regexp = '(.*)', format_regexp_escaping_rule = 'JSON'; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(Freeform, '0\n-1\n18446744073709551615\n'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(Freeform, '-1\n0\n18446744073709551615\n'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+DESC format(JSONEachRow, '{"x":"0"}\n{"x":"-1"}\n{"x":"18446744073709551615"}') SETTINGS input_format_json_try_infer_numbers_from_strings = 1; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+DESC format(JSONEachRow, '{"x":"-1"}\n{"x":"0"}\n{"x":"18446744073709551615"}') SETTINGS input_format_json_try_infer_numbers_from_strings = 1; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+
+SELECT x, toTypeName(x) FROM format(JSONEachRow, '{"x":0}\n{"x":1}\n{"x":18446744073709551615}');
+SELECT x, toTypeName(x) FROM format(JSONEachRow, '{"x":0}\n{"x":-1}\n{"x":1.5}');
+SELECT x, toTypeName(x) FROM format(JSONEachRow, '{"x":-1}\n{"x":0}');
+SELECT a, toTypeName(a) FROM format(JSONEachRow, '{"a":[-1,1]}');

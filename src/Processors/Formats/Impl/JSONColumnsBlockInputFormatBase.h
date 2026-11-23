@@ -85,6 +85,7 @@ public:
     JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformEqualTypesIfNeeded(DataTypePtr & type, const DataTypePtr & new_type) override { type = inference_info.mergeNegativeIntegers(type, new_type); }
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     [[nodiscard]] bool needContext() const override { return !hints_str.empty(); }

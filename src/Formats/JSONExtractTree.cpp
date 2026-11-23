@@ -2144,7 +2144,7 @@ private:
                     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
 
                 if (checkIfTypesAreEqual(types))
-                    return std::make_shared<DataTypeArray>(types.back());
+                    return std::make_shared<DataTypeArray>(json_inference_info.mergeNegativeIntegers(types));
 
                 /// For JSON if we have not complete types, we should not try to transform them
                 /// and return it as a Tuple.

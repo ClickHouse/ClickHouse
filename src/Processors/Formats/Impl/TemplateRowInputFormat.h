@@ -124,6 +124,7 @@ public:
 
 private:
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformEqualTypesIfNeeded(DataTypePtr & type, const DataTypePtr & new_type) override { type = json_inference_info.mergeNegativeIntegers(type, new_type); }
 
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
