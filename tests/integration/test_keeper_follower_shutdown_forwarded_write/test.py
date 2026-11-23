@@ -109,6 +109,8 @@ def test_follower_shutdown_with_forwarded_write_in_flight(started_cluster):
         leader.exec_in_container(
             ["bash", "-c", "pkill -KILL clickhouse"], user="root", nothrow=True
         )
+        # Neither node finishes starting without the other one: Raft needs both for a quorum.
+        follower.start_clickhouse(wait_start=False)
         leader.start_clickhouse()
         follower.start_clickhouse()
         keeper_utils.wait_nodes(cluster, [node1, node2])
