@@ -3912,6 +3912,10 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, node_name_to_input);
         filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 
+        filter_actions_dag_conditions.clear();
+        for (const auto * node : added_filter_nodes.nodes)
+            filter_actions_dag_conditions.insert(node->result_name);
+
         /// NOTE: Currently we store two DAGs for analysis:
         /// (1) SourceStepWithFilter::filter_nodes, (2) query_info.filter_actions_dag. Make sure they are consistent.
         /// TODO: Get rid of filter_actions_dag in query_info after we move analysis of
@@ -7294,18 +7298,24 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
         return data.getColumnSizes(columns, calculate_subcolumn_sizes);
 
     IStorage::ColumnSizeByName result;
-    for (const auto & part : parts)
+    if (calculate_subcolumn_sizes)
     {
-        for (const auto & column_name : columns)
+        MergeTreeData::DataPartsVector data_parts;
+        data_parts.reserve(parts.size());
+        for (const auto & part : parts)
+            data_parts.push_back(part.data_part);
+        MergeTreeData::addColumnSizesOfParts(
+            data_parts, columns, /* with_columns = */ true, getContext()->getSettingsRef()[Setting::max_threads], result);
+    }
+    else
+    {
+        for (const auto & part : parts)
         {
-            const auto column = part.data_part->tryGetColumn(column_name);
-            if (!column)
-                continue;
-
-            const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
-                ? part.data_part->getSubcolumnSize(column_name)
-                : part.data_part->getColumnSize(column->getNameInStorage());
-            result[column_name].add(size);
+            for (const auto & column_name : columns)
+            {
+                if (const auto column = part.data_part->tryGetColumn(column_name))
+                    result[column_name].add(part.data_part->getColumnSize(column->getNameInStorage()));
+            }
         }
     }
 
