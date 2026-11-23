@@ -6,8 +6,6 @@ description: 'Step-by-step guide to configure unordered mode for continuous inge
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 By default, the S3 ClickPipe assumes files are added to a bucket in [lexicographical order](/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order). It's possible to configure an S3 ClickPipe to ingest files that don't have an implicit order by setting up an [Amazon SQS](https://aws.amazon.com/sqs/) queue connected to the bucket, optionally using [Amazon EventBridge](https://aws.amazon.com/eventbridge/) as an event router. This allows ClickPipes to listen for `ObjectCreated:*` events and ingest any new files regardless of the file naming convention.
 
 <Note>
@@ -44,11 +42,27 @@ We strongly recommend configuring a **Dead-Letter-Queue (DLQ)** for the SQS queu
 
 **a.** In the S3 bucket properties, navigate to **Event notifications > Amazon EventBridge** and enable sending notifications to EventBridge. Click **Save changes**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="Enabling Amazon EventBridge notifications in S3 bucket properties" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Enabling Amazon EventBridge notifications in S3 bucket properties](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
+
+</Frame>
+
+</div>
 
 **b.** In the AWS Console, navigate to **Amazon EventBridge > Rules > Create rule**. Name the rule (e.g. `S3ObjectCreated`), choose the **default** event bus, and click **Next**. On the **Build event pattern** step, select **AWS events or EventBridge partner events** as the event source, then enter the following event pattern manually, replacing `<bucket-name>` with your bucket name:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="Defining the EventBridge rule name and event bus" size="lg" border/>
+<div className="ch-image-lg">
+
+<Frame>
+
+![Defining the EventBridge rule name and event bus](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
+
+</Frame>
+
+</div>
 
 ```json
 {
@@ -66,9 +80,25 @@ Optionally, add an `object.key` condition to the pattern to filter by prefix or 
 
 **c.** On the **Select target(s)** step, choose **AWS service** as the target type and select **SQS queue**. Pick the queue created in the previous step. Leave **Use execution role (recommended)** checked to let EventBridge auto-create the required IAM role, then click **Next** and complete the wizard.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="Setting the SQS queue as the EventBridge rule target" size="lg" border/>
+<div className="ch-image-lg">
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge rule successfully created" size="lg" border/>
+<Frame>
+
+![Setting the SQS queue as the EventBridge rule target](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
+
+</Frame>
+
+</div>
+
+<div className="ch-image-lg">
+
+<Frame>
+
+![EventBridge rule successfully created](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
+
+</Frame>
+
+</div>
 
 **d.** Edit the SQS queue access policy to allow EventBridge to send messages to it. Replace `<sqs-queue-arn>` and `<eventbridge-rule-arn>` with the appropriate values:
 

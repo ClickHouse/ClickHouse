@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnTuple.h>
 
@@ -18,7 +19,7 @@
 #include <base/BFloat16.h>
 #include <base/types.h>
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -499,7 +500,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
     static void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
-        ssize_t row_base = stride_len - 1;
+        ssize_t row_base = static_cast<ssize_t>(stride_len) - 1;
 
         const __m512i bmask = _mm512_set1_epi64(bit_mask);
 
@@ -525,7 +526,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
     static void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
-        ssize_t row_base = stride_len - 1;
+        ssize_t row_base = static_cast<ssize_t>(stride_len) - 1;
 
         const __m512i bmask = _mm512_set1_epi32(bit_mask);
 
@@ -574,7 +575,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
         }
     })
 
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
 
 /// Use explicit AVX512BW target instead of x86-64-v4 for better performance
 /// The generic x86-64-v4 arch seems to generate slower code for this specific workload
@@ -587,7 +588,7 @@ namespace TargetSpecific::x86_64_v4
     {
         const size_t bytes_per_fs = stride_len / 8;
         const __m512i bmask = _mm512_set1_epi16(bit_mask);
-        ssize_t row_base = stride_len - 1;
+        ssize_t row_base = static_cast<ssize_t>(stride_len) - 1;
 
         /// Process 4 bytes at a time
         size_t b = 0;
@@ -635,7 +636,7 @@ _Pragma("clang attribute pop")
 template <typename T>
 SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntransposeBitPlane()
 {
-#if USE_MULTITARGET_CODE
+#if USE_X86_64_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         if constexpr (std::is_same_v<T, UInt64>)
