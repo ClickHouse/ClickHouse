@@ -1223,10 +1223,20 @@ void ColumnObject::insertDefault()
     /// roll back the sub-columns that were already modified, otherwise the object is left
     /// with sub-columns of different sizes and popBack would over-pop the shorter ones.
     size_t prev_size = size();
+    /// With the source a default row is written as text, so the typed paths get the defaults of their types:
+    /// the zero of a column is not always a value of its type, and must match the source text.
+    if (hasSource() && !object_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
+    const auto * object_type_ptr = hasSource() ? &assert_cast<const DataTypeObject &>(*object_type) : nullptr;
     try
     {
-        for (auto & [_, column] : typed_paths)
-            column->insertDefault();
+        for (auto & [path, column] : typed_paths)
+        {
+            if (object_type_ptr)
+                object_type_ptr->getTypedPaths().at(path)->insertDefaultInto(*column);
+            else
+                column->insertDefault();
+        }
         for (auto & [_, column] : dynamic_paths_ptrs)
             column->insertDefault();
         shared_data->insertDefault();
@@ -1243,10 +1253,18 @@ void ColumnObject::insertDefault()
 void ColumnObject::insertManyDefaults(size_t length)
 {
     size_t prev_size = size();
+    if (hasSource() && !object_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
+    const auto * object_type_ptr = hasSource() ? &assert_cast<const DataTypeObject &>(*object_type) : nullptr;
     try
     {
-        for (auto & [_, column] : typed_paths)
-            column->insertManyDefaults(length);
+        for (auto & [path, column] : typed_paths)
+        {
+            if (object_type_ptr)
+                object_type_ptr->getTypedPaths().at(path)->insertManyDefaultsInto(*column, length);
+            else
+                column->insertManyDefaults(length);
+        }
         for (auto & [_, column] : dynamic_paths_ptrs)
             column->insertManyDefaults(length);
         shared_data->insertManyDefaults(length);

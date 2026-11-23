@@ -44,6 +44,9 @@ DROP TABLE t_json_source_enum_default;
 SELECT json FROM format(JSONEachRow, 'json Nullable(JSON(with_source=1, e Enum8(\'ok\' = 1)))', '{"json" : null}');
 SELECT if(number = 0, materialize('{"e" : "ok"}')::JSON(with_source=1, e Enum8('ok' = 1)), NULL) AS json FROM numbers(2);
 SELECT r.json FROM (SELECT 1 AS k) AS l LEFT JOIN (SELECT 2 AS k, '{"e" : "ok"}'::JSON(with_source=1, e Enum8('ok' = 1)) AS json) AS r USING k SETTINGS join_use_nulls = 1;
+
+SELECT 'arrayElement out of range returns the type default, consistent with the source';
+SELECT json, json.__source FROM (SELECT arrayElement(materialize(['{"e" : "minus"}'::JSON(with_source=1, e Enum8('minus' = -1, 'zero' = 0))]), 2) AS json);
 SELECT 'the common type keeps the source only if all types have it';
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, a UInt32), '{}'::JSON(with_source=1, b UInt32)));
 SELECT toTypeName(if(1, '{}'::JSON(with_source=1, max_dynamic_paths=8), '{}'::JSON(with_source=1, max_dynamic_paths=16)));
