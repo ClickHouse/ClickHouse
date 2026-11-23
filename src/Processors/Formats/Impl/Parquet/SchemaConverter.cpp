@@ -1500,8 +1500,9 @@ bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
     if (!arrays_match)
         return false;
 
-    const String missing_field = tuple->column_mapper_path + "." + String(rest);
-    std::optional<Field> missing_default = getAbsentFieldDefault(missing_field, missing_field, element_type);
+    const String missing_path = tuple->column_mapper_path + "." + String(rest);
+    const String missing_field = column_mapper ? column_mapper->getIcebergFieldPath(missing_path, tuple->column_mapper_path) : String{};
+    std::optional<Field> missing_default = getAbsentFieldDefault(missing_field, missing_path, element_type);
     if (!missing_default && !options.format.parquet.allow_missing_columns)
         return false;
     const bool report_as_missing = !missing_default;
