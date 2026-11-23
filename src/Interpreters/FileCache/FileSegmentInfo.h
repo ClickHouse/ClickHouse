@@ -121,8 +121,7 @@ namespace DB
         /// Set when `query_max_elements` entries are copied, or `copied_size` passes `query_max_total_size`
         /// The next sub-queue (SLRU's second one, Split's second one) is then not walked at all.
         bool limit_reached{false};
-        /// Set by the query to stop the walk early, e.g. on `KILL QUERY` or `max_execution_time`, so that the priority lock
-        /// is released without walking the rest of the queue. The result is incomplete then. `nullptr` if the walk cannot be cancelled.
+        /// Set by the query to stop the walk early, e.g. on `KILL QUERY` or `max_execution_time`.
         const std::atomic<bool> * cancellation_flag = nullptr;
 
         [[nodiscard]] bool isCancelled() const { return cancellation_flag && cancellation_flag->load(std::memory_order_relaxed); }
