@@ -78,7 +78,6 @@ void forEachSubcolumnCandidate(
     settings.position_independent_encoding = false;
     settings.enumerate_dynamic_streams = enumerate_dynamic_streams;
     settings.enumerate_virtual_streams = true;
-    settings.array_level = initial_array_level;
     data.serialization->enumerateStreams(settings, callback, data);
 }
 

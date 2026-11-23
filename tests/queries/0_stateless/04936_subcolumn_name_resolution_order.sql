@@ -324,3 +324,58 @@ FROM t_shared_variant_level WHERE dynamicType(x[1]) = 'Array(Tuple(size0 UInt8))
 SELECT 'shared variant, element', toTypeName(x.`Array(Tuple(size0 UInt8))`.size0), x.`Array(Tuple(size0 UInt8))`.size0
 FROM t_shared_variant_level WHERE dynamicType(x[1]) = 'Array(Tuple(size0 UInt8))';
 DROP TABLE t_shared_variant_level;
+
+SELECT '--- the null of an element that cannot be inside Nullable is its own, not a synthesized map ---';
+
+-- `Array(Nullable(UInt8))` cannot be wrapped in Nullable, so `null` is the elements' null map the type already
+-- has, not a synthesized null map of the whole extracted value. A Dynamic must resolve it the way a Variant and
+-- the plain array do, whether the value sits in its own variant or in the shared variant.
+SELECT 'array', toTypeName(getSubcolumn(CAST([1, NULL], 'Array(Nullable(UInt8))'), 'null')),
+       getSubcolumn(CAST([1, NULL], 'Array(Nullable(UInt8))'), 'null');
+SELECT 'variant', toTypeName(getSubcolumn(CAST([1, NULL], 'Variant(Array(Nullable(UInt8)))'), 'Array(Nullable(UInt8)).null')),
+       getSubcolumn(CAST([1, NULL], 'Variant(Array(Nullable(UInt8)))'), 'Array(Nullable(UInt8)).null');
+SELECT 'dynamic', toTypeName(getSubcolumn(CAST(CAST([1, NULL], 'Array(Nullable(UInt8))'), 'Dynamic'), 'Array(Nullable(UInt8)).null')),
+       getSubcolumn(CAST(CAST([1, NULL], 'Array(Nullable(UInt8))'), 'Dynamic'), 'Array(Nullable(UInt8)).null');
+SELECT 'dynamic, shared variant', toTypeName(getSubcolumn(CAST(CAST([1, NULL], 'Array(Nullable(UInt8))'), 'Dynamic(max_types=0)'), 'Array(Nullable(UInt8)).null')),
+       getSubcolumn(CAST(CAST([1, NULL], 'Array(Nullable(UInt8))'), 'Dynamic(max_types=0)'), 'Array(Nullable(UInt8)).null');
+
+-- A nested array of nullables keeps the level: `null` is the inner elements' null map, `Array(Array(UInt8))`.
+SELECT 'nested array', toTypeName(getSubcolumn(CAST(CAST([[1, NULL]], 'Array(Array(Nullable(UInt8)))'), 'Dynamic'), 'Array(Array(Nullable(UInt8))).null')),
+       getSubcolumn(CAST(CAST([[1, NULL]], 'Array(Array(Nullable(UInt8)))'), 'Dynamic'), 'Array(Array(Nullable(UInt8))).null');
+
+-- A type that can be inside Nullable still gets the synthesized UInt8 null map of the whole value.
+SELECT 'scalar', toTypeName(getSubcolumn(CAST(5, 'Dynamic'), 'UInt8.null')),
+       getSubcolumn(CAST(5, 'Dynamic'), 'UInt8.null');
+
+SELECT '--- the array sizes of a path read alone from shared data match the stream the path was stored with ---';
+
+-- Shared data stores each path as a column of its own, so the sizes below the outer array are stored as
+-- `size0` while they are requested as `size1`. A subcolumn requested without its path is read alone,
+-- by the names of its streams; with the path, it is extracted from the whole value.
+DROP TABLE IF EXISTS t_shared_sizes_advanced;
+DROP TABLE IF EXISTS t_shared_sizes_advanced_chunked;
+CREATE TABLE t_shared_sizes_advanced (x Array(JSON(max_dynamic_paths=0)))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, object_shared_data_serialization_version = 'advanced',
+    object_shared_data_serialization_version_for_zero_level_parts = 'advanced';
+CREATE TABLE t_shared_sizes_advanced_chunked (x Array(JSON(max_dynamic_paths=0)))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, object_shared_data_serialization_version = 'advanced_chunked',
+    object_shared_data_serialization_version_for_zero_level_parts = 'advanced_chunked';
+INSERT INTO t_shared_sizes_advanced VALUES (['{"p":[1,2],"q":[[1,2,3]]}']);
+INSERT INTO t_shared_sizes_advanced_chunked VALUES (['{"p":[1,2],"q":[[1,2,3]]}']);
+
+SELECT 'fixture check', dynamicType(x[1].p), dynamicType(x[1].q) FROM t_shared_sizes_advanced;
+
+SELECT 'advanced, sizes alone', x.p.:`Array(Nullable(Int64))`.size1 FROM t_shared_sizes_advanced;
+SELECT 'advanced, sizes with the path', x.p.:`Array(Nullable(Int64))`.size1, x.p FROM t_shared_sizes_advanced;
+SELECT 'advanced, outer and inner sizes alone', x.q.:`Array(Array(Nullable(Int64)))`.size1, x.q.:`Array(Array(Nullable(Int64)))`.size2 FROM t_shared_sizes_advanced;
+SELECT 'advanced, sizes and null map alone', x.p.:`Array(Nullable(Int64))`.size1, x.p.:`Array(Nullable(Int64))`.null FROM t_shared_sizes_advanced;
+
+SELECT 'advanced_chunked, sizes alone', x.p.:`Array(Nullable(Int64))`.size1 FROM t_shared_sizes_advanced_chunked;
+SELECT 'advanced_chunked, sizes with the path', x.p.:`Array(Nullable(Int64))`.size1, x.p FROM t_shared_sizes_advanced_chunked;
+SELECT 'advanced_chunked, outer and inner sizes alone', x.q.:`Array(Array(Nullable(Int64)))`.size1, x.q.:`Array(Array(Nullable(Int64)))`.size2 FROM t_shared_sizes_advanced_chunked;
+SELECT 'advanced_chunked, sizes and null map alone', x.p.:`Array(Nullable(Int64))`.size1, x.p.:`Array(Nullable(Int64))`.null FROM t_shared_sizes_advanced_chunked;
+
+DROP TABLE t_shared_sizes_advanced;
+DROP TABLE t_shared_sizes_advanced_chunked;

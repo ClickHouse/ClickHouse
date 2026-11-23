@@ -703,7 +703,7 @@ void SerializationMap::enumerateStreams(
         /// Wrapped in `SerializationMapSize` which reads array offsets from all buckets
         /// and sums them to produce the total map size per row.
         settings.path.push_back(Substream::ArraySizes);
-        auto subcolumn_name = "size" + std::to_string(settings.array_level);
+        auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
         auto array_size_serialization = SerializationNamed::create(SerializationNumber<UInt64>::create(), subcolumn_name, SubstreamType::NamedOffsets);
         auto map_size_serialization = SerializationMapSize::create(array_size_serialization, serialization_version);
         settings.path.back().data = SubstreamData(map_size_serialization)
@@ -716,7 +716,6 @@ void SerializationMap::enumerateStreams(
         /// as a subcolumn. Uses `KeysOrValuesSubcolumnCreator` to produce
         /// `SerializationMapKeysOrValues` that reads key/value data from all buckets.
         settings.path.push_back(Substream::ArrayElements);
-        ++settings.array_level;
         const auto & nested_data_serialization = assert_cast<const SerializationArray &>(*nested_serialization).getNestedSerialization();
         auto array_elements_next_data = SubstreamData(nested_data_serialization)
             .withType(map_type ? map_type->getNestedDataType() : nullptr)
@@ -724,7 +723,6 @@ void SerializationMap::enumerateStreams(
         auto nested_creator = std::make_shared<SerializationArray::SubcolumnCreator>(map_column ? map_column->getNestedColumn().getOffsetsPtr() : nullptr);
         settings.path.back().creator = std::make_shared<KeysOrValuesSubcolumnCreator>(nested_creator, serialization_version);
         nested_data_serialization->enumerateStreams(settings, callback, array_elements_next_data);
-        --settings.array_level;
         settings.path.pop_back();
     }
 

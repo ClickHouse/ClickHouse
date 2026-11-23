@@ -973,19 +973,14 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
     }
 
     /// Extract nested subcolumn of requested dynamic subcolumn if needed.
-    /// If requested subcolumn is null map, it's processed separately as there is no Nullable type yet.
-    /// The name is the null map unless the variant type claims it itself, as a JSON does.
-    bool is_null_map_subcolumn = subcolumn_nested_name == "null" && !subcolumn_type->canResolveDynamicSubcolumn("null");
+    /// `null` is the null map of the extracted value only when the element can be inside Nullable, as for
+    /// `variant.Type.null`; otherwise it is an ordinary subcolumn of the element, resolved below, such as the
+    /// elements' null map of `Array(Nullable(T))` or a JSON path. That null map has no Nullable type yet.
+    bool is_null_map_subcolumn = subcolumn_nested_name == "null"
+        && canExtractedSubcolumnsBeInsideNullable(subcolumn_type)
+        && !subcolumn_type->canResolveDynamicSubcolumn("null");
     if (is_null_map_subcolumn)
-    {
-        if (!canExtractedSubcolumnsBeInsideNullable(subcolumn_type))
-        {
-            if (throw_if_null)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Dynamic type doesn't have subcolumn '{}'", subcolumn_name);
-            return nullptr;
-        }
         res->data.type = std::make_shared<DataTypeUInt8>();
-    }
 
     /// The variant the subcolumn resolved to, which is what a read of it traverses.
     res->substreams_path.emplace_back(ISerialization::Substream::DynamicData);

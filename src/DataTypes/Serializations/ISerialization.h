@@ -268,9 +268,6 @@ public:
         /// When not set, all substreams are enumerated unconditionally.
         using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
         CheckStreamExistsCallback check_stream_exists_callback;
-
-        /// Current level of array. Needed to differentiate stream names of nested array offsets.
-        size_t array_level = 0;
     };
 
     virtual void enumerateStreams(
