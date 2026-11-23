@@ -91,6 +91,10 @@ public:
 
     void initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
+    /// The request must be idle until the background group has completed admission.
+    /// Keep its setup bytes charged until their original owners release them.
+    void reparentQuerySetup(ThreadGroupPtr background_group);
+
     /// The group this one is nested in, if any (see `parent`).
     ThreadGroupPtr getParent() const { return parent; }
 

@@ -246,6 +246,12 @@ public:
     /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
     void reparent(MemoryTracker * new_parent);
 
+    /// Preserve the setup peak when another group continues the same query.
+    void inheritPeak(const MemoryTracker & source)
+    {
+        updatePeak(source.getPeak(), false);
+    }
+
     Int64 getPeak() const
     {
         return peak.load(std::memory_order_relaxed);

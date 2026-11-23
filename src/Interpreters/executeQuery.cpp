@@ -3246,9 +3246,15 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
-                auto background_query_execution_started = executeQueryInBackground(std::string_view(begin, end), context);
-                background_query_dispatched = true;
-                background_query_execution_started.get();
+                CurrentThread::flushUntrackedMemory();
+                {
+                    /// The worker reparents the request's setup tracker before admission. Keep it idle
+                    /// until then; subsequent request cleanup still releases its original allocations.
+                    MemoryTrackerSwitcher waiting_memory_scope(&total_memory_tracker);
+                    auto background_query_execution_started = executeQueryInBackground(std::string_view(begin, end), context);
+                    background_query_dispatched = true;
+                    background_query_execution_started.get();
+                }
                 BlockIO io;
                 io.dispatched = true;
                 return io;
@@ -4792,7 +4798,7 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
     {
         try
         {
-            auto query_scope = QueryScope::createForQueryContext(source->context);
+            auto query_scope = QueryScope::createForBackgroundQuery(source->context, source->group);
             ProcessList::EntryPtr process_list_entry;
             SCOPE_EXIT({
                 CurrentThread::flushUntrackedMemory();
