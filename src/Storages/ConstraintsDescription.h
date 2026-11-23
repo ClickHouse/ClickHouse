@@ -99,6 +99,8 @@ public:
         std::vector<std::vector<Analyzer::CNFAtomicFormula>> cnf_constraints;
         QueryTreeNodePtrWithHashMap<AtomIds> query_node_to_atom_ids;
         std::unique_ptr<ComparisonGraph<QueryTreeNodePtr>> graph;
+        /// Keeps the context the constraints were analyzed with alive.
+        ContextPtr analysis_context;
 
         friend ConstraintsDescription;
     };

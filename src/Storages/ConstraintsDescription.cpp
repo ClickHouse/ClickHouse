@@ -253,7 +253,13 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
 
     QueryAnalysisPass pass(table_node);
 
-    for (const auto & constraint : filterConstraintsForOptimization())
+    const auto constraints_for_optimization = filterConstraintsForOptimization();
+    /// Constraints are stored SQL: read table names in them as written.
+    if (!constraints_for_optimization.empty())
+        data.analysis_context = Context::createCopyForStoredDefinition(context);
+    const auto & analysis_context = data.analysis_context;
+
+    for (const auto & constraint : constraints_for_optimization)
     {
         auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".
@@ -268,11 +274,11 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             func->arguments = args;
             expr = func;
         }
-        auto query_tree = buildQueryTree(expr, context);
-        pass.run(query_tree, context);
+        auto query_tree = buildQueryTree(expr, analysis_context);
+        pass.run(query_tree, analysis_context);
 
-        const auto cnf = Analyzer::CNF::toCNF(query_tree, context)
-            .pullNotOutFunctions(context);
+        const auto cnf = Analyzer::CNF::toCNF(query_tree, analysis_context)
+            .pullNotOutFunctions(analysis_context);
         for (const auto & group : cnf.getStatements())
         {
             data.cnf_constraints.emplace_back(group.begin(), group.end());

@@ -12,6 +12,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 
 
@@ -32,8 +33,9 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
-    , expressions(constraints_.getExpressions(context_, header->getNamesAndTypesList()))
-    , context(std::move(context_))
+    /// Constraints are stored SQL: read table names in them as written.
+    , context(Context::createCopyForStoredDefinition(context_))
+    , expressions(constraints_.getExpressions(context, header->getNamesAndTypesList()))
 {
 }
 
