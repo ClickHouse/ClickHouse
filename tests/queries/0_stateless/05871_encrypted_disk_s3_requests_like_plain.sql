@@ -4,15 +4,19 @@
 
 -- Reading from an encrypted disk must make as many S3 requests as reading the same data from the disk under it.
 -- The encryption header used to be read with an unbounded request, which was reopened when the reader set its range.
+-- Parts in packed storage are excluded with `min_bytes_for_full_part_storage = 0`: a file inside the packed archive
+-- does not start at the archive's header, so its header is read with a request of its own.
 
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_encrypted;
 
 CREATE TABLE t_plain (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1024;
+SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    index_granularity = 1024;
 
 CREATE TABLE t_encrypted (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-SETTINGS storage_policy = 's3_no_cache_encrypted', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1024;
+SETTINGS storage_policy = 's3_no_cache_encrypted', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    index_granularity = 1024;
 
 INSERT INTO t_plain SELECT number, toString(number) FROM numbers(100000);
 INSERT INTO t_plain SELECT number, toString(number) FROM numbers(100000, 100000);
