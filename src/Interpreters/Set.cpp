@@ -132,20 +132,21 @@ public:
     }
 
     /// The same result as `executeImplCase`. Returns false if the table is not for this method and columns.
+    /// With `repeated_keys`, a row whose key equals the previous row's reuses its result, as in the hash table's cache.
     template <typename Method>
     bool execute(
         const Method & method, const ColumnRawPtrs & columns, const Sizes & sizes,
-        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const
+        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map, bool repeated_keys) const
     {
-        return mixed_hash ? executeWithHash<true>(method, columns, sizes, vec_res, negative, null_map)
-                          : executeWithHash<false>(method, columns, sizes, vec_res, negative, null_map);
+        return mixed_hash ? executeWithHash<true>(method, columns, sizes, vec_res, negative, null_map, repeated_keys)
+                          : executeWithHash<false>(method, columns, sizes, vec_res, negative, null_map, repeated_keys);
     }
 
 private:
     template <bool mixed, typename Method>
     bool executeWithHash(
         const Method &, const ColumnRawPtrs & columns, const Sizes & sizes,
-        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map) const
+        ColumnUInt8::Container & vec_res, bool negative, ConstNullMapPtr null_map, bool repeated_keys) const
     {
         using Key = typename Method::Key;
         const size_t rows = vec_res.size();
@@ -159,12 +160,16 @@ private:
             /// Read through the method's state, so the values are those the hash table would look up.
             typename Method::State state(columns, sizes, nullptr);
             static_assert(sizeof(*state.getKeyData()) == sizeof(Key));
-            findNumbers<mixed, Key>(reinterpret_cast<const char *>(state.getKeyData()), rows, res);
+            const char * values = reinterpret_cast<const char *>(state.getKeyData());
+            if (repeated_keys)
+                findRepeatedNumbers<mixed, Key>(values, rows, res);
+            else
+                findNumbers<mixed, Key>(values, rows, res);
         }
         else if constexpr (IsSetMethodKeysFixed<Method>::value
                            && (std::is_same_v<Key, UInt32> || std::is_same_v<Key, UInt64> || std::is_same_v<Key, UInt128>))
         {
-            if (getSlots<Key>().empty())
+            if (getSlots<Key>().empty() || repeated_keys)
                 return false;
             typename Method::State state(columns, sizes, nullptr);
             Arena pool;
@@ -398,6 +403,27 @@ private:
         }
 
         return true;
+    }
+
+    /// For keys that mostly repeat the previous row's: only a changed key is looked up.
+    template <bool mixed, typename Key>
+    void findRepeatedNumbers(const char * values, size_t rows, UInt8 * res) const
+    {
+        if (rows == 0)
+            return;
+        Key previous = unalignedLoad<Key>(values);
+        UInt8 found = contains<mixed, Key>(previous);
+        res[0] = found;
+        for (size_t i = 1; i < rows; ++i)
+        {
+            const Key key = unalignedLoad<Key>(values + i * sizeof(Key));
+            if (key != previous)
+            {
+                previous = key;
+                found = contains<mixed, Key>(key);
+            }
+            res[i] = found;
+        }
     }
 
     template <bool mixed, typename Key>
@@ -1201,7 +1227,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     /// most half of the rows are NULL, and only the other rows count towards building it.
     const bool may_use_cuckoo_lookup = cuckoo_lookup || rows_before_cuckoo_lookup.load(std::memory_order_relaxed) > 0;
     const size_t num_null_rows = null_map && may_use_cuckoo_lookup ? countBytesInFilter(*null_map) : 0;
-    /// The hash table answers a key equal to the previous row's from its cache, without a lookup.
+    /// Keys that repeat the previous row's are looked up only when they change: in the table if it is built, otherwise in
+    /// the hash table.
     const bool keys_sorted = may_use_cuckoo_lookup && keysAreSorted(key_columns, vec_res.size());
     /// The keys do not change while the shared lock is held, so the table is built here, looks up this block, and is
     /// installed below.
@@ -1213,8 +1240,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             new_cuckoo_lookup = createCuckooLookup();
     }
     const CuckooLookup * lookup_table = cuckoo_lookup ? cuckoo_lookup.get() : new_cuckoo_lookup.get();
-    const bool used_cuckoo_lookup = !keys_sorted && lookup_table && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
-        { return lookup_table->execute(method, key_columns, key_sizes, vec_res, negative, null_map); });
+    const bool used_cuckoo_lookup = lookup_table && num_null_rows * 2 <= vec_res.size() && data->callOnMethod([&](const auto & method)
+        { return lookup_table->execute(method, key_columns, key_sizes, vec_res, negative, null_map, keys_sorted); });
     if (!used_cuckoo_lookup)
         data->callOnMethod([&](auto & method) { executeImpl(method, key_columns, vec_res, negative, vec_res.size(), null_map); });
 
