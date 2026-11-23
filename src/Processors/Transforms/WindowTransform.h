@@ -68,10 +68,7 @@ class WindowTransform final : public IProcessor
     void releaseUnusedBlocks();
 
 public:
-    WindowTransform(
-        SharedHeader input_header_, SharedHeader output_header_,
-        const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
-
+    WindowTransform(SharedHeader input_header_, SharedHeader output_header_, const WindowTransformParams & params_);
     ~WindowTransform() override;
 
     String getName() const override { return "WindowTransform"; }

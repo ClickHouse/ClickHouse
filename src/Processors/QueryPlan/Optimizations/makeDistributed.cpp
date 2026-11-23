@@ -1275,7 +1275,7 @@ static void tryPushWindowBelowSortedGather(QueryPlan::Node & node, const QueryPl
     /// parallelism comes from the buckets themselves.
     auto bucket_window = std::make_unique<WindowStep>(
         sorting_node->step->getOutputHeader(), window_description, window_step->getWindowFunctions(), /*streams_fan_out_=*/false,
-        window_step->getSortSettings());
+        window_step->getSortSettings(), window_step->getFunctionSettings());
     bucket_window->setStepDescription(*window_step);
 
     /// Move the gather above the window; the children links already form the target chain.

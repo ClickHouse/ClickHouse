@@ -144,7 +144,8 @@ GroupExpressions WindowImplementation::applyImpl(GroupExpressionPtr expression, 
             window_step->getWindowDescription(),
             window_step->getWindowFunctions(),
             /*streams_fan_out_=*/false,
-            window_step->getSortSettings());
+            window_step->getSortSettings(),
+            window_step->getFunctionSettings());
         new_step->setStepDescription(fmt::format("Partitioned {}", window_step->getStepDescription()), 200);
         distributed->plan_step = std::move(new_step);
         distributed->strategy = strategySingleton<WindowStrategy>();

@@ -5,6 +5,8 @@
 
 #include <Interpreters/WindowDescription.h>
 
+#include <WindowFunctions/Common/WindowFunctionSettings.h>
+
 namespace DB
 {
 
@@ -17,7 +19,8 @@ public:
             const WindowDescription & window_description_,
             const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
             bool streams_fan_out_,
-            const SortingStep::Settings & sort_settings_);
+            const SortingStep::Settings & sort_settings_,
+            const WindowFunctionSettings & function_settings_);
 
     [[nodiscard]] String getName() const override { return "Window"; }
 
@@ -68,6 +71,8 @@ public:
 
     [[nodiscard]] const SortingStep::Settings & getSortSettings() const { return sort_settings; }
 
+    [[nodiscard]] const WindowFunctionSettings & getFunctionSettings() const { return function_settings; }
+
     /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
     [[nodiscard]] bool hasStreamsFanOut() const { return streams_fan_out; }
 
@@ -80,6 +85,7 @@ private:
     VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
     bool streams_fan_out;
     SortingStep::Settings sort_settings;
+    WindowFunctionSettings function_settings;
 };
 
 }

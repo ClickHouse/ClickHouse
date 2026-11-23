@@ -1,6 +1,7 @@
 #pragma once
 
 #include <WindowFunctions/Common/WindowFunctionRequirements.h>
+#include <WindowFunctions/Common/WindowFunctionSettings.h>
 
 #include <Interpreters/WindowDescription.h>
 
@@ -22,6 +23,8 @@ struct WindowTransformParams
 {
     const Block input_header;
     const WindowDescription window_description;
+    const VectorWithMemoryTracking<WindowFunctionDescription> functions;
+    const WindowFunctionSettings function_settings;
     const VectorWithMemoryTracking<size_t> partition_by_indices;
     const VectorWithMemoryTracking<size_t> order_by_indices;
     const VectorWithMemoryTracking<bool> should_materialize;
@@ -33,7 +36,8 @@ public:
     static WindowTransformParams create(
         const Block & input_header,
         const WindowDescription & window_description,
-        const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
+        VectorWithMemoryTracking<WindowFunctionDescription> functions,
+        WindowFunctionSettings settings);
 };
 
 }

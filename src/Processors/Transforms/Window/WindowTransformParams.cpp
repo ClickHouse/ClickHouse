@@ -246,7 +246,8 @@ bool needsPeerGroupIndexes(const WindowDescription & description, const WindowFu
 WindowTransformParams WindowTransformParams::create(
     const Block & input_header,
     const WindowDescription & window_description,
-    const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
+    VectorWithMemoryTracking<WindowFunctionDescription> functions,
+    WindowFunctionSettings settings)
 {
     auto header = materializeHeader(input_header);
     auto partition_by_indices = findPositions(header, window_description.partition_by);
@@ -260,6 +261,8 @@ WindowTransformParams WindowTransformParams::create(
     return WindowTransformParams{
         std::move(header),
         std::move(description),
+        std::move(functions),
+        std::move(settings),
         std::move(partition_by_indices),
         std::move(order_by_indices),
         std::move(should_materialize),
