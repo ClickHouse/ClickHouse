@@ -89,10 +89,10 @@ Default fallback wheels contain no compiled extensions but retain platform and i
 pip cache remove clickhouse_connect
 ```
 
-Check whether all three extension modules are present. This prints `True` when they are:
+Check whether all four extension modules are present. This prints `True` when they are:
 
 ```bash
-python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv')))"
+python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in ('clickhouse_connect.driverc.buffer', 'clickhouse_connect.driverc.dataconv', 'clickhouse_connect.driverc.npconv', 'clickhouse_connect.driverc.sqlscan')))"
 ```
 
 Importing `clickhouse_connect.driverc.npconv` directly also requires NumPy to be installed.

@@ -823,6 +823,18 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads` で設定されたクエリ処理スレッドの最大数
 </Note>
 
+#### 集約・ソート・DISTINCT の処理ステップにおけるスピル {#explain-analyze-spilling}
+
+`GROUP BY`、`ORDER BY`、または `DISTINCT` の処理ステップがデータを一時ストレージにスピルすると、次の情報が出力されます:
+
+```txt
+Spill: spilled <compressed_bytes>
+```
+
+これは、並列プロセッサを含むステップ全体で書き込まれた圧縮バイト数の累積値です。
+この合計には、すでに読み取り済みまたは削除済みの一時ファイルも含まれます。また、データが複数回ディスクに退避された場合は、書き込みごとに個別にカウントされます。
+データがディスクに退避されなかった場合、この行は出力されません。
+
 #### 結合 ステップ {#explain-analyze-join-steps}
 
 結合 ステップでは、`EXPLAIN ANALYZE` は結合順序オプティマイザの推定値と実際に起きたことを比較する行 ([推定値と実測値の join メトリクス](#explain-analyze-join-estimation) を参照) と、各側の*参加*行 (`Left` と `Right`) を出力し、その後に 結合 の実装固有の行を出力します。`Left` と `Right` は SQL 上の論理的な側に対応します。ほとんどの場合、`Left` は 結合 のプローブ側、`Right` は 結合 のビルド側にもなります。ただし、結合 の実行中に入れ替え (swap) が発生することがあるため、常にそうなるとは限りません。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のすべての値 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) に対応しています。また、この設定では選択できない 3 つの実装、すなわち `CROSS` または `COMMA` 結合、結合キーが定まらない `ON` 句を受け取る [block nested loop 結合](/ja/reference/statements/select/join#join-with-an-arbitrary-on-condition)、および [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも対象です。ほとんどの実装では両側が報告されますが、マテリアライズする側のみを報告するものもあります (たとえば、`direct` は `Left:` のみを出力します) 。
@@ -1099,7 +1111,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 結果がプロジェクションパーツのレイアウトに依存する場合は、`marks_span` に範囲が示され、どちらとも判断できない判定は `too close to call` として報告されます。大きなテーブルでは、推定はグラニュールのサンプルを読み取って行われます (`projection_scan_budget_rows` を参照)。
 
-集約プロジェクション、`WHERE` 句、独自のスキップ索引、コミット順または仮想カラムのキー、あるいは格納された `_block_number` を持つプロジェクション、およびクエリが読み取るカラムをすべてカバーしていないプロジェクションは、`not_applicable` として報告されます。`force_optimize_projection_name` と `preferred_optimize_projection_name` は無視され、`force_optimize_projection` によってステートメントが失敗することはありません。
+WHATIF は、集約プロジェクションおよび独自のスキップ索引を持つプロジェクションを `not_applicable` として報告します。また、コミット順のキー、仮想カラムのキー、あるいは格納された `_block_number` を持つプロジェクションも `not_applicable` として報告します。クエリが読み取るカラムをすべて備えていないプロジェクションについても同様です。WHATIF は `force_optimize_projection_name` と `preferred_optimize_projection_name` を無視し、`force_optimize_projection` によってステートメントが失敗することはありません。
 
 **構文**
 
@@ -1110,7 +1122,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 **設定**
 
 * `projection_scan_budget_rows` — プロジェクションの推定が、グラニュールのサンプリングに切り替わる前に読み取ってよい行数です。デフォルト: `10000000`。`0` は無制限を意味し、`max_rows_to_read` でこの値を引き下げることもできます。サンプリングでは少なくとも約 30 個のグラニュールを読み取り、かつパーツごとに 1 つ以上のグラニュールを読み取ります。`max_rows_to_read` によってこれが許容されない場合、推定は `unsupported` になります。
-* `empirical` — `1` (デフォルト) では、ベースラインによるプルーニング後に残ったグラニュールに対し、メモリ上で索引を評価してスキップ率 (上限値) を測定します。`0` では、この処理を行いません。どちらの設定でも、実測で結果が得られない場合 (無効になっている場合や、メモリ上で索引を評価できない場合) は、推定器がカラム [STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)を使用します。どちらも利用できない場合は、適用可能かどうかのみを示す要約に切り替えます。
+* `empirical` — `1` (デフォルト) では、ベースラインによる枝刈り後に残ったグラニュールに対し、メモリ上で索引を評価してスキップ率 (上限値) を測定します。`0` では、この処理を行いません。どちらの設定でも、経験的な評価で結果が得られない場合 (無効になっている場合や、メモリ上で索引を評価できない場合) は、推定器がカラム [STATISTICS](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)を使用します。どちらも利用できない場合は、適用可能かどうかのみを示す要約に切り替えます。
 
 **出力**
 

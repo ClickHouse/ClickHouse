@@ -30,7 +30,7 @@ namespace
             return res;
         }
 
-        Flags accessTypeToFlags(AccessType type) const
+        [[nodiscard]] Flags accessTypeToFlags(AccessType type) const
         {
             return access_type_to_flags_mapping[static_cast<size_t>(type)];
         }
@@ -50,7 +50,7 @@ namespace
             return true;
         }
 
-        Flags keywordToFlags(std::string_view keyword) const
+        [[nodiscard]] Flags keywordToFlags(std::string_view keyword) const
         {
             Flags result;
             if (!tryKeywordToFlags(keyword, result))
@@ -58,7 +58,7 @@ namespace
             return result;
         }
 
-        Flags keywordsToFlags(const std::vector<std::string_view> & keywords) const
+        [[nodiscard]] Flags keywordsToFlags(const std::vector<std::string_view> & keywords) const
         {
             Flags res;
             for (const auto & keyword : keywords)
@@ -66,7 +66,7 @@ namespace
             return res;
         }
 
-        Flags keywordsToFlags(const Strings & keywords) const
+        [[nodiscard]] Flags keywordsToFlags(const Strings & keywords) const
         {
             Flags res;
             for (const auto & keyword : keywords)
@@ -74,21 +74,21 @@ namespace
             return res;
         }
 
-        std::vector<AccessType> flagsToAccessTypes(const Flags & flags_) const
+        [[nodiscard]] std::vector<AccessType> flagsToAccessTypes(const Flags & flags_) const
         {
             std::vector<AccessType> access_types;
             flagsToAccessTypesRec(flags_, access_types, *all_node);
             return access_types;
         }
 
-        std::vector<std::string_view> flagsToKeywords(const Flags & flags_) const
+        [[nodiscard]] std::vector<std::string_view> flagsToKeywords(const Flags & flags_) const
         {
             std::vector<std::string_view> keywords;
             flagsToKeywordsRec(flags_, keywords, *all_node);
             return keywords;
         }
 
-        String flagsToString(const Flags & flags_) const
+        [[nodiscard]] String flagsToString(const Flags & flags_) const
         {
             auto keywords = flagsToKeywords(flags_);
             if (keywords.empty())
@@ -103,23 +103,23 @@ namespace
             return str;
         }
 
-        const Flags & getAllFlags() const { return all_flags; }
-        const Flags & getGlobalFlags() const { return all_flags_for_target[GLOBAL]; }
-        const Flags & getGlobalWithParameterFlags() const { return all_flags_grantable_on_global_with_parameter_level; }
-        const Flags & getDatabaseFlags() const { return all_flags_for_target[DATABASE]; }
-        const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
-        const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
-        const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
-        const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
-        const Flags & getSourceFlags() const { return all_flags_for_target[SOURCE]; }
-        const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
-        const Flags & getDefinerFlags() const { return all_flags_for_target[DEFINER]; }
-        const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
-        const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
-        const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
-        const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
-        const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
-        const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
+        [[nodiscard]] const Flags & getAllFlags() const { return all_flags; }
+        [[nodiscard]] const Flags & getGlobalFlags() const { return all_flags_for_target[GLOBAL]; }
+        [[nodiscard]] const Flags & getGlobalWithParameterFlags() const { return all_flags_grantable_on_global_with_parameter_level; }
+        [[nodiscard]] const Flags & getDatabaseFlags() const { return all_flags_for_target[DATABASE]; }
+        [[nodiscard]] const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
+        [[nodiscard]] const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
+        [[nodiscard]] const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
+        [[nodiscard]] const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
+        [[nodiscard]] const Flags & getSourceFlags() const { return all_flags_for_target[SOURCE]; }
+        [[nodiscard]] const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
+        [[nodiscard]] const Flags & getDefinerFlags() const { return all_flags_for_target[DEFINER]; }
+        [[nodiscard]] const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
+        [[nodiscard]] const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
+        [[nodiscard]] const Flags & getAllFlagsGrantableOnGlobalWithParameterLevel() const { return getGlobalWithParameterFlags(); }
+        [[nodiscard]] const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
+        [[nodiscard]] const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
+        [[nodiscard]] const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
 
     private:
         enum NodeType
