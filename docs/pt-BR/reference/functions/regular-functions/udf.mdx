@@ -613,6 +613,17 @@ A árvore de código-fonte inclui drivers de prova de conceito em `programs/serv
 
 Esses drivers de exemplo servem como ponto de partida; revise e reforce o sandboxing para o seu ambiente antes de expô-los a usuários não confiáveis.
 
+### Drivers de terceiros {#third-party-drivers}
+
+Os drivers também podem vir de fora do ClickHouse. Eles são mantidos por seus próprios autores, e não pelo ClickHouse; revise-os da mesma forma que os drivers de exemplo antes de expô-los a usuários não confiáveis:
+
+* [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - executa o corpo de uma função Python em uma micro-VM [Hyperlight](https://github.com/hyperlight-dev/hyperlight) com kernel próprio. O Hyperlight é um projeto de sandbox da [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/). Cada bloco de linhas parte de um snapshot do convidado, de modo que o código não tem acesso à rede nem aos arquivos do servidor, e não mantém estado entre consultas. Requer Linux com `/dev/kvm`.
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
+
 ## Conteúdo relacionado {#related-content}
 
 * [Funções definidas pelo usuário no ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
