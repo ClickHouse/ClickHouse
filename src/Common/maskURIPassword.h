@@ -286,17 +286,9 @@ inline bool maskURIPassword(std::string & uri, const std::string_view authority_
     };
     if (first_glob_open != std::string::npos && last_glob_balance_zero != std::string::npos && first_glob_open < tokens_and_offset.back().second)
     {
-        mask_range(first_glob_open, std::max(tokens_and_offset.back().second - 1, last_glob_balance_zero));
-        if (last_glob_balance_zero > tokens_and_offset.back().second)
-        {
-            result.append(uri, last_glob_balance_zero + 1);
-            uri = result;
-        }
-        else
-        {
-            result.append(uri, tokens_and_offset.back().second);
-            uri = result;
-        }
+        mask_range(0, std::max(tokens_and_offset.back().second - 1, last_glob_balance_zero));
+        result.append(uri, copied_offset + 1);
+        uri = result;
         return true;
     }
 

@@ -131,12 +131,14 @@ TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
         {"http://u:unused@v:TOPSECRET@v2@TOPSECRET@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:TOPSECRET|middle|more|tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:pa//ss@host/x", "http://u:[HIDDEN]@host/x"},
-        {"http://{u:p@host1,u:TOPSECRET@host2}/x", "http://[HIDDEN]/x"},
-        {"http://{TOPSECRET,user:pw}@localhost:11111/x", "http://[HIDDEN]@localhost:11111/x"},
+        {"http://{u:p@host1,u:TOPSECRET@host2}/x", "[HIDDEN]/x"},
+        {"http://u:OUTERSECRET@host/x|http://{TOKEN,user:pw}@host2/x", "[HIDDEN]@host2/x"},
+        {"http://{TOPSECRET,user:pw}@localhost:11111/x", "[HIDDEN]@localhost:11111/x"},
         {"http://u:TOPSECRET|part:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:TOPSECRET|part|long:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:TOPSECRET|part|long:longer:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
         {"http://u:TOPSECRET|part|long|looooong|longer:tail@localhost:11111/x", "http://u:[HIDDEN]@localhost:11111/x"},
+        {"http://u:TOPSECRET{a,b}@localhost:11111/x", "[HIDDEN]@localhost:11111/x"},
     };
 
     for (const auto & [input, expected] : cases)
