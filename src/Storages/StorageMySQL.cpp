@@ -561,7 +561,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 
 StorageMySQL::Configuration StorageMySQL::getConfiguration(
     ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
-    const StorageID * table_id, const ASTSetQuery * settings)
+    const StorageID * table_id, const ASTSetQuery * settings, bool from_existing_metadata)
 {
     StorageMySQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
@@ -606,8 +606,13 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
         if (engine_args.size() == 7)
             configuration.on_duplicate_clause = checkAndGetLiteralArgument<String>(engine_args[6], "on_duplicate_clause");
     }
-    for (const auto & address : configuration.addresses)
-        context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+    /// A definition that this server stored is not checked against `remote_url_allow_hosts`, for the reason
+    /// given in `StoragePostgreSQL::getConfiguration`.
+    if (!from_existing_metadata)
+    {
+        for (const auto & address : configuration.addresses)
+            context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+    }
     if (configuration.replace_query && !configuration.on_duplicate_clause.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them");
@@ -643,7 +648,8 @@ void registerStorageMySQL(StorageFactory & factory)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
         auto configuration = StorageMySQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, args.storage_def->settings);
+            args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id, args.storage_def->settings,
+            /*from_existing_metadata=*/ isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax);
 
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,

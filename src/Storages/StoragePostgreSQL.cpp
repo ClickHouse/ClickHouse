@@ -821,7 +821,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
     ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
-    const StorageID * table_id, const ASTSetQuery * settings)
+    const StorageID * table_id, const ASTSetQuery * settings, bool from_existing_metadata)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(
@@ -886,8 +886,17 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
         if (engine_args.size() >= 7)
             configuration.on_conflict = checkAndGetLiteralArgument<String>(engine_args[6], "on_conflict");
     }
-    for (const auto & address : configuration.addresses)
-        context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+    /// The policy of outbound hosts is for a definition that is brought in now. A definition that this server
+    /// stored (`from_existing_metadata`: it is loaded at startup or by a short `ATTACH TABLE t`) was checked when
+    /// it was written, and refusing it after `remote_url_allow_hosts` was tightened would leave a table that
+    /// cannot be loaded, dropped or detached, or, with `async_load_databases = 0`, a server that does not start.
+    /// Every other statement is checked: a full `ATTACH TABLE t (...) ENGINE = ...`, a `RESTORE` and a query
+    /// replayed on another replica of a `Replicated` database bring a definition from outside this server.
+    if (!from_existing_metadata)
+    {
+        for (const auto & address : configuration.addresses)
+            context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+    }
 
     return configuration;
 }
@@ -903,7 +912,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
 
         auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings,
+            /*from_existing_metadata=*/ isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax);
 
         postgresql_settings.loadFromQuery(*args.storage_def);
 

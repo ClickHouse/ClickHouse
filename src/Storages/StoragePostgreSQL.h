@@ -80,9 +80,10 @@ public:
     /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
     /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
     /// collections instead of being accepted and silently ignored.
+    /// `from_existing_metadata`: the hosts are not checked against `remote_url_allow_hosts`, see the definition.
     static Configuration getConfiguration(
         ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
-        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
+        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr, bool from_existing_metadata = false);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true);
 

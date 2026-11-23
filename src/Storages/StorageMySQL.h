@@ -84,9 +84,10 @@ public:
         String addresses_expr;
     };
 
+    /// `from_existing_metadata`: the hosts are not checked against `remote_url_allow_hosts`, see the definition.
     static Configuration getConfiguration(
         ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
-        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
+        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr, bool from_existing_metadata = false);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
