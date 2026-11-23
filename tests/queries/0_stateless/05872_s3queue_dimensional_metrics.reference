@@ -1,0 +1,7 @@
+6	3
+object_storage_queue_processed_files_total	1
+object_storage_queue_last_poll_timestamp_seconds	1
+object_storage_queue_newest_committed_object_timestamp_seconds	1
+object_storage_queue_newest_seen_object_timestamp_seconds	1
+gauges after drop	0
+counter after drop	1

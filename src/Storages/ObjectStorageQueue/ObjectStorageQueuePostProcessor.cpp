@@ -1,3 +1,6 @@
+#include <Common/DimensionalMetrics.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
@@ -26,6 +29,11 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueMovedObjects;
     extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueTaggedObjects;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & ObjectStorageQueueFailures;
 }
 
 namespace DB
@@ -72,17 +80,34 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
+/// The number of `objects` which are not in `successful_objects`: the objects for which the action did not complete.
+static size_t countObjectsNotIn(const StoredObjects & objects, const StoredObjects & successful_objects)
+{
+    UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
+    successful_paths.reserve(successful_objects.size());
+    for (const auto & object : successful_objects)
+        successful_paths.insert(object.remote_path);
+
+    size_t count = 0;
+    for (const auto & object : objects)
+        if (!successful_paths.contains(object.remote_path))
+            ++count;
+    return count;
+}
+
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ContextPtr context_,
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
     String engine_name_,
+    const StorageID & storage_id_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     AfterProcessingSettings settings_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , engine_name(engine_name_)
+    , storage_id(storage_id_)
     , table_metadata(table_metadata_)
     , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
@@ -130,6 +155,7 @@ void ObjectStorageQueuePostProcessor::process(
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
+            countFailedObjects(countObjectsNotIn(objects, successful_objects));
         }
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
@@ -170,6 +196,7 @@ void ObjectStorageQueuePostProcessor::process(
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
+            countFailedObjects(countObjectsNotIn(objects, successful_objects));
         }
 #else
         throw Exception(
@@ -186,6 +213,17 @@ void ObjectStorageQueuePostProcessor::process(
             ObjectStorageQueueTableMetadata::actionToString(after_processing_action));
     }
 
+}
+
+void ObjectStorageQueuePostProcessor::countFailedObjects(size_t count) const
+{
+    if (!count)
+        return;
+
+    DimensionalMetrics::add(
+        DimensionalMetrics::ObjectStorageQueueFailures,
+        {storage_id.getDatabaseName(), storage_id.getTableName(), "after_processing", String(ErrorCodes::getName(getCurrentExceptionCode()))},
+        static_cast<DimensionalMetrics::Value>(count));
 }
 
 static constexpr size_t post_process_initial_backoff_ms = 100;
@@ -329,6 +367,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
+                    countFailedObjects(1);
                 }
             });
 
@@ -473,6 +512,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
+                    countFailedObjects(1);
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
@@ -578,6 +618,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         object_from.remote_path,
                         getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
                     );
+                    countFailedObjects(1);
                 }
             }
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);

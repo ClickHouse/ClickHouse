@@ -76,6 +76,7 @@ namespace ProfileEvents
 namespace DimensionalMetrics
 {
     extern MetricFamily & ObjectStorageQueueFailures;
+    extern MetricFamily & ObjectStorageQueueLastPollTimestamp;
 }
 
 
@@ -663,7 +664,24 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
         ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
     }
+
+    /// The table does not consume anymore, so its gauges would only show stale values until the server restarts.
+    /// This is done on every shutdown and not only on drop: after a detach and attach the gauges are set again by the first
+    /// poll. The streaming tasks are already deactivated, so they cannot set the gauges again.
+    removeGaugeMetrics(getStorageID(), metadata.get());
+
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::removeGaugeMetrics(const StorageID & storage_id, ObjectStorageQueueMetadata * metadata)
+{
+    /// The metadata can be shared with other tables and can outlive this one, so the watermarks of this table
+    /// are removed from it together with their gauges.
+    if (metadata)
+        metadata->removePipelineLagMetrics(storage_id);
+
+    DimensionalMetrics::remove(
+        DimensionalMetrics::ObjectStorageQueueLastPollTimestamp, {storage_id.getDatabaseName(), storage_id.getTableName()});
 }
 
 void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
@@ -971,6 +989,13 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 metadata->registerActive(storage_id);
+
+                /// Set before the cycle and not after it, so that it advances also when the cycle finds no files or fails.
+                /// It is after `registerActive`, so it does not advance when the registration fails.
+                DimensionalMetrics::set(
+                    DimensionalMetrics::ObjectStorageQueueLastPollTimestamp,
+                    {storage_id.getDatabaseName(), storage_id.getTableName()},
+                    static_cast<DimensionalMetrics::Value>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())));
 
                 if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
@@ -1289,6 +1314,7 @@ void StorageObjectStorageQueue::postProcess(
             type,
             object_storage,
             getName(),
+            getStorageID(),
             metadata.getTableMetadata(),
             after_processing_settings);
     }

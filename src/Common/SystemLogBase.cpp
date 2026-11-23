@@ -36,6 +36,7 @@
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Common/BlobStorageLogWriter.h>
 
+#include <Common/DimensionalMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SelfContained.h>
@@ -48,6 +49,11 @@
 
 #include <Common/logger_useful.h>
 
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & SystemLogDroppedRows;
+}
 
 namespace DB
 {
@@ -94,6 +100,10 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 
     if (settings.turn_off_logger)
         log->setLevel(0);
+
+    /// Create the counter with the value 0, with the same labels as in `pop`. A counter which appears
+    /// only at its first increment starts from the size of the first batch, and a rate calculated from it misses that batch.
+    DimensionalMetrics::add(DimensionalMetrics::SystemLogDroppedRows, {settings.database, settings.table}, 0);
 }
 
 static thread_local bool recursive_push_call = false;
@@ -281,10 +291,18 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
     }
 
     if (prev_ignored_logs)
+    {
         LOG_ERROR(log, "Queue had been full at {}, accepted {} logs, ignored {} logs.",
                     result.last_log_index - result.logs.size(),
                     result.logs.size(),
                     prev_ignored_logs);
+
+        /// The whole batch is added here and not one row at a time in `push`, which is a hot path.
+        DimensionalMetrics::add(
+            DimensionalMetrics::SystemLogDroppedRows,
+            {settings.database, settings.table},
+            static_cast<DimensionalMetrics::Value>(prev_ignored_logs));
+    }
 
     return result;
 }

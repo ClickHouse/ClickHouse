@@ -1,0 +1,5 @@
+system_log_flushed_rows_total	1
+system_log_flushes_total	1
+system_log_dropped_rows_total		1
+system_log_flushes_total	failure	1
+system_log_flushes_total	success	1
