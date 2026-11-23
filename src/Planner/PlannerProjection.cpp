@@ -259,7 +259,7 @@ QueryPlan ProjectionPlanner::buildPlanForNormalProjection(Block source)
             stored_columns.emplace_back(calculateActionNodeName(expression, *planner_context), std::move(stored_name));
     }
     projection_dag.project(stored_columns);
-    /// a function can give a constant column for an expression over a column (`a + NULL`), but the part stores a value for each row
+    /// `a + NULL` gives a constant column, but the part needs a full one
     for (auto & output : projection_dag.getOutputs())
         if (!constant_names.contains(output->result_name))
             output = &projection_dag.materializeNode(*output);

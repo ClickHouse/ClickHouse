@@ -8,20 +8,18 @@
 namespace DB
 {
 
-/// The analysis of the query of a projection. It keeps the rules of the old analysis that the existing parts depend on:
-/// the names of the stored columns, the expressions over the columns of the table, and the order of the keys.
+/// analysis of a projection query; keeps the column names and key order that existing parts rely on
 
-/// the context for the analysis of the query of a projection: the settings of the session do not change the meaning of the query
+/// session settings must not change what a projection means
 ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context);
 
-/// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
-/// With `only_analyze` a scalar subquery is not calculated, it gets a default value.
+/// with `only_analyze` scalar subqueries are not run and get a default value
 QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze = true);
 
-/// the name that a projection part stores the expression under: the name that the old analysis gave to the expression
+/// the name a projection part stores this expression under
 String getStoredName(const QueryTreeNodePtr & node, const ContextPtr & context);
 
-/// A scalar subquery is calculated one time, and the stored query keeps its value.
+/// runs scalar subqueries once and keeps their values in the stored query
 void storeValuesOfScalarSubqueries(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
 
 }

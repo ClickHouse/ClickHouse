@@ -1,4 +1,4 @@
--- the columns of a projection part have the names that the old analysis gave to the expressions of the query
+-- projection columns keep the names that the old analyzer gave them
 
 DROP TABLE IF EXISTS t_projection_resolved;
 
@@ -9,9 +9,9 @@ CREATE TABLE t_projection_resolved
     c String,
     m Int64 MATERIALIZED a * 2,
     al ALIAS a + 1,
-    -- the analysis replaces these calls, and the name is the name of the new call
+    -- these calls are replaced, and the new call gives the name
     PROJECTION p_same (SELECT a % 10 AS k, count(*), count(1), sum(1), countDistinct(c), sumIf(a, a > 1 + 1), sum(al) GROUP BY k),
-    -- the analysis takes another function for these calls, and the name is the name that the query writes
+    -- these resolve to another function but keep the written name
     PROJECTION p_resolved (SELECT a, any(b) RESPECT NULLS, count() IGNORE NULLS, sum(NULL), median(a) GROUP BY a),
     -- a constant key is not stored, and the last key takes its place
     PROJECTION p_keys (SELECT c, max(b) GROUP BY 'x', c, a),
@@ -41,7 +41,7 @@ SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p_keys
 
 DROP TABLE t_projection_resolved;
 
--- a scalar subquery has the value of the time when the projection is created
+-- a scalar subquery keeps the value it had when the projection was created
 DROP TABLE IF EXISTS t_projection_resolved_limit;
 DROP TABLE IF EXISTS t_projection_resolved_scalar;
 
@@ -66,7 +66,7 @@ ORDER BY column_position;
 
 SELECT k, c FROM (SELECT `greater(a, _CAST(1, 'Nullable(Int32)'))` AS k, finalizeAggregation(`count()`) AS c FROM mergeTreeProjection(currentDatabase(), t_projection_resolved_scalar, p)) ORDER BY k;
 
--- a scalar subquery that is not a simple value is also stored as its value
+-- the same for a value that is not a simple literal
 DROP TABLE IF EXISTS t_projection_resolved_array;
 CREATE TABLE t_projection_resolved_array (a Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS materialize_projections_on_insert = 1;
 ALTER TABLE t_projection_resolved_array ADD PROJECTION p (SELECT has((SELECT groupArray(x) FROM (SELECT x FROM t_projection_resolved_limit ORDER BY x)), a) AS k, count() GROUP BY k);

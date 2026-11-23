@@ -50,8 +50,7 @@ ASTPtr makeStoredNameASTs(const QueryTreeNodes & nodes, const ContextPtr & conte
     return list;
 }
 
-/// Makes the expression that the old analysis kept in the query of a projection. A projection part stores
-/// a column under the name of this expression, so the AST gives the name, and this function only selects what to name.
+/// the expression as the old analyzer kept it: its column name is the stored name
 ASTPtr makeStoredNameAST(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     if (const auto * column_node = node->as<ColumnNode>())
@@ -59,21 +58,18 @@ ASTPtr makeStoredNameAST(const QueryTreeNodePtr & node, const ContextPtr & conte
 
     if (const auto * constant_node = node->as<ConstantNode>())
     {
-        /// a constant folded from an expression of the query has the name of that expression
+        /// folded from a written expression: named as that expression
         if (constant_node->hasSourceExpression() && constant_node->getSourceExpression()->hasOriginalAST())
             return makeStoredNameAST(constant_node->getSourceExpression(), context);
 
-        /// a constant that the analysis makes has the name of the value
+        /// made by the analyzer: named by its value
         if (constant_node->hasSourceExpression() || !node->hasOriginalAST())
             return make_intrusive<ASTLiteral>(constant_node->getValue());
     }
 
     if (const auto * function_node = node->as<FunctionNode>())
     {
-        /// The node of an aggregate function has the name of the function that the factory gives, which can be
-        /// another function (`any(b) RESPECT NULLS`, `sum(NULL)`, `median(a)`). The stored name has the name that the
-        /// analysis takes for the name of the query. This is not for a call that the analysis replaces
-        /// with a call of other arguments (`count(*)`, `sum(1)`).
+        /// keep the written aggregate name (`median`, not `quantile`), unless the analyzer changed the arguments (`count(*)`)
         const auto * written_function
             = function_node->isAggregationCall() && node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
         bool has_written_name = written_function
@@ -106,22 +102,19 @@ ASTPtr makeStoredNameAST(const QueryTreeNodePtr & node, const ContextPtr & conte
         return makeASTFunction("lambda", makeASTFunction("tuple", std::move(arguments)), makeStoredNameAST(lambda_node->getExpression(), context));
     }
 
-    /// a literal and a subquery have the name of the expression that the query writes
+    /// literals and subqueries are named as written
     if (node->hasOriginalAST())
         return node->getOriginalAST();
 
     if (!isQueryOrUnionNode(node))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression {} of a projection has no original AST", node->formatASTForErrorMessage());
 
-    /// the analysis makes a subquery for `exists`
+    /// the subquery the analyzer makes for `exists`
     auto hash = node->getTreeHash();
     return make_intrusive<ASTIdentifier>(fmt::format("__subquery_{}_{}", hash.low64, hash.high64));
 }
 
-/// Makes the plan calculate each expression over the columns of the table, as the old analysis did.
-/// An ALIAS column becomes its expression, because the source does not have the column.
-/// A constant that the analysis folds from an expression over a column becomes that expression again.
-/// Returns true if the expression reads a column of the table.
+/// `ALIAS` columns and constants folded over a column become expressions again, as in the old analyzer
 bool restoreExpressionsOverColumns(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node)
 {
     while (const auto * column_node = node->as<ColumnNode>())
@@ -153,8 +146,7 @@ bool restoreExpressionsOverColumns(QueryTreeNodePtr & node, const QueryTreeNodeP
     return reads_column;
 }
 
-/// A constant key has one value, so a projection does not keep it. The last key stays if the query has no
-/// aggregate function, because the query must remain an aggregation.
+/// constant keys are dropped; one key stays if there are no aggregate functions
 void removeConstantGroupByKeys(QueryNode & query_node, bool has_aggregate_functions)
 {
     if (!query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets())
@@ -169,7 +161,7 @@ void removeConstantGroupByKeys(QueryNode & query_node, bool has_aggregate_functi
             continue;
         }
 
-        /// the last key takes the place of the removed one: the existing parts are sorted in this order
+        /// the last key takes its place: existing parts are sorted in this order
         if (i + 1 < keys.size())
             keys[i] = std::move(keys.back());
         keys.pop_back();
@@ -200,7 +192,6 @@ void collectScalarSubqueryValues(const QueryTreeNodePtr & node, ScalarSubqueryVa
             if (!source_expression->hasOriginalAST())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Scalar subquery {} of a projection has no original AST", source_expression->formatASTForErrorMessage());
 
-            /// the cast keeps the type of the value
             values.emplace(
                 source_expression->getOriginalAST().get(),
                 makeASTFunction(
@@ -218,7 +209,7 @@ void collectScalarSubqueryValues(const QueryTreeNodePtr & node, ScalarSubqueryVa
             collectScalarSubqueryValues(child, values);
 }
 
-/// The analysis makes the tree from a copy of the query, so `analyzed_ast` is that copy: it has the structure of `ast`.
+/// `analyzed_ast` is the analyzer's copy of `ast`, so both have the same shape
 size_t replaceScalarSubqueries(const ASTPtr & ast, const ASTPtr & analyzed_ast, const ScalarSubqueryValues & values)
 {
     if (ast->children.size() != analyzed_ast->children.size())
@@ -249,23 +240,22 @@ size_t replaceScalarSubqueries(const ASTPtr & ast, const ASTPtr & analyzed_ast, 
 ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context)
 {
     auto query_context = Context::createCopy(context);
-    /// the settings of the session must not change the meaning of the query of a projection
     query_context->setSetting("enable_positional_arguments", false);
     query_context->setSetting("rewrite_in_to_join", false);
     query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
-    /// `exists` stays an `IN` that is calculated with the projection, as a scalar it is a constant of the query
+    /// keep `exists` as `IN`, not as a scalar constant
     query_context->setSetting("execute_exists_as_scalar_subquery", false);
-    /// the query keeps the value of a scalar subquery, not a reference to the scalars of a query
+    /// keep scalar values in the tree, not references to query scalars
     query_context->setSetting("enable_scalar_subquery_optimization", false);
-    /// a projection is calculated locally; with parallel replicas the analysis replaces the set of `GLOBAL IN` with a temporary table
+    /// parallel replicas would turn a `GLOBAL IN` set into a temporary table
     query_context->setSetting("enable_parallel_replicas", Field(0));
-    /// aliases are resolved as a reload of the table resolves them, with the settings of the server
+    /// resolve aliases with the server settings, as a table reload does
     query_context->setSetting(
         "prefer_column_name_to_alias", context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
-    /// the analysis resolves positional arguments only in an initial query
+    /// positional arguments are resolved only in an initial query
     query_context->setQueryKindInitial();
 
-    /// the settings of the stored query are a part of the projection, so the constraints of the session do not apply to them
+    /// settings stored with the query win over the session
     if (const auto & settings = query_ast->as<ASTSelectQuery &>().settings())
         for (const auto & change : settings->as<ASTSetQuery &>().changes)
             query_context->setSetting(change.name, change.value);
@@ -278,14 +268,10 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     auto query_tree = buildQueryTree(query_ast, context);
     auto & query_node = query_tree->as<QueryNode &>();
 
-    /// A projection query is stored without a `FROM` clause, so its join tree is a reference to
-    /// `system.one` which has to be replaced with the table expression providing the input columns.
+    /// the stored query has no `FROM`: put the source in place of `system.one`
     query_node.getJoinTreeNode() = std::make_shared<TableNode>(source, context);
 
-    /** The Analyzer unwraps a `tuple` at the top level of `GROUP BY` into separate keys, while a
-      * projection stores such a key as a single column named after the whole tuple. Wrap the key into
-      * one more `tuple` so that unwrapping gives back the key the projection stores.
-      */
+    /// the analyzer splits a `tuple` key into its elements, but the part stores it as one column: wrap it once more
     if (query_node.hasGroupBy() && !query_node.isGroupByWithGroupingSets())
     {
         for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
@@ -302,9 +288,7 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager, only_analyze);
-    /// Optimization passes are not applied because some of them are invalid for projections.
-    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
-    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
+    /// resolve only: an optimization pass can change a stored expression (`GROUP BY -c0` into `GROUP BY c0`)
     query_tree_pass_manager.runOnlyResolve(query_tree);
 
     /// `count(1)` and `sum(1)` are stored as `count()`
@@ -325,7 +309,6 @@ String getStoredName(const QueryTreeNodePtr & node, const ContextPtr & context)
     return makeStoredNameAST(node, context)->getColumnName();
 }
 
-/// A scalar subquery is calculated one time, and the stored query keeps its value.
 void storeValuesOfScalarSubqueries(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
 {
     if (!hasSubquery(query_ast))

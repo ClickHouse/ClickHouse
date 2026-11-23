@@ -1,4 +1,4 @@
--- a projection stores `count(1)` and `sum(1)` as `count()`, and the settings of an INSERT do not change that
+-- `count(1)` and `sum(1)` are stored as `count()`, whatever the settings of the INSERT
 
 DROP TABLE IF EXISTS t_projection_count_variants;
 

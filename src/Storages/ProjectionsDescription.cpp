@@ -227,7 +227,7 @@ StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, Virtu
     return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals));
 }
 
-/// The parts store the columns of the table in the order of the table.
+/// parts keep the column order of the table
 void sortByPositionInTable(NamesAndTypesList & source_columns, const ColumnsDescription & columns)
 {
     std::unordered_map<String, size_t> positions;
@@ -242,9 +242,7 @@ void sortByPositionInTable(NamesAndTypesList & source_columns, const ColumnsDesc
     source_columns.sort([&](const NameAndTypePair & lhs, const NameAndTypePair & rhs) { return position(lhs) < position(rhs); });
 }
 
-/// Prepares the stored query of `result` and its source for the calculation.
-/// Returns the planner of the query, and the columns of the table that the query reads.
-/// The projection is calculated from this query, and the names of its columns come from it.
+/// prepares the stored query and its source; returns the planner and the table columns it reads
 std::pair<ProjectionPlanner, NamesAndTypesList> planProjectionQuery(
     ProjectionDescription & result, const ColumnsDescription & columns, const KeyDescription * partition_key, const ContextPtr & context)
 {
@@ -258,16 +256,16 @@ std::pair<ProjectionPlanner, NamesAndTypesList> planProjectionQuery(
     NamesAndTypesList source_columns(read_columns.begin(), read_columns.end());
     sortByPositionInTable(source_columns, columns);
 
-    /// a part does not store an EPHEMERAL column, so the calculation cannot read it
+    /// a part has no `EPHEMERAL` columns
     auto ephemeral_columns = columns.getEphemeral();
     for (const auto & column : source_columns)
         if (!ephemeral_columns.contains(column.name))
             result.required_columns.push_back(column.name);
-    /// the calculation counts the rows of the block, so the block needs a column
+    /// one column is needed to count the rows
     if (result.required_columns.empty())
         result.required_columns.push_back(ExpressionActions::getSmallestColumn(columns.getAllPhysical()).name);
 
-    /// the calculation analyzes the query again: it needs the columns that the query reads, and the ALIAS columns, because the query can refer to them
+    /// the query is analyzed again at calculation: keep the columns it reads and the `ALIAS` columns
     ColumnsDescription query_columns;
     for (const auto & column_name : result.required_columns)
     {
@@ -456,8 +454,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// physical column either because it's used to build part offset mapping during merge.
     bool can_hold_parent_part_offset = !(columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset"));
 
-    /// `cloneToASTSelect` puts the ORDER BY expression at the end of SELECT, and the stored query has it as ORDER BY.
-    /// The expression can be a matcher of many columns, which only an argument of a function can be.
+    /// make it a real `ORDER BY`; `tuple` because a matcher is valid only as a function argument
     auto & select_query = result.query_ast->as<ASTSelectQuery &>();
     if (projection_order_by)
     {
@@ -472,7 +469,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         select_query.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
     }
 
-    /// the stored query keeps the settings that the meaning of the query depends on, as the old analysis kept their result in the query
+    /// keep the settings that change what the query means
     auto & stored_settings = select_query.settings()->as<ASTSetQuery &>().changes;
     stored_settings.setSetting("enable_positional_arguments", query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections].value);
     for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants",
@@ -490,7 +487,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         ast_options.fully_qualified_identifiers = false;
 
         /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
-        /// The part is sorted by the last expression of ORDER BY, as it was when ORDER BY was at the end of SELECT.
+        /// the sorting key is the last `ORDER BY` expression, as before
         if (projection_order_by)
         {
             const auto & sort_expression = query_node.getOrderBy().getNodes().front()->as<SortNode &>().getExpression();
@@ -511,7 +508,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
                                  : planner.buildPlanForNormalProjection(makeEmptyBlock(source_columns));
         result.sample_block = *plan.getCurrentHeader();
 
-        /// the columns of the table go first, as the old analysis put them
+        /// table columns first, as before
         if (!is_aggregate)
         {
             Block ordered_block;
@@ -526,7 +523,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
     else
     {
-        /// A normal projection without `WHERE` stores the columns that it reads as they are.
+        /// no `WHERE`: the part stores the columns it reads as they are
         result.sample_block = makeEmptyBlock(source_columns);
     }
 
@@ -548,7 +545,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         result.type = ProjectionDescription::Type::Aggregate;
         if (!aggregation_keys.empty())
         {
-            /// the part is sorted by the columns of the keys
             ASTs key_columns;
             for (const auto & key : aggregation_keys)
                 key_columns.push_back(make_intrusive<ASTIdentifier>(key));

@@ -1,5 +1,4 @@
--- A normal projection can have a table ALIAS column in ORDER BY that is not in SELECT:
--- the projection stores the columns that the ALIAS column reads.
+-- ORDER BY of a normal projection can use an ALIAS column that is not in SELECT
 
 -- Case 1: ALIAS column only in ORDER BY
 DROP TABLE IF EXISTS t_04048_alias_proj;

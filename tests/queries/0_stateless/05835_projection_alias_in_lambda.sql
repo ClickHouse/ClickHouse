@@ -1,4 +1,4 @@
--- a lambda of a projection can have a parameter with the name of a column that an ALIAS column or an alias reads
+-- a lambda parameter can have the name of a column that an ALIAS column or an alias reads
 
 DROP TABLE IF EXISTS t_projection_lambda_alias;
 

@@ -91,7 +91,7 @@ struct ProjectionDescription
     /// during data writing.
     bool has_index_granularity_overrides = false;
 
-    /// The source that the calculation analyzes `query_ast` over: the columns of the table that the query can refer to.
+    /// the table that the calculation resolves `query_ast` against
     StoragePtr query_source;
 
     /// WHERE clause AST for filtered projections (Issue #74234).

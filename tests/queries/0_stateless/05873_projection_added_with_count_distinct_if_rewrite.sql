@@ -1,5 +1,4 @@
--- a projection that is added with `rewrite_count_distinct_if_with_count_distinct_implementation` keeps the rewrite,
--- and an INSERT without the setting does not change the name of the column
+-- a projection added with `rewrite_count_distinct_if_with_count_distinct_implementation` keeps the rewrite on later INSERTs
 
 DROP TABLE IF EXISTS t_projection_count_distinct_if_rewrite;
 

@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- ^ creates user defined functions, which are global.
 
--- the definition of a projection keeps the body of an SQL function, so a new body of the function does not change the projection
+-- a projection keeps the body of an SQL function, so replacing the function does not change it
 
 DROP TABLE IF EXISTS t_projection_sql_function;
 DROP TABLE IF EXISTS t_projection_sql_function_limits;
@@ -23,7 +23,7 @@ ENGINE = MergeTree ORDER BY tuple()
 SETTINGS materialize_projections_on_insert = 1;
 
 ALTER TABLE t_projection_sql_function ADD PROJECTION p_added (SELECT a WHERE projection_sql_function_positive(a) ORDER BY a);
--- the function has a scalar subquery, and the projection keeps the value that the subquery has now
+-- the scalar subquery in the function is frozen at its current value
 ALTER TABLE t_projection_sql_function ADD PROJECTION p_scalar (SELECT a WHERE a > projection_sql_function_threshold() ORDER BY a);
 
 CREATE OR REPLACE FUNCTION projection_sql_function_positive AS x -> x > 10;

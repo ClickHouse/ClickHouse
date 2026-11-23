@@ -130,7 +130,7 @@ public:
 
     void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
-    /// the name of the aggregate function that the analysis takes for the name that a query writes
+    /// the aggregate function name the analyzer uses for a written name
     static std::string rewriteAggregateFunctionNameIfNeeded(
         const std::string & aggregate_function_name,
         NullsAction action,
