@@ -824,7 +824,12 @@ Block ProjectionDescription::calculateByQuery(
         {
             String source_column_name
                 = with_parent_part_offset && column.name == "_parent_part_offset" ? String("_part_offset") : column.name;
-            auto source_column = source_block.getColumnOrSubcolumnByName(source_column_name);
+            /// A subcolumn (required by the key of the projection) is taken from the column that the table gives
+            /// the name, as the columns of the projection resolve it: `a.x.y` is the element `y` of a `Tuple`
+            /// column `a.x`, not the path `x.y` of a `JSON` column `a`.
+            auto source_column = source_block.has(source_column_name)
+                ? source_block.getByName(source_column_name)
+                : metadata->getColumns().getSubcolumnFromBlock(source_block, source_column_name);
             source_column.name = column.name;
             projection_block.insert(std::move(source_column));
         }

@@ -315,13 +315,20 @@ void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
     }
 }
 
-static String getColumnNameInStorage(const String & column_name, const NameSet & storage_columns, const NameSet & virtual_columns)
+static String getColumnNameInStorage(
+    const String & column_name, const NameSet & storage_columns, const NameSet & virtual_columns, const ColumnsDescription & table_columns)
 {
     if (storage_columns.contains(column_name))
         return column_name;
 
     if (virtual_columns.contains(column_name))
         return column_name;
+
+    /// A subcolumn belongs to the column that the table gives the name: next to a `JSON` column `a` and a `Tuple`
+    /// column `a.x`, the subcolumn `a.x.y` is the element of `a.x`, not the path `x.y` of `a`.
+    if (auto column_in_table = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        column_in_table && column_in_table->isSubcolumn() && storage_columns.contains(column_in_table->getNameInStorage()))
+        return column_in_table->getNameInStorage();
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
@@ -338,7 +345,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     const auto storage_columns = global_ctx->storage_columns.getNameSet();
     const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
     for (const auto & name : sort_key_columns_vec)
-        key_columns.insert(getColumnNameInStorage(name, storage_columns, virtual_columns));
+        key_columns.insert(getColumnNameInStorage(name, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
 
     /// Force the sign, is_deleted and version columns. A subcolumn is read on its own,
     /// so that its column can still be gathered in a vertical merge.
@@ -419,12 +426,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             if (index_columns.size() > 1)
             {
                 for (const auto & index_column : index_columns)
-                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
+                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
             }
         }
         else if (index_columns.size() == 1)
         {
-            auto column_name = getColumnNameInStorage(index_columns.front(), storage_columns, virtual_columns);
+            auto column_name = getColumnNameInStorage(index_columns.front(), storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns());
             global_ctx->skip_indexes_by_column[column_name].push_back(index);
         }
         else
@@ -432,13 +439,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             global_ctx->merging_skip_indexes.push_back(index);
 
             for (const auto & index_column : index_columns)
-                key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
+                key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
         }
     }
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
         for (const auto & column : projection->getRequiredColumns())
-            key_columns.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
+            key_columns.insert(getColumnNameInStorage(column, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
 
     /// The TTL step runs over the merged stream, so every TTL expression it evaluates must read
     /// from a merged column - a gathered one is missing from the block and the expression throws.
@@ -448,9 +455,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
         {
             for (const auto & col : ttl_descr.expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
+                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
             for (const auto & col : ttl_descr.where_expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
+                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
         };
 
         if (global_ctx->metadata_snapshot->hasRowsTTL())
@@ -3527,7 +3534,8 @@ void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDes
 
     auto indices_expression = indices_description.getSingleExpressionForIndices(columns_for_indices, global_ctx->data->getContext());
     auto indices_expression_dag = indices_expression->getActionsDAG().clone();
-    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+        *plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext(), &global_ctx->metadata_snapshot->getColumns());
     indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
 
     auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
@@ -3556,7 +3564,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         bool read_any_required_column = std::ranges::any_of(required_columns, [&](const auto & column_name)
         {
-            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns, virtual_columns));
+            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns, virtual_columns, global_ctx->metadata_snapshot->getColumns()));
         });
 
         if (!read_any_required_column)
@@ -3790,7 +3798,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// Calculate sorting key expressions so that they are available for merge sorting.
         const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;
         auto sorting_key_expression_dag = sorting_key_expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*merge_parts_query_plan.getCurrentHeader(), sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+            *merge_parts_query_plan.getCurrentHeader(), sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext(),
+            &global_ctx->metadata_snapshot->getColumns());
         auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),
             ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_expression_dag)));
