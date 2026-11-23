@@ -18,6 +18,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <base/scope_guard.h>
 
 #include <Poco/Net/IPAddress.h>
@@ -297,6 +298,7 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     params.collection.endpoint = collection->getOrDefault<String>("endpoint", "");
     params.collection.api_key = collection->getOrDefault<SecretString>("api_key");
     params.collection.api_version = collection->getOrDefault<String>("api_version", "");
+    params.collection.headers = getHeadersFromNamedCollection(*collection);
 
     if (params.collection.provider.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'provider'", credentials);
@@ -533,7 +535,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Shared with the submitted requests so each one is self-contained and nothing dangles even
     /// if this call stops waiting for a future it handed out.
     std::shared_ptr<IAIProvider> provider = createAIProvider(
-        getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+        getContext(),
+        params.collection.provider,
+        params.collection.endpoint,
+        params.collection.api_key,
+        params.collection.api_version,
+        params.collection.headers);
 
     if (input_rows_count == 0)
         return result_type->createColumn();

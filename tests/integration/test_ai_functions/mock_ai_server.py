@@ -32,6 +32,9 @@ Endpoints:
         same true/false heuristic used for the `aiFilter` fallback below).
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
+  POST /v1/chat/header_auth, /v1/embeddings/header_auth, /v1/anthropic/header_auth
+      Require x-api-key=gateway-test-key and X-Tenant=tenant-a, otherwise return 401.
+      Return the corresponding normal chat, embedding, or Anthropic-shaped response.
   POST /v1/chat/completions_null_fields - like `/v1/chat/completions`, but every field of the structured reply is
       null, as when the text contains none of them.
   POST /v1/chat/completions_no_structured_output — like `/v1/chat/completions`, but ignores
@@ -323,6 +326,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             LAST_REQUEST["path"] = parsed.path
             LAST_REQUEST["body"] = body
             LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+
+        if parsed.path in (
+            "/v1/chat/header_auth",
+            "/v1/embeddings/header_auth",
+            "/v1/anthropic/header_auth",
+        ):
+            if (
+                self.headers.get("x-api-key") != "gateway-test-key"
+                or self.headers.get("X-Tenant") != "tenant-a"
+            ):
+                self._send_json(
+                    401, make_error_response("custom header authentication failed")
+                )
+            elif parsed.path == "/v1/embeddings/header_auth":
+                self._send_json(200, make_embeddings_response(body))
+            elif parsed.path == "/v1/anthropic/header_auth":
+                self._send_json(
+                    200, make_anthropic_response(extract_user_message(body))
+                )
+            else:
+                self._send_json(200, make_success_response(extract_user_message(body)))
+            return
 
         if parsed.path in ("/v1/metrics/openai", "/v1/metrics/anthropic"):
             # A known delay provides a lower bound for the request timer.

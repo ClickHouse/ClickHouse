@@ -97,10 +97,46 @@ ALTER TABLE t REPLACE PARTITION ID '202610' FROM t_tmp;
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
+| `headers.header.name`, `headers.header[N].name` | String | — | Custom HTTP header name. Use an indexed `header[N]` for additional headers. |
+| `headers.header.value`, `headers.header[N].value` | String | — | Value of the corresponding custom HTTP header. |
 
 <Note>
 Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `provider = 'openai'` and pointing the `endpoint` to your service.
 </Note>
+
+### Custom HTTP headers {#custom-http-headers}
+
+For a gateway that authenticates with `x-api-key` instead of Bearer authentication,
+omit `api_key` and supply the header in the named collection. Custom headers are
+sent with both text and embedding requests:
+
+```sql
+CREATE NAMED COLLECTION ai_gateway AS
+    provider = 'openai',
+    endpoint = 'https://gateway.example/v1/chat/completions',
+    model = 'gateway-model',
+    `headers.header.name` = 'x-api-key',
+    `headers.header.value` = 'gateway-key',
+    `headers.header[1].name` = 'X-Tenant',
+    `headers.header[1].value` = 'analytics-team';
+
+SELECT aiGenerate('Summarize the order status.', map('credentials', 'ai_gateway'));
+
+ALTER NAMED COLLECTION ai_gateway SET `headers.header.value` = 'replacement-key';
+```
+
+The same `headers` subtree can be set in a server-configured named collection.
+Header names are case-insensitive. Duplicate custom headers, or custom headers
+that conflict with a provider-generated authentication or API-version header,
+are rejected rather than silently replacing one another. To supply your own
+`Authorization` header for an OpenAI-compatible gateway, leave `api_key` unset.
+All headers are validated by the server's `http_forbid_headers` policy, including
+the checks for invalid header names and CR/LF in values. Header values may contain
+credentials; keep them in the named collection rather than the function's
+parameter map.
+
+`Content-Length` and `Transfer-Encoding` are managed by the AI request transport
+and cannot be supplied as custom headers.
 
 ### Selecting credentials {#selecting-credentials}
 

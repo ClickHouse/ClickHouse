@@ -19,7 +19,9 @@ MOCK_PORT = 18123
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("node", stay_alive=True)
+instance = cluster.add_instance(
+    "node", stay_alive=True, main_configs=["configs/custom_headers.xml"]
+)
 
 
 def run_mock_server():
@@ -864,6 +866,129 @@ def test_generate_with_api_key_sends_auth_header(started_cluster):
     )
     assert result.strip() == "with key"
     assert last_request()["headers"].get("authorization") == "Bearer test-key"
+
+
+@pytest.fixture
+def header_collection(started_cluster):
+    names = []
+
+    def create(provider, endpoint, headers, api_key=None, model=True):
+        name = f"ai_custom_headers_{uuid.uuid4().hex}"
+        values = {"provider": provider, "endpoint": endpoint}
+        if model:
+            values["model"] = "test-model"
+        if api_key is not None:
+            values["api_key"] = api_key
+        for index, (header_name, value) in enumerate(headers):
+            prefix = "headers.header" if index == 0 else f"headers.header[{index}]"
+            values[f"{prefix}.name"] = header_name
+            values[f"{prefix}.value"] = value
+
+        def quote(value):
+            return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+        assignments = ", ".join(
+            f"`{key}` = {quote(value)}" for key, value in values.items()
+        )
+        instance.query(f"CREATE NAMED COLLECTION {name} AS {assignments}")
+        names.append(name)
+        return name
+
+    yield create
+    for name in names:
+        instance.query(f"DROP NAMED COLLECTION {name}")
+
+
+@pytest.mark.parametrize(
+    "provider,path,embedding",
+    [
+        ("openai", "/v1/chat/header_auth", False),
+        ("openai", "/v1/embeddings/header_auth", True),
+        ("anthropic", "/v1/anthropic/header_auth", False),
+    ],
+)
+def test_custom_headers_authenticate_gateway(
+    header_collection, provider, path, embedding
+):
+    collection = header_collection(
+        provider,
+        f"http://localhost:{MOCK_PORT}{path}",
+        [("x-api-key", "gateway-test-key"), ("X-Tenant", "tenant-a")],
+        model=not embedding,
+    )
+    if embedding:
+        query = f"SELECT length(aiEmbed('headers', 'test-model', map('credentials', '{collection}')))"
+    else:
+        query = f"SELECT aiGenerate('headers', map('credentials', '{collection}'))"
+    assert instance.query(query).strip() == ("4" if embedding else "headers")
+    headers = last_request()["headers"]
+    assert headers["x-api-key"] == "gateway-test-key"
+    assert headers["x-tenant"] == "tenant-a"
+    if provider == "anthropic":
+        assert headers["anthropic-version"] == "2023-06-01"
+    else:
+        assert "authorization" not in headers
+
+
+def test_custom_headers_preserve_bearer_and_follow_alter(header_collection):
+    collection = header_collection(
+        "openai",
+        f"http://localhost:{MOCK_PORT}/v1/chat/completions",
+        [("X-Tenant", "before")],
+        api_key="test-key",
+    )
+    query = f"SELECT aiGenerate('headers', map('credentials', '{collection}'))"
+    assert instance.query(query).strip() == "headers"
+    assert last_request()["headers"]["x-tenant"] == "before"
+    instance.query(
+        f"ALTER NAMED COLLECTION {collection} SET `headers.header.value` = 'after'"
+    )
+    assert instance.query(query).strip() == "headers"
+    headers = last_request()["headers"]
+    assert headers["x-tenant"] == "after"
+    assert headers["authorization"] == "Bearer test-key"
+
+
+def test_custom_authorization_without_api_key(header_collection):
+    collection = header_collection(
+        "openai",
+        f"http://localhost:{MOCK_PORT}/v1/chat/completions",
+        [("Authorization", "Basic dGVzdDpwYXNz")],
+    )
+    assert (
+        instance.query(
+            f"SELECT aiGenerate('headers', map('credentials', '{collection}'))"
+        ).strip()
+        == "headers"
+    )
+    assert last_request()["headers"]["authorization"] == "Basic dGVzdDpwYXNz"
+
+
+@pytest.mark.parametrize(
+    "headers,api_key,expected",
+    [
+        ([("X-Rejected-AI-Test", "header-secret")], None, "forbidden"),
+        ([("Invalid Header", "header-secret")], None, "invalid character"),
+        ([("X-Tenant", "header-secret\r\nX-Injected: yes")], None, "invalid character"),
+        (
+            [("X-Tenant", "header-secret"), ("x-tenant", "other")],
+            None,
+            "Duplicate AI HTTP header",
+        ),
+        ([("authorization", "header-secret")], "test-key", "Duplicate AI HTTP header"),
+        ([("content-length", "header-secret")], None, "manage HTTP header"),
+        ([("Transfer-Encoding", "header-secret")], None, "manage HTTP header"),
+    ],
+)
+def test_custom_header_validation(header_collection, headers, api_key, expected):
+    collection = header_collection(
+        "openai", f"http://localhost:{MOCK_PORT}/v1/chat/completions", headers, api_key
+    )
+    error = instance.query_and_get_error(
+        f"SELECT aiGenerate('headers', map('credentials', '{collection}'))"
+    )
+    assert expected in error
+    assert "header-secret" not in error
 
 
 def test_generate_model_override_with_default_credentials(started_cluster):

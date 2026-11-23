@@ -31,7 +31,7 @@ namespace DB
 class OpenAIProvider : public IAIProvider
 {
 public:
-    OpenAIProvider(const String & endpoint_, std::string_view api_key_);
+    OpenAIProvider(const String & endpoint_, std::string_view api_key_, HTTPHeaderEntries custom_headers_ = {});
 
     void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) override;
     [[nodiscard]] HTTPHeaderEntries getHeaders() const override;

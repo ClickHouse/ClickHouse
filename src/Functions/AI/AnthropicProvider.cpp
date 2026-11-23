@@ -21,8 +21,10 @@ namespace ErrorCodes
 
 static constexpr auto DEFAULT_ANTHROPIC_API_VERSION = "2023-06-01";
 
-AnthropicProvider::AnthropicProvider(const String & endpoint_, std::string_view api_key_, const String & api_version_)
-    : endpoint(endpoint_)
+AnthropicProvider::AnthropicProvider(
+    const String & endpoint_, std::string_view api_key_, const String & api_version_, HTTPHeaderEntries custom_headers_)
+    : IAIProvider(std::move(custom_headers_))
+    , endpoint(endpoint_)
     , api_key(api_key_)
     , api_version(api_version_.empty() ? DEFAULT_ANTHROPIC_API_VERSION : api_version_)
     , uri(endpoint_)
@@ -39,7 +41,7 @@ HTTPHeaderEntries AnthropicProvider::getHeaders() const
     if (!api_key.empty()) /// not all providers need API key
         headers.emplace_back("x-api-key", api_key);
     headers.emplace_back("anthropic-version", api_version);
-    return headers;
+    return addCustomHeaders(std::move(headers));
 }
 
 void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)

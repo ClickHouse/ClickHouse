@@ -7,6 +7,9 @@
 
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/String.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -70,14 +73,38 @@ void IAIProvider::embed(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
 }
 
-AIProviderPtr createAIProvider(
-    const ContextPtr & context, const String & provider_name, const String & endpoint, std::string_view api_key, const String & api_version)
+HTTPHeaderEntries IAIProvider::addCustomHeaders(HTTPHeaderEntries headers) const
 {
+    for (const auto & custom_header : custom_headers)
+    {
+        const auto same_name = [&](const HTTPHeaderEntry & header) { return Poco::icompare(header.name, custom_header.name) == 0; };
+        if (std::any_of(headers.begin(), headers.end(), same_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate AI HTTP header '{}'", custom_header.name);
+        headers.push_back(custom_header);
+    }
+    return headers;
+}
+
+AIProviderPtr createAIProvider(
+    const ContextPtr & context,
+    const String & provider_name,
+    const String & endpoint,
+    std::string_view api_key,
+    const String & api_version,
+    HTTPHeaderEntries custom_headers)
+{
+    /// Validate custom names/values before producing any diagnostics about duplicate names.
+    context->getHTTPHeaderFilter().checkHeaders(custom_headers);
+    for (const auto & header : custom_headers)
+    {
+        if (Poco::icompare(header.name, "Content-Length") == 0 || Poco::icompare(header.name, "Transfer-Encoding") == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI functions manage HTTP header '{}' automatically", header.name);
+    }
     AIProviderPtr provider;
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
-        provider = std::make_unique<OpenAIProvider>(endpoint, api_key);
+        provider = std::make_unique<OpenAIProvider>(endpoint, api_key, std::move(custom_headers));
     else if (provider_name == "anthropic")
-        provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version);
+        provider = std::make_unique<AnthropicProvider>(endpoint, api_key, api_version, std::move(custom_headers));
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Unknown AI provider '{}'. Supported: 'openai', 'anthropic', 'huggingface', 'tei'", provider_name);

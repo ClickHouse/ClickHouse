@@ -10,6 +10,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <memory>
 #include <string_view>
+#include <utility>
 
 namespace DB
 {
@@ -152,6 +153,10 @@ struct AIEmbeddingResponse
 class IAIProvider
 {
 public:
+    explicit IAIProvider(HTTPHeaderEntries custom_headers_ = {})
+        : custom_headers(std::move(custom_headers_))
+    {
+    }
     virtual ~IAIProvider() = default;
 
     /// Send a chat completion request. Replaces the contents of `response`, filling the token counts
@@ -168,6 +173,13 @@ public:
     /// `response`, filling `input_tokens` before the payload is validated: so a failed request can still update token counts
     virtual void embed(
         const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response);
+
+protected:
+    /// Reject ambiguous, case-insensitive duplicates instead of silently replacing authentication.
+    [[nodiscard]] HTTPHeaderEntries addCustomHeaders(HTTPHeaderEntries headers) const;
+
+private:
+    const HTTPHeaderEntries custom_headers;
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
@@ -175,7 +187,11 @@ using AIProviderPtr = std::unique_ptr<IAIProvider>;
 /// Also validates the provider's headers with `HTTPHeaderFilter`.
 AIProviderPtr createAIProvider(
     const ContextPtr & context,
-    const String & provider_name, const String & endpoint, std::string_view api_key, const String & api_version);
+    const String & provider_name,
+    const String & endpoint,
+    std::string_view api_key,
+    const String & api_version,
+    HTTPHeaderEntries custom_headers = {});
 
 /// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
 String formatProviderError(int status_code, const String & response_body);
