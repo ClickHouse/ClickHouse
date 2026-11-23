@@ -2,6 +2,8 @@
 
 #include <Interpreters/Q/QCompiler.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,6 +26,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/Q/ASTQQuery.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -527,6 +531,26 @@ String deriveColumnName(const QNodePtr & node)
     }
 }
 
+namespace
+{
+
+/// The helper columns, aliases, and lambda parameters of the generated query are named with the prefix `__q`
+/// (`__q1`, `__qrow`, `__qmatch`, ...). A q name cannot start with an underscore, but a column of a ClickHouse table,
+/// of `.ch.sql`, or a column named by a symbol can. Such a column could be confused with a helper, so it is rejected:
+/// every table that the q program works with comes through here.
+void checkNoReservedNames(const NamesAndTypesList & columns)
+{
+    for (const auto & column : columns)
+    {
+        if (column.name.starts_with("__q"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The column '{}' cannot be used in the q dialect: the names starting with '__q' are reserved for the generated query",
+                column.name);
+    }
+}
+
+}
+
 QCompiler::QCompiler(ContextPtr context_) : context(std::move(context_))
 {
 }
@@ -556,6 +580,7 @@ QValue QCompiler::makeTable(ASTPtr select_query, Names keys)
     auto table = std::make_shared<QTable>();
     table->table_expression = makeSubqueryTableExpression(select_query);
     table->columns = header->getNamesAndTypesList();
+    checkNoReservedNames(table->columns);
     table->keys = std::move(keys);
 
     QValue value;
@@ -783,13 +808,33 @@ std::optional<QValue> QCompiler::resolveTable(const String & name)
         return std::nullopt;
 
     auto table_expression = makeTableIdentifierExpression(id.database_name, id.table_name);
-    QSelectBuilder builder;
-    builder.from = table_expression;
-    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(builder.build(), context);
+
+    /// The structure is taken from the metadata of the table rather than from analyzing `SELECT * FROM t`,
+    /// which would require the `SELECT` grant on every column, even if the q program uses only some of them
+    /// (or none, like `cols t`). The columns are those that the user is allowed to see, as in `system.columns`.
+    /// The generated query is checked for access as usual when it is executed.
+    StoragePtr storage = DatabaseCatalog::instance().getTable(id, context);
+    auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    NamesAndTypesList columns = metadata->getColumns().getOrdinary();
+    if (id.hasDatabase() && id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        auto access = context->getAccess();
+        if (!access->isGranted(AccessType::SHOW_COLUMNS, id.database_name, id.table_name))
+        {
+            std::erase_if(columns, [&](const NameAndTypePair & column)
+            {
+                return !access->isGranted(AccessType::SHOW_COLUMNS, id.database_name, id.table_name, column.name);
+            });
+            /// Nothing of the table is visible to the user: report it as the lack of the grant.
+            if (columns.empty())
+                context->checkAccess(AccessType::SELECT, id);
+        }
+    }
+    checkNoReservedNames(columns);
 
     auto result_table = std::make_shared<QTable>();
     result_table->table_expression = table_expression;
-    result_table->columns = header->getNamesAndTypesList();
+    result_table->columns = std::move(columns);
 
     QValue value;
     value.kind = QValueKind::Table;
