@@ -78,6 +78,27 @@ La fusión en lectura (merge-on-read) no está implementada, por lo que **las ta
 archivos de datos de la instantánea, que todavía contiene las versiones de fila reemplazadas por upserts posteriores. Por ello, al leer una tabla cuyo esquema
 declara `primary-key` se lanza una excepción.
 
+## Tablas con vectores de eliminación {#deletion-vectors}
+
+Los vectores de eliminación no se aplican, por lo que **las instantáneas con vectores de eliminación no se pueden leer**: el resultado seguiría
+conteniendo las filas que eliminaron sentencias `DELETE` y `UPDATE` posteriores. Por ello, leer una instantánea cuyo manifiesto de índice enumera
+vectores de eliminación lanza una excepción, incluso después de desactivar `deletion-vectors.enabled`.
+
+Una compactación completa en Paimon (`compact_strategy => 'full'`) aplica los vectores de eliminación, y las instantáneas creadas a partir
+de ella vuelven a poder leerse.
+
+Una lectura incremental se detiene en la primera instantánea no consumida con vectores de eliminación y permanece ahí incluso después de una compactación
+completa, ya que todas las instantáneas hasta esa compactación enumeran los mismos vectores de eliminación. El cursor no avanza.
+La lectura se reanuda cuando Paimon hace expirar esas instantáneas, o cuando se abandonan moviendo el cursor a la instantánea de
+la compactación completa, lo que descarta todas las instantáneas aún no consumidas hasta ese punto (consulte
+[Cuando no se puede leer una instantánea](#when-a-snapshot-cannot-be-read)):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+En cualquier caso, las filas eliminadas por esos vectores de eliminación siguen presentes en los datos que la lectura incremental ya ha devuelto.
+
 ## Configuración {#settings}
 
 Este motor usa la misma configuración que los motores correspondientes de almacenamiento de objetos y añade ajustes específicos de Paimon:
@@ -143,6 +164,57 @@ SELECT count()
 FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
+
+### Retroceso del almacén {#rewinding-the-warehouse}
+
+El cursor de Keeper en `paimon_keeper_path` registra hasta dónde se ha consumido el stream, y las lecturas incrementales asumen que el almacén solo avanza: los ids de instantánea de Paimon aumentan de forma monótona y nunca se reutilizan. Hacer expirar instantáneas antiguas no supone ningún problema: elimina un prefijo y deja intactos los ids posteriores.
+
+Mover el almacén *hacia atrás* invalida esa suposición. Restaurar el almacén a partir de una copia de seguridad anterior, revertirlo con otro motor o eliminar y volver a crear la tabla Paimon en la misma ruta son operaciones que hacen retroceder los ids de instantánea, de modo que el escritor acaba reutilizando ids que el cursor ya ha consumido.
+
+**Hacer retroceder el almacén requiere restablecer el cursor en la misma operación.** Una vez que se reutilizan los ids, ClickHouse no puede reconstruir qué instantáneas ha recibido ya un consumidor, por lo que un cursor que no se restablece tras un retroceso da lugar a una entrega no definida: es posible que se omitan las instantáneas con ids reutilizados.
+
+Si el retroceso deja el cursor apuntando más allá de la instantánea más reciente del almacén, la lectura falla con `INVALID_STATE` en lugar de indicar que no hay datos nuevos, y el mensaje de error incluye el comando de recuperación. No se lee nada y el cursor queda intacto, por lo que cada sondeo posterior fallará de la misma manera hasta que se resuelva el problema:
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+No elimine el nodo `committed_snapshot` para recuperarse. Un cursor ausente significa &quot;nunca consumido&quot;, por lo que la siguiente lectura volverá a leer la tabla completa en lugar de reanudarse.
+
+Antes de restablecer el cursor, pause todos los consumidores que compartan `paimon_keeper_path`, incluidas las vistas materializadas actualizables, y espere a que finalicen las lecturas in-flight.
+
+El commit de una lectura depende del cursor que esta observó. Si el cursor cambia después de esa observación pero antes del commit, la lectura falla con `INVALID_STATE`, no entrega nada y mantiene el valor que usted estableció. Una lectura que ya haya realizado el commit puede entregar igualmente su batch después de restablecer el cursor; en ese caso, retroceder el cursor puede provocar que ese batch se entregue de nuevo.
+
+No elimine ni reemplace `processing_lock` manualmente. Es un nodo efímero que pertenece a la sesión de ClickHouse Keeper que ejecuta la lectura incremental; su ciclo de vida no es una interfaz de recuperación para el operador.
+
+### Cuando no se puede leer una instantánea {#when-a-snapshot-cannot-be-read}
+
+Las instantáneas que Paimon ha expirado se omiten automáticamente: la expiración elimina un prefijo de los ids de instantánea, por lo que se sabe que todo lo que quede por debajo de la instantánea más antigua del almacén ya no existe, y el cursor lo deja atrás.
+
+Cualquier otro fallo al leer una instantánea —un error transitorio del almacenamiento de objetos, un archivo de instantánea corrupto— hace que la consulta falle y deja el cursor donde está. No existe, de forma deliberada, ningún parámetro de configuración para tolerar esto. Omitir una instantánea no leída supone eliminar de forma permanente los datos confirmados (committed) en ella, y un interruptor permanente de &quot;tolerar errores&quot; convertiría cualquier futuro corte de red en una pérdida de datos silenciosa. Como el cursor no se modifica, un error transitorio no requiere ninguna intervención: el siguiente sondeo vuelve a leer el mismo rango y se completa correctamente.
+
+Si una instantánea es realmente ilegible y el stream debe seguir avanzando, descártela explícitamente. El mensaje de error indica el comando, pero tenga en cuenta lo que implica: la lectura fallida no entregó nada, por lo que mover el cursor a la instantánea ilegible descarta **todas** las instantáneas aún no consumidas hasta ella inclusive, no solo la ilegible.
+
+Con el cursor en 1 y las instantáneas 2, 3 y 4 pendientes, siendo la 3 ilegible:
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+Para conservar las instantáneas legibles, primero realice el vaciado hasta la instantánea ilegible. Cada sondeo consume una instantánea y hace avanzar el cursor hasta llegar a la que no se puede leer:
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+En cualquier caso, la decisión queda registrada como una acción explícita del operador, en lugar de inferirse a partir de un parámetro de configuración.
 
 ## De Paimon a MergeTree mediante una vista materializada actualizable {#paimon-to-mergetree-via-refresh-mv}
 

@@ -22,7 +22,10 @@ SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5);
 SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5, offset = 3);
 
 SELECT '-- an arm-local setting on a non-last arm plus SETTINGS on the last arm is ambiguous and rejected';
-SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2)); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 1 UNION ALL SELECT number FROM numbers(100) SETTINGS limit = 2); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- parenthesized arms keep their own settings (1 + 2 = 3)';
+SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2));
 
 SELECT '-- nesting per-arm settings in subqueries applies them per arm unambiguously (1 + 2 = 3)';
 SELECT count() FROM (SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 2));
