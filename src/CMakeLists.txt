@@ -576,28 +576,6 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 # TUs where libcxx hardening needs to be disabled are specified here.
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
-    Processors/Transforms/WindowTransform.cpp                        # window functions
-    Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
-    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
-    Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
-    Processors/Transforms/Window/Partition.cpp                       # window functions
-    Processors/Transforms/Window/Peers.cpp                           # window functions
-    Processors/Transforms/Window/Frame.cpp                           # window functions
-    Processors/Transforms/Window/WindowTransformParams.cpp           # window functions
-    WindowFunctions/Common/WindowArguments.cpp                       # window functions
-    WindowFunctions/General/WindowFunctionRank.cpp                   # window functions
-    WindowFunctions/General/WindowFunctionDenseRank.cpp              # window functions
-    WindowFunctions/General/WindowFunctionRowNumber.cpp              # window functions
-    WindowFunctions/General/WindowFunctionNtile.cpp                  # window functions
-    WindowFunctions/General/WindowFunctionPercentRank.cpp            # window functions
-    WindowFunctions/General/WindowFunctionCumeDist.cpp               # window functions
-    WindowFunctions/General/WindowFunctionNthValue.cpp               # window functions
-    WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
-    WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
-    WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
-    WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
-    WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
