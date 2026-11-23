@@ -39,6 +39,7 @@ namespace ProfileEvents
 {
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorBytesOutsideRequestMap;
     extern const Event ReaderExecutorDeliveredBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorCacheGetRequests;
@@ -131,9 +132,9 @@ public:
                           bool bypass_ = false, bool incremental_ = false)
         : block_size(block_size_), state(std::move(state_)), bypass(bypass_), incremental(incremental_) {}
 
-    CacheTier tier() const override { return incremental ? CacheTier::FilesystemCache : CacheTier::PageCache; }
-    bool fillsWholeSegment() const override { return !incremental; }
-    String name() const override { return "MockFileCache"; }
+    [[nodiscard]] CacheTier tier() const override { return incremental ? CacheTier::FilesystemCache : CacheTier::PageCache; }
+    [[nodiscard]] bool fillsWholeSegment() const override { return !incremental; }
+    [[nodiscard]] String name() const override { return "MockFileCache"; }
 
     /// Tile the asked range into file-level blocks: a fully-resident block is a Hit (fresh reader),
     /// else a Miss carrying a Writer (null on a bypass tier, which never populates). Past EOF -> empty.
@@ -176,7 +177,7 @@ private:
     {
     public:
         Reader(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
-        ByteRange range() const override { return r; }
+        [[nodiscard]] ByteRange range() const override { return r; }
         ChainedBuffers read(ByteRange sub) override
         {
             const size_t lo = std::max(sub.offset, r.offset);
@@ -199,9 +200,9 @@ private:
     public:
         Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_, bool incremental_)
             : r(r_), state(std::move(s_)), incremental(incremental_) {}
-        ByteRange range() const override { return r; }
-        bool fillsWholeSegment() const override { return !incremental; }
-        size_t committed() const override
+        [[nodiscard]] ByteRange range() const override { return r; }
+        [[nodiscard]] bool fillsWholeSegment() const override { return !incremental; }
+        [[nodiscard]] size_t committed() const override
         {
             if (incremental)
             {
@@ -330,7 +331,7 @@ public:
     {
         return std::make_unique<ExternalBufferReader>(data);
     }
-    String name() const override { return "ExternalBufferSourceReader"; }
+    [[nodiscard]] String name() const override { return "ExternalBufferSourceReader"; }
 
 private:
     std::shared_ptr<const std::string> data;
@@ -390,7 +391,7 @@ public:
     {
         return std::make_unique<FaultBudgetReader>(data, budget);
     }
-    String name() const override { return "FaultBudgetSourceReader"; }
+    [[nodiscard]] String name() const override { return "FaultBudgetSourceReader"; }
 
 private:
     std::shared_ptr<const std::string> data;
@@ -524,9 +525,8 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
 
 TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
 {
-    /// Under memory pressure the executor serves a smaller window, so its in-flight buffers hold
-    /// less. The no-cache path serves the whole (pressure-adjusted) window, so the first window's
-    /// size is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
+    /// Under memory pressure the executor fetches a smaller window, so it holds less in memory. The first
+    /// fetch is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
     constexpr size_t base_window = 8 * 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", base_window)};
 
@@ -545,11 +545,11 @@ TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
 
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
             ReaderExecutor::Options{.window_size = base_window});
-        ChainedBuffers w = ex.readNextWindow();
-        const size_t got = w.atEnd() ? 0 : w.totalBytes();
+        ex.readNextWindow();
+        const size_t fetched = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
 
         mt.adjustWithUntrackedMemory(-amount);
-        return got;
+        return fetched;
     };
 
     EXPECT_EQ(firstWindow(50), base_window);        /// Normal: full window
@@ -582,7 +582,8 @@ TEST_F(ReaderExecutorTest, PlanLookAheadShrinksUnderMemoryPressure)
 
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
             ReaderExecutor::Options{
-                .block_size = block, .plan_look_ahead = base_look_ahead, .cache_chain = std::move(chain)});
+                .window_size = base_look_ahead / 2, .block_size = block, .plan_look_ahead = base_look_ahead,
+                .cache_chain = std::move(chain)});
         ex.readNextWindow();
 
         mt.adjustWithUntrackedMemory(-amount);
@@ -592,7 +593,7 @@ TEST_F(ReaderExecutorTest, PlanLookAheadShrinksUnderMemoryPressure)
     EXPECT_EQ(resolvedReach(50), base_look_ahead);        /// Normal
     EXPECT_EQ(resolvedReach(80), base_look_ahead / 2);    /// Elevated
     EXPECT_EQ(resolvedReach(92), base_look_ahead / 8);    /// High
-    EXPECT_EQ(resolvedReach(99), base_look_ahead / 32);   /// Critical, at the 128 KiB floor
+    EXPECT_EQ(resolvedReach(99), base_look_ahead / 16);   /// Critical: twice the window, which stops at 128 KiB
 }
 
 TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
@@ -604,7 +605,7 @@ TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
     constexpr size_t base_block = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", base_window)};
 
-    /// Read one window and return {total bytes, largest node bytes}. See `WindowShrinksUnderMemoryPressure`
+    /// Read one window and return {fetched bytes, largest served node}. See `WindowShrinksUnderMemoryPressure`
     /// for how the pressure level is driven through the group memory tracker.
     auto windowNodes = [&](UInt64 pct) -> std::pair<size_t, size_t>
     {
@@ -618,25 +619,24 @@ TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
             ReaderExecutor::Options{.window_size = base_window, .block_size = base_block});
         ChainedBuffers w = ex.readNextWindow();
-        size_t total = 0;
         size_t max_node = 0;
         while (!w.atEnd())
         {
             auto span = w.peek();
             max_node = std::max(max_node, span.size);
-            total += span.size;
             w.advance(span.size);
         }
+        const size_t fetched = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
         mt.adjustWithUntrackedMemory(-amount);
-        return {total, max_node};
+        return {fetched, max_node};
     };
 
-    const auto [normal_total, normal_node] = windowNodes(50);   /// Normal
-    EXPECT_EQ(normal_total, base_window);
+    const auto [normal_fetched, normal_node] = windowNodes(50);   /// Normal
+    EXPECT_EQ(normal_fetched, base_window);
     EXPECT_EQ(normal_node, base_block);          /// nodes of the full block
 
-    const auto [elevated_total, elevated_node] = windowNodes(80);   /// Elevated
-    EXPECT_EQ(elevated_total, base_window / 4);   /// window / 4
+    const auto [elevated_fetched, elevated_node] = windowNodes(80);   /// Elevated
+    EXPECT_EQ(elevated_fetched, base_window / 4);   /// window / 4
     EXPECT_EQ(elevated_node, base_block / 2);     /// block / 2, smaller than the window
 }
 
@@ -934,8 +934,7 @@ TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
 
 TEST_F(ReaderExecutorTest, NoCacheReadsFromSourceAndNeverTouchesCache)
 {
-    /// Case 1: an empty cache chain bypasses the plan entirely (`readNextWindow` -> `readSource`). Every
-    /// byte comes from source and no cache counter moves.
+    /// Case 1: without caches, every byte comes from source and no cache counter moves.
     const size_t block = 256;
     StoredObjects objects{makeFile("a.bin", 4 * block)};
 
@@ -1656,11 +1655,341 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
             << "served window clobbered by bridge at " << (off + i);
 }
 
+TEST_F(ReaderExecutorTest, FetchReadsPastReadUntilAndServesTheRestLater)
+{
+    /// `read_until` bounds the serve, not the fetch: the rest of the window is served later, with no request.
+    constexpr size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block});
+
+    ex.setReadUntil(block);
+    ASSERT_EQ(drain(ex).size(), block);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
+
+    ex.setReadUntil(std::nullopt);
+    auto rest = drain(ex);
+    ASSERT_EQ(rest.size(), 3 * block);
+    for (size_t i = 0; i < rest.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(rest[i]), patternByte(block + i)) << "at " << (block + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u) << "the bytes kept past read_until were read again";
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorDeliveredBytes), 4 * block);
+}
+
+TEST_F(ReaderExecutorTest, FetchStopsAtWideRequestMapHole)
+{
+    /// The hole between [0, 1K) and [3K, 4K) is wider than `min_bytes_for_seek`: no byte of it is read.
+    constexpr size_t kib = 1024;
+    StoredObjects objects{makeFile("a.bin", 4 * kib)};
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * kib, .min_bytes_for_seek = kib, .block_size = 256});
+    ByteRangeSet map;
+    map.add({0, kib});
+    map.add({3 * kib, kib});
+    ex.setRequestMap(map);
+
+    ex.readNextWindow();
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), kib);
+
+    ex.seek(3 * kib);
+    auto second = drain(ex);
+    ASSERT_EQ(second.size(), kib);
+    for (size_t i = 0; i < second.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(second[i]), patternByte(3 * kib + i)) << "at " << (3 * kib + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2 * kib) << "a byte of the hole was read";
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesOutsideRequestMap), 0u);
+}
+
+TEST_F(ReaderExecutorTest, FetchReadsThroughNarrowRequestMapHole)
+{
+    /// A hole up to `min_bytes_for_seek` is read through: one fetch covers both ranges.
+    constexpr size_t kib = 1024;
+    StoredObjects objects{makeFile("a.bin", 4 * kib)};
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * kib, .min_bytes_for_seek = kib, .block_size = 256});
+    ByteRangeSet map;
+    map.add({0, kib});
+    map.add({kib + 512, 512});   /// [1.5K, 2K), 512 bytes after the first range
+    ex.setRequestMap(map);
+
+    ex.setReadUntil(kib);
+    EXPECT_EQ(drain(ex).size(), kib);
+
+    ex.setReadUntil(2 * kib);
+    ex.seek(kib + 512);
+    auto second = drain(ex);
+    ASSERT_EQ(second.size(), 512u);
+    for (size_t i = 0; i < second.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(second[i]), patternByte(kib + 512 + i)) << "at " << (kib + 512 + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2 * kib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesOutsideRequestMap), 512u) << "only the hole lies outside the map";
+}
+
+TEST_F(ReaderExecutorTest, HeldConnectionEndingBeforeServedByteIsContinued)
+{
+    /// A fetch into a filesystem cache miss segment starts at its committed front, here before the served byte.
+    /// The held GET, bounded by the first run, ends before that byte: the rest of the fetch is read past its bound.
+    constexpr size_t kib = 1024;
+    constexpr size_t size = 1024 * kib;
+    StoredObjects objects{makeFile("a.bin", size)};
+    auto state = std::make_shared<MockCacheState>(size);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(
+        /*block_size=*/size, state, /*bypass=*/false, /*incremental=*/true));   /// one cold incremental cell
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 256 * kib, .min_bytes_for_seek = 64 * kib, .block_size = 128 * kib,
+        .max_tail_for_drain = 1024 * kib, .long_connection_limit = limit, .cache_chain = std::move(chain)});
+    ByteRangeSet map;
+    map.add({0, 512 * kib});
+    map.add({768 * kib, 256 * kib});
+    ex.setRequestMap(map);
+
+    /// Fetches [0, 256K) through a GET held up to 512K; the cell commits up to 256K.
+    ex.setReadUntil(128 * kib);
+    EXPECT_EQ(drain(ex).size(), 128 * kib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
+
+    ex.setReadUntil(size);
+    ex.seek(768 * kib);
+    auto second = drain(ex);
+    ASSERT_EQ(second.size(), 256 * kib);
+    for (size_t i = 0; i < second.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(second[i]), patternByte(768 * kib + i)) << "at " << (768 * kib + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size) << "a byte of the backfill was read twice";
+}
+
+TEST_F(ReaderExecutorTest, ReadOutsideRequestMapIsServed)
+{
+    /// A read where the map says nothing is served, one block per fetch.
+    constexpr size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block});
+    ex.setRequestMap({});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 4 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 4u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesOutsideRequestMap), 4 * block);
+}
+
+TEST_F(ReaderExecutorTest, NewRequestMapAppliesToTheNextFetch)
+{
+    /// A map that arrives during the read bounds the next fetch.
+    constexpr size_t kib = 1024;
+    StoredObjects objects{makeFile("a.bin", 4 * kib)};
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * kib, .min_bytes_for_seek = 256, .block_size = 256});
+    ByteRangeSet first;
+    first.add({0, kib});
+    first.add({3 * kib, kib});
+    ex.setRequestMap(first);
+    ex.setReadUntil(kib);
+    EXPECT_EQ(drain(ex).size(), kib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), kib);
+
+    ByteRangeSet second;
+    second.add({0, 4 * kib});
+    ex.setRequestMap(second);
+    ex.setReadUntil(std::nullopt);
+    EXPECT_EQ(drain(ex).size(), 3 * kib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 2u);
+}
+
+TEST_F(ReaderExecutorTest, CacheFetchReadsPastReadUntilAndFillsTheCache)
+{
+    /// A cold fetch reads past `read_until` and fills the cache; the rest is served from it.
+    constexpr size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+    auto state = std::make_shared<MockCacheState>(4 * block);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
+
+    ex.setReadUntil(block);
+    ASSERT_EQ(drain(ex).size(), block);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+    EXPECT_TRUE(state->resident.subtract(ByteRange{0, 4 * block}).empty()) << "the fetch did not fill the window";
+
+    ex.setReadUntil(std::nullopt);
+    auto rest = drain(ex);
+    ASSERT_EQ(rest.size(), 3 * block);
+    for (size_t i = 0; i < rest.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(rest[i]), patternByte(block + i)) << "at " << (block + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+}
+
+TEST_F(ReaderExecutorTest, BypassFetchPastReadUntilIsHeldNotServed)
+{
+    /// With a read-only tier, the bytes past `read_until` are held in memory, not served.
+    constexpr size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+    auto state = std::make_shared<MockCacheState>(4 * block);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state, /*bypass=*/true));
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
+
+    ex.setReadUntil(block);
+    ASSERT_EQ(drain(ex).size(), block) << "a byte past read_until was served";
+
+    ex.setReadUntil(std::nullopt);
+    auto rest = drain(ex);
+    ASSERT_EQ(rest.size(), 3 * block);
+    for (size_t i = 0; i < rest.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(rest[i]), patternByte(block + i)) << "at " << (block + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
+    EXPECT_TRUE(state->writes.empty());
+}
+
+TEST_F(ReaderExecutorTest, PlanResolvesNoFurtherThanTheRequestMapRun)
+{
+    /// The plan pins no cache cell past the map run.
+    constexpr size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 16 * block)};
+    auto state = std::make_shared<MockCacheState>(16 * block);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 4 * block, .min_bytes_for_seek = block, .block_size = block,
+        .plan_look_ahead = 16 * block, .cache_chain = std::move(chain)});
+    ByteRangeSet map;
+    map.add({0, 2 * block});
+    map.add({12 * block, 4 * block});
+    ex.setRequestMap(map);
+
+    EXPECT_EQ(ex.readNextWindow().totalBytes(), block);
+    EXPECT_EQ(state->max_resolved_end, 2 * block);
+}
+
+TEST_F(ReaderExecutorTest, LongConnectionEndsAtRequestMapHole)
+{
+    /// A held GET ends at the hole, so the seek over the hole finds it complete.
+    constexpr size_t mib = 1024 * 1024;
+    constexpr size_t window = 64 * 1024;
+    StoredObjects objects{makeFile("a.bin", 4 * mib)};
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = window, .min_bytes_for_seek = window, .block_size = window,
+        .max_tail_for_drain = 0, .long_connection_limit = std::make_shared<LongConnectionLimit>(4)});
+    ByteRangeSet map;
+    map.add({0, 2 * mib});
+    map.add({3 * mib, mib});
+    ex.setRequestMap(map);
+
+    ex.setReadUntil(2 * mib);
+    ASSERT_EQ(drain(ex).size(), 2 * mib);
+    ASSERT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
+
+    ex.setReadUntil(std::nullopt);
+    ex.seek(3 * mib);
+    auto second = drain(ex);
+    ASSERT_EQ(second.size(), mib);
+    for (size_t i = 0; i < second.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(second[i]), patternByte(3 * mib + i)) << "at " << (3 * mib + i);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u) << "a held GET ran into the hole";
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesOutsideRequestMap), 0u);
+}
+
+TEST_F(ReaderExecutorTest, RequestMapOpensLongConnectionOnFirstRead)
+{
+    /// With a map, the first read opens one held GET to the end of the run.
+    constexpr size_t mib = 1024 * 1024;
+    constexpr size_t window = 64 * 1024;
+    StoredObjects objects{makeFile("a.bin", 2 * mib)};
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = window, .min_bytes_for_seek = window, .block_size = window,
+        .max_tail_for_drain = 0, .long_connection_limit = std::make_shared<LongConnectionLimit>(4)});
+    ByteRangeSet map;
+    map.add({0, mib});
+    ex.setRequestMap(map);
+
+    ex.readNextWindow();
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
+
+    ex.setReadUntil(mib);
+    drain(ex);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), mib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+}
+
+TEST_F(ReaderExecutorTest, FetchReadsThroughHoleBeforeLaterDemandInAppendOnlyCell)
+{
+    /// One 4K filesystem cache segment fills only from its committed front: with [0, 1K) and [3.5K, 4K)
+    /// in the map, the first fetch reads through the hole.
+    constexpr size_t segment = 4096;
+    StoredObjects objects{makeFile("a.bin", 2 * segment)};
+    auto state = std::make_shared<MockCacheState>(2 * segment);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(segment, state, /*bypass=*/false, /*incremental=*/true));
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 2 * segment, .min_bytes_for_seek = 1024, .block_size = 1024, .cache_chain = std::move(chain)});
+    ByteRangeSet map;
+    map.add({0, 1024});
+    map.add({3584, 512});
+    ex.setRequestMap(map);
+
+    EXPECT_EQ(ex.readNextWindow().totalBytes(), 1024u);
+    ex.seek(3584);
+    ChainedBuffers w = ex.readNextWindow();
+    ASSERT_EQ(w.totalBytes(), 512u);
+    EXPECT_EQ(static_cast<unsigned char>(w.peek().data[0]), patternByte(3584));
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u) << "the hole was read by a second request";
+    EXPECT_TRUE(state->resident.subtract(ByteRange{0, segment}).empty()) << "the segment was not filled";
+}
+
+TEST_F(ReaderExecutorTest, FetchStopsBeforeDemandInNextAppendOnlyCell)
+{
+    /// The next range is in another segment, so the fetch stops at the end of the run.
+    constexpr size_t segment = 4096;
+    StoredObjects objects{makeFile("a.bin", 2 * segment)};
+    auto state = std::make_shared<MockCacheState>(2 * segment);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(segment, state, /*bypass=*/false, /*incremental=*/true));
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 2 * segment, .min_bytes_for_seek = 1024, .block_size = 1024, .cache_chain = std::move(chain)});
+    ByteRangeSet map;
+    map.add({0, 1024});
+    map.add({6144, 1024});
+    ex.setRequestMap(map);
+
+    EXPECT_EQ(ex.readNextWindow().totalBytes(), 1024u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
+    EXPECT_FALSE(state->resident.subtract(ByteRange{0, segment}).empty()) << "the rest of the segment was read";
+
+    ex.seek(6144);
+    ChainedBuffers w = ex.readNextWindow();
+    ASSERT_EQ(w.totalBytes(), 1024u);
+    EXPECT_EQ(static_cast<unsigned char>(w.peek().data[0]), patternByte(6144));
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 2u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u + 3072u);   /// [0, 1K) and [4K, 7K)
+}
+
 #if USE_SSL
 
 /// Encrypt `plaintext` with the given key/iv at stream offset 0 using AES_128_CTR. CTR is
 /// symmetric -- encryption and decryption are the same operation.
-String aesCtrEncrypt(const String & key, FileEncryption::InitVector iv, const String & plaintext)
+String aesCtrEncrypt(const SecretString & key, FileEncryption::InitVector iv, const String & plaintext)
 {
     FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
     enc.setOffset(0);
@@ -1673,7 +2002,7 @@ String aesCtrEncrypt(const String & key, FileEncryption::InitVector iv, const St
 /// legacy stacked-encryption write where an outer layer's keystream covers `[inner_header (64),
 /// inner_ciphertext]` at offsets `[0, inner_ciphertext_size + 64)`. CTR is position-addressable, so
 /// encrypting two contiguous chunks at adjacent offsets equals encrypting the concatenation.
-String aesCtrEncryptAt(const String & key, FileEncryption::InitVector iv,
+String aesCtrEncryptAt(const SecretString & key, FileEncryption::InitVector iv,
     size_t stream_offset, const char * data, size_t size)
 {
     FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
@@ -1684,7 +2013,7 @@ String aesCtrEncryptAt(const String & key, FileEncryption::InitVector iv,
 }
 
 /// Build the on-disk encrypted byte stream: Header(64 bytes) + ciphertext.
-String makeEncryptedFile(const String & key, FileEncryption::InitVector iv, const String & plaintext)
+String makeEncryptedFile(const SecretString & key, FileEncryption::InitVector iv, const String & plaintext)
 {
     String file_bytes;
     {
@@ -1717,7 +2046,7 @@ StoredObject writeBytesObject(const std::filesystem::path & dir, const std::stri
 TEST_F(ReaderExecutorTest, DecryptsSmallPayload)
 {
     /// Single layer, payload smaller than one block -- the executor serves plaintext.
-    String key(16, 'q');
+    SecretString key(16, 'q');
     const FileEncryption::InitVector iv(UInt128{42});
     const String plaintext = "Hello, encrypted world!";
     StoredObjects objects{writeBytesObject(tmp_dir, "small.enc", makeEncryptedFile(key, iv, plaintext))};
@@ -1736,7 +2065,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossManyWindows)
     /// Plaintext far larger than the block, so the executor decrypts many successive windows,
     /// each at its own increasing logical offset -- the CTR keystream offset must advance per
     /// window or the tail windows come back garbage.
-    String key(16, 'k');
+    SecretString key(16, 'k');
     const FileEncryption::InitVector iv(UInt128{0x0123456789abcdefULL});
 
     const size_t plaintext_size = 4096 * 3 + 777;
@@ -1762,12 +2091,45 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossManyWindows)
     EXPECT_EQ(String(out.begin(), out.end()), plaintext);
 }
 
+TEST_F(ReaderExecutorTest, RequestMapIsLogicalUnderEncryption)
+{
+    /// The map is in plaintext offsets: the fetch stops at the logical hole.
+    constexpr size_t kib = 1024;
+    SecretString key(16, 'm');
+    const FileEncryption::InitVector iv(UInt128{7});
+    String plaintext(4 * kib, '\0');
+    for (size_t i = 0; i < plaintext.size(); ++i)
+        plaintext[i] = static_cast<char>((i * 13 + 5) & 0xFF);
+    StoredObjects objects{writeBytesObject(tmp_dir, "map.enc", makeEncryptedFile(key, iv, plaintext))};
+
+    TestThreadGroup tg;
+    ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * kib, .min_bytes_for_seek = kib, .block_size = 256});
+    executor.addDecryptionLayer("/t", [&](UInt128, const String &) { return key; });
+    executor.initDecryption();
+    ByteRangeSet map;
+    map.add({0, kib});
+    map.add({3 * kib, kib});
+    executor.setRequestMap(map);
+
+    executor.setReadUntil(kib);
+    auto first = drain(executor);
+    EXPECT_EQ(String(first.begin(), first.end()), plaintext.substr(0, kib));
+
+    executor.setReadUntil(std::nullopt);
+    executor.seek(3 * kib);
+    auto second = drain(executor);
+    EXPECT_EQ(String(second.begin(), second.end()), plaintext.substr(3 * kib));
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2 * kib);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesOutsideRequestMap), 0u);
+}
+
 TEST_F(ReaderExecutorTest, DecryptsAcrossBlobBoundary)
 {
     /// A single encrypted file (header + ciphertext) split across two objects. The header lives in
     /// the first object and the payload spans both, so this exercises the physical shift
     /// `position + data_start_offset` and the object-piece mapping crossing a boundary while decrypting.
-    String key(16, 'm');
+    SecretString key(16, 'm');
     const FileEncryption::InitVector iv(UInt128{0x55});
     const size_t plaintext_size = 5000;
     String plaintext(plaintext_size, '\0');
@@ -1803,8 +2165,8 @@ TEST_F(ReaderExecutorTest, DecryptsMultiLayer)
     /// The outer keystream covers the inner header AND payload -- outer's keystream offset for
     /// user-byte P is `P + 64`, inner's is `P`. `initDecryption` peels the outer layer off the
     /// inner header before parsing it.
-    String key_inner(16, 'i');
-    String key_outer(16, 'o');
+    SecretString key_inner(16, 'i');
+    SecretString key_outer(16, 'o');
     const FileEncryption::InitVector iv_inner(UInt128{1});
     const FileEncryption::InitVector iv_outer(UInt128{2});
 
@@ -1866,8 +2228,8 @@ TEST_F(ReaderExecutorTest, TotalSizeIsZeroForEmptyEncryptedSource)
     StoredObjects objects{makeFile("empty.bin", 0)};
 
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{});
-    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return String{}; });
-    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return String{}; });
+    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return SecretString{}; });
+    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return SecretString{}; });
     executor.initDecryption();
 
     EXPECT_EQ(executor.totalSize(), 0u);
@@ -1880,8 +2242,8 @@ TEST_F(ReaderExecutorTest, UndersizedEncryptedSourceThrowsOnInit)
     StoredObjects objects{makeFile("tiny.bin", 10)};   // 10 bytes < 128-byte two-layer header
 
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{});
-    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return String{}; });
-    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return String{}; });
+    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return SecretString{}; });
+    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return SecretString{}; });
 
     EXPECT_THROW(executor.initDecryption(), DB::Exception);
 }
@@ -1893,7 +2255,7 @@ TEST_F(ReaderExecutorTest, EncryptedEofReleasesLongConnectionSlot)
     /// `data_start_offset`, so after the last plaintext byte `position` stayed below the physical
     /// size, `atEnd` stayed false, the EOF branch was skipped and the `LongConnectionLimit` slot was
     /// pinned past EOF. With the logical `totalSize()` the slot is released.
-    String key(16, 'k');
+    SecretString key(16, 'k');
     const FileEncryption::InitVector iv(UInt128{0xfeedfaceULL});
     const String plaintext(2048, 'E');
     StoredObjects objects{writeBytesObject(tmp_dir, "eof.enc", makeEncryptedFile(key, iv, plaintext))};
@@ -1914,7 +2276,7 @@ TEST_F(ReaderExecutorTest, EncryptionHeaderCacheServesRepeatedOpens)
 {
     /// With a shared header cache, the first open populates it and the second serves the header
     /// from the cache (skipping the source read); both must decrypt to the same plaintext.
-    String key(16, 'c');
+    SecretString key(16, 'c');
     FileEncryption::InitVector iv(UInt128{0x1234abcdULL});
     const String plaintext(5000, 'Z');
     StoredObjects objects{writeBytesObject(tmp_dir, "cached.enc", makeEncryptedFile(key, iv, plaintext))};
@@ -1946,7 +2308,7 @@ TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
     /// several threads decrypting DISTINCT logical offsets concurrently must not cross-talk through a
     /// shared keystream offset. Parse a known single-layer header, then have N threads each decrypt a
     /// distinct chunk; every chunk must match a single-threaded reference decrypt of the same chunk.
-    String key(16, 'r');
+    SecretString key(16, 'r');
     const FileEncryption::InitVector iv(UInt128{0xabcdef0123456789ULL});
 
     const size_t chunk_size = 4096;

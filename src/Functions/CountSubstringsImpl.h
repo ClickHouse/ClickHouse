@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Functions/PositionImpl.h>
 
 #include <functional>

@@ -32,7 +32,7 @@ struct MaterializedPostgreSQLSettings
     MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES(MaterializedPostgreSQLSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void applyChange(const SettingChange & change);
-    bool has(std::string_view name) const;
+    [[nodiscard]] bool has(std::string_view name) const;
     void loadFromQuery(ASTStorage & storage_def);
     /// Must be called after `loadFromQuery` when creating or attaching a `MaterializedPostgreSQL` database or table.
     void applyDefaultsForNewOrExistingObject(ASTStorage & storage_def, bool is_attach);
