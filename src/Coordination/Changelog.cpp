@@ -1464,9 +1464,16 @@ void LogEntryStorage::addEntryToLatestCache(uint64_t index, const LogEntryPtr & 
 {
     /// Invariant across the loop, and every evaluation costs a size-class lookup.
     const size_t entry_bytes = cachedLogEntryBytes(log_entry);
-    while (!latest_logs_cache.hasSpaceAvailable(entry_bytes))
+    while (!latest_logs_cache.hasSpaceAvailable(entry_bytes) && canEvictOldestCachedEntry())
         latest_logs_cache.popOldestEntry();
     latest_logs_cache.addEntry(index, log_entry);
+}
+
+bool LogEntryStorage::canEvictOldestCachedEntry() const
+{
+    /// Positions in compressed files are decompressed offsets that cannot be read back (see assertNotCompressed).
+    auto it = logs_location.find(latest_logs_cache.min_index_in_cache);
+    return it == logs_location.end() || !it->second.file_description->is_compressed;
 }
 
 void LogEntryStorage::reserveLocations(size_t count)
@@ -1804,7 +1811,7 @@ void LogEntryStorage::refreshCache()
         return latest_logs_cache.count_threshold != 0 && latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold;
     };
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
-           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()))
+           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()) && canEvictOldestCachedEntry())
         latest_logs_cache.popOldestEntry();
 }
 
@@ -2665,6 +2672,9 @@ void LogEntryStorage::appendNextFileCursors(LogReadPlan::ReadAheadWindow & windo
     if (coverage_end > max_index_with_location)
         return;
     const auto & next_loc = logs_location.at(coverage_end);
+    /// Entries of compressed files are never evicted, they are served from latest_logs_cache.
+    if (next_loc.file_description->is_compressed)
+        return;
     appendRunCursors(window, next_loc.file_description, coverage_end, max_index_with_location + 1);
 }
 

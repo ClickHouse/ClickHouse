@@ -2714,6 +2714,140 @@ TYPED_TEST(CoordinationChangelogTest, ValidRunsMaintenanceInvariants)
     changelog_read.checkValidRunsConsistencyForTests();
 }
 
+// Tests: compressed changelog files with a bounded latest logs cache.
+
+namespace
+{
+
+void appendAndWaitDurable(DB::KeeperLogStore & store, uint64_t from, uint64_t to)
+{
+    for (uint64_t i = from; i <= to; ++i)
+    {
+        auto entry = getLogEntry("value_" + std::to_string(i), i);
+        store.append(entry);
+    }
+    store.end_of_append_batch(0, 0);
+    waitDurableLogs(store);
+}
+
+}
+
+// Positions recorded for entries of compressed files are decompressed offsets that cannot be read back
+// from disk, so entries loaded from such files at startup must stay readable after the latest logs
+// cache goes over its threshold, both during the load and on later flushes.
+TYPED_TEST(CoordinationChangelogTest, CompressedEntriesStayCachedAcrossRestart)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = this->enable_compression,
+        .rotate_interval = 10,
+        .latest_logs_cache_entry_count_threshold = 5,
+    };
+    const DB::ReadAheadSettings readahead_settings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024};
+
+    const auto check_readable = [](DB::KeeperLogStore & store, uint64_t last)
+    {
+        auto entries = store.log_entries(1, last + 1);
+        ASSERT_NE(entries, nullptr);
+        ASSERT_EQ(entries->size(), last);
+        for (uint64_t i = 1; i <= last; ++i)
+        {
+            EXPECT_EQ((*entries)[i - 1]->get_term(), i);
+            for (const auto & entry : {store.entry_at(i), store.entry_at_ext(i, /*for_commit=*/true)})
+            {
+                ASSERT_NE(entry, nullptr);
+                EXPECT_EQ(entry->get_term(), i);
+            }
+        }
+
+        auto peer_entries = store.log_entries_ext(1, last + 1, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
+        ASSERT_NE(peer_entries, nullptr);
+        EXPECT_EQ(peer_entries->size(), last);
+    };
+
+    {
+        DB::KeeperLogStore writer(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+        writer.init(0, 0);
+        appendAndWaitDurable(writer, 1, 35);
+    }
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.init(0, 0);
+    check_readable(changelog, 35);
+
+    appendAndWaitDurable(changelog, 36, 45);
+    // flush() twice: the second one applies the locations of the uncompressed appends and evicts.
+    changelog.flush();
+    changelog.flush();
+    check_readable(changelog, 45);
+
+    DB::KeeperLogInfo log_info;
+    changelog.getKeeperLogInfo(log_info);
+    if (this->enable_compression)
+        EXPECT_EQ(log_info.latest_logs_cache_entries, 45u);
+    else
+        EXPECT_LE(log_info.latest_logs_cache_entries, 5u);
+}
+
+// After compress_logs is enabled on a node with uncompressed logs, read-ahead planned for the evicted
+// uncompressed prefix must not extend into the following compressed file.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadDoesNotPlanIntoCompressedFile)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Mixes compressed and uncompressed files itself";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    {
+        DB::KeeperLogStore writer(
+            DB::LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 10},
+            DB::FlushSettings(),
+            DB::ReadAheadSettings{},
+            this->keeper_context);
+        writer.init(0, 0);
+        appendAndWaitDurable(writer, 1, 10);
+    }
+
+    {
+        DB::KeeperLogStore writer(
+            DB::LogFileSettings{.force_sync = false, .compress_logs = true, .rotate_interval = 10},
+            DB::FlushSettings(),
+            DB::ReadAheadSettings{},
+            this->keeper_context);
+        writer.init(0, 0);
+        appendAndWaitDurable(writer, 11, 25);
+    }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin.zstd"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_21_30.bin.zstd"));
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = false, .compress_logs = true, .rotate_interval = 10, .latest_logs_cache_entry_count_threshold = 5},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    auto entry = changelog.entry_at_ext(1, /*for_commit=*/true);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->get_term(), 1u);
+
+    auto peer_entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
+    ASSERT_NE(peer_entries, nullptr);
+    ASSERT_EQ(peer_entries->size(), 5u);
+    for (uint64_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*peer_entries)[i]->get_term(), i + 1);
+
+    auto entries = changelog.log_entries(1, 26);
+    ASSERT_NE(entries, nullptr);
+    EXPECT_EQ(entries->size(), 25u);
+}
+
 // Tests: per-peer read-ahead
 
 namespace DB

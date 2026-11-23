@@ -296,7 +296,7 @@ struct ReadAheadReader;
   * suffix), bounded by latest_logs_cache_entry_count_threshold and by
   * latest_logs_cache_size_threshold, which is charged in `cachedLogEntryBytes`, that is resident
   * bytes rather than payload bytes; once persisted, its location is recorded (logs_location) and the
-  * entry may be evicted.
+  * entry may be evicted, unless that location is in a compressed file, which cannot be read back.
   *
   * Replication is served by per-peer read-ahead readers (peer_readers): each follower gets a
   * dedicated reader decoding entries ahead of the requested range.
@@ -485,6 +485,8 @@ private:
         const ChangelogFileDescriptionPtr & file,
         uint64_t from_index,
         uint64_t end_limit) const;
+
+    bool canEvictOldestCachedEntry() const;
 
     /// Shared N+1 planning step: extend the window with the next file's cursors past `coverage_end`.
     /// PRECONDITION: `coverage_end` is located and non-zero (caller must guard the zero/unlocated case,
