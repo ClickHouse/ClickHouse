@@ -361,11 +361,11 @@ public:
         return answerIfLoaded([&](const IStorage & storage) { return storage.getColumnSizes(columns, calculate_subcolumn_sizes); });
     }
 
-    SerializationInfoByName getSerializationHints() const override
+    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            return nested->getSerializationHints();
+            return nested->getSerializationHints(metadata_snapshot);
         return SerializationInfoByName{{}};
     }
 

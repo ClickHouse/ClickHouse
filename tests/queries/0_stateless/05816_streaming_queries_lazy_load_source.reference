@@ -1,0 +1,3 @@
+cold	MergeTree	0
+stream	3	6
+refresh	[1,2,3]
