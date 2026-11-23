@@ -575,7 +575,6 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
 # TUs where libcxx hardening needs to be disabled are specified here.
 set_property(SOURCE
-    Columns/IColumn.cpp                        # hashjoin_with_large_output
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
