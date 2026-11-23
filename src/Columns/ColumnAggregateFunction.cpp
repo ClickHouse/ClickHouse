@@ -316,6 +316,10 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
                         "in ColumnAggregateFunction::insertRangeFrom method (data.size() = {}).",
                         toString(start), toString(length), toString(from_concrete.data.size()));
 
+    /// Nothing to share; on a self-insert the column would hold itself as src.
+    if (length == 0)
+        return;
+
     if (force_data_ownership || (!empty() && src.get() != &from_concrete))
     {
         /// Must create new states of aggregate function and take ownership of it,
