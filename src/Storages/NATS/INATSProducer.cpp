@@ -152,6 +152,8 @@ void INATSProducer::startProducingTaskLoop()
     catch (...)
     {
         tryLogCurrentException(log);
+        publish_error = getCurrentExceptionMessage(false);
+        payloads.finish();
     }
 
     LOG_DEBUG(log, "Producer on subject {} completed", subject);
