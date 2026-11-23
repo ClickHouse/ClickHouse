@@ -68,6 +68,8 @@ public:
     void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     void checkInsertIsAllowed(ContextPtr context) const override;
+    /// The same for the views an insert into `table` also writes, unless `materialized_views_ignore_errors` lets it skip them.
+    static void checkDependentViewsInsertIsAllowed(const StoragePtr & table, ContextPtr query_context);
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -163,6 +165,9 @@ private:
     friend class RefreshTask;
 
     void checkStatementCanBeForwarded() const;
+
+    /// Returns the context the view writes into `target` with.
+    ContextPtr checkTargetInsertIsAllowed(const StoragePtr & target, ContextPtr local_context) const;
 
     ContextMutablePtr createRefreshContext(const String & log_comment) const;
     /// Prepare to refresh a refreshable materialized view: create temporary table (if needed) and

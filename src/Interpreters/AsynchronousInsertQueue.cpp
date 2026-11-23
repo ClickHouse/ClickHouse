@@ -43,6 +43,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUT.h>
@@ -597,6 +598,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 
     /// Asked for table functions too: the storage's own refusal is not an access check.
     table->checkInsertIsAllowed(query_context);
+    StorageMaterializedView::checkDependentViewsInsertIsAllowed(table, query_context);
 
     insert_query.columns = make_intrusive<ASTExpressionList>();
     for (const auto & column : sample_block)

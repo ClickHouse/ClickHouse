@@ -14,6 +14,24 @@ SUPPORT_IS_DISABLED
 -- rows queued by it: 0
 -- delta through a materialized view, writes on: an asynchronous insert still goes through
 2
+-- delta through a view on the source, writes off, asynchronous insert that does not wait
+SUPPORT_IS_DISABLED
+-- rows queued by it: 0
+-- delta two views below the source, writes off, asynchronous insert that does not wait
+SUPPORT_IS_DISABLED
+-- rows queued by it: 0
+-- delta two views below the source, writes on: an asynchronous insert still goes through
+3
+-- delta through a view on the target of a view inserted into, writes off, asynchronous insert that does not wait
+SUPPORT_IS_DISABLED
+-- rows queued by it: 0
+-- delta through a view on the target of an alias, writes off, asynchronous insert that does not wait
+SUPPORT_IS_DISABLED
+-- rows queued by it: 0
+-- a view whose target is dropped, asynchronous insert that does not wait: refused, as the flush would
+UNKNOWN_TABLE
+-- the same with ignore_materialized_views_with_dropped_target_table: still accepted on the initiator
+-- accepted on the initiator: rc=0 output_lines=0
 -- iceberg, inserts off, asynchronous insert that does not wait: refused, not acknowledged
 SUPPORT_IS_DISABLED
 -- rows queued by it: 0
@@ -21,6 +39,10 @@ SUPPORT_IS_DISABLED
 1
 -- iceberg through a definer view: the definer may write, the invoker session may not: accepted
 2
+-- iceberg through a definer view on the source: the definer may write, the invoker session may not: accepted
+3
+-- delta through a refreshable view on the source, writes off: still accepted on the initiator
+-- accepted on the initiator: rc=0 output_lines=0
 -- paimon, asynchronous insert that does not wait: refused, not acknowledged
 Writes are not supported for engine
 -- rows queued by it: 0

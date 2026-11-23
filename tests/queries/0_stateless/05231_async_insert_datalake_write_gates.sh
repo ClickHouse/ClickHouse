@@ -106,6 +106,58 @@ ${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=1 --async_insert=1 --wait_for_asy
     -q "INSERT INTO mv_delta VALUES (7)"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_delta"
 
+# The flush also writes the views that depend on the table, and the views that depend on their targets.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_chain (id Int32) ENGINE = Null;
+    CREATE MATERIALIZED VIEW mv_chain TO t_src AS SELECT id FROM t_chain;
+    CREATE TABLE a_src ENGINE = Alias('t_src');
+"
+
+echo '-- delta through a view on the source, writes off, asynchronous insert that does not wait'
+QID="${CLICKHOUSE_DATABASE}_delta_src_nowait"
+${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=0 "${ASYNC_NOWAIT[@]}" --query_id="${QID}" \
+    -q "INSERT INTO t_src VALUES (8)" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+echo "-- rows queued by it: $(queued_rows t_src "${QID}")"
+
+echo '-- delta two views below the source, writes off, asynchronous insert that does not wait'
+QID="${CLICKHOUSE_DATABASE}_delta_chain_nowait"
+${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=0 "${ASYNC_NOWAIT[@]}" --query_id="${QID}" \
+    -q "INSERT INTO t_chain VALUES (8)" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+echo "-- rows queued by it: $(queued_rows t_chain "${QID}")"
+
+echo '-- delta two views below the source, writes on: an asynchronous insert still goes through'
+${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=1 --async_insert=1 --wait_for_async_insert=1 \
+    -q "INSERT INTO t_chain VALUES (9)"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_delta"
+
+echo '-- delta through a view on the target of a view inserted into, writes off, asynchronous insert that does not wait'
+QID="${CLICKHOUSE_DATABASE}_delta_mv_chain_nowait"
+${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=0 "${ASYNC_NOWAIT[@]}" --query_id="${QID}" \
+    -q "INSERT INTO mv_chain VALUES (8)" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+echo "-- rows queued by it: $(queued_rows mv_chain "${QID}")"
+
+# An alias writes into its target with an insert of its own, which writes the target's views.
+echo '-- delta through a view on the target of an alias, writes off, asynchronous insert that does not wait'
+QID="${CLICKHOUSE_DATABASE}_delta_alias_src_nowait"
+${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=0 "${ASYNC_NOWAIT[@]}" --query_id="${QID}" \
+    -q "INSERT INTO a_src VALUES (8)" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+echo "-- rows queued by it: $(queued_rows a_src "${QID}")"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_gone_src (id Int32) ENGINE = Null;
+    CREATE TABLE t_gone (id Int32) ENGINE = Null;
+    CREATE MATERIALIZED VIEW mv_gone TO t_gone AS SELECT id FROM t_gone_src;
+    DROP TABLE t_gone;
+"
+echo '-- a view whose target is dropped, asynchronous insert that does not wait: refused, as the flush would'
+${CLICKHOUSE_CLIENT} "${ASYNC_NOWAIT[@]}" -q "INSERT INTO t_gone_src VALUES (1)" 2>&1 | grep -o -m1 'UNKNOWN_TABLE'
+
+echo '-- the same with ignore_materialized_views_with_dropped_target_table: still accepted on the initiator'
+out=$(${CLICKHOUSE_CLIENT} --ignore_materialized_views_with_dropped_target_table=1 "${ASYNC_NOWAIT[@]}" \
+    -q "INSERT INTO t_gone_src VALUES (1)" 2>&1); rc=$?
+echo "-- accepted on the initiator: rc=${rc} output_lines=$(printf '%s' "${out}" | grep -c . || true)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_gone_src"
+
 echo '-- iceberg, inserts off, asynchronous insert that does not wait: refused, not acknowledged'
 QID="${CLICKHOUSE_DATABASE}_iceberg_nowait"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=0 "${ASYNC_NOWAIT[@]}" --query_id="${QID}" \
@@ -131,6 +183,21 @@ echo '-- iceberg through a definer view: the definer may write, the invoker sess
 ${CLICKHOUSE_CLIENT} --async_insert=1 --wait_for_async_insert=1 \
     -q "INSERT INTO mv_iceberg_definer VALUES (8)"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_iceberg"
+
+echo '-- iceberg through a definer view on the source: the definer may write, the invoker session may not: accepted'
+${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=1 --async_insert=1 --wait_for_async_insert=1 \
+    -q "INSERT INTO t_src VALUES (10)"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_iceberg"
+
+# A refreshable view reads its source on its own schedule, so an insert into the source does not write it.
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_refresh_src (id Int32) ENGINE = Null;
+    CREATE MATERIALIZED VIEW rmv_delta REFRESH EVERY 1 YEAR APPEND TO t_delta EMPTY AS SELECT id FROM t_refresh_src;
+"
+echo '-- delta through a refreshable view on the source, writes off: still accepted on the initiator'
+out=$(${CLICKHOUSE_CLIENT} --allow_delta_lake_writes=0 "${ASYNC_NOWAIT[@]}" -q "INSERT INTO t_refresh_src VALUES (1)" 2>&1); rc=$?
+echo "-- accepted on the initiator: rc=${rc} output_lines=$(printf '%s' "${out}" | grep -c . || true)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_refresh_src"
 
 # Paimon has no writer at all, so its refusal comes from the unsupported default rather than from
 # a setting; the initiator must report it for the same reason.
@@ -231,7 +298,8 @@ ${CLICKHOUSE_CLIENT} "${ASYNC_NOWAIT[@]}" -q "INSERT INTO mv_archive_column VALU
 # `SYNC`: a definer stays in use, and cannot be dropped, until its view is actually removed.
 ${CLICKHOUSE_CLIENT} -q "
     DROP VIEW mv_archive_no_insert SYNC; DROP VIEW mv_archive_column SYNC; DROP TABLE a_archive;
-    DROP VIEW mv_iceberg_definer SYNC; DROP VIEW mv_delta; DROP TABLE t_src;
+    DROP VIEW mv_iceberg_definer SYNC; DROP VIEW mv_delta; DROP VIEW mv_chain; DROP VIEW rmv_delta; DROP VIEW mv_gone;
+    DROP TABLE a_src; DROP TABLE t_chain; DROP TABLE t_refresh_src; DROP TABLE t_gone_src; DROP TABLE t_src;
     DROP TABLE t_delta; DROP TABLE t_iceberg; DROP TABLE t_paimon;
     DROP TABLE t_globs; DROP TABLE t_archive; DROP TABLE t_plain;
     DROP USER ${DEFINER_USER}; DROP USER ${RESTRICTED_USER}; DROP USER ${COLUMN_USER};

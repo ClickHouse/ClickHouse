@@ -1,4 +1,5 @@
 #include <thread>
+#include <unordered_set>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/ColumnDefault.h>
@@ -34,6 +35,7 @@
 #include <Interpreters/executeQuery.h>
 
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/SelectQueryDescription.h>
@@ -62,6 +64,8 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsBool ignore_materialized_views_with_dropped_target_table;
+    extern const SettingsBool materialized_views_ignore_errors;
 }
 
 namespace ServerSetting
@@ -89,6 +93,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
     extern const int TOO_MANY_MATERIALIZED_VIEWS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace ActionLocks
@@ -752,10 +757,15 @@ void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_cont
 
 void StorageMaterializedView::checkInsertIsAllowed(ContextPtr local_context) const
 {
+    checkTargetInsertIsAllowed(getTargetTable(), local_context);
+}
+
+ContextPtr StorageMaterializedView::checkTargetInsertIsAllowed(const StoragePtr & target, ContextPtr local_context) const
+{
     /// The context is derived exactly as `write` derives it, so the check answers as the sink would.
-    auto view_metadata = getInMemoryMetadataPtr(local_context, false);
-    auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
-    auto target = getTargetTable();
+    /// The view's own metadata is enough for that, and without SQL security the derived context is a plain copy.
+    const auto view_metadata = IStorage::getInMemoryMetadataPtr(local_context, false);
+    ContextPtr context = view_metadata->sql_security_type ? view_metadata->getSQLSecurityOverriddenContext(local_context) : local_context;
     /// Every insert into the view needs this access to its target, so the target's refusal must not come first.
     if (!has_inner_table && view_metadata->sql_security_type)
     {
@@ -763,6 +773,57 @@ void StorageMaterializedView::checkInsertIsAllowed(ContextPtr local_context) con
         context->checkAccess(AccessType::INSERT, target->getStorageID(), target_metadata->getSampleBlockInsertable().getNames());
     }
     target->checkInsertIsAllowed(context);
+    return context;
+}
+
+void StorageMaterializedView::checkDependentViewsInsertIsAllowed(const StoragePtr & table, ContextPtr query_context)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (settings[Setting::materialized_views_ignore_errors] || table->noPushingToViewsOnInserts())
+        return;
+
+    std::vector<std::pair<StoragePtr, ContextPtr>> destinations{{table, query_context}};
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    while (!destinations.empty())
+    {
+        auto [destination, destination_context] = std::move(destinations.back());
+        destinations.pop_back();
+        const auto destination_id = destination->getStorageID();
+        if (!visited.insert(destination_id).second)
+            continue;
+
+        /// A view written into directly writes into its target, and an `Alias` too, with an insert of its own.
+        if (const auto * destination_view = dynamic_cast<const StorageMaterializedView *>(destination.get()))
+        {
+            auto target = destination_view->getTargetTable();
+            destinations.emplace_back(target, destination_view->checkTargetInsertIsAllowed(target, destination_context));
+            continue;
+        }
+        if (const auto * alias = dynamic_cast<const StorageAlias *>(destination.get()))
+        {
+            auto alias_target = alias->tryGetTargetTable();
+            if (alias_target && !alias_target->noPushingToViewsOnInserts())
+                destinations.emplace_back(alias_target, destination_context);
+        }
+
+        for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(destination_id))
+        {
+            auto storage = DatabaseCatalog::instance().tryGetTable(view_id, destination_context);
+            const auto * view = dynamic_cast<const StorageMaterializedView *>(storage.get());
+            if (!view)
+                continue;
+            /// The flush skips a view that no longer reads this table, and one whose target is a view.
+            const auto view_metadata = view->IStorage::getInMemoryMetadataPtr(destination_context, false);
+            if (view_metadata->getSelectQuery().select_table_id != destination_id)
+                continue;
+            auto target = view->tryGetTargetTable();
+            if (!target && !settings[Setting::ignore_materialized_views_with_dropped_target_table])
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Target table '{}' of view '{}' doesn't exist", view->getTargetTableId(), view_id);
+            if (!target || dynamic_cast<const StorageMaterializedView *>(target.get()))
+                continue;
+            destinations.emplace_back(target, view->checkTargetInsertIsAllowed(target, destination_context));
+        }
+    }
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
