@@ -1028,6 +1028,13 @@ ASTPtr makeNonConstantInReplacement(
 FutureSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, ContextPtr context, PreparedSets & prepared_sets)
 {
+    if (inFunctionComparesNulls(node->name) && context->getSettingsRef()[Setting::in_null_as_unknown])
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("in_null_as_unknown", Field(0u));
+        context = std::move(mutable_context);
+    }
+
     const IAST & args = *node->arguments;
 
     if (args.children.size() != 2)
@@ -1601,7 +1608,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (auto name_and_type = getNameAndTypeFromAST(node.arguments->children.at(0), data))
             left_argument_type = name_and_type->type;
         const bool left_argument_is_tuple = isTupleType(left_argument_type) || isTupleFunction(node.arguments->children.at(0));
-        const bool use_standard_null_semantics = data.getContext()->getSettingsRef()[Setting::in_null_as_unknown];
+        const bool use_standard_null_semantics = data.getContext()->getSettingsRef()[Setting::in_null_as_unknown]
+            && !inFunctionComparesNulls(node.name);
 
         if (use_standard_null_semantics && left_argument_is_tuple)
             throw Exception(
