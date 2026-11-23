@@ -4824,6 +4824,10 @@ Number of replicas used to execute a query with task-based parallel replicas
 
 The total number of parquet row groups pruned by bloom filters.
 
+### ParquetColumnChunksPagesLocatedFromHeaders {#parquetcolumnchunkspageslocatedfromheaders}
+
+Number of Parquet column chunks without an offset index whose pages holding the rows read by lazy materialization were located from their page headers, so that only those pages were read
+
 ### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
 
 Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads
