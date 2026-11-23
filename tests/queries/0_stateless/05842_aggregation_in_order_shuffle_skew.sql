@@ -14,29 +14,34 @@ DROP TABLE IF EXISTS t_aio_shuffle_skew;
 CREATE TABLE t_aio_shuffle_skew (k UInt64, v UInt64, s String, lc LowCardinality(String), d Dynamic)
 ENGINE = MergeTree ORDER BY k
 -- The query under `max_memory_usage` below holds up to 16 blocks per stream plus the read buffers, so its memory
--- depends on the size of a block and of a compressed block. Do not let the randomized settings enlarge them.
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10M', min_compress_block_size = 65536, max_compress_block_size = 1048576;
+-- depends on the size of a block and of a compressed block, and on the number of read buffers (the packed part
+-- storage on an object storage needs more of them). Do not let the randomized settings enlarge them.
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10M', min_compress_block_size = 65536, max_compress_block_size = 1048576,
+    min_bytes_for_full_part_storage = 0;
 
 -- Every part holds a single key, so each input stream sends all of its rows to one shard for a long time, while
 -- every other shard waits for that stream. Without markers this either deadlocks or buffers whole parts.
+-- The rows are few and wide: the test is about the amount of buffered data, and the time it takes is in the number
+-- of rows (it runs under sanitizers with the thread fuzzer as well).
 SYSTEM STOP MERGES t_aio_shuffle_skew;
-INSERT INTO t_aio_shuffle_skew SELECT 1, number, toString(number), toString(number % 100), number FROM numbers(1000000);
-INSERT INTO t_aio_shuffle_skew SELECT 2, number, toString(number), toString(number % 100), number FROM numbers(1000000);
-INSERT INTO t_aio_shuffle_skew SELECT 3, number, toString(number), toString(number % 100), number FROM numbers(1000000);
-INSERT INTO t_aio_shuffle_skew SELECT 4, number, toString(number), toString(number % 100), number FROM numbers(1000000);
-INSERT INTO t_aio_shuffle_skew SELECT 5, number, toString(number), toString(number % 100), number FROM numbers(1000000);
-INSERT INTO t_aio_shuffle_skew SELECT 6, number, toString(number), toString(number % 100), number FROM numbers(1000000);
-INSERT INTO t_aio_shuffle_skew SELECT 7, number, toString(number), toString(number % 100), number FROM numbers(1000000);
-INSERT INTO t_aio_shuffle_skew SELECT 8, number, toString(number), toString(number % 100), number FROM numbers(1000000);
+INSERT INTO t_aio_shuffle_skew SELECT 1, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 2, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 3, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 4, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 5, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 6, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 7, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_skew SELECT 8, number, repeat(toString(number), 60), toString(number % 100), number FROM numbers(100000);
 
 SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle_skew GROUP BY k
       SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
--- The repartitioning holds a few blocks per stream, not whole parts: it takes under 20 MB with blocks of 8192 rows,
--- while a part is about 50 MB in memory, and seven of the eight streams wait for the first one.
-SELECT k, sum(v), max(s), max(lc), count(d) FROM t_aio_shuffle_skew GROUP BY k ORDER BY k
-SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_block_size = 8192,
+-- The repartitioning holds a few blocks per stream, not whole parts: the query takes about 30 MB with blocks of
+-- 1024 rows, while a part is about 31 MB in memory (250 MB in total), and seven of the eight streams wait for the
+-- first one.
+SELECT k, sum(v), max(s) = repeat('99999', 60), max(lc), count(d) FROM t_aio_shuffle_skew GROUP BY k ORDER BY k
+SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_block_size = 1024,
     max_memory_usage = '100M';
 
 -- `GROUP BY k, v % 7` reads in the order of `k` alone, so rows with equal sort keys go to different shards.
@@ -48,9 +53,9 @@ SELECT
 
 -- Runs of keys that interleave between parts, with many more shards than streams.
 TRUNCATE TABLE t_aio_shuffle_skew;
-INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 50000) * 3, number, '', '', NULL FROM numbers(600000);
-INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 70000) * 3 + 1, number, '', '', NULL FROM numbers(600000);
-INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 30000) * 2, number, '', '', NULL FROM numbers(600000);
+INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 12500) * 3, number, '', '', NULL FROM numbers(150000);
+INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 17500) * 3 + 1, number, '', '', NULL FROM numbers(150000);
+INSERT INTO t_aio_shuffle_skew SELECT intDiv(number, 7500) * 2, number, '', '', NULL FROM numbers(150000);
 
 SELECT
     (SELECT groupBitXor(cityHash64(k, s)) FROM (SELECT k, sum(v) AS s FROM t_aio_shuffle_skew GROUP BY k)
