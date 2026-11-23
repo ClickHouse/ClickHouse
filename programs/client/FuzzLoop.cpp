@@ -1280,6 +1280,10 @@ bool Client::buzzHouse()
     {
         LOG_INFO(fuzz_config->log, "The server is not responding, stopping fuzzing");
     }
+    else if (fuzz_config->distributed_shapes)
+    {
+        fuzz_config->logDistributedShapesReach();
+    }
     if (!no_timeout || !no_eof)
     {
         /// Don't let the last query's error code become the exit code

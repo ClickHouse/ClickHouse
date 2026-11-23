@@ -676,6 +676,43 @@ std::optional<DB::Strings> FuzzConfig::queryLines(const String & query, const bo
     return res;
 }
 
+void FuzzConfig::logDistributedShapesReach()
+{
+    /// Initial SELECTs carrying the parallel replicas bundle, with automatic mode or without, against the others
+    static const String query = R"(SELECT
+    position(query, 'parallel_replicas_allow_in_with_subquery = 1, automatic_parallel_replicas_mode = ') > 0 AS bundled,
+    position(query, 'parallel_replicas_allow_in_with_subquery = 1, automatic_parallel_replicas_mode = 1') > 0 AS automatic,
+    count() AS queries,
+    countIf(type = 'QueryFinish') AS finished,
+    countIf(type = 'QueryFinish' AND ProfileEvents['SelectedMarks'] > 0) AS finished_reading_marks,
+    countIf(ProfileEvents['ParallelReplicasQueryCount'] > 0) AS pr_plan_built,
+    countIf(ProfileEvents['ParallelReplicasNumRequests'] > 0) AS pr_coordinated_reads,
+    countIf(ProfileEvents['AutoParallelReplicasCostModelEvaluated'] > 0) AS autopr_cost_model,
+    countIf(ProfileEvents['AutoParallelReplicasApplied'] > 0) AS autopr_applied,
+    countIf(ProfileEvents['AutoParallelReplicasPlansNotComparable'] > 0) AS autopr_not_comparable,
+    countIf(exception_code = 49) AS logical_errors
+FROM "system"."query_log"
+WHERE is_initial_query AND type != 'QueryStart' AND query_kind = 'Select'
+GROUP BY ALL ORDER BY ALL)";
+
+    if (!processServerQuery(false, "SYSTEM FLUSH LOGS;"))
+    {
+        LOG_INFO(log, "Distributed shapes reach: SYSTEM FLUSH LOGS failed");
+        return;
+    }
+    const std::optional<DB::Strings> lines = queryLines(query, false, "TabSeparatedWithNames");
+
+    if (!lines.has_value())
+    {
+        LOG_INFO(log, "Distributed shapes reach: the query_log query failed");
+        return;
+    }
+    for (const auto & line : lines.value())
+    {
+        LOG_INFO(log, "Distributed shapes reach: {}", line);
+    }
+}
+
 String FuzzConfig::queryFirstLine(const String & query, const bool outlog, const String & format)
 {
     const std::optional<DB::Strings> lines = queryLines(query, outlog, format);
