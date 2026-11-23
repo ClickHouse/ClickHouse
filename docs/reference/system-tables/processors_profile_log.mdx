@@ -101,8 +101,8 @@ When queries join multiple tables, ClickHouse constructs independent read pipeli
 
 To identify and attribute rows to each side of a join:
 
-1. Identify the scan processors (such as `MergeTreeSelectProcessor` or `SourceFromQueryPipeline`) associated with each input table using `plan_step_name` and `plan_step_description`.
-2. Observe how intermediate rows pass through `FilterTransform`, `ExpressionTransform`, and into `HashJoinTransform`.
+1. Identify the scan processors associated with each input table using `plan_step_name` and `plan_step_description`. For `MergeTree` tables, the processor name typically begins with `MergeTreeSelect`.
+2. Observe how intermediate rows pass through `FilterTransform`, `ExpressionTransform`, and the join processors.
 3. Note that processor row and byte counters measure in-memory chunk processing rather than raw disk reads (which are tracked in `system.query_log` and `ProfileEvents`).
 
 #### Example {#profiling-join-example}
@@ -153,8 +153,8 @@ ORDER BY plan_step, id;
 ```
 
 In the output:
-- Processors under the step corresponding to reading `right_table` feed rows into `HashJoinTransform` to build the in-memory hash table.
-- Processors under the step corresponding to `left_table` stream rows through `HashJoinTransform` to probe for matching keys.
+- Processors under the step corresponding to reading `right_table` feed rows into build-side processors such as `FillingRightJoinSideTransform`, which construct the in-memory hash table.
+- Processors under the step corresponding to `left_table` stream rows through `JoiningTransform` to probe for matching keys.
 - To determine rows read per table, look at `output_rows` on the scan step for each respective side rather than aggregate totals.
 
 ## See Also {#see-also}
