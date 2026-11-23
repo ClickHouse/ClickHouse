@@ -219,13 +219,17 @@ static bool constantGranularityUsesBytes(
 
 MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     size_t rows,
-    size_t bytes_uncompressed,
+    const std::function<size_t()> & get_bytes_uncompressed,
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules)
 {
     if (!constantGranularityUsesBytes(rows, settings, info, blocks_are_granules))
         return std::make_shared<MergeTreeIndexGranularityAdaptive>();
+
+    /// computeIndexGranularity uses the byte count only on the adaptive path; a non-adaptive part gets the fixed
+    /// row granularity, so do not pay for get_bytes_uncompressed (which may read a part's prefixes) there.
+    const size_t bytes_uncompressed = info.mark_type.adaptive ? get_bytes_uncompressed() : 0;
 
     size_t computed_granularity = computeIndexGranularity(
         rows,
@@ -244,14 +248,7 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules)
 {
-    /// Only size the block (which serializes variable-size AggregateFunction states) when the
-    /// constant-granularity path will actually consume it. On the non-const adaptive path the
-    /// figure is ignored here and recomputed per block by MergeTreeDataPartWriterOnDisk, so
-    /// computing it now would be a wasted serialization pass.
-    if (!constantGranularityUsesBytes(block.rows(), settings, info, blocks_are_granules))
-        return std::make_shared<MergeTreeIndexGranularityAdaptive>();
-
-    return createMergeTreeIndexGranularity(block.rows(), getBlockSizeForGranularity(block), settings, info, blocks_are_granules);
+    return createMergeTreeIndexGranularity(block.rows(), [&] { return getBlockSizeForGranularity(block); }, settings, info, blocks_are_granules);
 }
 
 size_t MergeTreeIndexGranularity::getMarksCountForSkipIndex(size_t skip_index_granularity) const
