@@ -7484,10 +7484,21 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         else if (command.type == AlterCommand::MODIFY_COLUMN && command.data_type && old_types.contains(command.column_name)
             && isJSONSharedDataPathRegexpsOnlyChange(*old_types.at(command.column_name), *command.data_type))
         {
-            /// A SHARED REGEXP change rewrites no data, so a key or a projection computed from the whole column would go stale.
+            /// A SHARED REGEXP change rewrites no data, so a key, a MATERIALIZED column or a projection computed from the whole
+            /// column would go stale.
             if (columns_in_keys.contains(command.column_name))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "ALTER of key column {} is forbidden",
                     backQuoteIfNeed(command.column_name));
+
+            /// Old parts keep the stored values of a MATERIALIZED column, even one that reads the column through an ALIAS.
+            for (const auto & column : old_metadata.getColumns())
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                    && expressionReadsColumn(column.default_desc.expression, old_metadata.getColumns(), local_context, command.column_name))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} is forbidden because the MATERIALIZED column {} is computed from it. Drop the column first",
+                        backQuoteIfNeed(command.column_name),
+                        backQuoteIfNeed(column.name));
 
             for (const auto & projection : old_metadata.getProjections())
                 if (new_metadata.getProjections().has(projection.name) && usesColumnInExpression(*projection.query_ast, command.column_name))

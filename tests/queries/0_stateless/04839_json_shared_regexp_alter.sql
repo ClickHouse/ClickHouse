@@ -136,6 +136,30 @@ DROP TABLE key_04839;
 CREATE TABLE key_04839 (id UInt64, j JSON, PROJECTION p (SELECT dynamicType(CAST(j, 'Dynamic')) AS ty, count() GROUP BY ty)) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE key_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^zzz$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 DROP TABLE key_04839;
+-- A projection that reads the column through an ALIAS column or a chain of them.
+CREATE TABLE key_04839 (id UInt64, j JSON, a ALIAS j, PROJECTION p (SELECT dynamicType(CAST(a, 'Dynamic')) AS ty, count() GROUP BY ty)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO key_04839 SELECT number, '{"x":1}' FROM numbers(4);
+ALTER TABLE key_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE key_04839;
+CREATE TABLE key_04839 (id UInt64, j JSON, a ALIAS j, b ALIAS a, PROJECTION p (SELECT id, any(dynamicType(CAST(b, 'Dynamic'))) GROUP BY id)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE key_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE key_04839;
+
+-- A stored MATERIALIZED column computed from the whole column, directly or through an ALIAS column, would keep its old values.
+CREATE TABLE mat_04839 (id UInt64, j JSON, ty String MATERIALIZED toTypeName(j)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mat_04839 SELECT number, '{"x":1}' FROM numbers(4);
+ALTER TABLE mat_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'materialized', ty, count() FROM mat_04839 GROUP BY ty;
+DROP TABLE mat_04839;
+CREATE TABLE mat_04839 (id UInt64, j JSON, a ALIAS j, ty String MATERIALIZED dynamicType(CAST(a, 'Dynamic'))) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE mat_04839 MODIFY COLUMN j JSON(SHARED REGEXP '^x$'); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE mat_04839;
+-- A MATERIALIZED column of a subcolumn does not depend on the rules.
+CREATE TABLE mat_04839 (id UInt64, j JSON(a UInt32), x UInt32 MATERIALIZED j.a) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mat_04839 SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+ALTER TABLE mat_04839 MODIFY COLUMN j JSON(a UInt32, SHARED REGEXP '^x$');
+SELECT 'materialized subcolumn', sum(x) FROM mat_04839;
+DROP TABLE mat_04839;
 
 -- A key on a subcolumn and a projection that stores the column as is do not depend on the rules.
 CREATE TABLE key_04839 (id UInt64, j JSON(a UInt32), PROJECTION p (SELECT * ORDER BY j.a)) ENGINE = MergeTree ORDER BY (j.a, id) SETTINGS index_granularity = 1;
