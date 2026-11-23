@@ -1,0 +1,6 @@
+--- url reads the listed object, whose key contains the separator
+1	2
+--- a per-member task cannot name it, so urlCluster refuses instead of reading another object
+contains '::', which is the archive-member separator
+--- and so does a whole-archive task, which the worker cannot tell from a per-member one
+contains '::', which is the archive-member separator

@@ -48,6 +48,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -648,8 +649,13 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()),
         local_context->getProcessListElementSafe());
 
+    /// A listed object key that itself contains `::` cannot be named by a read task, because the worker splits
+    /// the task path at the first separator; only a Web archive read builds such a task from a listed key.
+    const bool reject_ambiguous_archive_keys
+        = configuration->getType() == ObjectStorageType::Web && configuration->isArchive();
+
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica, const std::atomic_bool & stop_waiting) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context, reject_ambiguous_archive_keys](size_t number_of_current_replica, const std::atomic_bool & stop_waiting) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
@@ -658,7 +664,22 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 
             auto task = task_distributor->getNextTask(number_of_current_replica, &stop_waiting);
             if (task)
+            {
+                /// A task carries an archive and its member as one `<archive>::<member>` string, and the worker
+                /// splits it at the first separator. A listed object key that itself contains `::` would be split
+                /// inside the key, and the worker would read another object - or refuse a whole-archive task as a
+                /// per-member one - so reject it here, where the key is still known. A member name containing
+                /// `::` is fine: the separator in front of it is the first one either way.
+                if (reject_ambiguous_archive_keys && task->getPathOrPathToArchiveIfArchive().contains("::"))
+                    throw Exception(
+                        ErrorCodes::CANNOT_UNPACK_ARCHIVE,
+                        "Object key '{}' contains '::', which is the archive-member separator, so a read task "
+                        "cannot say where the archive ends and the member starts; read this source with `url` "
+                        "instead, or rename the object",
+                        task->getPathOrPathToArchiveIfArchive());
+
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
+            }
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
