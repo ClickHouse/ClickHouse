@@ -13,6 +13,7 @@
 #include <Coordination/Storage/StorageState.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedMutex.h>
 #include <Disks/DiskLocal.h>
 #include <IO/CompressionMethod.h>
@@ -35,6 +36,11 @@
 #include <vector>
 
 using namespace Coordination::Storage;
+
+namespace DB::FailPoints
+{
+    extern const char keeper_lsmt_get_committed_node_after_repointing[];
+}
 
 namespace DB::CoordinationSetting
 {
@@ -830,6 +836,116 @@ TEST(KeeperStorage, WriteThrottling)
     storage.sorted_runs.clear();
     storage.recalculateWriteThrottling();
     EXPECT_EQ(storage.write_throttling_us.load(), 0u);
+}
+
+/// A reader that loads an evicted block re-points the node cache entries of all nodes in it at its
+/// copy, through weak pointers. Concurrent readers of the same block (under a shared storage_mutex)
+/// may load their own copies and re-point the same entries; a reader that then drops its copy leaves
+/// the entries expired if the block cache keeps nothing. The first reader must still return its node.
+TEST(KeeperStorage, GetCommittedNodeAfterConcurrentReaderDroppedItsCopy)
+{
+    TestDataDir data_dir("./keeper_storage_repointed_entry_test");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::storage_memory_only] = false;
+    (*settings)[DB::CoordinationSetting::committed_memtable_size] = 2048;
+    (*settings)[DB::CoordinationSetting::memtable_block_size] = 256;
+    (*settings)[DB::CoordinationSetting::file_block_size] = 256;
+    (*settings)[DB::CoordinationSetting::file_block_group_compressed_size] = 256;
+    (*settings)[DB::CoordinationSetting::sorted_file_uncompressed_size] = 2048;
+    /// The block cache keeps nothing: a block lives only as long as someone holds it.
+    (*settings)[DB::CoordinationSetting::block_cache_size] = 1;
+    /// No merges: publishing a merge takes storage_mutex exclusively, which would wait for the paused
+    /// reader and block the shared lock the test takes while the reader is paused.
+    (*settings)[DB::CoordinationSetting::min_files_to_merge] = 1'000'000;
+
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
+    keeper_context->setDataDisk(std::make_shared<DB::DiskLocal>("DataDisk", data_dir.path));
+
+    DB::SharedMutex storage_mutex;
+    StorageState storage(keeper_context, &storage_mutex);
+    storage.startup();
+
+    {
+        std::lock_guard lock(storage_mutex);
+        for (int i = 0; i < 200; ++i)
+        {
+            const std::string path = fmt::format("/n{:05}", i);
+            const std::string data = fmt::format("data{}", i);
+            FullNode node;
+            node.action = NodeAction::Create;
+            node.path = NodePath(path);
+            node.data_ptr = data.data();
+            node.stats.data_size = static_cast<uint32_t>(data.size());
+            storage.appendCommittedNode(node);
+        }
+    }
+
+    /// Wait until the first node's entry is expired, so the read below takes the slow path. That happens
+    /// once its memtable is flushed and the flush thread drops its reference to the memtable, which
+    /// may be a bit after the memtable is removed from `immutable_memtables`. Nothing re-points the
+    /// entry afterwards: there are no other readers, no writes and no merges.
+    const NodePathWithHash path = NodePath("/n00000").withCalculatedHash();
+    bool expired = false;
+    for (int attempt = 0; attempt < 4000 && !expired; ++attempt)
+    {
+        {
+            std::shared_lock lock(storage_mutex);
+            const NodeRefCache::Entry * entry = storage.node_cache.findEntry(path.hash);
+            ASSERT_NE(entry, nullptr);
+            std::lock_guard guard(entry->block);
+            expired = storage.immutable_memtables.empty() && !entry->block.get();
+        }
+        if (!expired)
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    ASSERT_TRUE(expired);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+    SCOPE_EXIT({ DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing); });
+
+    std::string read_data;
+    std::string read_error;
+    std::thread reader([&]
+    {
+        try
+        {
+            std::shared_lock lock(storage_mutex);
+            NodeRef ref = storage.getCommittedNode(path);
+            if (!ref)
+            {
+                read_error = "node not found";
+                return;
+            }
+            FullNode out;
+            std::string buf;
+            ref.read(out, buf);
+            read_data = std::string(out.getData());
+        }
+        catch (const DB::Exception & e)
+        {
+            read_error = e.message();
+        }
+    });
+
+    /// The reader has loaded the block and re-pointed the entries at its copy. Do what a concurrent
+    /// reader of the same block does: re-point the entry at another copy, then drop that copy.
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+    {
+        std::shared_lock lock(storage_mutex);
+        NodeRefCache::Entry * entry = storage.node_cache.findEntry(path.hash);
+        ASSERT_NE(entry, nullptr);
+        BlockPtr other_copy = BlockData::create(256);
+        std::lock_guard guard(entry->block);
+        entry->block.set(other_copy);
+    }
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_lsmt_get_committed_node_after_repointing);
+    reader.join();
+
+    EXPECT_EQ(read_error, "");
+    EXPECT_EQ(read_data, "data0");
+
+    storage.shutdown();
 }
 
 #endif

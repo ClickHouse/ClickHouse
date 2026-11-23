@@ -1,4 +1,6 @@
 #include <functional>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -48,7 +50,6 @@
 #include <Storages/StorageMerge.h>
 #include <Common/logger_useful.h>
 
-#include <unordered_set>
 
 namespace DB
 {
@@ -74,7 +75,7 @@ struct ReadToDistribute
     StorageID storage_id;
 };
 
-static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
+static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
 
 /// Side of a JOIN; `Left`/`Right` double as the join node's child indices.
 enum class JoinSide : size_t
@@ -163,6 +164,14 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 }
 
+static bool mergeTreeReadCanBeCoordinated(const ReadFromMergeTree & read)
+{
+    /// `createParallelReplicasPlan` checks the read's context, where the planner may have disabled parallel replicas.
+    /// Only a coordinated read has to pass it: a read which is only shipped, like the broadcast side of a join or the
+    /// read of an `IN` set, is executed whole by every replica.
+    return mergeTreeReadCanBeShipped(read) && ClusterProxy::canUseParallelReplicasOnInitiator(read.getContext());
+}
+
 /// The broadcast side of a shipped join is executed in full by every replica, so its MergeTree reads must
 /// pass the same rules as the coordinated ones - otherwise each replica would join against its own data.
 static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
@@ -238,7 +247,7 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 ///   result), so it reaches the replicas as a live function and each evaluates it itself.
 /// `visited` holds the sets already checked: a set can be referenced from several places, and the sets nested in
 /// a set's plan are checked recursively.
-static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, std::unordered_set<const FutureSetFromSubquery *> & visited)
+static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag, UnorderedSetWithMemoryTracking<const FutureSetFromSubquery *> & visited)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -379,7 +388,7 @@ static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::fu
 /// fragment local instead of shipping it.
 static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
 {
-    std::unordered_set<const FutureSetFromSubquery *> visited;
+    UnorderedSetWithMemoryTracking<const FutureSetFromSubquery *> visited;
     return checkQueryPlanActionDAGs(node, [&](const ActionsDAG & dag) { return dagReferencesUnshippableSubquerySet(dag, visited); });
 }
 
@@ -387,13 +396,18 @@ class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplic
 {
     QueryPlan::Nodes & nodes;
     const QueryPlanOptimizationSettings & optimization_settings;
+    const Optimization::ExtraSettings & extra_settings;
 
 public:
     ApplyParallelReplicasVisitor(
-        QueryPlan::Node * root_, QueryPlan::Nodes & nodes_, const QueryPlanOptimizationSettings & optimization_settings_)
+        QueryPlan::Node * root_,
+        QueryPlan::Nodes & nodes_,
+        const QueryPlanOptimizationSettings & optimization_settings_,
+        const Optimization::ExtraSettings & extra_settings_)
         : QueryPlanVisitor<ApplyParallelReplicasVisitor>(root_)
         , nodes(nodes_)
         , optimization_settings(optimization_settings_)
+        , extra_settings(extra_settings_)
     {
     }
 
@@ -600,6 +614,11 @@ public:
             partial_aggregation_node.step->setStepDescription("partial");
             partial_aggregation_node.children = {original_split_node->children.front()};
 
+            /// The heap the aggregation would get under `ORDER BY ... LIMIT`, before the fragment is serialized, so that the
+            /// replicas run it too.
+            if (auto * limit_node = stack.size() >= 3 ? limitAbove(stack.size() - 3) : nullptr)
+                applyOrderedGroupByTopKToSplit(limit_node, parent_node, *partial_aggregation_step, nodes, extra_settings);
+
             /// Add gather
             auto & new_split_node = nodes.emplace_back();
             new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(partial_aggregation_node.step->getOutputHeader());
@@ -697,6 +716,16 @@ public:
     }
 
 private:
+    /// The `Limit` of `GROUP BY ... ORDER BY ... LIMIT`: the node of the frame `index`, or of one of the two frames above it,
+    /// with the sort and the expression in between.
+    [[nodiscard]] QueryPlan::Node * limitAbove(size_t index) const
+    {
+        for (size_t i = 0; i < 3 && i <= index; ++i)
+            if (auto * node = stack[index - i].node; typeid_cast<const LimitStep *>(node->step.get()))
+                return node;
+        return nullptr;
+    }
+
     /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).
     [[nodiscard]] bool mustReadTillEnd() const
     {
@@ -816,14 +845,14 @@ private:
 /// reads are left local): the parallel-replicas coordinator drives every read of a shipped fragment and
 /// cannot distinguish duplicate announcements for one table, so such a union must not become a single
 /// distributed fragment (mirrors StorageView::getUnderlyingMergeTreeStorageForParallelReplicas).
-static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
+static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
 {
     if (!node)
         return {};
 
     if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
     {
-        if (!mergeTreeReadCanBeShipped(*read))
+        if (!mergeTreeReadCanBeCoordinated(*read))
             return {};
         return {{node, read->getMergeTreeData().getStorageID()}};
     }
@@ -839,9 +868,13 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
             if (!merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
                 return {};
 
+            /// The reads of the underlying tables do not exist yet, so ask the context of the `Merge` read itself.
+            if (!ClusterProxy::canUseParallelReplicasOnInitiator(merge->getContext()))
+                return {};
+
             const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
 
-            std::vector<ReadToDistribute> reads;
+            VectorWithMemoryTracking<ReadToDistribute> reads;
             reads.reserve(storage_ids.size());
             for (const auto & storage_id : storage_ids)
                 reads.push_back({node, storage_id});
@@ -851,14 +884,14 @@ static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * 
 
     if (typeid_cast<UnionStep *>(node->step.get()))
     {
-        std::vector<ReadToDistribute> reads;
+        VectorWithMemoryTracking<ReadToDistribute> reads;
         for (auto * child : node->children)
         {
             auto child_reads = collectReadsToDistribute(child, consider_merges);
             reads.insert(reads.end(), child_reads.begin(), child_reads.end());
         }
 
-        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
+        UnorderedSetWithMemoryTracking<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
         for (const auto & read : reads)
             if (!seen.insert(read.storage_id).second)
                 return {};
@@ -917,7 +950,7 @@ static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
         return;
 
     /// Collect first: the expansion replaces the step of a visited node.
-    std::vector<QueryPlan::Node *> merge_nodes;
+    VectorWithMemoryTracking<QueryPlan::Node *> merge_nodes;
     Stack stack;
     traverseQueryPlan(
         stack,
@@ -966,7 +999,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     /// of its own to distribute but is shipped inside the fragment and read in full by every replica.
     expandMergeReadsForParallelReplicas(query_plan);
 
-    std::unordered_set<const QueryPlan::Node *> eligible;
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> eligible;
     for (const auto & read : collectReadsToDistribute(root))
         eligible.insert(read.node);
     if (eligible.empty())
@@ -990,7 +1023,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 
     /// Collect (parent, child index) of every eligible read first, then wrap — avoids mutating the tree
     /// while traversing it.
-    std::vector<std::pair<QueryPlan::Node *, size_t>> to_wrap;
+    VectorWithMemoryTracking<std::pair<QueryPlan::Node *, size_t>> to_wrap;
     Stack stack;
     traverseQueryPlan(
         stack,
@@ -1006,16 +1039,21 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
         parent->children[i] = make_split_above(parent->children[i]);
 }
 
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
+void applyParallelReplicas(
+    QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &, const Optimization::ExtraSettings &);
 
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
+void applyParallelReplicas(
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & settings,
+    const Optimization::ExtraSettings & extra_settings)
 {
     if (!settings.enable_parallel_replicas)
         return;
 
     insertParallelReplicasSplit(query_plan, nodes);
 
-    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes, settings).visit();
+    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes, settings, extra_settings).visit();
 
     ConvertToDistributedVisitor(query_plan).visit();
 }
