@@ -35,11 +35,26 @@ struct ScannedDataFile
     using KernelDvInfo = KernelPointerWrapper<ffi::SharedDvInfo, ffi::free_kernel_dv_info>;
     using KernelExpression = KernelPointerWrapper<ffi::SharedExpression, ffi::free_kernel_expression>;
 
+    ScannedDataFile(
+        std::string path_, int64_t size_, std::optional<UInt64> num_records_, KernelDvInfo dv_info_, std::optional<KernelExpression> transform_)
+        : path(std::move(path_))
+        , size(size_)
+        , num_records(num_records_)
+        , dv_info(std::move(dv_info_))
+        , transform(std::move(transform_))
+        , retained_kernel_bytes(
+              (dv_info.get() ? ffi::dv_info_retained_size(dv_info.get()) : 0)
+              + (transform ? ffi::expression_retained_size(transform->get()) : 0))
+    {
+    }
+
     std::string path;
     int64_t size = 0;
     std::optional<UInt64> num_records;
     KernelDvInfo dv_info;
     std::optional<KernelExpression> transform;
+    /// The memory of the kernel that `dv_info` and `transform` keep alive.
+    size_t retained_kernel_bytes = 0;
 };
 
 using ScannedDataFilePtr = std::shared_ptr<const ScannedDataFile>;
@@ -50,7 +65,7 @@ struct SnapshotDataFiles
 
     static size_t getFileWeight(const ScannedDataFile & file)
     {
-        return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity();
+        return sizeof(ScannedDataFile) + sizeof(ScannedDataFilePtr) + file.path.capacity() + file.retained_kernel_bytes;
     }
 };
 
