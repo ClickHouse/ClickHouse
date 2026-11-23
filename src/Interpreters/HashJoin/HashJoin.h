@@ -17,13 +17,11 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Block_fwd.h>
-#include <Interpreters/HashJoin/BuildSlots.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/FixedHashSet.h>
 #include <Common/HashTable/HashMap.h>
@@ -40,6 +38,7 @@ class ExpressionActions;
 using Sizes = std::vector<size_t>;
 
 class MatchedRowsStats;
+class HashJoinTable;
 
 namespace JoinStuff
 {
@@ -142,7 +141,7 @@ struct BuildResult
   * With the parallel layout, several threads can build the hash table at once. A bucket is a part of the key space
   * that is always filled under the same lock. It is a sub-table of a `TwoLevelHashTable`, or a set of cache lines
   * of the flat `PartitionedFixedHashTable`. The parallel layout has `NUM_HASH_TABLE_BUCKETS` buckets, and the
-  * serial layout has one. A slot is a group of buckets with one lock and one arena (see `BuildSlots`). The serial
+  * serial layout has one. A slot is a group of buckets with one lock (see `BuildSlots`). The serial
   * layout has one slot, and the parallel layout one per build stream, rounded up to a power of two and capped at the bucket count.
   *
   * 2. Process "left" table and join corresponding rows from "right" table by lookups in the map.
@@ -354,13 +353,16 @@ public:
         M(range8_key64)                \
         M(range16_key64)               \
         M(range17_key64)               \
-        M(range18_key64)
+        M(range18_key64)               \
+        M(two_level_key_packed_string) \
+        M(key_packed_string)
 
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
     /// they are read back the same way (the output key column is the parent LowCardinality type).
     /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
     /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
+    /// The packed `String` maps are absent too, because a key of 16 bytes or more is stored as its hash.
     /// Only the serial types are listed: a `JoinSource` reads a `StorageJoin` map, and `StorageJoin`
     /// always builds with the serial layout.
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -376,19 +378,6 @@ public:
         M(keys256)                             \
         M(low_cardinality_key_string)          \
         M(low_cardinality_key_fixed_string)
-
-    #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
-        M(two_level_key8 __VA_OPT__(,) __VA_ARGS__)             \
-        M(two_level_key16 __VA_OPT__(,) __VA_ARGS__)            \
-        M(two_level_key32 __VA_OPT__(,) __VA_ARGS__)            \
-        M(two_level_key64 __VA_OPT__(,) __VA_ARGS__)            \
-        M(two_level_key_string __VA_OPT__(,) __VA_ARGS__)       \
-        M(two_level_key_fixed_string __VA_OPT__(,) __VA_ARGS__) \
-        M(two_level_keys32 __VA_OPT__(,) __VA_ARGS__)           \
-        M(two_level_keys64 __VA_OPT__(,) __VA_ARGS__)           \
-        M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
-        M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
-        M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
 
     /// The packed fixed-width maps, `keys32` to `keys256`, hold the keys of a clause if all of them are fixed-width
     /// and take at most this many bytes together.
@@ -443,15 +432,20 @@ public:
             HashMapTable,
             BITS_FOR_BUCKET_SERIAL>>;
 
+    /// A bucket starts with 2 cells and gets its initial size at the first insert of its slot, see `BuildSlots::reserveOnFirstInsert`.
+    using JoinTwoLevelHashTableGrower = TwoLevelHashTableGrower<1>;
+
     template <typename Key, typename Mapped, typename Hash>
-    using JoinTwoLevelHashMap
-        = std::conditional_t<std::is_same_v<Mapped, VoidMapped>, TwoLevelHashSet<Key, Hash>, TwoLevelHashMap<Key, Mapped, Hash>>;
+    using JoinTwoLevelHashMap = std::conditional_t<
+        std::is_same_v<Mapped, VoidMapped>,
+        TwoLevelHashSet<Key, Hash, JoinTwoLevelHashTableGrower>,
+        TwoLevelHashMap<Key, Mapped, Hash, JoinTwoLevelHashTableGrower>>;
 
     template <typename Key, typename Mapped>
     using JoinTwoLevelHashMapWithSavedHash = std::conditional_t<
         std::is_same_v<Mapped, VoidMapped>,
-        TwoLevelHashSetWithSavedHash<Key>,
-        TwoLevelHashMapWithSavedHash<Key, Mapped>>;
+        TwoLevelHashSetWithSavedHash<Key, DefaultHash<Key>, JoinTwoLevelHashTableGrower>,
+        TwoLevelHashMapWithSavedHash<Key, Mapped, DefaultHash<Key>, JoinTwoLevelHashTableGrower>>;
 
     template <typename Key, typename Mapped>
     using JoinFixedHashMap = std::conditional_t<
@@ -509,10 +503,18 @@ public:
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 16>>         range16_key64;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
+        /// A single `String` key as a `PackedStringJoinKey`, see `enable_packed_string_keys_in_hash_join`.
+        std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_key_packed_string;
+        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           key_packed_string;
 
-        void create(Type which)
+        void create(Type which, bool robin_hood_allowed)
         {
-            visit(which, []<typename Table>(std::shared_ptr<Table> & map) { map = std::make_shared<Table>(); });
+            visit(which, [robin_hood_allowed]<typename Table>(std::shared_ptr<Table> & map)
+            {
+                map = std::make_shared<Table>();
+                if constexpr (requires { map->setRobinHoodAllowed(robin_hood_allowed); })
+                    map->setRobinHoodAllowed(robin_hood_allowed);
+            });
         }
 
         /// Calls `f` with the map of type `which`, a `std::shared_ptr` that is null until `create`.
@@ -529,7 +531,18 @@ public:
             UNREACHABLE();
         }
 
-        size_t getTotalByteCountImpl(Type which) const
+        /// The map of type `which`, a `std::shared_ptr` that is null until `create`.
+        template <Type which, typename Self>
+        auto & mapOf(this Self & self)
+        {
+#define M(NAME) \
+    if constexpr (which == Type::NAME) \
+        return self.NAME;
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+        }
+
+        [[nodiscard]] size_t getTotalByteCountImpl(Type which) const
         {
             switch (which)
             {
@@ -540,7 +553,7 @@ public:
             }
         }
 
-        size_t getBufferSizeInCells(Type which) const
+        [[nodiscard]] size_t getBufferSizeInCells(Type which) const
         {
             switch (which)
             {
@@ -576,7 +589,7 @@ public:
             selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
         }
 
-        size_t allocatedBytes() const;
+        [[nodiscard]] size_t allocatedBytes() const;
     };
 
     using NullmapList = std::deque<NullMapHolder>;
@@ -600,24 +613,19 @@ public:
 
     struct RightTableData
     {
-        explicit RightTableData(const HashJoinBuildLayout & layout)
-            : build_streams(layout.num_build_streams)
-            , slots(layout.num_slots)
-        {
-        }
+        explicit RightTableData(const HashJoinBuildLayout & layout);
 
         /// Frees a large table on a thread pool, see the definition.
         ~RightTableData();
 
         void spliceBuildStreamLists();
 
-        Type type = Type::hashed;
-
+        /// One table per `ON` disjunct:
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
         /// tab1 join tab2 on t1.x = t2.x
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
-        std::vector<MapsVariant> maps;
+        std::vector<std::unique_ptr<HashJoinTable>> tables;
         Block sample_block; /// Block as it would appear in the BlockList
         /// Track index of "right" table columns in columns list or row store.
         ColumnAccessIndexes column_access_indexes;
@@ -628,15 +636,12 @@ public:
         /// Resolves RowRef::block_no to the stored block.
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
-        BuildSlots slots;
-
         std::atomic<size_t> allocated_size = 0;
         std::atomic<size_t> nullmaps_allocated_size = 0;
         /// Number of rows of right table to join
         std::atomic<size_t> rows_to_join = 0;
-        /// Running totals: summing the buckets would read what other build threads are mutating.
+        /// A running total: summing the buckets would read what other build threads are mutating.
         /// `bucket_bytes` accumulates deltas, so a post-build step that swaps maps must recompute it.
-        std::atomic<size_t> keys_to_join = 0;
         std::atomic<size_t> bucket_bytes = 0;
 
         /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build threads
@@ -671,20 +676,14 @@ public:
         RowStoreState row_store_state = RowStoreState::Enabled;
         RowDataStore::RowLayoutPtr row_store_layout;
 
-        /// For range types: the minimum key value and the range size from min_key to max_key.
-        struct KeyRange
-        {
-            UInt64 min_key = 0;
-            UInt64 size = 0;
-        };
+        size_t keys() const;
 
-        KeyRange key_range;
-
-        size_t avgPerKeyRows() const
+        [[nodiscard]] size_t avgPerKeyRows() const
         {
-            if (keys_to_join == 0)
+            const size_t num_keys = keys();
+            if (num_keys == 0)
                 return 0;
-            return rows_to_join / keys_to_join;
+            return rows_to_join / num_keys;
         }
     };
 
@@ -716,7 +715,6 @@ public:
 
     const Block & savedBlockSample() const { return data->sample_block; }
 
-    bool isUsed(size_t off) const;
     bool isUsed(UInt32 block_no, size_t row_idx) const;
 
     void debugKeys() const;
@@ -728,8 +726,6 @@ public:
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
-
-    const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
@@ -779,8 +775,6 @@ private:
 
     std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
-
-    std::vector<Sizes> key_sizes;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -847,8 +841,6 @@ private:
 
     void recomputeBucketBytes();
 
-    void dataMapInit(MapsVariant & map);
-
     void initRightBlockStructure(Block & saved_block_sample);
 
     class ContinuationResult;
@@ -874,7 +866,8 @@ public:
 
 private:
 
-    static Type toTwoLevelType(Type type);
+    /// The key type of the maps of every table.
+    Type keyType() const;
 
     /// The maps flavour this join runs on. All the dispatch entry points take it.
     JoinMapsKind getMapsKind() const;
@@ -895,8 +888,8 @@ private:
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 
-    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
-    void tryRerangeRightTableDataImpl(Map & map);
+    template <JoinKind KIND, typename Maps, JoinStrictness STRICTNESS>
+    void tryRerangeRightTableDataImpl();
 
     bool canConvertToFixedHashMap() const;
 
@@ -905,12 +898,7 @@ private:
     void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
-    template <bool is_signed, typename Key, typename MapsTemplate>
-    void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
-
     void freezeMapsForProbing();
-
-    bool isRowStoreSupported() const;
 
     /// Layout is from the sample block, before any fill thread.
     void initRowStore(const Block & block);

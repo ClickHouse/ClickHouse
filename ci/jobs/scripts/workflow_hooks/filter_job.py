@@ -50,10 +50,21 @@ PRELIMINARY_JOBS = [
     JobNames.FAST_TEST,
 ]
 
+# A draft pull request runs only the fast test (and the docker images it runs in).
+DRAFT_PR_JOBS = [
+    JobNames.FAST_TEST,
+    JobNames.DOCKER_BUILDS_ARM,
+    JobNames.DOCKER_BUILDS_AMD,
+]
+
 # The `arm_binary` jobs that run in pull requests instead of the LLVM coverage jobs
 # (see `ci/workflows/pull_request.py`).
 FUNCTIONAL_COVERAGE_REPLACEMENT_JOBS = [
     j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+]
+# The stateless jobs that run with plan-based parallel replicas (see `ci/workflows/pull_request.py`).
+PLAN_BASED_PARALLEL_REPLICAS_JOBS = [
+    j.name for j in JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
 ]
 COVERAGE_REPLACEMENT_JOBS = [
     j.name
@@ -80,20 +91,32 @@ BUILDS_FOR_TESTS = [
     + JobConfigs.release_build_jobs
 ]
 
-# Keep this in sync with the build jobs configured in
-# ci/workflows/pull_request.py. Unlike a name-based check, this excludes jobs
-# such as `Build profile diff` that are not builds despite their names.
-REVIEW_THREADS_BUILD_JOBS = [
+# The jobs that run while the PR has unresolved review threads, besides the
+# preliminary checks and `Code Review`. The code is expected to change again, so
+# the run is limited to the cheapest useful signal: the ASan builds (they catch
+# compilation errors on both architectures), the clang-tidy builds, and one
+# targeted suite of functional and of integration tests on the `amd_asan_ubsan`
+# build. Both test jobs are core blocking jobs, so they do not wait for any of
+# the skipped jobs.
+REVIEW_THREADS_BUILD_JOBS = [j.name for j in JobConfigs.tidy_build_arm_jobs] + [
     j.name
-    for j in JobConfigs.tidy_build_arm_jobs
-    + JobConfigs.build_jobs
-    + JobConfigs.extra_validation_build_jobs
-    + JobConfigs.release_build_jobs_with_examples
-    + JobConfigs.special_build_jobs
-    + JobConfigs.build_llvm_coverage_job
-    + JobConfigs.toolchain_build_jobs
-    + JobConfigs.wasm_parser_build_jobs
+    for j in JobConfigs.build_jobs
+    if j.parameter in (BuildTypes.AMD_ASAN_UBSAN, BuildTypes.ARM_ASAN_UBSAN)
 ]
+REVIEW_THREADS_TEST_JOBS = [
+    j.name
+    for j in JobConfigs.functional_tests_pr_jobs
+    + JobConfigs.integration_test_targeted_pr_jobs
+    if j.parameter.startswith(f"{BuildTypes.AMD_ASAN_UBSAN}, db disk")
+    and j.parameter.endswith(", targeted")
+]
+assert (
+    len(REVIEW_THREADS_BUILD_JOBS) == len(JobConfigs.tidy_build_arm_jobs) + 2
+), f"unexpected review-threads build jobs: {REVIEW_THREADS_BUILD_JOBS}"
+assert (
+    len(REVIEW_THREADS_TEST_JOBS) == 2
+), f"expected one functional and one integration job, got: {REVIEW_THREADS_TEST_JOBS}"
+REVIEW_THREADS_JOBS = REVIEW_THREADS_BUILD_JOBS + REVIEW_THREADS_TEST_JOBS
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan_ubsan)",
@@ -214,6 +237,7 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/print_uncovered_code.py",
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
+    "ci/jobs/scripts/filter_coverage_lines.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     # Exports per-test coverage and runs the post-export selector smoke.
     "ci/jobs/scripts/functional_tests/export_coverage.py",
@@ -253,6 +277,7 @@ _LLVM_COVERAGE_ONLY_PATHS = (
     "ci/jobs/scripts/print_uncovered_code.py",
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
+    "ci/jobs/scripts/filter_coverage_lines.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/functional_tests/export_coverage.py",
     "ci/jobs/scripts/coverage_selection.py",
@@ -310,16 +335,11 @@ SMALL_PR_WORKFLOW = "PR"
 
 # The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
 # symbols, i.e. they are designed for exactly the small PRs this rule skips the
-# untargeted fuzzers on, so they keep running. `SQLLogic test` and `SQLStorm test`
-# run fixed third-party suites unrelated to the change: over the 30 days before
-# 2026-09-19 their only PR failures were infrastructure (`Start ClickHouse`,
-# `Download dataset`), at 108 and 19 minutes per run.
+# untargeted fuzzers on, so they keep running.
 _STRESS_AND_FUZZER_JOB_PREFIXES = (
     JobNames.STRESS,
     JobNames.ASTFUZZER,
     JobNames.LACASADELDOLOR,
-    JobNames.SQL_LOGIC_TEST,
-    JobNames.SQL_STORM_TEST,
 )
 
 # Digest inputs of the skippable jobs that must not switch the skip off: a fifth
@@ -608,6 +628,14 @@ REVERT_PR_NOTE = (
     f"`{Labels.CI_FORCE_ALL}` label to run the full CI."
 )
 
+DRAFT_PR_SKIP_REASON = (
+    f"Skipped: draft PR, only the fast test runs unless labeled '{Labels.CI_FORCE_ALL}'"
+)
+DRAFT_PR_NOTE = (
+    "Draft PR: only the fast test runs. Mark the PR ready for review to run the full CI, "
+    f"or add the `{Labels.CI_FORCE_ALL}` label and re-run the workflow."
+)
+
 
 def revert_depth(title):
     """Number of nested `Revert "..."` wrappers in the pull request title; see
@@ -632,6 +660,7 @@ def is_net_revert_pr(title):
 
 
 _revert_note_added = False
+_draft_note_added = False
 
 
 def _add_revert_note():
@@ -641,6 +670,15 @@ def _add_revert_note():
         return
     _revert_note_added = True
     _info_cache.add_workflow_note(REVERT_PR_NOTE)
+
+
+def _add_draft_note():
+    """Explain the skipped jobs once on the workflow report page."""
+    global _draft_note_added
+    if _draft_note_added or _info_cache is None:
+        return
+    _draft_note_added = True
+    _info_cache.add_workflow_note(DRAFT_PR_NOTE)
 
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
@@ -728,6 +766,109 @@ def _is_empty_merge_commit(sha):
     return num_parents >= 2 and num_files == 0
 
 
+def configure_performance_shards():
+    """Choose one PR shard family before optional workflow filters run."""
+    from ci.jobs.scripts.performance_selection import pr_shards
+    from ci.praktika.runtime import RunConfig
+
+    info = Info()
+    config = RunConfig.from_fs(info.workflow_name)
+    # ci-force-all bypasses workflow_filter_hooks, so mutually exclusive job
+    # families must be filtered in this pre-hook, before claiming any runners.
+    for job in JobConfigs.performance_comparison_pr_jobs:
+        build_type = job.parameter.split(",", 1)[0].strip()
+        total = pr_shards(info, build_type)
+        count = int(job.parameter.rsplit("/", 1)[1])
+        if count != total:
+            config.set_job_as_filtered(job.name, "Other performance shard family selected")
+    config.dump()
+
+
+def _amd_performance_skipped(info):
+    """True if a pull request does not run the AMD performance comparison: it runs on ARM
+    by default, and on AMD only when asked for, or when the ARM run is a full one."""
+    if (
+        not info.pr_number  # run all performance jobs on master
+        or " Performance Improvement" in info.pr_body
+        or Labels.CI_PERFORMANCE in info.pr_labels
+        or Labels.PR_PERFORMANCE in info.pr_labels
+    ):
+        return False
+    from ci.jobs.scripts.performance_selection import full_suite_reason
+
+    # Automatic full ARM runs enable selected AMD runs, just like pr-performance.
+    return not full_suite_reason(info, "arm_release")
+
+
+# The kv data flag, set by `configure_amd_release_thinlto`, that makes `Build (amd_release)`
+# build without ThinLTO (see `ci/jobs/build_clickhouse.py`).
+AMD_RELEASE_WITHOUT_THINLTO_KV = "amd_release_without_thinlto"
+AMD_RELEASE_BUILD_JOB = f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE})"
+
+assert AMD_RELEASE_BUILD_JOB in {
+    j.name for j in JobConfigs.release_build_jobs
+}, "AMD_RELEASE_BUILD_JOB names a job that does not exist"
+
+
+def configure_amd_release_thinlto():
+    """Build `amd_release` without ThinLTO in a pull request that skips the AMD performance
+    comparison, its only consumer that depends on how the binary is optimized.
+
+    Over 2026-11-06 to 2026-11-13, 2569 of 2983 PR `amd_release` builds (86%) had no AMD
+    performance comparison, and their median `Build ClickHouse` step took 20 minutes
+    (the non-LTO `amd_binary`: 4 minutes). Without ThinLTO the compile commands of
+    `amd_release` are the same as those of `amd_binary`, which master builds on every commit,
+    so the build is served from the compiler cache and only links (the standalone
+    `clickhouse-keeper` objects are the exception). The other consumers - packages,
+    `Install packages`, `Compatibility check`, integration tests, `ClickBench` (which checks
+    correctness, not timings) - test the same code. `arm_release` keeps ThinLTO: the ARM
+    performance comparison runs in nearly every PR, so ThinLTO stays covered in PRs.
+
+    A pre-hook, not a filter hook: `ci-force-all` bypasses the filter hooks and then runs
+    every performance job, so that case must keep ThinLTO, and the decision must be recorded
+    before the cache lookup. The build is cached under a salted digest, so that a later run
+    with the same digest that does run the AMD comparison (e.g. after adding `pr-performance`)
+    does not reuse the non-LTO binary.
+    """
+    from ci.praktika.cache import Cache
+
+    info = Info()
+    force_all = (
+        Labels.CI_FORCE_ALL in info.pr_labels
+        or info.get_kv_data("unresolved_review_threads_force_all") is True
+    )
+    if (
+        info.pr_number <= 0
+        or info.workflow_name != SMALL_PR_WORKFLOW
+        # Private PR builds are deployed to staging (see `flavor_cmake_options`).
+        or info.repo_name != "ClickHouse/ClickHouse"
+        or force_all
+        or not _amd_performance_skipped(info)
+    ):
+        return
+    print(f"NOTE: no AMD performance comparison - [{AMD_RELEASE_BUILD_JOB}] builds without ThinLTO")
+    info.store_kv_data(AMD_RELEASE_WITHOUT_THINLTO_KV, True)
+    salts = info.get_kv_data(Cache.DIGEST_SALTS_KV_KEY) or {}
+    salts[AMD_RELEASE_BUILD_JOB] = "without_thinlto"
+    info.store_kv_data(Cache.DIGEST_SALTS_KV_KEY, salts)
+
+
+def configure_toolchain_builds():
+    """`Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for hours."""
+    from ci.praktika.runtime import RunConfig
+
+    info = Info()
+    if not info.pr_number or Labels.CI_TOOLCHAIN in info.pr_labels:
+        return
+    # A pre-hook, unlike `should_skip_job`, also applies with `ci-force-all`.
+    config = RunConfig.from_fs(info.workflow_name)
+    for job in JobConfigs.toolchain_build_jobs:
+        config.set_job_as_filtered(
+            job.name, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
+        )
+    config.dump()
+
+
 def _llvm_coverage_only_decision(job_name):
     """Skip decision of the `ci-llvm-coverage` label, or `None` when it has
     nothing to say about the job.
@@ -737,9 +878,6 @@ def _llvm_coverage_only_decision(job_name):
     checks to their own rule, which skips them when the pull request changes no test. With
     `ci-no-coverage` on top, the family is skipped and the `arm_binary` replacement jobs with their
     build take its place, as with `ci-coverage`: they go on to the replacement rules.
-
-    Factored out of `should_skip_job` so the review-thread gate can apply it to its allowlisted
-    builds: the gate may only shrink the PR surface.
     """
     if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels and not (
         _is_llvm_coverage_family_job(job_name)
@@ -757,15 +895,9 @@ def _llvm_coverage_only_decision(job_name):
     return None
 
 
-def _coverage_family_decision(job_name, notes=True):
+def _coverage_family_decision(job_name):
     """Filter decision for the coverage job family, or `None` when the job is
     not part of it (or the family rules have nothing to say about it).
-
-    Factored out of `should_skip_job` so the review-thread gate can consult the
-    skip half of it before limiting the pipeline: the gate may only shrink the
-    PR surface, so it must not start the coverage family when a full run would
-    have skipped it. Pass `notes=False` to probe the decision without emitting
-    the workflow note for a decision that the caller may discard.
     """
     # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
     # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
@@ -777,8 +909,7 @@ def _coverage_family_decision(job_name, notes=True):
     # runs in the scheduled coverage workflow.
     if _is_llvm_coverage_family_job(job_name):
         if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
-            if notes:
-                _add_pipeline_note(Labels.CI_NO_COVERAGE)
+            _add_pipeline_note(Labels.CI_NO_COVERAGE)
             return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
         if _info_cache.pr_number > 0:
             if not _llvm_coverage_requested():
@@ -787,11 +918,10 @@ def _coverage_family_decision(job_name, notes=True):
                     f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' "
                     f"or '{Labels.CI_LLVM_COVERAGE}' label or when changing the coverage code",
                 )
-            if notes:
-                if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels:
-                    _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
-                else:
-                    _add_pipeline_note(Labels.CI_COVERAGE)
+            if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels:
+                _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
+            else:
+                _add_pipeline_note(Labels.CI_COVERAGE)
 
     # With `ci-coverage` or `ci-llvm-coverage` (or changed coverage code) the coverage jobs run these
     # configurations themselves. `ci-no-coverage` wins over both for the coverage jobs, so with both
@@ -835,10 +965,6 @@ def _coverage_family_decision(job_name, notes=True):
 def _small_pr_skip_decision(job_name, changed_files):
     """Skip decision of the small-PR and single-architecture rules, or `None`
     when they have nothing to say about the job.
-
-    Factored out of `should_skip_job` so the review-thread gate can apply it
-    to its allowlisted builds: the gate may only shrink the PR surface, so it
-    must not start builds that a full run would have skipped.
     """
     # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
     # of these jobs takes up to 1-3 hours and they rarely catch anything a change
@@ -911,6 +1037,20 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped for release PR"
 
+    # A draft is work in progress: the fast test gives the author quick feedback, and the
+    # full CI starts when the PR is marked ready for review (the PR workflow also runs on
+    # `ready_for_review`). The `ci-force-all` label, checked above, runs everything.
+    # Only the main PR workflow, whose `can_be_merged.py` post-hook blocks the merge of a
+    # draft-only run: `BackportPR` has no fast test and no merge gate but has automerge,
+    # so a draft backport must still run its full CI.
+    if (
+        _info_cache.pr_is_draft
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and job_name not in DRAFT_PR_JOBS
+    ):
+        _add_draft_note()
+        return True, DRAFT_PR_SKIP_REASON
+
     if (
         _info_cache.pr_number > 0
         and job_name != JobNames.STYLE_CHECK
@@ -935,20 +1075,9 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
-    # `Build Toolchain (PGO, BOLT)` is opt-in: it occupies a large runner for
-    # hours. This check stays ahead of the review-thread gate below, which is
-    # allowed to shrink the pipeline but never to widen it - a limited run must
-    # not start toolchain builds that a full run would have skipped.
-    if (
-        JobNames.BUILD_TOOLCHAIN in job_name
-        and _info_cache.pr_number
-        and Labels.CI_TOOLCHAIN not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_TOOLCHAIN}'"
-
-    # While the PR has unresolved review threads, run only builds and the
-    # preliminary checks - the code is expected to change again, so the full
-    # test suite would be wasted (https://github.com/ClickHouse/ClickHouse/issues/114724).
+    # While the PR has unresolved review threads, run only `REVIEW_THREADS_JOBS`
+    # and the preliminary checks - the code is expected to change again, so the
+    # full test suite would be wasted (https://github.com/ClickHouse/ClickHouse/issues/114724).
     # The `Code Review` job keeps running so the AI review re-checks the new
     # code and resolves its own addressed threads, which re-triggers the full
     # suite via rerun_on_review_threads.yml. The kv data is stored by the
@@ -960,7 +1089,7 @@ def should_skip_job(job_name):
     )
     if (
         limited_by_review_threads
-        and job_name not in REVIEW_THREADS_BUILD_JOBS
+        and job_name not in REVIEW_THREADS_JOBS
         and job_name not in PRELIMINARY_JOBS
         and job_name != JobNames.CODE_REVIEW
     ):
@@ -968,36 +1097,19 @@ def should_skip_job(job_name):
             _pipeline_note_labels.add("unresolved-review-threads")
             _info_cache.add_workflow_note(
                 f"The PR has {unresolved_threads} unresolved review thread(s): only "
-                "builds and preliminary checks run, and merge is blocked. Resolve the "
+                "the preliminary checks, the ASan and clang-tidy builds, and one targeted "
+                "ASan suite of functional and of integration tests run, and merge is blocked. Resolve the "
                 "threads before this run finishes to re-run the full test suite automatically; "
                 "otherwise re-run CI manually, or add the "
                 f"`{Labels.IGNORE_UNRESOLVED_THREADS}` label to bypass the gate."
             )
         return True, f"Skipped, {unresolved_threads} unresolved review thread(s)"
 
-    # The limited pipeline is a fixed allowlist. Do not let other labels turn
-    # it into a smaller pipeline: it must retain the builds, preliminary jobs,
-    # and `Code Review` needed to validate the gate and trigger its re-run.
-    if limited_by_review_threads:
-        # The gate may only shrink the pipeline, never widen it: the allowlisted
-        # coverage build is as expensive as any other build, so it must keep the
-        # skip a full run would give it. Only a skip decision is honoured: a
-        # neutral answer must not turn into anything wider than the allowlist.
-        coverage_decision = _coverage_family_decision(job_name)
-        if coverage_decision is not None and coverage_decision[0]:
-            return coverage_decision
-        # The same holds for the builds that `ci-llvm-coverage` skips (the
-        # preliminary checks are kept: the gate needs them).
-        if job_name in REVIEW_THREADS_BUILD_JOBS:
-            llvm_coverage_only_decision = _llvm_coverage_only_decision(job_name)
-            if llvm_coverage_only_decision is not None:
-                return llvm_coverage_only_decision
-        # The same holds for the builds that a small PR or a single-architecture
-        # run skips (`SMALL_PR_SKIPPED_BUILDS`, `PR_SINGLE_ARCH_SKIPPED_BUILDS`).
-        small_pr_decision = _small_pr_skip_decision(job_name, changed_files)
-        if small_pr_decision is not None:
-            return small_pr_decision
-        return False, ""
+    # The gate may only shrink the pipeline, never widen it: an allowlisted job
+    # goes on to the same decisions as in a full run, so every label and filter
+    # below that skips it (`do not test`, `ci-build`, `ci-performance`, coverage,
+    # small PRs, ...) still does. A limited run is the intersection of the
+    # allowlist and the full run.
 
     if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
         return True, "Skipped, only documentation changed"
@@ -1200,12 +1312,9 @@ def should_skip_job(job_name):
 
     # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
-        " Performance Improvement" not in _info_cache.pr_body
-        and Labels.CI_PERFORMANCE not in _info_cache.pr_labels
-        and Labels.PR_PERFORMANCE not in _info_cache.pr_labels
-        and JobNames.PERFORMANCE in job_name
+        JobNames.PERFORMANCE in job_name
         and "amd" in job_name
-        and _info_cache.pr_number  # run all performance jobs on master
+        and _amd_performance_skipped(_info_cache)
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
@@ -1213,10 +1322,13 @@ def should_skip_job(job_name):
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
     # The coverage family and its `arm_binary` replacements are already handled above and must run
     # in full when they run at all, so this only narrows down the other plain (non-coverage) test jobs.
+    # The plan-based parallel replicas jobs run in full too: a change to the job script can break how they
+    # install and start the server with the plan-based profile.
     if (
         changed_files
         and all(f.startswith("ci/") and f.endswith(".py") for f in changed_files)
         and job_name not in COVERAGE_REPLACEMENT_JOBS
+        and job_name not in PLAN_BASED_PARALLEL_REPLICAS_JOBS
         and "llvm_coverage" not in job_name
         and "excluded_from_llvm" not in job_name
     ):
@@ -1245,28 +1357,15 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, the stateless and integration
-    targeted checks, the docs examples, and the limited clang-tidy check). The
-    targeted checks select from CIDB and skip themselves when the selection is
-    empty. Two of the others are conditional here. The limited
-    clang-tidy check has nothing to analyze when the change touches neither a C
-    or C++ file, nor an input of a code generator producing C++, nor the
-    clang-tidy configuration or the check's own logic, so a docs- or test-only
-    PR does not need to claim a large runner for it. And the flaky check reruns
-    the PR's new/changed stateless tests and the tests `master` changed after
-    the PR's last CI run as a drift guard, so when there are none it has nothing
-    to do. Filter it out here, at config time, so such a PR does not schedule
-    the runner, restore `CH_AMD_BINARY`, and enter the test container only to
-    exit `SKIPPED`. This is the merge-queue counterpart to the `flaky` branch of
-    `should_skip_job`, kept deliberately minimal so it cannot skip the
-    build/style/fast-test/docs-examples jobs the queue always needs. The skip
-    condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_merge_queue_tests`), so the early exit and the config-time
-    skip never disagree. `get_changed_tests` resolves data fixtures (a
-    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
-    subdirectory) back to the tests that consume them, so a fixture-only PR
-    still reruns the affected test surface instead of being skipped here as
-    "no changed tests".
+    `amd_binary` build, the stateless and integration targeted checks, the docs
+    examples, and the limited clang-tidy check). The targeted checks select from
+    CIDB and skip themselves when the selection is empty. One of the others is
+    conditional here: the limited clang-tidy check has nothing to analyze when
+    the change touches neither a C or C++ file, nor an input of a code generator
+    producing C++, nor the clang-tidy configuration or the check's own logic, so
+    a docs- or test-only PR does not need to claim a large runner for it. Filter
+    it out here, at config time, kept deliberately minimal so it cannot skip the
+    build/style/fast-test/docs-examples jobs the queue always needs.
     """
     global _info_cache
     if _info_cache is None:
@@ -1289,13 +1388,4 @@ def should_skip_merge_queue_job(job_name):
             )
         return False, ""
 
-    if "flaky" not in job_name.lower() or "stateless" not in job_name.lower():
-        return False, ""
-
-    from ci.jobs.scripts.find_tests import Targeting
-
-    targeter = Targeting(info=_info_cache)
-    targeter.job_type = Targeting.STATELESS_JOB_TYPE
-    if not targeter.get_merge_queue_tests():
-        return True, "Skipped, no new/changed stateless tests to rerun in the merge queue"
     return False, ""
