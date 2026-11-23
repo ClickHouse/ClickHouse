@@ -7,8 +7,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/MatcherNode.h>
-#include <Analyzer/Passes/IfChainToMultiIfPass.h>
-#include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -39,6 +37,7 @@ namespace Setting
 {
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsBool enable_positional_arguments_for_projections;
+    extern const SettingsBool optimize_if_chain_to_multiif;
     extern const SettingsBool prefer_column_name_to_alias;
 }
 
@@ -149,6 +148,107 @@ bool restoreExpressionsOverColumns(QueryTreeNodePtr & node, const QueryTreeNodeP
             reads_column |= restoreExpressionsOverColumns(child, table_node);
 
     return reads_column;
+}
+
+/// the conditions that the old analysis took for a constant: a number, NULL, and a cast of them to `UInt8`
+std::optional<bool> getConstantCondition(const QueryTreeNodePtr & node)
+{
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        const auto & value = constant_node->getValue();
+        if (value.isNull())
+            return false;
+        if (isBool(constant_node->getResultType()))
+            return {};
+        if (value.getType() == Field::Types::UInt64)
+            return value.safeGet<UInt64>() != 0;
+        if (value.getType() == Field::Types::Int64)
+            return value.safeGet<Int64>() != 0;
+        return {};
+    }
+
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+        return {};
+
+    const auto & name = function_node->getFunctionName();
+    const auto & arguments = function_node->getArguments().getNodes();
+    if ((name == "CAST" || name == "_CAST") && arguments.size() == 2)
+    {
+        const auto * type_node = arguments[1]->as<ConstantNode>();
+        if (!type_node || type_node->getValue().getType() != Field::Types::String)
+            return {};
+
+        const auto & type_name = type_node->getValue().safeGet<String>();
+        return type_name == "UInt8" || type_name == "Nullable(UInt8)" ? getConstantCondition(arguments[0]) : std::nullopt;
+    }
+
+    if ((name == "toUInt8" || name == "toInt8" || name == "identity" || name == "__scalarSubqueryResult") && arguments.size() == 1)
+        return getConstantCondition(arguments[0]);
+
+    return {};
+}
+
+bool isIfFunction(const QueryTreeNodePtr & node)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    return function_node && function_node->getFunctionName() == "if" && function_node->getArguments().getNodes().size() == 3;
+}
+
+/// `if(1, a, b)` becomes `a`: the old analysis did this before it found the types, so the stored names and types depend on it
+void replaceIfWithConstantCondition(QueryTreeNodePtr & node)
+{
+    for (auto & child : node->getChildren())
+        if (child)
+            replaceIfWithConstantCondition(child);
+
+    if (!isIfFunction(node))
+        return;
+
+    const auto & arguments = node->as<FunctionNode &>().getArguments().getNodes();
+    auto condition = getConstantCondition(arguments[0]);
+    if (!condition)
+        return;
+
+    auto branch = arguments[*condition ? 1 : 2];
+    if (branch->hasAlias())
+        branch = branch->clone();
+    if (node->hasAlias())
+        branch->setAlias(node->getAlias());
+    node = std::move(branch);
+}
+
+/// `if(x, 1, if(y, 2, 3))` becomes `multiIf(x, 1, y, 2, 3)`, also before the types; a changed chain is not looked into, as before
+void replaceIfChainsWithMultiIf(QueryTreeNodePtr & node)
+{
+    for (auto & child : node->getChildren())
+    {
+        if (!child)
+            continue;
+
+        if (!isIfFunction(child) || !isIfFunction(child->as<FunctionNode &>().getArguments().getNodes()[2]))
+        {
+            replaceIfChainsWithMultiIf(child);
+            continue;
+        }
+
+        auto multi_if_node = std::make_shared<FunctionNode>("multiIf");
+        auto & multi_if_arguments = multi_if_node->getArguments().getNodes();
+        for (auto if_node = child; ; if_node = multi_if_arguments.back())
+        {
+            if (!multi_if_arguments.empty())
+                multi_if_arguments.pop_back();
+
+            const auto & if_arguments = if_node->as<FunctionNode &>().getArguments().getNodes();
+            multi_if_arguments.insert(multi_if_arguments.end(), if_arguments.begin(), if_arguments.end());
+            if (!isIfFunction(multi_if_arguments.back()))
+                break;
+        }
+
+        if (child->hasAlias())
+            multi_if_node->setAlias(child->getAlias());
+        child = std::move(multi_if_node);
+    }
 }
 
 /// undoes what the analyzer did to the wrapped keys: it folds the wrapper of a key that is a constant,
@@ -343,6 +443,10 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     auto query_tree = buildQueryTree(query_ast, query_context);
     auto & query_node = query_tree->as<QueryNode &>();
 
+    replaceIfWithConstantCondition(query_tree);
+    if (query_context->getSettingsRef()[Setting::optimize_if_chain_to_multiif])
+        replaceIfChainsWithMultiIf(query_tree);
+
     /// the stored query has no `FROM`: put the source in place of `system.one`
     query_node.getJoinTreeNode() = std::make_shared<TableNode>(source, query_context);
 
@@ -385,10 +489,8 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
                 constant_node && constant_node->hasSourceExpression() && !isQueryOrUnionNode(constant_node->getSourceExpression()))
                 argument = constant_node->getSourceExpression();
 
-    /// `count(1)` and `sum(1)` are stored as `count()`, `if(1, a, b)` as `a`, a chain of `if` as `multiIf`
+    /// `count(1)` and `sum(1)` are stored as `count()`
     NormalizeCountVariantsPass().run(query_tree, query_context);
-    IfConstantConditionPass().run(query_tree, query_context);
-    IfChainToMultiIfPass().run(query_tree, query_context);
 
     removeConstantGroupByKeys(query_node, hasAggregateFunctionNodes(query_tree));
 

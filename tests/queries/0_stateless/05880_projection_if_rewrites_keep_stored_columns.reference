@@ -1,0 +1,22 @@
+p_cast	['plus(b, 1)']
+p_chain	['if(greater(a, 1), 2, 3)','multiIf(greater(b, 5), 1, greater(a, 1), 2, 3)']
+p_literal	['a']
+p_multi_if	['multiIf(1, b, plus(b, 1))']
+p_null	['b']
+p_types	['a']
+p_cast	plus(b, 1)	UInt64
+p_cast	count()	AggregateFunction(count)
+p_chain	if(greater(a, 1), 2, 3)	UInt8
+p_chain	multiIf(greater(b, 5), 1, greater(a, 1), 2, 3)	UInt8
+p_chain	count()	AggregateFunction(count)
+p_literal	a	UInt8
+p_literal	max(1)	AggregateFunction(max, UInt8)
+p_multi_if	multiIf(1, b, plus(b, 1))	UInt64
+p_multi_if	count()	AggregateFunction(count)
+p_null	b	UInt64
+p_null	count()	AggregateFunction(count)
+p_types	a	UInt8
+p_types	count()	AggregateFunction(count)
+p_types	sum(a)	AggregateFunction(sum, UInt8)
+10	2
+20	1
