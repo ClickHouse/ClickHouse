@@ -1364,9 +1364,9 @@ SkipIndexOrder MergeTreeDataSelectExecutor::computeSkipIndexOrder(
         if (r_is_vectorsimilarity)
             r_index_priority = 0;
 #endif
-        // negated since we want to prioritize coarser indexes
-        const auto neg_l_granularity = -l_index->getGranularity();
-        const auto neg_r_granularity = -r_index->getGranularity();
+        // reversed since we want to prioritize coarser indexes; `UInt64` keeps the full domain of the granularity
+        const UInt64 neg_l_granularity = std::numeric_limits<UInt64>::max() - l_index->getGranularity();
+        const UInt64 neg_r_granularity = std::numeric_limits<UInt64>::max() - r_index->getGranularity();
 
         const auto l_size = idx_sizes[l];
         const auto r_size = idx_sizes[r];
@@ -2656,15 +2656,16 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
 {
     size_t marks = 1;
 
-    if (rows_setting + rows_granularity <= rows_setting) /// overflow
+    /// The granularity is zero, or `rows_setting + rows_granularity` would overflow.
+    if (rows_granularity == 0 || rows_setting > std::numeric_limits<size_t>::max() - rows_granularity)
         marks = max_marks;
     else if (rows_setting)
         marks = (rows_setting + rows_granularity - 1) / rows_granularity;
 
     if (bytes_granularity)
     {
-        /// Overflow
-        if (bytes_setting + bytes_granularity <= bytes_setting) /// overflow
+        /// `bytes_setting + bytes_granularity` would overflow.
+        if (bytes_setting > std::numeric_limits<size_t>::max() - bytes_granularity)
             marks = max_marks;
         else if (bytes_setting)
             marks = std::max(marks, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
@@ -2912,7 +2913,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         if (sparse_keys_size == 0 && key_condition_useful)
         {
             const BoolMask mask = key_condition.checkInRange(
-                used_key_indices, sparse_key_left.data(), sparse_key_right.data(), sparse_key_types,
+                used_key_indices, sparse_key_left.data(), sparse_key_right.data(), sparse_key_types, primary_key.data_types,
                 /*equal_boundaries_mask=*/ {}, /*initial_mask=*/ {}, /*key_bounds=*/ nullptr);
             sparse_condition_can_be_true = mask.can_be_true;
         }
@@ -3104,6 +3105,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_left.data(),
                     sparse_key_right.data(),
                     sparse_key_types,
+                    primary_key.data_types,
                     equal_boundaries_mask,
                     initial_mask,
                     &index_bounds);
