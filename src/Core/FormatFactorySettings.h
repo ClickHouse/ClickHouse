@@ -1364,6 +1364,10 @@ Do Parquet encoding in multiple threads.
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
 )", 0) \
+    DECLARE(UInt64, output_format_parquet_data_page_row_limit, 20000, R"(
+Maximum number of rows in a data page, checked every [output_format_parquet_batch_size](#output_format_parquet_batch_size) values; a page also ends at [output_format_parquet_data_page_size](#output_format_parquet_data_page_size). Without it a column that compresses well, such as a sorted one, fits a whole row group in one page, and the page index cannot skip any part of it. 0 means no limit.
+)", 0, \
+        {"26.11", 0, 20000, "New setting: end a Parquet data page after 20000 rows, as parquet-mr and Arrow do, so the page index can skip parts of columns that compress well."}) \
     DECLARE(NonZeroUInt64, output_format_parquet_batch_size, 1024, R"(
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
@@ -1417,6 +1421,10 @@ Put crc32 checksums in parquet page headers.
 Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
 )", 0, \
         {"26.11", false, false, "New setting."}) \
+    DECLARE(Bool, output_format_parquet_use_data_page_v2, false, R"(
+Write Parquet data pages as `DataPageV2` instead of `DataPage` (V1). `DataPageV2` stores the repetition and definition levels uncompressed, so that readers can get nulls and array sizes without decompressing the values, records the numbers of rows and nulls in the page header, and starts pages at row boundaries. Some Parquet readers do not support `DataPageV2`.
+)", 0, \
+        {"26.12", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd', 'bzip2', 'xz'.
 )", 0) \
@@ -1706,6 +1714,12 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0, \
         {"26.2", true, false, "Write Date as Arrow DATE32 instead of plain UInt16 by default."}) \
+    DECLARE(Bool, output_format_arrow_variant_as_json_string, false, R"(
+Write `Variant` values as a nullable Arrow `Utf8` column holding the JSON representation of each value (as in the `JSONEachRow`
+format, e.g. a `String` value is quoted), instead of an Arrow dense union. Use it for Arrow readers that do not support unions.
+A `NULL` value is written as an Arrow null, except in a `Map` key, which Arrow does not allow to be null: there it is the JSON `null`.
+)", 0, \
+        {"26.11", false, false, "New setting to write Variant as a string with its JSON representation in a Utf8 column instead of an Arrow dense union."}) \
     DECLARE(Bool, output_format_arrow_uuid_as_fixed_byte_array, false, R"(
 Write `UUID` values as plain Arrow `FixedSizeBinary(16)`, without the `arrow.uuid` extension type in the field metadata.
 Use it for Arrow readers that do not support the `arrow.uuid` extension type.

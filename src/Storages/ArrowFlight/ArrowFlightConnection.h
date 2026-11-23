@@ -3,8 +3,11 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
+#include <Common/SecretString.h>
 #include <Storages/StorageArrowFlight.h>
 #include <arrow/flight/client.h>
+
+#include <optional>
 
 
 namespace DB
@@ -22,8 +25,7 @@ public:
     /// itself carries none, so an RPC is bounded only by the options getCallOptions returns.
     std::shared_ptr<arrow::flight::FlightClient> getClient(UInt64 timeout_sec) const;
 
-    /// By value: the connection's shared options carry only the authentication header, while the
-    /// deadline differs per request.
+    /// By value: built from the connection's authentication header and the request's deadline.
     arrow::flight::FlightCallOptions getCallOptions(UInt64 timeout_sec) const;
 
     /// Makes another connection with the same parameters.
@@ -45,12 +47,12 @@ private:
     int port;
     const bool use_basic_authentication;
     const String username;
-    const String password;
+    const SecretString password;
     const bool enable_ssl;
     const String ssl_ca;
     const String ssl_override_hostname;
     mutable std::shared_ptr<arrow::flight::FlightClient> client TSA_GUARDED_BY(mutex);
-    mutable std::shared_ptr<const arrow::flight::FlightCallOptions> options TSA_GUARDED_BY(mutex);
+    mutable std::optional<std::pair<String, SecretString>> auth_header TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };
 
