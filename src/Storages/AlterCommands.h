@@ -155,10 +155,6 @@ struct AlterCommand
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
-    /// Set by `prepare` for `DROP`/`CLEAR`. True when the name is its own column in the schema
-    /// before this command, so dotted `name.*` columns are not part of the drop.
-    bool targets_exact_column = false;
-
     /// Clear columns or index (don't drop from metadata)
     bool clear = false;
 
@@ -257,8 +253,7 @@ public:
     void validate(const StoragePtr & table, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
-    /// parts to commands from storage's metadata (for example, absent default).
-    /// `context` is for the per-command column snapshot (`columnsAddedByAlter`).
+    /// parts to commands from storage's metadata (for example, absent default)
     void prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.

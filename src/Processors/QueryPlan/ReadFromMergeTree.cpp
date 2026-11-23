@@ -66,7 +66,6 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -1773,9 +1772,6 @@ static std::optional<size_t> estimateReadBytes(
             );
 
         const bool share_nested = (*data_part.storage.getSettings())[MergeTreeSetting::share_nested_offsets];
-        std::optional<LoadedMergeTreeDataPartInfoForReader> part_info;
-        if (alter_conversions)
-            part_info.emplace(part.data_part, alter_conversions);
 
         /// The name of a requested column as it is stored in this particular part.
         auto try_get_column_in_part = [&](const String & col_name) -> std::optional<NameAndTypePair>
@@ -1802,7 +1798,7 @@ static std::optional<size_t> estimateReadBytes(
             /// such a column as missing and fills it from the default expression, which may read wide
             /// physical columns this estimate knows nothing about. That happens when a column is
             /// dropped and re-added under the same name, so the name alone does not tell them apart.
-            if (col && alter_conversions->isColumnDropped(name_in_part, share_nested, part_info ? &*part_info : nullptr))
+            if (col && alter_conversions->isColumnDropped(name_in_part, share_nested))
                 return {};
 
             return col;

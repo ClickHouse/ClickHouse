@@ -108,9 +108,6 @@ struct MutationCommand
     /// We need just clear column, not drop from metadata.
     bool clear = false;
 
-    /// This `DROP`/`CLEAR` names one column. Persisted as `/*exact*/`. An unmarked command still applies to `n.*`.
-    bool targets_exact_column = false;
-
     /// Column rename_to
     String rename_to = {};
 

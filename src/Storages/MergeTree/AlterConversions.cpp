@@ -253,8 +253,6 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
         /// The reader returns the replacement column's defaults instead of the stored values.
         value_updated_columns.insert(dropped_column_name);
-        if (command.targets_exact_column)
-            exact_column_drops.insert(dropped_column_name);
         dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
@@ -364,36 +362,23 @@ NameSet AlterConversions::getColumnsInvalidatingIndexes() const
     return res;
 }
 
-bool AlterConversions::isColumnDropped(
-    const std::string & name,
-    bool share_nested_offsets,
-    const IMergeTreeDataPartInfoForReader * part_info) const
+bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
 {
+    /// Check exact match (e.g. DROP COLUMN `n.s`)
     if (dropped_columns.contains(name))
         return true;
 
-    /// Dotted names are independent when nested offsets are not shared.
+    /// When share_nested_offsets is disabled, dotted-name columns are independent
+    /// and dropping `n` should not affect `n.a`.
     if (!share_nested_offsets)
         return false;
 
-    /// `DROP n` drops `n.*` only when `n` is a Nested parent, not its own column or missing-column marker.
+    /// Check if the parent nested column was dropped (e.g. DROP COLUMN `n` should match `n.s`, `n.d`, etc.)
     auto nested_prefix_end = name.find('.');
-    if (nested_prefix_end == std::string::npos)
-        return false;
+    if (nested_prefix_end != std::string::npos && dropped_columns.contains(name.substr(0, nested_prefix_end)))
+        return true;
 
-    const String prefix = name.substr(0, nested_prefix_end);
-    if (!dropped_columns.contains(prefix))
-        return false;
-
-    /// Exact `n` is marked on the command. A legacy parent `DROP`/`CLEAR` is not, so `n.a` follows `n`.
-    if (exact_column_drops.contains(prefix))
-        return false;
-
-    if (part_info
-        && (part_info->getColumns().contains(prefix) || part_info->getSerializationInfos().isMissingColumn(prefix)))
-        return false;
-
-    return true;
+    return false;
 }
 
 PrewhereExprSteps AlterConversions::getMutationSteps(

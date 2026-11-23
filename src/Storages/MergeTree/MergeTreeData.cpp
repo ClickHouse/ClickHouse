@@ -6861,8 +6861,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         if (!isSecondaryDDLReplay(local_context))
         {
-            /// `prepare` already ignored no-ops against the per-command snapshot. Replay the rest
-            /// to record which physical column a drop or rename removed.
+            /// Only effective commands count. `command.ignore` covers a command that is a no-op against
+            /// the pre-ALTER snapshot (`ADD COLUMN IF NOT EXISTS` for a column that already exists), but
+            /// it is decided before any command ran, so the commands are replayed here against the set
+            /// of names present after each preceding one, the way `AlterCommand::apply` will see them:
+            /// an `ADD COLUMN IF NOT EXISTS` of a name a preceding rename created adds nothing, and a
+            /// rename or drop of a name a preceding drop or rename already removed moves nothing.
             NameSet present;
             for (const auto & column : old_columns)
                 present.insert(column.name);
@@ -15154,46 +15158,6 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
-/// On-fly `CLEAR`/`DROP` `IN PARTITION` applies only to `partition_id`.
-/// A patch part's own id is not the partition it updates; callers pass the original one.
-static bool dropCommandAppliesToPartition(
-    const MutationCommand & command,
-    const String & partition_id,
-    const MergeTreeData & storage,
-    const ContextPtr & context)
-{
-    if (command.type != MutationCommand::Type::DROP_COLUMN)
-        return true;
-
-    const auto alter = command.ast();
-    if (!alter)
-        return true;
-
-    if (alter->partition)
-    {
-        const auto command_partition_id = storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
-        return partition_id == command_partition_id;
-    }
-
-    if (alter->partitions)
-    {
-        for (const auto & partition_ast : alter->partitions->children)
-        {
-            const auto command_partition_id = storage.getPartitionIDFromQuery(partition_ast, context);
-            if (partition_id == command_partition_id)
-                return true;
-        }
-        return false;
-    }
-
-    return true;
-}
-
-static bool dropCommandAppliesToPart(const MutationCommand & command, const MergeTreeDataPartPtr & part, const ContextPtr & context)
-{
-    return dropCommandAppliesToPartition(command, part->info.getOriginalPartitionId(), part->storage, context);
-}
-
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MergeTreeDataPartPtr & part,
     const MutationsSnapshotPtr & mutations,
@@ -15204,7 +15168,6 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     )
 {
     auto commands = mutations->getOnFlyMutationCommandsForPart(part);
-    std::erase_if(commands, [&](const MutationCommand & command) { return !dropCommandAppliesToPart(command, part, query_context); });
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
 
@@ -15217,13 +15180,6 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     for (auto & patch : patches)
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
-        /// The same partition filter as the base part. A `CLEAR` in one partition must not
-        /// discard a patch that updates another partition.
-        const auto patch_partition_id = patch.part->info.getOriginalPartitionId();
-        std::erase_if(patch_commands, [&](const MutationCommand & command)
-        {
-            return !dropCommandAppliesToPartition(command, patch_partition_id, part->storage, query_context);
-        });
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
         auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
 
