@@ -13,12 +13,15 @@ set -e
 # others. A `{a|b}` failover group cannot be combined with an archive read at all, which
 # `05830_url_archive_custom_method` covers.
 
-# Serves two archives, each holding `m.csv` with a single row, and publishes both ports only after binding,
-# so readiness needs no polling. One process keeps a single coproc, which a second `coproc` would warn about.
+# Serves two archives, each holding `m.csv` with a single row. Both sockets are bound before the ports are
+# published, and both ports go out in one write: printing from the serving threads lets the two `print` calls
+# interleave, and `read` then sees one merged number and an empty line. One process keeps a single coproc,
+# which a second `coproc` would warn about.
 coproc SHARDS {
     exec python3 -u - <<'EOF'
 import io
 import re
+import sys
 import threading
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -73,13 +76,15 @@ def make_handler(body):
 
     return Handler
 
-def serve(value):
-    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(make_body(value)))
-    print(server.server_address[1], flush=True)
-    server.serve_forever()
+def make_server(value):
+    return ThreadingHTTPServer(("127.0.0.1", 0), make_handler(make_body(value)))
 
-for shard_value in (1, 2):
-    threading.Thread(target=serve, args=(shard_value,), daemon=True).start()
+servers = [make_server(1), make_server(2)]
+sys.stdout.write(f"{servers[0].server_address[1]}\n{servers[1].server_address[1]}\n")
+sys.stdout.flush()
+
+for server in servers:
+    threading.Thread(target=server.serve_forever, daemon=True).start()
 
 threading.Event().wait()
 EOF
@@ -88,6 +93,9 @@ SERVER_PID=$SHARDS_PID
 trap 'kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true' EXIT
 read -r -t 30 PORT_A <&"${SHARDS[0]}"
 read -r -t 30 PORT_B <&"${SHARDS[0]}"
+
+# A port the read above did not deliver would be spliced into the URL below and fail far away, so fail here.
+[[ "${PORT_A}" =~ ^[0-9]+$ && "${PORT_B}" =~ ^[0-9]+$ ]] || { echo "ports: '${PORT_A}' '${PORT_B}'"; exit 1; }
 
 echo "--- a union of shards reads the archive from every shard"
 ${CLICKHOUSE_CLIENT} --query \
