@@ -1,6 +1,9 @@
 #include <Storages/StorageFilesystemCache.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,6 +16,7 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageSnapshot.h>
+#include <Common/assert_cast.h>
 
 #include <magic_enum.hpp>
 
@@ -30,13 +34,24 @@ namespace ErrorCodes
 namespace
 {
 
+void insertValue(IColumn & column, UInt64 value) { assert_cast<ColumnUInt64 &>(column).insertValue(value); }
+
+void insertValue(IColumn & column, std::string_view value) { assert_cast<ColumnString &>(column).insertData(value.data(), value.size()); }
+
+void insertValue(IColumn & column, FileSegmentState state) { insertValue(column, std::string_view(FileSegment::stateToString(state))); }
+
 /// `NULL` for `None`, the name of the queue otherwise.
 template <typename Queue>
-Field queueToField(Queue queue)
+requires std::is_enum_v<Queue>
+void insertValue(IColumn & column, Queue queue)
 {
     if (queue == Queue::None)
-        return Field();
-    return String(magic_enum::enum_name(queue));
+    {
+        column.insertDefault();
+        return;
+    }
+    const auto name = magic_enum::enum_name(queue);
+    assert_cast<ColumnNullable &>(column).insertData(name.data(), name.size());
 }
 
 /// Walks the priority queue on the first call to `generate` and emits the result in chunks of at most `max_block_size` rows.
@@ -80,31 +95,31 @@ protected:
         {
             auto & column = *columns[i];
             column.reserve(end - begin);
-            auto fill = [&](auto && get_value)
+            auto fill = [&](auto FileSegmentSummaryInfo::* member)
             {
                 for (size_t row = begin; row < end; ++row)
-                    column.insert(get_value((*infos)[row]));
+                    insertValue(column, (*infos)[row].*member);
             };
 
             const auto & name = header.getByPosition(i).name;
             if (name == "priority_rank")
-                fill([](const FileSegmentSummaryInfo & info) { return info.priority_rank; });
+                fill(&FileSegmentSummaryInfo::priority_rank);
             else if (name == "path")
-                fill([](const FileSegmentSummaryInfo & info) { return info.path; });
+                fill(&FileSegmentSummaryInfo::path);
             else if (name == "key")
-                fill([](const FileSegmentSummaryInfo & info) { return info.key; });
+                fill(&FileSegmentSummaryInfo::key);
             else if (name == "offset")
-                fill([](const FileSegmentSummaryInfo & info) { return info.offset; });
+                fill(&FileSegmentSummaryInfo::offset);
             else if (name == "size")
-                fill([](const FileSegmentSummaryInfo & info) { return info.size; });
+                fill(&FileSegmentSummaryInfo::size);
             else if (name == "state")
-                fill([](const FileSegmentSummaryInfo & info) { return FileSegment::stateToString(info.state); });
+                fill(&FileSegmentSummaryInfo::state);
             else if (name == "split_queue")
-                fill([](const FileSegmentSummaryInfo & info) { return queueToField(info.split_queue); });
+                fill(&FileSegmentSummaryInfo::split_queue);
             else if (name == "slru_queue")
-                fill([](const FileSegmentSummaryInfo & info) { return queueToField(info.slru_queue); });
+                fill(&FileSegmentSummaryInfo::slru_queue);
             else if (name == "user_id")
-                fill([](const FileSegmentSummaryInfo & info) { return info.user_id; });
+                fill(&FileSegmentSummaryInfo::user_id);
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} in table function `filesystemCache`", name);
         }
