@@ -646,14 +646,25 @@ void StorageFileLog::takeOverFile(const String & file_name, FileContext & file_c
 void StorageFileLog::openFilesAndSetPos()
 {
     /// Take-overs come first: re-keying a name to a new file drops the offset of the file it leaves, which another name may lead to.
-    for (const auto & file : file_infos.file_names)
+    /// A take-over makes the name it takes the file from retried, and that name can take over the file of a name visited
+    /// before it (a rotation of three or more files), so the pass is repeated until no name takes over a file. Every
+    /// take-over gives one more name the file it leads to, which bounds the number of passes by the number of names.
+    bool any_taken_over = true;
+    for (size_t pass = 0; any_taken_over && pass < file_infos.file_names.size(); ++pass)
     {
-        auto & file_ctx = findInMap(file_infos.context_by_name, file);
-        if (file_ctx.status == FileStatus::NO_CHANGE && !file_ctx.open_failed)
-            continue;
-        if (const auto inode = getInodeToRead(file, file_ctx);
-            inode && *inode != file_ctx.inode && file_infos.meta_by_inode.contains(*inode))
-            takeOverFile(file, file_ctx, *inode);
+        any_taken_over = false;
+        for (const auto & file : file_infos.file_names)
+        {
+            auto & file_ctx = findInMap(file_infos.context_by_name, file);
+            if (file_ctx.status == FileStatus::NO_CHANGE && !file_ctx.open_failed)
+                continue;
+            if (const auto inode = getInodeToRead(file, file_ctx);
+                inode && *inode != file_ctx.inode && file_infos.meta_by_inode.contains(*inode))
+            {
+                takeOverFile(file, file_ctx, *inode);
+                any_taken_over = true;
+            }
+        }
     }
 
     bool any_open_failed = false;

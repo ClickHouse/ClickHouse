@@ -79,4 +79,26 @@ read_table file_log_3
 mv "${base}/outside/t" "${base}/outside/q"
 read_table file_log_3
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_3"
+
+# A rotation of three files where the name in the middle, b.csv, is not read at that time: c.csv takes over the file of
+# b.csv, which makes b.csv retried, and b.csv takes over the old file of a.csv before a.csv is re-keyed to its new file.
+mkdir -p "${base}/dir4"
+printf '800\n801\n802\n803\n' > "${base}/outside/k"
+echo 900 > "${base}/outside/l"
+echo 950 > "${base}/outside/m"
+ln -s "${base}/outside/k" "${base}/dir4/a.csv"
+ln -s "${base}/outside/l" "${base}/dir4/b.csv"
+ln -s "${base}/outside/m" "${base}/dir4/c.csv"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_4 (a UInt64) ENGINE = FileLog('${base}/dir4/', 'CSV')"
+read_table file_log_4
+${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_4 FILE 'a.csv' OFFSET 16"
+${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_4 FILE 'c.csv' OFFSET 4"
+echo 804 >> "${base}/outside/k"
+echo 901 >> "${base}/outside/l"
+mv "${base}/outside/m" "${base}/outside/m.1"
+mv "${base}/outside/l" "${base}/outside/m"
+mv "${base}/outside/k" "${base}/outside/l"
+echo 990 > "${base}/outside/k"
+read_table file_log_4
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_4"
 rm -rf "${base:?}"
