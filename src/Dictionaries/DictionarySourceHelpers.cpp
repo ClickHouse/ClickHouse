@@ -9,6 +9,8 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/IdentifierQuotingStyle.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -23,7 +25,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-void checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message)
+ASTPtr checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message)
 {
     const char * query_begin = query.data();
     const char * query_end = query.data() + query.size();
@@ -33,28 +35,86 @@ void checkDictionaryQueryIsSelect(const String & query, const String & descripti
     if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
 
+    return ast;
+}
+
+namespace
+{
+
+/// The query is checked with the ClickHouse parser, so everything that the external database reads differently
+/// is rejected: MySQL executes the text of `/*! ... */`, does not take `--` without a following space for a comment,
+/// reads `$$...$$` and the typographic quotes that ClickHouse accepts (`‘...’`) as identifiers;
+/// PostgreSQL reads a backslash in a string literally.
+void checkExternalDatabaseQueryIsSelect(const String & query, const String & description, const char * error_message)
+{
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd() && !token.isError(); token = lexer.nextToken())
+    {
+        const std::string_view text(token.begin, token.size());
+        const bool is_quoted = token.type == TokenType::StringLiteral || token.type == TokenType::QuotedIdentifier;
+        const bool is_ascii_quoted = is_quoted && (text.starts_with('\'') || text.starts_with('"') || text.starts_with('`'));
+        if (token.type == TokenType::Comment || token.type == TokenType::HereDoc || (is_quoted && (!is_ascii_quoted || text.contains('\\'))))
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} cannot contain comments, heredocs, typographic quotes or backslashes, because the external database may read them differently: {}",
+                description,
+                text);
+    }
+
+    ASTPtr ast = checkDictionaryQueryIsSelect(query, description, error_message);
+
     /// `INTO OUTFILE` is a part of a `SELECT` for ClickHouse, but an external database (MySQL) writes the file on its host.
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()); query_with_output && query_with_output->out_file)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
 }
 
-void checkExternalDictionarySourceQueries(
-    const ExternalQueryBuilder & query_builder, const String & update_field, const String & invalidate_query, const String & source_name)
-{
-    static constexpr auto source_error = "Only SELECT query can be used as a dictionary source";
-    checkDictionaryQueryIsSelect(query_builder.composeLoadAllQuery(), "Query for " + source_name + " dictionary", source_error);
+}
 
-    /// The value of `update_field` is inserted into the query verbatim.
+bool isExternalDatabaseDictionarySource(const String & source_type)
+{
+    return source_type == "mysql" || source_type == "postgresql" || source_type == "odbc";
+}
+
+void checkExternalDictionarySourceQueries(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    Poco::Util::AbstractConfiguration::Keys source_keys;
+    config.keys(config_prefix + ".source", source_keys);
+    /// The number of elements is checked when the source is created.
+    if (source_keys.empty() || source_keys.size() > 2)
+        return;
+
+    /// The source type is chosen as in `DictionarySourceFactory::create`.
+    const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
+    if (!isExternalDatabaseDictionarySource(source_type))
+        return;
+
+    const String source_prefix = config_prefix + ".source." + source_type;
+    const String query = config.getString(source_prefix + ".query", "");
+    const String where = config.getString(source_prefix + ".where", "");
+    const String update_field = config.getString(source_prefix + ".update_field", "");
+    const String invalidate_query = config.getString(source_prefix + ".invalidate_query", "");
+
+    /// The source composes its queries from `query` or `where`, the attribute expressions and `update_field`, which are inserted verbatim,
+    /// and from identifiers, which it quotes in the style of the database. The identifiers do not change the kind of the query,
+    /// so they are replaced here by a placeholder table and quoted in the ClickHouse style, which the ClickHouse parser reads correctly.
+    /// The table, the database and the schema can also come from a named collection, so they are not used.
+    const DictionaryStructure dict_struct(config, config_prefix);
+    const ExternalQueryBuilder query_builder(
+        dict_struct, /* db_ */ "", /* schema_ */ "", /* table_ */ query.empty() ? "table" : "", query, where, IdentifierQuotingStyle::Backticks);
+
+    static constexpr auto source_error = "Only SELECT query can be used as a dictionary source";
+    checkExternalDatabaseQueryIsSelect(query_builder.composeLoadAllQuery(), "Query for " + source_type + " dictionary", source_error);
+
     if (!update_field.empty())
-        checkDictionaryQueryIsSelect(
+        checkExternalDatabaseQueryIsSelect(
             query_builder.composeUpdateQuery(update_field, "1970-01-01 00:00:00"),
-            "Update query for " + source_name + " dictionary",
+            "Update query for " + source_type + " dictionary",
             source_error);
 
     if (!invalidate_query.empty())
-        checkDictionaryQueryIsSelect(
+        checkExternalDatabaseQueryIsSelect(
             invalidate_query,
-            "Invalidate query for " + source_name + " dictionary",
+            "Invalidate query for " + source_type + " dictionary",
             "Only SELECT query can be used as a dictionary invalidate query");
 }
 

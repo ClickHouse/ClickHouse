@@ -106,6 +106,7 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 #include <Compression/CompressionFactory.h>
@@ -251,6 +252,22 @@ std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
     }
     return {};
+}
+
+/// Checks the queries of a source of an external database in a `CREATE DICTIONARY` query, see `checkExternalDictionarySourceQueries`.
+/// The constant expressions in the source are evaluated on a copy, as `getTablePropertiesAndNormalizeCreateQuery` does later
+/// before the query is sent to other hosts and replicas, so they receive the values checked here.
+void checkQueriesOfExternalDictionarySource(const ASTCreateQuery & create, ContextPtr context)
+{
+    if (!create.dictionary || !create.dictionary->source || !isExternalDatabaseDictionarySource(Poco::toLower(create.dictionary->source->name)))
+        return;
+
+    ASTPtr create_copy = create.clone();
+    const auto & dictionary_copy = *create_copy->as<ASTCreateQuery &>().dictionary;
+    NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
+    NormalizeAndEvaluateConstantsVisitor(visitor_data).visit(dictionary_copy.source->ptr());
+
+    checkExternalDictionarySourceQueries(*getDictionaryConfigurationFromAST(create_copy->as<ASTCreateQuery &>(), context), "dictionary");
 }
 
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
@@ -4166,6 +4183,12 @@ BlockIO InterpreterCreateQuery::execute()
     }
 
     getContext()->checkAccess(getRequiredAccess());
+
+    /// The queries of a source of an external database are sent to it with the credentials of the source, so only `SELECT` is allowed.
+    /// Checked only for the query of the user, before it is sent to other hosts and replicas: the definitions of existing
+    /// dictionaries (`ATTACH` at startup, `RESTORE`, the replay on other hosts and replicas) are not checked, so that they keep loading.
+    if (create.is_dictionary && !internal && !getContext()->isDDLOrOnClusterInternal() && !is_restore_from_backup)
+        checkQueriesOfExternalDictionarySource(create, getContext());
 
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
