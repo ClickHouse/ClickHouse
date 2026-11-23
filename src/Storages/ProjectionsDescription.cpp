@@ -531,9 +531,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         result.type = ProjectionDescription::Type::Aggregate;
         if (!aggregation_keys.empty())
         {
+            /// a key that the query repeats is repeated in the sorting key, as before
             ASTs key_columns;
-            for (const auto & key : aggregation_keys)
-                key_columns.push_back(make_intrusive<ASTIdentifier>(key));
+            for (const auto & key_node : query_node.getGroupBy().getNodes())
+                key_columns.push_back(make_intrusive<ASTIdentifier>(getStoredName(key_node, query_node.getContext())));
 
             result.key_size = key_columns.size();
             auto order_expression = key_columns.size() == 1 ? key_columns.front() : makeASTFunction("tuple", std::move(key_columns));
