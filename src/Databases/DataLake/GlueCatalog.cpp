@@ -942,8 +942,12 @@ bool GlueCatalog::commitTableUpdate(
         request.SetDatabaseName(namespace_name);
         request.SetTableInput(buildUpdatedTableInput(existing, new_metadata_path, new_schema, new_metadata));
         /// Without it, a delayed retry could move the pointer back and drop the columns of a newer commit.
-        if (existing.VersionIdHasBeenSet())
-            request.SetVersionId(existing.GetVersionId());
+        if (!existing.VersionIdHasBeenSet())
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Glue did not return the version of table {}.{}, so the commit of {} cannot be conditional",
+                namespace_name, table_name, new_metadata_path);
+        request.SetVersionId(existing.GetVersionId());
         bool request_retried = false;
         request.SetRequestRetryHandler([&request_retried](const Aws::AmazonWebServiceRequest &) { request_retried = true; });
 

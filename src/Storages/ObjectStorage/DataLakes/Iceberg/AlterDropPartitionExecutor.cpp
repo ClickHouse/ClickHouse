@@ -691,7 +691,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     const auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
     FileNamesGenerator filename_generator(
         components.path_resolver.getTableLocation(), /* use_uuid_in_metadata */ catalog != nullptr, compression_method, write_format);
-    filename_generator.setBaseMetadataFile(state.table_state.metadata_version, state.table_state.metadata_file_path);
+    filename_generator.setVersion(state.table_state.metadata_version + 1);
     filename_generator.setCompressionMethod(compression_method);
 
     const bool write_statistics = shouldWriteIcebergTableStatisticsNdv(context, catalog);
