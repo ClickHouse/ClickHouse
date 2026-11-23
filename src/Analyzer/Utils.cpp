@@ -800,6 +800,31 @@ TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join
     return result;
 }
 
+namespace
+{
+
+/** Whether a filter on the columns of this side of a JOIN can be applied before the JOIN
+  * without changing its result. Not for the null-producing side of an outer JOIN, the right side
+  * of an `ASOF JOIN`, both sides of a `PASTE JOIN` or `FULL JOIN`, and both sides of an
+  * `ANY INNER JOIN` (prefiltering can change which duplicate of a key survives).
+  */
+bool canPrefilterJoinSide(JoinKind kind, JoinStrictness strictness, JoinTableSide side)
+{
+    if (isPaste(kind) || isFull(kind))
+        return false;
+    if (kind == JoinKind::Inner && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny))
+        return false;
+    if (strictness == JoinStrictness::Asof && side == JoinTableSide::Right)
+        return false;
+    if (isLeft(kind) && side == JoinTableSide::Right)
+        return false;
+    if (isRight(kind) && side == JoinTableSide::Left)
+        return false;
+    return true;
+}
+
+}
+
 bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
 {
     std::vector<QueryTreeNodePtr> stack = {join_tree};
@@ -822,8 +847,6 @@ bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const Que
             const bool table_on_left = contains_table(join->getLeftTableExpressionNodeTyped());
             const bool table_on_right = contains_table(join->getRightTableExpressionNodeTyped());
 
-            if (isAnyInnerJoin(join->getKind(), join->getStrictness()) && (table_on_left || table_on_right))
-                return false;
             if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
                 return false;
             if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
