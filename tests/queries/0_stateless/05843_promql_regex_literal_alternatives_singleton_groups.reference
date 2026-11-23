@@ -1,0 +1,16 @@
+-- a group with a single string extends the strings before it
+[1]
+[2,4]
+[2,4]
+[1,3]
+[7]
+[1,3,4,7]
+-- a metric name regex with such groups reads the tags table by its primary key
+6
+1
+-- many groups with a single string after a long list of long strings
+6
+6
+0
+-- a single string after more than 100 strings keeps the regex
+6

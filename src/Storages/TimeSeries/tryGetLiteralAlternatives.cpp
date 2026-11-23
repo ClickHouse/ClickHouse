@@ -38,6 +38,13 @@ std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos, 
             bool has_prefix = terms.size() > 1 || !terms.front().empty();
             if (has_prefix && terms.size() * group->size() > MAX_EXPANDED_TERMS)
                 return {};
+            if (group->size() == 1)
+            {
+                /// A group of one string is appended in place, so many such groups do not copy the terms again and again.
+                for (auto & term : terms)
+                    term += group->front();
+                continue;
+            }
             Strings expanded;
             expanded.reserve(terms.size() * group->size());
             for (const auto & prefix : terms)
