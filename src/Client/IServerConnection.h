@@ -42,6 +42,9 @@ struct Packet
     std::optional<InitialAllRangesAnnouncement> announcement;
     std::optional<ParallelReadRequest> request;
 
+    /// The maximum number of tasks requested by `ReadTaskRequest`.
+    UInt64 max_read_tasks = 1;
+
     std::string server_timezone;
 };
 

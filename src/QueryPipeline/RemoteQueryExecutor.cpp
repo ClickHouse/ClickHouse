@@ -996,7 +996,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             return ReadResult(ReadResult::Type::ParallelReplicasToken);
 
         case Protocol::Server::ReadTaskRequest:
-            processReadTaskRequest();
+            processReadTaskRequest(packet.max_read_tasks);
             break;
         case Protocol::Server::PartUUIDs:
             LOG_WARNING(
@@ -1136,7 +1136,7 @@ void RemoteQueryExecutor::processProfileEventsPacket(Block block)
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
 }
 
-void RemoteQueryExecutor::processReadTaskRequest()
+void RemoteQueryExecutor::processReadTaskRequest(size_t max_tasks)
 {
     /// A ReadTaskRequest arrives only from a worker running a cluster table function or object storage
     /// source with distributed reads. Serving it needs a task iterator, which only the legitimate
@@ -1166,8 +1166,10 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
 
-    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica, stop_waiting_for_read_task);
-    connections->sendClusterFunctionReadTaskResponse(*response);
+    auto responses = (*extension->task_iterator)(extension->replica_info->number_of_current_replica, max_tasks, stop_waiting_for_read_task);
+    if (responses.size() > max_tasks)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} read tasks, while at most {} were requested", responses.size(), max_tasks);
+    connections->sendClusterFunctionReadTaskResponse(responses);
 }
 
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)

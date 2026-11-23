@@ -84,13 +84,13 @@ private:
 TEST(StorageObjectStorageArchive, DistributedArchiveRejectsUnknownSize)
 {
     bool sent_task = false;
-    DB::ClusterFunctionReadTaskCallback callback = [&sent_task]
+    DB::ClusterFunctionReadTaskCallback callback = [&sent_task](size_t) -> DB::ClusterFunctionReadTaskResponses
     {
         if (sent_task)
-            return std::make_shared<DB::ClusterFunctionReadTaskResponse>();
+            return {};
 
         sent_task = true;
-        return std::make_shared<DB::ClusterFunctionReadTaskResponse>("archive.zip :: value.tsv");
+        return {std::make_shared<DB::ClusterFunctionReadTaskResponse>("archive.zip :: value.tsv")};
     };
 
     auto object_storage = std::make_shared<UnknownSizeObjectStorage>();
@@ -98,6 +98,7 @@ TEST(StorageObjectStorageArchive, DistributedArchiveRejectsUnknownSize)
     DB::StorageObjectStorageSource::ReadTaskIterator iterator(
         callback,
         /*max_threads_count=*/1,
+        /*max_tasks_per_request=*/0,
         /*is_archive_=*/true,
         object_storage,
         context);

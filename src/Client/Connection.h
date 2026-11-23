@@ -9,6 +9,7 @@
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -36,6 +37,8 @@ class JWTProvider;
 class Connection;
 struct ConnectionParameters;
 struct ClusterFunctionReadTaskResponse;
+using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = VectorWithMemoryTracking<ClusterFunctionReadTaskResponsePtr>;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
@@ -191,7 +194,7 @@ public:
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
 
-    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses & responses);
     /// Send all scalars.
     void sendScalarsData(Scalars & data) override;
 

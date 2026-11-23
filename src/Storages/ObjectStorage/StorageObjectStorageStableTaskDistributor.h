@@ -31,6 +31,10 @@ public:
 
     ObjectInfoPtr getNextTask(size_t number_of_current_replica, const std::atomic_bool * stop_waiting = nullptr);
 
+    /// Returns the next task as `getNextTask` does, and up to `max_tasks - 1` more tasks of the replica that are
+    /// available without waiting and without taking the tasks of other replicas. Returns nothing when there are no more tasks.
+    ObjectInfos getNextTasks(size_t number_of_current_replica, size_t max_tasks, const std::atomic_bool * stop_waiting = nullptr);
+
 private:
     size_t getReplicaForFile(const String & file_path);
     ObjectInfoPtr getPreQueuedFile(size_t number_of_current_replica);

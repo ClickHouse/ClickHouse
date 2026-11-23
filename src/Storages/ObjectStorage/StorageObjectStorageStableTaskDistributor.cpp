@@ -72,6 +72,29 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t numb
     return getAnyUnprocessedFile(number_of_current_replica, stop_waiting);
 }
 
+ObjectInfos StorageObjectStorageStableTaskDistributor::getNextTasks(
+    size_t number_of_current_replica, size_t max_tasks, const std::atomic_bool * stop_waiting)
+{
+    ObjectInfos tasks;
+    auto first_task = getNextTask(number_of_current_replica, stop_waiting);
+    if (!first_task)
+        return tasks;
+
+    tasks.push_back(std::move(first_task));
+    while (tasks.size() < max_tasks)
+    {
+        auto task = getPreQueuedFile(number_of_current_replica);
+        if (!task)
+            task = getMatchingFileFromIterator(number_of_current_replica);
+        if (!task)
+            break;
+        tasks.push_back(std::move(task));
+    }
+
+    LOG_TRACE(log, "Assigning {} tasks to replica {}", tasks.size(), number_of_current_replica);
+    return tasks;
+}
+
 size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String & file_path)
 {
     size_t nodes_count = ids_of_nodes.size();

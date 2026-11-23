@@ -1699,9 +1699,10 @@ String StorageFileSource::FilesIterator::next()
 {
     if (distributed_processing)
     {
-        auto task = getContext()->getClusterFunctionReadTaskCallback()();
-        if (!task || task->isEmpty())
+        auto tasks = getContext()->getClusterFunctionReadTaskCallback()(1);
+        if (tasks.empty())
             return {};
+        const auto & task = tasks.front();
 
         /// The read task may come from a client impersonating an initiator server, so validate the path.
         checkCreationIsAllowedResolvingDotDot(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);

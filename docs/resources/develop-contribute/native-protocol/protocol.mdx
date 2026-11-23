@@ -187,6 +187,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | INSERT_RETURNING | 54495 | Data (INSERT) | For `INSERT ... RETURNING (SELECT ...)` with the rows sent in `Data` packets, the server sends the result of the `RETURNING` query while it is still reading the rows: `Data` packets (the first one is the header of the result, with 0 rows), `Totals`, `Extremes`, `ProfileInfo`, and `Progress`, interleaved with the client's row stream and before `EndOfStream`. See the [INSERT phase](#insert-phase). Below this revision the server rejects such a query with an `Exception` (`NOT_IMPLEMENTED`) instead of sending the schema block, so an older client never sees the new packets. |
 | PROFILE_EVENTS_IN_SECONDARY_INSERT | 54496 | ProfileEvents (INSERT) | For a secondary `INSERT` (sent by the initiator of a distributed `INSERT`, `query_kind = SecondaryQuery`), after it has received the end-of-input terminator, the server sends the insert's final [`ProfileEvents`](#profileevents) before `EndOfStream`, or before the `Exception` if the query fails after that point; the initiator charges it to the quotas over profile events of the initiating user. Periodic reports while the rows are uploaded stay suppressed for secondary `INSERT`s. Below this version the server sends no `ProfileEvents` for a secondary `INSERT`. The packet format is unchanged. External clients send initial queries and see no change. |
 | CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD | 54497 | Aggregation (two-level buckets) | The aggregation method for fixed-width keys and one `String` key, any of which can be `LowCardinality`, follows `enable_fixed_and_packed_string_keys_in_aggregation`, which the initiator always sends with its secondary queries. A peer below this revision always uses the serialized method for such keys and does not know the setting, so exchanging two-level buckets with it would place the same key in different buckets. Both sides fail closed across the boundary: the initiator zeroes the two-level thresholds for a shard below this revision and re-buckets the shard's single-level blocks itself, and a shard answering an initiator below this revision zeroes its own two-level thresholds. Peers from 54489 to 54495 agree on the method for a lone `String` key but not for these keys, so the boundary of 54489 moved here. Compared against the peer's revision rather than its version, as at 54489. No native-protocol wire change. |
+| CLUSTER_FUNCTION_READ_TASK_BATCHES | 54498 | ReadTaskRequest, ReadTaskResponse | `ReadTaskRequest` (server packet `13`, sent by a worker of a `*Cluster` table function to the initiator) gets a body: `VarUInt max_tasks`, at least `1`. `ReadTaskResponse` (client packet `9`) starts with `VarUInt count`, at most `max_tasks`, followed by `count` read-task payloads (each one is the otherwise-unspecified body of a `ReadTaskResponse` below this version, and none of them is empty); `count = 0` means that there are no more tasks. Below this version `ReadTaskRequest` has no body and `ReadTaskResponse` carries one payload, which is empty when there are no more tasks. Inter-server only. |
 
 ## Packet envelope {#packet-envelope}
 
@@ -970,7 +971,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 6    | KeepAlive                 | not specified       | Connection keepalive |
 | 7    | Scalar                    | not specified       | Scalar data block |
 | 8    | IgnoredPartUUIDs          | not specified       | Obsolete (query deduplication was removed). Rejected without reading the body in every state — see [Protocol violations](#protocol-violations). |
-| 9    | ReadTaskResponse          | not specified       | S3 cluster read response |
+| 9    | ReadTaskResponse          | not specified       | S3 cluster read response. From v54498 a list of read tasks — see [CLUSTER_FUNCTION_READ_TASK_BATCHES](#feature-table) |
 | 10   | MergeTreeReadTaskResponse | not specified       | Parallel read task response |
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
@@ -994,7 +995,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 10   | Log                            | [Log](#log)         | Query execution log lines |
 | 11   | TableColumns                   | [TableColumns](#tablecolumns) | Column descriptions for defaults |
 | 12   | PartUUIDs                      | not specified       | Unique part IDs |
-| 13   | ReadTaskRequest                | not specified       | Cluster read task request |
+| 13   | ReadTaskRequest                | (no body); from v54498 `VarUInt max_tasks` | Cluster read task request — see [CLUSTER_FUNCTION_READ_TASK_BATCHES](#feature-table) |
 | 14   | ProfileEvents                  | [ProfileEvents](#profileevents) | Performance counters |
 | 15   | MergeTreeAllRangesAnnouncement | not specified       | Parallel read initialization |
 | 16   | MergeTreeReadTaskRequest       | not specified       | Parallel read task assignment |
