@@ -2445,7 +2445,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeExternalBatch(
     {
         expectNextNodeLength(static_cast<size_t>(batch.length), fmt::format("column '{}'", field.name));
         result.push_back(
-            decodeBatchColumn(field, /*target_hint=*/nullptr, normalizedName(field.name), /*list_depth=*/0, /*read_undeclared_nulls=*/true));
+            decodeBatchColumn(field, /*target_hint=*/nullptr, field.name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();

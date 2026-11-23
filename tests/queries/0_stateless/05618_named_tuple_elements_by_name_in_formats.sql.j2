@@ -51,6 +51,10 @@ SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}'
 SELECT * FROM file(currentDatabase() || '_05618_ci.{{ format }}', '{{ format }}', 'id UInt32, `S.A` DateTime(\'UTC\'), `s.a` Int32') ORDER BY id SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 {% endif -%}
 {% endif -%}
+{% if format == 'Vortex' -%}
+INSERT INTO FUNCTION file(currentDatabase() || '_05618_ci.Vortex', 'Vortex') SELECT 1 AS id, tuple(toDate32('2200-01-01'))::Tuple(A Date32) AS S;
+SELECT * FROM file(currentDatabase() || '_05618_ci.Vortex', 'Vortex', 'id UInt32, `S.A` DateTime(\'UTC\')') SETTINGS {{ ci }}; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+{% endif -%}
 {% endfor -%}
 
 {% for format in ['Parquet', 'ORC', 'Arrow', 'Native', 'Vortex'] -%}
