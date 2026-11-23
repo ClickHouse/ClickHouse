@@ -244,6 +244,7 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
 #if USE_ROCKSDB
         Stopwatch rebuild_watch;
         FailPointInjection::pauseFailPoint(FailPoints::unique_key_before_index_rebuild);
+        CurrentThread::checkIfNotCancelled();
         Block accumulated = readUniqueKeyColumns(data, part, metadata_snapshot, uk_names);
         /// A cancelled pipeline can return an empty or partial block instead of throwing.
         CurrentThread::checkIfNotCancelled();
@@ -341,6 +342,9 @@ Block UniqueKeyDenseIndexOps::readUniqueKeyColumns(
     /// `_part_offset`, so `apply_deleted_mask=false` keeps the `_row_exists`
     /// lightweight-delete filter out (deadness is tracked by the DeleteBitmap).
     auto context = Context::createCopy(data.getContext());
+    /// Rebuilding one local part must not inherit distributed execution from the server profile.
+    context->setSetting("enable_parallel_replicas", Field(0));
+    context->setSetting("make_distributed_plan", false);
     context->setSetting("apply_deleted_mask", false);
     auto mutations_snapshot = data.getMutationsSnapshot({});
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(
