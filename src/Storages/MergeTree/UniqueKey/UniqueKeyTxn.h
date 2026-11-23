@@ -48,7 +48,7 @@ public:
         std::vector<DeleteBitmapStore::BitmapLink> carried;
 
         /// `targets` plus the targets of `carried`
-        std::vector<MergeTreePartInfo> allTargets() const
+        [[nodiscard]] std::vector<MergeTreePartInfo> allTargets() const
         {
             std::vector<MergeTreePartInfo> all = targets;
             for (const auto & link : carried)
@@ -60,10 +60,10 @@ public:
     virtual ~IUniqueKeyCommit() = default;
 
     /// The partition this write publishes into
-    virtual String partitionId() const = 0;
+    [[nodiscard]] virtual String partitionId() const = 0;
 
     /// Names this write in the commit protocol's log lines
-    virtual std::string_view writeKind() const = 0;
+    [[nodiscard]] virtual std::string_view writeKind() const = 0;
 
     /// Put everything on disk inside the part this write will publish
     virtual std::optional<StagedWrite> stage(const PartitionWriteGuard & guard) = 0;
