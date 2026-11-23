@@ -1,7 +1,6 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -134,8 +133,8 @@ bool isOptimizeRowOrderExplicitlySet(const SettingsChanges & settings_changes)
     return settings_changes.tryGet("optimize_row_order") != nullptr;
 }
 
-/// Prediction of the part size for choosing its format: like `Block::bytes`, but the nested default that a NULL
-/// carries is not counted, because it compresses to nothing.
+/// Prediction of the part size for choosing its format: like `Block::bytes`, but the default values inside a `Nullable`
+/// column (normally the payload of its NULL rows) are not counted, because they compress to nothing.
 size_t estimatePartSize(const Block & block)
 {
     size_t res = 0;
@@ -145,14 +144,14 @@ size_t estimatePartSize(const Block & block)
             continue;
 
         size_t bytes = elem.column->byteSize();
-        size_t null_defaults = 0;
+        size_t nested_defaults = 0;
         if (const auto * nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
         {
             auto one_default = nullable->getNestedColumn().cloneEmpty();
             one_default->insertDefault();
-            null_defaults = countBytesInFilter(nullable->getNullMapData()) * one_default->byteSize();
+            nested_defaults = nullable->getNestedColumn().getNumberOfDefaultRows() * one_default->byteSize();
         }
-        res += bytes - std::min(bytes, null_defaults);
+        res += bytes - std::min(bytes, nested_defaults);
     }
     return res;
 }
