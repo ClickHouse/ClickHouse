@@ -492,9 +492,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const auto & aggregation_keys = planner.getAggregationKeys();
     if (is_aggregate || result.where_clause_ast)
     {
-        auto plan = is_aggregate ? planner.buildPlanForAggregateProjection(makeEmptyBlock(source_columns))
-                                 : planner.buildPlanForNormalProjection(makeEmptyBlock(source_columns));
-        result.sample_block = *plan.getCurrentHeader();
+        result.sample_block = is_aggregate ? planner.getHeaderOfAggregateProjection() : planner.getHeaderOfNormalProjection();
 
         /// table columns first, as before
         if (!is_aggregate)
@@ -673,7 +671,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.query_ast = select_query->cloneToASTSelect();
 
     auto [planner, source_columns] = planProjectionQuery(result, columns, partition_key, query_context);
-    result.sample_block = *planner.buildPlanForAggregateProjection(makeEmptyBlock(source_columns)).getCurrentHeader();
+    result.sample_block = planner.getHeaderOfAggregateProjection();
 
     for (const auto & key : planner.getAggregationKeys())
     {

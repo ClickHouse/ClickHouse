@@ -45,12 +45,24 @@ public:
     /// the plan that calculates the aggregate states of an aggregate projection from a block of the source columns
     QueryPlan buildPlanForAggregateProjection(Block source);
 
+    /// the columns that the plans return; no function is executed, so the description of a projection uses these
+    Block getHeaderOfNormalProjection();
+    Block getHeaderOfAggregateProjection();
+
 private:
     /// calculates the expressions from the identifiers of the source columns, the outputs have the names that the planner gives
     ActionsDAG buildActions(const QueryTreeNodes & expressions);
 
     /// calculates the aggregation keys and the aggregate function arguments
     ActionsDAG buildKeysAndArgumentsActions();
+
+    /// calculates the columns of a normal projection under the names that the part stores
+    ActionsDAG buildStoredExpressionsActions();
+
+    /// renames the keys after the aggregation to the names that the part stores
+    [[nodiscard]] ActionsDAG buildStoredNamesActions(const Block & aggregated_header) const;
+
+    [[nodiscard]] Names getUniquePlannerKeyNames() const;
 
     /// the first steps of both plans: reads the block under the identifiers of the columns and applies WHERE
     QueryPlan buildPlanForSource(Block source);
