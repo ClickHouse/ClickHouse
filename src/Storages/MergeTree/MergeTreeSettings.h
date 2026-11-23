@@ -145,6 +145,8 @@ struct MergeTreeSettings
     static void resolveDiskSetting(
         SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false,
         bool stored_definition = false);
+    /// Whether the tables of the database are server-internal, see `s3_allow_server_credentials_for_system_table_disks`.
+    static bool isSystemDatabaseForDisks(const String & database_name);
 
     /// Cloud only
     static bool isSMTReadonlySetting(const String & name);

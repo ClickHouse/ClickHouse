@@ -93,7 +93,7 @@ private:
     };
     /// Opens the marks file, or the slice of it.
     OpenedMarks openMarksReader();
-    String getMarkCacheKey() const;
+    MarkCache::Key getCacheKey() const;
 
     MarkCache::MappedPtr loadMarksImpl();
     MarkCache::MappedPtr loadMarksSync();

@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -131,7 +132,7 @@ bool canBeExecutedByEnabledAlgorithm(const JoinSettings & join_settings, JoinKin
             case JoinAlgorithm::DIRECT:
                 /// Only over a key-value right table, and only for the strictness it already has.
                 break;
-            case JoinAlgorithm::IE_JOIN:
+            case JoinAlgorithm::INEQUALITY:
                 /// Only for an inequality `ON` condition, which no rewrite introduces.
                 break;
             case JoinAlgorithm::DEFAULT:
@@ -264,13 +265,14 @@ static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
 
 DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
+    auto is_bool = [](const DataTypePtr & t) { return isBool(t) || isSimpleAggregateFunctionOfBool(*t); };
     for (const auto & key_type : {left_type, right_type})
     {
         bool replaced = false;
         auto result = replaceNestedTypesInPair(type, key_type,
             [&](const DataTypePtr & leaf, const DataTypePtr & key_leaf) -> DataTypePtr
             {
-                if (isBool(leaf) && !isBool(key_leaf) && leaf->equals(*key_leaf))
+                if (is_bool(leaf) && !is_bool(key_leaf) && leaf->equals(*key_leaf))
                 {
                     replaced = true;
                     return std::make_shared<DataTypeUInt8>();
@@ -706,10 +708,17 @@ void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_j
         else
             col.column = col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
 
-        /// In case of using `arrayJoin` we can get more or less rows than one
-        if (col.column->size() != 1)
-            col.column = col.column->cloneResized(1);
+        col.column = totalsColumnToSingleRow(col.column, col.type);
     }
+}
+
+ColumnPtr totalsColumnToSingleRow(const ColumnPtr & column, const DataTypePtr & type)
+{
+    if (column->empty() && !isColumnConst(*column) && !type->isDefaultInsertTrivial())
+        return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+    if (column->size() != 1)
+        return column->cloneResized(1);
+    return column;
 }
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
@@ -722,6 +731,19 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     DataTypePtr left_type_strict = removeNullable(removeLowCardinality(left_type));
     DataTypePtr right_type_strict = removeNullable(removeLowCardinality(right_type));
     return left_type_strict->equals(*right_type_strict);
+}
+
+bool isExactJoinKeyEquality(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    auto left = removeLowCardinalityAndNullable(left_type);
+    auto right = removeLowCardinalityAndNullable(right_type);
+    if (left->equals(*right))
+        return true;
+    if (isNumber(left) && isNumber(right))
+        return true;
+    if (isDateOrDate32OrDateTimeOrDateTime64(left) && isDateOrDate32OrDateTimeOrDateTime64(right))
+        return true;
+    return isFixedString(left) && isFixedString(right);
 }
 
 static ColumnPtr castToBoolColumn(ColumnPtr column)

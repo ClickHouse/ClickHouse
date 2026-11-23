@@ -63,7 +63,7 @@ public:
         std::unique_ptr<arrow::flight::ResultStream> * result) override;
 
 private:
-    using DecodeResult = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, std::shared_ptr<arrow::Table>>;
+    using DecodeResult = std::tuple<std::string, ArrowFlight::SchemaModifier, ArrowFlight::BlockModifier, std::shared_ptr<arrow::Table>, bool>;
 
     [[nodiscard]] arrow::Result<DecodeResult> decodeDescriptor(
         const arrow::flight::FlightDescriptor & descriptor,

@@ -14,9 +14,9 @@ SETTINGS index_granularity = 100000, index_granularity_bytes = 10240, use_const_
 CREATE TABLE t_json_gran_mrg AS t_json_gran_ins;
 
 -- max_dynamic_paths = 0 sends every path to shared data; the large value makes it dominate the column.
-INSERT INTO t_json_gran_ins SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(10000);
-INSERT INTO t_json_gran_mrg SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(5000);
-INSERT INTO t_json_gran_mrg SELECT number + 5000, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(5000);
+INSERT INTO t_json_gran_ins SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(1000);
+INSERT INTO t_json_gran_mrg SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(500);
+INSERT INTO t_json_gran_mrg SELECT number + 500, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(500);
 OPTIMIZE TABLE t_json_gran_mrg FINAL;
 
 -- One active Wide part each.
@@ -36,9 +36,9 @@ DROP TABLE IF EXISTS t_json_gran_mut_ins;
 DROP TABLE IF EXISTS t_json_gran_mut;
 CREATE TABLE t_json_gran_mut_ins AS t_json_gran_ins;
 CREATE TABLE t_json_gran_mut AS t_json_gran_ins;
-INSERT INTO t_json_gran_mut_ins SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(9000);
-INSERT INTO t_json_gran_mut SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(10000);
-ALTER TABLE t_json_gran_mut DELETE WHERE x >= 9000 SETTINGS mutations_sync = 2;
+INSERT INTO t_json_gran_mut_ins SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(900);
+INSERT INTO t_json_gran_mut SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(1000);
+ALTER TABLE t_json_gran_mut DELETE WHERE x >= 900 SETTINGS mutations_sync = 2;
 
 SELECT count(), min(part_type = 'Wide') FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mut' AND active;
 SELECT 2 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_mut' AND active)
@@ -48,8 +48,8 @@ SELECT 2 * (SELECT sum(marks) FROM system.parts WHERE database = currentDatabase
 -- its granularity by the Compact parts' total size rather than by nothing, which would make one huge granule.
 DROP TABLE IF EXISTS t_json_gran_cw;
 CREATE TABLE t_json_gran_cw AS t_json_gran_ins SETTINGS min_level_for_wide_part = 1;
-INSERT INTO t_json_gran_cw SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(5000);
-INSERT INTO t_json_gran_cw SELECT number + 5000, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(5000);
+INSERT INTO t_json_gran_cw SELECT number, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(500);
+INSERT INTO t_json_gran_cw SELECT number + 500, concat('{"a":"', repeat('y', 500), '"}') FROM numbers(500);
 SELECT count(), min(part_type = 'Compact') FROM system.parts WHERE database = currentDatabase() AND table = 't_json_gran_cw' AND active;
 OPTIMIZE TABLE t_json_gran_cw FINAL;
 

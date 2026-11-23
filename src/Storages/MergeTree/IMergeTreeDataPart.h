@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <string_view>
+
 #include <Common/UniqueLock.h>
 
 #include <atomic>
@@ -179,6 +182,10 @@ public:
     std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
     /// The streams of a subcolumn if they are in the cache already; never lists them.
     SubcolumnStreamsPtr tryGetCachedSubcolumnStreams(const String & subcolumn_name) const;
+    /// The sizes of the subcolumns, and, if `with_columns`, of the columns among `column_names` that the part has. The uncached
+    /// subcolumn sizes are calculated with one reader per column, or nullopt is returned if `only_from_memory` and that reads files.
+    std::optional<std::vector<std::pair<String, ColumnSize>>> getColumnAndSubcolumnSizes(
+        const Names & column_names, bool with_columns, bool only_from_memory) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -549,6 +556,9 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
+
     void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
@@ -618,7 +628,7 @@ public:
     /// Returns the list of part files in the order they should be written to disk. This list is used to optimize
     /// the layout of files in packed storage.
     /// The list can be incomplete, in that case the remaining files should be written in any order.
-    virtual Strings getPreferredFileOrder() const { return COMMON_METADATA_FILES; }
+    virtual Strings getPreferredFileOrder() const { return getCommonMetadataFiles(); }
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -843,7 +853,8 @@ public:
     void removeIfNeeded();
 
 protected:
-    inline static const Strings COMMON_METADATA_FILES =
+    /// `constexpr` so that including this header costs no static initializer; `getCommonMetadataFiles` materializes it.
+    static constexpr std::array<std::string_view, 10> COMMON_METADATA_FILES =
     {
         "uuid.txt",
         "checksums.txt",
@@ -856,6 +867,8 @@ protected:
         "partition.dat",
         "ttl.txt",
     };
+
+    static Strings getCommonMetadataFiles() { return Strings(COMMON_METADATA_FILES.begin(), COMMON_METADATA_FILES.end()); }
 
     /// Primary key (correspond to primary.idx file).
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -914,6 +927,7 @@ protected:
 
     /// List the streams required to read the specified subcolumns with their sizes, one entry per subcolumn.
     virtual std::vector<SubcolumnStreamsPtr> calculateSubcolumnStreams(const NamesAndTypesList & subcolumns) const;
+    virtual bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & /*subcolumn*/) const { return true; }
 
     /// Calculate the size of the streams a read of all columns touches; the size on disk where columns are not stored
     /// in streams of their own.
@@ -1038,8 +1052,6 @@ private:
     std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
         const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
-    /// The path that identifies the part in the caches shared between tables.
-    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 

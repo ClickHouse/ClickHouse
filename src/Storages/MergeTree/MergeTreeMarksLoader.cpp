@@ -322,10 +322,12 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     return res;
 }
 
-String MergeTreeMarksLoader::getMarkCacheKey() const
+/// The directory a part occupies may differ from its name (`<name>.proj`); the key names the part.
+MarkCache::Key MergeTreeMarksLoader::getCacheKey() const
 {
     auto data_part_storage = data_part_reader->getDataPartStorage();
-    auto key = data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string();
+    auto path = fs::path(data_part_storage->getFullRootPath()) / data_part_reader->getPartName() / mrk_path;
+    auto key = data_part_storage->getDiskName() + ":" + path.string();
     if (slice)
     {
         /// Slices of one file differ by their begin. The file's hash keeps a slice of a removed part from serving a
@@ -336,7 +338,7 @@ String MergeTreeMarksLoader::getMarkCacheKey() const
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The file {} of a marks slice is not in the checksums of the part", mrk_path);
         key += "#" + getHexUIntLowercase(it->second.file_hash) + "#" + std::to_string(slice->begin);
     }
-    return key;
+    return MarkCache::hash(key);
 }
 
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
@@ -349,7 +351,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(getMarkCacheKey());
+        auto key = getCacheKey();
 
         if (save_marks_in_cache)
         {
@@ -385,7 +387,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     /// Avoid queueing jobs into thread pool if marks are in cache
     if (mark_cache)
     {
-        auto key = MarkCache::hash(getMarkCacheKey());
+        auto key = getCacheKey();
         if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
         {
             /// As in loadMarksSync, so that every part a slice is read for removes its entry.

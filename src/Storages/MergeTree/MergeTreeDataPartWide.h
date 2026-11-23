@@ -68,6 +68,7 @@ private:
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
     std::vector<SubcolumnStreamsPtr> calculateSubcolumnStreams(const NamesAndTypesList & subcolumns) const override;
+    bool canCalculateSubcolumnSizeFromMemory(const NameAndTypePair & subcolumn) const override;
 
     /// The sum of the per-column read sizes.
     ColumnSize calculateTotalColumnsReadSize() const override;
@@ -86,7 +87,8 @@ private:
     void forEachExistingStreamOfColumn(const String & column_name, const std::function<void(const String & stream_name)> & callback) const;
 
     /// The streams a read of the columns touches, by requested name, listed by one reader after it has read the prefixes.
-    std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(const NamesAndTypesList & columns) const;
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(
+        const NamesAndTypesList & columns, const ReadSettings & read_settings) const;
 
     mutable std::mutex columns_read_sizes_mutex;
     /// Only a column with dynamic subcolumns has a read size below its on-disk size, so this is populated (and

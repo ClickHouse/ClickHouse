@@ -761,11 +761,26 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
         encodeDataType(std::make_shared<DataTypeNothing>(), ostr);
         return;
     }
-    /// Check if this value is in shared variant. In this case it's already
-    /// in desired binary format.
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
+        /// Values in the shared variant are encoded with the default format settings. They differ from
+        /// the requested binary format only when a `JSON` inside has to be written as a string.
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
+        if (settings.binary.write_json_as_string)
+        {
+            ReadBufferFromMemory buf(value);
+            auto type = decodeDataType(buf);
+            if (type->hasDynamicStructure())
+            {
+                auto serialization = getDataTypesCache().getSerialization(type->getName(), type);
+                auto tmp_column = type->createColumn();
+                serialization->deserializeBinary(*tmp_column, buf, FormatSettings{});
+                encodeDataType(type, ostr);
+                serialization->serializeBinary(*tmp_column, 0, ostr, settings);
+                return;
+            }
+        }
+
         ostr.write(value.data(), value.size());
         return;
     }
@@ -896,13 +911,14 @@ void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, Rea
     dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);
 }
 
-template <typename ReadFieldFunc, typename TryDeserializeVariantFunc, typename DeserializeVariant>
+template <typename ReadFieldFunc, typename CheckForNullFunc, typename TryDeserializeVariantFunc, typename DeserializeVariant>
 static void deserializeTextImpl(
     IColumn & column,
     ReadBuffer & istr,
     const FormatSettings & settings,
     ReadFieldFunc read_field,
     FormatSettings::EscapingRule escaping_rule,
+    CheckForNullFunc check_for_null,
     TryDeserializeVariantFunc try_deserialize_variant,
     DeserializeVariant deserialize_variant)
 {
@@ -911,6 +927,16 @@ static void deserializeTextImpl(
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     String field = read_field(istr);
+
+    /// A field that is exactly the null marker of the format is NULL, as in `Variant`,
+    /// regardless of whether the caller applies `input_format_null_as_default`.
+    ReadBufferFromString null_buf(field);
+    if (check_for_null(null_buf) && null_buf.eof())
+    {
+        dynamic_column.insertDefault();
+        return;
+    }
+
     JSONInferenceInfo json_info;
     auto variant_type = tryInferDataTypeByEscapingRule(field, settings, escaping_rule, &json_info);
     if (escaping_rule == FormatSettings::EscapingRule::JSON)
@@ -921,6 +947,12 @@ static void deserializeTextImpl(
     /// If failed, insert this value as String.
     if (!checkIfTypeIsComplete(variant_type))
     {
+        /// A variant must consume the whole field, otherwise a value parsed from a part of it would be stored.
+        auto try_deserialize_whole_field = [&try_deserialize_variant](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
+        {
+            return try_deserialize_variant(serialization, col, buf) && buf.eof();
+        };
+
         size_t shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
         for (ColumnVariant::Discriminator i = 0; i != variant_types.size(); ++i)
         {
@@ -931,7 +963,7 @@ static void deserializeTextImpl(
                     dynamic_column.getVariantSerialization(variant_types[i], variant_info.variant_names[i]),
                     i,
                     *field_buf,
-                    try_deserialize_variant))
+                    try_deserialize_whole_field))
                 return;
         }
 
@@ -1051,6 +1083,11 @@ void SerializationDynamic::deserializeTextCSV(IColumn & column, ReadBuffer & ist
         return field;
     };
 
+    auto check_for_null = [&settings](ReadBuffer & buf)
+    {
+        return SerializationNullable::tryDeserializeNullCSV(buf, settings);
+    };
+
     auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
         return serialization.tryDeserializeTextCSV(col, buf, settings);
@@ -1061,7 +1098,7 @@ void SerializationDynamic::deserializeTextCSV(IColumn & column, ReadBuffer & ist
         serialization.deserializeTextCSV(col, buf, settings);
     };
 
-    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::CSV, try_deserialize_variant, deserialize_variant);
+    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::CSV, check_for_null, try_deserialize_variant, deserialize_variant);
 }
 
 bool SerializationDynamic::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
@@ -1087,11 +1124,17 @@ void SerializationDynamic::serializeTextEscaped(const IColumn & column, size_t r
 
 void SerializationDynamic::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto read_field = [](ReadBuffer & buf)
+    auto read_field = [&settings](ReadBuffer & buf)
     {
         String field;
-        readEscapedString(field, buf);
+        /// Preserve escapes for the NULL check and deserialize them only once in the nested serialization.
+        settings.tsv.crlf_end_of_line_input ? readTSVFieldCRLF(field, buf) : readTSVField(field, buf);
         return field;
+    };
+
+    auto check_for_null = [&settings](ReadBuffer & buf)
+    {
+        return SerializationNullable::tryDeserializeNullEscaped(buf, settings);
     };
 
     auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
@@ -1104,7 +1147,7 @@ void SerializationDynamic::deserializeTextEscaped(IColumn & column, ReadBuffer &
         serialization.deserializeTextEscaped(col, buf, settings);
     };
 
-    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Escaped, try_deserialize_variant, deserialize_variant);
+    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Escaped, check_for_null, try_deserialize_variant, deserialize_variant);
 }
 
 bool SerializationDynamic::tryDeserializeTextEscaped(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
@@ -1137,6 +1180,11 @@ void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & 
         return field;
     };
 
+    auto check_for_null = [](ReadBuffer & buf)
+    {
+        return SerializationNullable::tryDeserializeNullQuoted(buf);
+    };
+
     auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
         return serialization.tryDeserializeTextQuoted(col, buf, settings);
@@ -1147,7 +1195,7 @@ void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & 
         serialization.deserializeTextQuoted(col, buf, settings);
     };
 
-    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Quoted, try_deserialize_variant, deserialize_variant);
+    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Quoted, check_for_null, try_deserialize_variant, deserialize_variant);
 }
 
 bool SerializationDynamic::tryDeserializeTextQuoted(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
@@ -1207,6 +1255,11 @@ void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & is
         return field;
     };
 
+    auto check_for_null = [](ReadBuffer & buf)
+    {
+        return SerializationNullable::tryDeserializeNullJSON(buf);
+    };
+
     auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
         return serialization.tryDeserializeTextJSON(col, buf, settings);
@@ -1217,7 +1270,7 @@ void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & is
         serialization.deserializeTextJSON(col, buf, settings);
     };
 
-    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::JSON, try_deserialize_variant, deserialize_variant);
+    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::JSON, check_for_null, try_deserialize_variant, deserialize_variant);
 }
 
 bool SerializationDynamic::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
@@ -1250,6 +1303,11 @@ void SerializationDynamic::deserializeTextRaw(IColumn & column, ReadBuffer & ist
         return field;
     };
 
+    auto check_for_null = [&settings](ReadBuffer & buf)
+    {
+        return SerializationNullable::tryDeserializeNullRaw(buf, settings);
+    };
+
     auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
         return serialization.tryDeserializeTextRaw(col, buf, settings);
@@ -1260,7 +1318,7 @@ void SerializationDynamic::deserializeTextRaw(IColumn & column, ReadBuffer & ist
         serialization.deserializeTextRaw(col, buf, settings);
     };
 
-    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Raw, try_deserialize_variant, deserialize_variant);
+    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Raw, check_for_null, try_deserialize_variant, deserialize_variant);
 }
 
 bool SerializationDynamic::tryDeserializeTextRaw(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
@@ -1293,6 +1351,9 @@ void SerializationDynamic::deserializeWholeText(IColumn & column, ReadBuffer & i
         return field;
     };
 
+    /// Whole text has no null marker: `CAST('NULL' AS Dynamic)` is the string 'NULL'.
+    auto check_for_null = [](ReadBuffer &) { return false; };
+
     auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
         return serialization.tryDeserializeWholeText(col, buf, settings);
@@ -1303,7 +1364,7 @@ void SerializationDynamic::deserializeWholeText(IColumn & column, ReadBuffer & i
         serialization.deserializeWholeText(col, buf, settings);
     };
 
-    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Raw, try_deserialize_variant, deserialize_variant);
+    deserializeTextImpl(column, istr, settings, read_field, FormatSettings::EscapingRule::Raw, check_for_null, try_deserialize_variant, deserialize_variant);
 }
 
 bool SerializationDynamic::tryDeserializeWholeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
