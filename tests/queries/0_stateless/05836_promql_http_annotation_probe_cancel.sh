@@ -50,7 +50,8 @@ print(d["status"], sys.argv[2] in d.get("error", ""))' "$OUT" "$error_text"
         result=$($CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS query_log;
 SELECT type, exception_code FROM system.query_log
-WHERE type != 'QueryStart' AND log_comment = '${log_comment}' AND query LIKE '%arrayExists%' AND query_id != '${log_comment}'")
+WHERE (current_database = currentDatabase() OR query LIKE '%${CLICKHOUSE_DATABASE}%') AND type != 'QueryStart'
+    AND log_comment = '${log_comment}' AND query LIKE '%arrayExists%' AND query_id != '${log_comment}'")
         [ -n "$result" ] && break
         sleep 0.5
     done
