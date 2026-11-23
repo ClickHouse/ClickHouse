@@ -52,7 +52,7 @@ def check(label, sql, expected, mode):
     assert actual == expected, (label, actual, expected)
     query("SYSTEM FLUSH LOGS query_log")
     rows = query(f"SELECT toJSONString(ProfileEvents) FROM system.query_log "
-                 f"WHERE query_id='{query_id}' AND type='QueryFinish'").splitlines()
+                 f"WHERE current_database = currentDatabase() AND query_id='{query_id}' AND type='QueryFinish'").splitlines()
     assert len(rows) == 1, (label, rows)
     return {key: int(value) for key, value in json.loads(rows[0]).items()}
 
