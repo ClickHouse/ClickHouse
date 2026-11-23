@@ -181,6 +181,23 @@ def fixtures(directory):
         [("8.8.8.0/24", first), ("1.1.1.0/24", incompatible)],
     )
     (directory / "invalid.mmdb").write_text("This is not an MMDB file.\n")
+    # Map keys with dots, which make a subcolumn name ambiguous, and an optional map with a required nested map.
+    dotted = {"a.b": "literal", "a": {"b": "nested"}, "c.d": {"e": "single"}}
+    write_database(
+        directory / "projections.mmdb",
+        4,
+        [
+            (
+                "8.8.8.0/24",
+                {
+                    "x": dotted,
+                    "o": {"t": {"s": "present"}, "u": "u"},
+                    "w": {"o": {"t": {"s": "deep"}}},
+                },
+            ),
+            ("1.1.1.0/24", {"x": dotted, "w": {}}),
+        ],
+    )
 
 
 if __name__ == "__main__":
