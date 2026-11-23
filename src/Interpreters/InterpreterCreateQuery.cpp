@@ -2777,7 +2777,7 @@ try
 catch (...)
 {
     /// Only a new table owns its data; an attached one keeps it.
-    if (mode == LoadingStrictnessLevel::CREATE)
+    if (isFreshDefinition(mode) && !expectsExistingState(mode))
     {
         try
         {
