@@ -45,10 +45,11 @@ INSERT INTO t_rf_latest SELECT number * 2 FROM numbers(1000000);
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
 -- 550000 keys, more than half of the kept maximum but too few to saturate the filter: the first run is predicted from
--- the previous count, the second one from its own and gets the filter built.
+-- the previous count. It spills, so it leaves no count of its own, and the second run takes half of the maximum
+-- and gets the filter built.
 TRUNCATE TABLE t_rf_latest;
 INSERT INTO t_rf_latest SELECT number * 2 FROM numbers(550000);
-SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
+SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k) SETTINGS max_bytes_before_external_join = 1000000;
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_latest USING (k);
 
 SYSTEM FLUSH LOGS query_log;
