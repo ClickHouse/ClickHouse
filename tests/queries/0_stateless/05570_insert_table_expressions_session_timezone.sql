@@ -87,6 +87,7 @@ CREATE TABLE t_graphite_la (Path String, Time UInt32, Value Float64, Version UIn
 INSERT INTO t_graphite_ref SELECT 'sum_1', 1577836800 + number * 60, 1, 1 FROM numbers(1440) SETTINGS optimize_on_insert = 1;
 INSERT INTO t_graphite_tokyo SELECT 'sum_1', 1577836800 + number * 60, 1, 1 FROM numbers(1440) SETTINGS optimize_on_insert = 1, session_timezone = 'Asia/Tokyo';
 INSERT INTO t_graphite_la SELECT 'sum_1', 1577836800 + number * 60, 1, 1 FROM numbers(1440) SETTINGS optimize_on_insert = 1, session_timezone = 'America/Los_Angeles';
+SELECT count() < 1440 FROM t_graphite_ref;
 SELECT (SELECT groupArray((Time, v)) FROM (SELECT Time, sum(Value) AS v FROM t_graphite_tokyo GROUP BY Time ORDER BY Time))
     = (SELECT groupArray((Time, v)) FROM (SELECT Time, sum(Value) AS v FROM t_graphite_ref GROUP BY Time ORDER BY Time));
 SELECT (SELECT groupArray((Time, v)) FROM (SELECT Time, sum(Value) AS v FROM t_graphite_la GROUP BY Time ORDER BY Time))
@@ -132,9 +133,11 @@ SET transform_null_in = 1;
 CREATE TABLE t_null_in (x UInt64) ENGINE = MergeTree ORDER BY (x IN (NULL, 1));
 ALTER TABLE t_null_in COMMENT COLUMN x 'rebuilds the key expression under transform_null_in = 1';
 SET transform_null_in = 0;
--- One INSERT: two parts would start a merge, and merges of this table fail.
 INSERT INTO t_null_in VALUES (1), (2);
+INSERT INTO t_null_in VALUES (3), (1);
+OPTIMIZE TABLE t_null_in FINAL;
 SELECT x FROM t_null_in ORDER BY x;
+SELECT count() FROM t_null_in WHERE x IN (NULL, 1) SETTINGS force_primary_key = 1;
 
 DROP TABLE t_key;
 DROP TABLE t_minute;

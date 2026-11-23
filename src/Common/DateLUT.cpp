@@ -216,7 +216,10 @@ const DateLUTImpl & DateLUT::instance()
         /// but on CH-client side we have no query context,
         /// and each time we modify client's global context
         const DB::ContextPtr global_context = DB::Context::getGlobalContextInstance();
-        if (global_context)
+        /// Background merges take their settings from the background profile.
+        if (global_context && SessionTimezoneBlockerInThread::isBlocked() && global_context->hasBackgroundContext())
+            timezone_from_context.emplace(global_context->getBackgroundContext()->getSettingsRef()[DB::Setting::session_timezone]);
+        else if (global_context)
             timezone_from_context.emplace(global_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
 

@@ -1,0 +1,7 @@
+<clickhouse>
+  <profiles>
+    <background>
+      <session_timezone>Asia/Tokyo</session_timezone>
+    </background>
+  </profiles>
+</clickhouse>
