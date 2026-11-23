@@ -6,6 +6,7 @@
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
@@ -37,6 +38,24 @@ bool outputsPreservedRowsOnce(const JoinStepLogical & join, const QueryPlan::Nod
         default:
             return false;
     }
+}
+
+/// A `CommonSubplanReferenceStep` reads the result of a `CommonSubplanStep` elsewhere in the plan, and that step
+/// is replaced with one that can be executed only when its reference is found in the plan.
+bool hasCommonSubplanReference(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> nodes_to_visit{&root};
+    while (!nodes_to_visit.empty())
+    {
+        const auto * current = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (typeid_cast<const CommonSubplanReferenceStep *>(current->step.get()))
+            return true;
+
+        nodes_to_visit.insert(nodes_to_visit.end(), current->children.begin(), current->children.end());
+    }
+    return false;
 }
 
 }
@@ -71,6 +90,9 @@ size_t tryRemoveUnusedJoin(QueryPlan::Node * node, QueryPlan::Nodes & /*nodes*/,
     /// The join builds its totals row from the totals of both inputs, and a prepared storage is validated
     /// against the kind and strictness of the join only when the join is built.
     if (canProduceTotals(other_node) || isPreparedJoinStorage(*node->children.back()))
+        return 0;
+
+    if (hasCommonSubplanReference(other_node))
         return 0;
 
     /// What the join outputs is computed from the preserved side alone, so an expression over it does the same.
