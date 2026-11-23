@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <algorithm>
 #include <filesystem>
 #include <memory>
@@ -100,6 +101,16 @@ namespace
         reserve_size, fmt::join(disks_info, ", "));
 }
 
+}
+
+size_t getTemporaryFileReserveSize(size_t data_size, size_t min_free_disk_space)
+{
+    size_t reserve_size = 0;
+    if (common::addOverflow(data_size, min_free_disk_space, reserve_size))
+        throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+            "Cannot reserve {} bytes for temporary data with {} bytes of free disk space to keep",
+            data_size, min_free_disk_space);
+    return reserve_size;
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
