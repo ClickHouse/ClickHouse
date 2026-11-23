@@ -62,17 +62,17 @@ bool needSilkAwareWait()
     return silk::FiberScheduler::getCurrentFiberId().raw != 0 && !Silk::SuspensionBlocker::isActive();
 }
 
-long futexImpl(uint32_t * word, int op, uint32_t val, const timespec * timeout, uint32_t val3)
+int64_t futexImpl(uint32_t * word, int op, uint32_t val, const timespec * timeout, uint32_t val3)
 {
     TSAN_ANNOTATE(__sanitizer_syscall_pre_futex(word, op, val, timeout, nullptr, val3));
-    const long res = ::syscall(SYS_futex, word, op, val, timeout, nullptr, val3);
+    const int64_t res = ::syscall(SYS_futex, word, op, val, timeout, nullptr, val3);
     TSAN_ANNOTATE(__sanitizer_syscall_post_futex(res, word, op, val, timeout, nullptr, val3));
     return res;
 }
 
 int futexWait(uint32_t & word, uint32_t expected, uint64_t deadline)
 {
-    const timespec timeout{.tv_sec = static_cast<time_t>(deadline / 1'000'000'000), .tv_nsec = static_cast<long>(deadline % 1'000'000'000)};
+    const timespec timeout{.tv_sec = static_cast<time_t>(deadline / 1'000'000'000), .tv_nsec = static_cast<int64_t>(deadline % 1'000'000'000)};
     if (futexImpl(&word, FUTEX_WAIT_BITSET_PRIVATE, expected, deadline == UINT64_MAX ? nullptr : &timeout, FUTEX_BITSET_MATCH_ANY)
         && errno == ETIMEDOUT)
         return ETIMEDOUT;
@@ -167,7 +167,7 @@ private:
             silk::FiberScheduler::releaseWaiters(mutex.getWaiterKey());
     }
 
-    uint64_t getWaiterKey() const { return reinterpret_cast<uint64_t>(&storage.__state); }
+    [[nodiscard]] uint64_t getWaiterKey() const { return reinterpret_cast<uint64_t>(&storage.__state); }
 
     std::__libcpp_mutex_t & storage;
     std::atomic_ref<uint32_t> state;
@@ -237,7 +237,7 @@ private:
         bool operator==(const Identity &) const = default;
     };
 
-    Identity getOwnerIdentity() const
+    [[nodiscard]] Identity getOwnerIdentity() const
     {
         return {std::atomic_ref(storage.__owner_fiber).load(std::memory_order_relaxed), std::atomic_ref(storage.__owner_thread).load(std::memory_order_relaxed)};
     }
@@ -351,7 +351,7 @@ private:
         std::__libcpp_condvar_t & storage;
     };
 
-    bool empty() const { return !std::atomic_ref(storage.__head).load(std::memory_order_relaxed); }
+    [[nodiscard]] bool empty() const { return !std::atomic_ref(storage.__head).load(std::memory_order_relaxed); }
 
     void setHead(Waiter * waiter) { std::atomic_ref(storage.__head).store(waiter, std::memory_order_relaxed); }
 
@@ -398,7 +398,7 @@ public:
             }
         }
         mutex.lock();
-        return result;
+        return result; /// NOLINT(clang-analyzer-core.StackAddressEscape)
     }
 
     void notifyOne()
@@ -545,7 +545,7 @@ int __libcpp_condvar_wait(__libcpp_condvar_t * cv, __libcpp_mutex_t * m)
 
 int __libcpp_condvar_timedwait(__libcpp_condvar_t * cv, __libcpp_mutex_t * m, __libcpp_timespec_t * ts)
 {
-    timespec now;
+    timespec now{};
     clock_gettime(CLOCK_REALTIME, &now);
     const int64_t seconds = static_cast<int64_t>(ts->tv_sec) - now.tv_sec;
     if (seconds < 0)
