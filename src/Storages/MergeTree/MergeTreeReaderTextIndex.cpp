@@ -453,6 +453,8 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         settings,
         /*expected_buffer_size=*/ std::nullopt,
         /*use_page_cache_lookahead=*/ false);
+    if (counted_compressed_blocks)
+        positions_stream->setBlocksReadSink(&positions_ranges_read.ranges);
 
     positions_stream->seekToStart();
 }
@@ -647,17 +649,57 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
     }
 }
 
-std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
+std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info)
 {
     /// use_page_cache_lookahead: a cursor can skip segments forward (`getPostingsStream`),
     /// and a whole-list read drops the stream at the end of the list (`readAllPostingsForToken`).
-    return makeTextIndexInputStream(
+    auto stream = makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),
         index_read_task.index.index->getSubstreams()[2],
         settings,
         estimatePostingListBufferSize(token_info),
         /*use_page_cache_lookahead=*/ false);
+    if (counted_compressed_blocks)
+        stream->setBlocksReadSink(&postings_ranges_read.ranges);
+    return stream;
+}
+
+void MergeTreeReaderTextIndex::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+{
+    if (fallback_reader)
+        fallback_reader->countCompressedBytesRead(counted);
+    IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+    /// The streams created later get their sink when they are created.
+    for (auto & [_, stream] : postings_streams)
+        stream->setBlocksReadSink(&postings_ranges_read.ranges);
+    if (positions_stream)
+        positions_stream->setBlocksReadSink(&positions_ranges_read.ranges);
+}
+
+void MergeTreeReaderTextIndex::flushCompressedBlocksRead()
+{
+    if (fallback_reader)
+        fallback_reader->flushCompressedBlocksRead();
+    if (!counted_compressed_blocks)
+        return;
+
+    for (auto & [_, stream] : postings_streams)
+        stream->recordBytesConsumed();
+    if (positions_stream)
+        positions_stream->recordBytesConsumed();
+
+    auto count = [&](FileRangesRead & file, std::string_view kind)
+    {
+        if (file.ranges.empty())
+            return;
+        if (!file.counted)
+            file.counted = &counted_compressed_blocks->getCountedRanges(fmt::format(
+                "{}/{}.{}", data_part_info_for_read->getDataPartStorage()->getFullPath(), index_read_task.index.index->getFileName(), kind));
+        counted_compressed_blocks->count(*file.counted, file.ranges);
+    };
+    count(postings_ranges_read, "postings");
+    count(positions_ranges_read, "positions");
 }
 
 MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)
@@ -1219,6 +1261,7 @@ std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(co
 
                 stream->seekToMark({token_info.offsets[0], 0});
                 postings_serialization->deserializeToArray(*stream->getDataBuffer(), token_info, 0, *docs);
+                stream->recordBytesConsumed();
             }
             cursors.push_back(std::make_shared<PostingListCursor>(std::move(docs)));
         }

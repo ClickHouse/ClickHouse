@@ -105,8 +105,11 @@ public:
 
     size_t getFileSize() const { return file_size; }
 
-    /// See `CompressedReadBufferBase::setBlocksReadSink`. Must not be called for a stream of uncompressed data.
+    /// See `CompressedReadBufferBase::setBlocksReadSink`. A stream of uncompressed data records the ranges of the file it
+    /// consumed, each closed by a seek or by `recordBytesConsumed`.
     void setBlocksReadSink(CompressedBlockRanges * blocks_read_);
+    /// Records the range of uncompressed data consumed since the previous seek or call.
+    void recordBytesConsumed();
 
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
@@ -137,6 +140,8 @@ private:
     ReadBufferFromFileBase * plain_file_buffer = nullptr;
     CompressedReadBufferBase * compressed_data_buffer = nullptr;
     CompressedBlockRanges * blocks_read = nullptr;
+    /// See `recordBytesConsumed`.
+    size_t consumed_begin = 0;
     std::unique_ptr<ReadBuffer> read_buffer_holder;
 
     bool initialized = false;

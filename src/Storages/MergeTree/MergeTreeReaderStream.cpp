@@ -245,7 +245,9 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
         if (mark.offset_in_decompressed_block != 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot seek to offset in decompressed block ({}) for uncompressed data", mark.offset_in_decompressed_block);
 
+        recordBytesConsumed();
         plain_file_buffer->seek(mark.offset_in_compressed_file, SEEK_SET);
+        consumed_begin = mark.offset_in_compressed_file;
     }
 }
 
@@ -408,12 +410,28 @@ void CountedCompressedBlocks::count(CountedRanges & file_ranges, CompressedBlock
 
 void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
 {
-    if (!settings.is_compressed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
     /// The buffer is created on the first read, see `init`.
     blocks_read = blocks_read_;
     if (compressed_data_buffer)
         compressed_data_buffer->setBlocksReadSink(blocks_read);
+    if (plain_file_buffer)
+        consumed_begin = plain_file_buffer->getPosition();
+}
+
+void MergeTreeReaderStream::recordBytesConsumed()
+{
+    if (!blocks_read || !plain_file_buffer)
+        return;
+
+    const size_t consumed_end = plain_file_buffer->getPosition();
+    if (consumed_end > consumed_begin)
+    {
+        if (!blocks_read->empty() && blocks_read->back().second == consumed_begin)
+            blocks_read->back().second = consumed_end;
+        else
+            blocks_read->emplace_back(consumed_begin, consumed_end);
+    }
+    consumed_begin = consumed_end;
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
