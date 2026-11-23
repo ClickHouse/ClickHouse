@@ -120,7 +120,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     {
         const auto & factory = TableFunctionFactory::instance();
         auto table_function_ast = ast_create_query.as_table_function->ptr();
-        auto table_function = factory.get(table_function_ast, context);
+        auto table_function = factory.get(table_function_ast, context, /* is_replayed_definition = */ true);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
@@ -588,11 +588,9 @@ void DatabaseOnDisk::renameTable(
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
             target_db->checkMetadataFilenameAvailability(to_table_name);
 
-        /// This place is actually quite dangerous. Since data directory is moved to store/
-        /// DatabaseCatalog may try to clean it up as unused. We add UUID mapping to avoid this.
-        /// However, we may fail after data directory move, but before metadata file creation in the destination db.
-        /// In this case nothing will protect data directory (except 30-days timeout).
-        /// But this situation (when table in Ordinary database is partially renamed) require manual intervention anyway.
+        /// The data directory is moved to store/, so the UUID must be marked as used first (see `DatabaseCatalog::addUUIDMapping`).
+        /// We may fail after data directory move, but before metadata file creation in the destination db.
+        /// This situation (when table in Ordinary database is partially renamed) requires manual intervention.
         if (from_ordinary_to_atomic)
         {
             DatabaseCatalog::instance().addUUIDMapping(create.uuid);
