@@ -6,6 +6,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/Passes/IfChainToMultiIfPass.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -268,7 +270,7 @@ void storeSettingsOfProjectionQuery(const ASTPtr & query_ast, const ContextPtr &
     const auto & settings = context->getSettingsRef();
     auto & stored_settings = query_ast->as<ASTSelectQuery &>().settings()->as<ASTSetQuery &>().changes;
     stored_settings.setSetting("enable_positional_arguments", settings[Setting::enable_positional_arguments_for_projections].value);
-    for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants"})
+    for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants", "optimize_if_chain_to_multiif"})
         stored_settings.setSetting(setting, settings.get(setting));
 }
 
@@ -301,8 +303,10 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
     /// resolve only: an optimization pass can change a stored expression (`GROUP BY -c0` into `GROUP BY c0`)
     query_tree_pass_manager.runOnlyResolve(query_tree);
 
-    /// `count(1)` and `sum(1)` are stored as `count()`
+    /// `count(1)` and `sum(1)` are stored as `count()`, `if(1, a, b)` as `a`, a chain of `if` as `multiIf`
     NormalizeCountVariantsPass().run(query_tree, query_context);
+    IfConstantConditionPass().run(query_tree, query_context);
+    IfChainToMultiIfPass().run(query_tree, query_context);
 
     auto table_node = query_node.getJoinTreeNode();
     for (auto & child : query_node.getChildren())
