@@ -286,11 +286,11 @@ single stripe in compact parts
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge. A merge also reads a bigger part in a whole
-if the part is not bigger than the worst-case memory of a read buffer for each
-column (the configured buffer size, twice with prefetch). For a part with small
-stripes this can take more memory than reading each column separately, but it
-sends one request instead of one per column per stripe. 0 disables it.
+in a whole to memory during merge or mutation. A bigger part is also read in a
+whole if the part is not bigger than the worst-case memory of a read buffer for
+each column (the configured buffer size, twice with prefetch). For a part with
+small stripes this can take more memory than reading each column separately, but
+it sends one request instead of one per column per stripe. 0 disables it.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
@@ -2278,6 +2278,15 @@ the total storage volume of all the data to be merged. If the volume exceeds
 data to the storage disk using the direct I/O interface (`O_DIRECT` option).
 If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 )", 0) \
+    DECLARE(Bool, check_part_use_direct_io, true, R"(
+When checking a data part on a local disk (`CHECK TABLE`, the check of a part that failed to be read,
+recalculation of missing checksums), read its files with direct I/O (`O_DIRECT` option),
+bypassing the OS page cache, so that wrong data in the page cache does not make a healthy part look broken.
+Parts in packed storage (see `min_bytes_for_full_part_storage`) and the part written by `OPTIMIZE ... DRY RUN`
+are still read through the page cache.
+If the filesystem does not support direct I/O, the files are read through the page cache.
+)", 0, \
+        {"26.12", false, true, "New setting. Check data parts on local disks with direct I/O, bypassing the OS page cache."}) \
     DECLARE(UInt64, index_granularity_bytes, 10 * 1024 * 1024, R"(
 Maximum size of data granules in bytes.
 

@@ -105,11 +105,6 @@ time_t MetadataStorageFromCacheObjectStorage::getLastChanged(const std::string &
     return underlying->getLastChanged(path);
 }
 
-bool MetadataStorageFromCacheObjectStorage::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
 bool MetadataStorageFromCacheObjectStorage::supportsStat() const
 {
     return underlying->supportsStat();
@@ -391,16 +386,6 @@ void MetadataStorageFromCacheObjectStorageTransaction::writeInlineDataToFile(con
 void MetadataStorageFromCacheObjectStorageTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
     underlying->setLastModified(path, timestamp);
-}
-
-bool MetadataStorageFromCacheObjectStorageTransaction::supportsChmod() const
-{
-    return underlying->supportsChmod();
-}
-
-void MetadataStorageFromCacheObjectStorageTransaction::chmod(const String & path, mode_t mode)
-{
-    underlying->chmod(path, mode);
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::setReadOnly(const std::string & path)

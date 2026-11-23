@@ -693,6 +693,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     join_step->setHasRuntimeFilters();
 
+    /// A packed long key is hashed for every row that reaches the join, so only a filter that passes mostly the rows
+    /// which match saves that. A `LEFT ANTI` filter passes the misses.
+    if (!check_left_does_not_contain)
+        join_step->setRuntimeFilterKeepsMatchingRows();
     return true;
 }
 
