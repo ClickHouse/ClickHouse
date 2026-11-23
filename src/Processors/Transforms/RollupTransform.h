@@ -31,6 +31,8 @@ protected:
     std::unique_ptr<Aggregator> output_aggregator;
 
     Block intermediate_header;
+    /// The header of a generated chunk after `finalizeChunk`, without `__grouping_set`.
+    const Block finalized_header;
 
     Chunks consumed_chunks;
     Chunk current_chunk;

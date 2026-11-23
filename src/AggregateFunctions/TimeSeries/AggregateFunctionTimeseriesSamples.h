@@ -1,7 +1,7 @@
 #pragma once
 
 #include <algorithm>
-#include <iterator>
+#include <limits>
 #include <utility>
 
 #include <absl/container/inlined_vector.h>
@@ -25,6 +25,7 @@ namespace ErrorCodes
 }
 
 /// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the largest real value (a NaN survives only when every sample at the timestamp is NaN).
+/// Out-of-order samples are appended to an unsorted tail of the array; the tail is sorted and merged into the sorted prefix when the state is read.
 template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
@@ -45,7 +46,8 @@ public:
                 last.second = timeseriesMaxValueForDuplicateTimestamp(last.second, value);
                 return;
             }
-            sorted = false;
+            if (isSorted())
+                unsorted_begin = buffer.size();
         }
         buffer.emplace_back(timestamp, value);
     }
@@ -61,10 +63,23 @@ public:
         for (size_t i = 0; i < count; ++i)
             appended[i] = {timestamps[i], values[i]};
 
-        UInt8 in_order = old_size == 0 || appended[-1].first < timestamps[0];
+        if (!isSorted())
+            return;
+
+        if (old_size && appended[-1].first >= timestamps[0])
+        {
+            unsorted_begin = old_size;
+            return;
+        }
+
         for (size_t i = 1; i < count; ++i)
-            in_order &= static_cast<UInt8>(timestamps[i - 1] < timestamps[i]);
-        sorted = sorted && in_order;
+        {
+            if (timestamps[i - 1] >= timestamps[i])
+            {
+                unsorted_begin = old_size + i;
+                return;
+            }
+        }
     }
 
     void merge(const AggregateFunctionTimeseriesSamples & other)
@@ -78,49 +93,53 @@ public:
         if (buffer.empty())
         {
             buffer = other.buffer;
-            sorted = other.sorted;
+            unsorted_begin = other.unsorted_begin;
             sort();
             return;
         }
 
         sort();
 
-        /// A rare unsorted argument is sorted into a copy: `other` belongs to another state and is kept intact.
-        const Buffer * rhs = &other.buffer;
-        Buffer sorted_other_buffer;
-        if (!other.sorted)
-        {
-            sorted_other_buffer = other.buffer;
-            sortBuffer(sorted_other_buffer);
-            rhs = &sorted_other_buffer;
-        }
+        /// Both the prefix and the tail of `other` are inserted; one reservation saves a second reallocation.
+        buffer.reserve(buffer.size() + other.buffer.size());
+
+        /// The sorted prefix of `other` is merged first, so its order is kept; the unsorted tail of `other`, if any, then becomes the tail of this buffer.
+        /// `other` belongs to another state and is kept intact.
+        const auto other_prefix_begin = other.buffer.begin();
+        const auto other_prefix_end = other.isSorted() ? other.buffer.end() : other.buffer.begin() + other.unsorted_begin;
 
         /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append or prepend.
-        if (buffer.back().first < rhs->front().first)
+        if (buffer.back().first < other_prefix_begin->first)
         {
-            buffer.insert(buffer.end(), rhs->begin(), rhs->end());
-            return;
+            buffer.insert(buffer.end(), other_prefix_begin, other_prefix_end);
         }
-        if (rhs->back().first < buffer.front().first)
+        else if ((other_prefix_end - 1)->first < buffer.front().first)
         {
-            buffer.insert(buffer.begin(), rhs->begin(), rhs->end());
-            return;
+            buffer.insert(buffer.begin(), other_prefix_begin, other_prefix_end);
+        }
+        else
+        {
+            /// Overlapping ranges: the prefix samples are appended and merged into this buffer in place.
+            const size_t tail_begin = buffer.size();
+            buffer.insert(buffer.end(), other_prefix_begin, other_prefix_end);
+            mergeSortedTail(buffer, tail_begin);
         }
 
-        Buffer merged;
-        merged.reserve(buffer.size() + rhs->size());
-        std::merge(buffer.begin(), buffer.end(), rhs->begin(), rhs->end(), std::back_inserter(merged), lessByTimestamp);
-        deduplicateSorted(merged);
-        buffer = std::move(merged);
+        if (other_prefix_end != other.buffer.end())
+        {
+            unsorted_begin = buffer.size();
+            buffer.insert(buffer.end(), other_prefix_end, other.buffer.end());
+            sort();
+        }
     }
 
     void serialize(WriteBuffer & buf) const
     {
         /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.
-        if (!sorted) [[unlikely]]
+        if (!isSorted()) [[unlikely]]
         {
             Buffer sorted_buffer = buffer;
-            sortBuffer(sorted_buffer);
+            sortBuffer(sorted_buffer, unsorted_begin);
             writeSamples(sorted_buffer, buf);
             return;
         }
@@ -131,7 +150,7 @@ public:
     {
         /// Deserialize replaces any previous contents.
         buffer.clear();
-        sorted = true;
+        unsorted_begin = NO_UNSORTED;
 
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
@@ -156,7 +175,7 @@ public:
     template <typename RangeType>
     void checkTimestampsInRange(const RangeType & range) const
     {
-        if (sorted && !buffer.empty() && range.contains(buffer.front().first)
+        if (isSorted() && !buffer.empty() && range.contains(buffer.front().first)
             && (buffer.size() == 1 || range.contains(buffer.back().first)))
             return;
 
@@ -174,10 +193,10 @@ public:
     void forEachSample(F && f) const
     {
         /// A rare unsorted state is iterated via a sorted copy, so the state is not mutated behind `const`.
-        if (!sorted) [[unlikely]]
+        if (!isSorted()) [[unlikely]]
         {
             Buffer sorted_buffer = buffer;
-            sortBuffer(sorted_buffer);
+            sortBuffer(sorted_buffer, unsorted_begin);
             for (const auto & [timestamp, value] : sorted_buffer)
                 f(timestamp, value);
             return;
@@ -211,11 +230,13 @@ private:
         return lhs.first < rhs.first;
     }
 
-    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
-    static void deduplicateSorted(Buffer & buf)
+    /// Collapses each run of adjacent samples with equal timestamps into one sample with `timeseriesMaxValueForDuplicateTimestamp`.
+    /// Samples before `start_pos` are already unique.
+    static void deduplicateSorted(Buffer & buf, size_t start_pos = 0)
     {
-        size_t last_unique = 0;
-        for (size_t i = 1; i < buf.size(); ++i)
+        chassert(start_pos <= buf.size());
+        size_t last_unique = start_pos == 0 ? 0 : start_pos - 1;
+        for (size_t i = last_unique + 1; i < buf.size(); ++i)
         {
             if (buf[i].first == buf[last_unique].first)
                 buf[last_unique].second = timeseriesMaxValueForDuplicateTimestamp(buf[last_unique].second, buf[i].second);
@@ -226,25 +247,59 @@ private:
             buf.resize(last_unique + 1);
     }
 
-    static void sortBuffer(Buffer & buf)
+    /// Sorts the tail `[start_pos, size)` of a buffer whose prefix `[0, start_pos)` is sorted and unique, and merges the tail into the prefix.
+    static void sortBuffer(Buffer & buf, size_t start_pos = 0)
     {
-        ::sort(buf.begin(), buf.end(), lessByTimestamp);
-        deduplicateSorted(buf);
+        chassert(start_pos <= buf.size());
+        ::sort(buf.begin() + start_pos, buf.end(), lessByTimestamp);
+        /// Many series with equal timestamps in one bucket collapse to the distinct timestamps here; only those are merged into the prefix.
+        deduplicateSorted(buf, start_pos);
+        mergeSortedTail(buf, start_pos);
+    }
+
+    /// Merges the sorted and unique tail `[tail_begin, size)` into the sorted and unique prefix `[0, tail_begin)` in place.
+    static void mergeSortedTail(Buffer & buf, size_t tail_begin)
+    {
+        chassert(tail_begin <= buf.size());
+        if (tail_begin == buf.size())
+            return;
+
+        /// A tail that lies entirely before the prefix, such as an older part read after a newer one, is moved in front of it.
+        if ((buf.end() - 1)->first < buf.begin()->first)
+        {
+            std::rotate(buf.begin(), buf.begin() + tail_begin, buf.end());
+            return;
+        }
+
+        /// The prefix samples before `merge_begin` are less than every sample of the tail, so they keep their positions,
+        /// and the merge and the deduplication start at `merge_begin`.
+        auto tail = buf.begin() + tail_begin;
+        auto merge_begin = std::lower_bound(buf.begin(), tail, *tail, lessByTimestamp);
+        /// With the tail after the prefix there is nothing to merge, and a unique tail leaves nothing to deduplicate.
+        if (merge_begin == tail)
+            return;
+        std::inplace_merge(merge_begin, tail, buf.end(), lessByTimestamp);
+        deduplicateSorted(buf, merge_begin - buf.begin());
     }
 
     /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
     void sort()
     {
-        if (sorted)
+        if (isSorted())
             return;
-        sortBuffer(buffer);
-        sorted = true;
+        sortBuffer(buffer, unsorted_begin);
+        unsorted_begin = NO_UNSORTED;
     }
 
-    /// The samples, sorted by timestamp and deduplicated whenever `sorted` is true.
+    [[nodiscard]] bool isSorted() const { return unsorted_begin == NO_UNSORTED; }
+
+    /// The value of `unsorted_begin` for a buffer with no unsorted tail.
+    static constexpr size_t NO_UNSORTED = std::numeric_limits<size_t>::max();
+
+    /// The samples. The prefix `[0, unsorted_begin)` is sorted by timestamp and unique, the rest is in arbitrary order;
+    /// `NO_UNSORTED` means the whole buffer is sorted and unique.
     Buffer buffer;
-    /// Cleared by an out-of-order `add`; while set, timestamps in `buffer` are strictly increasing.
-    bool sorted = true;
+    size_t unsorted_begin = NO_UNSORTED;
 };
 
 }
