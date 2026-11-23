@@ -8,6 +8,7 @@
 #include <IO/WriteIntText.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/StackTrace.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -101,15 +102,19 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
         startSendHeaders();
     }
 
-    setResponseDefaultHeaders(response);
+    {
+        /// Response headers outlive the query-owned output buffer.
+        MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
+        setResponseDefaultHeaders(response);
 
-    if (count() && compression_method != CompressionMethod::None)
-        response.set("Content-Encoding", toContentEncodingName(compression_method));
+        if (count() && compression_method != CompressionMethod::None)
+            response.set("Content-Encoding", toContentEncodingName(compression_method));
 
-    if (add_cors_header)
-        response.set("Access-Control-Allow-Origin", "*");
+        if (add_cors_header)
+            response.set("Access-Control-Allow-Origin", "*");
 
-    response.set("X-ClickHouse-Exception-Tag", exception_tag);
+        response.set("X-ClickHouse-Exception-Tag", exception_tag);
+    }
 
     writeHeaderSummary();
     writeExceptionCode();
@@ -194,6 +199,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Co
 
 void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 {
+    MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
     std::lock_guard lock(mutex);
 
     if (headers_started_sending)

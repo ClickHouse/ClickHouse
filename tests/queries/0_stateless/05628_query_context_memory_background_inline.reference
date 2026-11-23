@@ -1,0 +1,4 @@
+max_memory_usage rejects inline payload at admission
+max_memory_usage_for_user rejects inline payload at admission
+0 reports and releases inline payload with another query active
+4194304 reports and releases inline payload with another query active

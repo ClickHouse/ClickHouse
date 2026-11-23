@@ -205,6 +205,10 @@ public:
 
     void adjustWithUntrackedMemory(Int64 untracked_memory);
 
+    /// Check retained query setup bytes against this query's limit, without rechecking
+    /// ancestors that have already accounted for those bytes.
+    void checkQueryLimit() const;
+
     Int64 get() const
     {
         return amount.load(std::memory_order_relaxed);
@@ -241,6 +245,12 @@ public:
     /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
     /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
     void reparent(MemoryTracker * new_parent);
+
+    /// Preserve the setup peak when another group continues the same query.
+    void inheritPeak(const MemoryTracker & source)
+    {
+        updatePeak(source.getPeak(), false);
+    }
 
     Int64 getPeak() const
     {

@@ -1,0 +1,8 @@
+native max_memory_usage rejects retained context at admission
+native max_memory_usage_for_user rejects retained context at admission
+native preserves setup peak after override
+native releases source context with another active query
+http max_memory_usage rejects retained context at admission
+http max_memory_usage_for_user rejects retained context at admission
+http preserves setup peak after override
+http releases source context with another active query
