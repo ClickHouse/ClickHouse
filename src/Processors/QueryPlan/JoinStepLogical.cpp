@@ -2067,27 +2067,6 @@ static void constructBlockNestedLoopJoinStep(
         nodes, makeDescription("Post Join Actions"));
 }
 
-/// Whether `node` holds the values of an input column, up to `Nullable` and `LowCardinality`. `remapColumnStats` also keeps the
-/// average size through a function such as `hex` that returns the type of its argument, and a key it changed has another size.
-static bool passesInputValuesOn(const ActionsDAG::Node & node)
-{
-    const ActionsDAG::Node * current = &node;
-    using ActionType = ActionsDAG::ActionType;
-    while (current->type != ActionType::INPUT)
-    {
-        bool passes_values_on = current->type == ActionType::ALIAS;
-        if (current->type == ActionType::FUNCTION && current->function_base)
-        {
-            const auto & name = current->function_base->getName();
-            passes_values_on = name == "_CAST" || name == "CAST" || name == "materialize" || name == "toNullable";
-        }
-        if (!passes_values_on || current->children.empty())
-            return false;
-        current = current->children.front();
-    }
-    return true;
-}
-
 static QueryPlanNode buildPhysicalJoinImpl(
     VectorWithMemoryTracking<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -2679,7 +2658,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         for (const auto & [name, stats] : right_column_stats)
             table_join->setRightColumnAvgBytes(name, stats.avg_bytes);
         for (const auto * output : right_dag.getOutputs())
-            if (!passesInputValuesOn(*output))
+            if (!holdsInputValues(*output))
                 table_join->setRightColumnComputed(output->result_name);
     }
 
