@@ -34,11 +34,7 @@
 
 
 #if !defined(NetSSL_API)
-#    if !defined(POCO_NO_GCC_API_ATTRIBUTE) && defined(__GNUC__) && (__GNUC__ >= 4)
-#        define NetSSL_API __attribute__((visibility("default")))
-#    else
-#        define NetSSL_API
-#    endif
+#    define NetSSL_API
 #endif
 
 
