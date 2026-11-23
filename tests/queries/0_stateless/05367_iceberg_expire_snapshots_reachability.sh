@@ -73,8 +73,11 @@ for format_version in 2 3; do
 
     echo "deletes lost after the commit are collected as orphans"
     files_after=$(list_files)
+    # `remove_orphan_files` keeps files modified in the second of `older_than` or later, and the whole
+    # test can run within one second, so the restored files are backdated.
     for file in $(comm -23 <(echo "${files_before}") <(echo "${files_after}")); do
-        cp -p "${TABLE_PATH}.saved/${file}" "${TABLE_PATH}/${file}"
+        cp "${TABLE_PATH}.saved/${file}" "${TABLE_PATH}/${file}"
+        TZ=UTC touch -t 202001010000 "${TABLE_PATH}/${file}"
     done
     $CH --query "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files('$($CH --query "SELECT toString(now())")')" | grep -v $'\t0$' | grep -v metadata_files
     [ "$(list_files | grep -v '/v1.metadata.json')" = "$(echo "${files_after}" | grep -v '/v1.metadata.json')" ] && echo "same files as right after expire"

@@ -25,7 +25,9 @@ TABLE_PATH = "iceberg_maintenance"
 ENGINE = f"IcebergS3('http://minio1:9001/root/{TABLE_PATH}/', 'minio', '{minio_secret_key}')"
 
 WRITE_SETTINGS = {"allow_insert_into_iceberg": 1, "mutations_sync": 2}
-EXPIRE_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1}
+# The client resolves `allow_experimental_expire_snapshots` to the newer name `allow_expire_snapshots`,
+# which 26.3 does not know, so the old name goes in the query text, where the server resolves it.
+EXPIRE = "ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 2) SETTINGS allow_experimental_expire_snapshots = 1"
 ORPHAN_SETTINGS = {
     "allow_insert_into_iceberg": 1,
     "allow_iceberg_remove_orphan_files": 1,
@@ -46,10 +48,7 @@ def started_cluster():
 
 
 def expire_snapshots(node):
-    node.query(
-        "ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 2)",
-        settings=EXPIRE_SETTINGS,
-    )
+    node.query(EXPIRE, settings={"allow_insert_into_iceberg": 1})
     assert node.query(SNAPSHOT_COUNT) == "2\n"
 
 
