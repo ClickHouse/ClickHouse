@@ -46,7 +46,7 @@ ${CLICKHOUSE_CLIENT} --query "
         uniqExactIf(query_id, initial_query_id = '${Q}6' AND NOT is_initial_query) > 0,
         sumIf(ProfileEvents['S3HeadObject'], initial_query_id = '${Q}6') - sumIf(ProfileEvents['S3HeadObject'], initial_query_id = '${Q}3')
     FROM system.query_log
-    WHERE type = 'QueryFinish' AND initial_query_id IN ('${Q}3', '${Q}6')
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND initial_query_id IN ('${Q}3', '${Q}6')
 "
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
