@@ -1083,8 +1083,6 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
             if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
                 transform_handle.emplace(transform.some._0);
 
-            ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
-
             auto * visitor = static_cast<StatsVisitor *>(engine_context);
             visitor->total_data_files += 1;
             visitor->total_bytes += static_cast<size_t>(size);
