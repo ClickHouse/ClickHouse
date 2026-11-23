@@ -302,10 +302,16 @@ private:
     {
         if (buffer.size() + extra <= buffer.capacity() || isSorted())
             return;
+        /// A small buffer is cheaper to grow than to sort at every growth.
+        if (buffer.capacity() < MIN_CAPACITY_TO_COMPACT)
+            return;
         sort();
         if (buffer.size() > buffer.capacity() / 2)
             buffer.reserve(std::max(buffer.size() + extra, 2 * buffer.capacity()));
     }
+
+    /// Buffers with a smaller capacity grow without sorting the unsorted tail first.
+    static constexpr size_t MIN_CAPACITY_TO_COMPACT = 64;
 
     /// The value of `unsorted_begin` for a buffer with no unsorted tail.
     static constexpr size_t NO_UNSORTED = std::numeric_limits<size_t>::max();
