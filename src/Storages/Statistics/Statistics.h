@@ -231,7 +231,7 @@ public:
     [[nodiscard]] std::optional<Float64> estimateGreater(const Field & val) const;
     [[nodiscard]] std::optional<Float64> estimateEqual(const Field & val) const;
     /// `estimateEqual` of each of `values` if it is the same for all of them; nullopt if it may not be, or is unknown.
-    [[nodiscard]] std::optional<Float64> estimateEqualForAll(const IColumn & values) const;
+    [[nodiscard]] std::optional<Float64> estimateEqualForAll(const IColumn & values, const IDataType & values_type) const;
     [[nodiscard]] std::optional<Float64> estimateRange(const Range & range) const;
 
     [[nodiscard]] Estimate getEstimate() const;

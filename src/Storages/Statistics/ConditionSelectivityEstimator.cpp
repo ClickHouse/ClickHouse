@@ -798,11 +798,12 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
     if (ranges.set)
     {
         /// Distinct values of these types are distinct points: each element of the set is one of its ranges.
-        const WhichDataType which(ranges.set->getElementsTypes().front());
+        const DataTypePtr & elements_type = ranges.set->getElementsTypes().front();
+        const WhichDataType which(elements_type);
         if (which.isNativeInteger() || which.isString() || which.isUUID())
         {
             const ColumnPtr elements = ranges.set->getSetElements().front();
-            if (const auto estimate = stats->estimateEqualForAll(*elements))
+            if (const auto estimate = stats->estimateEqualForAll(*elements, *elements_type))
             {
                 /// Added one by one like the estimates of the ranges, so that the sum is the same.
                 Float64 rows = 0;

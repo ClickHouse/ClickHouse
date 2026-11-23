@@ -496,7 +496,7 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     return std::nullopt;
 }
 
-std::optional<Float64> ColumnStatistics::estimateEqualForAll(const IColumn & values) const
+std::optional<Float64> ColumnStatistics::estimateEqualForAll(const IColumn & values, const IDataType & values_type) const
 {
     /// `estimateEqual` has a common estimate only with a cardinality, and depends on the value only for NaN, in `Basic`
     /// and in these statistics.
@@ -504,8 +504,15 @@ std::optional<Float64> ColumnStatistics::estimateEqualForAll(const IColumn & val
         return std::nullopt;
 
     const auto basic = stats.find(StatisticsType::Basic);
+    /// `Basic` converts a value to the column type and counts only the column default exactly. An integer, `String`
+    /// or `UUID` of the column's own type converts to itself, so only its default values can get another estimate.
+    const WhichDataType which(values_type);
+    const bool only_defaults = (which.isNativeInteger() || which.isString() || which.isUUID())
+        && values_type.equals(*removeLowCardinalityAndNullable(stats_desc.data_type));
     for (size_t i = 0; i < values.size(); ++i)
     {
+        if (only_defaults && !values.isDefaultAt(i))
+            continue;
         const Field value = values[i];
         if (value.isNaN() || (basic != stats.end() && basic->second->estimateEqual(value)))
             return std::nullopt;
