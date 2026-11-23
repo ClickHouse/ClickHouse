@@ -63,6 +63,7 @@
 #include <Core/Defines.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <WindowFunctions/registerWindowFunctions.h>
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Formats/FormatFactory.h>
@@ -1121,6 +1122,7 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
+    registerWindowFunctions();
     /// Hiding the secrets of engine arguments needs the engines, which declare them.
     registerTableFunctions();
     registerDatabases();
