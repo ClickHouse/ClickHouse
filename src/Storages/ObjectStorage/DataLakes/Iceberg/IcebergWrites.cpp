@@ -1379,8 +1379,8 @@ IcebergStorageSink::IcebergStorageSink(
             filename_generator.setDataLocation(properties->getValue<String>("write.data.path"));
     }
 
-    partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
-    auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
+    partititon_spec = Iceberg::getDefaultPartitionSpec(metadata);
+    partition_spec_id = partititon_spec->getValue<Int64>(Iceberg::f_spec_id);
 
     current_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = metadata->getArray(Iceberg::f_schemas);
@@ -1402,17 +1402,8 @@ IcebergStorageSink::IcebergStorageSink(
         sortBlockByKeyDescription(extended_block_for_sorting, sort_description, sort_order_description, context);
     header_with_sort_columns = std::make_shared<const Block>(std::move(extended_block_for_sorting));
 
-    for (size_t i = 0; i < partitions_specs->size(); ++i)
-    {
-        auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
-        if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
-        {
-            partititon_spec = current_partition_spec;
-            if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
-                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context_, header_with_sort_columns);
-            break;
-        }
-    }
+    if (partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
+        partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context_, header_with_sort_columns);
 
     if (shouldWriteIcebergTableStatisticsNdv(context, catalog))
         column_sketches.emplace(*sample_block, current_schema->getArray(Iceberg::f_fields));
