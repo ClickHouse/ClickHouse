@@ -1395,6 +1395,8 @@ void StorageTimeSeriesSelector::readImpl(
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
 
     auto modified_context = Context::createCopy(context);
+    /// The generated query names resolved tables: they are read as written.
+    modified_context->setAllowCompoundTableIdentifierQualification(false);
     ContextPtr interpreter_context = modified_context;
     applySettingsForSelectIDsQuery(*modified_context);
 
