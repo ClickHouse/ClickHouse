@@ -16,7 +16,7 @@ class ParserPrometheusQuery final : public IParserBase
 public:
     ParserPrometheusQuery(const String & database_name_, const String & table_name_, const Field & evaluation_time_);
 
-    const char * getName() const override { return "PromQL Statement"; }
+    [[nodiscard]] const char * getName() const override { return "PromQL Statement"; }
 
     /// Returns true if parsing failed exactly at the end of the input.
     static bool isIncompleteAtEOF(std::string_view query);
@@ -27,7 +27,7 @@ public:
 
     /// PromQL is parsed from the raw text by its own grammar, which has tokens such as `=~` that
     /// the SQL lexer rejects; the SQL tokens are only used here to find the end of the statement.
-    bool consumesRawText() const override { return true; }
+    [[nodiscard]] bool consumesRawText() const override { return true; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

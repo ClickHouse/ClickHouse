@@ -71,7 +71,7 @@ struct Step
 
     /// `l <op> r` over the `index`-th column of each side. The inputs of the DAG are the left header followed by
     /// the right one.
-    JoinActionRef predicate(JoinConditionOperator op, size_t index) const
+    [[nodiscard]] JoinActionRef predicate(JoinConditionOperator op, size_t index) const
     {
         const auto & inputs = expression_actions.getActionsDAG()->getInputs();
         JoinActionRef left(inputs.at(index), expression_actions);
@@ -456,7 +456,7 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
     /// `GraceHashJoin::isSupported` also requires a single join clause (`TableJoin::oneDisjunct`), which a step has
     /// only when its `ON` clause carries an equality between the two sides at the top level. Without one, neither
     /// side ever spills the step: a disjunction is split into one clause per disjunct and run by a plain
-    /// multi-clause hash join, an inequality-only join becomes an `IEJoinStep` (or a CROSS join with a residual
+    /// multi-clause hash join, an inequality-only join becomes an `InequalityJoinStep` (or a CROSS join with a residual
     /// filter), and every one of those checks the size limits as hard caps, like this side.
     Step disjunction(JoinKind::Inner, JoinStrictness::All, {});
     disjunction.onDisjunction();
@@ -478,9 +478,9 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
         EXPECT_NO_THROW(serializeAt(parallel_hash_with_threshold_and_limit, pre_setting_version, step->join_operator));
     }
 
-    /// `ie_join` claims an inequality-only step before the preference list is consulted, and a list nothing else in
-    /// which runs the step is not a reason to refuse it either: the limits are hard caps for `IEJoinStep` on both sides.
-    for (const auto & algorithms : {"ie_join", "ie_join,hash", "hash,ie_join", "direct"})
+    /// `inequality` claims an inequality-only step before the preference list is consulted, and a list nothing else in
+    /// which runs the step is not a reason to refuse it either: the limits are hard caps for `InequalityJoinStep` on both sides.
+    for (const auto & algorithms : {"inequality", "inequality,hash", "hash,inequality", "direct"})
     {
         EXPECT_NO_THROW(serializeAt(
             makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version, inequalities.join_operator))
@@ -498,7 +498,7 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
     }
 
     /// One top-level equality is enough for a single clause: the disjunction is then a residual condition of a
-    /// spill-capable hash join, and an equality next to inequalities is a join key unless `ie_join` is listed first -
+    /// spill-capable hash join, and an equality next to inequalities is a join key unless `inequality` is listed first -
     /// which an old peer may not honor, so the gate does not rely on it. Both stay refused with a size limit.
     Step equality_and_disjunction(JoinKind::Inner, JoinStrictness::All, {});
     equality_and_disjunction.onEqualityAndDisjunction();
@@ -511,7 +511,7 @@ TEST(JoinSpillTriggerPlanSetting, StepsWithoutASingleEqualityClause)
     EXPECT_THROW(serializeAt(with_size_limit, pre_setting_version, equality_and_inequalities.join_operator), Exception);
     EXPECT_THROW(
         serializeAt(
-            makeJoinSettings({{"join_algorithm", "ie_join,hash"}, {"max_rows_in_join", 100u}}), pre_setting_version,
+            makeJoinSettings({{"join_algorithm", "inequality,hash"}, {"max_rows_in_join", 100u}}), pre_setting_version,
             equality_and_inequalities.join_operator),
         Exception);
 

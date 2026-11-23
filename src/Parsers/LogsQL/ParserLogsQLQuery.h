@@ -35,7 +35,7 @@ public:
     {
     }
 
-    const char * getName() const override { return "LogsQL Statement"; }
+    [[nodiscard]] const char * getName() const override { return "LogsQL Statement"; }
 
     /// Returns true if parsing the LogsQL statement in [begin, end) fails with a syntax error
     /// at the end of the input, i.e. the statement is still being typed. Never throws.
