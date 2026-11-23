@@ -410,15 +410,22 @@ void StorageFactory::checkTemporaryTableEngine(const String & storage_name, cons
 
 AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & create) const
 {
-    return collectAccess(create, &StorageFeatures::get_export_access_fn);
+    return collectAccess(create, [](const StorageFeatures & features, const SettingsChanges & changes)
+    {
+        return features.get_export_access_fn ? features.get_export_access_fn(changes, /* own_engine */ true) : AccessRightsElements{};
+    });
 }
 
 AccessRightsElements StorageFactory::getCreateAccess(const ASTCreateQuery & create) const
 {
-    return collectAccess(create, &StorageFeatures::get_create_access_fn);
+    return collectAccess(create, [](const StorageFeatures & features, const SettingsChanges & changes)
+    {
+        return features.get_create_access_fn ? features.get_create_access_fn(changes) : AccessRightsElements{};
+    });
 }
 
-AccessRightsElements StorageFactory::collectAccess(const ASTCreateQuery & create, GetExportAccessFn * StorageFeatures::*access_fn) const
+AccessRightsElements StorageFactory::collectAccess(
+    const ASTCreateQuery & create, const std::function<AccessRightsElements(const StorageFeatures &, const SettingsChanges &)> & access_of) const
 {
     AccessRightsElements res;
     auto add = [&](const ASTStorage & storage)
@@ -426,8 +433,8 @@ AccessRightsElements StorageFactory::collectAccess(const ASTCreateQuery & create
         if (!storage.engine || !storage.settings)
             return;
         auto it = storages.find(storage.engine->name);
-        if (it != storages.end() && it->second.features.*access_fn)
-            res.append_range((it->second.features.*access_fn)(storage.settings->changes));
+        if (it != storages.end())
+            res.append_range(access_of(it->second.features, storage.settings->changes));
     };
 
     if (create.storage)
@@ -440,13 +447,24 @@ AccessRightsElements StorageFactory::collectAccess(const ASTCreateQuery & create
     return res;
 }
 
+AccessRightsElements StorageFactory::getExportAccess(const SettingsChanges & changes, const String & engine) const
+{
+    AccessRightsElements res;
+    for (const auto & [name, creator] : storages)
+    {
+        if (creator.features.get_export_access_fn)
+            res.append_range(creator.features.get_export_access_fn(changes, name == engine));
+    }
+    return res;
+}
+
 AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes) const
 {
     AccessRightsElements res;
     for (const auto & [_, creator] : storages)
     {
         if (creator.features.get_export_access_fn)
-            res.append_range(creator.features.get_export_access_fn(changes));
+            res.append_range(creator.features.get_export_access_fn(changes, /* own_engine */ true));
     }
     return res;
 }

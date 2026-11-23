@@ -1511,7 +1511,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
             /// because this table is actually stateless like a table function.
             /* is_table_function */true,
             getFormatSettings(context_copy),
-            getCatalog());
+            catalog);
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
@@ -1539,7 +1539,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         /* comment */"",
         getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
-        getCatalog(),
+        catalog,
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
         distributed_processing,
@@ -2423,7 +2423,7 @@ The following settings are supported:
 | `catalog_type`          | Type of catalog: `glue`, `unity` (Delta, or Delta and Iceberg with `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
-| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
+| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `true`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |

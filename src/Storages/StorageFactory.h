@@ -43,7 +43,8 @@ public:
 
     /// The grants needed by settings that make a table send its data to another place, e.g. the move destination of a queue.
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
-    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
+    /// If `own_engine`, also the grants for settings that modify the source files, e.g. `after_processing` of a queue.
+    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes, bool own_engine);
 
     /// The grants that settings of a new table require of the user who creates it. They are checked before a distributed or
     /// replicated `CREATE` is queued, because the hosts that run it may not have the user's grants.
@@ -199,12 +200,15 @@ public:
     [[nodiscard]] AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
     /// See `GetCreateAccessFn`. For the same engines as `getExportAccess`.
     [[nodiscard]] AccessRightsElements getCreateAccess(const ASTCreateQuery & create) const;
+    /// For `changes` of a table with `engine`: the destinations of every engine, as below, and the source files of `engine` only.
+    [[nodiscard]] AccessRightsElements getExportAccess(const SettingsChanges & changes, const String & engine) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
     [[nodiscard]] AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
 
 private:
-    [[nodiscard]] AccessRightsElements collectAccess(const ASTCreateQuery & create, GetExportAccessFn * StorageFeatures::*access_fn) const;
+    [[nodiscard]] AccessRightsElements collectAccess(
+        const ASTCreateQuery & create, const std::function<AccessRightsElements(const StorageFeatures &, const SettingsChanges &)> & access_of) const;
 
     Storages storages;
 };
