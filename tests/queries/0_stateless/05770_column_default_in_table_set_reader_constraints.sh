@@ -11,7 +11,8 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas=0"
 # A default `p IN table` of a column missing in a part is evaluated with the settings of the storage, except for the
 # ones restricting the reading query. A setting that the profile of the reading user pins with a constraint also
 # restricts what the user may read, so the settings of the storage must not lift it: here `allow_executable_tables`.
-# The same holds for a setting that the reading query cannot change because it runs with `readonly = 1`.
+# The same holds for a setting that the reading query cannot change because it runs with `readonly = 1`, and for a
+# setting named `allow_*` that the reading query sets itself, with no constraint: it says what the query may do.
 
 user="user_${CLICKHOUSE_DATABASE}"
 profile="profile_${CLICKHOUSE_DATABASE}"
@@ -50,6 +51,12 @@ $readonly_client -q "SET allow_executable_tables = 1" 2>&1 | grep -o -m1 'READON
 $readonly_client -q "SELECT sum(p IN exec_rhs_constraints) FROM t_constraints" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 $readonly_client -q "SELECT sum(f) FROM t_constraints" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 $readonly_client -q "SELECT p FROM t_constraints"
+
+echo 'allow_executable_tables = 0 without constraints'
+$CLICKHOUSE_CLIENT -q "SELECT sum(p IN exec_rhs_constraints) FROM t_constraints SETTINGS allow_executable_tables = 0" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+$CLICKHOUSE_CLIENT -q "SELECT sum(f) FROM t_constraints SETTINGS allow_executable_tables = 0" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+$CLICKHOUSE_CLIENT --allow_executable_tables 0 -q "SELECT sum(f) FROM t_constraints" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+$CLICKHOUSE_CLIENT -q "SELECT p FROM t_constraints SETTINGS allow_executable_tables = 0"
 
 $CLICKHOUSE_CLIENT -m -q "
     DROP SETTINGS PROFILE ${profile};

@@ -375,16 +375,19 @@ bool IMergeTreeReader::mayEvaluateMissingDefaults() const
 }
 
 /// The settings of the reading query that a default reading a table (`x IN table`) is evaluated with, in place of
-/// the settings of the storage context: those that restrict the access, and all the limits and the resources -
-/// the settings named `max_*` and `min_*` and the overflow modes of the limits. None of them changes the meaning of
-/// an expression, so a default reads a table the same way as the reading query would read it directly.
+/// the settings of the storage context: those that restrict the access - the readonly mode and all the settings
+/// named `allow_*`, such as `allow_executable_tables`, which say what the reading query is allowed to do, whether
+/// or not a constraint pins them - and all the limits and the resources - the settings named `max_*` and `min_*` and
+/// the overflow modes of the limits. None of them changes the meaning of an expression: an `allow_*` setting only
+/// decides whether something is permitted. So a default reads a table the same way as the reading query would read
+/// it directly.
 static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressions()
 {
     static const std::vector<std::string_view> names = []
     {
         static constexpr std::string_view other_names[] =
         {
-            "readonly", "allow_ddl", "allow_introspection_functions",
+            "readonly",
             "temporary_files_codec", "temporary_files_buffer_size",
             "timeout_before_checking_execution_speed",
         };
@@ -392,7 +395,8 @@ static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressi
         std::vector<std::string_view> result(std::begin(other_names), std::end(other_names));
         for (std::string_view name : Settings().getAllRegisteredNames())
         {
-            if (name.starts_with("max_") || name.starts_with("min_") || name.ends_with("_overflow_mode") || name.ends_with("_overflow_mode_leaf"))
+            if (name.starts_with("allow_") || name.starts_with("max_") || name.starts_with("min_")
+                || name.ends_with("_overflow_mode") || name.ends_with("_overflow_mode_leaf"))
                 result.push_back(name);
         }
         return result;
@@ -400,7 +404,7 @@ static const std::vector<std::string_view> & getReaderSettingsForDefaultExpressi
     return names;
 }
 
-/// The settings of the storage context that replace the settings of the reading query must not bypass the constraints
+/// The other settings of the storage context that replace the settings of the reading query must not bypass the constraints
 /// of its user: a setting pinned by a settings profile, such as `allow_executable_tables = 0 READONLY`, restricts what
 /// the user may read, whatever the settings of the storage are. The same holds for the readonly mode of the reading
 /// query: with `readonly = 1` the user cannot change `allow_executable_tables = 0`, so the settings of the storage must
