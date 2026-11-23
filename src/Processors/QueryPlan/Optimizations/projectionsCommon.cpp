@@ -398,15 +398,30 @@ static bool projectionPartHasRequiredColumns(
     return true;
 }
 
-/// Whether filtering by `projection` depends on the column `name`: the projection is built from it,
-/// stores it, or the filter reads it (`required_column_names`).
-static bool isProjectionColumn(const ProjectionDescription & projection, const Names & required_column_names, const String & name)
+/// The table column that stores `name`: `tup` for the subcolumn `tup.x`, `name` itself for a column
+/// or for a name the table does not have.
+static String getNameInStorage(const ColumnsDescription & table_columns, const String & name)
 {
-    if (name.empty())
+    if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        return column->getNameInStorage();
+    return name;
+}
+
+/// Whether filtering by `projection` depends on the table column `name_in_storage`: the projection is built
+/// from it, stores it, or the filter reads it (`required_column_names`), directly or through one of its subcolumns.
+static bool isProjectionColumn(
+    const ProjectionDescription & projection,
+    const Names & required_column_names,
+    const ColumnsDescription & table_columns,
+    const String & name_in_storage)
+{
+    if (name_in_storage.empty())
         return false;
-    return std::ranges::contains(projection.required_columns, name)
-        || projection.sample_block.has(name)
-        || std::ranges::contains(required_column_names, name);
+
+    auto is_stored_in = [&](const String & name) { return getNameInStorage(table_columns, name) == name_in_storage; };
+    return std::ranges::any_of(projection.required_columns, is_stored_in)
+        || std::ranges::any_of(projection.sample_block, [&](const auto & column) { return is_stored_in(column.name); })
+        || std::ranges::any_of(required_column_names, is_stored_in);
 }
 
 /// Pending metadata mutations (`RENAME COLUMN` / `DROP COLUMN`) are applied at read time by the
@@ -416,10 +431,12 @@ static bool isProjectionColumn(const ProjectionDescription & projection, const N
 /// `c` instead of the new column's default. Such a part is read from the parent part instead.
 /// Only the mutations touching a column the projection holds or the read needs (for `RENAME COLUMN`,
 /// both the old and the new name) matter: a pending drop of an unrelated column keeps the projection usable.
+/// A mutation of `tup` touches the projection columns `tup.x`.
 static bool partHasPendingMetadataMutationsOnColumns(
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const MergeTreeData::DataPartPtr & part,
     const ProjectionDescription & projection,
+    const ColumnsDescription & table_columns,
     const Names & required_column_names)
 {
     if (!mutations_snapshot->hasMetadataMutations())
@@ -431,8 +448,8 @@ static bool partHasPendingMetadataMutationsOnColumns(
         if (!AlterConversions::isSupportedMetadataMutation(command.type))
             continue;
 
-        if (isProjectionColumn(projection, required_column_names, command.column_name)
-            || isProjectionColumn(projection, required_column_names, command.rename_to))
+        if (isProjectionColumn(projection, required_column_names, table_columns, command.column_name)
+            || isProjectionColumn(projection, required_column_names, table_columns, command.rename_to))
             return true;
     }
 
@@ -487,10 +504,7 @@ bool ColumnsChangedOnFlyByPart::changesProjectionColumns(const MergeTreeData::Da
     /// or if the part does not store it. A subcolumn (`tup.x`) is checked by the column that stores it (`tup`).
     auto is_changed = [&](const String & name)
     {
-        String name_in_storage = name;
-        if (auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
-            name_in_storage = column->getNameInStorage();
-
+        const String name_in_storage = getNameInStorage(table_columns, name);
         return updated_columns.contains(name_in_storage)
             || !materialized_column_dependencies->findColumnsToRecalculate(name_in_storage, updated_columns).empty()
             || (updates_data_columns && table_columns.hasPhysical(name_in_storage) && !part->tryGetColumn(name_in_storage));
@@ -556,7 +570,7 @@ bool analyzeProjectionCandidate(
             && projectionPartHasRequiredColumns(
                 *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, part_column_names)
             && !partHasPendingMetadataMutationsOnColumns(
-                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, part_column_names))
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, parent_metadata->getColumns(), part_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
                 projection_part,
@@ -676,7 +690,7 @@ void filterPartsAndCollectProjectionCandidates(
             && projectionPartHasRequiredColumns(
                 *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
             && !partHasPendingMetadataMutationsOnColumns(
-                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns)
+                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, parent_metadata->getColumns(), filter_required_columns)
             && !columns_changed_on_fly.changesProjectionColumns(part_with_ranges.data_part, projection))
         {
             RangesInDataPart projection_part(

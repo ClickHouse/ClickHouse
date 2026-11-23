@@ -113,3 +113,7 @@ Description: Projection has been analyzed and will be applied during reading
 -- patch of the source of a MATERIALIZED tuple whose subcolumn is in the projection WHERE
 5	5	(1,0)
 5	5	(1,0)
+-- pending drop and re-add of a tuple whose subcolumn is in the projection WHERE
+20
+20
+20

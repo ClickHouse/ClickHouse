@@ -380,3 +380,37 @@ SELECT id, k, tup FROM t_lw_proj_patch WHERE k = 5 AND tup.x = 1;
 SELECT id, k, tup FROM t_lw_proj_patch WHERE k = 5 AND tup.x = 1 SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_lw_proj_patch;
+
+-- A pending `DROP COLUMN tup` applies to the projection columns `tup.x`: after the column is replaced and
+-- the projection is added again, the projection part of a part not rewritten yet holds the old column.
+CREATE TABLE t_lw_proj_patch
+(
+    id UInt64,
+    k UInt64,
+    v UInt64,
+    tup Tuple(x UInt64, y UInt64)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    enable_block_number_column = 1,
+    enable_block_offset_column = 1,
+    min_bytes_for_wide_part = 0,
+    index_granularity = 16;
+
+INSERT INTO t_lw_proj_patch SELECT number, number % 100, number, (toUInt64(number % 2 = 0), number) FROM numbers(2000);
+ALTER TABLE t_lw_proj_patch ADD PROJECTION p_tup (SELECT _part_offset WHERE tup.x = 1 ORDER BY k);
+ALTER TABLE t_lw_proj_patch MATERIALIZE PROJECTION p_tup SETTINGS mutations_sync = 2;
+SYSTEM STOP MERGES t_lw_proj_patch;
+
+ALTER TABLE t_lw_proj_patch DROP PROJECTION p_tup SETTINGS alter_sync = 0;
+ALTER TABLE t_lw_proj_patch DROP COLUMN tup SETTINGS alter_sync = 0;
+ALTER TABLE t_lw_proj_patch ADD COLUMN tup Tuple(x UInt64, y UInt64) DEFAULT (toUInt64(1), toUInt64(0)) SETTINGS alter_sync = 0;
+ALTER TABLE t_lw_proj_patch ADD PROJECTION p_tup (SELECT _part_offset WHERE tup.x = 1 ORDER BY k) SETTINGS alter_sync = 0;
+
+SELECT '-- pending drop and re-add of a tuple whose subcolumn is in the projection WHERE';
+SELECT count() FROM t_lw_proj_patch WHERE k = 5 AND tup.x = 1;
+UPDATE t_lw_proj_patch SET v = 10 WHERE id = 5;
+SELECT count() FROM t_lw_proj_patch WHERE k = 5 AND tup.x = 1;
+SELECT count() FROM t_lw_proj_patch WHERE k = 5 AND tup.x = 1 SETTINGS optimize_use_projections = 0;
+
+DROP TABLE t_lw_proj_patch;
