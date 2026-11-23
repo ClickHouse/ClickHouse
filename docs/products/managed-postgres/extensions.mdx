@@ -2,16 +2,106 @@
 slug: /cloud/managed-postgres/extensions
 sidebarTitle: 'Extensions'
 title: 'PostgreSQL extensions'
-description: 'Available PostgreSQL extensions in ClickHouse Managed Postgres'
-keywords: ['postgres extensions', 'postgis', 'pgvector', 'pg_cron', 'postgresql extensions']
+description: 'Enable, configure and install PostgreSQL extensions in ClickHouse Managed Postgres'
+keywords: ['postgres extensions', 'postgis', 'pgvector', 'pg_cron', 'pgaudit', 'timescaledb', 'shared_preload_libraries', 'postgresql extensions']
 doc_type: 'guide'
 ---
 
-ClickHouse Managed Postgres includes a curated set of extensions to extend the functionality of your database. Below is the list of available extensions.
+ClickHouse Managed Postgres includes a curated set of extensions to extend the functionality of your database. Some extensions only need to be installed in a database with `CREATE EXTENSION`. Others load a shared library when Postgres starts, and must first be enabled on the service from the **Extensions** panel in the ClickHouse Cloud console.
 
-## Installing extensions {#installing-extensions}
+## Managing extensions in the console {#managing-extensions}
 
-To install an extension, connect to your database and run:
+The **Extensions** panel lets you turn on extensions that need a shared library preloaded, and edit their settings, without connecting to the database.
+
+### Open the Extensions panel {#open-extensions-panel}
+
+1. Open your Managed Postgres service in the ClickHouse Cloud console.
+2. Select **Settings** in the sidebar.
+3. In the **Extensions** section, select **Edit extensions**.
+
+The **Edit extensions** button is unavailable when:
+
+- Your role doesn't have permission to manage the service.
+- The service is stopped. Start it first.
+- The service is a read replica. Extensions are managed on the primary instance.
+
+### Extensions you can manage {#manageable-extensions}
+
+The panel lists the extensions below that your database reports as available. Use the search box to filter by name or description.
+
+| Extension | Default | What it does |
+|-----------|---------|--------------|
+| `pg_stat_statements` | Always on | Tracks execution statistics for all SQL statements. Query insights depends on it, so it can't be turned off. Its settings are still editable. |
+| `pg_cron` | On by default | Runs SQL commands on a cron schedule. |
+| `pgaudit` | Off | Session and object audit logging. |
+| `timescaledb` | Off | Time-series storage and analytics. Apache 2 Edition features only. |
+
+Each row shows a link to the extension's own documentation. A badge shows whether the extension is **Always on** or **On by default**. Rows with settings also show how many settings they have.
+
+### Enable or disable an extension {#enable-disable-extension}
+
+1. Select the checkbox next to an extension to enable it. Clear it to disable the extension.
+2. Select **Save changes**.
+3. Review the **Apply extension changes?** dialog, then pick one of the following:
+   - **Apply changes & restart** saves your changes and restarts the service right away.
+   - **Apply changes** saves your changes without restarting. They take effect at the next restart.
+
+Enabling or disabling a preloaded extension always requires a restart, because Postgres only reads `shared_preload_libraries` at startup. The service doesn't restart on its own. If you choose **Apply changes**, restart it later from the **Service actions** toolbar on the [**Settings**](/products/managed-postgres/settings#service-actions) page.
+
+<Warning>
+Restarting disconnects all clients connected to the database.
+</Warning>
+
+Enabling an extension makes it available to all users on the service. To use it in a database, connect to that database and run `CREATE EXTENSION` (see [Installing extensions in a database](#installing-extensions)).
+
+When you disable an extension, the confirmation dialog explains what stops working:
+
+| Extension | Effect of disabling |
+|-----------|---------------------|
+| `pg_cron` | Scheduled jobs stop running. Job definitions in the `cron` schema are preserved. |
+| `pgaudit` | Audit logging stops. Logs already written are retained. |
+| `timescaledb` | Databases that contain hypertables or other TimescaleDB objects fail to load once the library is removed. Drop those objects first. |
+
+If the service preloads a library that the console doesn't manage, the dialog lists it. Saving removes that library from `shared_preload_libraries`.
+
+### Edit extension settings {#edit-extension-settings}
+
+Select a row, or its arrow, to expand the extension's settings. The settings appear without the extension prefix: `pgaudit.log` shows as `log` under **pgaudit**.
+
+- You can view an extension's settings at any time. You can only edit them once the extension is enabled.
+- An empty field shows the platform default as a placeholder. Leave it empty to keep the default.
+- Values are checked as you type. A collapsed row shows how many of its settings need attention. **Save changes** stays disabled until every value is valid.
+- Settings marked **Requires restart** only take effect after the service restarts. Other settings take effect within about a minute of saving.
+
+Selected settings for each extension:
+
+| Extension | Setting | Default | Requires restart |
+|-----------|---------|---------|------------------|
+| `pg_stat_statements` | `pg_stat_statements.max` | `5000` | Yes |
+| `pg_stat_statements` | `pg_stat_statements.track` | `top` | No |
+| `pg_cron` | `cron.database_name` | `postgres` | Yes |
+| `pg_cron` | `cron.max_running_jobs` | `1` | Yes |
+| `pgaudit` | `pgaudit.log` | `none` | No |
+| `pgaudit` | `pgaudit.role` | *(empty)* | No |
+| `timescaledb` | `timescaledb.max_cached_chunks_per_hypertable` | `1024` | No |
+
+The panel lists every supported setting with a description. For full details, see each extension's documentation.
+
+<Note>
+`pg_cron` runs jobs from a single database, set by `cron.database_name`. Run `CREATE EXTENSION pg_cron;` in that database.
+</Note>
+
+### After saving {#after-saving}
+
+A notification confirms the save:
+
+- **Your changes are live** when no restart is needed.
+- **Restart required for N settings to take effect** when you saved without restarting. The message lists the affected settings.
+- **Restarting** followed by the service name when you chose **Apply changes & restart**. While the service restarts, the panel shows a restarting message and reloads the extensions once the service is running again.
+
+## Installing extensions in a database {#installing-extensions}
+
+Enabling an extension in the console loads its library. It doesn't create the extension's objects in any database. To install an extension, connect to your database and run:
 
 ```sql
 CREATE EXTENSION extension_name;
