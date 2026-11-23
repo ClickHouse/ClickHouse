@@ -1,0 +1,14 @@
+<test>
+    <settings>
+        <format_custom_escaping_rule>Escaped</format_custom_escaping_rule>
+        <format_custom_field_delimiter>:</format_custom_field_delimiter>
+        <format_custom_row_after_delimiter>:</format_custom_row_after_delimiter>
+        <input_format_custom_detect_header>0</input_format_custom_detect_header>
+        <input_format_parallel_parsing>0</input_format_parallel_parsing>
+    </settings>
+
+    <!-- Time values in rows separated by ':', so the digits and colons run to the end of every read buffer. Parallel parsing is off because it parses from memory buffers. -->
+    <fill_query>INSERT INTO FUNCTION file('time_parsing_colon_rows.txt', 'RawBLOB') SELECT repeat('12:34:56:', 1000000) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+
+    <query>SELECT sum(toInt64(t)) FROM file('time_parsing_colon_rows.txt', 'CustomSeparated', 't Time') FORMAT Null</query>
+</test>

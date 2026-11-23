@@ -1097,8 +1097,10 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     const char * s = buf.position();
     const char * buf_end = buf.buffer().end();
 
+    /// Look at most at hhh:mm:ss. If more bytes are in the buffer, the whole value is there.
     const char * token_end = s;
-    while (token_end < buf_end && (isNumericASCII(*token_end) || isSymbolIn(*token_end, allowed_time_delimiters)))
+    const char * scan_end = s + std::min<size_t>(buf_end - s, 9);
+    while (token_end < scan_end && (isNumericASCII(*token_end) || isSymbolIn(*token_end, allowed_time_delimiters)))
         ++token_end;
 
     /// The value may continue in the next buffer, so copy it and parse the copy.
