@@ -16,3 +16,16 @@ SELECT toTypeName(v), v FROM (SELECT true AS v) a FULL JOIN (SELECT toUInt8(2) A
 SELECT toTypeName(v), v FROM (SELECT toUInt8(2) AS v) a FULL JOIN (SELECT true AS v) b USING v ORDER BY v;
 SELECT toTypeName(a.v), toTypeName(b.v), toTypeName(v) FROM (SELECT true AS v) a INNER JOIN (SELECT toUInt8(1) AS v) b USING v;
 WITH RECURSIVE r AS (SELECT true AS x UNION ALL SELECT toUInt8(x + 1) FROM r WHERE x < 2) SELECT toTypeName(x), x FROM r ORDER BY x;
+SELECT toTypeName(x), x FROM (SELECT '{"a" : true}'::JSON(a Bool) AS x UNION ALL SELECT '{"a" : 2}'::JSON(a UInt8)) ORDER BY toString(x);
+SELECT toTypeName(x), x FROM (SELECT '{"a" : 2}'::JSON(a UInt8) AS x UNION ALL SELECT '{"a" : true}'::JSON(a Bool)) ORDER BY toString(x);
+CREATE TABLE t_saf (s SimpleAggregateFunction(any, Bool), b Bool, u UInt8) ENGINE = Memory;
+INSERT INTO t_saf VALUES (true, true, 2);
+SELECT toTypeName(x), x FROM (SELECT s AS x FROM t_saf UNION ALL SELECT u FROM t_saf) ORDER BY x;
+SELECT toTypeName(x), x FROM (SELECT u AS x FROM t_saf UNION ALL SELECT s FROM t_saf) ORDER BY x;
+SELECT toTypeName(x) FROM (SELECT s AS x FROM t_saf UNION ALL SELECT b FROM t_saf);
+DROP TABLE t_saf;
+SELECT a.*, toTypeName(a.*) FROM (SELECT true AS v) a INNER JOIN (SELECT toUInt8(1) AS v) b USING v;
+CREATE TABLE t_alias_key (x UInt8, k Bool ALIAS x > 0) ENGINE = Memory;
+INSERT INTO t_alias_key VALUES (1);
+SELECT toTypeName(k), k FROM t_alias_key FULL JOIN (SELECT toUInt8(2) AS k) b USING k ORDER BY k;
+DROP TABLE t_alias_key;

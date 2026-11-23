@@ -28,3 +28,16 @@ UInt8	2
 UInt8	UInt8	UInt8
 UInt8	1
 UInt8	2
+JSON(a UInt8)	{"a":1}
+JSON(a UInt8)	{"a":2}
+JSON(a UInt8)	{"a":1}
+JSON(a UInt8)	{"a":2}
+UInt8	1
+UInt8	2
+UInt8	1
+UInt8	2
+SimpleAggregateFunction(any, Bool)
+SimpleAggregateFunction(any, Bool)
+1	UInt8
+UInt8	1
+UInt8	2
