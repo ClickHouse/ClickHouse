@@ -472,7 +472,7 @@ void collectSubcolumnAccessesExposedToAggregation(const QueryTreeNodePtr & node,
     if (const auto * function_node = node->as<FunctionNode>())
     {
         /// The arguments of an aggregate function are evaluated before the aggregation.
-        if (function_node->isAggregateFunction())
+        if (function_node->isAggregationCall())
             return;
 
         /// The arguments are traversed as well: in `getSubcolumn(getSubcolumn(r, 'a'), 'b')` the outer call can't be
