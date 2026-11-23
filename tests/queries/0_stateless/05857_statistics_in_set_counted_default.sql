@@ -26,4 +26,20 @@ FROM
     WHERE explain ILIKE '%Prewhere filter column%'
 );
 
+-- Without the default every value gets the common estimate, so `with_default IN (1, 3, 5)` is read first. A debug build
+-- checks that estimate against the estimate of the set's ranges.
+SELECT position(line, 'filter_col') < position(line, 'with_default') AS filter_col_first
+FROM
+(
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS line
+    FROM
+    (
+        EXPLAIN actions = 1
+        SELECT count() FROM t_counted_default WHERE with_default IN (1, 3, 5) AND filter_col = 5
+        SETTINGS use_statistics = 1, optimize_move_to_prewhere = 1, allow_reorder_prewhere_conditions = 1,
+            min_marks_per_part_to_load_statistics = 0, explain_query_plan_default = 'legacy'
+    )
+    WHERE explain ILIKE '%Prewhere filter column%'
+);
+
 DROP TABLE t_counted_default;

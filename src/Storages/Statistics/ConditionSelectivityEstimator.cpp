@@ -808,7 +808,13 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
                 Float64 rows = 0;
                 for (size_t i = 0; i < elements->size(); ++i)
                     rows += *estimate;
-                return selectivityOfRows(rows);
+                const Selectivity result = selectivityOfRows(rows);
+#ifndef NDEBUG
+                /// Heavy: builds the ranges that this path avoids.
+                const Selectivity from_ranges = estimateRanges(ranges.get());
+                chassert(result.true_sel == from_ranges.true_sel && result.null_sel == from_ranges.null_sel);
+#endif
+                return result;
             }
         }
     }
