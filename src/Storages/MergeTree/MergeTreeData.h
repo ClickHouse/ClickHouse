@@ -613,6 +613,10 @@ public:
         const std::function<void(size_t)> & load_part,
         const std::function<void(size_t)> & consume_part);
 
+    /// Adds the getColumnAndSubcolumnSizes of every part to `result`; the parts that read files are sized on up to `max_threads` threads.
+    static void addColumnSizesOfParts(
+        const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result);
+
     bool supportsFinal() const override;
 
     bool supportsParallelInsert() const override { return true; }
@@ -924,6 +928,9 @@ public:
 
     virtual std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
     virtual size_t getMaxOutdatedPartsCountForPartition() const;
+
+    /// Whether background merges are still delayed after the startup, see `delay_merges_after_startup_seconds`.
+    bool areMergesDelayedAfterStartup() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
@@ -2285,7 +2292,7 @@ protected:
     template <typename AddedParts, typename RemovedParts>
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
 
-    SerializationInfoByName getSerializationHints() const override;
+    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
@@ -2438,6 +2445,14 @@ protected:
 
     StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
     void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
+
+    void delayMergesAfterStartup();
+    void stopDelayingMergesAfterStartup();
+
+    /// Only a table the server loads from its metadata at startup delays its merges.
+    bool merges_can_be_delayed_after_startup = false;
+    /// `CLOCK_MONOTONIC` time of the startup in nanoseconds, 0 if the delay is not armed.
+    std::atomic<UInt64> startup_time_ns = 0;
 
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
