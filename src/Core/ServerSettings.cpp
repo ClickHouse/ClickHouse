@@ -1,6 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Jemalloc.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/FilesystemIsolation.h>
@@ -551,38 +552,9 @@ A value of `0` means all cores.
 The delay during which a dropped table can be restored using the [`UNDROP`](/reference/statements/undrop) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 )", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-[`database_catalog_unused_dir_hide_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
-removing all access rights. It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "immediately".
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previously "hidden"
-(see [database_catalog_unused_dir_hide_timeout_sec](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec))
-and this directory was not modified for last
-[`database_catalog_unused_dir_rm_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
-It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 30 days.
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 1 day.
-</Note>
-)", 0) \
+    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task revoked all access rights from an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task removed an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the scheduling period of the task. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 0, R"(The size of the threadpool used for shutting down tables when the server is stopping. Zero means the number of threads is equal to the number of cores.)", 0) \
@@ -1461,6 +1433,8 @@ reading that folder, the materialized view `system._<log>_mv_<hash>` and the `Sh
 `system.<log>` is a `Merge` table over the generations. A new schema creates a new generation; settings, TTL and indices
 come from the `smt_settings`, `smt_ttl` and `smt_indices` keys of the log's configuration and are changed in place.
 The objects are created on the first flush of a log, or at startup with `prepare_system_log_tables_on_startup`.
+The sorting key of a table is the key of the log with `hostname` in front, so that the rows of a replica are read by the key.
+The `smt_order_by` and `smt_partition_by` keys of the log's configuration replace the keys of the table.
 
 The local `system` database is renamed to `system_local` while the setting is enabled. Requires `shared_database_catalog`
 and `<shared_log_pipeline><endpoint>` in the server configuration.
@@ -2434,7 +2408,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     known_keys.insert(path);
             }
         }
-        for (const auto & [alias, _] : ServerSettingsTraits::aliases_to_settings)
+        for (const auto & [alias, _] : ServerSettingsTraits::aliasesToSettings())
             known_keys.insert(String(alias));
     }
 
@@ -3440,8 +3414,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 }
                 /// Drop the nodes this fragment removed, preserving the order of the survivors
                 /// (appended nodes sit past `matchable_count` and are never erased here).
-                for (size_t i = matchable_count; i-- > 0;)
+                for (size_t i = matchable_count; i > 0;)
                 {
+                    --i;
                     if (erased[i])
                         merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
                 }

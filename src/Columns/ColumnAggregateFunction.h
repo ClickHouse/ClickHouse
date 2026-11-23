@@ -97,7 +97,7 @@ private:
 
     explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_, std::optional<size_t> version_ = std::nullopt);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
