@@ -67,7 +67,9 @@ public:
       */
     using Base = COWHelper<IColumnHelper<ColumnQBit>, ColumnQBit>;
 
-    static Ptr create(const ColumnPtr & column, size_t dimension, size_t stride) { return Base::create(column->assumeMutable(), dimension, stride); }
+    /// Borrow the input for an immutable result instead of `assumeMutable`, which would
+    /// `chassert(use_count() == 1)` and fire for valid callers that keep the shared `ColumnPtr` alive.
+    static Ptr create(const ColumnPtr & column, size_t dimension, size_t stride) { return Base::create(const_cast<IColumn *>(column.get())->getPtr(), dimension, stride); }
     static MutablePtr create(MutableColumnPtr && tuple_, size_t dimension, size_t stride) { return Base::create(std::move(tuple_), dimension, stride); }
 
     const char * getFamilyName() const override { return "QBit"; }
