@@ -656,8 +656,13 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     /// This is a callback for the client/local app to better find query end. Note: this is a kludge, remove it.
     if (!last_is_delimiter)
         return;
+
+    std::string_view trimmed_query = query;
+    while (!trimmed_query.empty() && (trimmed_query.back() == ' ' || trimmed_query.back() == '\t' || trimmed_query.back() == '\n' || trimmed_query.back() == '\r'))
+        trimmed_query.remove_suffix(1);
+
     if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter
-        || query.ends_with(';') || query.ends_with("\\G"))  /// This is for raw data in INSERT queries, which is not necessarily tokenized.
+        || trimmed_query.ends_with(';') || trimmed_query.ends_with("\\G"))  /// This is for raw data in INSERT queries, which is not necessarily tokenized.
     {
         *last_is_delimiter = true;
     }
