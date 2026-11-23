@@ -129,7 +129,7 @@ DatabaseMySQL::DatabaseMySQL(
     : DatabaseWithAltersOnDiskBase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
-    , database_engine_define(database_engine_define_->clone())
+    , database_engine_define(database_engine_define_->formatWithSecretsOneLine<SecretString>())
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
@@ -268,7 +268,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     }
 
     auto storage = local_tables_cache[table_name].second;
-    auto table_storage_define = database_engine_define->clone();
+    auto table_storage_define = parseDatabaseEngineDefinition(database_engine_define);
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
@@ -318,7 +318,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
-    create_query->set(create_query->storage, database_engine_define);
+    create_query->set(create_query->storage, parseDatabaseEngineDefinition(database_engine_define));
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
@@ -820,7 +820,9 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 /*dependent_table_id=*/ nullptr,
                 engine_define->settings))
         {
-            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
+            configuration = StorageMySQL::processNamedCollectionResult(
+                *named_collection, *mysql_settings, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table_or_query=*/ false);
         }
         else
         {
@@ -842,7 +844,8 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             if (engine_name == "MySQL")
             {
                 size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
-                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(
+                    host_port, max_addresses, 3306, globCaller(fmt::format("Database engine '{}'", engine_name)));
             }
             else
             {
@@ -863,7 +866,10 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
-        mysql_settings->loadFromQueryContext(args.context, *engine_define);
+        /// On `RESTORE` we don't use the session context: it may contain a conflicting `mysql_datatypes_support_level`
+        /// setting and make the `RESTORE` fail. A short `ATTACH` keeps the stored definition, as on startup.
+        if (!args.is_restore_from_backup && !args.create_query.attach_short_syntax)
+            mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
             mysql_settings->loadFromQuery(*engine_define);
 
@@ -896,8 +902,6 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MySQL database engine
 
 <CloudNotSupportedBadge />

@@ -7,7 +7,7 @@ title: 'INFORMATION_SCHEMA'
 doc_type: 'reference'
 ---
 
-تُعد `INFORMATION_SCHEMA` (أو: `information_schema`) قاعدة بيانات نظام توفّر [عرضًا غير معتمد على نظام إدارة قواعد البيانات](https://en.wikipedia.org/wiki/Information_schema) وموحّدًا إلى حدٍّ ما للبيانات الوصفية الخاصة بكائنات قاعدة البيانات. وتُعد طرق العرض في `INFORMATION_SCHEMA` عمومًا أقل من جداول النظام العادية، لكن يمكن للأدوات استخدامها للحصول على معلومات أساسية بطريقة موحّدة عبر مختلف أنظمة إدارة قواعد البيانات. ومن المفترض أن تتطور بنية طرق العرض ومحتواها في `INFORMATION_SCHEMA` بطريقة متوافقة مع الإصدارات السابقة، أي لا تُضاف إلا وظائف جديدة، من دون تغيير الوظائف الحالية أو إزالتها. ومن ناحية التنفيذ الداخلي، تُطابِق طرق العرض في `INFORMATION_SCHEMA` عادةً جداول نظام عادية مثل [system.columns](/ar/reference/system-tables/columns) و[system.databases](/ar/reference/system-tables/databases) و[system.tables](/ar/reference/system-tables/tables).
+تُعد `INFORMATION_SCHEMA` (أو: `information_schema`) قاعدة بيانات نظام توفّر [عرضًا غير معتمد على نظام إدارة قواعد البيانات](https://en.wikipedia.org/wiki/Information_schema) وموحّدًا إلى حدٍّ ما للبيانات الوصفية الخاصة بكائنات قاعدة البيانات. وتُعد العروض في `INFORMATION_SCHEMA` عمومًا أقل من جداول النظام العادية، لكن يمكن للأدوات استخدامها للحصول على معلومات أساسية بطريقة موحّدة عبر مختلف أنظمة إدارة قواعد البيانات. ومن المفترض أن تتطور بنية العروض ومحتواها في `INFORMATION_SCHEMA` بطريقة متوافقة مع الإصدارات السابقة، أي لا تُضاف إلا وظائف جديدة، من دون تغيير الوظائف الحالية أو إزالتها. ومن ناحية التنفيذ الداخلي، تُطابِق العروض في `INFORMATION_SCHEMA` عادةً جداول نظام عادية مثل [system.columns](/ar/reference/system-tables/columns) و[system.databases](/ar/reference/system-tables/databases) و[system.tables](/ar/reference/system-tables/tables).
 
 ```sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
@@ -18,40 +18,57 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ CHARACTER_SETS          │
 │ COLLATIONS              │
 │ COLUMNS                 │
+│ COLUMN_PRIVILEGES       │
+│ ENGINES                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
-| STATISTICS              |
+│ SCHEMA_PRIVILEGES       │
+│ STATISTICS              │
 │ TABLES                  │
+│ TABLE_PRIVILEGES        │
+│ USER_PRIVILEGES         │
 │ VIEWS                   │
+│ character_sets          │
+│ collations              │
+│ column_privileges       │
 │ columns                 │
+│ engines                 │
 │ key_column_usage        │
 │ referential_constraints │
+│ schema_privileges       │
 │ schemata                │
-| statistics              |
+│ statistics              │
+│ table_privileges        │
 │ tables                  │
+│ user_privileges         │
 │ views                   │
 └─────────────────────────┘
 ```
 
-يحتوي `INFORMATION_SCHEMA` على طرق العرض التالية:
+يحتوي `INFORMATION_SCHEMA` على العروض التالية:
 
+* [CHARACTER&#95;SETS](#character_sets)
 * [COLUMNS](#columns)
+* [COLUMN&#95;PRIVILEGES](#column_privileges)
 * [COLLATIONS](#collations)
+* [ENGINES](#engines)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
+* [SCHEMA&#95;PRIVILEGES](#schema_privileges)
 * [STATISTICS](#statistics)
 * [TABLES](#tables)
+* [TABLE&#95;PRIVILEGES](#table_privileges)
+* [USER&#95;PRIVILEGES](#user_privileges)
 * [VIEWS](#views)
 
-تتوفر أيضًا طرق عرض مكافئة غير حساسة لحالة الأحرف، مثل `INFORMATION_SCHEMA.columns`، وذلك لأسباب تتعلق بالتوافق مع قواعد البيانات الأخرى. وينطبق الأمر نفسه على جميع الأعمدة في طرق العرض هذه، إذ تتوفر كل من الصيغ المكتوبة بأحرف صغيرة (على سبيل المثال، `table_name`) والصيغ المكتوبة بأحرف كبيرة (`TABLE_NAME`).
+تتوفر أيضًا عروض مكافئة غير حساسة لحالة الأحرف، مثل `INFORMATION_SCHEMA.columns`، وذلك لأسباب تتعلق بالتوافق مع قواعد البيانات الأخرى. وينطبق الأمر نفسه على جميع الأعمدة في العروض هذه، إذ تتوفر كل من الصيغ المكتوبة بأحرف صغيرة (على سبيل المثال، `table_name`) والصيغ المكتوبة بأحرف كبيرة (`TABLE_NAME`).
 
-<div id="columns">
-  ## COLUMNS
-</div>
+## COLUMNS {#columns}
 
 يحتوي على أعمدة مأخوذة من جدول النظام [system.columns](/ar/reference/system-tables/columns)، وأعمدة غير مدعومة في ClickHouse أو لا معنى لها (وتكون دائمًا `NULL`)، لكنها مطلوبة وفقًا للمعيار.
 
@@ -143,9 +160,7 @@ domain_schema:            ᴺᵁᴸᴸ
 domain_name:              ᴺᵁᴸᴸ
 ```
 
-<div id="schemata">
-  ## SCHEMATA
-</div>
+## SCHEMATA {#schemata}
 
 يحتوي على أعمدة مستمدة من جدول النظام [system.databases](/ar/reference/system-tables/databases)، وأعمدة غير مدعومة في ClickHouse أو لا معنى لها (وتكون دائمًا `NULL`)، لكن يجب أن تكون موجودة وفقًا للمعيار.
 
@@ -187,9 +202,7 @@ default_character_set_name:    ᴺᵁᴸᴸ
 sql_path:                      ᴺᵁᴸᴸ
 ```
 
-<div id="tables">
-  ## TABLES
-</div>
+## TABLES {#tables}
 
 يتضمن الأعمدة المقروءة من جدول النظام [system.tables](/ar/reference/system-tables/tables).
 
@@ -237,9 +250,7 @@ table_collation: utf8mb4_0900_ai_ci
 table_comment:   
 ```
 
-<div id="views">
-  ## VIEWS
-</div>
+## VIEWS {#views}
 
 يتضمن أعمدة مأخوذة من جدول النظام [system.tables](/ar/reference/system-tables/tables) عند استخدام محرك الجدول [View](/ar/reference/engines/table-engines/special/view).
 
@@ -298,9 +309,7 @@ is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
 
-<div id="key_column_usage">
-  ## KEY_COLUMN_USAGE
-</div>
+## KEY_COLUMN_USAGE {#key_column_usage}
 
 يحتوي على أعمدة من جدول النظام [system.tables](/ar/reference/system-tables/tables) المقيّدة بقيود.
 
@@ -357,9 +366,7 @@ referenced_table_name:         ᴺᵁᴸᴸ
 referenced_column_name:        ᴺᵁᴸᴸ
 ```
 
-<div id="referential_constraints">
-  ## REFERENTIAL_CONSTRAINTS
-</div>
+## REFERENTIAL_CONSTRAINTS {#referential_constraints}
 
 يتضمن معلومات عن المفاتيح الخارجية. ويُرجِع حاليًا نتيجة فارغة (من دون أي صفوف)، وهذا يكفي فقط لضمان التوافق مع أدوات الجهات الخارجية مثل Tableau Online.
 
@@ -377,15 +384,11 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `table_name` ([String](/ar/reference/data-types/string)) — غير مستخدم حاليًا.
 * `referenced_table_name` ([String](/ar/reference/data-types/string)) — غير مستخدم حاليًا.
 
-<div id="statistics">
-  ## STATISTICS
-</div>
+## STATISTICS {#statistics}
 
 يوفّر معلومات عن فهارس الجدول. ويُرجِع حاليًا نتيجة فارغة (من دون أي صفوف)، وهو ما يكفي فقط لضمان التوافق مع أدوات الجهات الخارجية مثل Tableau Online.
 
-<div id="collations">
-  ## COLLATIONS
-</div>
+## COLLATIONS {#collations}
 
 يوفّر معلومات عن قواعد الترتيب المتاحة. يتضمن قواعد الترتيب من [system.collations](/ar/reference/system-tables/collations)، بالإضافة إلى صفّين للتوافق مع MySQL: `utf8mb4_0900_ai_ci` — قاعدة الترتيب التي يعلن عنها بروتوكول MySQL أثناء المصافحة، وفي `SCHEMATA.DEFAULT_COLLATION_NAME` و`TABLES.TABLE_COLLATION` — و`binary` — قاعدة الترتيب الشكلية التي يعيّنها بروتوكول MySQL للأعمدة الرقمية وغيرها من الأعمدة غير النصية في البيانات الوصفية لمجموعة النتائج — حتى يتمكن العميل المتوافق مع MySQL، الذي يتبع قواعد الترتيب المُعلن عنها، من العثور عليها في هذا العرض.
 
@@ -398,3 +401,76 @@ referenced_column_name:        ᴺᵁᴸᴸ
 * `is_compiled` ([Nullable](/ar/reference/data-types/nullable)([String](/ar/reference/data-types/string))) — ما إذا كانت قاعدة الترتيب مُصرَّفةً ضمن الخادم (`Yes` لكلا صفَّي التوافق مع MySQL، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
 * `sortlen` ([Nullable](/ar/reference/data-types/nullable)([UInt64](/ar/reference/data-types/int-uint))) — الحد الأدنى لطول الفرز (`0` لـ `utf8mb4_0900_ai_ci`، و`1` لـ `binary`، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
 * `pad_attribute` ([Nullable](/ar/reference/data-types/nullable)([String](/ar/reference/data-types/string))) — سمة الحشو، `NO PAD` أو `PAD SPACE` (`NO PAD` لكلا صفَّي التوافق مع MySQL، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
+
+## CHARACTER_SETS {#character_sets}
+
+يوفّر قائمة ثابتة بمجموعات المحارف (`utf8`، `utf8mb4`، `ascii`، `binary`) لضمان التوافق مع أدوات MySQL، في حين يعمل ClickHouse نفسه بترميز UTF-8.
+
+الأعمدة:
+
+* `character_set_name` ([String](/ar/reference/data-types/string)) — اسم مجموعة المحارف.
+
+## ENGINES {#engines}
+
+يعرض معلومات عن محركات الجداول المتاحة، مقروءةً من جدول النظام [system.table&#95;engines](/ar/reference/system-tables/table_engines). يُوفَّر هذا الجدول لضمان التوافق مع MySQL.
+
+الأعمدة:
+
+* `engine` ([String](/ar/reference/data-types/string)) — اسم محرك الجدول.
+* `support` ([String](/ar/reference/data-types/string)) — القيمة `DEFAULT` للمحرك المعيَّن في [default&#95;table&#95;engine](/operations/settings/settings#default_table_engine)، وإلا فالقيمة `YES`.
+
+## USER_PRIVILEGES {#user_privileges}
+
+يوفّر معلومات عن الامتيازات العامة، مقروءةً من جدول النظام [system.grants](/ar/reference/system-tables/grants) (الصفوف غير المرتبطة بأي قاعدة بيانات).
+
+لا تعرض العروض `*_PRIVILEGES` إلا الأذونات الموجبة الخالية من أحرف البدل؛ إذ يتعذّر تمثيل عمليات سحب الصلاحيات الجزئية، ومنح الصلاحيات باستخدام أحرف البدل (مثل `GRANT SELECT ON db_prefix*.*`)، والأذونات الممنوحة على كائنات محددة بالاسم ضمن أنواع الامتيازات ذات المَعلمات (مثل `GRANT TABLE ENGINE ON TinyLog`) بالصيغة المتوافقة مع MySQL، ولذلك تُستبعد. وبالتالي يظهر الطرف الممنوح المقيَّد بسحب صلاحيات جزئي وكأنه يملك الإذن دون قيود. أما أذونات `ON *` للأنواع ذات المَعلمات فتظهر بوصفها امتيازات عامة عادية. ويبقى `system.grants` هو المصدر المعتمد. وعلى خلاف MySQL، تعرض العروض هذه أذونات جميع المستخدمين والأدوار، وتتطلب قراءتها صلاحية الوصول إلى `system.grants`؛ وفي غيابها يفشل الاستعلام مُطلِقًا الاستثناء `ACCESS_DENIED`. ولا يوجد عمود `GRANTOR` لأن ClickHouse لا يسجّل الجهة التي أصدرت الإذن.
+
+الأعمدة:
+
+* `grantee` ([String](/ar/reference/data-types/string)) — المستخدم أو الدور الممنوح له الامتياز، بصيغة MySQL: `'name'@'%'`. ولأن الأدوار لا مقابل لها في MySQL، فإنها تُعرض بالطريقة نفسها التي يُعرض بها المستخدمون.
+* `table_catalog` ([String](/ar/reference/data-types/string)) — قيمته دائمًا `def`.
+* `privilege_type` ([String](/ar/reference/data-types/string)) — اسم الامتياز، مثل `SELECT` أو `ALTER UPDATE`. راجع [system.privileges](/ar/reference/system-tables/privileges) للاطلاع على القائمة الكاملة.
+* `is_grantable` ([String](/ar/reference/data-types/string)) — تكون قيمته `YES` إذا مُنح الامتياز `WITH GRANT OPTION`، وإلا فقيمته `NO`.
+* `grantee_type` ([String](/ar/reference/data-types/string)) — `USER` أو `ROLE`. عمود غير قياسي: إذ يمكن في ClickHouse أن يحمل مستخدم ودور الاسم نفسه، ويتيح هذا العمود التمييز بينهما.
+
+## SCHEMA_PRIVILEGES {#schema_privileges}
+
+يوفّر معلومات عن الامتيازات على مستوى قاعدة البيانات، مستمدّة من جدول النظام [system.grants](/ar/reference/system-tables/grants) (أي الصفوف التي تتضمّن قاعدة بيانات دون جدول). راجع [USER&#95;PRIVILEGES](#user_privileges) للاطلاع على القيود المشتركة بين جميع العروض `*_PRIVILEGES`.
+
+الأعمدة:
+
+* `grantee` ([String](/ar/reference/data-types/string)) — المستخدم أو الدور الممنوح له الامتياز، بصيغة MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/ar/reference/data-types/string)) — قيمته دائمًا `def`.
+* `table_schema` ([String](/ar/reference/data-types/string)) — اسم قاعدة البيانات.
+* `privilege_type` ([String](/ar/reference/data-types/string)) — اسم الامتياز.
+* `is_grantable` ([String](/ar/reference/data-types/string)) — `YES` إذا مُنح الامتياز مع `WITH GRANT OPTION`، وإلا فـ`NO`.
+* `grantee_type` ([String](/ar/reference/data-types/string)) — `USER` أو `ROLE`. عمود غير قياسي: إذ قد يحمل مستخدم ودور الاسم نفسه في ClickHouse، ويُميّز هذا العمود بينهما في هذه الحالة.
+
+## TABLE_PRIVILEGES {#table_privileges}
+
+يوفّر معلومات عن الامتيازات على مستوى الجدول، تُقرأ من جدول النظام [system.grants](/ar/reference/system-tables/grants) (الصفوف التي تحدّد جدولًا دون عمود). راجع [USER&#95;PRIVILEGES](#user_privileges) للاطلاع على القيود المشتركة بين جميع عروض `*_PRIVILEGES`.
+
+الأعمدة:
+
+* `grantee` ([String](/ar/reference/data-types/string)) — المستخدم أو الدور الممنوح له الامتياز، بصيغة MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/ar/reference/data-types/string)) — قيمته دائمًا `def`.
+* `table_schema` ([String](/ar/reference/data-types/string)) — اسم قاعدة البيانات.
+* `table_name` ([String](/ar/reference/data-types/string)) — اسم الجدول.
+* `privilege_type` ([String](/ar/reference/data-types/string)) — اسم الامتياز.
+* `is_grantable` ([String](/ar/reference/data-types/string)) — `YES` إذا مُنح الامتياز باستخدام `WITH GRANT OPTION`، وإلا فـ`NO`.
+* `grantee_type` ([String](/ar/reference/data-types/string)) — `USER` أو `ROLE`. عمود غير قياسي: إذ يمكن في ClickHouse أن يحمل مستخدم ودور الاسم نفسه، ويتيح هذا العمود التمييز بينهما.
+
+## COLUMN_PRIVILEGES {#column_privileges}
+
+يوفّر معلومات عن الامتيازات على مستوى العمود، تُقرأ من جدول النظام [system.grants](/ar/reference/system-tables/grants) (الصفوف التي تحدد عمودًا؛ صف واحد لكل عمود). راجع [USER&#95;PRIVILEGES](#user_privileges) للاطلاع على القيود المشتركة بين جميع العروض `*_PRIVILEGES`.
+
+الأعمدة:
+
+* `grantee` ([String](/ar/reference/data-types/string)) — المستخدم أو الدور الممنوح له الامتياز، بصيغة MySQL: `'name'@'%'`.
+* `table_catalog` ([String](/ar/reference/data-types/string)) — القيمة دائمًا `def`.
+* `table_schema` ([String](/ar/reference/data-types/string)) — اسم قاعدة البيانات.
+* `table_name` ([String](/ar/reference/data-types/string)) — اسم الجدول.
+* `column_name` ([String](/ar/reference/data-types/string)) — اسم العمود.
+* `privilege_type` ([String](/ar/reference/data-types/string)) — اسم الامتياز.
+* `is_grantable` ([String](/ar/reference/data-types/string)) — `YES` إذا كان الامتياز ممنوحًا مع `WITH GRANT OPTION`، وإلا فـ`NO`.
+* `grantee_type` ([String](/ar/reference/data-types/string)) — `USER` أو `ROLE`. عمود غير قياسي: ففي ClickHouse قد يحمل مستخدم ودور الاسم نفسه، ويتيح هذا العمود التمييز بينهما.
