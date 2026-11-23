@@ -20,6 +20,7 @@
 ///   benchmark_thread_pool --benchmark_filter='^FreePool/cpus:4/pool_size:256/batch:16/work_ns:0/iterations:1/manual_time/threads:16$'
 
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <benchmark/benchmark.h>
@@ -247,20 +248,7 @@ struct Run
         {
             std::lock_guard lock(unit_error_mutex);
             if (!unit_failed.exchange(true))
-            {
-                try
-                {
-                    throw;
-                }
-                catch (const std::exception & e)
-                {
-                    unit_error = e.what();
-                }
-                catch (...)
-                {
-                    unit_error = "unknown exception";
-                }
-            }
+                unit_error = DB::getCurrentExceptionMessage(/* with_stacktrace */ false);
             return 0;
         }
     }
