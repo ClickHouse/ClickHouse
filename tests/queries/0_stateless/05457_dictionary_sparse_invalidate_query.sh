@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 # `invalidate_query` must notice changes when a `MergeTree` result column uses `Sparse` serialization.
 # Check both the local `ClickHouse` source and the remote path through 127.0.0.2.
 
