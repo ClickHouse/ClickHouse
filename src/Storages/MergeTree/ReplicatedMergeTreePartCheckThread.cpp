@@ -403,14 +403,26 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 
             zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true, part_name);
 
+            /// Once `need_stop` is observed, this check stays cancelled even if `start` resets the flag meanwhile.
+            /// `checkDataPart` stops reading a file in the middle on cancellation, so a check that resumed after
+            /// that would compare a checksum of a partially read file and report a healthy part as broken.
+            bool cancelled = false;
+            auto is_cancelled = [this, &cancelled]
+            {
+                if (need_stop)
+                    cancelled = true;
+                return cancelled;
+            };
+
             checkDataPart(
                 part,
                 /* require_checksums */true,
                 is_broken_projection,
-                [this] { return need_stop.load(); },
+                is_cancelled,
                 throw_on_broken_projection);
 
-            bool cancelled = need_stop;
+            /// A stop requested after the last poll inside `checkDataPart` still cancels the check.
+            is_cancelled();
             fiu_do_on(FailPoints::check_table_inject_part_check_cancelled, { cancelled = true; });
             if (cancelled)
             {
