@@ -21,7 +21,8 @@ if (ENABLE_SILK AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/silk/include")
 endif ()
 
 if (ENABLE_SILK)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_LIBCPP_HAS_THREAD_API_EXTERNAL=1 -isystem ${ClickHouse_SOURCE_DIR}/base/libcxx-external-threading")
+    # _LIBCPP_HAS_THREAD_API_PTHREAD=0 disables libc++abi's recursive static initialization check: it compares OS thread ids, which fibers share.
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_LIBCPP_HAS_THREAD_API_EXTERNAL=1 -D_LIBCPP_HAS_THREAD_API_PTHREAD=0 -isystem ${ClickHouse_SOURCE_DIR}/base/libcxx-external-threading")
 endif ()
 
 disable_dummy_launchers_if_needed()

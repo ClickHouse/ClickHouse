@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/NoDumpAllocator.h>
-#include <Common/Silk/FiberScheduler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
