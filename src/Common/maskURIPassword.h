@@ -186,11 +186,13 @@ inline bool maskURIPassword(std::string & uri, const std::string_view authority_
         switch (const char c = uri[i]; c)
         {
             case '@': {
-                if (current_end_matches(tokens_and_offset, COLON, AT | PIPE, PIPE | COLON))
+                if (current_end_matches(tokens_and_offset, COLON, AT | PIPE | AUTHORITY_TERMINATOR, PIPE | COLON))
                 {
                     tokens_and_offset.pop_back();
                     tokens_and_offset.back() = {AT, i};
                 }
+                else if (current_end_matches(tokens_and_offset, SCHEMA_SEPARATOR, PIPE))
+                    tokens_and_offset.back() = {AT, i};
                 else if (
                     tokens_and_offset.size() == 2
                     && current_end_matches(tokens_and_offset, AUTHORITY_TERMINATOR | SCHEMA_SEPARATOR, COLON))
