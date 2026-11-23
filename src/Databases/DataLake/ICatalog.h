@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SecretString.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -11,6 +12,7 @@
 #include <Poco/JSON/Object.h>
 
 #include <functional>
+#include <memory>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -27,6 +29,10 @@ using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
 std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type);
+
+/// Percent-encodes the bytes a URI cannot carry raw (controls, space, DEL, non-ASCII, `?`, `#`) and every `%` that
+/// `S3::URI` would read literally: one that does not start an escape, or any `%` when the URL has a raw `?`.
+std::string encodeLocationForURI(std::string_view location);
 
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
@@ -72,39 +78,40 @@ public:
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
     TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
 
-    bool hasLocation() const;
-    bool hasSchema() const;
-    bool hasStorageCredentials() const;
-    bool hasDataLakeSpecificProperties() const;
+    [[nodiscard]] bool hasLocation() const;
+    [[nodiscard]] bool hasSchema() const;
+    [[nodiscard]] bool hasStorageCredentials() const;
+    [[nodiscard]] bool hasDataLakeSpecificProperties() const;
 
-    void setLocation(const std::string & location_);
-    std::string getLocation() const;
-    std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
-    std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
+    void setLocation(std::string_view location_);
+    [[nodiscard]] std::string getLocation() const;
+    [[nodiscard]] std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
+    [[nodiscard]] std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
-    std::string getEndpoint() const { return endpoint; }
+    [[nodiscard]] std::string getEndpoint() const { return endpoint; }
 
     void setSchema(const DB::NamesAndTypesList & schema_);
-    const DB::NamesAndTypesList & getSchema() const;
+    [[nodiscard]] const DB::NamesAndTypesList & getSchema() const;
 
     void setStorageCredentials(std::shared_ptr<IStorageCredentials> credentials_);
-    std::shared_ptr<IStorageCredentials> getStorageCredentials() const;
+    [[nodiscard]] std::shared_ptr<IStorageCredentials> getStorageCredentials() const;
 
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
-    std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
+    [[nodiscard]] std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
     void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
-    std::optional<std::string> getTableUUID() const { return table_uuid; }
+    [[nodiscard]] std::optional<std::string> getTableUUID() const { return table_uuid; }
     void setTableFormat(DataLakeTableFormat format) { table_format = format; }
-    DataLakeTableFormat getTableFormat() const { return table_format; }
+    [[nodiscard]] DataLakeTableFormat getTableFormat() const { return table_format; }
 
-    bool requiresLocation() const { return with_location; }
-    bool requiresSchema() const { return with_schema; }
-    bool requiresCredentials() const { return with_storage_credentials; }
-    bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
+    [[nodiscard]] bool requiresLocation() const { return with_location; }
+    [[nodiscard]] bool requiresSchema() const { return with_schema; }
+    [[nodiscard]] bool requiresCredentials() const { return with_storage_credentials; }
+    [[nodiscard]] bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
 
-    StorageType getStorageType() const;
+    [[nodiscard]] StorageType getStorageType() const;
+    [[nodiscard]] bool isS3Location() const;
 
     /// Some catalogs (Unity or Glue) may store not only Iceberg/DeltaLake tables but other kinds of "tables"
     /// as simple files or some in-memory tables, or even DataLake tables but in some private storages.
@@ -119,8 +126,8 @@ public:
             reason_why_table_is_not_readable = reason;
         }
     }
-    bool isDefaultReadableTable() const { return is_default_readable_table; }
-    std::string getReasonWhyTableIsUnreadable() const { return reason_why_table_is_not_readable; }
+    [[nodiscard]] bool isDefaultReadableTable() const { return is_default_readable_table; }
+    [[nodiscard]] std::string getReasonWhyTableIsUnreadable() const { return reason_why_table_is_not_readable; }
 
 private:
     /// Starts with s3://, file://, etc.
@@ -158,7 +165,7 @@ private:
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
 
-    std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
+    [[nodiscard]] std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
 };
 
 
@@ -201,18 +208,18 @@ struct CatalogSettings
 {
     String storage_endpoint;
     String aws_access_key_id;
-    String aws_secret_access_key;
+    DB::SecretString aws_secret_access_key;
     String region;
     String aws_role_arn;
     String aws_role_session_name;
     String aws_external_id;
 
-    DB::SettingsChanges allChanged() const;
+    [[nodiscard]] DB::SettingsChanges allChanged() const;
 };
 
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
-class ICatalog
+class ICatalog : public std::enable_shared_from_this<ICatalog>
 {
 public:
     using Namespaces = std::vector<std::string>;
@@ -220,30 +227,30 @@ public:
 
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
-    virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
-    virtual DataLakeTableFormat getTableFormat(const TableMetadata & table_metadata) const = 0;
-    std::string_view getTableEngineName(const TableMetadata & table_metadata) const;
+    [[nodiscard]] virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
+    [[nodiscard]] virtual DataLakeTableFormat getTableFormat(const TableMetadata & table_metadata) const = 0;
+    [[nodiscard]] std::string_view getTableEngineName(const TableMetadata & table_metadata) const;
 
     virtual ~ICatalog() = default;
 
     /// Does catalog have any tables?
-    virtual bool empty() const = 0;
+    [[nodiscard]] virtual bool empty() const = 0;
 
     /// Fetch the list of tables (names contain full namespaces). Each entry carries an
     /// `is_readable` flag so listings can drop unreadable tables without a metadata fetch.
-    virtual CatalogTables getTables() const = 0;
+    [[nodiscard]] virtual CatalogTables getTables() const = 0;
 
     /// Enumerate every namespace as a full dot-separated path (hierarchical catalogs
     /// return every nested level; flat catalogs their single-level names).
-    virtual Namespaces getNamespaces() const = 0;
+    [[nodiscard]] virtual Namespaces getNamespaces() const = 0;
 
     /// Fetch the list of tables restricted by the `name` predicate (see `TableNameFilter`);
     /// each entry carries an `is_readable` flag like getTables(). Default impl prunes
     /// namespaces via `getNamespaces()`.
-    virtual CatalogTables getTables(const TableNameFilter & filter) const;
+    [[nodiscard]] virtual CatalogTables getTables(const TableNameFilter & filter) const;
 
     /// Check that a table exists in a given namespace.
-    virtual bool existsTable(
+    [[nodiscard]] virtual bool existsTable(
         const std::string & namespace_naem,
         const std::string & table_name) const = 0;
 
@@ -263,9 +270,9 @@ public:
 
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
-    virtual std::optional<StorageType> getStorageType() const = 0;
+    [[nodiscard]] virtual std::optional<StorageType> getStorageType() const = 0;
 
-    virtual std::optional<std::string> getDefaultTableLocation(
+    [[nodiscard]] virtual std::optional<std::string> getDefaultTableLocation(
         const std::string & namespace_name,
         const std::string & table_name) const;
 
@@ -274,18 +281,30 @@ public:
     /// the data refuses to create a namespace over a plain directory those files create.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
 
+    /// Creates a table at the default location of the catalog. The catalog writes the first metadata file.
+    /// Requires `writesInitialMetadata`.
+    virtual void createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const;
+
     /// Creates the namespace unless it already exists.
     virtual void createNamespaceIfNotExists(const String & namespace_name) const;
 
-    virtual bool managesTableLocation() const { return false; }
+    [[nodiscard]] virtual bool managesTableLocation() const { return false; }
 
-    virtual bool assignsLocationToNewNamespaces() const { return false; }
+    [[nodiscard]] virtual bool assignsLocationToNewNamespaces() const { return false; }
 
     /// True when the catalog writes the first metadata file itself on create. The client must not prewrite it.
-    virtual bool writesInitialMetadata() const { return false; }
+    [[nodiscard]] virtual bool writesInitialMetadata() const { return false; }
 
     /// Updates metadata in catalog.
-    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+    /// `base_catalog_metadata_location` is the metadata pointer the commit was built on, exactly as the catalog returned it.
+    /// Catalogs that only store a pointer (e.g. Glue) reject the commit unless the pointer still names it.
+    [[nodiscard]] virtual bool updateMetadata(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
+        Poco::JSON::Object::Ptr new_snapshot,
+        Poco::JSON::Object::Ptr new_metadata) const;
 
     /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
     /// `new_metadata_path` is the path of the freshly written `vN.metadata.json`; it is used by
@@ -294,10 +313,11 @@ public:
     /// catalog is expected to currently have - used to build the optimistic-concurrency requirement
     /// (`assert-current-schema-id`) on transactional catalogs (e.g. Iceberg REST).
     /// Returns `false` on a recoverable conflict so the caller can retry, throws otherwise.
-    virtual bool updateSchema(
+    [[nodiscard]] virtual bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
+        const String & base_catalog_metadata_location,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const;
 
@@ -307,7 +327,7 @@ public:
     /// the commit is rejected if the table or any of its references has changed since.
     /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry,
     /// throws otherwise.
-    virtual Poco::JSON::Object::Ptr removeSnapshots(
+    [[nodiscard]] virtual Poco::JSON::Object::Ptr removeSnapshots(
         const String & namespace_name,
         const String & table_name,
         Poco::JSON::Object::Ptr base_metadata,
@@ -324,7 +344,7 @@ public:
     /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
     /// So the REST catalog is transactional.
     /// The Glue catalog does not support such operation.
-    virtual bool isTransactional() const { return false; }
+    [[nodiscard]] virtual bool isTransactional() const { return false; }
 
     virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)
@@ -362,7 +382,7 @@ public:
 protected:
     /// List tables directly in `namespace_name` (non-recursive), as fully-qualified
     /// `namespace.table` entries carrying an `is_readable` flag like getTables().
-    virtual CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
+    [[nodiscard]] virtual CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
 
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
