@@ -262,9 +262,20 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
         options.ignore_rename_columns = true;
-        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
+        /// The synthesized query names a resolved table: it is read as written, like in `resolveTable`. A table function is user-written.
+        ContextPtr analysis_context = context;
+        if (reading_from_table)
+        {
+            auto as_written_context = Context::createCopy(context);
+            as_written_context->setAllowCompoundTableIdentifierQualification(false);
+            analysis_context = std::move(as_written_context);
+        }
+
+        InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), analysis_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(context);
+        if (analysis_context != context)
+            reading_plan.addInterpreterContext(analysis_context);
     }
     else
     {
