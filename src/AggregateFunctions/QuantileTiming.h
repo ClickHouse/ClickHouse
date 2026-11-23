@@ -643,13 +643,15 @@ public:
                 if (unlikely(mediumIsWorthToConvertToLarge()))
                 {
                     mediumToLarge();
-                    large->insertChecked(x);
+                    large->insert(x);
                 }
                 else
                     medium.insert(x);
             }
             else
-                large->insertChecked(x);
+                /// A state that rows are added to one by one is built from such rows, and its count grows by one, so the
+                /// unchecked insertion is enough and keeps this loop fast.
+                large->insert(x);
         }
     }
 
