@@ -1,5 +1,7 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -130,6 +132,29 @@ namespace
 bool isOptimizeRowOrderExplicitlySet(const SettingsChanges & settings_changes)
 {
     return settings_changes.tryGet("optimize_row_order") != nullptr;
+}
+
+/// Prediction of the part size for choosing its format: like `Block::bytes`, but the nested default that a NULL
+/// carries is not counted, because it compresses to nothing.
+size_t estimatePartSize(const Block & block)
+{
+    size_t res = 0;
+    for (const auto & elem : block)
+    {
+        if (!elem.column)
+            continue;
+
+        size_t bytes = elem.column->byteSize();
+        size_t null_defaults = 0;
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
+        {
+            auto one_default = nullable->getNestedColumn().cloneEmpty();
+            one_default->insertDefault();
+            null_defaults = countBytesInFilter(nullable->getNullMapData()) * one_default->byteSize();
+        }
+        res += bytes - std::min(bytes, null_defaults);
+    }
+    return res;
 }
 
 }
@@ -1084,7 +1109,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// The part directory name can be non-unique because of leftovers of previous runs.
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
-    auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
+    auto part_format = data.choosePartFormat(estimatePartSize(block), block.rows(), new_part_level, /*projection =*/nullptr);
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), PartDirIntent::CreateFresh)
         .withPartFormat(part_format)
         .withPartInfo(new_part_info)
@@ -1319,7 +1344,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
+    part_type = data.choosePartFormat(estimatePartSize(block), block.rows(), parent_part->info.level, &projection).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
