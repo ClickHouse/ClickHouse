@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 
+#include <Common/SecretString.h>
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
 #include <Common/SettingsChanges.h>
@@ -60,13 +61,13 @@ public:
 
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
-        const String & user_, const String & password_,
+        const String & user_, std::string_view password_,
         const String & proto_send_chunked_, const String & proto_recv_chunked_,
         const SSHKey & ssh_private_key_,
         const String & jwt_,
         const String & quota_key_,
         const String & cluster_,
-        const String & cluster_secret_,
+        std::string_view cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
@@ -230,7 +231,7 @@ private:
     UInt16 port;
     String default_database;
     String user;
-    String password;
+    SecretString password;
     String proto_send_chunked;
     String proto_recv_chunked;
     String proto_send_chunked_srv;
@@ -246,7 +247,7 @@ private:
 
     /// For inter-server authorization
     String cluster;
-    String cluster_secret;
+    SecretString cluster_secret;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2

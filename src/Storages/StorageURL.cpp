@@ -140,11 +140,11 @@ static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 ar
                                                     "url, name of used format (taken from file extension by default), "
                                                     "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
-static const std::unordered_set<std::string_view> required_configuration_keys = {
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> required_configuration_keys = {
     "url",
 };
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "format",
     "compression",
     "compression_method",
@@ -190,14 +190,14 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
-String getSampleURI(String uri, ContextPtr context)
+String getSampleURI(String uri, ContextPtr context, const RemoteDescriptionCaller & caller)
 {
     if (urlWithGlobs(uri))
     {
         /// Only the first address is needed, to read the hive partitioning and the virtual columns off
         /// its path, so the rest of the pattern is never generated and never counted against the limit.
         RemoteDescriptionGenerator generator(
-            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller, '|');
         String first_uri;
         if (generator.next(first_uri))
             return first_uri;
@@ -225,7 +225,8 @@ IStorageURLBase::IStorageURLBase(
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    const RemoteDescriptionCaller & glob_caller_)
     : IStorage(table_id_)
     , uri(uri_)
     , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
@@ -235,6 +236,7 @@ IStorageURLBase::IStorageURLBase(
     , http_method(http_method_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
+    , glob_caller(glob_caller_)
 {
     if (format_name != "auto")
         FormatFactory::instance().checkFormatName(format_name);
@@ -245,16 +247,18 @@ IStorageURLBase::IStorageURLBase(
     {
         ColumnsDescription columns;
         if (format_name == "auto")
-            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_);
+            std::tie(columns, format_name)
+                = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_, glob_caller);
         else
-            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_, glob_caller);
 
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (format_name == "auto")
-            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_).second;
+            format_name
+                = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_, glob_caller).second;
 
         /// We don't allow special columns in URL storage.
         if (!columns_.hasOnlyOrdinary())
@@ -269,7 +273,7 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    const auto sample_path = getSampleURI(uri, context_);
+    const auto sample_path = getSampleURI(uri, context_, glob_caller);
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
         sample_path,
@@ -335,9 +339,12 @@ namespace
         return hash.get128();
     }
 
-    StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
+    /// `description` is the pattern `uri` was generated from: when the failover options of `uri` alone
+    /// exceed the limit, the message reports the addresses of the whole pattern.
+    StorageURLSource::FailoverOptions
+    getFailoverOptions(const String & uri, const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller)
     {
-        return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
+        return parseReplicasOfShard(uri, description, max_addresses, caller);
     }
 }
 
@@ -350,16 +357,19 @@ static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-        : max_addresses_upper_bound(max_addresses)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller_, const std::optional<FormatSettings> & format_settings_)
+        : description(uri_)
+        , caller(caller_)
+        , max_addresses_upper_bound(max_addresses)
         , filter_virtual_columns(virtual_columns)
         , filter_hive_columns(hive_columns)
+        , filter_format_settings(format_settings_)
         , filter_context(context)
     {
         /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
         /// would break it. It still goes through this iterator, for the `_path` / `_file` filter.
         if (split_uris)
-            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, "url");
+            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, caller_, '|');
         else
             single_uri = uri_;
 
@@ -418,37 +428,43 @@ public:
     /// How many streams are worth starting when the caller wants up to `requested` of them. Every
     /// stream asks for an address as soon as it starts, so starting more of them than there are
     /// servable addresses forces another batch at once - and generating one past the limit throws,
-    /// failing a query whose surviving addresses were all within it. When a filter pruned some of the
-    /// generated addresses, batches are prefetched until `requested` survivors are buffered, the
+    /// failing a query whose surviving addresses were all within it. Unless the whole pattern is known
+    /// to fit into the limit, batches are prefetched until `requested` survivors are buffered, the
     /// pattern is exhausted, or the limit is reached - so a pattern whose first survivors appear
     /// after the first batch still gets its parallelism. Rejected addresses count as generated:
-    /// prefetching stops at the limit rather than walking an unbounded pattern.
+    /// prefetching stops at the limit rather than walking an unbounded pattern, and it never asks
+    /// past the limit itself - that is left to a stream.
     size_t sizeForStreams(size_t requested)
     {
         std::lock_guard lock(mutex);
         if (exact_size)
             return *exact_size;
 
-        if (!has_filter)
+        /// When the whole pattern fits into the limit, a stream that finds nothing left simply finishes,
+        /// so the streams are sized from the pattern. The limit is on the addresses of both stages, but
+        /// `totalCount` only counts the URLs, so it tells that the whole pattern fits only when no URL
+        /// has failover options (`|`): with `first,b{1|2},c` and a limit of three the URLs are three,
+        /// but the addresses are four.
+        /// Not exhausted, so there is a generator: a single URI is exhausted at once.
+        const auto total = generator->totalCount();
+        const bool whole_pattern_fits = !limit_exceeded && !description.contains('|') && total && *total <= max_addresses_upper_bound;
+
+        /// Otherwise, with no filter, the streams are sized below from the buffered URLs, all of which fit
+        /// into the limit: a stream started for a URL beyond them would ask the generator past the limit
+        /// while another stream already reads the URLs that fit - this happens with a predicate on a
+        /// physical column, which keeps the query from being reduced to one stream by its `LIMIT`.
+        if (!has_filter && whole_pattern_fits)
             return upperBound();
 
         /// The buffered addresses are not pruned yet, and how many of them survive is unknown until the
-        /// pipeline runs. When the whole pattern fits into the limit, a stream that finds nothing left
-        /// simply finishes, so the streams are sized from the pattern as if there were no filter.
-        /// Otherwise every stream asks for an address as soon as it starts, and a stream started for an
-        /// address the filter then rejects would ask the generator past the limit while another stream
-        /// already reads the one survivor. One stream reads exactly what a ready filter would have
-        /// selected; it prunes the batch on its first `next`.
+        /// pipeline runs. Unless the whole pattern fits into the limit, every stream asks for an address
+        /// as soon as it starts, and a stream started for an address the filter then rejects would ask
+        /// the generator past the limit while another stream already reads the one survivor. One stream
+        /// reads exactly what a ready filter would have selected; it prunes the batch on its first `next`.
         if (filter_deferred)
-        {
-            /// Not exhausted, so there is a generator: a single URI is exhausted at once.
-            const auto total = generator->totalCount();
-            if (total && *total <= max_addresses_upper_bound)
-                return upperBound();
-            return 1;
-        }
+            return whole_pattern_fits ? upperBound() : 1;
 
-        while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
+        while (batch.size() - batch_index < requested && !exhausted && !limit_exceeded && generated < max_addresses_upper_bound)
             fillBatch();
 
         /// Never zero: when everything buffered was pruned and the limit is reached, the one stream
@@ -459,7 +475,7 @@ public:
 private:
     /// Not exhausted, so at least one more address exists beyond the batch; the query can never
     /// consume more than the limit anyway.
-    size_t upperBound() const TSA_REQUIRES(mutex)
+    [[nodiscard]] size_t upperBound() const TSA_REQUIRES(mutex)
     {
         /// A non-exhausted iterator always has a generator: a single URI is exhausted at once.
         const auto total = generator->totalCount();
@@ -468,9 +484,14 @@ private:
 
     /// Generates the next portion of addresses, applies the `_path` / `_file` filter to it and
     /// appends the survivors to `batch`, keeping the buffered unconsumed ones. Appends nothing only
-    /// when the pattern is exhausted or the whole portion was filtered out.
+    /// when the pattern is exhausted, the whole portion was filtered out, or the limit is reached while
+    /// unconsumed addresses are still buffered.
     void fillBatch() TSA_REQUIRES(mutex)
     {
+        /// Everything within the limit has been generated, and there is more.
+        if (limit_exceeded)
+            throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses_upper_bound);
+
         batch.erase(batch.begin(), batch.begin() + batch_index);
         batch_index = 0;
 
@@ -488,22 +509,41 @@ private:
         else
         {
             /// Never generate more addresses than the limit allows. Asking for one past it is what makes
-            /// the generator report that the pattern is too large - and only a query that reads that far
-            /// ever asks.
+            /// the pattern reported as too large - and only a query that reads that far ever asks.
+            /// The generator yields the URLs, and the limit is on the addresses of both stages together,
+            /// as for `remote`, so the failover options (`|`) of every URL are counted here, before the
+            /// `_path` / `_file` filter: a URL the filter rejects is still generated, and
+            /// `example-{1,2}-{1|2}` is four addresses, not two.
+            const size_t generated_before = generated;
             size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses_upper_bound - std::min(max_addresses_upper_bound, generated));
             if (target == 0)
                 target = 1;
 
-            fresh.reserve(target);
             String uri;
-            while (fresh.size() < target)
+            while (generated - generated_before < target)
             {
                 if (!generator->next(uri))
                     break;
-                ++generated;
+                /// The URL that crosses the limit is not buffered: the query may still stop at one of
+                /// the addresses before it, and only if it does not, the next batch reports the limit.
+                /// This holds for a URL whose failover options alone exceed the limit as well, so they
+                /// are counted without throwing.
+                const auto options = countReplicasOfShard(uri, description, max_addresses_upper_bound, caller);
+                if (!options || generated + *options > max_addresses_upper_bound)
+                {
+                    limit_exceeded = true;
+                    break;
+                }
+                generated += *options;
                 fresh.push_back(std::move(uri));
             }
-            exhausted = generator->isExhausted();
+
+            /// `sizeForStreams` prefetches while earlier survivors are still buffered: those can be read,
+            /// and the query may stop at one of them, so the limit is reported only when nothing is left.
+            if (fresh.empty() && batch.empty() && limit_exceeded)
+                throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses_upper_bound);
+
+            exhausted = !limit_exceeded && generator->isExhausted();
         }
 
         if (has_filter && !fresh.empty())
@@ -540,14 +580,19 @@ private:
         for (const auto & uri : uris)
             paths.push_back(Poco::URI(uri).getPath());
 
-        VirtualColumnUtils::filterByPathOrFile(
-            uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+        VirtualColumnUtils::filterSourcesByIndexes(
+            uris,
+            VirtualColumnUtils::getFilterByPathAndFileIndexes(
+                paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context, filter_format_settings));
     }
 
     std::mutex mutex;
 
     std::optional<RemoteDescriptionGenerator> generator TSA_GUARDED_BY(mutex);
     String single_uri;
+    /// The pattern and the surface that expands it, for the error message.
+    const String description;
+    const RemoteDescriptionCaller caller;
     const size_t max_addresses_upper_bound;
 
     bool has_filter = false;
@@ -556,17 +601,21 @@ private:
     bool filter_deferred TSA_GUARDED_BY(mutex) = false;
     const NamesAndTypesList filter_virtual_columns;
     const NamesAndTypesList filter_hive_columns;
+    const std::optional<FormatSettings> filter_format_settings;
     const ContextPtr filter_context;
 
     Strings batch TSA_GUARDED_BY(mutex);
     size_t batch_index TSA_GUARDED_BY(mutex) = 0;
+    /// The addresses generated so far, counting the failover options of every URL.
     size_t generated TSA_GUARDED_BY(mutex) = 0;
     bool exhausted TSA_GUARDED_BY(mutex) = false;
+    /// The next URL would cross the limit; the next batch reports it.
+    bool limit_exceeded TSA_GUARDED_BY(mutex) = false;
     std::optional<size_t> exact_size;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context, const RemoteDescriptionCaller & caller, const std::optional<FormatSettings> & format_settings_)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, split_uris, max_addresses, predicate, virtual_columns, hive_columns, context, caller, format_settings_)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -799,6 +848,7 @@ StorageURLSource::StorageURLSource(
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
+            input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
             input_format->setBucketsToRead(buckets_to_read);
 
             if (need_only_count)
@@ -1508,7 +1558,8 @@ public:
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
-        const String & http_method_)
+        const String & http_method_,
+        PartitionedWriteAccessCheck write_access_check_)
         : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
@@ -1519,12 +1570,17 @@ public:
         , compression_method(compression_method_)
         , headers(headers_)
         , http_method(http_method_)
+        , write_access_check(std::move(write_access_check_))
     {
     }
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
         std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+
+        /// The partition id comes from the data, so its destination is checked before anything is written to it.
+        if (write_access_check)
+            write_access_check(context, partition_path);
 
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
@@ -1542,6 +1598,7 @@ private:
     const CompressionMethod compression_method;
     const HTTPHeaderEntries headers;
     const String http_method;
+    const PartitionedWriteAccessCheck write_access_check;
 };
 
 std::string IStorageURLBase::getReadMethod() const
@@ -1579,16 +1636,19 @@ namespace
     class URLReadBufferIterator : public IReadBufferIterator, WithContext
     {
     public:
-        /// `url_producer_` yields the addresses to try, one at a time. Inference stops at the first
-        /// address it can read from, so a pattern is only expanded as far as that.
+        /// `url_producer_` yields the addresses to try, one at a time, generated from `description_`.
+        /// Inference stops at the first address it can read from, so a pattern is only expanded as far
+        /// as that.
         URLReadBufferIterator(
             URLProducer url_producer_,
+            const String & description_,
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
             const HTTPHeaderEntries & headers_,
             const std::optional<FormatSettings> & format_settings_,
-            const ContextPtr & context_)
-            : WithContext(context_), url_producer(std::move(url_producer_)), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
+            const ContextPtr & context_,
+            const RemoteDescriptionCaller & caller_)
+            : WithContext(context_), url_producer(std::move(url_producer_)), description(description_), caller(caller_), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
         {
             produceMoreURLs();
         }
@@ -1728,18 +1788,43 @@ namespace
         /// is the only way inference learns that there is nothing left to try.
         bool produceMoreURLs()
         {
-            const size_t size_before = url_options_to_check.size();
             const size_t max_addresses = getContext()->getSettingsRef()[Setting::glob_expansion_max_elements];
 
+            /// Everything within the limit has been tried, and there is more.
+            if (limit_exceeded)
+                throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses);
+
+            const size_t size_before = url_options_to_check.size();
+            const size_t addresses_before = buffered_addresses;
+
             /// As in the glob iterator: stay within the limit, and ask for one past it only when the
-            /// caller has read everything that is allowed, so that it is the reader that hits it.
-            size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses - std::min(max_addresses, size_before));
+            /// caller has read everything that is allowed, so that it is the reader that hits it. The
+            /// limit is on the addresses of both stages together, as for reading, so the failover
+            /// options (`|`) of every URL count, not the URLs: `example-{1,2}-{1|2}` is four addresses.
+            size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses - std::min(max_addresses, buffered_addresses));
             if (target == 0)
                 target = 1;
 
             String url;
-            while (url_options_to_check.size() - size_before < target && url_producer(url))
-                url_options_to_check.push_back(getFailoverOptions(url, max_addresses));
+            while (buffered_addresses - addresses_before < target && url_producer(url))
+            {
+                /// The URL that crosses the limit is not buffered: inference may still stop at one of
+                /// the addresses before it, and only if it does not, the next call reports the limit.
+                /// This holds for a URL whose failover options alone exceed the limit as well, so they
+                /// are counted without throwing before they are materialized, as in the glob iterator.
+                const auto count = countReplicasOfShard(url, description, max_addresses, caller);
+                if (!count || buffered_addresses + *count > max_addresses)
+                {
+                    limit_exceeded = true;
+                    break;
+                }
+                auto options = getFailoverOptions(url, description, max_addresses, caller);
+                buffered_addresses += options.size();
+                url_options_to_check.push_back(std::move(options));
+            }
+
+            if (url_options_to_check.size() == size_before && limit_exceeded)
+                throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses);
 
             return url_options_to_check.size() != size_before;
         }
@@ -1824,7 +1909,13 @@ namespace
         }
 
         URLProducer url_producer;
+        const String description;
+        const RemoteDescriptionCaller caller;
         std::vector<std::vector<String>> url_options_to_check;
+        /// The failover options of all URLs in `url_options_to_check`.
+        size_t buffered_addresses = 0;
+        /// The producer generated a URL whose options do not fit into the limit any more.
+        bool limit_exceeded = false;
         size_t current_index = 0;
         size_t scanned_options = 0;
         String current_url_option;
@@ -1842,7 +1933,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const RemoteDescriptionCaller & caller)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
     /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
@@ -1858,7 +1950,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     if (urlWithGlobs(uri))
     {
         auto generator = std::make_shared<RemoteDescriptionGenerator>(
-            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller, '|');
         url_producer = [generator](String & out) { return generator->next(out); };
     }
     else
@@ -1873,7 +1965,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
         };
     }
 
-    URLReadBufferIterator read_buffer_iterator(url_producer, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(url_producer, uri, format, compression_method, headers, format_settings, context, caller);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1885,9 +1977,10 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const RemoteDescriptionCaller & caller)
 {
-    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context).first;
+    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context, caller).first;
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromData(
@@ -1895,9 +1988,10 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
     const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const RemoteDescriptionCaller & caller)
 {
-    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context);
+    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context, caller);
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -1961,6 +2055,8 @@ public:
     /// and only for a sort column it physically reads from the file.
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
 
     ReadFromURL(
         const Names & column_names_,
@@ -2032,6 +2128,12 @@ bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_c
     /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
     /// would come from other values than the ones the reader compares against it.
     return !info.columns_description.hasDefault(sort_column.name);
+}
+
+bool ReadFromURL::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
 }
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2136,17 +2238,20 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     }
 
     size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+    const auto & glob_caller = storage->glob_caller;
     is_url_with_globs = urlWithGlobs(storage->uri);
 
     if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
-            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses]()
+            [callback = context->getClusterFunctionReadTaskCallback(), max_addresses, caller = storage->glob_caller]()
             {
                 auto task = callback();
                 if (!task || task->isEmpty())
                     return StorageURLSource::FailoverOptions{};
-                return getFailoverOptions(task->path, max_addresses);
+                /// The worker only knows its task, not the pattern of the initiator, which counts the
+                /// failover options of every task against the limit before handing it out.
+                return parseRemoteDescription(task->path, 0, task->path.size(), '|', max_addresses, caller);
             });
     }
     else
@@ -2154,7 +2259,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
         /// Iterate through disclosed URLs and make a source for each file. Even a URL
         /// without globs must go through this iterator: it applies a deferred `_path`
         /// / `_file` filter before the source opens the URL.
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, is_url_with_globs, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context, glob_caller, storage->format_settings);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -2163,13 +2268,17 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return;
         }
 
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([glob_iterator, max_addresses]()
-        {
-            String next_uri = glob_iterator->next();
-            if (next_uri.empty())
-                return StorageURLSource::FailoverOptions{};
-            return getFailoverOptions(next_uri, max_addresses);
-        });
+        /// The failover options (`|`) of each URL are expanded here, as the URL is taken. The iterator
+        /// has already counted them against the limit when it generated the URL, before the `_path` /
+        /// `_file` filter, so the URLs the filter rejected count too.
+        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>(
+            [glob_iterator, max_addresses, caller = glob_caller, uri = storage->uri]()
+            {
+                String next_uri = glob_iterator->next();
+                if (next_uri.empty())
+                    return StorageURLSource::FailoverOptions{};
+                return getFailoverOptions(next_uri, uri, max_addresses, caller);
+            });
 
         num_streams = std::min(num_streams, glob_iterator->sizeForStreams(num_streams));
     }
@@ -2328,7 +2437,8 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            write_method);
+            write_method,
+            getPartitionedWriteAccessCheck());
     }
 
     return std::make_shared<StorageURLSink>(
@@ -2386,6 +2496,7 @@ StorageURL::StorageURL(
     const String & http_method_,
     ASTPtr partition_by_,
     bool distributed_processing_,
+    const RemoteDescriptionCaller & glob_caller_,
     bool is_replayed_definition_)
     : IStorageURLBase(
         uri_,
@@ -2400,7 +2511,8 @@ StorageURL::StorageURL(
         headers_,
         http_method_,
         partition_by_,
-        distributed_processing_)
+        distributed_processing_,
+        glob_caller_)
     , is_replayed_definition(is_replayed_definition_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
@@ -3526,6 +3638,7 @@ void registerStorageURL(StorageFactory & factory)
                     config.http_method,
                     partition_by,
                     /* distributed_processing */ false,
+                    tableEngineURLCaller(),
                     is_replayed_definition);
             }
 
@@ -3552,7 +3665,7 @@ void registerStorageURL(StorageFactory & factory)
                 object_storage_args.push_back(engine_arg->clone());
             StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false, is_replayed_definition);
 
-            auto configuration = std::make_shared<StorageWebConfiguration>();
+            auto configuration = std::make_shared<StorageWebConfiguration>(tableEngineURLCaller());
             configuration->is_replayed_definition = is_replayed_definition;
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
@@ -3602,7 +3715,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
-- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats#formats-overview).
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/reference/formats/index#formats-overview).
 
     If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 

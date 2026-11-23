@@ -257,7 +257,11 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
-option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+option(BUILD_STANDALONE_KEEPER "Deprecated: build keeper as a separate binary instead of a symlink to clickhouse" OFF)
+if (BUILD_STANDALONE_KEEPER)
+    message (WARNING "BUILD_STANDALONE_KEEPER is deprecated and will be removed: `clickhouse-keeper` is a symlink to the `clickhouse` binary, "
+        "which runs Keeper in the same way, and a separate binary costs another full ThinLTO link in every build.")
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -267,9 +271,7 @@ if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
-# Add a section with the hash of the compiled machine code for integrity checks.
-# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
-# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
+# Add a section with the hash of the compiled machine code for integrity checks. Only for official builds.
 if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
@@ -412,6 +414,17 @@ if (ARCH_AMD64 AND NOT SANITIZE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
+if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
+    # Sign return addresses, so that overwriting one on the stack cannot redirect control flow.
+    # `paciasp` and `autiasp` are no-ops on cores without `FEAT_PAuth` (before ARMv8.3), so the
+    # binary still runs there. Code must not be compiled for ARMv8.3 or later (by `-march` or a
+    # `target` attribute), because then the compiler emits `retaa`, which raises SIGILL on those
+    # cores; the compatibility check guards against it.
+    # Sanitizer builds are excluded, because the sanitizer runtimes do not strip the signature
+    # when they unwind, so their reports would show garbage frames.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
+endif()
+
 # Puts a canary between the locals and the return address and checks it before returning, so that an
 # overflow of a local buffer aborts instead of returning to an address the attacker wrote. 'strong'
 # instruments only the functions that can be overflowed - a local array, an address-taken local, an
@@ -437,6 +450,12 @@ if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
+# Trap when a value-returning C++ function reaches its end without a `return`. Not in sanitizer and fuzzer builds (the
+# UBSan ones report it), nor with Emscripten, which links its UBSan runtime for any UBSan check.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING AND NOT OS_WASM)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=return -fsanitize-trap=return")
+endif ()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
@@ -452,6 +471,9 @@ endif ()
 # Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
 # to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
 # llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+#
+# Under sanitizers compiler-rt intercepts `sincos`; `__real_sincos` is bound to llvm-libc's `sincos` as well
+# (see contrib/libllvmlibc-cmake), so the bits match `sin` and `cos` in every build.
 if (USE_MUSL)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
 endif ()
@@ -571,6 +593,21 @@ if (ENABLE_CFI AND NOT ENABLE_THINLTO)
         "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
 endif ()
 
+if (ENABLE_CFI_DIAGNOSTICS AND NOT ENABLE_CFI)
+    message (FATAL_ERROR "ENABLE_CFI_DIAGNOSTICS requires ENABLE_CFI.")
+endif ()
+
+# Both runtimes bundle `sanitizer_common`, so they cannot be linked together.
+if (ENABLE_CFI_DIAGNOSTICS AND ENABLE_XRAY)
+    message (FATAL_ERROR "ENABLE_CFI_DIAGNOSTICS is incompatible with ENABLE_XRAY.")
+endif ()
+
+# Rust std calls glibc's `__pthread_get_minstack` through a pointer from `dlsym`, which CFI rejects; the replacement
+# that keeps the call inside the program is in base/glibc-compatibility.
+if (ENABLE_CFI AND OS_LINUX AND NOT USE_MUSL AND NOT GLIBC_COMPATIBILITY)
+    message (FATAL_ERROR "ENABLE_CFI requires GLIBC_COMPATIBILITY or USE_MUSL on Linux.")
+endif ()
+
 if (ENABLE_CFI AND ENABLE_TESTS)
     message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
         "ThinLTO (required by CFI) is disabled when building tests. "
@@ -598,46 +635,39 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
+        # Do not verify every module with debug info again on each load and import; the LTO pipeline still verifies each module.
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-disable-auto-upgrade-debug-info")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
         # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
     endif()
 
     if (ENABLE_CFI)
-        # CFI checks: virtual dispatch type safety and bad downcasts via static_cast.
-        # cfi-icall is omitted because C function pointers in contrib libraries (compiled without
-        # CFI) would cause false positives. Start conservative; broaden after baseline is clean.
-        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
-        #
-        # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
-        # visibility the resulting binary crashes with SIGSEGV before main runs. Validated
-        # empirically by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with
-        # signal 11.
-        #
-        # That crash was originally attributed to inline-static singletons like
-        # `Context::global_context_instance` being duplicated per shared object. That is not the
-        # cause. Every `-Wunique-object-duplication` site has since been fixed (the warning now
-        # reports nothing under `-fvisibility=hidden`) and the crash is unchanged: it is
-        # `numa_init()`, a pre-main libc constructor, calling `free()` — which this binary
-        # interposes in `Common/malloc.cpp` — and reaching jemalloc before jemalloc has
-        # initialised. Whether it fires at all depends on static-initialisation order, so it can
-        # appear to come and go with unrelated changes. Fixing that is what would let CFI use
-        # `hidden`; the duplication fixes on their own do not.
-        # CFI vtable visibility is still satisfied for in-binary types because
-        # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
-        # the linker to treat all vtables as internal to the binary.
-        #
-        # CFI is left in the default trap mode: a violation executes an illegal instruction
-        # (SIGILL) and CI's core-dump handler yields a stack trace pinpointing the bad vcall/cast.
-        # Diagnostic mode (`-fno-sanitize-trap=cfi`, which prints a UBSan-style type/location
-        # report) is deliberately NOT used: it makes Clang link `libclang_rt.ubsan_standalone`,
-        # which this toolchain does not ship (only select compiler-rt libs are built from contrib),
-        # so even host tools like `protoc` fail to link — validated by WeeklyCFI run 28943752776.
-        # `-fno-sanitize-recover=cfi` is redundant in trap mode but kept as an explicit marker that
-        # a violation must never be continued past.
-        set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
+        # All CFI checks, in trap mode: a violation executes an illegal instruction (SIGILL).
+        # Clang checks (and devirtualizes) only classes with hidden LTO visibility, so C++ needs
+        # `-fvisibility=hidden`; symbols that the shared libc must see are marked with default
+        # visibility at their definitions. C has no classes, so it keeps the default visibility.
+        # Libraries that put `visibility("default")` on their classes would exempt them from CFI.
+        add_compile_definitions (_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS _LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS)
+        if (ENABLE_CFI_DIAGNOSTICS)
+            set (CFI_FLAGS "-fsanitize=cfi -fsanitize-recover=cfi -fno-sanitize-trap=cfi")
+            # For `__ubsan_default_options` in base/base/sanitizer_options.h.
+            add_compile_definitions (CFI_DIAGNOSTICS=1)
+        else ()
+            set (CFI_FLAGS "-fsanitize=cfi -fno-sanitize-recover=cfi -fsanitize-trap=cfi")
+        endif ()
+        set (CFI_FLAGS "${CFI_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/cmake/cfi-ignorelist.txt")
+        # Encode integer types by size, as `-Zsanitizer-cfi-normalize-integers` does for Rust: the type ids of an
+        # indirect call between C or C++ and Rust then match (the Rust code is checked in the same link, see
+        # contrib/corrosion-cmake).
+        set (CFI_FLAGS "${CFI_FLAGS} -fsanitize-cfi-icall-experimental-normalize-integers")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=default")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS} -fvisibility=hidden")
+        if (GLIBC_COMPATIBILITY)
+            # Rust std finds `__pthread_get_minstack` with `dlsym` (see base/glibc-compatibility/pthread_get_minstack.c).
+            set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--export-dynamic-symbol=__pthread_get_minstack")
+        endif ()
     endif ()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
@@ -663,7 +693,9 @@ option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 # Increase stack size on Musl. We need big stack for our recursive-descend parser
 # and for analyzer passes that recurse on deeply-nested join trees (e.g.
 # 1000-join queries). Match glibc's 8 MiB default; musl reads this from
-# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB). Our musl fork,
+# like glibc, uses a finite RLIMIT_STACK soft limit instead, so this only
+# applies when the limit is unlimited.
 if (USE_MUSL)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
@@ -762,8 +794,8 @@ endif ()
 
 # Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
 # then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
-# Resolving everything at startup costs nothing here because we link dynamically only against libc
-# and we forbid dlopen (see programs/main.cpp).
+# Resolving everything at startup costs nothing here because we link statically (musl) or dynamically
+# only against libc, and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
 # The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
 if (NOT OS_DARWIN)
@@ -804,6 +836,12 @@ enable_testing() # Enable for tests without binary
 
 set(ENABLE_OPENSSL_DYNAMIC_DEFAULT OFF)
 option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." ${ENABLE_OPENSSL_DYNAMIC_DEFAULT})
+
+# A shared libcrypto calls back into ClickHouse (e.g. certificate verification callbacks), and Clang CFI rejects every
+# call that crosses into or out of a library that is not part of the same link.
+if (ENABLE_CFI AND ENABLE_OPENSSL_DYNAMIC)
+    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_OPENSSL_DYNAMIC.")
+endif ()
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -848,6 +886,9 @@ macro (clickhouse_add_executable target)
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
         target_link_libraries (${target} PUBLIC clickhouse_new_delete)
+        if (TARGET pthread_get_minstack)
+            target_sources (${target} PRIVATE $<TARGET_OBJECTS:pthread_get_minstack>)
+        endif ()
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
         # is never used outside (it is declared as constructor) it is omitted
@@ -953,9 +994,9 @@ if (FUZZER)
                 # Targets compiled with -fno-sanitize=all must never be instrumented:
                 # a later -fsanitize=fuzzer-no-link overrides it and re-enables
                 # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
-                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
-                # runs before any coverage runtime exists, so every executable would
-                # crash at startup.
+                # runtimes (musl, clang_rt_*): their startup code (rcrt1 self-relocation,
+                # __init_libc) runs before relocations are applied and before any
+                # coverage runtime exists, so every executable would crash at startup.
                 #
                 # The PC table that -fsanitize=fuzzer-no-link implies is left out. `clickhouse_fuzzer`
                 # links every `src/` library into a single image that keeps outgrowing the 2 GiB reach of
@@ -1009,7 +1050,6 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")
