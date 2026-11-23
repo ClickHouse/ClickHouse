@@ -3,17 +3,25 @@
         <use_query_condition_cache>0</use_query_condition_cache>
     </settings>
 
-    <create_query>CREATE TABLE t_prewhere_json (id UInt64, j JSON(max_dynamic_paths = 0)) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE t_prewhere_json_v2 (id UInt64, j JSON(max_dynamic_paths = 0)) ENGINE = MergeTree ORDER BY id</create_query>
     <create_query>CREATE TABLE t_prewhere_map (id UInt64, m Map(String, String)) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', map_buckets_strategy = 'constant', max_buckets_in_map = 16, map_buckets_min_avg_size = 0</create_query>
 
-    <fill_query>INSERT INTO t_prewhere_json SELECT number, concat('{{"kind":"a","n":', toString(number), ',"payload":"', repeat('x', 2000), '"}}') FROM numbers_mt(3000000)</fill_query>
+    <!-- Every server reads the 24 parts this INSERT writes: a zero-level part keeps the JSON shared data as
+         `map_with_buckets` and a merged one as `advanced`, so reading `j.kind` costs more per row before a merge. -->
+    <fill_query>SYSTEM STOP MERGES t_prewhere_json_v2</fill_query>
+    <fill_query>INSERT INTO t_prewhere_json_v2 SELECT number, concat('{{"kind":"a","n":', toString(number), ',"payload":"', repeat('x', 2000), '"}}') FROM numbers_mt(3000000) SETTINGS max_block_size = 62500, min_insert_block_size_rows = 125000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 24 OR min(rows) != 125000 OR max(rows) != 125000 OR max(level) != 0) FROM system.parts WHERE database = currentDatabase() AND table = 't_prewhere_json_v2' AND active</fill_query>
     <fill_query>INSERT INTO t_prewhere_map SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(16)), arrayMap(i -> repeat('v', 60), range(16))) FROM numbers_mt(10000000)</fill_query>
 
     <!-- No row passes the first condition, so the rest of the column should not be read -->
-    <query>SELECT count() FROM t_prewhere_json WHERE j.kind = 'b' AND length(toString(j)) > 10</query>
-    <query>SELECT count() FROM t_prewhere_json WHERE j.kind = 'b' AND length(toString(j.payload)) > 10</query>
+    <query disabled="1">SELECT count() FROM t_prewhere_json WHERE j.kind = 'b' AND length(toString(j)) > 10</query>
+    <query disabled="1">SELECT count() FROM t_prewhere_json WHERE j.kind = 'b' AND length(toString(j.payload)) > 10</query>
     <query>SELECT count() FROM t_prewhere_map WHERE m['k1'] = 'x' AND length(toString(m)) > 10</query>
 
-    <drop_query>DROP TABLE IF EXISTS t_prewhere_json</drop_query>
+    <!-- Queries 0 and 1 on the fixed part layout of `t_prewhere_json_v2`; their table is not created any more. -->
+    <query>SELECT count() FROM t_prewhere_json_v2 WHERE j.kind = 'b' AND length(toString(j)) > 10</query>
+    <query>SELECT count() FROM t_prewhere_json_v2 WHERE j.kind = 'b' AND length(toString(j.payload)) > 10</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_prewhere_json_v2</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_prewhere_map</drop_query>
 </test>
