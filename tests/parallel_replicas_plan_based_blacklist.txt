@@ -88,6 +88,7 @@
     A plan-based parallel replica cannot find the tags collected by `timeSeriesStoreTags` (fix: https://github.com/ClickHouse/ClickHouse/pull/132565)
     https://github.com/ClickHouse/ClickHouse/issues/131138
 04836_time_series_v10_selector_whole_metric_pk_range
+04891_timeseries_lowcardinality_id
 04910_promql_dialect_regex_matcher
 05059_promql_empty_by_group
 05076_promql_label_manipulation_label_names
