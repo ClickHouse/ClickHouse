@@ -23,3 +23,6 @@ true
 [true,true]
 [true,2]	String
 [1,2]
+{"x":{"a":true}}
+{"x":[{"a":true}]}
+{"x":{"a":1}}

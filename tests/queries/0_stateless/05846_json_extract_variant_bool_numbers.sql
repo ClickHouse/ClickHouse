@@ -27,3 +27,6 @@ SELECT JSONExtractKeysAndValues('{"k":[true,2]}', 'Variant(Array(Bool))');
 SELECT JSONExtract('{"a":[true,2]}', 'JSON(a Variant(Array(Bool)))').a;
 SELECT JSONExtract('[true,2]', 'Variant(Array(Bool), String)') AS v, variantType(v);
 SELECT JSONExtract('[1.5,2]', 'Variant(Array(Int64))');
+SELECT CAST('{"x":{"a":2}}' AS JSON(x Variant(JSON(a Bool)))) SETTINGS type_json_skip_invalid_typed_paths = 1;
+SELECT CAST('{"x":[{"a":2}]}' AS JSON(x Variant(Array(JSON(a Bool))))) SETTINGS type_json_skip_invalid_typed_paths = 1;
+SELECT CAST('{"x":{"a":1.5}}' AS JSON(x Variant(JSON(a Int64)))) SETTINGS type_json_skip_invalid_typed_paths = 1;
