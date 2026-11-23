@@ -1,4 +1,5 @@
 import re
+import socket
 import struct
 import threading
 import time
@@ -184,6 +185,33 @@ def test_handshake_to_continue_session_is_expired(started_cluster):
             node1.name, session_timeout=8000, session_id=session_id, full_reply=True
         ) == (0, 0, 0, b"")
     finally:
+        node2.start_clickhouse()
+        node3.start_clickhouse()
+        wait_nodes()
+
+
+def test_close_without_quorum_after_client_shutdown(started_cluster):
+    wait_nodes()
+    client = get_keeper_socket(node1.name)
+    try:
+        req = int_long_int_long_struct.pack(0, 0, 8000, 0)
+        req += write_buffer(b"\x00" * 16) + bytes([0])
+        client.send(int_struct.pack(45) + req)
+        client.recv(1_000)
+
+        node2.stop_clickhouse()
+        node3.stop_clickhouse()
+        keeper_utils.wait_until_quorum_lost(cluster, node1)
+
+        client.send(int_struct.pack(8) + int_int_struct.pack(0x7FFFFFFF, -11))
+        client.shutdown(socket.SHUT_WR)
+        client.settimeout(10)
+        start = time.monotonic()
+        assert client.recv(1_000) == b""
+        # The Close cannot be committed, its response only comes after operation_timeout_ms (5 s).
+        assert time.monotonic() - start < 3
+    finally:
+        client.close()
         node2.start_clickhouse()
         node3.start_clickhouse()
         wait_nodes()

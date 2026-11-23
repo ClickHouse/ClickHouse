@@ -645,6 +645,11 @@ void KeeperTCPHandler::runImpl()
                 /// Each request restarts session stopwatch
                 session_stopwatch.restart();
             }
+            else if (result.has_requests && in->eof())
+            {
+                LOG_DEBUG(log, "Client closed connection after close request, session id #{}", session_id);
+                break;
+            }
 
             /// Process exact amount of responses from pipe
             /// otherwise state of responses queue and signaling pipe
