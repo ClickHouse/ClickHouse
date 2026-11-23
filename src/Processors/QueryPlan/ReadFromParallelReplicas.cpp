@@ -131,6 +131,13 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
+void ReadFromParallelReplicasStep::enableGroupByTopK(size_t top_k_limit)
+{
+    auto new_context = Context::createCopy(context);
+    new_context->setSetting("distributed_group_by_top_k", top_k_limit);
+    context = std::move(new_context);
+}
+
 void ReadFromParallelReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes = addPipes(output_header);
@@ -177,7 +184,8 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
             pools_to_use[i]->getAddress());
 
         const size_t parallel_marshalling_threads
-            = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
+            = context->getSettingsRef()[Setting::max_threads] / pools_to_use.size()
+            + (context->getSettingsRef()[Setting::max_threads] % pools_to_use.size() != 0);
         Pipe pipe = createPipeForSingeReplica(pools_to_use[i], replica_info, out_header, parallel_marshalling_threads);
         remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
         pipes.emplace_back(std::move(pipe));

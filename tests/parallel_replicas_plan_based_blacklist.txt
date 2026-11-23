@@ -22,14 +22,8 @@
     `SHUFFLE` is not shipped with the plan fragment, so replicas return every row they read and lazy materialization does not apply
 05480_shuffle_clause
 
-    A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
-    https://github.com/ClickHouse/ClickHouse/issues/128539
-02377_optimize_sorting_by_input_stream_properties_2
+    The initiator merges the aggregation results of the replicas without keeping the memory-bound merging
 02404_memory_bound_merging
-03305_mergine_aggregated_filter_push_down
-03355_join_to_in_optimization
-04093_lazy_final_combined_filtering
-04095_lazy_final_with_lazy_materialization
 
     `force_primary_key` throws `INDEX_NOT_USED` on a replica when the filter is a constant above `ARRAY JOIN`
     https://github.com/ClickHouse/ClickHouse/issues/128542
@@ -50,11 +44,13 @@
 05175_time_series_table_functions_parallel_replicas
 
     The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
+05137_join_fixed_string_zero_bytes_runtime_filter
 05141_hypothetical_projection_verdict_rules
 05175_hypothetical_projection_part_offset
 
     The test checks EXPLAIN output, which parallel replicas wrap differently; the optimization itself still applies
 02725_agg_projection_respect_PK
+03355_join_to_in_optimization
 03892_grouping_sets_force_aggregation_in_order
 05076_hypothetical_projection_estimate
 05176_hypothetical_projection_estimate_part_layout
@@ -91,7 +87,18 @@
 
     A plan-based parallel replica cannot find the tags collected by `timeSeriesStoreTags` (fix: https://github.com/ClickHouse/ClickHouse/pull/132565)
     https://github.com/ClickHouse/ClickHouse/issues/131138
+04836_time_series_v10_selector_whole_metric_pk_range
+04910_promql_dialect_regex_matcher
 05059_promql_empty_by_group
 05076_promql_label_manipulation_label_names
+05211_promql_present_over_time_absent_over_time
+05215_promql_predict_linear
 05234_promql_result_timestamp_scale
+05234_promql_result_timestamp_type
+05241_prometheus_query_timestamp
+05273_promql_instant_vector_sorted_by_tags
+05293_promql_constant_scalar_arithmetic
+05320_promql_duplicate_series_check_per_step
 05320_promql_duplicate_series_one_to_one_matching
+05332_promql_set_operator_empty_on
+05595_timeseries_external_targets_truncate
