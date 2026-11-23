@@ -356,13 +356,13 @@ struct OneElementResizeGrower
 
     static constexpr size_t initial_count = 1;
 
-    size_t bufSize() const { return buf_size; }
+    [[nodiscard]] size_t bufSize() const { return buf_size; }
 
-    size_t place(size_t x) const { return x % buf_size; }
+    [[nodiscard]] size_t place(size_t x) const { return x % buf_size; }
 
-    size_t next(size_t pos) const { return (pos + 1) % buf_size; }
+    [[nodiscard]] size_t next(size_t pos) const { return (pos + 1) % buf_size; }
 
-    bool overflow(size_t elems) const { return elems >= buf_size; }
+    [[nodiscard]] bool overflow(size_t elems) const { return elems >= buf_size; }
 
     void increaseSize() { ++buf_size; }
 
@@ -659,7 +659,7 @@ struct HashTableWithInvariantsCheck : Base
 {
     using Base::Base;
 
-    bool isRobinHoodMode() const { return this->isRobinHood(); }
+    [[nodiscard]] bool isRobinHoodMode() const { return this->isRobinHood(); }
 
     void checkInvariants() const
     {
