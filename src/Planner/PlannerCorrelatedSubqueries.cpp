@@ -2099,7 +2099,7 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It may also result in non-correlated subquery plan
             /// Example:
             /// SELECT * FROM numbers(1) WHERE EXISTS (SELECT a = number FROM table)
-            if (optimizePlanForExists(correlated_query_plan))
+            if (optimizePlanForExists(correlated_query_plan, /*is_correlated=*/true))
             {
                 /// Subquery always produces at least 1 row.
                 buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);
