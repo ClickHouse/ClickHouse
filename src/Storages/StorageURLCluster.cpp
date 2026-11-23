@@ -2,6 +2,7 @@
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/StringUtils.h>
+#include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -9,6 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
@@ -36,6 +38,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_url_encoding;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsBool use_hive_partitioning;
 }
@@ -53,6 +56,7 @@ StorageURLCluster::StorageURLCluster(
     : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
     , uri(uri_), format_name(format_)
 {
+    const auto glob_caller = tableFunctionURLClusterCaller();
     auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context->getHTTPHeaderFilter().checkHeaders(headers);
@@ -64,10 +68,16 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context, glob_caller);
         else
             columns = StorageURL::getTableStructureFromData(
-                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
+                format_,
+                uri,
+                chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
+                headers,
+                std::nullopt,
+                context,
+                glob_caller);
 
         storage_metadata.setColumns(columns);
     }
@@ -75,14 +85,20 @@ StorageURLCluster::StorageURLCluster(
     {
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context).second;
+                           uri,
+                           chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method),
+                           headers,
+                           std::nullopt,
+                           context,
+                           glob_caller)
+                           .second;
 
         storage_metadata.setColumns(columns_);
     }
 
     auto & storage_columns = storage_metadata.columns;
 
-    const auto sample_path = getSampleURI(uri, context);
+    const auto sample_path = getSampleURI(uri, context, glob_caller);
     /// Not grabbing the file_columns because it is not necessary to do it here.
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
@@ -113,7 +129,8 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -123,12 +140,13 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
-    TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
-        table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        format_name,
-        context
-    );
+    if (add_structure_and_format)
+        TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
+            table_function,
+            getStructureToSend(storage_snapshot->metadata->getColumns(), context->getInsertionTableColumnsDescription().get()),
+            format_name,
+            context
+        );
 
     /// When a non-cluster table function (`url`) was auto-converted to cluster mode
     /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -154,14 +172,29 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
+    const size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+    const bool with_globs = urlWithGlobs(uri);
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, urlWithGlobs(uri), context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+        uri, with_globs, max_addresses, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context, tableFunctionURLClusterCaller());
 
-    auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
+    /// Every task is expanded into its failover options (`|`) only on the worker, which knows nothing
+    /// about the other tasks. The limit is on the addresses of both stages together, as for `url`, so the
+    /// iterator counts the options of every task as it generates it, before the `_path` / `_file` filter:
+    /// `{1,2}{1|2}` is four addresses, not two tasks of two addresses each.
+    auto next_callback = [iter = std::move(iterator), context](size_t, const std::atomic_bool &) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto url = iter->next();
         if (url.empty())
             return std::make_shared<ClusterFunctionReadTaskResponse>();
+
+        /// The workers check the credentials under their own configuration, which can differ from this one.
+        const auto & settings = context->getSettingsRef();
+        for (const auto & option : parseRemoteDescription(url, 0, url.size(), '|', settings[Setting::glob_expansion_max_elements]))
+        {
+            Poco::Net::HTTPBasicCredentials credentials;
+            setCredentialsFromURL(credentials, Poco::URI(option, settings[Setting::enable_url_encoding]), context->getHTTPHeaderFilter());
+        }
+
         return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(url));
     };
     auto callback = std::make_shared<TaskIterator>(std::move(next_callback));

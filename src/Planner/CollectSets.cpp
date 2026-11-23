@@ -41,20 +41,8 @@ namespace ErrorCodes
 namespace
 {
 
-std::pair<ColumnsWithTypeAndName, DataTypes> buildSetElementsForConstantColumn(
-    const DataTypePtr & in_first_argument_type,
-    const ColumnPtr & in_second_argument_column,
-    const DataTypePtr & in_second_argument_type,
-    const String & in_function_name,
-    const Settings & settings)
+DataTypes getSetElementTypes(const ColumnsWithTypeAndName & set, const String & in_function_name, const Settings & settings)
 {
-    auto set = getSetElementsForConstantValue(
-        in_first_argument_type, in_second_argument_column, in_second_argument_type,
-        GetSetElementParams{
-            .transform_null_in = settings[Setting::transform_null_in],
-            .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-        });
-
     if (set.empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -70,7 +58,7 @@ std::pair<ColumnsWithTypeAndName, DataTypes> buildSetElementsForConstantColumn(
     for (const auto & elem : set)
         set_element_types.push_back(elem.type);
 
-    return {std::move(set), Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in])};
+    return Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
 }
 
 class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
@@ -131,10 +119,22 @@ public:
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
-            auto [set, set_element_types] = buildSetElementsForConstantColumn(
-                in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(),
-                function_node->getFunctionName(), settings);
+            const GetSetElementParams params{
+                .transform_null_in = settings[Setting::transform_null_in],
+                .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+            };
 
+            std::optional<ColumnsWithTypeAndName> set_from_values;
+            if (const auto deferred_field = constant_node->tryGetDeferredField())
+                set_from_values = tryGetSetElementsForTupleOfPlainValues(
+                    in_first_argument->getResultType(), deferred_field->safeGet<Tuple>(), params);
+
+            auto set = set_from_values
+                ? std::move(*set_from_values)
+                : getSetElementsForConstantValue(
+                      in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(), params);
+
+            auto set_element_types = getSetElementTypes(set, function_node->getFunctionName(), settings);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))
@@ -150,10 +150,13 @@ public:
         }
         else if (auto scalar_column = tryGetScalarConstantColumn(in_second_argument, planner_context.getQueryContext()))
         {
-            auto [set, set_element_types] = buildSetElementsForConstantColumn(
+            auto set = getSetElementsForConstantValue(
                 in_first_argument->getResultType(), scalar_column, in_second_argument->getResultType(),
-                function_node->getFunctionName(), settings);
-
+                GetSetElementParams{
+                    .transform_null_in = settings[Setting::transform_null_in],
+                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+                });
+            auto set_element_types = getSetElementTypes(set, function_node->getFunctionName(), settings);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))
