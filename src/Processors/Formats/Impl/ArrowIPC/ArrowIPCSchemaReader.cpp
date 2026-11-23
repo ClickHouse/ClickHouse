@@ -156,6 +156,16 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         num_rows_in_file = total_rows;
     }
 
+    return ArrowIPC::inferColumns(schema, format_settings);
+}
+
+DataTypePtr ArrowIPC::removeNullableForInference(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    return wrapNothingInNullable(removeNullableRecursively(type, format_settings));
+}
+
+NamesAndTypesList ArrowIPC::inferColumns(const ArrowSchema & schema, const FormatSettings & format_settings)
+{
     /// GeoParquet geometry columns are inferred as their geo type (when the parser is enabled).
     UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
     if (format_settings.parquet.allow_geoparquet_parser)
@@ -210,7 +220,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         /// recursively to nested types too, mirroring the library reader (which would otherwise infer a
         /// different nested schema for the same file and cache it under the same key).
         if (make_columns_nullable == 0)
-            type = wrapNothingInNullable(removeNullableRecursively(type, format_settings));
+            type = ArrowIPC::removeNullableForInference(type, format_settings);
         else if (make_columns_nullable == 1)
             type = makeNullableRecursively(type, format_settings);
 
