@@ -37,6 +37,9 @@ struct ColumnWithTypeAndName;
 class ArrowIPCBlockInputFormat final : public IInputFormat
 {
 public:
+    /// Parses the WKB/WKT binary values of a decoded (possibly Nullable) String column into a geo column.
+    static ColumnPtr decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing);
+
     ArrowIPCBlockInputFormat(
         ReadBuffer & in_, SharedHeader header_, bool stream_, size_t max_block_size_, const FormatSettings & format_settings_);
     ~ArrowIPCBlockInputFormat() override;
@@ -72,8 +75,6 @@ private:
     void reinterpretRawByteColumns(
         ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field,
         bool repair_variants) const;
-    /// Parses the WKB/WKT binary values of a decoded (possibly Nullable) String column into a geo column.
-    static ColumnPtr decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing);
     bool readStreamBatch();
     bool readFileBatch();
     Chunk generateChunkFromBatch();
@@ -125,6 +126,26 @@ private:
 
     std::atomic<int> is_stopped{0};
 };
+
+
+namespace ArrowIPC
+{
+
+/// Converts the decoded columns of a record batch into a chunk of `header`: matches the columns by name (or
+/// case-insensitively), extracts the subcolumns of `Nested` and struct fields, parses GeoParquet geometry,
+/// reinterprets raw bytes and casts to the requested types. A header column absent from the batch is filled
+/// with defaults when `allow_missing_columns`, and an exception otherwise. Used by the native `Arrow` formats and
+/// by the formats that receive Arrow data through the C data interface.
+Chunk buildChunk(
+    const Block & header,
+    RecordBatchDecoder::DecodedColumns & decoded,
+    size_t num_rows,
+    const FormatSettings & format_settings,
+    bool allow_missing_columns,
+    const UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> & geo_columns,
+    BlockMissingValues * block_missing_values);
+
+}
 
 }
 

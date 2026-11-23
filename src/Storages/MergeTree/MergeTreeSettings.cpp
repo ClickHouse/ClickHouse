@@ -25,7 +25,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
+#include <Interpreters/DatabaseCatalog.h>
+
 #include "config.h"
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedSystemDatabase.h>
+#endif
 
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_min_bytes_for_wide_part = 10485760lu;
@@ -64,6 +69,8 @@ setting). The value specified when the table is created overrides the global
 value for this setting.
 
 For a column of fixed-size values the block size is rounded down to a multiple of the value size in bytes, but not below one value.
+
+A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB.
 )", 0) \
     DECLARE(UInt64, index_granularity, 8192, R"(
 Maximum number of data rows between the marks of an index. I.e how many rows
@@ -820,6 +827,13 @@ OPTIMIZE FINAL query.
     Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/reference/statements/alter/statistics)
     or [during INSERTs](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert))", 0, \
         {"26.1", true, true, "New setting"}) \
+    DECLARE(Bool, serialize_statistics_bounds_with_column_type, false, R"(
+When enabled, the minimum and maximum of `minmax` and `basic` statistics are written with the serialization
+of the column type, in statistics file format `V5`, instead of the generic `Field` encoding of `V4`.
+Older versions cannot read the statistics files of `V5`, so do not enable it before all replicas are upgraded:
+the statistics of the parts written with it have to be rematerialized after a downgrade.
+)", 0, \
+        {"26.12", false, false, "New setting"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)
@@ -930,6 +944,20 @@ requests to zookeeper in large-scale clusters
 The sleep time for merge selecting task is multiplied by this factor when
 there's nothing to merge and divided when a merge was assigned
 )", 0) \
+    DECLARE(UInt64, delay_merges_after_startup_seconds, 60, R"(
+Background merges of a table that the server loads at startup do not start
+until this many seconds after the table starts up, so that the first queries
+after a restart do not compete with them. The first `INSERT`, `OPTIMIZE`,
+mutation or lightweight update of the table on this server ends the delay. A
+replica of a `ReplicatedMergeTree` table postpones the merges of its
+replication queue, also those it would fetch as a merged part, so
+`SYSTEM SYNC REPLICA` and mutations started on another replica can wait on it
+until the delay ends. Tables created by `CREATE TABLE`, attached by
+`ATTACH TABLE` or restored by `UNDROP TABLE` are not delayed. Merges are not
+delayed while a partition has at least `parts_to_delay_insert` active parts.
+0 disables the delay.
+)", 0, \
+        {"26.12", 0, 60, "New setting to delay background merges after the server startup"}) \
     DECLARE(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, R"(
 Sets the interval in seconds for ClickHouse to execute the cleanup of old
 temporary directories.
@@ -2218,7 +2246,7 @@ The maximum postpone time for failed replicated task. The value is used if the t
         {"25.4", 0, 5ULL * 60 * 1000, "Added new setting to enable postponing tasks in the replication queue."}) \
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
+Reject primary/secondary indexes and sorting keys with identical expressions, and sorting, primary or sampling key, secondary index or projection sorting key expressions with the name of a stored column
     )", 0) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
@@ -3412,6 +3440,16 @@ SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) c
             res.emplace_back(String{setting.getName()}, value);
     }
     return res;
+}
+
+bool MergeTreeSettings::isSystemDatabaseForDisks(const String & database_name)
+{
+#if CLICKHOUSE_CLOUD
+    /// The tables of the former local `system` database keep its exemption.
+    if (SharedSystemDatabase::isLocalDatabase(database_name))
+        return true;
+#endif
+    return database_name == DatabaseCatalog::SYSTEM_DATABASE;
 }
 
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)

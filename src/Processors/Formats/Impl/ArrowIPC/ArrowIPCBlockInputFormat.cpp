@@ -1084,8 +1084,12 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
 
 }
 
-void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(
-    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field, bool repair_variants) const
+namespace
+{
+
+void reinterpretRawByteColumnsImpl(
+    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field, const FormatSettings & format_settings,
+    bool repair_variants)
 {
     const auto * constant = typeid_cast<const ColumnConst *>(column.column.get());
     auto [new_column, new_type] = reinterpretRawBytes(
@@ -1095,6 +1099,14 @@ void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(
         new_column = ColumnConst::create(new_column, constant->size());
     column.column = std::move(new_column);
     column.type = std::move(new_type);
+}
+
+}
+
+void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(
+    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field, bool repair_variants) const
+{
+    reinterpretRawByteColumnsImpl(column, to_type, field, format_settings, repair_variants);
 }
 
 ColumnPtr ArrowIPCBlockInputFormat::decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing)
@@ -1139,12 +1151,27 @@ ColumnPtr ArrowIPCBlockInputFormat::decodeGeoColumn(const ColumnPtr & source, co
 
 Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows)
 {
-    const Block & header = getPort().getHeader();
+    return ArrowIPC::buildChunk(
+        getPort().getHeader(),
+        decoded,
+        num_rows,
+        format_settings,
+        format_settings.arrow.allow_missing_columns,
+        geo_columns,
+        format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
+}
 
+Chunk ArrowIPC::buildChunk(
+    const Block & header,
+    RecordBatchDecoder::DecodedColumns & decoded,
+    size_t num_rows,
+    const FormatSettings & format_settings,
+    bool allow_missing_columns,
+    const UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> & geo_columns,
+    BlockMissingValues * block_missing_values_ptr)
+{
     /// Map decoded column name -> index (lower-cased when case-insensitive matching is on).
     const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
-    BlockMissingValues * block_missing_values_ptr
-        = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     UnorderedMapWithMemoryTracking<String, size_t> name_to_index;
     name_to_index.reserve(decoded.size());
     for (size_t i = 0; i < decoded.size(); ++i)
@@ -1212,7 +1239,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
 
             if (!read_from_nested)
             {
-                if (!format_settings.arrow.allow_missing_columns)
+                if (!allow_missing_columns)
                     throw Exception(
                         ErrorCodes::THERE_IS_NO_COLUMN,
                         "Column '{}' is not present in the Arrow IPC data", header_column.name);
@@ -1243,7 +1270,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         if (geo_it != geo_columns.end() && geo_it->second.encoding == GeoEncoding::Native)
         {
             const DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
-            reinterpretRawByteColumns(column, geo_type, src_field, /*repair_variants=*/true);
+            reinterpretRawByteColumnsImpl(column, geo_type, src_field, format_settings, /*repair_variants=*/true);
             try
             {
                 column = prepareArrowColumnForCast(column, geo_type, format_settings, i, block_missing_values_ptr);
@@ -1262,17 +1289,17 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         }
         else if (geo_it != geo_columns.end())
         {
-            column.column = decodeGeoColumn(column.column, geo_it->second, format_settings.precise_float_parsing);
+            column.column = ArrowIPCBlockInputFormat::decodeGeoColumn(column.column, geo_it->second, format_settings.precise_float_parsing);
             column.type = getGeoDataType(geo_it->second.type);
         }
         else if (format_settings.parquet.allow_geoparquet_parser && header_column.type->getName() == "Geometry")
         {
             const GeoColumnMetadata mixed{.encoding = GeoEncoding::WKB, .type = GeoType::Mixed, .covering_bbox = std::nullopt};
-            column.column = decodeGeoColumn(column.column, mixed, format_settings.precise_float_parsing);
+            column.column = ArrowIPCBlockInputFormat::decodeGeoColumn(column.column, mixed, format_settings.precise_float_parsing);
             column.type = getGeoDataType(GeoType::Mixed);
         }
         else
-            reinterpretRawByteColumns(column, header_column.type, src_field, /*repair_variants=*/true);
+            reinterpretRawByteColumnsImpl(column, header_column.type, src_field, format_settings, /*repair_variants=*/true);
 
         /// Match differently-cased struct field names against the requested type when case-insensitive
         /// column matching is enabled, so the named-tuple CAST below does not turn them into defaults.
