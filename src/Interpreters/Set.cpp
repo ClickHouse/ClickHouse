@@ -338,39 +338,41 @@ void Set::executeDiskSet(const ColumnRawPtrs & key_columns, ColumnUInt8::Contain
 
 
 template <typename Method>
-void NO_INLINE Set::insertFromBlockImpl(
+size_t NO_INLINE Set::insertFromBlockImpl(
     Method & method,
     const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
     ConstNullMapPtr null_map,
-    ColumnUInt8::Container * out_filter)
+    ColumnUInt8::Container * out_filter,
+    size_t max_keys)
 {
     if (null_map)
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter);
+            return insertFromBlockImplCase<Method, true, true>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
         else
-            insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter);
+            return insertFromBlockImplCase<Method, true, false>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
     }
     else
     {
         if (out_filter)
-            insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter);
+            return insertFromBlockImplCase<Method, false, true>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
         else
-            insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter);
+            return insertFromBlockImplCase<Method, false, false>(method, key_columns, rows, variants, null_map, out_filter, max_keys);
     }
 }
 
 
 template <typename Method, bool has_null_map, bool build_filter>
-void NO_INLINE Set::insertFromBlockImplCase(
+size_t NO_INLINE Set::insertFromBlockImplCase(
     Method & method,
     const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
     [[maybe_unused]] ConstNullMapPtr null_map,
-    [[maybe_unused]] ColumnUInt8::Container * out_filter)
+    [[maybe_unused]] ColumnUInt8::Container * out_filter,
+    size_t max_keys)
 {
     typename Method::State state(key_columns, key_sizes, nullptr, {.skips_rows = has_null_map});
 
@@ -389,11 +391,19 @@ void NO_INLINE Set::insertFromBlockImplCase(
             }
         }
 
-        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
+
+        if (emplace_result.isInserted() && method.data.size() > max_keys)
+        {
+            if constexpr (build_filter)
+                std::fill(out_filter->begin() + i + 1, out_filter->begin() + rows, 0);
+            return i + 1;
+        }
     }
+    return rows;
 }
 
 
@@ -488,6 +498,12 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 
 bool Set::insertFromColumns(const Columns & columns)
 {
+    size_t rows_taken = 0;
+    return insertFromColumns(columns, std::numeric_limits<size_t>::max(), rows_taken);
+}
+
+bool Set::insertFromColumns(const Columns & columns, size_t max_keys, size_t & rows_taken)
+{
     /// Include explicit-element updates in the critical section: another owner may request a spill.
     std::lock_guard lock(rwlock);
     size_t rows = columns.at(0)->size();
@@ -497,7 +513,7 @@ bool Set::insertFromColumns(const Columns & columns)
     if (fill_set_elements)
         holder.filter = ColumnUInt8::create(rows);
 
-    bool inserted = insertFromColumnsImpl(columns, holder);
+    bool inserted = insertFromColumnsImpl(columns, holder, max_keys, rows_taken);
     if (inserted && fill_set_elements)
     {
         if (max_elements_to_fill && max_elements_to_fill < data->getTotalRowCount())
@@ -516,10 +532,11 @@ bool Set::insertFromColumns(const Columns & columns)
 bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 {
     std::lock_guard lock(rwlock);
-    return insertFromColumnsImpl(columns, holder);
+    size_t rows_taken = 0;
+    return insertFromColumnsImpl(columns, holder, std::numeric_limits<size_t>::max(), rows_taken);
 }
 
-bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
+bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, size_t & rows_taken)
 {
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
@@ -551,6 +568,7 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
     }
 
     size_t rows = columns.at(0)->size();
+    rows_taken = rows;
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -571,7 +589,8 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
 
     data->callOnMethod([&](auto & method)
     {
-        insertFromBlockImpl(method, holder.key_columns, rows, *data, null_map, holder.filter ? &holder.filter->getData() : nullptr);
+        rows_taken = insertFromBlockImpl(
+            method, holder.key_columns, rows, *data, null_map, holder.filter ? &holder.filter->getData() : nullptr, max_keys);
     });
 
     bool within_limits = limits.check(data->getTotalRowCount(), data->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
@@ -650,6 +669,35 @@ Columns Set::getSetElements() const
     for (const auto & col : set_elements)
         result.push_back(col->getPtr());
     return result;
+}
+
+static Columns sortSetIndexColumns(const Columns & columns)
+{
+    Block block_to_sort;
+    SortDescription sort_description;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        String column_name = "_" + toString(i);
+        block_to_sort.insert({columns[i], nullptr, column_name});
+        sort_description.emplace_back(column_name, 1, 1);
+    }
+
+    sortBlock(block_to_sort, sort_description);
+    return block_to_sort.getColumns();
+}
+
+std::shared_ptr<const Columns> Set::getSortedSetElements() const
+{
+    checkIsCreated();
+
+    std::lock_guard lock(sorted_set_elements_mutex);
+    auto sorted = sorted_set_elements.lock();
+    if (!sorted)
+    {
+        sorted = std::make_shared<const Columns>(sortSetIndexColumns(getSetElements()));
+        sorted_set_elements = sorted;
+    }
+    return sorted;
 }
 
 ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const
@@ -972,7 +1020,8 @@ static std::optional<BoolMask> checkInRangeSingleColumn(
     }
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(
+    const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set)
     : has_all_keys(set_elements.size() == indexes_mapping_.size())
     , indexes_mapping(std::move(indexes_mapping_))
     , instance_id(getNextMergeTreeSetIndexId())
@@ -1000,19 +1049,23 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
 
-    Block block_to_sort;
-    SortDescription sort_description;
-    for (size_t i = 0; i < tuple_size; ++i)
+    /// Reuse the set's sorted copy only for an index over all of its own columns, unconverted and in order.
+    bool use_sorted_set_elements = false;
+    if (source_set && tuple_size > 0 && source_set->isCreated())
     {
-        String column_name = "_" + toString(i);
-        block_to_sort.insert({ordered_set[i], nullptr, column_name});
-        sort_description.emplace_back(column_name, 1, 1);
+        const Columns source_elements = source_set->getSetElements();
+        use_sorted_set_elements = tuple_size == source_elements.size();
+        for (size_t i = 0; use_sorted_set_elements && i < tuple_size; ++i)
+            use_sorted_set_elements = indexes_mapping[i].tuple_index == i && ordered_set[i].get() == source_elements[i].get();
     }
 
-    sortBlock(block_to_sort, sort_description);
-
-    for (size_t i = 0; i < tuple_size; ++i)
-        ordered_set[i] = block_to_sort.getByPosition(i).column;
+    if (use_sorted_set_elements)
+    {
+        shared_ordered_set = source_set->getSortedSetElements();
+        ordered_set = *shared_ordered_set;
+    }
+    else
+        ordered_set = sortSetIndexColumns(ordered_set);
 
     /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
     /// columns hold at most one value, so reuse cannot grow them. Variable-width columns

@@ -112,14 +112,26 @@ public:
             if (use_null_as_unknown)
                 set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
 
-            auto set = getSetElementsForConstantValue(
-                set_element_type, constant_node->getColumn(), constant_node->getResultType(),
-                GetSetElementParams{
-                    .transform_null_in = settings[Setting::transform_null_in] || use_null_as_unknown,
-                    .in_null_as_unknown = use_null_as_unknown,
-                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-                },
-                &source_info);
+            const GetSetElementParams params{
+                .transform_null_in = settings[Setting::transform_null_in] || use_null_as_unknown,
+                .in_null_as_unknown = use_null_as_unknown,
+                .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+            };
+
+            std::optional<ColumnsWithTypeAndName> set_from_values;
+            /// The plain-values shortcut does not report the source's `NULL` and empty state.
+            if (!use_null_as_unknown)
+            {
+                if (const auto deferred_field = constant_node->tryGetDeferredField())
+                    set_from_values = tryGetSetElementsForTupleOfPlainValues(
+                        set_element_type, deferred_field->safeGet<Tuple>(), params);
+            }
+
+            auto set = set_from_values
+                ? std::move(*set_from_values)
+                : getSetElementsForConstantValue(
+                      set_element_type, constant_node->getColumn(), constant_node->getResultType(), params,
+                      use_null_as_unknown ? &source_info : nullptr);
 
             if (set.empty())
                 throw Exception(

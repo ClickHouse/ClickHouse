@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Field.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType_fwd.h>
 
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -56,5 +58,10 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
     const DataTypePtr & rhs_type,
     GetSetElementParams params,
     SetSourceInfo * source_info = nullptr);
+
+/// The set elements of `x IN (v1, v2, ...)` for a scalar key from a tuple of `UInt64`, `Int64` or `String` `Field`s,
+/// equal to those of `getSetElementsForConstantValue`. Returns nullopt for any other key or value types.
+std::optional<ColumnsWithTypeAndName> tryGetSetElementsForTupleOfPlainValues(
+    const DataTypePtr & expression_type, const Tuple & rhs_elements, GetSetElementParams params);
 
 }

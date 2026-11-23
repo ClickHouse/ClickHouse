@@ -310,6 +310,22 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context);
 
 
+/// Recursively clears aliases from `node` and all of its descendants, stopping at
+/// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
+///
+/// Background: during identifier resolution, when an identifier resolves to an alias
+/// (e.g. `cond` in `PREWHERE cond` resolves to the projection alias `cond`), the alias
+/// body is deep-cloned and the clone replaces the identifier. Only the clone's root is
+/// registered for later alias removal; the clone's descendants — which carry the
+/// original inner aliases (clone preserves aliases) — are not. A plain non-recursive
+/// `removeAlias` on each registered node therefore leaks inner aliases when the alias
+/// body itself contains alias-bearing nodes.
+///
+/// This walk catches those inner aliases. Nested subqueries / lambdas live in separate
+/// scopes that are responsible for their own alias cleanup, so the walk stops at their
+/// boundary.
+void removeAliasesRecursive(QueryTreeNodePtr & node);
+
 /// With `date_time_as_numbers`, a `DateTime` leaf becomes its raw Unix timestamp instead of local date-time
 /// text; valid only where the literal's declared type is re-applied to it.
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);

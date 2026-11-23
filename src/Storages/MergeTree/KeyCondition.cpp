@@ -656,10 +656,10 @@ static NullAtomOverChain classifyNullAtomOverChain(const KeyCondition::Monotonic
 /// insert into test values ('2020-01-01', 1, '');
 /// insert into test values ('2020-01-02', 1, '');
 /// select * from test where d != '2020-01-01'; -- If relaxed, no record will return
-static const std::set<std::string_view> no_relaxed_atom_functions
+[[clang::no_destroy]] static const std::set<std::string_view> no_relaxed_atom_functions
     = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty", "notHas"};
 
-static const std::map<std::string, std::string> inverse_relations =
+[[clang::no_destroy]] static const std::map<std::string, std::string> inverse_relations =
 {
     {"equals", "notEquals"},
     {"notEquals", "equals"},
@@ -1092,7 +1092,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceCondition(
 /// connectives (handled structurally by `cloneDAGWithInversionPushDown`) and boolean comparisons
 /// `KeyCondition` does not prune (`isDistinctFrom`, `ilike`, `notILike`). The prunable boolean atoms
 /// are taken directly from `atom_map` (see `predicateIsBooleanResult`), so this only holds the extras.
-static const std::unordered_set<std::string_view> extra_boolean_result_functions
+[[clang::no_destroy]] static const std::unordered_set<std::string_view> extra_boolean_result_functions
 {
     "not", "and", "or", "isDistinctFrom", "ilike", "notILike",
 };
@@ -1671,7 +1671,7 @@ static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predica
     return res;
 }
 
-const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
+[[clang::no_destroy]] const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyCondition::space_filling_curve_name_to_type {
         {"mortonEncode", SpaceFillingCurveType::Morton},
         {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
@@ -1693,7 +1693,7 @@ static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & conditio
         const auto & column_bf = column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]);
         const auto & hashes = condition_bloom_filter_data.hashes_per_column[column_index];
 
-        if (!column_bf->findAnyHash(hashes))
+        if (!column_bf->findAnyHash(*hashes))
         {
             return false;
         }
@@ -4191,7 +4191,8 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     const Columns & set_columns,
     const DataTypes & set_types,
     SetAtomCandidate candidate,
-    const DataTypePtr & has_element_type)
+    const DataTypePtr & has_element_type,
+    const Set * source_set)
 {
     chassert(set_types.size() == set_columns.size());
     if (candidate.column_mappings.empty())
@@ -4247,7 +4248,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     indexes_mapping.reserve(candidate.column_mappings.size());
     for (auto & mapping : candidate.column_mappings)
         indexes_mapping.push_back(std::move(mapping.index_mapping));
-    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping));
+    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping), source_set);
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
     const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
@@ -4277,19 +4278,20 @@ void KeyCondition::appendSetAtoms(
     SetIndexAnalysisResult analysis,
     bool allow_relaxed_pruning,
     AtomGroup & group,
-    const DataTypePtr & has_element_type) const
+    const DataTypePtr & has_element_type,
+    const Set * source_set) const
 {
     const size_t args_count = analysis.componentwise_candidate.args_count;
 
     /// Component and packed-tuple mappings can coexist even when they constrain the same key column.
     /// Key coverage only limits the additional wrapped-set candidates below.
     if (auto atom = tryPrepareSetAtom(
-            set_columns, set_types, std::move(analysis.componentwise_candidate), has_element_type))
+            set_columns, set_types, std::move(analysis.componentwise_candidate), has_element_type, source_set))
         group.atoms.emplace_back(std::move(*atom));
 
     if (analysis.packed_tuple_candidate)
         if (auto atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), has_element_type))
+                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), has_element_type, source_set))
             group.atoms.emplace_back(std::move(*atom));
 
     /// Atoms for the predicate's components and whole tuple take priority over additional
@@ -4337,7 +4339,7 @@ void KeyCondition::appendSetAtoms(
             set_candidate.is_relaxed = !is_injective;
 
             auto candidate_atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(set_candidate), has_element_type);
+                set_columns, set_types, std::move(set_candidate), has_element_type, source_set);
 
             /// Additional atoms for complement predicates must be exact. `tryPrepareSetAtom` can relax
             /// even an injective transform when its mapping covers only some tuple components.
@@ -4407,7 +4409,7 @@ void KeyCondition::prepareSetAtomsForIn(
     const auto set_columns = prepared_set->getSetElements();
     const auto set_types = future_set->getTypes();
 
-    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group);
+    appendSetAtoms(set_columns, set_types, std::move(*analysis), allow_relaxed_pruning, group, /*has_element_type=*/ nullptr, prepared_set.get());
 }
 
 /// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
@@ -4843,7 +4845,7 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
   * we want to apply the function to the constant for index analysis,
   * but should modify it to pass on un-parsable values.
   */
-static std::set<std::string_view> date_time_parsing_functions = {
+[[clang::no_destroy]] static std::set<std::string_view> date_time_parsing_functions = {
     "toDate",
     "toDate32",
     "toTime",
@@ -6360,8 +6362,10 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
 
                     const_value = converted;
 
-                    /// Only an exact conversion preserves the candidate's precision.
-                    if (!key_expr_type_not_null->equals(*common_type))
+                    /// Only an exact conversion preserves the candidate's precision. An `Enum` is compared with
+                    /// a number by its value, which an integer supertype holds exactly.
+                    if (!key_expr_type_not_null->equals(*common_type)
+                        && !(isEnum(key_expr_type_not_null) && isNativeInteger(common_type)))
                         is_relaxed = true;
                 }
                 if (!key_expr_type_not_null->equals(*common_type))
@@ -7431,6 +7435,7 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * sparse_left_keys,
     const FieldRef * sparse_right_keys,
     const DataTypes & sparse_data_types,
+    const DataTypes & key_types,
     const std::vector<UInt8> & equal_boundaries_mask,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds) const
@@ -7439,6 +7444,7 @@ BoolMask KeyCondition::checkInRange(
 
 #ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
+    chassert(key_types.size() == num_key_columns);
 
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
@@ -7493,7 +7499,7 @@ BoolMask KeyCondition::checkInRange(
         key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
-            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
+            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types, key_types);
         });
 }
 
@@ -8213,9 +8219,10 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
 }
 
 /// The same over the sparse representation of the primary index, where a key column is addressed by
-/// its position among the columns the index resolves.
+/// its position among the columns the index resolves. A key column it does not resolve is checked as the
+/// whole universe, except by a range atom, which answers `(true, true)` for such a column.
 bool KeyCondition::mayReadNullKeyValue(
-    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & sparse_key_types) const
+    const std::vector<int> & key_col_to_sparse_pos, const Hyperrectangle & sparse_hyperrectangle, const DataTypes & key_types) const
 {
     for (const auto & element : expandAtomGroups(rpn))
     {
@@ -8225,11 +8232,16 @@ bool KeyCondition::mayReadNullKeyValue(
         for (size_t key_column : element.key_columns)
         {
             if (key_column >= key_col_to_sparse_pos.size() || key_col_to_sparse_pos[key_column] == -1)
+            {
+                if (element.function != RPNElement::FUNCTION_IN_RANGE && element.function != RPNElement::FUNCTION_NOT_IN_RANGE
+                    && rangeOfKeyColumnMayHoldNull(element, Range::createWholeUniverse(), key_types, key_column))
+                    return true;
                 continue;
+            }
 
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_column]);
             if (sparse_pos < sparse_hyperrectangle.size()
-                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
+                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], key_types, key_column))
                 return true;
         }
     }
@@ -8766,7 +8778,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 BoolMask KeyCondition::checkInHyperrectangle(
     const std::vector<int> & key_col_to_sparse_pos,
     const Hyperrectangle & sparse_hyperrectangle,
-    const DataTypes & sparse_data_types) const
+    const DataTypes & sparse_data_types,
+    const DataTypes & key_types) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -9243,14 +9256,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
-    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types)))
+    if (unlikely(!rpn_stack[0].can_be_false && mayReadNullKeyValue(key_col_to_sparse_pos, sparse_hyperrectangle, key_types)))
         rpn_stack[0].can_be_false = true;
 
     return rpn_stack[0];
 }
 
+KeyCondition::BloomFilterData::Hashes KeyCondition::BloomFilterData::makeHashes(VectorWithMemoryTracking<uint64_t> hashes)
+{
+    std::sort(hashes.begin(), hashes.end());
+    hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
+    if (hashes.size() < hashes.capacity() / 2)
+        hashes.shrink_to_fit();
+    return std::make_shared<const VectorWithMemoryTracking<uint64_t>>(std::move(hashes));
+}
+
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                          std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+                                          std::function<BloomFilterData::Hashes(size_t column_idx, const ColumnPtr &)> hash_many)
 {
     forEachAtomWithPolarity(rpn, [&](RPNElement & rpn_element, bool positive)
     {
@@ -9286,7 +9308,7 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                 return;
             }
 
-            hashes.emplace_back(VectorWithMemoryTracking<uint64_t>{*hashed_value});
+            hashes.emplace_back(BloomFilterData::makeHashes({*hashed_value}));
 
             std::vector<std::size_t> key_columns_for_element;
             key_columns_for_element.emplace_back(rpn_element.getKeyColumn());
@@ -9311,30 +9333,17 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
                 const auto & set_column = ordered_set[i];
 
-                auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);
+                auto hashes_for_column = hash_many(indexes_mapping[i].key_index, set_column);
 
-                if (!hashes_for_column_opt)
+                if (!hashes_for_column || hashes_for_column->empty())
                 {
                     continue;
                 }
 
-                auto & hashes_for_column = *hashes_for_column_opt;
+                chassert(std::adjacent_find(hashes_for_column->begin(), hashes_for_column->end(), std::greater_equal<>())
+                    == hashes_for_column->end());
 
-                if (hashes_for_column.empty())
-                {
-                    continue;
-                }
-
-                /// Sort and deduplicate the probe hashes once, here, instead of leaving that to every
-                /// lookup on every granule/row group: a filter can then intersect them with its own
-                /// sorted value set in one merge pass (see the Parquet `DictionaryLookup`), and the
-                /// duplicates that an `IN` set can produce - different values whose hashes collide, or
-                /// a tuple element repeated across set rows - are probed once instead of many times.
-                std::sort(hashes_for_column.begin(), hashes_for_column.end());
-                hashes_for_column.erase(
-                    std::unique(hashes_for_column.begin(), hashes_for_column.end()), hashes_for_column.end());
-
-                hashes.emplace_back(hashes_for_column);
+                hashes.emplace_back(std::move(hashes_for_column));
 
                 key_columns_for_element.push_back(indexes_mapping[i].key_index);
             }
