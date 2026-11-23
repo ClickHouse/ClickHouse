@@ -1,6 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Jemalloc.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/FilesystemIsolation.h>
@@ -551,38 +552,9 @@ A value of `0` means all cores.
 The delay during which a dropped table can be restored using the [`UNDROP`](/reference/statements/undrop) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 )", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-[`database_catalog_unused_dir_hide_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
-removing all access rights. It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "immediately".
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previously "hidden"
-(see [database_catalog_unused_dir_hide_timeout_sec](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec))
-and this directory was not modified for last
-[`database_catalog_unused_dir_rm_timeout_sec`](/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
-It also works for directories that clickhouse-server does not
-expect to see inside `store/`.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 30 days.
-</Note>
-)", 0) \
-    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(
-Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task.
-
-<Note>
-A value of `0` means "never". The default value corresponds to 1 day.
-</Note>
-)", 0) \
+    DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task revoked all access rights from an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the time after which the task removed an unused directory. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, database_catalog_unused_dir_cleanup_period_sec, 24 * 60 * 60, R"(Parameter of the background task that cleaned up garbage from the `store/` directory: the scheduling period of the task. The setting is deprecated and has no effect: the task was removed, and ClickHouse never hides or removes unused directories in `store/` automatically.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 0, R"(The size of the threadpool used for shutting down tables when the server is stopping. Zero means the number of threads is equal to the number of cores.)", 0) \
@@ -1461,6 +1433,8 @@ reading that folder, the materialized view `system._<log>_mv_<hash>` and the `Sh
 `system.<log>` is a `Merge` table over the generations. A new schema creates a new generation; settings, TTL and indices
 come from the `smt_settings`, `smt_ttl` and `smt_indices` keys of the log's configuration and are changed in place.
 The objects are created on the first flush of a log, or at startup with `prepare_system_log_tables_on_startup`.
+The sorting key of a table is the key of the log with `hostname` in front, so that the rows of a replica are read by the key.
+The `smt_order_by` and `smt_partition_by` keys of the log's configuration replace the keys of the table.
 
 The local `system` database is renamed to `system_local` while the setting is enabled. Requires `shared_database_catalog`
 and `<shared_log_pipeline><endpoint>` in the server configuration.
@@ -1538,6 +1512,9 @@ Period in seconds to completely remove snapshot parts for SharedMergeTree. Only 
 )", 0) \
     DECLARE(UInt64, snapshot_cleaner_pool_size, 128, R"(
 Threads for cleanup of shared merge tree snapshot cleaner threads. Only available in ClickHouse Cloud
+)", 0) \
+    DECLARE(UInt64, snapshot_cleaner_max_replicas, 3, R"(
+Maximum number of replicas that run the snapshot cleaner for each table under the snapshot registry. Every replica running a cleaner advertises it with the `snapshot_cleaner_enabled` replica flag; the replicas rank the advertising replicas by a rendezvous hash of the table and the replica name, and a replica processes a table only when it is among the top entries, so the cleanup of different tables spreads across the fleet while duplicated work stays bounded. Replicas whose cleaner is disabled (`snapshot_cleaner_period = 0`) never advertise and are never elected. `0` means no limit: every replica processes every table. Only available in ClickHouse Cloud
 )", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
@@ -3440,8 +3417,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 }
                 /// Drop the nodes this fragment removed, preserving the order of the survivors
                 /// (appended nodes sit past `matchable_count` and are never erased here).
-                for (size_t i = matchable_count; i-- > 0;)
+                for (size_t i = matchable_count; i > 0;)
                 {
+                    --i;
                     if (erased[i])
                         merged_include_from_nodes.erase(merged_include_from_nodes.begin() + i);
                 }
@@ -3979,10 +3957,16 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"columns_cache_size", {std::to_string(context->getColumnsCache() ? context->getColumnsCache()->configuredMaxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"vector_similarity_index_cache_max_entries", {std::to_string(context->getVectorSimilarityIndexCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_tokens_cache_max_entries", {std::to_string(context->getTextIndexTokensCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_header_cache_max_entries", {std::to_string(context->getTextIndexHeaderCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"text_index_postings_cache_max_entries", {std::to_string(context->getTextIndexPostingsCache()->maxCount()), ChangeableWithoutRestart::Yes}},
             {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entries", {std::to_string(context->getQueryResultCache()->maxCount()), ChangeableWithoutRestart::Yes}},
+            {"query_cache_max_entry_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxEntrySizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"point_in_polygon_cache_size", {std::to_string(CurrentMetrics::get(CurrentMetrics::PointInPolygonCacheSizeLimit)), ChangeableWithoutRestart::Yes}},
             {"unique_key_bitmap_cache_size_bytes",
                 {std::to_string(context->getDeleteBitmapCache() ? context->getDeleteBitmapCache()->maxSizeInBytes() : 0), ChangeableWithoutRestart::Yes}},
@@ -4142,9 +4126,14 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())
+    {
         changeable_settings.insert(
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"parquet_metadata_cache_max_entries",
+             {std::to_string(context->getParquetMetadataCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 
 #if ENABLE_DISTRIBUTED_CACHE
