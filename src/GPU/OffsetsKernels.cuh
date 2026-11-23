@@ -20,6 +20,9 @@ __host__ void subtractFromOffsets(const uint64_t * from, size_t count, uint64_t 
 
 __host__ void offsetsFromSizes(const uint64_t * sizes, size_t count, uint64_t * offsets_end, cuda::stream_ref stream);
 
+/// The sum of `count` sizes, or `limit + 1` if it is greater than `limit` (or would overflow). Waits for the stream.
+__host__ uint64_t sumOfSizesUpTo(const uint64_t * sizes, size_t count, uint64_t limit, cuda::stream_ref stream);
+
 struct CoveredRows
 {
     size_t rows = 0;

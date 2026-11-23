@@ -223,6 +223,9 @@ private:
     /// Of each column, what the batches so far did not take: bytes, or of a column of sizes, the offsets of the rows
     /// left, from 0, one more than them.
     std::vector<DeviceBuffer> carried;
+    /// Of each column of sizes, the bytes of the size that the batches so far ended within, fewer than 8: a compressed
+    /// block may end within a value.
+    std::vector<DeviceBuffer> carried_size_tails;
     DecompressionBatch decompression;
     EventPtr staged_sent = createEvent();
     /// Of the part being read, the rows sent.
