@@ -645,10 +645,17 @@ void KeeperTCPHandler::runImpl()
                 /// Each request restarts session stopwatch
                 session_stopwatch.restart();
             }
-            else if (result.has_requests && in->eof())
+            else if (result.has_requests)
             {
-                LOG_DEBUG(log, "Client closed connection after close request, session id #{}", session_id);
-                break;
+                /// Requests after `Close` are not processed. Drop them, so that the next poll sees the end of the stream.
+                /// `eof` is called only when nothing is buffered, so it does not block on a socket without new data.
+                if (in->available())
+                    in->ignore(in->available());
+                else if (in->eof())
+                {
+                    LOG_DEBUG(log, "Client closed connection after close request, session id #{}", session_id);
+                    break;
+                }
             }
 
             /// Process exact amount of responses from pipe

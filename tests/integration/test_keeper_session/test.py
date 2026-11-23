@@ -205,7 +205,14 @@ def test_close_without_quorum_after_client_shutdown(started_cluster):
         node3.stop_clickhouse(kill=True)
 
         close_xid, close_op = 0x7FFFFFFF, -11
-        client.send(int_struct.pack(8) + int_int_struct.pack(close_xid, close_op))
+        # A heartbeat after the Close is not processed, and it must not keep the connection open either.
+        heartbeat_xid, heartbeat_op = -2, 11
+        client.send(
+            int_struct.pack(8)
+            + int_int_struct.pack(close_xid, close_op)
+            + int_struct.pack(8)
+            + int_int_struct.pack(heartbeat_xid, heartbeat_op)
+        )
         client.shutdown(socket.SHUT_WR)
         client.settimeout(20)
         start = time.monotonic()
