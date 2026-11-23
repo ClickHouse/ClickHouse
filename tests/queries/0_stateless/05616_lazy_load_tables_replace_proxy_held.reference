@@ -1,3 +1,5 @@
-cold: MergeTree	0
-held: MergeTree	1
-released: MergeTree	1
+cold: MergeTree	0	\N
+held: MergeTree	1	1000
+held count: 1000
+released: MergeTree	1	1000
+released count: 1000
