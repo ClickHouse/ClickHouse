@@ -10,6 +10,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -41,10 +43,25 @@ DataTypePtr eligibleDateTimeType(const DataTypePtr & type)
     return nullptr;
 }
 
-bool isBoundByLambda(const ASTIdentifier & identifier, const std::vector<String> & lambda_parameters)
+bool isBoundBy(const ASTIdentifier & identifier, const std::vector<String> & names)
 {
     const auto & parts = identifier.name_parts;
-    return !parts.empty() && std::ranges::find(lambda_parameters, parts.front()) != lambda_parameters.end();
+    return !parts.empty() && std::ranges::find(names, parts.front()) != names.end();
+}
+
+/// Expression aliases as the analyzer collects them: none inside a lambda or a subquery, nor a lambda's own.
+void collectAliases(const IAST & ast, std::vector<String> & aliases)
+{
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        return;
+    /// `time AS time` still names the column.
+    const auto * identifier = ast.as<ASTIdentifier>();
+    if (auto alias = ast.tryGetAlias(); !alias.empty() && (!identifier || identifier->shortName() != alias))
+        aliases.push_back(std::move(alias));
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectWithUnionQuery>())
+        return;
+    for (const auto & child : ast.children)
+        collectAliases(*child, aliases);
 }
 
 /// Returns the DateTime/DateTime64 column type if `column_name` refers to
@@ -120,7 +137,7 @@ bool tryWrapComparisonLiteral(
     /// Check left=identifier, right=string-literal
     if (const auto * id = left->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(*id, columns, table_id, isBoundByLambda(*id, lambda_parameters)))
+        if (auto dt = getDateTimeColumnType(*id, columns, table_id, isBoundBy(*id, lambda_parameters)))
         {
             if (const auto * lit = right->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
             {
@@ -133,7 +150,7 @@ bool tryWrapComparisonLiteral(
     /// Check right=identifier, left=string-literal (e.g. '2000-01-01' <= time)
     if (const auto * id = right->as<ASTIdentifier>())
     {
-        if (auto dt = getDateTimeColumnType(*id, columns, table_id, isBoundByLambda(*id, lambda_parameters)))
+        if (auto dt = getDateTimeColumnType(*id, columns, table_id, isBoundBy(*id, lambda_parameters)))
         {
             if (const auto * lit = left->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
             {
@@ -243,7 +260,8 @@ bool tryWrapInLiterals(
     const ColumnsDescription & columns,
     const StorageID & table_id,
     const String & timezone,
-    const std::vector<String> & lambda_parameters)
+    const std::vector<String> & lambda_parameters,
+    const std::vector<String> & aliases)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
         return false;
@@ -255,10 +273,13 @@ bool tryWrapInLiterals(
     if (!id)
         return false;
 
-    const bool bound_by_lambda = isBoundByLambda(*id, lambda_parameters);
+    const bool bound_by_lambda = isBoundBy(*id, lambda_parameters);
     auto dt = getDateTimeColumnType(*id, columns, table_id, bound_by_lambda);
     if (!dt)
         return false;
+
+    /// A set value would drop an alias, and fits only the column itself, not a lambda parameter or alias of its name.
+    const bool wrap_strings = bound_by_lambda || (!id->compound() && isBoundBy(*id, aliases)) || !right->tryGetAlias().empty();
 
     bool wrapped = false;
     const auto zoned_type = withExplicitTimezone(dt, timezone);
@@ -280,7 +301,7 @@ bool tryWrapInLiterals(
             }
 
             wrapped = true;
-            if (bound_by_lambda)
+            if (wrap_strings || !lit->alias.empty())
             {
                 rewritten.push_back(wrapWithTimezone(child, dt, timezone));
                 continue;
@@ -302,7 +323,7 @@ bool tryWrapInLiterals(
         wrap_children(tuple_func->arguments->children);
     else if (auto * expr_list = right->as<ASTExpressionList>())
         wrap_children(expr_list->children);
-    else if (const auto * lit = right->as<ASTLiteral>(); lit && !bound_by_lambda)
+    else if (const auto * lit = right->as<ASTLiteral>(); lit && !wrap_strings)
     {
         /// A plain literal list is folded by the parser into one literal: `IN ('a')` is a String,
         /// `IN ('a','b')` a Tuple, `IN ['a']` an Array.
@@ -339,6 +360,7 @@ public:
         /// Parameters of the lambdas enclosing the visited node. A lambda keeps its parameters as plain
         /// identifiers in the AST, and inside its body such a name shadows a storage column of the same name.
         std::vector<String> lambda_parameters;
+        std::vector<String> aliases;
         bool modified = false;
     };
 
@@ -395,8 +417,12 @@ public:
                 data.lambda_parameters.push_back(parameter_identifier->name());
             }
 
+            const size_t enclosing_aliases = data.aliases.size();
+            collectAliases(*arguments[1], data.aliases);
+
             InDepthNodeVisitor<RewriteDateTimeLiteralsMatcher, true>(data).visit(arguments[1]);
             data.lambda_parameters.resize(enclosing_parameters);
+            data.aliases.resize(enclosing_aliases);
         }
         else if (comparison_functions.contains(function.name))
         {
@@ -407,7 +433,7 @@ public:
         else if (functionIsInOrGlobalInOperator(function.name))
         {
             if (tryWrapInLiterals(
-                    function, data.columns, data.table_id, data.session_timezone, data.lambda_parameters))
+                    function, data.columns, data.table_id, data.session_timezone, data.lambda_parameters, data.aliases))
                 data.modified = true;
         }
     }
@@ -436,7 +462,11 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
         children.erase(it);
     };
 
-    RewriteDateTimeLiteralsMatcher::Data data{columns, table_id, session_timezone, {}, false};
+    RewriteDateTimeLiteralsMatcher::Data data{columns, table_id, session_timezone, {}, {}, false};
+    if (new_command.update_assignments)
+        collectAliases(*new_command.update_assignments, data.aliases);
+    if (new_command.predicate)
+        collectAliases(*new_command.predicate, data.aliases);
     RewriteDateTimeLiteralsVisitor visitor(data);
 
     if (new_command.update_assignments)
