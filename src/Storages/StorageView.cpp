@@ -803,7 +803,8 @@ void StorageView::readImpl(
     const auto & header = query_plan.getCurrentHeader();
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
-    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(*header, expected_header))
+    if (!converts_query_result_to_columns && select_with_union && hasJoin(*select_with_union)
+        && changedNullabilityOneWay(*header, expected_header))
     {
         throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
                             "Query from view {} returned Nullable column having not Nullable type in structure. "

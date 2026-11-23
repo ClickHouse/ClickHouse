@@ -58,10 +58,21 @@ ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context
 }
 
 StoragePtr TableFunctionView::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context, is_insert_query);
+    /// A table created with `CREATE TABLE ... AS view(...)` passes its columns, and then the storage is created on the first
+    /// access, with the global context (see `ITableFunction::execute`). Analyzing the query here would do it with the global
+    /// access rights, which evaluates constant expressions, such as `dictGet`, that the user may have no access to, and
+    /// discloses their values, for example in an error. `StorageView::read` analyzes the query with the context of each query
+    /// that reads the table, and converts its result to these columns.
+    const bool has_cached_columns = !cached_columns.empty();
+    auto columns = has_cached_columns ? std::move(cached_columns) : getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
+    /// The query result is converted to these columns, as `StorageTableFunctionProxy` did for the columns of the query.
+    if (has_cached_columns)
+    {
+        res->setConvertsQueryResultToColumns();
+    }
     res->startup();
     return res;
 }
