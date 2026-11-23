@@ -1,31 +1,54 @@
 -- a lazily read column is not served by a projection that stores only the other column
-995	7
-994	7
-995	[0,1]	7
-994	[0]	7
-995	7
-994	7
+a
+id
+k
+995	0
+994	0
+995	[0,1]	0
+994	[0]	0
+995	0
+994	0
 995	[0,1]
 994	[0]
 -- mutations of a column that the part does not hold
-1	{"x":11}	7	1
-2	{"x":22}	7	2
-1	{"x":11}	7	UInt32	1
-2	{"x":22}	7	UInt32	2
-1	{"x":11}	7	1
-2	{"x":22}	7	2
+a
+b
+id
+1	{"x":11}	0	1
+2	{"x":22}	0	2
+1	{"x":11}	0	UInt32	1
+2	{"x":22}	0	UInt32	2
+a
+b
+id
 1	{"x":11}	9	1
-2	{"x":22}	7	2
-1	{"x":11}	7	1
-2	{"x":22}	7	2
+2	{"x":22}	0	2
+a
+b
+id
+1	{"x":11}	0	1
+2	{"x":22}	0	2
+a
+b
+id
+1	{"x":11}	0	1
+2	{"x":22}	0	2
+a
+a.x
+b
+id
+1	{"x":11}	0	1
+2	{"x":22}	0	2
 -- a projection computed from the recorded default of a missing column stays usable
 0
 0
 0
 0
 -- a skip index over a subcolumn of a missing column is not answered by a path of the JSON column
-1	7
-2	7
+a
+id
+1	0
+2	0
 2
 2
 0
