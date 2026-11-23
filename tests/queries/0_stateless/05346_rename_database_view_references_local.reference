@@ -8,6 +8,7 @@
 index_v: NOT_IMPLEMENTED
 loop_v: NOT_IMPLEMENTED
 qualified_loop_v: NOT_IMPLEMENTED
+remote_loop_v: NOT_IMPLEMENTED
 param_v: NOT_IMPLEMENTED
 1
 1

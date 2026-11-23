@@ -39,6 +39,7 @@ ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --ignore-error -m -q "
     CREATE VIEW ext.index_v AS SELECT x FROM loop(mergeTreeIndex(f, t)) LIMIT 1;
     CREATE VIEW ext.loop_v AS SELECT * FROM loop('f', 't') LIMIT 1;
     CREATE VIEW ext.qualified_loop_v AS SELECT * FROM loop(f.t) LIMIT 1;
+    CREATE VIEW ext.remote_loop_v (x UInt64) AS SELECT x FROM remote('127.0.0.2', (SELECT 'ext' FROM loop('f', 't') LIMIT 1), 't');
     CREATE VIEW ext.param_v AS SELECT * FROM f.p(n = 1);
     CREATE VIEW ext.file_v AS SELECT * FROM file('f', 'CSV', 'x UInt64');
     RENAME DATABASE f TO g;
@@ -47,6 +48,8 @@ ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --ignore-error -m -q "
     DROP VIEW ext.loop_v;
     RENAME DATABASE f TO g;
     DROP VIEW ext.qualified_loop_v;
+    RENAME DATABASE f TO g;
+    DROP VIEW ext.remote_loop_v;
     RENAME DATABASE f TO \`g.dot\`;
     SELECT * FROM ext.param_v;
     RENAME DATABASE f TO g;

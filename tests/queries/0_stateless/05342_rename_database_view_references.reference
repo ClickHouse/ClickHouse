@@ -21,6 +21,7 @@ _mem.v: 5
 _ext.merge_v: 5
 _ext.param_call_v: 5
 _ext.literal_arg_v: 5
+_ext.remote_local_v: 2
 occurrences of the old name: 0
 _dst.rt: 5
 _ext.rt: 2
@@ -51,4 +52,5 @@ _mem.v: 10
 _ext.merge_v: 10
 _ext.param_call_v: 10
 _ext.literal_arg_v: 10
+_ext.remote_local_v: 4
 ['_dst.inline_mv','_dst.qualified_mv','_dst.to_mv','_dst.union_mv','_ext.cte_mv','_ext.mv']

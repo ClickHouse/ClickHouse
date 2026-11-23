@@ -62,8 +62,9 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${C0}.j (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
     CREATE VIEW ${C0}.joinget_v AS SELECT joinGet('${C0}.j', 'v', toUInt64(1)) AS x;
     CREATE VIEW ${C0}.qualified_v AS SELECT ${C0}.t.a FROM ${C0}.t;
+    CREATE VIEW ${C0}.remote_joinget_v (a UInt64) AS SELECT a FROM remote('127.0.0.2', toString(joinGet('${C0}.j', 'v', toUInt64(1))), 't');
 "
-for view in joinget_v qualified_v; do
+for view in joinget_v qualified_v remote_joinget_v; do
     ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${C0} TO \`${C0}.x\`" 2>&1 | sed -n "s/.*the names in ${C0}\.\([a-z_]*\) refer.*: \(a database name contains a dot\)\..*/\1: \2/p" | head -1
     ${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${C0}; DROP VIEW ${C0}.${view}"
 done

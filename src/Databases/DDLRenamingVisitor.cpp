@@ -122,13 +122,34 @@ namespace
         }
     }
 
-    /// The arguments of these table functions name objects on other servers.
+    /// The table functions that read the tables of other servers.
     bool isRemoteTableFunction(const IAST & ast)
     {
         const auto * function = ast.as<ASTFunction>();
         return function
             && (function->name == "remote" || function->name == "remoteSecure" || function->name == "cluster"
                 || function->name == "clusterAllReplicas");
+    }
+
+    /// The arguments of such a table function that this server evaluates, as `parseRemoteFunctionArguments` reads them:
+    /// all but the names of the remote objects and a table function the remote servers run.
+    ASTs getLocalArguments(const ASTFunction & function)
+    {
+        ASTs res;
+        if (!function.arguments)
+            return res;
+        for (auto argument : function.arguments->children)
+        {
+            /// A named collection override `key = value`.
+            if (const auto * pair = argument->as<ASTFunction>(); pair && pair->name == "equals" && pair->arguments
+                && pair->arguments->children.size() == 2)
+                argument = pair->arguments->children[1];
+            const auto * nested = argument->as<ASTFunction>();
+            if (!dynamic_cast<const ASTIdentifier *>(argument.get())
+                && !(nested && TableFunctionFactory::instance().isTableFunctionName(nested->name)))
+                res.push_back(argument);
+        }
+        return res;
     }
 
     /// A parameterized view is called like a table function named `db.view`.
@@ -371,7 +392,13 @@ namespace
 
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
-        if (auto table_name_argument = getTableNameArgumentIndex(function))
+        if (isRemoteTableFunction(function))
+        {
+            auto local_data = data;
+            for (auto & argument : getLocalArguments(function))
+                DDLRenamingVisitor::Visitor{local_data}.visit(argument);
+        }
+        else if (auto table_name_argument = getTableNameArgumentIndex(function))
         {
             /// A string on the right side of `IN` is a value, not a table name.
             replaceTableNameInArgument(function, data, *table_name_argument, /*accept_string=*/ !functionIsInOrGlobalInOperator(function.name));
@@ -626,7 +653,12 @@ namespace
     const ASTFunction * findTableFunctionNamingDatabase(const IAST & ast, const String & database)
     {
         if (isRemoteTableFunction(ast))
+        {
+            for (const auto & argument : getLocalArguments(*ast.as<ASTFunction>()))
+                if (const auto * found = findTableFunctionNamingDatabase(*argument, database))
+                    return found;
             return nullptr;
+        }
         if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
             if (const auto * function = table_expression->table_function->as<ASTFunction>())
                 if (const auto * found = findInTableFunction(*function, database))
@@ -713,7 +745,11 @@ void DatabaseRenamingInViewDefinition::collect(const ASTPtr & ast, NamePosition 
     else if (const auto * function = ast->as<ASTFunction>())
     {
         if (isRemoteTableFunction(*function))
+        {
+            for (const auto & argument : getLocalArguments(*function))
+                collect(argument, NamePosition::Expression);
             return;
+        }
 
         auto table_name_argument = getTableNameArgumentIndex(*function);
         for (const auto & child : ast->children)

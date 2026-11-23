@@ -22,6 +22,8 @@ joinget_v: a database name contains a dot
 1
 qualified_v: a database name contains a dot
 1
+remote_joinget_v: a database name contains a dot
+1
 -- a table and a column named like the database, with no qualified name to rewrite
 7
 -- column expressions and the dictionary() table function
