@@ -11,6 +11,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
+#include <optional>
 #include <string_view>
 
 namespace DB::ArrowIPC
@@ -56,6 +57,10 @@ EncodedStream encodeStream(const Block & header, const Chunks & chunks, const Fo
 
 /// Parses a `Schema` message, encapsulated or a bare FlatBuffer `Message`.
 ArrowSchema parseSchemaMessage(std::string_view message);
+
+/// The number of rows that the header of a message (the FlatBuffer `Message`) declares for its record batch, or
+/// nothing if it is not a message with a record batch. It is known before the batch is decoded.
+std::optional<Int64> recordBatchRows(std::string_view header);
 
 /// Reads the messages of an Arrow IPC stream, given one by one, as the stream itself: the `ArrowStream` input
 /// format reads Arrow Flight data through it. `next` returns the next message, or false at the end.

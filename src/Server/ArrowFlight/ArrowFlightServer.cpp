@@ -5,6 +5,7 @@
 #include <Server/ArrowFlight/AuthMiddleware.h>
 #include <Server/ArrowFlight/CallsData.h>
 #include <Server/ArrowFlight/commandSelector.h>
+#include <Server/ArrowFlight/formatArrowScalar.h>
 #include <Server/ArrowFlight/PollSession.h>
 
 #include <Core/Block.h>
@@ -18,6 +19,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
@@ -42,6 +44,7 @@
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Interpreters/ProcessList.h>
+#include <base/unaligned.h>
 
 #include <arrow/flight/sql/FlightSql.pb.h>
 #include <fmt/ranges.h>
@@ -170,40 +173,118 @@ namespace
         return bytes;
     }
 
-    /// Whether the field is a `date64`: milliseconds since the epoch, which the reader decodes as `DateTime`, so a
-    /// date before 1970 or after 2106 would not survive. A parameter of this type is decoded as its `Int64` value.
-    bool isDate64(const ArrowIPC::ArrowField & field)
+    /// The type that the values of a parameter of the Arrow type `type` are decoded as, if they are not decoded as
+    /// values of a ClickHouse type: an integer or a binary type with the same layout, which gives the value as
+    /// Arrow stores it. The ClickHouse types of these Arrow types cannot hold all of their values (a `Date32` has
+    /// a narrower range, a `Decimal` cannot have a negative scale), or their text depends on a time zone, while
+    /// the literal of a parameter is the text the Apache Arrow library formats: see `formatArrowScalar.h`.
+    std::optional<ArrowIPC::ArrowType> parameterCarrierType(const ArrowIPC::ArrowType & type)
     {
-        return field.type.kind == ArrowIPC::TypeKind::Date && field.type.unit == ArrowIPC::flatbuf::DateUnit_MILLISECOND;
+        using ArrowIPC::TypeKind;
+        namespace flatbuf = ArrowIPC::flatbuf;
+
+        auto integer = [](int bit_width)
+        {
+            ArrowIPC::ArrowType carrier;
+            carrier.kind = TypeKind::Int;
+            carrier.bit_width = bit_width;
+            carrier.is_signed = true;
+            return carrier;
+        };
+        auto binary = [](int byte_width)
+        {
+            ArrowIPC::ArrowType carrier;
+            carrier.kind = TypeKind::FixedSizeBinary;
+            carrier.byte_width = byte_width;
+            return carrier;
+        };
+
+        switch (type.kind)
+        {
+            case TypeKind::Date:
+                return integer(type.unit == flatbuf::DateUnit_DAY ? 32 : 64);
+            case TypeKind::Time:
+                return integer(type.time_bit_width);
+            case TypeKind::Timestamp:
+            case TypeKind::Duration:
+                return integer(64);
+            case TypeKind::Decimal:
+                return binary(type.decimal_bit_width / 8);
+            case TypeKind::Interval:
+                if (type.unit == flatbuf::IntervalUnit_YEAR_MONTH)
+                    return integer(32);
+                return binary(type.unit == flatbuf::IntervalUnit_DAY_TIME ? 8 : 16);
+            default:
+                return {};
+        }
     }
 
-    /// The date of a `date64` value as Arrow formats it: the day of the milliseconds in the proleptic Gregorian
-    /// calendar (http://howardhinnant.github.io/date_algorithms.html#civil_from_days).
-    String date64ToSQLLiteral(Int64 milliseconds)
+    /// One of the integers of a value decoded as bytes, which are in the byte order of the Arrow schema.
+    template <typename T>
+    T loadParameterInteger(std::string_view bytes, size_t offset, bool little_endian)
     {
-        constexpr Int64 milliseconds_per_day = 86'400'000;
-        Int64 days = milliseconds / milliseconds_per_day;
-        if (milliseconds % milliseconds_per_day < 0)
-            --days;
-        const Int64 z = days + 719468;
-        const Int64 era = (z >= 0 ? z : z - 146096) / 146097;
-        const Int64 doe = z - era * 146097;
-        const Int64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-        const Int64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        const Int64 mp = (5 * doy + 2) / 153;
-        const Int64 day = doy - (153 * mp + 2) / 5 + 1;
-        const Int64 month = mp < 10 ? mp + 3 : mp - 9;
-        const Int64 year = yoe + era * 400 + (month <= 2);
-        return quoteString(fmt::format("{:04}-{:02}-{:02}", year, month, day));
+        chassert(offset + sizeof(T) <= bytes.size());
+        const char * address = bytes.data() + offset;
+        return little_endian ? unalignedLoadLittleEndian<T>(address) : unalignedLoadBigEndian<T>(address);
+    }
+
+    /// The literal of a parameter whose value is decoded as an integer or as bytes (see `parameterCarrierType`):
+    /// the text the Apache Arrow library formats for the value. Nothing for the other types.
+    std::optional<String> carriedParameterToSQLLiteral(const ArrowIPC::ArrowType & type, bool little_endian, const IColumn & column)
+    {
+        using ArrowIPC::TypeKind;
+        namespace flatbuf = ArrowIPC::flatbuf;
+
+        /// `parseSchema` has validated the unit.
+        const auto time_unit = static_cast<ArrowFlight::ArrowTimeUnit>(type.unit);
+
+        /// The texts of dates, times and intervals are quoted: `2021-01-01` would be parsed as `2021 - 1 - 1`.
+        switch (type.kind)
+        {
+            case TypeKind::Date:
+                if (type.unit == flatbuf::DateUnit_DAY)
+                    return quoteString(ArrowFlight::formatArrowDate32(static_cast<Int32>(column.getInt(0))));
+                return quoteString(ArrowFlight::formatArrowDate64(column.getInt(0)));
+            case TypeKind::Time:
+                return quoteString(ArrowFlight::formatArrowTime(column.getInt(0), time_unit));
+            case TypeKind::Timestamp:
+                return quoteString(ArrowFlight::formatArrowTimestamp(column.getInt(0), time_unit, !type.timezone.empty()));
+            case TypeKind::Duration:
+                return quoteString(toString(column.getInt(0)));
+            case TypeKind::Decimal:
+            {
+                String coefficient{column.getDataAt(0)};
+                if (!little_endian)
+                    std::reverse(coefficient.begin(), coefficient.end());
+                /// A number, so it is not quoted.
+                return ArrowFlight::formatArrowDecimal(coefficient, type.scale);
+            }
+            case TypeKind::Interval:
+            {
+                if (type.unit == flatbuf::IntervalUnit_YEAR_MONTH)
+                    return quoteString(ArrowFlight::formatArrowMonthInterval(static_cast<Int32>(column.getInt(0))));
+                const String bytes{column.getDataAt(0)};
+                if (type.unit == flatbuf::IntervalUnit_DAY_TIME)
+                    return quoteString(ArrowFlight::formatArrowDayTimeInterval(
+                        loadParameterInteger<Int32>(bytes, 0, little_endian), loadParameterInteger<Int32>(bytes, 4, little_endian)));
+                return quoteString(ArrowFlight::formatArrowMonthDayNanoInterval(
+                    loadParameterInteger<Int32>(bytes, 0, little_endian),
+                    loadParameterInteger<Int32>(bytes, 4, little_endian),
+                    loadParameterInteger<Int64>(bytes, 8, little_endian)));
+            }
+            default:
+                return {};
+        }
     }
 
     /// Converts the value of a bound parameter to a ClickHouse SQL literal, by the Arrow type of the parameter.
-    String parameterToSQLLiteral(const ArrowIPC::ArrowField & field, const ColumnWithTypeAndName & column)
+    /// `little_endian` is the byte order of the Arrow schema.
+    String parameterToSQLLiteral(const ArrowIPC::ArrowField & field, bool little_endian, const ColumnWithTypeAndName & column)
     {
         if (column.column->isNullAt(0))
             return "NULL";
-        if (isDate64(field))
-            return date64ToSQLLiteral(column.column->getInt(0));
+        if (auto literal = carriedParameterToSQLLiteral(field.type, little_endian, *column.column))
+            return std::move(*literal);
 
         WriteBufferFromOwnString text;
         column.type->getDefaultSerialization()->serializeText(*column.column, 0, text, FormatSettings{});
@@ -219,7 +300,6 @@ namespace
             /// Numbers: their text is a valid numeric literal.
             case TypeKind::Int:
             case TypeKind::FloatingPoint:
-            case TypeKind::Decimal:
                 return value;
             case TypeKind::Utf8:
             case TypeKind::LargeUtf8:
@@ -231,9 +311,7 @@ namespace
             case TypeKind::BinaryView:
             case TypeKind::FixedSizeBinary:
                 return binaryToSQLExpression(binaryParameterBytes(column));
-            /// Date/time types: the text is a human-readable string like "2021-01-01" that must be quoted - otherwise
-            /// ClickHouse parses "2021-01-01" as 2021 - 1 - 1 = 2019. Other types (lists, structs, maps, ...) are
-            /// quoted as a best-effort fallback.
+            /// The other types (lists, structs, maps, ...) are quoted as a best-effort fallback.
             default:
                 return quoteString(value);
         }
@@ -417,8 +495,8 @@ namespace
 
     /// The values of the parameters a client binds to a prepared statement with `DoPut`, as SQL literals: the
     /// messages of an Arrow IPC stream of at most one row. None when no row is bound.
-    /// The messages are decoded as `next_message` returns them, and nothing is read after the first excess row:
-    /// the upload is not attributed to a query, so it must not be collected first.
+    /// The messages are decoded as `next_message` returns them, and nothing is decoded or read after the first
+    /// excess row. The caller limits the memory of the decoding, see `doPut`.
     Result<std::optional<Strings>> readParameterLiterals(const ArrowIPC::IPCMessagesReadBuffer::NextMessage & next_message, const ContextPtr & context)
     {
         ArrowIPC::IPCMessage schema_message;
@@ -429,20 +507,19 @@ namespace
 
         /// Parameters are positional, but the reader matches the columns of a batch by name: the fields are renamed
         /// by their position, so that equal names (or names equal up to case) cannot make two parameters read the
-        /// same column. A `date64` is read as its `Int64` milliseconds, see `isDate64`. Both keep the layout of the
-        /// data, so the batches are read as they are.
+        /// same column. The values of some types are read as integers or bytes, see `parameterCarrierType`. Both
+        /// keep the layout of the data, so the batches are read as they are.
         {
             auto decoded_schema = schema;
             for (size_t i = 0; i < decoded_schema.fields.size(); ++i)
             {
                 auto & field = decoded_schema.fields[i];
                 field.name = "p" + std::to_string(i);
-                if (isDate64(field))
+                if (auto carrier = parameterCarrierType(field.type))
                 {
-                    field.type = ArrowIPC::ArrowType{};
-                    field.type.kind = ArrowIPC::TypeKind::Int;
-                    field.type.bit_width = 64;
-                    field.type.is_signed = true;
+                    field.type = std::move(*carrier);
+                    /// The metadata of the field (an extension type) must not change how the carrier is read.
+                    field.custom_metadata.clear();
                 }
             }
             schema_message.header = std::move(ArrowIPC::splitStream(ArrowIPC::serializeSchemaMessage(decoded_schema)).front().header);
@@ -475,8 +552,14 @@ namespace
         if (header.columns() != schema.fields.size())
             return Status::NotImplemented("The types of some of the bound parameters are not supported");
 
+        /// The limit of one row is checked by the headers of the record batches, before a batch is decoded: a batch
+        /// of a few bytes can declare any number of rows (of a run-end encoded column), which the reader would
+        /// allocate. Nothing is decoded or read after the first excess row.
+        bool schema_given = false;
+        size_t rows_in_batches = 0;
+        std::optional<Status> excess_rows;
         auto data_buffer = std::make_unique<ArrowIPC::IPCMessagesReadBuffer>(
-            [&schema_message, &next_message, schema_given = false](ArrowIPC::IPCMessage & message) mutable
+            [&](ArrowIPC::IPCMessage & message)
             {
                 if (!schema_given)
                 {
@@ -484,7 +567,19 @@ namespace
                     schema_given = true;
                     return true;
                 }
-                return next_message(message);
+                if (excess_rows || !next_message(message))
+                    return false;
+                if (const auto rows = ArrowIPC::recordBatchRows(message.header); rows && *rows > 0)
+                {
+                    if (rows_in_batches != 0)
+                        excess_rows = Status::NotImplemented("Multiple parameter sets are not supported");
+                    else if (*rows > 1)
+                        excess_rows = Status::NotImplemented("Multiple parameter sets are not supported (got ", *rows, " rows)");
+                    if (excess_rows)
+                        return false;
+                    rows_in_batches = 1;
+                }
+                return true;
             });
         auto input = std::make_shared<ArrowIPCBlockInputFormat>(
             *data_buffer, std::make_shared<const Block>(header), /* stream_ */ true, DEFAULT_BLOCK_SIZE, format_settings);
@@ -508,9 +603,12 @@ namespace
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 const auto & header_column = header.getByPosition(i);
-                literals->push_back(parameterToSQLLiteral(schema.fields[i], {columns[i], header_column.type, header_column.name}));
+                literals->push_back(
+                    parameterToSQLLiteral(schema.fields[i], schema.little_endian, {columns[i], header_column.type, header_column.name}));
             }
         }
+        if (excess_rows)
+            return *excess_rows;
         return literals;
     }
 }
@@ -1351,8 +1449,22 @@ Status ArrowFlightServer::doPut(
             /// Before the parameters are read: there is nothing to bind them to if the handle is unknown.
             FLIGHT_RETURN_NOT_OK(calls_data->getPreparedStatement(handle, auth.getUsername()).status());
 
-            auto query_context = session->makeQueryContext();
-            FLIGHT_ASSIGN_OR_RAISE(auto params, readParameterLiterals(next_message, query_context))
+            std::optional<Strings> params;
+            {
+                /// The parameters are decoded before there is a query to run. The decoding is registered in the list
+                /// of processes as a query is, so that its memory is charged to the user and is under the limits of
+                /// a query of the user (`max_memory_usage`, `max_memory_usage_for_user`): what a client uploads can
+                /// take much more memory when it is decoded than it has bytes.
+                auto query_context = session->makeQueryContext();
+                query_context->setCurrentQueryId(""); /// Empty string means the query id will be autogenerated.
+                QueryScope query_scope = QueryScope::create(query_context);
+                auto process_list_entry = query_context->getProcessList().insert(
+                    "(Arrow Flight SQL) binding the parameters of a prepared statement", /* normalized_query_hash */ 0, /* ast */ nullptr,
+                    query_context, clock_gettime_ns(CLOCK_MONOTONIC), /* is_internal */ true);
+                query_context->setProcessListElement(process_list_entry->getQueryStatus());
+
+                FLIGHT_ASSIGN_OR_RAISE(params, readParameterLiterals(next_message, query_context))
+            }
             FLIGHT_RETURN_NOT_OK(calls_data->bindParameters(handle, auth.getUsername(), std::move(params)));
 
             /// Return DoPutPreparedStatementResult with the same handle.

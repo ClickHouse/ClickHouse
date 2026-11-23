@@ -346,6 +346,14 @@ ArrowSchema parseSchemaMessage(std::string_view message)
     return parseSchema(*parsed.header_as_Schema(), parsed.version());
 }
 
+std::optional<Int64> recordBatchRows(std::string_view header)
+{
+    const auto & message = verifiedMessage(header);
+    if (message.header_type() != flatbuf::MessageHeader_RecordBatch || !message.header_as_RecordBatch())
+        return {};
+    return message.header_as_RecordBatch()->length();
+}
+
 IPCMessagesReadBuffer::IPCMessagesReadBuffer(NextMessage next_message_)
     : ReadBuffer(nullptr, 0)
     , next_message(std::move(next_message_))

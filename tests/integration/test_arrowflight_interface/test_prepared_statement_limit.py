@@ -215,6 +215,20 @@ def test_prepared_statement_execute_without_bind_no_params():
     ("timestamp_us", pa.array([datetime.datetime(2023, 3, 14, 12, 30, 45)], type=pa.timestamp("us")), datetime.datetime(2023, 3, 14, 12, 30, 45)),
     # Decimal
     ("decimal128", pa.array([decimal.Decimal("123.45")], type=pa.decimal128(10, 2)), decimal.Decimal("123.45")),
+    # Decimals with a scale that a ClickHouse decimal cannot have: negative (12 * 10^2), and above the precision.
+    ("decimal128_negative_scale", pa.array([decimal.Decimal("1200")], type=pa.decimal128(2, -2)), decimal.Decimal("1200")),
+    (
+        "decimal128_scale_above_precision",
+        pa.Array.from_buffers(pa.decimal128(2, 4), 1, [None, pa.py_buffer((12).to_bytes(16, "little", signed=True))]),
+        decimal.Decimal("0.0012"),
+    ),
+    # Values that are bound as the text of Arrow, whatever the range and the text of the ClickHouse type
+    ("date32_before_1900", pa.array([datetime.date(1500, 1, 1)], type=pa.date32()), datetime.date(1500, 1, 1)),
+    ("timestamp_ns_before_1970", pa.array([-1], type=pa.timestamp("ns")), "1969-12-31 23:59:59.999999999"),
+    ("time32_s", pa.array([datetime.time(12, 30, 45)], type=pa.time32("s")), "12:30:45"),
+    ("time64_us", pa.array([datetime.time(12, 30, 45, 123456)], type=pa.time64("us")), "12:30:45.123456"),
+    ("duration_ms", pa.array([datetime.timedelta(milliseconds=1500)], type=pa.duration("ms")), "1500"),
+    ("month_day_nano_interval", pa.array([pa.MonthDayNano([1, 2, 3])], type=pa.month_day_nano_interval()), "1M2d3ns"),
     # NULL
     ("null_int", pa.array([None], type=pa.int32()), None),
     ("null_string", pa.array([None], type=pa.string()), None),
@@ -497,6 +511,59 @@ def test_prepared_statement_date64_parameter_keeps_its_date():
     result = stmt.execute()
     assert result.column("before_epoch").to_pylist() == ["1960-01-01"]
     assert result.column("after_datetime").to_pylist() == ["2200-01-01"]
+
+    stmt.close()
+
+
+def test_prepared_statement_timestamp_parameters_do_not_depend_on_time_zones():
+    """A timestamp is bound as Arrow formats it: in UTC, and with `Z` if its type has a time zone. Neither the
+    time zone of the type nor the one of the session changes the value."""
+    client = get_client()
+    client.set_session_options({"session_timezone": "Asia/Tokyo"})
+
+    stmt = client.prepare("SELECT ? AS zoned, ? AS naive")
+    stmt.bind_parameters(
+        pa.record_batch(
+            [
+                pa.array([0], type=pa.timestamp("us", tz="Europe/Berlin")),
+                pa.array([datetime.datetime(2023, 3, 14, 12, 30, 45)], type=pa.timestamp("us")),
+            ],
+            names=["0", "1"],
+        )
+    )
+    result = stmt.execute()
+    assert result.column("zoned").to_pylist() == ["1970-01-01 00:00:00.000000Z"]
+    assert result.column("naive").to_pylist() == ["2023-03-14 12:30:45.000000"]
+
+    stmt.close()
+
+
+def test_prepared_statement_rows_of_a_compact_batch_are_rejected_before_decoding():
+    """The limit of one row is checked by the header of a batch, before the batch is decoded: a run-end encoded
+    column of 16 bytes that declares 2^40 rows is rejected as multiple parameter sets. Decoding it would need
+    terabytes, and fail with another error."""
+    client = get_client()
+
+    stmt = client.prepare("SELECT ? AS result")
+    rows = 1 << 40
+    values = pa.RunEndEncodedArray.from_arrays(pa.array([rows], pa.int64()), pa.array([1], pa.int8()))
+    params = pa.record_batch([values], names=["0"])
+
+    cmd = CommandPreparedStatementQuery(prepared_statement_handle=stmt.handle)
+    options = flight.FlightCallOptions(
+        headers=list(dict(client.headers).items()),
+        write_options=pa.ipc.IpcWriteOptions(allow_64bit=True),
+    )
+    with pytest.raises((pa.lib.ArrowException, flight.FlightError), match=f"got {rows} rows"):
+        writer, reader = client.client.do_put(flight_descriptor(cmd), params.schema, options)
+        writer.write_batch(params)
+        writer.done_writing()
+        reader.read()
+        writer.close()
+
+    # Nothing was bound.
+    with pytest.raises(pa.lib.ArrowInvalid, match="Parameters were not bound"):
+        stmt.execute()
 
     stmt.close()
 
