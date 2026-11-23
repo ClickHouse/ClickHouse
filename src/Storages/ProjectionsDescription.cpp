@@ -165,6 +165,11 @@ public:
 
     std::string getName() const override { return "ProjectionSource"; }
 
+    /// The storage is not a table of the catalog, it only borrows the name of `system.one`, so the
+    /// row policies and the `additional_table_filters` of that name must not be applied to it: they
+    /// would change the metadata of the projection.
+    bool isSyntheticDataSource() const override { return true; }
+
     bool supportsSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
