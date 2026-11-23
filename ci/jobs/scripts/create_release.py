@@ -266,6 +266,13 @@ class ReleaseInfo:
                 assert (
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
+                # The release PR is the last step of a cut, so without it the previous run failed past the master bump.
+                prev_version = CHVersion.get_version_at_commit(expected_prev_tag)
+                prev_branch = f"{prev_version.major}.{prev_version.minor}"
+                assert GH.get_pr_url_by_branch(branch=prev_branch, repo=GITHUB_REPOSITORY), (
+                    f"Refusing to cut [{release_branch}]: the previous cut [{prev_branch}] has no release PR."
+                    " Finish that cut by hand (its branch version bump and release PR): a rerun would cut the next release instead"
+                )
                 release_tag = version.describe
 
         if release_type == "patch":
