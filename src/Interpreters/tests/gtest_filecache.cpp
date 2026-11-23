@@ -5114,8 +5114,13 @@ TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
 
     const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
 
-    /// The start of a helper thread is logged at the debug level.
+    /// The start of a helper thread is logged at the debug level by the logger of `CacheMetadata`. All caches
+    /// share it, and it keeps the level and the channel which the root logger had when it was created.
     setupLogs("debug");
+    auto & metadata_logger = Poco::Logger::get("CacheMetadata");
+    metadata_logger.setChannel(Poco::Logger::root().getChannel());
+    metadata_logger.setLevel("debug");
+
     std::string log_output;
     testing::internal::CaptureStderr();
     {
