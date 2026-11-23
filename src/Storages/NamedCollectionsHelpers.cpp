@@ -239,6 +239,10 @@ void checkNamedCollectionOverridesInDictionarySource(
     if (collection_name.empty())
         return;
 
+    /// The dictionary is loaded with the global context, so the privilege to use the named collection,
+    /// which is checked in `tryGetNamedCollectionWithOverrides` for table engines and table functions, is checked here.
+    context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
+
     NamedCollectionFactory::instance().loadIfNot();
 
     /// A missing collection is reported when the dictionary source is created.

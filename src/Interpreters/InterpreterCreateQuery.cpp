@@ -43,6 +43,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Poco/String.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -225,6 +227,31 @@ namespace fs = std::filesystem;
 
 namespace
 {
+
+/// Returns the named collection that the source of a dictionary refers to with the key `name`, if any.
+/// Under `ON CLUSTER` the hosts evaluate the expressions in the source, so they are evaluated here too, on a copy.
+std::optional<String> getNamedCollectionOfDictionarySource(const ASTCreateQuery & create, ContextPtr context)
+{
+    if (!create.dictionary || !create.dictionary->source || !create.dictionary->source->elements)
+        return {};
+
+    ASTPtr source = create.dictionary->source->clone();
+    NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context};
+    NormalizeAndEvaluateConstantsVisitor(visitor_data).visit(source);
+
+    for (const auto & child : source->as<ASTFunctionWithKeyValueArguments &>().elements->children)
+    {
+        const auto * pair = child->as<ASTPair>();
+        if (!pair || Poco::toLower(pair->first) != "name")
+            continue;
+        if (const auto * identifier = pair->second->as<ASTIdentifier>())
+            return identifier->name();
+        if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            return literal->value.safeGet<String>();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of a named collection in a dictionary source must be a string");
+    }
+    return {};
+}
 
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
 /// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
@@ -4165,6 +4192,11 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     else if (create.is_dictionary)
     {
         required_access.emplace_back(AccessType::CREATE_DICTIONARY, create.getDatabase(), create.getTable());
+
+        /// Required here, not where the dictionary is built: `ON CLUSTER` and `Replicated` databases build it with full access,
+        /// and the dictionary is loaded with the global context.
+        if (auto collection_name = getNamedCollectionOfDictionarySource(create, getContext()))
+            required_access.emplace_back(AccessType::NAMED_COLLECTION, *collection_name);
     }
     else if (create.isView())
     {

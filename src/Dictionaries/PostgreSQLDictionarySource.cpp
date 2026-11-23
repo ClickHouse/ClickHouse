@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -242,6 +243,11 @@ std::string PostgreSQLDictionarySource::toString() const
     return "PostgreSQL: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
+void PostgreSQLDictionarySource::checkQueriesAreSelect() const
+{
+    checkExternalDictionarySourceQueries(query_builder, configuration.update_field, configuration.invalidate_query, "PostgreSQL");
+}
+
 static void validateConfigKeys(
     const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix)
 {
@@ -400,7 +406,11 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             bg_reconnect);
 
 
-        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, std::make_shared<const Block>(sample_block));
+        auto source = std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, std::make_shared<const Block>(sample_block));
+        /// The queries come from the `CREATE DICTIONARY` query and are executed with the credentials of the source.
+        if (created_from_ddl)
+            source->checkQueriesAreSelect();
+        return source;
 #else
         (void)dict_struct;
         (void)config;

@@ -53,6 +53,9 @@ public:
     DictionarySourcePtr clone() const override;
     std::string toString() const override;
 
+    /// Checks that the queries sent to the external database are `SELECT`, for a dictionary created by DDL.
+    void checkQueriesAreSelect() const;
+
 private:
     String getUpdateFieldAndDate();
     String doInvalidateQuery(const std::string & request) const;

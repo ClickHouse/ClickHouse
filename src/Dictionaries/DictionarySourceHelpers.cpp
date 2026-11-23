@@ -4,8 +4,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Core/Defines.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
 
@@ -15,6 +20,42 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int INCORRECT_QUERY;
+}
+
+void checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message)
+{
+    const char * query_begin = query.data();
+    const char * query_end = query.data() + query.size();
+    ParserQuery parser(query_end);
+    ASTPtr ast = parseQuery(parser, query_begin, query_end, description, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+
+    /// `INTO OUTFILE` is a part of a `SELECT` for ClickHouse, but an external database (MySQL) writes the file on its host.
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()); query_with_output && query_with_output->out_file)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "{}", error_message);
+}
+
+void checkExternalDictionarySourceQueries(
+    const ExternalQueryBuilder & query_builder, const String & update_field, const String & invalidate_query, const String & source_name)
+{
+    static constexpr auto source_error = "Only SELECT query can be used as a dictionary source";
+    checkDictionaryQueryIsSelect(query_builder.composeLoadAllQuery(), "Query for " + source_name + " dictionary", source_error);
+
+    /// The value of `update_field` is inserted into the query verbatim.
+    if (!update_field.empty())
+        checkDictionaryQueryIsSelect(
+            query_builder.composeUpdateQuery(update_field, "1970-01-01 00:00:00"),
+            "Update query for " + source_name + " dictionary",
+            source_error);
+
+    if (!invalidate_query.empty())
+        checkDictionaryQueryIsSelect(
+            invalidate_query,
+            "Invalidate query for " + source_name + " dictionary",
+            "Only SELECT query can be used as a dictionary invalidate query");
 }
 
 /// For simple key

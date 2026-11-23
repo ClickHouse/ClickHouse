@@ -25,6 +25,7 @@
 #include <Common/LocalDateTime.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/readInvalidateQuery.h>
 
 
@@ -244,7 +245,11 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         if (dictionary_configuration->query.empty() && dictionary_configuration->table.empty())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL dictionary source configuration must contain table or query field");
 
-        return std::make_unique<MySQLDictionarySource>(dict_struct, *dictionary_configuration, std::move(pool), sample_block, mysql_input_stream_settings);
+        auto source = std::make_unique<MySQLDictionarySource>(dict_struct, *dictionary_configuration, std::move(pool), sample_block, mysql_input_stream_settings);
+        /// The queries come from the `CREATE DICTIONARY` query and are executed with the credentials of the source.
+        if (created_from_ddl)
+            source->checkQueriesAreSelect();
+        return source;
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.");
@@ -534,6 +539,11 @@ std::string MySQLDictionarySource::toString() const
 {
     const auto & where = configuration.where;
     return "MySQL: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
+}
+
+void MySQLDictionarySource::checkQueriesAreSelect() const
+{
+    checkExternalDictionarySourceQueries(query_builder, configuration.update_field, configuration.invalidate_query, "MySQL");
 }
 
 std::string MySQLDictionarySource::quoteForLike(const std::string & value)

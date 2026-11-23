@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Common/escapeForFileName.h>
 #include <IO/Operators.h>
@@ -185,6 +186,11 @@ std::string XDBCDictionarySource::toString() const
     return bridge_helper->getName() + ": " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
+void XDBCDictionarySource::checkQueriesAreSelect() const
+{
+    checkExternalDictionarySourceQueries(query_builder, configuration.update_field, configuration.invalidate_query, bridge_helper->getName());
+}
+
 
 bool XDBCDictionarySource::isModified() const
 {
@@ -249,7 +255,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    Block & sample_block,
                                    ContextPtr global_context,
                                    const std::string & /* default_database */,
-                                   bool /* check_config */) -> DictionarySourcePtr {
+                                   bool created_from_ddl) -> DictionarySourcePtr {
 
         if (global_context->getSettingsRef()[Setting::cloud_mode])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `odbc` is disabled");
@@ -275,7 +281,11 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1)
         };
 
-        return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
+        auto source = std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
+        /// The queries come from the `CREATE DICTIONARY` query and are executed with the credentials of the source.
+        if (created_from_ddl)
+            source->checkQueriesAreSelect();
+        return source;
     };
     /// The connection string goes to the driver verbatim and can carry the password (`PWD=...`).
     factory.registerSource("odbc", create_table_source, SecretArgumentsSpec{.secret_keys = {"connection_string"}}, Documentation{

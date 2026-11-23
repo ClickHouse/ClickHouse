@@ -12,6 +12,7 @@ namespace DB
 {
 
 struct DictionaryStructure;
+struct ExternalQueryBuilder;
 class SettingsChanges;
 
 /// For simple key
@@ -26,6 +27,19 @@ Block blockForKeys(
 /// Used for applying settings to copied context in some register[...]Source functions
 SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextPtr & context, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+
+/// The query text comes from the dictionary definition (possibly a `CREATE DICTIONARY` written by a user
+/// who has no other privileges) and is executed with privileges that user may not have: as an `internal`
+/// query for a local ClickHouse source, or with the credentials of the configured account for an external
+/// database (possibly taken from a named collection). So only a `SELECT` without `INTO OUTFILE` is allowed.
+/// For external databases the query is parsed with the ClickHouse parser, so it must also be valid ClickHouse SQL.
+void checkDictionaryQueryIsSelect(const String & query, const String & description, const char * error_message);
+
+/// Checks the queries that a source of an external database (MySQL, PostgreSQL, ODBC) sends to it verbatim:
+/// the load query (`query` or `table` with `where`), the update query (`update_field`) and `invalidate_query`.
+/// It is used for dictionaries created by DDL, while the configuration files are trusted.
+void checkExternalDictionarySourceQueries(
+    const ExternalQueryBuilder & query_builder, const String & update_field, const String & invalidate_query, const String & source_name);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.
      *

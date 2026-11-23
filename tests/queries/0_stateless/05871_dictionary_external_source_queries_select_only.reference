@@ -1,0 +1,25 @@
+--- Statements other than SELECT are rejected
+MySQL invalidate_query: OK
+MySQL query: OK
+MySQL query with INTO OUTFILE: OK
+MySQL where: OK
+MySQL update_field: OK
+MySQL named collection invalidate_query: OK
+PostgreSQL invalidate_query: OK
+PostgreSQL query: OK
+--- SELECT is accepted
+MySQL: OK
+PostgreSQL: OK
+--- A named collection requires the privilege NAMED COLLECTION
+Without the grant: denied, not created
+1
+0
+Without the grant, ON CLUSTER: denied, not created
+1
+0
+Without the grant, the name is an expression: denied, not created
+1
+0
+With the grant: created
+0
+1

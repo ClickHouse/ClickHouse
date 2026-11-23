@@ -43,10 +43,10 @@ void checkNamedCollectionOverrideLock(const NamedCollection & collection, const 
 void checkNamedCollectionOverride(
     const NamedCollection & collection, const std::string & key, ContextPtr context, bool is_replayed_definition = false);
 
-/// Checks the overrides of the stored keys in the source of a dictionary at its creation, attachment or restore.
+/// Checks the privileges for the named collection in the source of a dictionary at its creation, attachment or restore.
 /// `config_prefix` is the source configuration "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse").
-/// Every key that replaces a stored key is checked with `checkNamedCollectionOverride` in `context`.
-/// Does nothing if the source does not refer to an existing named collection. Does not register dependencies.
+/// Checks `NAMED COLLECTION` on the collection, and every key that replaces a stored key with `checkNamedCollectionOverride` in `context`.
+/// Does nothing if the source does not refer to a named collection. Does not register dependencies.
 void checkNamedCollectionOverridesInDictionarySource(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
 
