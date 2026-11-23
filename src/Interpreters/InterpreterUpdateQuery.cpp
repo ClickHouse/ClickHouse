@@ -25,6 +25,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Storages/StorageAlias.h>
 
 
 namespace DB
@@ -164,6 +165,10 @@ BlockIO InterpreterUpdateQuery::execute()
             const auto & captured_update = captured_query_ptr->as<const ASTUpdateQuery &>();
             const auto default_database = captured_update.getDatabase().empty() ? cluster_default_database : captured_update.getDatabase();
             checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, throw_if_unresolved);
+            /// The hosts may execute the query without the user, so the targets of an `Alias` are authorized here,
+            /// as the alias does it itself when it updates them.
+            StorageAlias::checkTargetChainAccessIfAlias(
+                StorageID{default_database, captured_update.getTable()}, context, AccessType::ALTER, throw_if_unresolved);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }

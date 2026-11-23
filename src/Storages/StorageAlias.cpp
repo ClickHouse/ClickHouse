@@ -5,6 +5,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -54,6 +55,26 @@ StoragePtr resolveLazyStandIn(const StoragePtr & storage)
     return storage;
 }
 
+/// Whether the query is executed by a host of a distributed DDL query (`ON CLUSTER`) without the user: unless
+/// `distributed_ddl_use_initial_user_and_roles` is enabled, the hosts execute it with no user, and then every access check passes.
+bool isDistributedDDLWithoutUser(const ContextPtr & context)
+{
+    return context && context->isDDLOrOnClusterInternal() && !context->getClientInfo().is_replicated_database_internal
+        && !context->getUserID();
+}
+
+[[noreturn]] void throwAliasNeedsInitiatorUser(const StorageID & alias_id)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Table {} is an Alias. A distributed DDL query reaches the target of an alias only if every host executes it as the "
+        "initiating user: otherwise the hosts do not check the access to the target, and the host the query is submitted to "
+        "cannot check it for them, because their table of this name may be another one. Enable the server setting "
+        "distributed_ddl_use_initial_user_and_roles on every host, and set distributed_ddl_entry_format_version to at least {}",
+        alias_id.getNameForLogs(),
+        DDLLogEntry::INITIATOR_USER_VERSION);
+}
+
 }
 
 StorageAlias::StorageAlias(
@@ -79,9 +100,33 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     /// Table-level access check only. Column-level checks resolve subcolumns against the target
     /// metadata snapshot, so they are done by the caller that owns that snapshot (see `StorageAlias::read`).
     if (access_check)
+    {
+        if (isDistributedDDLWithoutUser(access_check->context))
+        {
+            throwAliasNeedsInitiatorUser(getStorageID());
+        }
         access_check->context->checkAccess(access_check->access_type, target_database, target_table);
+    }
 
-    return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+    auto target = DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+
+    /// The replicas of a `Replicated` database execute a query without the user (except, for some queries, the copy on the
+    /// replica the query is submitted to, see `QueryFlags::run_as_submitting_user`). The initiator has authorized the chain
+    /// of aliases it sees. A hop to an alias in this database is the same on every replica, because the definitions of its
+    /// tables are replicated, but an alias in another database is looked up in the catalog of each replica, which may
+    /// differ from the one of the initiator. Refuse such a hop on every replica, so that they all fail the same way.
+    if (access_check && access_check->context->getClientInfo().is_replicated_database_internal
+        && target_database != getStorageID().database_name && castStorage<StorageAlias>(target, DeferredTable::Skip))
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} is an Alias of another Alias {} in another database. A query replicated by a Replicated database cannot "
+            "go through it, because its replicas execute the query without the user and look up that alias in their own catalogs",
+            getStorageID().getNameForLogs(),
+            StorageID(target_database, target_table).getNameForLogs());
+    }
+
+    return target;
 }
 
 bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
@@ -154,6 +199,35 @@ std::vector<std::pair<String, String>> StorageAlias::getTargetChain() const
     return chain;
 }
 
+void StorageAlias::checkTargetChainAccessIfAlias(const StoragePtr & storage, const ContextPtr & query_context, AccessType access_type)
+{
+    /// An `Alias` is never loaded lazily (see `DatabaseOrdinary`), and no table function creates one, so a stand-in that
+    /// has not created its storage yet is not an alias. Do not load it: the question is asked for any distributed query.
+    const auto alias = castStorage<StorageAlias>(storage, DeferredTable::Skip);
+    if (!alias)
+    {
+        return;
+    }
+
+    for (const auto & [database, table] : alias->getTargetChain())
+    {
+        query_context->checkAccess(access_type, database, table);
+    }
+}
+
+void StorageAlias::checkTargetChainAccessIfAlias(
+    const StorageID & table_id, const ContextPtr & query_context, AccessType access_type, bool workers_run_without_user)
+{
+    const auto storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
+    checkTargetChainAccessIfAlias(storage, query_context, access_type);
+
+    /// The hosts refuse it anyway (see `getTargetTable`). Report it before the query is enqueued, if it is an alias here.
+    if (workers_run_without_user && castStorage<StorageAlias>(storage, DeferredTable::Skip))
+    {
+        throwAliasNeedsInitiatorUser(table_id);
+    }
+}
+
 NameSet StorageAlias::filterColumnsSelectableThroughChain(
     ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const
 {
@@ -183,6 +257,12 @@ bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType acc
 
 std::optional<IStorage::ColumnSizeByName> StorageAlias::tryGetColumnSizes(const ContextPtr & query_context) const
 {
+    /// See `supportsTrivialCountOptimization`.
+    if (isDistributedDDLWithoutUser(query_context))
+    {
+        return std::nullopt;
+    }
+
     auto target = tryGetTargetTable();
     if (!target)
         return std::nullopt;
@@ -663,8 +743,12 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMeta
 
 bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    if (!storage_snapshot)
+    /// A trivial `count()` answers from the target without `read`, which refuses a distributed DDL query without the user
+    /// (see `getTargetTable`). So does this, and the same for the other answers from the data of the target below.
+    if (!storage_snapshot || isDistributedDDLWithoutUser(query_context))
+    {
         return false;
+    }
 
     bool has_select_access = false;
     for (const auto & column : storage_snapshot->metadata->getColumns())
@@ -692,8 +776,10 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
 /// target and the conjunction of those answers is the whole chain.
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
-    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    if (isDistributedDDLWithoutUser(query_context) || !isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    {
         return {};
+    }
 
     auto target = tryGetTargetTable();
     return target ? target->totalRows(query_context) : std::optional<UInt64>{};
@@ -701,8 +787,10 @@ std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
-    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    if (isDistributedDDLWithoutUser(query_context) || !isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    {
         return {};
+    }
 
     auto target = tryGetTargetTable();
     return target ? target->totalBytes(query_context) : std::optional<UInt64>{};

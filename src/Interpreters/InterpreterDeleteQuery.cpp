@@ -17,6 +17,7 @@
 #include <Interpreters/InterpreterUpdateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Storages/StorageAlias.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
@@ -228,6 +229,9 @@ BlockIO InterpreterDeleteQuery::execute()
             params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &, bool throw_if_unresolved)
             {
                 checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
+                /// The hosts may execute the query without the user, so the targets of an `Alias` are authorized here,
+                /// as the alias does it itself when it deletes from them.
+                StorageAlias::checkTargetChainAccessIfAlias(table_id, context, AccessType::ALTER, throw_if_unresolved);
             };
             return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }

@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageProxy.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -42,6 +43,14 @@ BlockIO InterpreterOptimizeQuery::execute()
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
+        /// The hosts may execute the query without the user, so the targets of an `Alias` are authorized here.
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool workers_run_without_user)
+        {
+            const auto & optimize = captured_query_ptr->as<const ASTOptimizeQuery &>();
+            const auto & database = optimize.getDatabase().empty() ? cluster_default_database : optimize.getDatabase();
+            StorageAlias::checkTargetChainAccessIfAlias(
+                StorageID{database, optimize.getTable()}, context, AccessType::OPTIMIZE, workers_run_without_user);
+        };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 

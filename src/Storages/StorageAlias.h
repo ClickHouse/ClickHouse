@@ -72,6 +72,18 @@ public:
     /// chain when the target is itself an Alias. The chain stops at a cycle or at a target that does not exist.
     std::vector<std::pair<String, String>> getTargetChain() const;
 
+    /// If `storage` is an `Alias`, checks that the user of `query_context` has `access_type` on every table it resolves through.
+    /// An operation through an alias makes the same checks itself, on each hop, when it is executed. This is for the
+    /// initiator of a distributed query (`ON CLUSTER`, a `Replicated` database), whose hosts may execute the query without
+    /// the user (see `DDLTaskBase::makeQueryContext`), and then those checks pass whatever the user is granted.
+    static void checkTargetChainAccessIfAlias(const StoragePtr & storage, const ContextPtr & query_context, AccessType access_type);
+
+    /// Same, for the table `table_id` if it exists. For the initiator of `ON CLUSTER`, which may have no such table, or another
+    /// one under this name than the hosts have. So the hosts make their own check (see `getTargetTable`): if they execute the
+    /// query without the user (`workers_run_without_user`), they refuse an alias, and so does this function, early.
+    static void checkTargetChainAccessIfAlias(
+        const StorageID & table_id, const ContextPtr & query_context, AccessType access_type, bool workers_run_without_user);
+
     /// Read from target table
     void read(
         QueryPlan & query_plan,
