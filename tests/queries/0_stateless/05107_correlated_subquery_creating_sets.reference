@@ -12,3 +12,4 @@ the same set inside a correlated scalar subquery
 2	6
 an IN subquery inside a correlated EXISTS builds a set the same way
 100
+100

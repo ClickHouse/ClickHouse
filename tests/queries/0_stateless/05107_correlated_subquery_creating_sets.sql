@@ -46,13 +46,13 @@ SELECT 'an IN subquery inside a correlated EXISTS builds a set the same way';
 SELECT count() FROM t_correlated_sets AS o WHERE EXISTS (
     SELECT 1 FROM t_correlated_sets AS i WHERE i.s = o.s AND i.k IN (SELECT k FROM t_correlated_sets WHERE k < 50));
 
--- A set source that is itself correlated must not slip through: the analyzer rejects a correlated `IN`
--- argument before planning, and `decorrelateQueryPlan` rejects a correlated set source as well, so such a
--- query fails with `NOT_IMPLEMENTED` instead of a `PLACEHOLDER` logical error from executing the set plan
--- standalone. Correlated on the subquery's own table:
+-- A set source that is itself correlated must not slip through: the analyzer rewrites a correlated `IN`
+-- argument into `EXISTS` before planning, and `decorrelateQueryPlan` rejects a correlated set source as well,
+-- so such a query never reaches a `PLACEHOLDER` logical error from executing the set plan standalone.
+-- Correlated on the subquery's own table, the same as `EXISTS (SELECT 1 FROM t_correlated_sets AS n WHERE n.g = i.g AND n.k = i.k)`:
 SELECT count() FROM t_correlated_sets AS o WHERE EXISTS (
-    SELECT 1 FROM t_correlated_sets AS i WHERE i.s = o.s AND i.k IN (SELECT n.k FROM t_correlated_sets AS n WHERE n.g = i.g)); -- { serverError NOT_IMPLEMENTED }
--- and on the outer table:
+    SELECT 1 FROM t_correlated_sets AS i WHERE i.s = o.s AND i.k IN (SELECT n.k FROM t_correlated_sets AS n WHERE n.g = i.g));
+-- and on the outer table, which the hand-written `EXISTS` does not support either:
 SELECT count() FROM t_correlated_sets AS o WHERE EXISTS (
     SELECT 1 FROM t_correlated_sets AS i WHERE i.s = o.s AND i.k IN (SELECT n.k FROM t_correlated_sets AS n WHERE n.g = o.g)); -- { serverError NOT_IMPLEMENTED }
 

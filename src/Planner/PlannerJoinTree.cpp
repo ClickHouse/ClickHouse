@@ -267,6 +267,8 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
     return false;
 }
 
+}
+
 /// Whether the `LATERAL` subquery contains a function whose value may differ between two evaluations
 /// within one query (`rand`, `generateUUIDv4`, `rowNumberInAllBlocks`, ...). Decorrelation evaluates the
 /// subquery once per distinct value of the correlated columns, not once per outer row, so two outer rows
@@ -310,6 +312,9 @@ bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
     }
     return false;
 }
+
+namespace
+{
 
 /// AST-level counterpart of containsNonDeterministicFunction. Used for predicates that the
 /// pushdown injects as shard-side filters but that are NOT present in the outer query tree the
@@ -1090,6 +1095,8 @@ bool astContainsFunctionVolatileInScopeOfQuery(const ASTPtr & ast, const Context
     return false;
 }
 
+}
+
 /// Whether a table read inside the `LATERAL` subquery gets a hidden filter (a row policy or
 /// `additional_table_filters`) with a function volatile within the query. These filters are attached at
 /// table-read planning time, so `containsFunctionVolatileInScopeOfQuery` on the query tree does not see them,
@@ -1154,6 +1161,9 @@ bool lateralSubqueryReadsOpaqueView(const QueryTreeNodePtr & node)
     }
     return false;
 }
+
+namespace
+{
 
 /// Apply filters from additional_table_filters setting. Expects
 /// `parseAdditionalFilterAstIfNeeded` to have been called earlier so
