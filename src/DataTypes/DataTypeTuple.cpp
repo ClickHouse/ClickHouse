@@ -68,11 +68,6 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     return {};
 }
 
-bool DataTypeTuple::hasValidElementNames(const Strings & names)
-{
-    return !checkTupleNames(names).has_value();
-}
-
 DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
     : elems(elems_), names(names_), has_explicit_names(true)
 {
@@ -236,29 +231,6 @@ bool DataTypeTuple::isDefaultInsertTrivial() const
             [](const DataTypePtr & elem) { return elem->isDefaultInsertTrivial(); });
 }
 
-MutableColumnConstPtr DataTypeTuple::createColumnConst(size_t size, const Field & field) const
-{
-    /// `ColumnTuple::insert` skips the elements' `createColumnConst`, which for `JSON` gives the typed paths absent from an empty `Object` their type default.
-    if (isDefaultInsertTrivial() || field.getType() != Field::Types::Tuple || field.safeGet<Tuple>().size() != elems.size())
-        return IDataType::createColumnConst(size, field);
-
-    const auto & tuple = field.safeGet<Tuple>();
-    Columns columns;
-    columns.reserve(elems.size());
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        if (elems[i]->isDefaultInsertTrivial())
-        {
-            auto column = elems[i]->createColumn();
-            column->insert(tuple[i]);
-            columns.push_back(std::move(column));
-        }
-        else
-            columns.push_back(elems[i]->createColumnConst(1, tuple[i])->getDataColumnPtr());
-    }
-    return ColumnConst::create(ColumnTuple::create(columns), size);
-}
-
 bool DataTypeTuple::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -370,29 +342,25 @@ SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettin
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
-    return SerializationTuple::create(std::move(serializations), elems, has_explicit_names);
+    return SerializationTuple::create(std::move(serializations), has_explicit_names);
 }
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
 {
-    return getSerialization(info, true);
-}
-
-SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
-{
     SerializationTuple::ElementSerializations serializations(elems.size());
     const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
+
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i), use_type_serialization_settings);
+        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
     auto kinds = info.getKindStack();
     /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
     std::erase(kinds, ISerialization::Kind::SPARSE);
-    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), elems, has_explicit_names), kinds, info.getSettings());
+    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), has_explicit_names), kinds, info.getSettings());
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const
@@ -400,14 +368,9 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (const auto & elem : elems)
-    {
-        auto elem_settings = settings;
-        if (!settings.shouldCollectSerializationInfo(*elem))
-            elem_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-        infos.push_back(elem->createSerializationInfo(elem_settings));
-    }
+        infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
@@ -438,22 +401,17 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
-bool DataTypeTuple::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
+
+void DataTypeTuple::forEachChild(const ChildCallback & callback) const
 {
-    return std::any_of(elems.begin(), elems.end(), [&](const auto & elem)
+    for (const auto & elem : elems)
     {
-        return elem->hasSparseSerializationSubcolumns(settings);
-    });
-}
-
-DataTypePtr DataTypeTuple::doCloneWithChildren(const DataTypes & new_children) const
-{
-    if (has_explicit_names)
-        return std::make_shared<DataTypeTuple>(new_children, names);
-    return std::make_shared<DataTypeTuple>(new_children);
+        callback(*elem);
+        elem->forEachChild(callback);
+    }
 }
 
 void DataTypeTuple::updateHashImpl(SipHash & hash) const
@@ -506,7 +464,7 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-A tuple of elements, each having an individual [type](/reference/data-types/index). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/reference/data-types). Tuple must contain at least one element.
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/reference/functions/regular-functions/overview#higher-order-functions).
 

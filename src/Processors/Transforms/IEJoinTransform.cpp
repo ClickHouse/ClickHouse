@@ -189,7 +189,6 @@ IEJoinAlgorithm::IEJoinAlgorithm(
 
     if (residual)
     {
-        set_spillables.add(residual->actions->getActionsDAG());
         const auto & sample = residual->actions->getSampleBlock();
         if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
@@ -342,8 +341,6 @@ void IEJoinAlgorithm::runBuildStage()
         case BuildStage::BuildL2:
             buildL2(build_validity, build_encoded_keys[1]);
             bit_array.resize_fill((num_union_entries + 63) / 64);
-            for (size_t words = bit_array.size(); words > 1; words = bit_array_summaries.back().size())
-                bit_array_summaries.emplace_back().resize_fill((words + 63) / 64);
             build_validity = {};
             build_encoded_keys = {};
             build_stage = BuildStage::Done;
@@ -756,17 +753,8 @@ void IEJoinAlgorithm::buildL2(const std::array<SideValidity, 2> & validity, Padd
 
 void IEJoinAlgorithm::setBit(size_t pos)
 {
+    bit_array[pos / 64] |= UInt64(1) << (pos % 64);
     bit_array_end = std::max(bit_array_end, pos + 1);
-    UInt64 & word = bit_array[pos / 64];
-    bool was_empty = word == 0;
-    word |= UInt64(1) << (pos % 64);
-    for (size_t level = 0; was_empty && level < bit_array_summaries.size(); ++level)
-    {
-        pos /= 64;
-        UInt64 & summary = bit_array_summaries[level][pos / 64];
-        was_empty = summary == 0;
-        summary |= UInt64(1) << (pos % 64);
-    }
 }
 
 bool IEJoinAlgorithm::testBit(size_t pos) const
@@ -774,47 +762,37 @@ bool IEJoinAlgorithm::testBit(size_t pos) const
     return (bit_array[pos / 64] >> (pos % 64)) & 1;
 }
 
-size_t IEJoinAlgorithm::findNextSetBit()
+std::optional<size_t> IEJoinAlgorithm::findNextSetBit()
 {
-    /// No bit at or past bit_array_end is set.
+    /// No bit at or past bit_array_end is set, so the scan can stop there. This bounds the
+    /// common case where all matches of the current entry sit right after its own position
+    /// (e.g. band joins): without it every scan would walk empty words to the end of the array.
     if (scan_pos >= bit_array_end)
         return num_union_entries;
 
-    auto level_words = [&](size_t level) -> const PaddedPODArray<UInt64> &
-    {
-        return level == 0 ? bit_array : bit_array_summaries[level - 1];
-    };
-
-    /// Ascend while the rest of the current word is empty; the level above marks the later non-empty words.
-    size_t level = 0;
-    size_t index = scan_pos;
+    size_t word_index = scan_pos / 64;
+    const size_t word_end = (bit_array_end + 63) / 64;
+    UInt64 word = bit_array[word_index] & (~UInt64(0) << (scan_pos % 64));
     while (true)
     {
         ++produce_work;
-        const auto & words = level_words(level);
-        const size_t word_index = index / 64;
-        if (word_index >= words.size())
-            return num_union_entries;
-        if (UInt64 word = words[word_index] & (~UInt64(0) << (index % 64)))
+        if (word)
         {
-            index = word_index * 64 + std::countr_zero(word);
-            break;
+            size_t pos = word_index * 64 + std::countr_zero(word);
+            scan_pos = pos + 1;
+            return pos;
         }
-        if (level == bit_array_summaries.size())
+        ++word_index;
+        if (word_index >= word_end)
             return num_union_entries;
-        index = word_index + 1;
-        ++level;
+        if (produce_work >= produce_work_budget)
+        {
+            /// Yield mid-scan: all inspected words were clear, resume at the first uninspected one.
+            scan_pos = word_index * 64;
+            return std::nullopt;
+        }
+        word = bit_array[word_index];
     }
-
-    while (level > 0)
-    {
-        --level;
-        ++produce_work;
-        index = index * 64 + std::countr_zero(level_words(level)[index]);
-    }
-
-    scan_pos = index + 1;
-    return index;
 }
 
 void IEJoinAlgorithm::checkFrontierInvariant() const
@@ -826,12 +804,6 @@ void IEJoinAlgorithm::checkFrontierInvariant() const
         bool qualifies = frontierAdvances(i, l2_cursor);
         bool is_right_side = !entryIsLeft(l1_entries[permutation[i]]);
         chassert(testBit(permutation[i]) == (is_right_side && qualifies));
-    }
-    for (size_t level = 0; level < bit_array_summaries.size(); ++level)
-    {
-        const auto & below = level == 0 ? bit_array : bit_array_summaries[level - 1];
-        for (size_t word = 0; word < below.size(); ++word)
-            chassert(((bit_array_summaries[level][word / 64] >> (word % 64)) & 1) == (below[word] != 0));
     }
 }
 
@@ -973,8 +945,10 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             continue;
         }
 
-        size_t found = findNextSetBit();
-        if (found >= num_union_entries)
+        std::optional<size_t> found = findNextSetBit();
+        if (!found)
+            break;
+        if (*found >= num_union_entries)
         {
             /// The current left row's scan is exhausted; for SEMI/ANTI decide it on the
             /// candidates accumulated so far.
@@ -985,7 +959,7 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             continue;
         }
 
-        UInt64 right_entry = l1_entries[found];
+        UInt64 right_entry = l1_entries[*found];
         /// Bits are set only at positions of right-side entries.
         chassert(has_current_left && !entryIsLeft(right_entry));
 
@@ -1151,18 +1125,6 @@ void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUIn
         chunk.addColumn(column->index(indexes, 0));
 }
 
-void IEJoinAlgorithm::cancelResidual() noexcept
-{
-    if (!residual)
-        return;
-
-    for (const auto & node : residual->actions->getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
-            node.function->cancelExecution();
-    }
-}
-
 IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows)
 {
     const size_t num_pairs = left_rows.size();
@@ -1178,15 +1140,8 @@ IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_
     /// `executeOnColumns` reports the count its actions produced through the same reference, so
     /// comparing it is a backstop against a row-count-changing action; it compares totals only.
     size_t num_rows_after_execute = num_pairs;
-    /// The query may be cancelled before the residual is evaluated or while it is evaluated. Do not
-    /// start (or use) the evaluation then: the returned mask is meaningless, and `merge` sees the
-    /// cancellation and finishes the join without emitting anything of the current batch.
-    if (isCancelled())
-        return IColumn::Filter(num_pairs, 0);
     Columns results = residual->actions->executeOnColumns(
-        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute, /*dry_run=*/ false, is_cancelled);
-    if (isCancelled())
-        return IColumn::Filter(num_pairs, 0);
+        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows_after_execute);
     if (num_rows_after_execute != num_pairs)
     {
         throw Exception(
@@ -1220,12 +1175,8 @@ void IEJoinAlgorithm::appendPadded(Chunk & chunk, size_t side, size_t num_rows) 
     {
         /// The default of the column type: NULL when it is Nullable (with `join_use_nulls`
         /// the planner made the padded side's columns Nullable in the pre-join actions).
-        const auto & type = column_with_type.type;
-        auto column = type->createColumn();
-        if (type->isDefaultInsertTrivial())
-            column->insertManyDefaults(num_rows);
-        else
-            type->insertManyDefaultsInto(*column, num_rows);
+        auto column = column_with_type.type->createColumn();
+        column->insertManyDefaults(num_rows);
         chunk.addColumn(std::move(column));
     }
 }
@@ -1283,21 +1234,7 @@ IMergingAlgorithm::Status IEJoinAlgorithm::merge()
     if (produce_done)
         return Status({}, true);
 
-    /// A cancelled join stops instead of continuing the scan: the residual is not evaluated after
-    /// the cancellation, so the rows of the current batch, and any unmatched rows that would
-    /// follow, are not decided correctly and must not be emitted.
-    if (isCancelled())
-    {
-        produce_done = true;
-        return Status({}, true);
-    }
-
     Chunk result = produceBatch();
-    if (isCancelled())
-    {
-        produce_done = true;
-        return Status({}, true);
-    }
     return Status(std::move(result), produce_done);
 }
 
@@ -1337,13 +1274,6 @@ IEJoinTransform::IEJoinTransform(
         max_block_size,
         max_block_bytes)
 {
-    algorithm.setCancellationFlag(&getCancellationFlag());
-}
-
-void IEJoinTransform::onCancel() noexcept
-{
-    Base::onCancel();
-    algorithm.cancelResidual();
 }
 
 }

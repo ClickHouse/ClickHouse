@@ -89,8 +89,7 @@ void registerInputFormatBuffers(FormatFactory & factory)
     factory.registerInputFormat(
         "Buffers",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams &, const FormatSettings & settings)
-        { return std::make_shared<BuffersInputFormat>(buf, std::make_shared<const Block>(sample), settings); },
-        /*supports_reset_parser=*/ true);
+        { return std::make_shared<BuffersInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 
     factory.setDocumentation("Buffers", Documentation{
         .description = R"DOCS_MD(

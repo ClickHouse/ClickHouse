@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
@@ -24,9 +23,9 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    [[nodiscard]] bool empty() const override { return !has_elems; }
+    bool empty() const override { return !has_elems; }
 
-    [[nodiscard]] size_t memoryUsageBytes() const override;
+    size_t memoryUsageBytes() const override;
 
     const String index_name;
     const BloomFilterParameters params;
@@ -47,7 +46,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 
     ~MergeTreeIndexAggregatorBloomFilterText() override = default;
 
-    [[nodiscard]] bool empty() const override { return !granule || granule->empty(); }
+    bool empty() const override { return !granule || granule->empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
@@ -72,14 +71,13 @@ public:
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
-            IsShadowingColumn is_column_shadowing_map_subcolumn_,
-            JSONIndexArgumentTypes json_argument_types_);
+            NameSet columns_shadowing_map_subcolumns_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
-    [[nodiscard]] bool alwaysUnknownOrTrue() const override;
-    [[nodiscard]] bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-    [[nodiscard]] std::string getDescription() const override { return ""; }
+    bool alwaysUnknownOrTrue() const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    std::string getDescription() const override { return ""; }
 
 private:
     struct KeyTuplePositionMapping
@@ -150,14 +148,12 @@ private:
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
     Names index_columns;
-    /// Argument types of the JSON index functions of this index, by position in `index_columns`.
-    JSONIndexArgumentTypes json_argument_types;
     DataTypes index_data_types;
     BloomFilterParameters params;
 
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
-    IsShadowingColumn is_column_shadowing_map_subcolumn;
+    NameSet columns_shadowing_map_subcolumns;
 
     RPN rpn;
 };
@@ -176,8 +172,8 @@ public:
 
     ~MergeTreeIndexBloomFilterText() override = default;
 
-    [[nodiscard]] MergeTreeIndexGranulePtr createIndexGranule() const override;
-    [[nodiscard]] MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const ActionsDAG::Node * predicate, ContextPtr context) const override;

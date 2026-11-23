@@ -15,10 +15,6 @@ class SerializationMap final : public SimpleTextSerialization
 private:
     SerializationPtr key_serialization;
     SerializationPtr value_serialization;
-    /// Used only for the defaults of null keys and values. Not part of the pool key: the key of the nested serialization
-    /// already determines the defaults of these types.
-    DataTypePtr key_type;
-    DataTypePtr value_type;
 
     /// 'nested' is an Array(Tuple(key_type, value_type))
     SerializationPtr nested_serialization;
@@ -35,8 +31,6 @@ private:
     SerializationMap(
         const SerializationPtr & key_serialization_,
         const SerializationPtr & value_serialization_,
-        const DataTypePtr & key_type_,
-        const DataTypePtr & value_type_,
         const SerializationPtr & nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
 
@@ -45,8 +39,6 @@ public:
     static SerializationPtr create(
         const SerializationPtr & key_serialization_,
         const SerializationPtr & value_serialization_,
-        const DataTypePtr & key_type_,
-        const DataTypePtr & value_type_,
         const SerializationPtr & nested_serialization_,
         MergeTreeMapSerializationVersion serialization_version_);
 
@@ -141,14 +133,13 @@ private:
         {
         }
 
-        DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
+        DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateBucketsInfo>(*this);
         }
     };
 
     static DeserializeBinaryBulkStatePtr deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
-    static void checkBucketsHaveSameNumberOfRows(const VectorWithMemoryTracking<ColumnPtr> & buckets);
 
     template <typename KeyWriter, typename ValueWriter>
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;

@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Formats/FormatSettings.h>
 
 #include <algorithm>
 #include <array>
@@ -25,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int UNKNOWN_FORMAT_VERSION;
     extern const int INCORRECT_DATA;
 }
 
@@ -435,23 +433,12 @@ SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settin
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
     : SerializationInfoByName(settings_)
 {
-    if (settings.version == MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS
-        && (settings.isAlwaysDefault()
-            || std::ranges::none_of(columns, [&](const auto & column)
-            {
-                return column.type->hasSparseSerializationSubcolumns(settings);
-            })))
-    {
-        /// The writer can still add `missing_columns` after choosing the serialization kinds.
-        settings.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
-    }
-
     if (settings.isAlwaysDefault())
         return;
 
     for (const auto & column : columns)
     {
-        if (settings.shouldCollectSerializationInfo(*column.type))
+        if (settings.canUseSparseSerialization(*column.type))
             emplace(column.name, column.type->createSerializationInfo(settings));
     }
 }
@@ -657,15 +644,12 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
-    /// A version or a field this server does not know about means the part was written by a newer
-    /// server, not that the part is corrupted: report it as `UNKNOWN_FORMAT_VERSION`, so that callers
-    /// (`RESTORE`, in particular) can tell "too new to read" apart from "damaged".
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     {
         auto version_value = static_cast<std::underlying_type_t<MergeTreeSerializationInfoVersion>>(object->getValue<size_t>(KEY_VERSION));
         auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
         if (!maybe_enum)
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version of serialization infos ({})", version_value);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown version of serialization infos ({})", version_value);
         version = *maybe_enum;
     }
 
@@ -697,7 +681,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         }
         else
         {
-            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unexpected field '{}' in MergeTreeSerializationInfo JSON", key);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in MergeTreeSerializationInfo JSON", key);
         }
     }
 
@@ -721,26 +705,26 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeStringSerializationVersion>(version_value);
                 if (!maybe_enum.has_value())
-                    throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Invalid version {} for type '{}'", version_value, type_name);
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
                 string_serialization_version = *maybe_enum;
             }
             else if (type_name == KEY_NULLABLE_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeNullableSerializationVersion>(version_value);
                 if (!maybe_enum.has_value())
-                    throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Invalid version {} for type '{}'", version_value, type_name);
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
                 nullable_serialization_version = *maybe_enum;
             }
             else if (type_name == KEY_MAP_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeMapSerializationVersion>(version_value);
                 if (!maybe_enum.has_value())
-                    throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Invalid version {} for type '{}'", version_value, type_name);
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
                 map_serialization_version = *maybe_enum;
             }
             else
             {
-                throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown field '{}' in types_serialization_versions", type_name);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown field '{}' in types_serialization_versions", type_name);
             }
         }
     }
@@ -800,7 +784,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
             if (physical_column_names.contains(mc.name))
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Column '{}' is both physical and missing in serialization infos", mc.name);
-            (void)DataTypeFactory::instance().get(mc.type_name);
+            DataTypeFactory::instance().get(mc.type_name);
             missing_columns.push_back(std::move(mc));
         }
         infos.setMissingColumns(std::move(missing_columns));

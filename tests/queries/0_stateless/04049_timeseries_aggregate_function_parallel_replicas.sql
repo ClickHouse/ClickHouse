@@ -18,7 +18,7 @@ INSERT INTO ts_data VALUES
 -- Create an AggregatingMergeTree table with a timeseries aggregate state column
 CREATE TABLE ts_agg (
     k UInt64,
-    agg AggregateFunction(timeSeriesLastToGrid(100, 200, 10, 15), DateTime('UTC'), Float64)
+    agg AggregateFunction(timeSeriesResampleToGridWithStaleness(100, 200, 10, 15), DateTime('UTC'), Float64)
 ) ENGINE = AggregatingMergeTree() ORDER BY k;
 
 -- This INSERT uses `initializeAggregation` which re-creates the aggregate function
@@ -26,10 +26,10 @@ CREATE TABLE ts_agg (
 -- replica that called `extractIntParameter` which did not handle Decimal64.
 INSERT INTO ts_agg
     SELECT toUnixTimestamp(timestamp) % 2 AS k,
-           initializeAggregation('timeSeriesLastToGridState(100, 200, 10, 15)', timestamp, value)
+           initializeAggregation('timeSeriesResampleToGridWithStalenessState(100, 200, 10, 15)', timestamp, value)
     FROM ts_data;
 
 SELECT k, finalizeAggregation(agg) FROM ts_agg FINAL ORDER BY k;
 
 -- Also verify -Merge combinator works (same reconstruction path)
-SELECT timeSeriesLastToGridMerge(100, 200, 10, 15)(agg) FROM ts_agg;
+SELECT timeSeriesResampleToGridWithStalenessMerge(100, 200, 10, 15)(agg) FROM ts_agg;

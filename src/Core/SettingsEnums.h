@@ -2,9 +2,6 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
-#include <Common/FilesystemIsolation.h>
-#include <Common/SeccompFilter.h>
-#include <Core/FileCachePolicy.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -16,10 +13,7 @@
 #include <Core/SettingsFields.h>
 #include <Core/ShortCircuitFunctionEvaluation.h>
 #include <Core/StreamingHandleErrorMode.h>
-#include <Core/Defines.h>
-#include <Core/Names.h>
-#include <base/unit.h>
-#include <Formats/FormatSettingsEnums.h>
+#include <Formats/FormatSettings.h>
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/ReadMethod.h>
@@ -141,7 +135,6 @@ DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
-DECLARE_SETTING_ENUM(HashJoinLayout)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -196,15 +189,15 @@ enum class QueryResultCacheSystemTableHandling : uint8_t
 
 DECLARE_SETTING_ENUM(QueryResultCacheSystemTableHandling)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettingsEnums::DateTimeInputFormat)
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeInputFormat)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettingsEnums::DateTimeOutputFormat)
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettingsEnums::IntervalOutputFormat)
+DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(AggregateFunctionInputFormat, FormatSettingsEnums::AggregateFunctionInputFormat)
+DECLARE_SETTING_ENUM_WITH_RENAME(AggregateFunctionInputFormat, FormatSettings::AggregateFunctionInputFormat)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettingsEnums::ParquetVersion)
+DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
 DECLARE_SETTING_ENUM(LogsLevel)
 
@@ -237,20 +230,11 @@ DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class TextIndexPostingListApplyMode : uint8_t
 {
-    Materialize,
-    Lazy,
+    MATERIALIZE,
+    LAZY,
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
-
-enum class TextIndexPostingsIntersectionAlgorithm : uint8_t
-{
-    BruteForce,
-    Leapfrog,
-    Auto,
-};
-
-DECLARE_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm)
 
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
@@ -271,15 +255,6 @@ enum class UniqueKeyProbeImplementation : uint8_t
 };
 
 DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
-
-enum class UniqueKeyConflictAction : uint8_t
-{
-    Overwrite = 0, /// Incoming row supersedes the existing live row (UPSERT).
-    Ignore,        /// Existing row wins; the conflicting incoming row is dropped.
-    Abort,         /// INSERT fails on the first live duplicate; nothing is published.
-};
-
-DECLARE_SETTING_ENUM(UniqueKeyConflictAction)
 
 enum class MySQLDataTypesSupport : uint8_t
 {
@@ -329,21 +304,19 @@ enum class TransactionsWaitCSNMode : uint8_t
 
 DECLARE_SETTING_ENUM(TransactionsWaitCSNMode)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(CapnProtoEnumComparingMode, FormatSettingsEnums::CapnProtoEnumComparingMode)
+DECLARE_SETTING_ENUM_WITH_RENAME(CapnProtoEnumComparingMode, FormatSettings::CapnProtoEnumComparingMode)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettingsEnums::EscapingRule)
+DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettingsEnums::MsgPackUUIDRepresentation)
+DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(GeoJSONUnsupportedGeometryHandling, FormatSettingsEnums::UnsupportedGeometryHandling)
+DECLARE_SETTING_ENUM_WITH_RENAME(GeoJSONUnsupportedGeometryHandling, FormatSettings::UnsupportedGeometryHandling)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettingsEnums::ParquetCompression)
+DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetCompression)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettingsEnums::ArrowCompression)
+DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(ArrowUnsupportedTypes, FormatSettingsEnums::ArrowUnsupportedTypes)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettingsEnums::ORCCompression)
+DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
 enum class Dialect : uint8_t
 {
@@ -353,7 +326,6 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
-    logsql,
     trino,
 };
 
@@ -469,8 +441,8 @@ DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
-DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettingsEnums::DateTimeOverflowBehavior)
-DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettingsEnums::InputFormatColumnMatchingCaseSensitivity)
+DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
+DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
@@ -485,10 +457,6 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
-
-DECLARE_SETTING_ENUM(SeccompMode)
-
-DECLARE_SETTING_ENUM(FilesystemIsolationMode)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
@@ -509,14 +477,13 @@ enum class DatabaseDataLakeCatalogType : uint8_t
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
-enum class DatabaseDataLakeSnapshotLoadingMode : uint8_t
+enum class FileCachePolicy : uint8_t
 {
-    AUTO,
-    ALL,
-    REFS,
+    LRU,
+    SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
 };
-
-DECLARE_SETTING_ENUM(DatabaseDataLakeSnapshotLoadingMode)
 
 DECLARE_SETTING_ENUM(FileCachePolicy)
 
@@ -559,7 +526,6 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
-DECLARE_SETTING_ENUM(MergeTreeObjectTypedSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
@@ -577,8 +543,7 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking,
-    PFor
+    Bitpacking
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
@@ -684,14 +649,6 @@ enum class S3UriStyle : uint8_t
 };
 
 DECLARE_SETTING_ENUM(S3UriStyle)
-
-enum class S3RequestPayer : uint8_t
-{
-    NONE,
-    REQUESTER,
-};
-
-DECLARE_SETTING_ENUM(S3RequestPayer)
 
 enum class ExplainQueryPlanDefault : uint8_t
 {

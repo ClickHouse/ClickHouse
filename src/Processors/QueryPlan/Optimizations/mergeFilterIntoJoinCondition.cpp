@@ -1,8 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/ListWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
@@ -21,7 +17,6 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinOperator.h>
-#include <Interpreters/JoinUtils.h>
 
 #include <Planner/Utils.h>
 
@@ -29,7 +24,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
-#include <ranges>
 #include <unordered_map>
 #include <vector>
 
@@ -48,9 +42,9 @@ namespace
 
 auto getInputNodes(const ActionsDAG & filter_dag, const Names & allowed_inputs_names)
 {
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> allowed_nodes;
+    std::unordered_set<const ActionsDAG::Node *> allowed_nodes;
 
-    UnorderedMapWithMemoryTracking<std::string_view, ListWithMemoryTracking<const ActionsDAG::Node *>> inputs_map;
+    std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_map;
     for (const auto & input_node : filter_dag.getInputs())
         inputs_map[input_node->result_name].emplace_back(input_node);
 
@@ -74,11 +68,11 @@ enum class ExpressionSide : uint8_t
     RIGHT,
 };
 
-UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getExpressionInputs(const ActionsDAG::Node * expr)
+std::unordered_set<const ActionsDAG::Node *> getExpressionInputs(const ActionsDAG::Node * expr)
 {
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> result;
+    std::unordered_set<const ActionsDAG::Node *> result;
 
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    std::unordered_set<const ActionsDAG::Node *> visited;
     ActionsDAG::NodeRawConstPtrs nodes_to_process = { expr };
     while (!nodes_to_process.empty())
     {
@@ -105,8 +99,8 @@ UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getExpressionInputs(con
 
 ExpressionSide getExpressionSide(
     const ActionsDAG::Node * expr,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & left_allowed_inputs,
-    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & right_allowed_inputs
+    const std::unordered_set<const ActionsDAG::Node *> & left_allowed_inputs,
+    const std::unordered_set<const ActionsDAG::Node *> & right_allowed_inputs
 )
 {
     auto inputs = getExpressionInputs(expr);
@@ -136,7 +130,7 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
-using JoinConditionParts = VectorWithMemoryTracking<ActionsDAG>;
+using JoinConditionParts = std::vector<ActionsDAG>;
 
 /// A conjunct left alone once the others moved into the JOIN loses the boolean conversion the
 /// enclosing `and` gave it, so it has to be converted explicitly.
@@ -183,13 +177,13 @@ const ColumnFunction * tryGetColumnFunction(const IColumn & column)
 /// reason.
 bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
 {
-    VectorWithMemoryTracking<const ActionsDAG::Node *> nodes{node};
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited_nodes;
+    std::vector<const ActionsDAG::Node *> nodes{node};
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
 
     /// The columns captured by a folded lambda are not nodes of any `ActionsDAG`, so they need a
     /// worklist of their own.
-    VectorWithMemoryTracking<const IColumn *> columns;
-    UnorderedSetWithMemoryTracking<const IColumn *> visited_columns;
+    std::vector<const IColumn *> columns;
+    std::unordered_set<const IColumn *> visited_columns;
 
     /// Whether `function` itself is non-deterministic; the nodes of its lambda body, if it has one,
     /// are queued for the walk.
@@ -258,36 +252,12 @@ bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
     return false;
 }
 
-/// Unlike `getConjunctsList`, shared nodes are not de-duplicated: each occurrence is reported.
-ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node * predicate)
-{
-    ActionsDAG::NodeRawConstPtrs conjuncts;
-    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{predicate};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
-        {
-            for (const auto * child : node->children | std::ranges::views::reverse)
-                stack.push_back(child);
-        }
-        else if (node->type == ActionsDAG::ActionType::ALIAS)
-            stack.push_back(node->children.front());
-        else
-            conjuncts.push_back(node);
-    }
-    return conjuncts;
-}
-
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
     const Names & right_stream_available_columns,
-    const bool allow_dynamic_type_in_join_keys,
-    NameSet join_condition_names
+    const bool allow_dynamic_type_in_join_keys
 )
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
@@ -309,7 +279,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     auto conjuncts_list = getConjunctsList(predicate);
 
     JoinConditionParts result;
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> conjuncts_to_replace;
+    std::unordered_set<const ActionsDAG::Node *> conjuncts_to_replace;
     ActionsDAG::NodeRawConstPtrs rejected_conjuncts;
     rejected_conjuncts.reserve(conjuncts_list.size());
 
@@ -349,15 +319,6 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
              || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
-                /// Such a key matches pairs `equals` rejects, so the condition also stays in the filter.
-                if (JoinCommon::keyMatchesValuesEqualsRejects(lhs->result_type) || JoinCommon::keyMatchesValuesEqualsRejects(rhs->result_type))
-                {
-                    if (join_condition_names.insert(conjunct->result_name).second)
-                        result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
-                    rejected_conjuncts.push_back(conjunct);
-                    continue;
-                }
-
                 result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
                 conjuncts_to_replace.insert(conjunct);
                 continue;
@@ -367,7 +328,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     }
 
     const auto trivial_filter = rejected_conjuncts.empty();
-    if (!conjuncts_to_replace.empty())
+    if (!result.empty())
     {
         /// There's a non-empty list of extracted condition parts.
         /// After JOIN step these equalities will always evaluate to true.
@@ -387,33 +348,6 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         }
         else if (rejected_conjuncts.size() > 1)
         {
-            /// `and` is evaluated left to right, so a guard stays ahead of the conjunct it guards.
-            /// `getConjunctsList` de-duplicates shared nodes and can report one twice through its ALIAS branch.
-            UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> remaining_occurrences;
-            for (const auto * conjunct : rejected_conjuncts)
-                ++remaining_occurrences[conjunct];
-
-            ActionsDAG::NodeRawConstPtrs ordered_conjuncts;
-            ordered_conjuncts.reserve(rejected_conjuncts.size());
-            for (const auto * conjunct : getConjunctsInWrittenOrder(predicate))
-            {
-                auto it = remaining_occurrences.find(conjunct);
-                if (it != remaining_occurrences.end() && it->second != 0)
-                {
-                    --it->second;
-                    ordered_conjuncts.push_back(conjunct);
-                }
-            }
-
-            if (ordered_conjuncts.size() != rejected_conjuncts.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Reordering the residual filter lost {} of {} conjuncts. DAG:\n{}",
-                    rejected_conjuncts.size() - ordered_conjuncts.size(),
-                    rejected_conjuncts.size(),
-                    filter_dag.dumpDAG());
-
-            rejected_conjuncts = std::move(ordered_conjuncts);
-
             /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             filter_dag.addOrReplaceInOutputs(createResultPredicate(
@@ -494,18 +428,13 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
     const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
 
-    NameSet join_condition_names;
-    for (const auto & condition : join_operator.expression)
-        join_condition_names.insert(condition.getColumnName());
-
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
         right_stream_available_columns,
-        allow_dynamic_type_in_join_keys,
-        std::move(join_condition_names));
+        allow_dynamic_type_in_join_keys);
 
     if (equality_predicates.empty())
         return 0;
@@ -522,7 +451,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (trivial_filter)
     {
         if (filter_step->removesFilterColumn())
-            filter_dag.removeFromOutputs(filter_step->getFilterColumnName());
+            filter_dag.removeUnusedResult(filter_step->getFilterColumnName());
         parent_node->step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(filter_dag));
     }
 
