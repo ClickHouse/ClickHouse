@@ -16,7 +16,7 @@ namespace DB
 class QueryPlan;
 
 /// plans the SELECT of a projection
-/// names each stored expression as the old analysis did, because a projection part stores its columns under these names
+/// names each stored expression as the query writes it, because a projection part stores its columns under these names
 class ProjectionPlanner
 {
 public:
