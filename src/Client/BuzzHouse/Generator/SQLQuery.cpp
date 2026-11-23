@@ -735,7 +735,19 @@ StatementGenerator::FromSourceInfo StatementGenerator::joinedTableOrFunction(
         }
         break;
         case QueryOp::Table:
-            t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
+            /// A table read twice in one query: the reads must be told apart when the plans are paired
+            if (this->distributed_shapes && !this->distributed_shape_tables.empty() && rg.nextBool())
+            {
+                t = rg.pickRandomly(this->distributed_shape_tables);
+            }
+            else
+            {
+                t = &rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda)).get();
+            }
+            if (this->distributed_shapes)
+            {
+                this->distributed_shape_tables.emplace_back(t);
+            }
             t->setName(tof->mutable_est(), false);
             addTableRelation(rg, true, rel_name, *t);
             break;
@@ -1550,7 +1562,12 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
                 ein->set_not_(rg.nextBool());
                 ein->set_global(rg.nextBool());
                 expr1 = ein->mutable_expr()->mutable_expr();
-                if (rg.nextBool())
+                if (this->distributed_shapes && this->allow_subqueries && rg.nextBool())
+                {
+                    /// A set from a subquery is built on the initiator and paired between the local and distributed plans
+                    generateSubquery(rg, ein->mutable_in_type()->mutable_sel());
+                }
+                else if (rg.nextBool())
                 {
                     ExprList * elist = rg.nextBool() ? ein->mutable_in_type()->mutable_tuple() : ein->mutable_in_type()->mutable_array();
                     const uint32_t nclauses = rg.nextSmallNumber();
@@ -2523,9 +2540,21 @@ void StatementGenerator::generateTopSelect(
 {
     const uint32_t ncols = std::max(std::min(remainingWidth(), rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
 
+    /// A nested top query, e.g. of a `CREATE TABLE ... AS SELECT` in a query, is decided by the outer one
+    const bool outer_shapes = this->distributed_shapes;
+
+    this->distributed_shapes = !outer_shapes && !fc.parallel_replicas_clusters.empty() && rg.nextMediumNumber() < 21;
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
     this->levels.clear();
+    if (this->distributed_shapes)
+    {
+        injectDistributedShapes(rg, *ts->mutable_sel(), false);
+        /// Appended after the generated settings, so these win
+        addParallelReplicasSettings(rg, ts->mutable_sel()->mutable_setting_values());
+        this->distributed_shape_tables.clear();
+    }
+    this->distributed_shapes = outer_shapes;
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();

@@ -241,6 +241,8 @@ def generate_buzz_config(
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
         "test_with_fill": random.randint(1, 10) == 1,
         "compare_success_results": False,  # This can give false positives, so disable it
+        # Steer some queries to where distributed plans diverge from local ones, on the clusters of one shard
+        "distributed_shapes": True,
         "allow_infinite_tables": random.randint(1, 10) == 1,
         "allow_health_check": False,  # I have to test this first
         "allow_nasty_identifiers": random.randint(1, 8) == 1,

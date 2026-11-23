@@ -3867,6 +3867,8 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
 
 void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
 {
+    /// A request left by a query generated elsewhere, e.g. by an oracle, is not for this statement
+    this->repeat_statement = false;
     const uint32_t nqueries = rg.randomInt<uint32_t>(1, fc.max_parallel_queries);
     const uint32_t start_transaction = 2 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && !this->in_transaction);
     const uint32_t commit = 50 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && this->in_transaction);

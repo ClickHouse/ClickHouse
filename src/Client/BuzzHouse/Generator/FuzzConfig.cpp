@@ -509,6 +509,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"test_with_fill", [&](const JSONValue & v) { test_with_fill = v.getBool(); }},
         {"use_dump_table_oracle", [&](const JSONValue & v) { use_dump_table_oracle = v.getUInt32(); }},
         {"compare_success_results", [&](const JSONValue & v) { compare_success_results = v.getBool(); }},
+        {"distributed_shapes", [&](const JSONValue & v) { distributed_shapes = v.getBool(); }},
         {"allow_infinite_tables", [&](const JSONValue & v) { allow_infinite_tables = v.getBool(); }},
         {"compare_explains", [&](const JSONValue & v) { compare_explains = v.getBool(); }},
         {"allow_hardcoded_inserts", [&](const JSONValue & v) { allow_hardcoded_inserts = v.getBool(); }},
@@ -1068,6 +1069,13 @@ void FuzzConfig::loadServerConfigurations()
         });
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
+    if (distributed_shapes)
+    {
+        loadServerSettings<String>(
+            this->parallel_replicas_clusters,
+            "parallel replicas clusters",
+            R"(SELECT "cluster" FROM "system"."clusters" GROUP BY "cluster" HAVING uniqExact("shard_num") = 1 AND count() > 1)");
+    }
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
     if (enable_failpoints)
     {

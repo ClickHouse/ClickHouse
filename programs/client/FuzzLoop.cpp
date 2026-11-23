@@ -1262,6 +1262,15 @@ bool Client::buzzHouse()
                          fuzz_config->outf << full_query << std::endl;
                          server_up &= processBuzzHouseQuery(full_query);
                          gen.updateGenerator(sq1, *external_integrations, !have_error);
+                         const bool is_select = sq1.parallel_queries_size() == 0 && sq1.single_query().has_explain()
+                             && sq1.single_query().explain().inner_query().has_select();
+
+                         if (gen.takeRepeatStatement() && is_select && server_up && !have_error)
+                         {
+                             /// The first run collected the statistics automatic parallel replicas decides on
+                             fuzz_config->outf << full_query << std::endl;
+                             server_up &= processBuzzHouseQuery(full_query);
+                         }
                      }},
                 });
             }

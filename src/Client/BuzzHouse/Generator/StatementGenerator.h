@@ -216,6 +216,12 @@ private:
     bool enforce_final = false;
     bool allow_engine_udf = true;
     bool chain_views = false; ///< When set, next joinedTableOrFunction call picks a view (for MV chaining)
+    /// The top query being generated gets the shapes that make a distributed plan diverge from the local one
+    bool distributed_shapes = false;
+    /// The last statement must run twice, so that automatic parallel replicas can decide on collected statistics
+    bool repeat_statement = false;
+    /// Tables read by the query being generated with distributed shapes, to read them again for self-joins
+    std::vector<const SQLTable *> distributed_shape_tables;
 
     uint32_t depth = 0;
     uint32_t width = 0;
@@ -826,6 +832,9 @@ private:
     void generateExprIn(RandomGenerator & rg, bool allow_empty, ExprInType * expr);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
+    /// Rules that target the differences between local and distributed execution, see DistributedShapes.cpp
+    void injectDistributedShapes(RandomGenerator & rg, google::protobuf::Message & message, bool in_subquery);
+    void addParallelReplicasSettings(RandomGenerator & rg, SettingValues * svs);
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
     void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
@@ -1111,6 +1120,8 @@ public:
     void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
     void generateNextStatement(RandomGenerator & rg, SQLQuery & sq);
+    /// Whether the statement generated last must run twice, resets the request
+    bool takeRepeatStatement() { return std::exchange(repeat_statement, false); }
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
     void setInTransaction(const bool value) { in_transaction = value; }

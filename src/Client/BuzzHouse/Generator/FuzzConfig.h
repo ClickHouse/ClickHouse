@@ -318,6 +318,10 @@ public:
     DB::Strings disallowed_settings;
     DB::Strings hot_table_settings;
     DB::Strings hot_formats;
+    /// Clusters with one shard of several replicas, where parallel replicas can run. Loaded from the server when
+    /// `distributed_shapes` is set; some queries then get the shapes and settings that make the distributed plan
+    /// diverge from the local one
+    DB::Strings parallel_replicas_clusters;
     DB::Strings tokenizers;
 
     std::vector<CHFunction> det_funcs;
@@ -353,6 +357,7 @@ public:
     bool fuzz_floating_points = true;
     bool test_with_fill = true;
     bool compare_success_results = false;
+    bool distributed_shapes = false;
     bool measure_performance = false;
     bool allow_infinite_tables = false;
     bool compare_explains = false;
