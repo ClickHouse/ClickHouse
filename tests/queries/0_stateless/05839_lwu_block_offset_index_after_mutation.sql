@@ -63,6 +63,6 @@ ATTACH TABLE t_lwu_block_offset_projection;
 ALTER TABLE t_lwu_block_offset_projection UPDATE w = 1 WHERE uid = 0;
 
 SELECT uid, _block_offset FROM t_lwu_block_offset_projection WHERE v IN (5, 10) ORDER BY uid SETTINGS optimize_use_projections = 0;
-SELECT uid, _block_offset FROM t_lwu_block_offset_projection WHERE v IN (5, 10) ORDER BY uid SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT uid, _block_offset FROM t_lwu_block_offset_projection WHERE v IN (5, 10) ORDER BY uid SETTINGS optimize_use_projections = 1, force_optimize_projection = 1, optimize_read_in_order = 0;
 
 DROP TABLE t_lwu_block_offset_projection;
