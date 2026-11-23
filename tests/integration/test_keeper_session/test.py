@@ -194,16 +194,17 @@ def test_close_without_quorum_after_client_shutdown(started_cluster):
     wait_nodes()
     client = get_keeper_socket(node1.name)
     try:
-        req = int_long_int_long_struct.pack(0, 0, 8000, 0)
+        req = int_long_int_long_struct.pack(0, 0, 10000, 0)
         req += write_buffer(b"\x00" * 16) + bytes([0])
         client.send(int_struct.pack(45) + req)
         client.recv(1_000)
 
-        node2.stop_clickhouse()
-        node3.stop_clickhouse()
+        node2.stop_clickhouse(kill=True)
+        node3.stop_clickhouse(kill=True)
         keeper_utils.wait_until_quorum_lost(cluster, node1)
 
-        client.send(int_struct.pack(8) + int_int_struct.pack(0x7FFFFFFF, -11))
+        close_xid, close_op = 0x7FFFFFFF, -11
+        client.send(int_struct.pack(8) + int_int_struct.pack(close_xid, close_op))
         client.shutdown(socket.SHUT_WR)
         client.settimeout(10)
         start = time.monotonic()
