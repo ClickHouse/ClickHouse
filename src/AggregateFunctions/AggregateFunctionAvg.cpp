@@ -137,6 +137,19 @@ SELECT avg(t) FROM test;
         )"
     },
     {
+        "Empty table with Nullable column returns NULL",
+        R"(
+CREATE TABLE test_nullable (t Nullable(UInt8)) ENGINE = Memory;
+
+SELECT avg(t) FROM test_nullable;
+        )",
+        R"(
+┌─avg(t)─┐
+│   ᴺᵁᴸᴸ │
+└────────┘
+        )"
+    },
+    {
         "Average of an interval",
         R"(
 CREATE TABLE requests (req_id Int64, duration IntervalMillisecond) ENGINE = Memory;

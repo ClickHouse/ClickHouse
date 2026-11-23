@@ -55,6 +55,20 @@ SELECT avg(t) FROM test;
 └────────┘
 ```
 
+**Empty table with Nullable column returns NULL**
+
+```sql title=Query
+CREATE TABLE test_nullable (t Nullable(UInt8)) ENGINE = Memory;
+
+SELECT avg(t) FROM test_nullable;
+```
+
+```response title=Response
+┌─avg(t)─┐
+│   ᴺᵁᴸᴸ │
+└────────┘
+```
+
 **Average of an interval**
 
 ```sql title=Query
