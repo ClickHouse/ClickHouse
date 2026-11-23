@@ -123,7 +123,8 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
-    const TableJoin::JoinOnClause & clause)
+    const TableJoin::JoinOnClause & clause,
+    VectorWithMemoryTracking<size_t> & matched_clause_keys)
 {
     const auto & lhs_pk = lhs_reading->getStorageMetadata()->getPrimaryKey();
     if (lhs_pk.column_names.empty())
@@ -217,7 +218,10 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
 
             /// Check if both keys matched exactly to expected PK nodes.
             if (lhs_match->second.node == lhs_pk_output && rhs_match->second.node == rhs_pk_output)
+            {
                 sharding.emplace_back(lhs_pk_colum_names[pos], rhs_pk_colum_names[pos]);
+                matched_clause_keys.push_back(i);
+            }
         }
 
         if (sharding.size() <= pos)
@@ -225,6 +229,41 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     }
 
     return sharding;
+}
+
+/// Every row of an inner join has equal keys on both sides, so a right-side column equal to the right
+/// primary key is the same shard key as the left one for the joins above.
+static void addRightShardKeysToLeftDAG(
+    ActionsDAG & lhs_dag,
+    const VectorWithMemoryTracking<const ActionsDAG::Node *> & lhs_key_nodes,
+    const ActionsDAG & rhs_dag,
+    const ReadFromMergeTree & rhs_reading,
+    const Block & lhs_input_header,
+    const Block & output_header)
+{
+    const auto & rhs_pk = rhs_reading.getStorageMetadata()->getPrimaryKey();
+    const auto & rhs_pk_dag = rhs_pk.expression->getActionsDAG();
+    auto rhs_matches = matchTrees(rhs_pk_dag.getOutputs(), rhs_dag, false);
+
+    for (const auto * output : rhs_dag.getOutputs())
+    {
+        auto match = rhs_matches.find(output);
+        if (match == rhs_matches.end() || !match->second.node || match->second.monotonicity)
+            continue;
+
+        for (size_t pos = 0; pos < lhs_key_nodes.size(); ++pos)
+        {
+            if (match->second.node != rhs_pk_dag.tryFindInOutputs(rhs_pk.column_names[pos]))
+                continue;
+
+            const auto & name = output->result_name;
+            const auto * column = output_header.findByName(name);
+            if (column && !lhs_input_header.has(name) && !lhs_dag.tryFindInOutputs(name)
+                && column->type->equals(*lhs_key_nodes[pos]->result_type))
+                lhs_dag.getOutputs().push_back(&lhs_dag.addAlias(*lhs_key_nodes[pos], name));
+            break;
+        }
+    }
 }
 
 /// We can apply sharding for multiple join steps at the same time.
@@ -432,6 +471,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             // std::cerr << "can_split_join " << can_split_join << std::endl;
 
             JoinStep::PrimaryKeySharding sharding;
+            VectorWithMemoryTracking<size_t> matched_clause_keys;
             if (can_split_join)
             {
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
@@ -444,7 +484,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 sharding = findCommonPrimaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
                     frame.results.back()->joins.sources.front(), frame.results.back()->dag,
-                    clauses[0]);
+                    clauses[0], matched_clause_keys);
             }
 
             // std::cerr << "common_prefix " << common_prefix << std::endl;
@@ -452,6 +492,17 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             if (!sharding.empty())
             {
                 result = std::move(frame.results.front());
+
+                if (isInner(kind))
+                {
+                    VectorWithMemoryTracking<const ActionsDAG::Node *> lhs_key_nodes;
+                    for (size_t key : matched_clause_keys)
+                        lhs_key_nodes.push_back(result->dag.tryFindInOutputs(clauses[0].key_names_left[key]));
+                    if (std::ranges::all_of(lhs_key_nodes, [](const auto * node) { return node != nullptr; }))
+                        addRightShardKeysToLeftDAG(
+                            result->dag, lhs_key_nodes, frame.results.back()->dag, *frame.results.back()->joins.sources.front(),
+                            *join_step->getInputHeaders().front(), *join_step->getOutputHeader());
+                }
 
                 /// Here we choose the minimal common prefix.
                 /// Applying optimization to more joins is potentially better.
