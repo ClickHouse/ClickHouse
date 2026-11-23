@@ -1373,10 +1373,8 @@ void AlterCommand::apply(
         if (should_skip_column_operation(column_name))
             return;
         metadata.columns.rename(column_name, rename_to);
-        RenameColumnData rename_data{column_name, rename_to};
+        RenameColumnData rename_data{column_name, rename_to, /*rename_subcolumns=*/true, &metadata.columns};
         RenameColumnVisitor rename_visitor(rename_data);
-        RenameColumnData key_rename_data{column_name, rename_to, /*rename_subcolumns=*/true, &metadata.columns};
-        RenameColumnVisitor key_rename_visitor(key_rename_data);
         for (const auto & column : metadata.columns)
         {
             metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
@@ -1396,16 +1394,16 @@ void AlterCommand::apply(
         metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
-            key_rename_visitor.visit(metadata.sorting_key.definition_ast);
+            rename_visitor.visit(metadata.sorting_key.definition_ast);
 
         if (metadata.isPrimaryKeyDefined())
-            key_rename_visitor.visit(metadata.primary_key.definition_ast);
+            rename_visitor.visit(metadata.primary_key.definition_ast);
 
         if (metadata.isSamplingKeyDefined())
-            key_rename_visitor.visit(metadata.sampling_key.definition_ast);
+            rename_visitor.visit(metadata.sampling_key.definition_ast);
 
         if (metadata.isPartitionKeyDefined())
-            key_rename_visitor.visit(metadata.partition_key.definition_ast);
+            rename_visitor.visit(metadata.partition_key.definition_ast);
 
         if (metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to))
             metadata.dropImplicitIndicesForColumn(column_name);

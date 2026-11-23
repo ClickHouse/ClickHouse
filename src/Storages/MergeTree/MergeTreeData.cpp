@@ -6640,7 +6640,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             std::vector<RenameColumnData> renames;
             for (const auto & command : commands)
                 if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
-                    renames.push_back({command.column_name, command.rename_to});
+                    renames.push_back({command.column_name, command.rename_to, /*rename_subcolumns=*/true, &new_metadata.columns});
 
             auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
             {
