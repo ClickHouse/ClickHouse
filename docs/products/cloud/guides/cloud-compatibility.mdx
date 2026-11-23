@@ -111,6 +111,8 @@ Experimental features are disabled in ClickHouse Cloud services to ensure the st
 
 DDL-created [named collections](/concepts/features/configuration/server-config/named-collections) can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. Named collections defined in configuration files aren't available because users can't modify server configuration files in ClickHouse Cloud.
 
+Backups don't support named collections yet, so restoring a backup with tables or dictionaries that includes them will fail. To check whether your service uses named collections, run `SELECT name FROM system.named_collections`. If it returns any rows, contact Support to restore a backup. This will be resolved in ClickHouse 26.12.
+
 ## Operational defaults and considerations {#operational-defaults-and-considerations}
 The following are default settings for ClickHouse Cloud services. In some cases, these settings are fixed to ensure the correct operation of the service, and in others, they can be adjusted.
 

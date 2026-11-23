@@ -12,6 +12,8 @@ dictionaries, tables, table functions, and object storage.
 
 <Note>
 DDL-created named collections can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. Named collections defined in configuration files aren't available because users can't modify server configuration files in ClickHouse Cloud.
+
+ClickHouse Cloud backups don't support named collections yet, so restoring tables or dictionaries that use them fails. See [Cloud compatibility](/products/cloud/guides/cloud-compatibility#named-collections) for what to do if you need to restore a backup.
 </Note>
 
 Named collections can be configured with DDL or in configuration files and are applied
