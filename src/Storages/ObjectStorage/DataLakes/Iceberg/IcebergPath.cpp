@@ -160,7 +160,9 @@ String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_pat
     if (pos == std::string::npos)
     {
         /// connection://bucket
-        auto prefix = table_location.substr(0, table_location.size() - table_root.size());
+        auto prefix = table_location.size() < table_root.size()
+            ? table_location
+            : table_location.substr(0, table_location.size() - table_root.size());
         if (raw_path.size() < prefix.size())
         {
             throw ::DB::Exception(
