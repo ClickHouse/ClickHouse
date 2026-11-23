@@ -141,7 +141,8 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 
 /// Remove query plan steps that don't affect the number of rows in the result.
 /// Returns true if the query always returns at least 1 row.
-bool optimizePlanForExists(QueryPlan & query_plan);
+/// `is_correlated` means the remaining plan is decorrelated rather than executed as is.
+bool optimizePlanForExists(QueryPlan & query_plan, bool is_correlated);
 
 /// Create ExpressionStep that projects only used columns
 QueryPlanStepPtr projectOnlyUsedColumns(
