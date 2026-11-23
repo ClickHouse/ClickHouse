@@ -1073,7 +1073,8 @@ FutureSetPtr makeExplicitSet(
         context->getSettingsRef()[Setting::transform_null_in]
             || context->getSettingsRef()[Setting::in_null_as_unknown]);
 
-    auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
+    auto set_key = PreparedSets::distinguishNullMode(
+        right_arg->getTreeHash(/*ignore_aliases=*/ true), context->getSettingsRef()[Setting::in_null_as_unknown]);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 

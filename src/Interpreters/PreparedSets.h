@@ -309,6 +309,8 @@ public:
     using Hash = CityHash_v1_0_2::uint128;
     using Hashing = FutureSetHashing;
 
+    static Hash distinguishNullMode(Hash source_hash, bool use_null_as_unknown);
+
     using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;

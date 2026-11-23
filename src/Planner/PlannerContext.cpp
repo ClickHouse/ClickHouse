@@ -6,7 +6,6 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Common/quoteString.h>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -231,25 +230,13 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
     return table_expression_data->getColumnIdentifierOrNull(column_name);
 }
 
-PreparedSets::Hash PlannerContext::distinguishSetNullMode(PreparedSets::Hash source_hash, bool use_null_as_unknown)
-{
-    if (!use_null_as_unknown)
-        return source_hash;
-
-    SipHash hash;
-    hash.update(source_hash.low64);
-    hash.update(source_hash.high64);
-    hash.update(UInt8{1});
-    return getSipHash128AsPair(hash);
-}
-
 PlannerContext::SetKey PlannerContext::createSetKey(
     const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node, bool use_null_as_unknown)
 {
     /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
-    const auto set_source_hash = distinguishSetNullMode(
+    const auto set_source_hash = PreparedSets::distinguishNullMode(
         set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true }),
-        use_null_as_unknown && !set_source_node->as<ConstantNode>());
+        use_null_as_unknown);
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.

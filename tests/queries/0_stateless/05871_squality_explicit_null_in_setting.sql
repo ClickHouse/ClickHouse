@@ -37,3 +37,11 @@ FROM numbers(1);
 SET allow_experimental_analyzer = 0;
 SELECT toTypeName(84 IN (63, NULL)), 84 IN (63, NULL), nullIn(84, (63, NULL)), toTypeName(nullIn(84, (63, NULL)));
 SELECT (1, NULL) IN ((1, NULL)); -- { serverError NOT_IMPLEMENTED }
+
+SET allow_experimental_analyzer = 1;
+SELECT nullIn(CAST(NULL AS Nullable(UInt8)), (256)), CAST(NULL AS Nullable(UInt8)) IN (256);
+SELECT CAST(NULL AS Nullable(UInt8)) IN (256), nullIn(CAST(NULL AS Nullable(UInt8)), (256));
+
+SET allow_experimental_analyzer = 0;
+SELECT nullIn(CAST(NULL AS Nullable(UInt8)), (256)), CAST(NULL AS Nullable(UInt8)) IN (256);
+SELECT CAST(NULL AS Nullable(UInt8)) IN (256), nullIn(CAST(NULL AS Nullable(UInt8)), (256));

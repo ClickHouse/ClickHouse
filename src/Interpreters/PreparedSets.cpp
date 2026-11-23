@@ -782,6 +782,18 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
+PreparedSets::Hash PreparedSets::distinguishNullMode(Hash source_hash, bool use_null_as_unknown)
+{
+    if (!use_null_as_unknown)
+        return source_hash;
+
+    SipHash hash;
+    hash.update(source_hash.low64);
+    hash.update(source_hash.high64);
+    hash.update(UInt8{1});
+    return getSipHash128AsPair(hash);
+}
+
 FutureSetFromTuplePtr PreparedSets::addFromTuple(
     const Hash & key,
     ASTPtr ast,

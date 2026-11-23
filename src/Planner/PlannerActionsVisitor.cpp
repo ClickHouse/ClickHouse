@@ -1101,6 +1101,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
 
     if (!subquery_or_table)
     {
+        set_key = PreparedSets::distinguishNullMode(set_key, use_null_as_unknown);
         auto set_element_type = in_first_argument->getResultType();
         const auto & settings = planner_context->getQueryContext()->getSettingsRef();
         if (use_null_as_unknown)
@@ -1119,7 +1120,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     }
     else
     {
-        set_key = PlannerContext::distinguishSetNullMode(set_key, use_null_as_unknown);
+        set_key = PreparedSets::distinguishNullMode(set_key, use_null_as_unknown);
         set = planner_context->getPreparedSets().findSubquery(set_key);
         if (!set)
             set = planner_context->getPreparedSets().findStorage(in_second_argument->getTreeHash({ .ignore_cte = true }));

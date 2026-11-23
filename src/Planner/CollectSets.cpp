@@ -159,7 +159,8 @@ public:
 
             set_element_types = Set::getElementTypes(
                 std::move(set_element_types), settings[Setting::transform_null_in] || use_null_as_unknown);
-            auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
+            auto set_key = PreparedSets::distinguishNullMode(
+                in_second_argument->getTreeHash({.ignore_cte = true}), use_null_as_unknown);
 
             if (sets.findTuple(set_key, set_element_types))
                 return;
@@ -177,7 +178,7 @@ public:
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
-            auto set_key = PlannerContext::distinguishSetNullMode(
+            auto set_key = PreparedSets::distinguishNullMode(
                 in_second_argument->getTreeHash({.ignore_cte = true}), use_null_as_unknown);
             const bool external_table_expected = isNameOfGlobalInFunction(function_node->getFunctionName());
 
