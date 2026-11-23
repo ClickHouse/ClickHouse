@@ -227,6 +227,10 @@ public:
     /// together with the marker stored on an analyzed `FunctionNode`.
     [[nodiscard]] virtual bool useNullAsUnknownSemanticsForIn() const { return false; }
 
+    /// Whether the function is one of the `IN` family whose `NULL` semantics
+    /// must be preserved when an `ActionsDAG` is sent to another server.
+    [[nodiscard]] virtual bool isInMembershipFunction() const { return false; }
+
     const Array & getParameters() const final;
 
     /// Do preparations and return executable.
@@ -681,6 +685,9 @@ public:
     /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this
     /// interface into one forwards to this.
     [[nodiscard]] virtual bool useNullAsUnknownSemanticsForIn() const { return false; }
+
+    /// See the comment for the same method in `IFunctionBase`.
+    [[nodiscard]] virtual bool isInMembershipFunction() const { return false; }
 
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting

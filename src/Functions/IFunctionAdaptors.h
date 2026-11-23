@@ -74,6 +74,7 @@ public:
 
     void updateHash(SipHash & hash) const override { function->updateHash(hash); }
     [[nodiscard]] bool useNullAsUnknownSemanticsForIn() const override { return function->useNullAsUnknownSemanticsForIn(); }
+    [[nodiscard]] bool isInMembershipFunction() const override { return function->isInMembershipFunction(); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }

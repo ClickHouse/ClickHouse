@@ -5440,6 +5440,12 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         const auto * function_capture = typeid_cast<const FunctionCapture *>(node.function_base.get());
         if (function_capture)
             column_flags |= 4;
+        if (node.type == ActionType::FUNCTION && node.function_base && node.function_base->isInMembershipFunction())
+        {
+            column_flags |= 8;
+            if (node.function_base->useNullAsUnknownSemanticsForIn())
+                column_flags |= 16;
+        }
 
         writeIntBinary(column_flags, out);
 
@@ -5578,6 +5584,8 @@ ActionsDAG ActionsDAG::deserialize(
 
         UInt8 column_flags = 0;
         readIntBinary(column_flags, in);
+        if ((column_flags & 16) && !(column_flags & 8))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `IN` function flags in serialized ActionsDAG");
 
         /// Deserialize column if it is present
         if (column_flags & 1)
@@ -5660,9 +5668,20 @@ ActionsDAG ActionsDAG::deserialize(
             }
             else
             {
-                auto function = FunctionFactory::instance().get(function_name, context);
+                ContextPtr function_context = context;
+                if (column_flags & 8)
+                {
+                    /// The outer query and a nested query may use different `IN` settings.
+                    /// Rebuild this function with the setting captured by the sender.
+                    auto mutable_context = Context::createCopy(context);
+                    mutable_context->setSetting("in_null_as_unknown", Field((column_flags & 16) ? 1u : 0u));
+                    function_context = std::move(mutable_context);
+                }
+                auto function = FunctionFactory::instance().get(function_name, function_context);
 
                 node.function_base = function->build(arguments);
+                if ((column_flags & 8) && !node.function_base->isInMembershipFunction())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `IN` function marker for {} in serialized ActionsDAG", function_name);
                 node.function = node.function_base->prepare(arguments);
                 node.is_function_compiled = false;
 
