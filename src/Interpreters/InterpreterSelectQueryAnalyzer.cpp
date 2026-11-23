@@ -74,6 +74,7 @@ extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
 extern const SettingsBool make_distributed_plan;
+extern const SettingsBool enable_shared_storage_snapshot_in_query;
 extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
@@ -238,6 +239,17 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         /// matter: everything on this path only tests it against zero, and the outer one is known non-zero.
         eligibility_context->setSetting("automatic_parallel_replicas_mode", Field{0});
         eligibility_context->setSetting("enable_parallel_replicas", Field{1});
+
+        /// Adopting the plan hands its reads the index analysis of the single-node plan, which is only valid
+        /// for the very snapshot it was made on, and `transplantAnalysisToAllReads` declines otherwise. Without
+        /// a query-wide snapshot every plan takes its own, so the plan built here could never be adopted.
+        if (!eligibility_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+        {
+            LOG_TRACE(
+                logger,
+                "Setting 'enable_shared_storage_snapshot_in_query' is disabled. Skipping building query plan with parallel replicas.");
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+        }
 
         if (!eligibility_context->canUseParallelReplicasOnInitiator())
         {

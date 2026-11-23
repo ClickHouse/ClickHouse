@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Each of `AutoParallelReplicasPlansNotComparable` and `AutoParallelReplicasStatisticsDrifted` must be
 -- counted when its case happens, not only stay zero when it does not.
 

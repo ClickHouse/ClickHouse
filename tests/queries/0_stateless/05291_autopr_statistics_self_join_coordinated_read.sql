@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- A self-join is the sharpest case of the statistics having to follow the read parallel replicas
 -- coordinate. Both sides read the same table, but only one of the two occurrences is the one whose mark
 -- ranges the replicas split between them - the other is read in full on every replica - and it is the

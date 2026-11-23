@@ -1,4 +1,5 @@
 -- Tags: no-sanitizers
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- no-sanitizers: too slow
 
 -- Regression test: automatic parallel replicas must not hit

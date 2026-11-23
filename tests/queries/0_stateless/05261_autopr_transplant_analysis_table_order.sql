@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Reads in the plan built for automatic parallel replicas are paired with the single-node plan's reads
 -- to hand over its index analysis. Pairing them by the name the analyzer gave the table expression
 -- does not work: the replicas plan's local plan is built from the tree `buildQueryTreeForShard`

@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas hand each read of the replicas plan the index analysis of the same read in the
 -- single-node plan. A table read more than once needs its occurrences told apart, and the analyzer's `__tableN`
 -- names cannot do it: the replicas plan's tree is rebuilt by `buildQueryTreeForShard`, which renumbers them over

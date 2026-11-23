@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- An aggregation without keys whose state owns memory (`uniqExact`) never gets statistics, so automatic
 -- parallel replicas could never decide it, yet it built the plan with parallel replicas on every execution.
 -- Red if that plan is built: `AutomaticParallelReplicasProbePlansBuilt` stays 0 for it.

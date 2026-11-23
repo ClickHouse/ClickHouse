@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- An expression that only reorders its columns is a wrapper the boundary search has to look through,
 -- and whether the columns share a type has nothing to do with it. `SELECT b, a` over `(a UInt64, b
 -- String)` is the case that says so: the planner emits the reorder as a step of its own - a `Project

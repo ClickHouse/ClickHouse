@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The runtime-dataflow-statistics key of automatic parallel replicas hashes the actions DAGs of the plan
 -- without the values of their large constants, but with the short ones. Checks it on the
 -- carriers it touches: a filter moved to PREWHERE (hashed by the read step) and a join.

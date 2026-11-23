@@ -1,4 +1,4 @@
--- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None); enable_shared_storage_snapshot_in_query=(1, 1)
 -- Every query reads the whole table in one thread with tiny read tasks, so the run time grows with the
 -- number of granules: small randomized granules push the test past the timeout.
 

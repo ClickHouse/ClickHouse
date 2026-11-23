@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- A query the cost model turns down must say so with `AutoParallelReplicasRejectedByCostModel`, not
 -- only by the absence of every other outcome after `AutoParallelReplicasCostModelEvaluated`.
 -- The constant string is not shipped, so the query reads and ships the same 8-byte keys. The read cap turns

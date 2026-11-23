@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- `automatic_parallel_replicas_ignore_thresholds` is what the `AutoParallelReplicas` stateless jobs
 -- rely on to reach the plan rewrite at all: without it a read too small to occupy `max_threads` is
 -- decided by the reading-thread cap before the cost model is consulted, and those jobs go back to

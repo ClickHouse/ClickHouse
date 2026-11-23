@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- `join_any_take_last_row` selects the last instead of the first matching right-side row for `ANY`
 -- joins, so the two modes can collect very different dataflow statistics for the same query text.
 -- They must therefore not share a runtime-dataflow-statistics cache entry.

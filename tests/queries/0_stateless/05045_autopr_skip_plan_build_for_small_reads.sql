@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas do not build the parallel-replicas plan at all when index analysis
 -- already shows that the query reads less than `automatic_parallel_replicas_min_bytes_per_replica`
 -- per replica. The observable consequence is that no dataflow statistics are collected for such a

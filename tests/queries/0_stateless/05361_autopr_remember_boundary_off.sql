@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Checks that `automatic_parallel_replicas_remember_boundary = 0` makes every query build the plan with parallel
 -- replicas, even one that the statistics of an earlier execution decline, so that benchmarks see the full cost of
 -- the decision. The same shape as `05331`: the output is several times the read, so a single node wins.

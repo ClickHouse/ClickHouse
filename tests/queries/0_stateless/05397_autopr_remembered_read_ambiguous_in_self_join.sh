@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 
 # Checks that a self-join, whose two reads share a key, is not declined at a remembered boundary: the remembered
 # key of the coordinated read matches both of them, so it cannot say which one parallel replicas coordinate, and

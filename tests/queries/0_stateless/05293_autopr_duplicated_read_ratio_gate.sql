@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Checks `automatic_parallel_replicas_max_duplicated_read_ratio`: a candidate that wins the cost
 -- model's time comparison is still declined when too much of the reading is repeated by every
 -- replica. Only the coordinated read is split; the build side below is read in full on every

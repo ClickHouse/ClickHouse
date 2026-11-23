@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The plan simplicity check for automatic parallel replicas looks only at the query's own plan. The
 -- plan that builds an `IN` set is not part of it, so a step in there that cannot collect dataflow
 -- statistics - `ReadFromSystemNumbers` for a set over `numbers`, a `UnionStep` for a set over a

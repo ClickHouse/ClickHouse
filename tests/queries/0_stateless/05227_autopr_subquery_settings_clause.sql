@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas must behave the same when an `IN` subquery carries its own `SETTINGS`
 -- clause. The optimization costs a probe plan built from a clone of the query AST with
 -- `automatic_parallel_replicas_mode` and `force_primary_key` dropped from it, and matches that plan

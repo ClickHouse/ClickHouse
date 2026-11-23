@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas transplants the single-node plan's index analysis onto the
 -- coordinated local read of the adopted replicas plan (`considerEnablingParallelReplicas`).
 -- When `query_plan_join_shard_by_pk_ranges` had sharded the single-node plan

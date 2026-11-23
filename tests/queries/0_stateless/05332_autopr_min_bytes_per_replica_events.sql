@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- `automatic_parallel_replicas_min_bytes_per_replica` turns a query away at two points, each with its
 -- own event, and both record the size they judged in `AutoParallelReplicasBytesPerReplica`:
 --  * before building the plan with parallel replicas, from the on-disk size of the largest read

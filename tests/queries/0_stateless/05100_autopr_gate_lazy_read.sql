@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Lazy materialization splits one read in two: the `ReadFromMergeTree` keeps the sorting column, and
 -- a `LazilyReadFromMergeTree` reads the columns taken out of it. The lazy half is far the larger -
 -- its rows are picked by the sort and are spread over the whole table, so it touches almost every

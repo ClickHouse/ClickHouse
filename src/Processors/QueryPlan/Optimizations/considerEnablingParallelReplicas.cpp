@@ -7,6 +7,8 @@
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 #include <Core/Joins.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -70,6 +72,11 @@ extern const Event AutoParallelReplicasBytesPerReplica;
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool enable_shared_storage_snapshot_in_query;
+}
 
 namespace
 {
@@ -762,6 +769,33 @@ bool transplantAnalysisToAllReads(
             }
             paired_by_replicas_read.emplace(read, it->second);
             single_node_by_occurrence.erase(it);
+        }
+    }
+
+    /// The transplanted analysis names parts of the single-node read's snapshot, but the candidate keeps
+    /// its own snapshot, and the reader takes alter conversions, patch parts and on-the-fly mutations from
+    /// it. Two snapshots taken at different moments would pair one moment's ranges with another's
+    /// mutations, which reads rows neither moment has. Require both to be the very same capture, for every
+    /// read before any is handed an analysis. `metadata` is not compared: a read may legitimately clone it
+    /// to add virtual columns, while `data` - the parts and the mutations snapshot - was built against the
+    /// metadata it was captured with.
+    for (const auto & [replicas_read, single_node_read] : paired_by_replicas_read)
+    {
+        const bool same_snapshot = single_node_read->getStorageSnapshot()->data == replicas_read->getStorageSnapshot()->data
+            && single_node_read->getMutationsSnapshot() == replicas_read->getMutationsSnapshot();
+        if (!same_snapshot)
+        {
+            /// With a query-wide snapshot cache, every read of a table in the query is given the same one.
+            [[maybe_unused]] const auto & context = replicas_read->getContext();
+            chassert(
+                !context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] || !context->hasQueryContext()
+                || !context->getQueryMetadataCache());
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "Read of {} in the replicas plan has another storage snapshot than its counterpart in the "
+                "single-node plan; not transplanting index analysis. Skipping optimization",
+                replicas_read->getStorageID().getNameForLogs());
+            return false;
         }
     }
 

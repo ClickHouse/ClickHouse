@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Verify that max_parallel_replicas is capped to the actual cluster size.
 -- With max_parallel_replicas=1000 (uncapped), the formula would favor parallel replicas.
 -- But since the cluster has only 3 nodes, num_replicas is capped to 3 and the formula

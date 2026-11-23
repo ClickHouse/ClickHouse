@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- A skip index is applied while granules are read (`use_skip_indexes_on_data_read`, on by default)
 -- rather than during index analysis. The reader that does that is only created when the read carries
 -- the conditions built from the query, and the plan built for automatic parallel replicas never builds

@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- The overhead of automatic parallel replicas is reported in parts: building the plan with parallel
 -- replicas (`AutoParallelReplicasPlanBuildMicroseconds`), the rest of the optimization
 -- (`AutoParallelReplicasOptimizationMicroseconds`), and collecting statistics while the query runs

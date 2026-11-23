@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- max_rows_to_read_leaf should not apply to local (non-distributed) queries
 -- See https://github.com/ClickHouse/ClickHouse/issues/99268
 

@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Input-byte autopr statistics for JOIN queries. A JoinStep never reads itself, but the JOIN-specific
 -- logic in `findReadingStep` decides WHICH reading step gets instrumented: the parallelized side
 -- (child 0, or child 1 for RIGHT), i.e. the table read across replicas. This test checks that the

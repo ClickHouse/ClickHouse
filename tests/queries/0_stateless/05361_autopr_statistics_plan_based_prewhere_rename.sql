@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- When PREWHERE takes over a filter, the single-node plan keeps a rename-only `Expression` that the
 -- parallel replicas local branch merges away. The plan hash ignores such steps, so the two plans match,
 -- and the walk that pairs their reads has to ignore them too - otherwise it gives up and no statistics

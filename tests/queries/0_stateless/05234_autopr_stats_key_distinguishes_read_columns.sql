@@ -1,4 +1,5 @@
 -- Tags: no-sanitizers
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- no-sanitizers: too slow - the same parallel-replicas machinery makes `03783` and `04034`
 -- too slow there as well. This test took 275s against the 180s cap in the ASan flaky check.
 

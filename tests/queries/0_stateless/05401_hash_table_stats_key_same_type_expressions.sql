@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- GROUP BY key expressions over one column that keep its type must not share hash-table size statistics: only
 -- the expression step below the aggregation tells them apart. The second run of a query preallocates what the
 -- first one recorded, while the first run of a different expression must preallocate nothing.

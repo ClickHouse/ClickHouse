@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Handing the single-node index analysis to the reads of the plan built for automatic parallel
 -- replicas means pairing the reads of the two plans, and the two plans are optimized separately, so
 -- position cannot do it. Reads are paired by the table they read together with the name the analyzer

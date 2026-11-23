@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas decides whether replicas pay off by building a second, candidate plan
 -- and costing it. For a query parallel replicas cannot read at all, that plan is built only to be
 -- recognized as useless and thrown away, so the eligibility of the query is checked before building

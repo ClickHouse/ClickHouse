@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 SET min_marks_per_part_to_load_statistics = 0;
 SET use_statistics_for_part_pruning = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;

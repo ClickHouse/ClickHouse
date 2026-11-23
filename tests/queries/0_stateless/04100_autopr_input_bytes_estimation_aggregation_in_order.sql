@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings, long, no-flaky-check
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- no-random-merge-tree-settings / no-random-settings: to stabilize the test. The autopr output-bytes
 -- estimate serializes the aggregation output with the default codec; under the `ZSTD(3)` default it
 -- is very sensitive to block-sizing query settings, so randomized settings make the estimate swing

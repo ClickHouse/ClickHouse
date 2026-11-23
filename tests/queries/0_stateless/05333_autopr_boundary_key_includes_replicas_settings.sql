@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Automatic parallel replicas remembers, per single-replica plan, which node ends the replicas' half of it, so a
 -- later execution can decide from the statistics there without building a plan with parallel replicas. Where that
 -- half ends also depends on settings that leave the single-replica plan as it is - `parallel_replicas_prefer_local_join`

@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 DROP TABLE IF EXISTS t_autopr_identical_subqueries;
 
 CREATE TABLE t_autopr_identical_subqueries (v UInt64) ENGINE = MergeTree ORDER BY v;

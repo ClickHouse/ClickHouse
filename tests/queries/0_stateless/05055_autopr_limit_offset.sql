@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Verify how query plans containing `Limit` and `Offset` steps interact with the automatic parallel
 -- replicas optimization.
 

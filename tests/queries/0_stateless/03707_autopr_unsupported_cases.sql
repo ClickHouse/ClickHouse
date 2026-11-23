@@ -1,3 +1,4 @@
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 -- Query shapes the automatic parallel replicas optimization does not support yet. Each of them must
 -- run, and must collect no dataflow statistics at all - `automatic_parallel_replicas_mode = 2` asks
 -- only for the statistics, and an unsupported shape leaves both byte counters at zero. Once a shape

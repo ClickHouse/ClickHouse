@@ -1,4 +1,5 @@
 -- Tags: stateful, long, no-msan
+-- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 
 -- `test.hits` lives on a `web` disk (S3) behind a local filesystem cache. With the randomized
 -- `enable_filesystem_cache=0` every query of this test downloads the whole table from S3 again, and when
