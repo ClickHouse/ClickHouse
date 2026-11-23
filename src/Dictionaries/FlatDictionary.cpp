@@ -749,6 +749,8 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
         bool value_is_null = attribute.is_nullable_set && value.isNull();
         if (value_is_null)
             attribute.is_nullable_set->insert(key);
+        else if (attribute.is_nullable_set) /// A repeated key keeps its last row, so a value replaces an earlier NULL.
+            attribute.is_nullable_set->erase(key);
 
         /// A null key still gets a row: lookups copy the row before the null map is applied.
         if constexpr (is_column_attribute_value<ValueType>)

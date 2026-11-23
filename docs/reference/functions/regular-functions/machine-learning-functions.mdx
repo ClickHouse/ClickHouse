@@ -29,7 +29,7 @@ See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogene
 
 Introduced in: v26.8.0
 
-Returns the id of the nearest (L2) centroid to a vector. The centroids are given as a constant array of float arrays, where the id is the 0-based position in that array, or as the name of a `Dictionary` holding the attributes `cid` and `vec`, where the id is `cid`.
+Returns the id of the nearest (L2) centroid to a vector. The centroids are given as a constant array of arrays, where the id is the 0-based position in that array, or as the name of a `Dictionary` holding the attributes `cid` and `vec`, where the id is `cid`.
 
 <Note>
 This function is non-deterministic: it can return different results for the same arguments.
@@ -43,8 +43,8 @@ assignCentroid(vec, centroids | dict_name)
 
 **Arguments**
 
-- `vec` — Vector to assign. Its dimension must match the dimension of the centroids. Widths other than `Float32` are converted to `Float32`, which is what the scoring kernel uses. [`Array(Float32)`](/reference/data-types/array) or [`Array(Float64)`](/reference/data-types/array) or [`Array(BFloat16)`](/reference/data-types/array)
-- `centroids` — The centroids to score against, which must be constant. Given as an array of equally sized, non-empty float arrays, the id then being the 0-based position in that array; or as the name of a `Dictionary` with an attribute `cid` of an unsigned integer type that fits `UInt32` and an attribute `vec` of type `Array(Float32)`, the id then being `cid`. The dictionary is read once and cached until it reloads. [`Array(Array(Float32))`](/reference/data-types/array) or [`Array(Array(Float64))`](/reference/data-types/array) or [`Array(Array(BFloat16))`](/reference/data-types/array) or [`String`](/reference/data-types/string)
+- `vec` — Vector to assign. Its dimension must match the dimension of the centroids. Element types other than `Float32` are converted to `Float32`, which is what the scoring kernel uses. [`Array(Float32)`](/reference/data-types/array) or [`Array(Float64)`](/reference/data-types/array) or [`Array(BFloat16)`](/reference/data-types/array) or [`Array(Int8)`](/reference/data-types/array) or [`Array(UInt8)`](/reference/data-types/array)
+- `centroids` — The centroids to score against, which must be constant. Given as an array of equally sized, non-empty arrays with any of the element types accepted for `vec` (not necessarily the same one), the id then being the 0-based position in that array; or as the name of a `Dictionary` with an attribute `cid` of an unsigned integer type that fits `UInt32` and an attribute `vec` of type `Array(Float32)`, the id then being `cid`. The dictionary is read once and cached until it reloads. [`Array(Array(Float32))`](/reference/data-types/array) or [`Array(Array(Float64))`](/reference/data-types/array) or [`Array(Array(BFloat16))`](/reference/data-types/array) or [`Array(Array(Int8))`](/reference/data-types/array) or [`Array(Array(UInt8))`](/reference/data-types/array) or [`String`](/reference/data-types/string)
 
 **Returned value**
 
