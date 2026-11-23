@@ -4,13 +4,17 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 
 #include <Common/FieldAccurateComparison.h>
+#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
 #include <Columns/ColumnNullable.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -23,6 +27,100 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+bool isBoolOrSimpleAggregateFunctionOfBool(const IDataType & type)
+{
+    return type.getName() == "Bool" || isSimpleAggregateFunctionOfBool(type);
+}
+
+/// How the bounds of an index column have to be read. A `Bool` is stored as a byte that need not be 0 or 1
+/// (e.g. after `INSERT ... SELECT toUInt8(2)`), and the index writes that byte as is.
+enum BoolBoundsKind : UInt8
+{
+    /// The column has no `Bool` whose stored byte could be lost.
+    NO_BOOL_BOUNDS = 0,
+    /// A `Bool`, possibly inside `Nullable`, `LowCardinality` or `SimpleAggregateFunction`.
+    SCALAR_BOOL_BOUNDS = 1,
+    /// A `Bool` inside a `Tuple`, an `Array` or a `Map`, e.g. `Tuple(Bool)`.
+    NESTED_BOOL_BOUNDS = 2,
+};
+
+BoolBoundsKind getBoolBoundsKind(const DataTypePtr & type)
+{
+    const DataTypePtr scalar_type = removeNullable(removeLowCardinality(type));
+    if (isBoolOrSimpleAggregateFunctionOfBool(*scalar_type))
+        return SCALAR_BOOL_BOUNDS;
+
+    /// A value of `Dynamic`, `Variant` or `JSON` carries the type of what it holds, so a `Bool` in it is compared as
+    /// a `Bool` field and has to be read as one. These types are not allowed in a `minmax` index, but the index of a
+    /// table created before that check can have them.
+    if (anyInTypeTree(*type, [](const IDataType & nested) { return isDynamic(nested) || isVariant(nested) || isObject(nested); }))
+        return NO_BOOL_BOUNDS;
+
+    if (anyInTypeTree(*type, isBoolOrSimpleAggregateFunctionOfBool))
+        return NESTED_BOOL_BOUNDS;
+
+    return NO_BOOL_BOUNDS;
+}
+
+/// Whether `field`, a value of `type` read with `read_bool_field_as_int`, has a `Bool` stored as a byte other than 0 and 1.
+bool hasNonCanonicalBool(const Field & field, const IDataType & type)
+{
+    if (field.isNull())
+        return false;
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return hasNonCanonicalBool(field, *nullable_type->getNestedType());
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
+        return hasNonCanonicalBool(field, *low_cardinality_type->getDictionaryType());
+
+    if (isBoolOrSimpleAggregateFunctionOfBool(type))
+        return field.getType() == Field::Types::UInt64 && field.safeGet<UInt64>() > 1;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        if (field.getType() != Field::Types::Tuple)
+            return false;
+
+        const auto & tuple = field.safeGet<Tuple>();
+        const auto & element_types = tuple_type->getElements();
+        for (size_t i = 0; i < tuple.size() && i < element_types.size(); ++i)
+            if (hasNonCanonicalBool(tuple[i], *element_types[i]))
+                return true;
+        return false;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        if (field.getType() != Field::Types::Array)
+            return false;
+
+        for (const auto & element : field.safeGet<Array>())
+            if (hasNonCanonicalBool(element, *array_type->getNestedType()))
+                return true;
+        return false;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (field.getType() != Field::Types::Map)
+            return false;
+
+        /// Each element of a `Map` field is a `Tuple` of the key and the value.
+        const auto & key_value_type = *assert_cast<const DataTypeArray &>(*map_type->getNestedType()).getNestedType();
+        for (const auto & element : field.safeGet<Map>())
+            if (hasNonCanonicalBool(element, key_value_type))
+                return true;
+        return false;
+    }
+
+    return false;
+}
+
+}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
@@ -48,13 +146,13 @@ void MergeTreeIndexGranuleMinMax::initSerializations()
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         serializations.push_back(type->getDefaultSerialization());
-        const DataTypePtr nested_type = removeNullable(removeLowCardinality(type));
-        bool_columns.push_back(isBool(nested_type) || isSimpleAggregateFunctionOfBool(*nested_type));
+        bool_columns.push_back(getBoolBoundsKind(type));
     }
     datatypes = index_sample_block.getDataTypes();
     /// A `Bool` column can hold any byte (e.g. `INSERT ... SELECT toUInt8(2)`), so its bounds are read as the stored
-    /// bytes rather than converted to `true`, and widened in `deserializeBinary`. A `Bool` nested in another type
-    /// (e.g. in a `JSON` value) is compared as a `Bool` field, so it is still read as one.
+    /// bytes rather than converted to `true`, and widened in `deserializeBinary`. The same holds for a `Bool` inside
+    /// a `Tuple`, an `Array` or a `Map`. A `Bool` in a `Dynamic`, `Variant` or `JSON` value is compared as a `Bool`
+    /// field, so it is still read as one (see `getBoolBoundsKind`).
     bool_format_settings.binary.read_bool_field_as_int = true;
 }
 
@@ -147,8 +245,15 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
         /// 0 or 1 (`b IN (true)`). A granule with bytes in `[2, 2]` must match both `toUInt8(b) = 2` and `b IN (true)`,
         /// so its range is widened to `[1, 2]`: the lower bound covers the converted value too. The upper bound
         /// already does, and a granule of only 0 and 1 is not changed.
-        if (bool_columns[i] && min_ref.getType() == Field::Types::UInt64 && min_ref.safeGet<UInt64>() > 1)
+        if (bool_columns[i] == SCALAR_BOOL_BOUNDS && min_ref.getType() == Field::Types::UInt64 && min_ref.safeGet<UInt64>() > 1)
             min_ref = UInt64(1);
+
+        /// The same for a `Bool` inside a `Tuple`, an `Array` or a `Map`: `(2)` is read as `(2)` or as `(1)`. Such
+        /// values are ordered lexicographically, so replacing the byte in place would not give a lower bound for
+        /// the elements after it (`(3, 0)` is above `(2, 5)`, but `(1, 0)` is below `(1, 5)`). The lower bound is
+        /// dropped instead; the upper bound already covers the converted values, which are never greater.
+        if (bool_columns[i] == NESTED_BOOL_BOUNDS && hasNonCanonicalBool(min_ref, *datatypes[i]))
+            min_ref = NEGATIVE_INFINITY;
 
         if (update_in_place)
         {
@@ -302,9 +407,8 @@ MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String 
 {
     const DataTypePtr & type = index_sample_block.getByPosition(0).type;
     serialization = type->getDefaultSerialization();
-    /// Keep the stored byte of a `Bool` bound, as `MergeTreeIndexGranuleMinMax` does.
-    const DataTypePtr nested_type = removeNullable(removeLowCardinality(type));
-    if (isBool(nested_type) || isSimpleAggregateFunctionOfBool(*nested_type))
+    /// Keep the stored bytes of a `Bool` bound, as `MergeTreeIndexGranuleMinMax` does.
+    if (getBoolBoundsKind(type) != NO_BOOL_BOUNDS)
         format_settings.binary.read_bool_field_as_int = true;
     granules.reserve(size_hint_);
 }
