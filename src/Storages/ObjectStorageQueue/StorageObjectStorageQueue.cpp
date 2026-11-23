@@ -195,6 +195,47 @@ namespace
             && (table_metadata.getMode() != ObjectStorageQueueMode::ORDERED || metadata.useBucketsForProcessing());
     }
 
+    /// What `after_processing = 'move'` needs of its destination: an S3 one or an Azure one, each given in full, or a prefix.
+    /// Checked when the settings are set, and again by every batch before it claims a file, because the action is shared
+    /// through the Keeper metadata by every table of the Keeper path, while the destination belongs to each table.
+    void checkMoveDestinationIsComplete(
+        bool move_uri,
+        bool move_access_key_id,
+        bool move_secret_access_key,
+        bool move_connection_string,
+        bool move_container,
+        bool move_prefix)
+    {
+        if (move_uri || move_access_key_id || move_secret_access_key)
+        {
+            if (!move_uri || !move_access_key_id || !move_secret_access_key)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Move to S3 bucket requires all of settings: move_uri, move_access_key_id, move_secret_access_key");
+            }
+            if (move_connection_string || move_container)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unexpected Azure settings when S3 settings are provided:{}{}",
+                    move_connection_string ? " move_connection_string" : "",
+                    move_container ? " move_container" : "");
+            }
+        }
+        else if (move_connection_string || move_container)
+        {
+            if (!move_connection_string || !move_container)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Move to Azure container requires all of settings: move_connection_string, move_container");
+            }
+        }
+        else if (!move_prefix)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Move of processed objects requires specifying target bucket/container or prefix");
+        }
+    }
+
     /// The move uses only the destination of the storage type of the table, so only that one is checked.
     void checkMoveDestinationHost(
         ObjectStorageType type,
@@ -252,39 +293,14 @@ namespace
             bool move_container = !queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString().empty();
             bool move_prefix = !queue_settings[ObjectStorageQueueSetting::after_processing_move_prefix].toString().empty();
 
-            if (move_uri || move_access_key_id || move_secret_access_key)
-            {
-                if (!move_uri || !move_access_key_id || !move_secret_access_key)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Move to S3 bucket requires all of settings: move_uri, move_access_key_id, move_secret_access_key");
-                }
-                if (move_connection_string || move_container)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected Azure settings when S3 settings are provided:{}{}",
-                        move_connection_string ? " move_connection_string" : "",
-                        move_container ? " move_container" : "");
-                }
-            }
-            else if (move_connection_string || move_container)
-            {
-                if (!move_connection_string || !move_container)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Move to Azure container requires all of settings: move_connection_string, move_container");
-                }
-                /// A full user `ATTACH` is fresh input as well, so only a definition stored on this server is exempt.
-                if (!is_loading_from_existing_metadata)
-                    ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
-                        queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
-            }
-            else if (!move_prefix)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Move of processed objects requires specifying target bucket/container or prefix");
-            }
+            checkMoveDestinationIsComplete(
+                move_uri, move_access_key_id, move_secret_access_key, move_connection_string, move_container, move_prefix);
+
+            /// A full user `ATTACH` is fresh input as well, so only a definition stored on this server is exempt.
+            if (move_connection_string && move_container && !move_uri && !is_loading_from_existing_metadata)
+                ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
+                    queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString(),
+                    queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString());
         }
 
         /// The host filter of `configuration` covers the source only, so the move destination is checked here.
@@ -919,16 +935,41 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
-    /// `alter` publishes the action together with its destination settings, so a batch should never capture `MOVE`
-    /// without a destination. If it does, it would read and insert its files and then fail to move them, so it is not
-    /// started.
-    if (after_processing == ObjectStorageQueueAction::MOVE
-        && after_processing_settings_copy.after_processing_move_uri.empty()
-        && after_processing_settings_copy.after_processing_move_prefix.empty()
-        && after_processing_settings_copy.after_processing_move_container.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The destination of `after_processing = 'move'` is not set yet, the settings are being altered. Will retry");
+    /// `alter` publishes the action together with its destination settings, so a batch of the altered table never captures
+    /// `MOVE` without its destination. But the action lives in the Keeper metadata, which is shared by every table of the
+    /// Keeper path, while the destination belongs to each table: an `ALTER` of another table can turn this one to `MOVE`
+    /// while its own destination is missing or incomplete, which is valid for the action it was created with. Such a batch
+    /// would read and insert its files and then fail to move them, before the commit, so that the rows are inserted again
+    /// on every poll. It is not started, and no file is claimed, until this table gets a complete destination of its own.
+    if (after_processing == ObjectStorageQueueAction::MOVE)
+    {
+        try
+        {
+            checkMoveDestinationIsComplete(
+                !after_processing_settings_copy.after_processing_move_uri.empty(),
+                !after_processing_settings_copy.after_processing_move_access_key_id.empty(),
+                !after_processing_settings_copy.after_processing_move_secret_access_key.empty(),
+                !after_processing_settings_copy.after_processing_move_connection_string.empty(),
+                !after_processing_settings_copy.after_processing_move_container.empty(),
+                !after_processing_settings_copy.after_processing_move_prefix.empty());
+            /// The move uses only the destination of the storage type of the table, or else the prefix.
+            const bool has_destination_of_its_type = type == ObjectStorageType::Azure
+                ? !after_processing_settings_copy.after_processing_move_container.empty()
+                : !after_processing_settings_copy.after_processing_move_uri.empty();
+            if (!has_destination_of_its_type && after_processing_settings_copy.after_processing_move_prefix.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Move of processed objects requires specifying target bucket/container or prefix");
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "The queue has `after_processing = 'move'`, which is shared by all tables of its Keeper path, but the move "
+                "destination of table {} is not complete, so no file is processed. Set it with `ALTER TABLE ... MODIFY SETTING`",
+                getStorageID().getNameForLogs());
+            throw;
+        }
+    }
 
     if (max_processed_files_override)
         commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
@@ -1971,7 +2012,11 @@ void StorageObjectStorageQueue::alter(
 
         for (auto & setting : new_settings)
         {
-            LOG_TEST(log, "New setting {}: {}", setting.name, setting.value);
+            /// The keys of the move destination must not get into the log.
+            if (setting.name == "after_processing_move_secret_access_key" || setting.name == "after_processing_move_connection_string")
+                LOG_TEST(log, "New setting {}: [HIDDEN]", setting.name);
+            else
+                LOG_TEST(log, "New setting {}: {}", setting.name, setting.value);
 
             auto inserted = new_settings_set.emplace(setting.name).second;
             if (!inserted)

@@ -1826,6 +1826,67 @@ def test_after_processing_change_keeps_the_move_destination_of_a_batch_in_flight
     )
 
 
+def test_move_action_set_through_another_table_of_the_keeper_path(started_cluster):
+    """The action is shared by every table of a Keeper path, the move destination is not. A table whose own
+    destination is incomplete, which is valid for `keep`, must not read a file once another table switches the
+    queue to `move`: it would insert the rows, fail to move the file before the commit and insert them again."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    altered_table = f"shared_action_altered_{token}"
+    table_name = f"shared_action_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    destination = f"{token}-destination"
+    recreate_minio_bucket(started_cluster, destination)
+    move_uri = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{destination}"
+    shared_settings = {
+        "keeper_path": f"/clickhouse/{table_name}",
+        "use_persistent_processing_nodes": 1,
+        "processing_threads_num": 1,
+    }
+
+    create_table(
+        started_cluster, node, altered_table, "unordered", files_path, additional_settings=shared_settings
+    )
+    # Only the URI of an external destination, without its keys.
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={**shared_settings, "after_processing_move_uri": move_uri},
+    )
+    node.query(
+        f"ALTER TABLE {altered_table} MODIFY SETTING after_processing = 'move', "
+        f"after_processing_move_prefix = '{processed_prefix}'"
+    )
+
+    put_s3_file_content(started_cluster, f"{files_path}/part.csv", b"1,2,3\n")
+    create_mv(node, table_name, f"{table_name}_dst")
+
+    wait_until(
+        lambda: node.contains_in_log(
+            f"the move destination of table default.{table_name} ("
+        )
+    )
+    assert node.query(f"SELECT count() FROM {table_name}_dst") == "0\n"
+
+    node.query(
+        f"ALTER TABLE {table_name} MODIFY SETTING after_processing = 'move', "
+        f"after_processing_move_access_key_id = '{started_cluster.minio_access_key}', "
+        f"after_processing_move_secret_access_key = '{started_cluster.minio_secret_key}'"
+    )
+    wait_until(
+        lambda: move_counts(started_cluster, "S3Queue", destination, files_path, "")
+        == (1, 0)
+    )
+    assert (
+        node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL")
+        == "1\t2\t3\n"
+    )
+
+
 @pytest.mark.parametrize(
     "destination_token",
     [None, "foreign-token"],
