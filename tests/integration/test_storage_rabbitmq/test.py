@@ -4250,6 +4250,50 @@ def test_rabbitmq_reconnect_drops_stale_deliveries(rabbitmq_cluster, db, unique)
     assert duplicates <= 2 * block_size, f"{duplicates} duplicates"
 
 
+def test_rabbitmq_reconnect_during_direct_select(rabbitmq_cluster, db, unique):
+    # A direct SELECT keeps the looping task running the event loop of the connection until the query ends. When the
+    # broker drops the connection meanwhile, the streaming task has to stop that loop before it replaces the connection.
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_empty_queue_backoff_start_ms = 100,
+                     rabbitmq_empty_queue_backoff_end_ms = 500;
+        """
+    )
+    instance.wait_for_log_line(f"\\({db}\\.rabbitmq\\): Registered 1/1 conumers")
+
+    def connections_ready():
+        return int(instance.count_in_log(f"({db}.rabbitmq): Connection is ready"))
+
+    ready_before = connections_ready()
+    # The RabbitMQ source stays alive until the whole query ends, about 20 seconds.
+    query = instance.get_query_request(
+        f"SELECT count(), sum(x) FROM (SELECT key AS x FROM {db}.rabbitmq "
+        "UNION ALL SELECT sleepEachRow(1) FROM numbers(20)) "
+        "SETTINGS stream_like_engine_allow_direct_select = 1, max_block_size = 1"
+    )
+    instance.wait_for_log_line(f"\\({db}\\.rabbitmq\\): Background loop started")
+
+    requests.delete(
+        f"http://{rabbitmq_cluster.rabbitmq_ip}:{rabbitmq_cluster.rabbitmq_management_port}/api/connections/username/root",
+        auth=("root", "clickhouse"),
+        headers={"X-Reason": "test"},
+        timeout=30,
+    ).raise_for_status()
+    deadline = time.monotonic() + 10
+    instance.wait_for_log_line(f"\\({db}\\.rabbitmq\\): Library error report")
+    while connections_ready() <= ready_before:
+        if time.monotonic() > deadline:
+            pytest.fail("the table did not reconnect while the direct SELECT was running")
+        time.sleep(0.1)
+
+    assert query.get_answer() == "20\t0\n"
+
+
 def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
     # With parallel_view_processing=0 the sources of several consumers ran one after another on one thread. They share
     # the flush deadline of a cycle, so once the first source had used it the others returned after one message each,

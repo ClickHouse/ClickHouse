@@ -454,6 +454,14 @@ void StorageRabbitMQ::startLoop()
     looping_task->activateAndSchedule();
 }
 
+bool StorageRabbitMQ::restoreConnection(std::lock_guard<std::mutex> & /* loop_lock */)
+{
+    /// The looping task runs the event loop of the connection: it has to finish before the connection is replaced.
+    stopLoop();
+    looping_task->deactivate();
+    return connection->reconnect();
+}
+
 
 void StorageRabbitMQ::incrementReader()
 {
@@ -946,13 +954,8 @@ void StorageRabbitMQ::read(
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
 
-    if (!connection->isConnected())
-    {
-        if (connection->getHandler().loopRunning())
-            deactivateTask(looping_task, false, true);
-        if (!connection->reconnect())
-            throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
-    }
+    if (!connection->getHandler().connectionRunning() && !restoreConnection(lock))
+        throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "No connection to {}", connection->connectionInfoForLog());
 
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -981,7 +984,7 @@ void StorageRabbitMQ::read(
         pipes.back().addTransform(std::move(converting_transform));
     }
 
-    if (!connection->getHandler().loopRunning() && connection->isConnected())
+    if (!connection->getHandler().loopRunning() && connection->getHandler().connectionRunning())
         startLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -1339,7 +1342,11 @@ void StorageRabbitMQ::threadFunc()
             auto table_id = getStorageID();
 
             const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-            const bool rabbit_connected = connection->isConnected() || connection->reconnect();
+            const bool rabbit_connected = [&]
+            {
+                std::lock_guard lock(loop_mutex);
+                return connection->getHandler().connectionRunning() || restoreConnection(lock);
+            }();
             const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
             const bool deps_ready = num_views == 0 || hasDependencies(table_id);
             /// True only when this cycle is the one out-of-order cycle a `SYSTEM REFRESH` grants to a
