@@ -1096,7 +1096,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
 
     /// The scope directly below `outer_scope` in the chain, to locate the subquery in its join tree.
     const IdentifierResolveScope * inner_scope = &scope;
-    for (const auto * outer_scope = scope.parent_scope; outer_scope; inner_scope = outer_scope, outer_scope = outer_scope->parent_scope)
+    for (auto * outer_scope = scope.parent_scope; outer_scope; inner_scope = outer_scope, outer_scope = outer_scope->parent_scope)
     {
         /** The carriers of this scope are probed in the order in which the parent lookup tries them, see
           * `QueryAnalyzer::tryResolveIdentifier`: lambda arguments, then expression aliases, then the join tree -
@@ -1137,12 +1137,12 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
           * itself in `(SELECT ...) AS t`, to break the alias cycle.
           *
           * Only an alias that can provide the rest of the identifier counts, as `tryResolveIdentifierFromCompoundExpression`
-          * requires there. The alias table keeps the expressions as they were written - lookups resolve a clone - so
-          * the type is known regardless of the order in which the enclosing query resolves its expressions only for a
-          * constant, such as `1 AS t` or `WITH (1, 2) AS t`. A constant without the rest of the identifier gives it no
-          * reading. Any other alias counts regardless of whether it has the rest: if it cannot provide it, the
-          * identifier fails to resolve instead of silently reading the aliased table expression, and the result
-          * still does not depend on the resolution order.
+          * requires there: an alias without the rest of the identifier gives it no reading. The alias table keeps the
+          * expressions as they were written - lookups resolve a clone - so only the type of a constant, such as
+          * `1 AS t` or `WITH (1, 2) AS t`, is known there. Any other alias is resolved to learn its type, exactly as
+          * the parent lookup would resolve it once the name is hidden, so the answer does not depend on the order in
+          * which the enclosing query resolves its expressions. Only an alias whose type cannot be determined this
+          * way counts regardless of whether it has the rest.
           */
         if (inner_scope->scope_node->getNodeType() == QueryTreeNodeType::QUERY
             && !inner_scope->context->getSettingsRef()[Setting::enable_global_with_statement])
@@ -1157,13 +1157,29 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             if (alias_it == outer_scope->aliases.alias_name_to_expression_node.end())
                 return OuterReading::ABSENT;
 
-            const auto * constant_node = alias_it->second->as<ConstantNode>();
-            if (!constant_node)
-                return OuterReading::READABLE;
+            DataTypePtr type;
+            if (const auto * constant_node = alias_it->second->as<ConstantNode>())
+            {
+                type = constant_node->getResultType();
+            }
+            else
+            {
+                if (!scope.outer_expression_alias_type_resolver)
+                    return OuterReading::READABLE;
+
+                /// The alias is resolved in the scope of the lookup, which needs a mutable scope. The scopes are
+                /// never constant objects: `QueryAnalyzer` owns them, and only the binding checks take them as constant.
+                auto alias_type = (*scope.outer_expression_alias_type_resolver)(
+                    const_cast<IdentifierResolveScope &>(scope), *outer_scope, identifier.front());
+                if (!alias_type)
+                    return OuterReading::READABLE;
+                if (!*alias_type)
+                    return OuterReading::ABSENT;
+                type = *alias_type;
+            }
 
             IdentifierView rest(identifier);
             rest.popFirst();
-            DataTypePtr type = constant_node->getResultType();
             if (!rest.empty())
                 type = type->tryGetSubcolumnType(rest.getFullName());
             return outerReadingOfType(type, identifier_lookup);

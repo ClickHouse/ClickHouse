@@ -1,5 +1,6 @@
 #pragma once
 
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <Analyzer/TableNode.h>
@@ -9,6 +10,7 @@
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 
+#include <Common/SetWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <Core/NamesAndTypes.h>
 
@@ -223,6 +225,15 @@ private:
         IdentifierResolveScope & scope,
         IdentifierResolveContext identifier_resolve_context);
 
+    /** Returns the type of the expression that the alias `alias_name` of `alias_scope`, an enclosing scope of
+      * `lookup_scope`, gives a lookup that starts in `lookup_scope`. The alias is resolved for that, exactly as such a
+      * lookup resolves it, so the answer does not depend on which expressions of the enclosing query are already resolved.
+      * Returns nullptr if the alias gives the lookup no expression, and std::nullopt if the type cannot be determined:
+      * the alias is not an expression, or it is being resolved by this method already.
+      */
+    std::optional<DataTypePtr> tryGetTypeOfOuterExpressionAlias(
+        IdentifierResolveScope & lookup_scope, IdentifierResolveScope & alias_scope, const std::string & alias_name);
+
     IdentifierResolveResult tryResolveIdentifierFromCTE(
         const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope);
@@ -386,6 +397,12 @@ private:
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
+
+    /// The scopes point to it, see `IdentifierResolveScope::outer_expression_alias_type_resolver`.
+    OuterExpressionAliasTypeResolver outer_expression_alias_type_resolver;
+
+    /// The aliases that `tryGetTypeOfOuterExpressionAlias` is resolving right now: lookup scope, alias scope, alias name.
+    SetWithMemoryTracking<std::tuple<const IdentifierResolveScope *, const IdentifierResolveScope *, std::string>> outer_expression_aliases_in_resolve_process;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
     /// by tree hash, so syntactically-identical calls fold to the same constant. For server constants

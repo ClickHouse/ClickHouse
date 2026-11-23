@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <optional>
+
 #include <base/arithmeticOverflow.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -223,6 +226,14 @@ struct IdentifierResolveState
 {
     size_t count = 1;
 };
+
+/** Resolves the expression alias `alias_name` of `alias_scope`, an enclosing scope of `lookup_scope`, the way a lookup
+  * that starts in `lookup_scope` does, and returns the type of the expression. Returns nullptr if the alias gives such
+  * a lookup no expression, and std::nullopt if the type cannot be determined.
+  * See `QueryAnalyzer::tryGetTypeOfOuterExpressionAlias`.
+  */
+using OuterExpressionAliasTypeResolver = std::function<std::optional<DataTypePtr>(
+    IdentifierResolveScope & lookup_scope, IdentifierResolveScope & alias_scope, const std::string & alias_name)>;
 
 struct IdentifierResolveContext
 {

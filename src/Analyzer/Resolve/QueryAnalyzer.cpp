@@ -402,7 +402,13 @@ QueryAnalyzer::QueryAnalyzer(
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
     , replaced_storage(std::move(replaced_storage_))
     , view_source_in_subqueries(view_source_in_subqueries_)
-{}
+{
+    outer_expression_alias_type_resolver
+        = [this](IdentifierResolveScope & lookup_scope, IdentifierResolveScope & alias_scope, const std::string & alias_name)
+    {
+        return tryGetTypeOfOuterExpressionAlias(lookup_scope, alias_scope, alias_name);
+    };
+}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
 
@@ -626,6 +632,8 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
 IdentifierResolveScope & QueryAnalyzer::createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope)
 {
     auto [it, _] = node_to_scope_map.emplace(scope_node, IdentifierResolveScope{scope_node, parent_scope});
+    if (!parent_scope)
+        it->second.outer_expression_alias_type_resolver = &outer_expression_alias_type_resolver;
     return it->second;
 }
 
@@ -1591,6 +1599,46 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         scope.used_alias_names.insert(identifier_bind_part);
 
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
+}
+
+std::optional<DataTypePtr> QueryAnalyzer::tryGetTypeOfOuterExpressionAlias(
+    IdentifierResolveScope & lookup_scope, IdentifierResolveScope & alias_scope, const std::string & alias_name)
+{
+    /// The expression of the alias can contain the identifier whose lookup asks for the type, e.g. `WITH t.x + 1 AS t`.
+    auto key = std::make_tuple(&lookup_scope, &alias_scope, alias_name);
+    if (!outer_expression_aliases_in_resolve_process.insert(key).second)
+        return std::nullopt;
+    SCOPE_EXIT({ outer_expression_aliases_in_resolve_process.erase(key); });
+
+    /// Asking for the type is not a use of the alias, see `IdentifierResolveScope::used_alias_names`.
+    const bool alias_was_used = alias_scope.used_alias_names.contains(alias_name);
+    SCOPE_EXIT({
+        if (!alias_was_used)
+            alias_scope.used_alias_names.erase(alias_name);
+    });
+
+    /// As in `tryResolveIdentifierInParentScopes`.
+    IdentifierResolveContext identifier_resolve_context;
+    identifier_resolve_context.resolveAliasesAt(&lookup_scope);
+    identifier_resolve_context.allow_to_check_database_catalog = false;
+
+    IdentifierLookup alias_lookup{Identifier(std::vector<std::string>{alias_name}), IdentifierLookupContext::EXPRESSION};
+    auto resolved_alias = tryResolveIdentifierFromAliases(alias_lookup, alias_scope, identifier_resolve_context).resolved_identifier;
+    if (!resolved_alias)
+        return DataTypePtr{};
+
+    switch (resolved_alias->getNodeType())
+    {
+        case QueryTreeNodeType::CONSTANT:
+        case QueryTreeNodeType::COLUMN:
+            return resolved_alias->getResultType();
+        case QueryTreeNodeType::FUNCTION:
+            if (resolved_alias->as<FunctionNode &>().isResolved())
+                return resolved_alias->getResultType();
+            return std::nullopt;
+        default:
+            return std::nullopt;
+    }
 }
 
 /* Try to resolve identifier as Common Table Expression (CTE)
