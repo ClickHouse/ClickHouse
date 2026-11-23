@@ -6797,7 +6797,39 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         const auto & old_columns_desc = old_metadata.getColumns();
         NameSet visited;
-        auto reads = [&](const String & name, auto && self) -> bool
+        std::function<bool(const String &)> column_reads;
+
+        /// Names in @bound are lambda parameters, not columns of the table.
+        std::function<bool(const IAST &, const NameSet &)> expression_reads = [&](const IAST & node, const NameSet & bound)
+        {
+            if (const auto * identifier = node.as<ASTIdentifier>())
+            {
+                const auto & identifier_name = identifier->name();
+                if (bound.contains(identifier->compound() ? identifier->name_parts.front() : identifier_name))
+                    return false;
+                if (identifier_name == alias_name || identifier_name.starts_with(alias_name + "."))
+                    return true;
+
+                /// A subcolumn (`m.v`) is defined by the column it belongs to.
+                auto resolved = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier_name);
+                return column_reads(resolved ? resolved->getNameInStorage() : identifier_name);
+            }
+
+            if (const auto * function = node.as<ASTFunction>();
+                function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+            {
+                NameSet lambda_bound = bound;
+                if (const auto * parameters = function->arguments->children[0]->as<ASTFunction>(); parameters && parameters->arguments)
+                    for (const auto & parameter : parameters->arguments->children)
+                        if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                            lambda_bound.insert(parameter_identifier->name());
+                return expression_reads(*function->arguments->children[1], lambda_bound);
+            }
+
+            return std::ranges::any_of(node.children, [&](const auto & child) { return expression_reads(*child, bound); });
+        };
+
+        column_reads = [&](const String & name)
         {
             if (!visited.insert(name).second)
                 return false;
@@ -6807,23 +6839,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 || (column->default_desc.kind != ColumnDefaultKind::Alias && column->default_desc.kind != ColumnDefaultKind::Materialized))
                 return false;
 
-            std::vector<const IAST *> to_visit{column->default_desc.expression.get()};
-            while (!to_visit.empty())
-            {
-                const auto * node = to_visit.back();
-                to_visit.pop_back();
-                if (const auto * identifier = node->as<ASTIdentifier>())
-                {
-                    const auto & identifier_name = identifier->name();
-                    if (identifier_name == alias_name || identifier_name.starts_with(alias_name + ".") || self(identifier_name, self))
-                        return true;
-                }
-                for (const auto & child : node->children)
-                    to_visit.push_back(child.get());
-            }
-            return false;
+            return expression_reads(*column->default_desc.expression, {});
         };
-        return reads(column_name, reads);
+
+        return column_reads(column_name);
     };
 
     auto check_key_materialized_sources = [&](const AlterCommand & command)

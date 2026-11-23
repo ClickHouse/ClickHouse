@@ -1144,24 +1144,28 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// MATERIALIZED columns derived from a column read at another type: their stored values were
     /// computed from data this mutation rewrites. A key column is skipped, because recomputing it would
     /// break the sort order or the partition id of the part; checkAlterIsPossible rejects such an ALTER.
-    NameSet type_changed_affected_materialized;
+    NameSet key_storage_columns;
     if (!type_changed_columns.empty())
     {
         /// A key column may be a subcolumn (`ORDER BY m.a`), so resolve the key columns to the columns
         /// they are stored in: a MATERIALIZED column whose subcolumn is a key cannot be recomputed in
         /// an existing part, and checkAlterIsPossible rejects such an ALTER.
-        NameSet key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
+        key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
         const auto & storage_columns = metadata_snapshot->getColumns();
         for (const auto & key_column : getKeyColumns(source, metadata_snapshot))
             if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
                 key_storage_columns.insert(column->getNameInStorage());
+    }
 
-        NameSet to_recompute = affected_materialized_closure(type_changed_columns);
+    /// The MATERIALIZED columns to recompute because @converted_columns are read at another type.
+    auto type_changed_dependents = [&](const NameSet & converted_columns)
+    {
+        NameSet to_recompute = affected_materialized_closure(converted_columns);
 
         /// The closure starts from the converted columns, so it skips a MATERIALIZED column that is converted
         /// itself. Casting its stored value does not apply its expression to a converted input, so recompute it
         /// too when one of its inputs is converted or recomputed.
-        for (const auto & column_name : type_changed_columns)
+        for (const auto & column_name : converted_columns)
         {
             auto it = materialized_column_dependencies.find(column_name);
             if (it == materialized_column_dependencies.end())
@@ -1174,13 +1178,18 @@ void MutationsInterpreter::prepare(bool dry_run)
                 to_recompute.insert(column_name);
         }
 
+        NameSet result;
         for (const auto & column_name : to_recompute)
         {
             if (!key_storage_columns.contains(column_name))
-                type_changed_affected_materialized.insert(column_name);
+                result.insert(column_name);
         }
-    }
-    bool type_changed_recompute_emitted = false;
+        return result;
+    };
+
+    NameSet type_changed_affected_materialized;
+    if (!type_changed_columns.empty())
+        type_changed_affected_materialized = type_changed_dependents(type_changed_columns);
 
     /// Recomputed MATERIALIZED columns also invalidate their stored artifacts.
     NameSet all_affected_materialized;
@@ -1745,13 +1754,11 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_statistics.insert(command.column_name);
 
             /// A later command of the same mutation can read a MATERIALIZED column computed from the converted
-            /// one (`UPDATE y = m`), so recompute those at this point, in command order. The source column is
-            /// converted when it is read, so these stages already see its new values.
-            if (!type_changed_recompute_emitted && type_changed_columns.contains(command.column_name))
-            {
-                emit_materialized_recompute_stages(type_changed_affected_materialized, std::nullopt);
-                type_changed_recompute_emitted = true;
-            }
+            /// one (`UPDATE y = m`), and an earlier one must not see it recomputed, so recompute the dependents of
+            /// this column at this point, in command order. The source column is converted when it is read, so
+            /// these stages already see its new values.
+            if (type_changed_columns.contains(command.column_name))
+                emit_materialized_recompute_stages(type_changed_dependents({command.column_name}), std::nullopt);
 
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
