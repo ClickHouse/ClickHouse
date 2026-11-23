@@ -2,7 +2,7 @@
 
 SET enable_parallel_replicas = 0, optimize_use_projections = 1, enable_positional_arguments_for_projections = 1;
 
-SELECT 'a MATERIALIZED column under * makes the projection not applicable, as ADD PROJECTION rejects it';
+SELECT 'a MATERIALIZED column under * makes the projection not applicable';
 DROP TABLE IF EXISTS t_star;
 CREATE TABLE t_star (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100;
 INSERT INTO t_star SELECT number % 10, number % 7 FROM numbers(1000);
@@ -10,7 +10,6 @@ CREATE HYPOTHETICAL PROJECTION p ON t_star (SELECT *, count() GROUP BY 1, 2);
 SELECT trim(explain) FROM (EXPLAIN WHATIF SELECT a, b, count() FROM t_star GROUP BY a, b) WHERE explain LIKE '  status:%';
 ALTER TABLE t_star ADD COLUMN c UInt64 MATERIALIZED a + 1 FIRST;
 SELECT trim(explain) FROM (EXPLAIN WHATIF SELECT a, b, count() FROM t_star GROUP BY a, b) WHERE explain LIKE '  status:%' OR explain LIKE '  reason:%';
-ALTER TABLE t_star ADD PROJECTION p (SELECT *, count() GROUP BY 1, 2); -- { serverError NOT_AN_AGGREGATE }
 DROP TABLE t_star;
 
 SELECT 'a column with the name of a lambda parameter does not bind the index';

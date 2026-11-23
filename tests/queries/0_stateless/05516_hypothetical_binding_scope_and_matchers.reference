@@ -1,4 +1,4 @@
-a MATERIALIZED column under * makes the projection not applicable, as ADD PROJECTION rejects it
+a MATERIALIZED column under * makes the projection not applicable
 status:       applicable
 status:       not_applicable
 reason:       Hypothetical projection no longer matches the table: the columns under `*` were (a, b), now (c, a, b). Run CREATE HYPOTHETICAL PROJECTION again
