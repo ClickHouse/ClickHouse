@@ -11,6 +11,7 @@
     <query>select arrayDistinct(arrayMap(x -> (x % 50, toString(x % 7)), range(1 + (number % 100) * 10))) from numbers(20000) format Null</query>
     <query>select arrayEnumerateUniqRanked(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
     <query>insert into hash_tables_partitions select toDate('2020-01-01') + number % 365, number from numbers(2000000)</query>
+    <query>select arrayDistinct(arrayMap(x -> range(toUInt32(x % 5)), range(1 + (number % 100) * 10))) from numbers(20000) format Null</query>
 
     <drop_query>DROP TABLE IF EXISTS hash_tables_partitions</drop_query>
 </test>
