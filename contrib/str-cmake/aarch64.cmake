@@ -6,6 +6,7 @@ add_library (str_neon OBJECT
     "${str_arm_dir}/aarch64_neon_membership.c"
     "${str_arm_dir}/aarch64_neon_strings.c"
     "${str_arm_dir}/dispatch.c"
+    "${str_arm_dir}/memory_compare.c"
     "${str_arm_dir}/memory_copy.c"
     "${str_arm_dir}/memory_fill.c"
     "${str_arm_dir}/memory_search.c")
@@ -29,9 +30,9 @@ foreach (target str_neon str_sve)
         -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
 endforeach ()
 # Public memory entries and small SVE helpers avoid leaf frame bookkeeping
-# while retaining compiler-generated CFI. Bulk entries keep their frames.
+# while retaining compiler-generated CFI. Other provider units keep their frames.
 # This provider is Linux-only without sanitizers.
-set_source_files_properties ("${str_arm_dir}/memory_copy.c" "${str_arm_dir}/tiny_copy_sve.c" "${str_arm_dir}/memory_fill.c"
+set_source_files_properties ("${str_arm_dir}/memory_compare.c" "${str_arm_dir}/memory_copy.c" "${str_arm_dir}/tiny_copy_sve.c" "${str_arm_dir}/memory_fill.c"
     "${str_arm_dir}/memory_search.c" "${str_arm_dir}/memory_search_sve.c" PROPERTIES
     COMPILE_OPTIONS "-momit-leaf-frame-pointer;-fasynchronous-unwind-tables")
 target_compile_options (str_neon PRIVATE -march=armv8-a)

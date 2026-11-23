@@ -59,7 +59,7 @@ workbench; the selected provider exposes the eleven libc-shaped entry points.
 
 The ARM objects use the compiler output directly, retaining unwind information.
 Most entries retain frame pointers. The leaf public `memcpy`, `memmove`,
-`memset`, and `memchr` entries and their small SVE helpers omit their frames
+`memset`, `memcmp`, and `memchr` entries and their small SVE helpers omit their frames
 and retain compiler-generated asynchronous unwind tables; bulk kernels,
 other entries, and nonleaf constructors keep their frames. Baseline
 objects use `-march=armv8-a`; separate SVE objects use `-march=armv8-a+sve`
