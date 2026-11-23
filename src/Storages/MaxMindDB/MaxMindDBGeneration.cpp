@@ -24,6 +24,7 @@
 #include <Common/checkStackSize.h>
 
 #include <limits>
+#include <optional>
 
 namespace DB
 {
@@ -423,25 +424,54 @@ struct MaxMindDBColumnDecoder::Column
         path.push_back(column.getNameInStorage());
         if (column.isSubcolumn())
         {
+            /// Descend into the MMDB record directly only while that reads exactly what the subcolumn means in ClickHouse:
+            /// - the parent must be a plain `Tuple`. Under a `Nullable(Tuple)` the value of the subcolumn depends on
+            ///   whether the parent itself is present, so the parent is decoded and the subcolumn is extracted from it;
+            /// - exactly one element of the tuple must match the rest of the name. MMDB map keys can contain dots, so
+            ///   `a.b` can name both the element `a.b` and the element `b` of the element `a`; splitting the name on
+            ///   dots would pick a field different from the one ClickHouse resolves the subcolumn to.
+            /// Whatever is left of the name is extracted from the decoded value with `getSubcolumn`.
             auto parent = column.getTypeInStorage();
-            String remaining = column.getSubcolumnName();
+            const String subcolumn_name = column.getSubcolumnName();
+            std::string_view remaining = subcolumn_name;
             while (!remaining.empty())
             {
-                parent = removeNullable(parent);
                 const auto * tuple = typeid_cast<const DataTypeTuple *>(parent.get());
-                const size_t end = remaining.find('.');
-                const String name = remaining.substr(0, end);
-                const auto position = tuple ? tuple->tryGetPositionByName(name) : std::nullopt;
-                if (!position)
+                std::optional<size_t> position;
+                bool ambiguous = false;
+                if (tuple)
                 {
-                    extract_subcolumn = column.getSubcolumnName();
-                    path.resize(1);
-                    decoder = ValueDecoder(column.getTypeInStorage());
-                    break;
+                    const auto & element_names = tuple->getElementNames();
+                    for (size_t i = 0; i < element_names.size(); ++i)
+                    {
+                        const auto & name = element_names[i];
+                        if (!remaining.starts_with(name) || (remaining.size() != name.size() && remaining[name.size()] != '.'))
+                            continue;
+                        ambiguous = position.has_value();
+                        if (ambiguous)
+                            break;
+                        position = i;
+                    }
                 }
+                if (!position || ambiguous)
+                    break;
+                const auto & name = tuple->getElementNames()[*position];
                 path.push_back(name);
                 parent = tuple->getElement(*position);
-                remaining = end == String::npos ? String{} : remaining.substr(end + 1);
+                remaining.remove_prefix(std::min(remaining.size(), name.size() + 1));
+            }
+            if (!remaining.empty())
+            {
+                const auto extracted_type = parent->tryGetSubcolumnType(remaining);
+                if (!extracted_type || !extracted_type->equals(*column.type))
+                {
+                    /// The subcolumn is defined relative to the whole column only.
+                    path.resize(1);
+                    parent = column.getTypeInStorage();
+                    remaining = subcolumn_name;
+                }
+                extract_subcolumn = remaining;
+                decoder = ValueDecoder(parent);
             }
         }
         path_pointers.reserve(path.size() + 1);
