@@ -1787,11 +1787,11 @@ protected:
             std::exception_ptr lost;
             /// `close` was called, so no request may follow.
             bool close_sent = false;
-            /// From `cancel` on: the cancelled tasks that have not ended, those that ended, and the polls sent for them.
+            /// From `cancel` on: the cancelled tasks that have not ended, those that ended, and until when they are polled.
             bool tearing_down = false;
             VectorWithMemoryTracking<RunningTaskInfo> teardown_running;
             Strings teardown_ended;
-            size_t teardown_polls = 0;
+            std::chrono::steady_clock::time_point teardown_deadline;
         };
 
         /// The handler of the control connection of one worker.
@@ -1828,7 +1828,9 @@ protected:
         using StatusEntries = decltype(StatelessWorkerControlProtocol::GetStatusesReply::entries);
 
         static constexpr UInt64 STATUS_WAIT_MILLISECONDS = 300;
-        static constexpr size_t MAX_TEARDOWN_POLLS = 10;
+        /// A poll returns at the first change of one of its tasks, so the wait is bounded by time, not by polls; shorter than
+        /// `TEARDOWN_TIMEOUT`, so the connection closes before it is aborted.
+        static constexpr std::chrono::milliseconds TEARDOWN_WAIT{3000};
         static constexpr std::chrono::milliseconds TEARDOWN_TIMEOUT{5000};
 
         WorkerControlConnectionParams makeConnectionParams(WorkerIndex worker) const
@@ -2040,7 +2042,6 @@ protected:
             {
                 for (const auto & task : state.teardown_running)
                     task_ids.push_back(task.task_id);
-                ++state.teardown_polls;
             }
             else
             {
@@ -2152,7 +2153,7 @@ protected:
             }
             state.teardown_running = std::move(running);
 
-            if (state.teardown_running.empty() || state.teardown_polls >= MAX_TEARDOWN_POLLS)
+            if (state.teardown_running.empty() || std::chrono::steady_clock::now() >= state.teardown_deadline)
                 finishTeardownLocked(worker);
             else
                 sendStatusRequestLocked(worker);
@@ -2178,6 +2179,7 @@ protected:
                 closeLocked(worker);
                 return;
             }
+            state.teardown_deadline = std::chrono::steady_clock::now() + TEARDOWN_WAIT;
 
             Strings task_ids;
             for (const auto & task : state.teardown_running)
