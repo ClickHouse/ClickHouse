@@ -472,8 +472,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// keep the settings that change what the query means
     auto & stored_settings = select_query.settings()->as<ASTSetQuery &>().changes;
     stored_settings.setSetting("enable_positional_arguments", query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections].value);
-    for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants",
-            "asterisk_include_materialized_columns", "asterisk_include_alias_columns"})
+    for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants"})
         stored_settings.setSetting(setting, query_context->getSettingsRef().get(setting));
 
     auto [planner, source_columns] = planProjectionQuery(result, columns, partition_key, query_context);

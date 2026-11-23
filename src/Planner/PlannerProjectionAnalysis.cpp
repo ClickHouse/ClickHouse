@@ -238,6 +238,9 @@ ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, cons
     query_context->setSetting("enable_positional_arguments", false);
     query_context->setSetting("rewrite_in_to_join", false);
     query_context->setSetting("rewrite_count_distinct_if_with_count_distinct_implementation", false);
+    /// `*` in a projection never has `MATERIALIZED` and `ALIAS` columns
+    query_context->setSetting("asterisk_include_materialized_columns", false);
+    query_context->setSetting("asterisk_include_alias_columns", false);
     /// keep `exists` as `IN`, not as a scalar constant
     query_context->setSetting("execute_exists_as_scalar_subquery", false);
     /// keep scalar values in the tree, not references to query scalars

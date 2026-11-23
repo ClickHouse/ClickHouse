@@ -1,0 +1,7 @@
+p_aggregate	a
+p_aggregate	b
+p_aggregate	count()
+p_normal	a
+p_normal	b
+1	10
+2	20
