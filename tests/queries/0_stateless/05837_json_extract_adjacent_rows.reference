@@ -1,0 +1,22 @@
+123	1	123
+456	1	456
+tru	0	
+e	0	
+nul	0	
+l	0	
+fals	0	
+e	0	
+"ab	0	
+c"	0	
+"ab"	1	"ab"
+-	0	
+1	1	1
+0	1	0
+7	1	7
+[1,2	0	
+]	0	
+{"a":"b"	0	
+}	0	
+{"a":1}	1	{"a":1}
+	0	
+{"padding":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}	1	{"padding":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
