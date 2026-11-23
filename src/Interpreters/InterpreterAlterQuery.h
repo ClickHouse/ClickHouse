@@ -22,14 +22,17 @@ public:
 
     BlockIO execute() override;
 
-    static AccessRightsElements getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table);
+    /// `engine` is the engine of the table, empty for `ON CLUSTER`.
+    static AccessRightsElements getRequiredAccessForCommand(
+        const ASTAlterCommand & command, const String & database, const String & table, const String & engine = {});
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
     bool supportsTransactions() const override { return true; }
 
 private:
-    AccessRightsElements getRequiredAccess() const;
+    /// `engine` is the engine of the table, empty if the table is not known.
+    AccessRightsElements getRequiredAccess(const String & engine = {}) const;
 
     BlockIO executeToTable(const ASTAlterQuery & alter);
 

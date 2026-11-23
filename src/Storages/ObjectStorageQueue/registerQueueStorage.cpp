@@ -4,6 +4,10 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Parsers/ASTCreateQuery.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
@@ -11,6 +15,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Poco/URI.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -39,6 +44,40 @@ namespace Setting
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
+}
+
+namespace
+{
+
+#if USE_AWS_S3
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageS3Configuration & configuration, const ContextPtr &)
+{
+    /// `S3::URI` keeps the user info in the endpoint or the bucket name, so such a URL is parsed again without it.
+    auto url = configuration.url;
+    if (!url.uri.getUserInfo().empty())
+    {
+        Poco::URI uri = url.uri;
+        uri.setUserInfo("");
+        url = S3::URI(
+            uri.toString(),
+            /*allow_archive_path_syntax*/ false,
+            /*keep_presigned_query_parameters*/ true);
+    }
+    return {configuration.getTypeName(), url.endpoint, url.bucket, configuration.getRawPath().path};
+}
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+ObjectStorageQueueTableMetadata::Source getQueueSource(const StorageAzureConfiguration & configuration, const ContextPtr &)
+{
+    String endpoint = configuration.getConnectionURLWithoutQuery();
+    const Poco::URI uri(endpoint);
+    if (uri.getScheme() != "http" && uri.getScheme() != "https")
+        return {};
+    return {configuration.getTypeName(), std::move(endpoint), configuration.getNamespace(), configuration.getRawPath().path};
+}
+#endif
+
 }
 
 template <typename Configuration>
@@ -116,6 +155,20 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
+    auto source = getQueueSource(*configuration, args.getLocalContext());
+    source.from_named_collection = configuration->initialized_from_named_collection;
+
+    /// Another replica of a `Replicated` database replays the definition that its initiator has checked.
+    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+    bool is_secondary_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    is_secondary_ddl_replay |= args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#endif
+    const bool is_replayed_definition = !isFreshTableDefinition(args.mode, args.query.attach_short_syntax)
+        || is_secondary_ddl_replay || args.getLocalContext()->isRecoveryFromStoredMetadata();
+    const bool strict_metadata_check = (args.is_restore_from_backup && !is_secondary_ddl_replay) || !is_replayed_definition;
+
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
         std::move(configuration),
@@ -127,6 +180,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         format_settings,
         args.storage_def,
         args.mode,
+        std::move(source),
+        strict_metadata_check,
         /* keep_data_in_keeper */ false);
 }
 
