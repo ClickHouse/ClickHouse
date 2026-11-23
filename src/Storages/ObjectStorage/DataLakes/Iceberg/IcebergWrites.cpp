@@ -93,6 +93,7 @@ namespace Setting
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
     extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
+    extern const SettingsNonZeroUInt64 iceberg_metadata_previous_versions_max;
     extern const SettingsUInt64 iceberg_insert_max_data_files_in_upload;
     extern const SettingsUInt64 iceberg_insert_max_sort_buffer_bytes;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -1574,7 +1575,7 @@ void IcebergStorageSink::finalizeBuffers()
     if (writer_per_partition_key.empty())
         return;
 
-    snapshot_id = MetadataGenerator(metadata).generateSnapshotId();
+    snapshot_id = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateSnapshotId();
 
     /// TODO: there's a chance that initializeMetadata() doesn't succeed within MAX_TRANSACTION_RETRIES without throwing, perhaps we should fail in this case
     size_t i = 0;
@@ -1661,7 +1662,7 @@ bool IcebergStorageSink::initializeMetadata()
     if (auto streaming_cursor = context->getStreamingCursor())
         refresh_cursor = refreshCursorToStorage(streaming_cursor->tree);
 
-    auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata).generateNextMetadata(
+    auto [new_snapshot, manifest_list_path] = MetadataGenerator(metadata, context->getSettingsRef()[Setting::iceberg_metadata_previous_versions_max]).generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
