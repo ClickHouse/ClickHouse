@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/BinaryFuseFilter.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -33,6 +34,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
@@ -191,13 +193,15 @@ struct MapIndexInfo
 /// independently of the index header. Returns std::nullopt if neither `mapKeys(<col>)` nor
 /// `mapValues(<col>)` is present in the index, or if the key is not representable in the key type.
 std::optional<MapIndexInfo> tryResolveMapIndexInfo(
-    const String & map_column_name, const Field & key_field, const DataTypePtr & map_key_type, const Block & header)
+    const String & map_column_name,
+    const Field & key_field,
+    const DataTypePtr & map_key_type,
+    const Block & header,
+    const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const ActionsDAG::Node * map_node)
 {
-    auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
-    auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
-
-    auto keys_position = header.findPositionByName(map_keys_index_column_name);
-    auto values_position = header.findPositionByName(map_values_index_column_name);
+    auto keys_position = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, map_node);
+    auto values_position = findMapIndexPosition(header, index_nodes, "mapValues", map_column_name, map_node);
 
     if (!keys_position && !values_position)
         return std::nullopt;
@@ -240,6 +244,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
         info.has_values_index = true;
         info.values_index_position = *values_position;
     }
+
     return info;
 }
 
@@ -247,7 +252,10 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
 /// against the binary fuse filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
-    const String & column_name, const Block & header, const IsShadowingColumn & is_shadowing_column)
+    const String & column_name,
+    const Block & header,
+    const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const IsShadowingColumn & is_shadowing_column)
 {
     auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
     if (!parsed)
@@ -255,13 +263,12 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 
     auto & [map_column_name, serialized_key] = *parsed;
 
-    auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
-    if (!header.has(map_keys_index_column_name))
-        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header);
+    auto keys_position = findMapIndexPosition(header, index_nodes, "mapKeys", map_column_name, nullptr);
+    if (!keys_position)
+        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header, index_nodes, nullptr);
 
     /// Deserialize the key from its text representation using the key type from the index header.
-    size_t keys_position = header.getPositionByName(map_keys_index_column_name);
-    const DataTypePtr & index_type = header.getByPosition(keys_position).type;
+    const DataTypePtr & index_type = header.getByPosition(*keys_position).type;
     const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
     const auto & key_type = array_type.getNestedType();
 
@@ -272,13 +279,16 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header);
+    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header, index_nodes, nullptr);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
 std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
-    const RPNBuilderTreeNode & key_node, const Block & header, const IsShadowingColumn & is_shadowing_column)
+    const RPNBuilderTreeNode & key_node,
+    const Block & header,
+    const ActionsDAG::NodeRawConstPtrs & index_nodes,
+    const IsShadowingColumn & is_shadowing_column)
 {
     if (key_node.isFunction())
     {
@@ -300,11 +310,12 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
                 if (const auto * map_type = typeid_cast<const DataTypeMap *>(removeNullable(dag_node->result_type).get()))
                     map_key_type = map_type->getKeyType();
 
-            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, map_key_type, header);
+            return tryResolveMapIndexInfo(
+                first_argument.getColumnName(), constant_value, map_key_type, header, index_nodes, first_argument.getDAGNode());
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, is_shadowing_column);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, index_nodes, is_shadowing_column);
 }
 
 }
@@ -314,11 +325,16 @@ MergeTreeIndexConditionBinaryFuseFilter::MergeTreeIndexConditionBinaryFuseFilter
     ContextPtr context_,
     const Block & header_,
     IsShadowingColumn is_column_shadowing_map_subcolumn_,
-    JSONIndexArgumentTypes json_argument_types_)
+    JSONIndexArgumentTypes json_argument_types_,
+    IsShadowingJSONSubcolumn is_shadowing_json_subcolumn_,
+    ActionsDAG::NodeRawConstPtrs index_nodes_)
     : WithContext(context_)
     , header(header_)
     , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , json_argument_types(std::move(json_argument_types_))
+    , is_shadowing_json_subcolumn(std::move(is_shadowing_json_subcolumn_))
+    , index_nodes(std::move(index_nodes_))
+    , json_index_columns(collectJSONIndexColumns(header, index_nodes))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate)
@@ -497,7 +513,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseFunction(const RPNBuilderT
     if (parent == nullptr && function_name == "isNotNull" && arguments_size == 1)
     {
         auto arg = function.getArgumentAt(0);
-        if (auto json_info = tryMatchNodeToJSONIndex(arg, header, "JSONAllPaths", json_argument_types))
+        if (auto json_info = tryMatchNodeToJSONIndex(arg, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
         {
             auto arg_type = arg.getDAGNode()->result_type;
             /// It doesn't make sense to use binary fuse filter for isNotNull on non-Nullable type, as isNotNull will be always true.
@@ -616,12 +632,10 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
     const ColumnPtr & column,
     RPNElement & out)
 {
-    auto key_node_column_name = key_node.getColumnName();
-
-    if (header.has(key_node_column_name))
+    if (auto key_position = findIndexPosition(header, index_nodes, key_node))
     {
         size_t row_size = column->size();
-        size_t position = header.getPositionByName(key_node_column_name);
+        size_t position = *key_position;
         const DataTypePtr & index_type = header.getByPosition(position).type;
 
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
@@ -661,7 +675,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
     /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths", json_argument_types))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
     {
         if (function_name != "in" && function_name != "globalIn")
             return false;
@@ -725,7 +739,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -736,8 +750,17 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
         if (!prepared_set)
             return false;
 
-        auto default_column_to_check = type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-        ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, type, ""};
+        /// The value of a missing key is the default of the result type of the lookup, which can differ
+        /// from the type of the set: `m['missing'] IN (SELECT '0')` over `Map(String, UInt64)` gives
+        /// `UInt64` 0, and `Set::execute` casts it to the `String` '0' of the set. So probe the set with
+        /// the default of the lookup type and let the set convert it, instead of the default of the set type.
+        const auto * lookup_node = key_node.getDAGNode();
+        if (!lookup_node)
+            return false;
+        const DataTypePtr & lookup_type = lookup_node->result_type;
+
+        auto default_column_to_check = lookup_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+        ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, lookup_type, ""};
         ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
         auto set_contains_default_value_predicate_column = prepared_set->execute(default_columns_with_type_to_check, false /*negative*/);
         const auto & set_contains_default_value_predicate_column_typed = assert_cast<const ColumnUInt8 &>(*set_contains_default_value_predicate_column);
@@ -1027,9 +1050,9 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
-    if (header.has(key_column_name))
+    if (auto key_position = findIndexPosition(header, index_nodes, key_node))
     {
-        size_t position = header.getPositionByName(key_column_name);
+        size_t position = *key_position;
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
@@ -1131,7 +1154,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions
     /// like `json.some.path = value`, `json.some.path.:Type = value`, or `json.path::Type = value`.
-    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths", json_argument_types))
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, json_index_columns, "JSONAllPaths", json_argument_types, is_shadowing_json_subcolumn))
     {
         if (function_name != "equals")
             return false;
@@ -1148,14 +1171,12 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
 
     if (function_name == "mapContainsValue" || function_name == "mapContainsKey" || function_name == "mapContains" || function_name == "has")
     {
-        auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
-        if (function_name == "mapContainsValue")
-            map_keys_index_column_name = fmt::format("mapValues({})", key_column_name);
-
-        if (!header.has(map_keys_index_column_name))
+        auto map_index_position = findMapIndexPosition(
+            header, index_nodes, function_name == "mapContainsValue" ? "mapValues" : "mapKeys", key_column_name, key_node.getDAGNode());
+        if (!map_index_position)
             return false;
 
-        size_t position = header.getPositionByName(map_keys_index_column_name);
+        size_t position = *map_index_position;
 
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
@@ -1228,7 +1249,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, index_nodes, is_column_shadowing_map_subcolumn))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1402,7 +1423,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBinaryFuseFilter::createIndexAggregato
 MergeTreeIndexConditionPtr MergeTreeIndexBinaryFuseFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBinaryFuseFilter>(
-        predicate, context, index.sample_block, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression),
+        getJSONSubcolumnShadowingCheck(),
+        index.expression->getActionsDAG().getOutputs());
 }
 
 static void assertIndexColumnsType(const Block & header)

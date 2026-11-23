@@ -453,6 +453,8 @@ private:
     }
 };
 
+}
+
 std::optional<size_t> findIndexPosition(
     const Block & header, const ActionsDAG::NodeRawConstPtrs & index_nodes, const RPNBuilderTreeNode & node)
 {
@@ -480,7 +482,6 @@ Names collectJSONIndexColumns(const Block & header, const ActionsDAG::NodeRawCon
     return names;
 }
 
-/// `map_node` is nullptr for the table column `map_column_name` itself.
 std::optional<size_t> findMapIndexPosition(
     const Block & header,
     const ActionsDAG::NodeRawConstPtrs & index_nodes,
@@ -509,6 +510,9 @@ std::optional<size_t> findMapIndexPosition(
 
     return position;
 }
+
+namespace
+{
 
 /// Try to resolve a Map column against the bloom filter index header by the map column name
 /// and the key as a Field. `map_key_type` is the key type of the map column, when it is known
