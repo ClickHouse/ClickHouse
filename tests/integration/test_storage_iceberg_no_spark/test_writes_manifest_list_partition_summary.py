@@ -416,12 +416,12 @@ def test_writes_manifest_list_partition_summary_after_compaction(
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
-def test_writes_manifest_list_no_summary_when_value_has_no_bound(
+def test_writes_manifest_list_partition_summary_float(
     started_cluster_iceberg_no_spark, storage_type
 ):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     TABLE_NAME = (
-        "test_writes_manifest_list_no_summary_when_value_has_no_bound_"
+        "test_writes_manifest_list_partition_summary_float_"
         + storage_type
         + "_"
         + get_uuid_str()
@@ -451,12 +451,10 @@ def test_writes_manifest_list_no_summary_when_value_has_no_bound(
         for _, partition, summary in entries
     }
 
-    # A `Float64` bound is not serialized, so the tuple holding 1.5 gets no summary at all rather
-    # than one claiming the field holds nothing.
-    assert summaries["value"] is None
-    # Negative control: a NaN partition value genuinely has no orderable bound, which `contains_nan`
-    # states truthfully, so its list is kept. Dropping it here would mean the check fires on any
-    # missing bound instead of on the contradiction.
+    bound = struct.pack("<d", 1.5)
+    assert _summary_tuples(summaries["value"]) == [(False, None, bound, bound)]
+    # A NaN partition value has no orderable bound, which `contains_nan` states truthfully, so its
+    # list is kept: only a field without a bound serialization drops the list.
     assert _summary_tuples(summaries["nan"]) == [(False, True, None, None)]
 
 
