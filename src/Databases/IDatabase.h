@@ -301,6 +301,12 @@ public:
     /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
     virtual void waitTableStarted(const String & /*name*/) const {}
 
+    /// The stored definition of a table that has no storage because its loading at startup failed or was canceled, or nullptr.
+    virtual ASTPtr tryGetCreateQueryOfTableFailedToLoad(const String & /*name*/) const { return nullptr; }
+
+    /// Drops a table for which `tryGetCreateQueryOfTableFailedToLoad` returns its definition.
+    virtual void dropTableFailedToLoad(ContextPtr context, const String & name, bool sync);
+
     /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
     virtual void waitDatabaseStarted() const {}
 

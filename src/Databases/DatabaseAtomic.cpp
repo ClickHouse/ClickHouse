@@ -250,6 +250,57 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
 }
 
+ASTPtr DatabaseAtomic::tryGetCreateQueryOfTableFailedToLoad(const String & name) const
+{
+    LoadTaskPtr task;
+    {
+        std::lock_guard lock(mutex);
+        auto it = load_table.find(name);
+        if (it == load_table.end())
+            return nullptr;
+        task = it->second;
+    }
+
+    waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task, /*no_throw*/ true);
+
+    {
+        std::lock_guard lock(mutex);
+        if (tables.contains(name))
+            return nullptr;
+    }
+
+    auto create_query = getCreateQueryFromMetadata(name, /*throw_on_error*/ true);
+    chassert(create_query->as<const ASTCreateQuery &>().uuid != UUIDHelpers::Nil);
+    return create_query;
+}
+
+void DatabaseAtomic::dropTableFailedToLoad(ContextPtr /*context*/, const String & table_name, bool /*sync*/)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::dropTableFailedToLoad");
+    waitDatabaseStarted();
+    auto create_query = tryGetCreateQueryOfTableFailedToLoad(table_name);
+    if (!create_query)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(table_name));
+
+    StorageID table_id(getDatabaseName(), table_name, create_query->as<const ASTCreateQuery &>().uuid);
+    chassert(DatabaseCatalog::instance().hasUUIDMapping(table_id.uuid));
+
+    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table_id);
+    auto db_disk = getDisk();
+    {
+        std::lock_guard lock(mutex);
+        db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
+        db_disk->replaceFile(table_metadata_path, table_metadata_path_drop); /// Mark table as dropped
+        eraseAsyncLoadState(table_name);
+    }
+
+    tryRemoveSymlink(table_name);
+
+    /// No delay: a table that cannot be loaded cannot be undropped either.
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table_id, nullptr, db_disk, table_metadata_path_drop, /*ignore_delay*/ true);
+}
+
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                  const String & to_table_name, bool exchange, bool dictionary)
     TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking

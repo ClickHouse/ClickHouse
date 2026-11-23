@@ -38,11 +38,21 @@ static void validateTableDisk(const DiskPtr & disk)
             description.toString());
 }
 
+std::optional<bool> getTableDiskSetting(const SettingsChanges & changes)
+{
+    std::optional<bool> table_disk;
+    for (const auto & [name, value, _] : changes)
+    {
+        if (name == "table_disk")
+            table_disk = value.safeGet<bool>();
+    }
+    return table_disk;
+}
+
 bool checkMergeTreeDiskSettings(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     bool found_disk_setting = false;
     bool found_storage_policy_setting = false;
-    bool table_disk = false;
     DiskPtr disk;
 
     for (const auto & [name, value, _] : changes)
@@ -54,8 +64,6 @@ bool checkMergeTreeDiskSettings(const SettingsChanges & changes, ContextPtr cont
         }
         else if (name == "storage_policy")
             found_storage_policy_setting = true;
-        else if (name == "table_disk")
-            table_disk = value.safeGet<bool>();
 
         if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
         {
@@ -65,7 +73,7 @@ bool checkMergeTreeDiskSettings(const SettingsChanges & changes, ContextPtr cont
         }
     }
 
-    if (table_disk)
+    if (getTableDiskSetting(changes).value_or(false))
         validateTableDisk(disk);
 
     return found_disk_setting;

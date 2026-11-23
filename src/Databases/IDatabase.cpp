@@ -193,6 +193,11 @@ void IDatabase::dropTable( /// NOLINT
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
 }
 
+void IDatabase::dropTableFailedToLoad(ContextPtr /*context*/, const String & /*name*/, bool /*sync*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot drop a table that failed to load in Database{}", getEngineName());
+}
+
 void IDatabase::attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path) /// NOLINT
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());

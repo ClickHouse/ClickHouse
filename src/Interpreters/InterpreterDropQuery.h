@@ -11,6 +11,7 @@ namespace DB
 class Context;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 class AccessRightsElements;
+class ASTCreateQuery;
 
 /** Allow to either drop table with all its data (DROP),
   * or remove information about table (just forget) from server (DETACH),
@@ -56,6 +57,16 @@ private:
 
     BlockIO executeToTable(ASTDropQuery & query);
     BlockIO executeToTableImpl(const ContextPtr& context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
+    BlockIO executeToTableFailedToLoad(
+        const ContextPtr & context_,
+        const ASTDropQuery & query,
+        const DatabasePtr & database,
+        const ASTCreateQuery & create,
+        DatabasePtr & db,
+        UUID & uuid_to_wait);
+
+    /// The `ignore_drop_queries_probability` testing knob.
+    bool isDropIgnoredRandomly(const ASTDropQuery & query, bool is_drop_or_detach_database) const;
 
     static void waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait, ContextPtr context_);
 

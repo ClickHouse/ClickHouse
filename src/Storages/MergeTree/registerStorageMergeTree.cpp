@@ -1330,6 +1330,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
         .stores_data_on_disk = true,
         .supports_temporary = true,
+        .supports_drop_without_loading = true,
     };
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
@@ -4453,6 +4454,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
         .related = {"MergeTree", "CollapsingMergeTree", "ReplicatedVersionedCollapsingMergeTree"}});
 
     features.supports_replication = true;
+    features.supports_drop_without_loading = false;
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
     features.supports_unique_key = false;

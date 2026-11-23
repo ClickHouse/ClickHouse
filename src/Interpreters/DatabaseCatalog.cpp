@@ -1503,7 +1503,11 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         auto full_path = elem.first;
         auto storage_id = elem.second.first;
         auto db_disk = elem.second.second;
-        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
+        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]()
+        {
+            this->addUUIDMapping(storage_id.uuid);
+            this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path);
+        });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1539,12 +1543,12 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
     chassert(table_id.hasUUID());
     chassert(!table || table->getStorageID().uuid == table_id.uuid);
     chassert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
+    chassert(hasUUIDMapping(table_id.uuid));
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time = 0;
     if (table)
     {
-        chassert(hasUUIDMapping(table_id.uuid));
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         /// Do not postpone removal of in-memory tables
         ignore_delay = ignore_delay || !table->storesDataOnDisk();
@@ -1583,7 +1587,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
-        addUUIDMapping(table_id.uuid);
         drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
     }
 
@@ -1659,6 +1662,11 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
+        /// A table dropped without a storage could not be loaded, so it cannot be attached back.
+        if (!dropped_table.table)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "Table {} cannot be undropped because it could not be loaded",
+                dropped_table.table_id.getNameForLogs());
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))

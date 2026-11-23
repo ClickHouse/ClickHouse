@@ -105,6 +105,8 @@ public:
         bool stores_data_on_disk = false;
         /// Whether the engine may back a temporary table (opt-in).
         bool supports_temporary = false;
+        /// A table of this engine that failed to load can be dropped by its metadata: its DROP involves only its data directory (opt-in).
+        bool supports_drop_without_loading = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -151,6 +153,7 @@ public:
         .get_export_access_fn = nullptr,
         .stores_data_on_disk = false,
         .supports_temporary = false,
+        .supports_drop_without_loading = false,
     }, Documentation documentation = {});
 
     [[nodiscard]] const Storages & getAllStorages() const

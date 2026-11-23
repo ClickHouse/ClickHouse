@@ -10,9 +10,15 @@
 #include <Interpreters/QueryLog.h>
 #include <IO/SharedThreadPools.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeSettingsDisks.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
@@ -51,6 +57,12 @@ namespace Setting
     extern const SettingsBool database_atomic_wait_for_drop_and_detach_synchronously;
     extern const SettingsFloat ignore_drop_queries_probability;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_table_size_to_drop;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool table_disk;
 }
 
 namespace ErrorCodes
@@ -64,6 +76,7 @@ namespace ErrorCodes
     extern const int TABLE_NOT_EMPTY;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
 }
 
 namespace ActionLocks
@@ -79,6 +92,28 @@ namespace FailPoints
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 {
     return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
+}
+
+/// Whether a table that failed to load can be dropped by its definition, i.e. its DROP involves only its own data directory.
+static bool canBeDroppedWithoutLoading(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (create.isView() || create.is_dictionary || create.as_table_function || !create.storage || !create.storage->engine)
+        return false;
+
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    auto it = storages.find(create.storage->engine->name);
+    if (it == storages.end() || !it->second.features.supports_drop_without_loading)
+        return false;
+
+    /// A `table_disk` table lives at the root of its disk, not under `store/<uuid>`.
+    if (create.storage->engine->name.ends_with("MergeTree"))
+    {
+        auto table_disk = create.storage->settings ? getTableDiskSetting(create.storage->settings->changes) : std::nullopt;
+        if (table_disk.value_or(context->getMergeTreeSettings()[MergeTreeSetting::table_disk]))
+            return false;
+    }
+
+    return true;
 }
 
 
@@ -180,13 +215,23 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);
 
+    /// A table whose loading failed has no storage to resolve: drop it by its stored definition if that is safe.
+    if (query.kind == ASTDropQuery::Kind::Drop && !query.if_empty && !context_->getCurrentTransaction())
+    {
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name))
+        {
+            auto create_query = database->tryGetCreateQueryOfTableFailedToLoad(table_id.table_name);
+            if (create_query && canBeDroppedWithoutLoading(create_query->as<const ASTCreateQuery &>(), getContext()))
+                return executeToTableFailedToLoad(context_, query, database, create_query->as<const ASTCreateQuery &>(), db, uuid_to_wait);
+        }
+    }
+
     /// If table was already dropped by anyone, an exception will be thrown
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
                                              : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context_);
 
     if (database && table)
     {
-        const auto & settings = getContext()->getSettingsRef();
         if (query.if_empty)
         {
             if (auto rows = table->totalRows(getContext()); rows > 0)
@@ -226,8 +271,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        bool secondary_query = getContext()->isDDLOrOnClusterInternal();
-
         /// Don't ignore DROP for refreshable materialized views: TRUNCATE doesn't stop
         /// the periodic refresh task, so the orphaned view would keep refreshing indefinitely,
         /// consuming background pool threads and potentially overwhelming the server.
@@ -237,13 +280,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = !current_query_ptr->as<ASTDropQuery>()->table;
 
-        /// Don't ignore DROP when it's part of DROP DATABASE: selectively ignoring individual
-        /// table drops can break dependency invariants (e.g., a dependent table's drop is ignored
-        /// while the table it depends on is dropped, since DROP DATABASE skips same-database
-        /// dependency checks), leaving orphaned tables that prevent server restart.
-        if (!secondary_query && !internal && !is_refreshable_view && !is_drop_or_detach_database
-            && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
-            && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
+        if (!is_refreshable_view && isDropIgnoredRandomly(ast_drop_query, is_drop_or_detach_database))
         {
             ast_drop_query.sync = false;
             /// A real DROP of an object storage, table function or non-truncatable table does not delete its data, so do not TRUNCATE it.
@@ -426,6 +463,76 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             uuid_to_wait = table_id.uuid;
     }
 
+    return {};
+}
+
+bool InterpreterDropQuery::isDropIgnoredRandomly(const ASTDropQuery & query, bool is_drop_or_detach_database) const
+{
+    const auto & settings = getContext()->getSettingsRef();
+    bool secondary_query = getContext()->isDDLOrOnClusterInternal();
+
+    /// Don't ignore DROP when it's part of DROP DATABASE: selectively ignoring individual
+    /// table drops can break dependency invariants (e.g., a dependent table's drop is ignored
+    /// while the table it depends on is dropped, since DROP DATABASE skips same-database
+    /// dependency checks), leaving orphaned tables that prevent server restart.
+    return !secondary_query && !internal && !is_drop_or_detach_database
+        && settings[Setting::ignore_drop_queries_probability] != 0 && query.kind == ASTDropQuery::Kind::Drop
+        && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]);
+}
+
+BlockIO InterpreterDropQuery::executeToTableFailedToLoad(
+    const ContextPtr & context_,
+    const ASTDropQuery & query,
+    const DatabasePtr & database,
+    const ASTCreateQuery & create,
+    DatabasePtr & db,
+    UUID & uuid_to_wait)
+{
+    StorageID table_id(database->getDatabaseName(), query.getTable(), create.uuid);
+
+    if (query.is_view)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Table {} is not a View", table_id.getNameForLogs());
+
+    if (query.is_dictionary)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Table {} is not a Dictionary", table_id.getNameForLogs());
+
+    if (!query.no_access_check)
+        context_->checkAccess(AccessType::DROP_TABLE, table_id);
+
+    bool is_drop_or_detach_database = !current_query_ptr->as<ASTDropQuery>()->table;
+    if (isDropIgnoredRandomly(query, is_drop_or_detach_database))
+    {
+        LOG_TEST(getLogger("InterpreterDropQuery"), "Ignore DROP TABLE query for table {} that failed to load", table_id.getNameForLogs());
+        return {};
+    }
+
+    const auto & settings = getContext()->getSettingsRef();
+
+    /// The size of the table is unknown, so only an unlimited `max_table_size_to_drop` lets it go.
+    if (create.storage->engine->name.ends_with("MergeTree"))
+    {
+        size_t max_table_size_to_drop = settings[Setting::max_table_size_to_drop].changed ? settings[Setting::max_table_size_to_drop].value
+                                                                                            : getContext()->getMaxTableSizeToDrop();
+        if (max_table_size_to_drop)
+            throw Exception(
+                ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT,
+                "The size of table {} cannot be checked against max_table_size_to_drop ({}) because the table failed to load. "
+                "To drop it, set max_table_size_to_drop = 0 for this query",
+                table_id.getNameForLogs(),
+                max_table_size_to_drop);
+    }
+
+    bool check_ref_deps = settings[Setting::check_referential_table_dependencies];
+    bool check_loading_deps = !check_ref_deps && settings[Setting::check_table_dependencies];
+    DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+
+    context_->onQueryExecutionStarted();
+    DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+    NamedCollectionFactory::instance().removeDependencies(table_id);
+    database->dropTableFailedToLoad(context_, table_id.table_name, query.sync);
+
+    db = database;
+    uuid_to_wait = table_id.uuid;
     return {};
 }
 
