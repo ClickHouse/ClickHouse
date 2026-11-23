@@ -255,6 +255,17 @@ SELECT CAST(tuple(map(toUInt8(number + 1), 'abcdefghijklmnop')) AS Tuple(`u.m` M
 SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(`u.m` Map(UInt8, IPv6)), `t.u.m.key_1` IPv6');
 SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_1` IPv6, t Tuple(`u.m` Map(UInt8, IPv6))');
 
+SELECT 'map lookup below struct fields with overlapping names';
+-- The lookup is taken from the last field that resolves it, and only that map is converted: the other one has values of another length.
+SELECT CAST(tuple(tuple(map(1, 'short')), map(toUInt8(number + 1), 'abcdefghijklmnop')) AS Tuple(u Tuple(m Map(UInt8, String)), `u.m` Map(UInt8, String))) AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_1` IPv6');
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_1` IPv6, t Tuple(`u.m` Map(UInt8, IPv6))');
+SELECT CAST(tuple(map(1, 'short'), tuple(map(toUInt8(number + 1), 'abcdefghijklmnop'))) AS Tuple(`u.m` Map(UInt8, String), u Tuple(m Map(UInt8, String)))) AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_1` IPv6');
+-- A field with the whole name is taken instead of a key lookup.
+SELECT CAST(tuple(tuple(map(1, 'short')), 'abcdefghijklmnop') AS Tuple(u Tuple(m Map(UInt8, String)), `u.m.key_1` String)) AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
+SELECT * FROM file('data.arrows', 'ArrowStream', '`t.u.m.key_1` IPv6');
+
 SELECT 'map without the requested key below an unnamed struct';
 SELECT CAST(tuple(map(toUInt8(number + 1), 'abcdefghijklmnop')) AS Tuple(Map(UInt8, String))) AS t FROM numbers(2) INTO OUTFILE 'data.arrows' TRUNCATE FORMAT ArrowStream;
 SELECT * FROM file('data.arrows', 'ArrowStream', 't Tuple(Map(UInt8, IPv6)), `t.1.key_1` IPv6');

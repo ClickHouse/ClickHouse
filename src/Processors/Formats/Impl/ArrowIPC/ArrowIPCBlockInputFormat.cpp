@@ -1464,6 +1464,20 @@ std::pair<ColumnPtr, DataTypePtr> restoreOwnNulls(
     return {column, type};
 }
 
+/// Whether `subcolumn` names a subcolumn the type declares (an element of a tuple, `keys` of a map), which
+/// `IDataType::getSubcolumnInfo` prefers to any key lookup of a map along the name: a field `u.m.key_1` of a
+/// struct is taken instead of the key `1` of the map `m` of its field `u`. With case-insensitive matching a
+/// name that differs from a declared one only by case resolves to it too.
+bool isDeclaredSubcolumn(const DataTypePtr & type, std::string_view subcolumn, bool case_insensitive)
+{
+    for (const auto & name : type->getSubcolumnNames())
+    {
+        if (case_insensitive ? boost::iequals(name, subcolumn) : name == subcolumn)
+            return true;
+    }
+    return false;
+}
+
 /// The requested type of the whole decoded column of type `type` implied by a requested subcolumn of it:
 /// `subcolumn` is the dotted name below the column (`key_1`, `u.key_1`, `values.key_1`) and `subcolumn_type`
 /// is its requested type. Returns null unless the path goes through a dynamic key lookup of a map (`key_1`).
@@ -1481,6 +1495,8 @@ std::pair<ColumnPtr, DataTypePtr> restoreOwnNulls(
 /// (`t Map(IPv6, UInt8)` or `t.keys Array(IPv6)`, and `t.key_6162:...:6f70`). Arrays are transparent: a key
 /// lookup below an array (`t Array(Map(UInt8, IPv6))` and `t.key_1`) has the type `Array(IPv6)`, and is converted
 /// element-wise.
+/// The caller checks that the name is not a declared subcolumn (see `isDeclaredSubcolumn`): that one is taken
+/// instead of a key lookup.
 DataTypePtr keyLookupSourceHint(
     const DataTypePtr & type, std::string_view subcolumn, const DataTypePtr & subcolumn_type,
     DataTypePtr requested, const String & path, size_t array_depth, const FindRequestedType & find_requested,
@@ -1513,22 +1529,27 @@ DataTypePtr keyLookupSourceHint(
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get()))
     {
         /// The name of an element can contain dots (`u.m`), and the elements of an unnamed tuple are named by
-        /// their positions (`1`), as the subcolumns of a tuple are.
-        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+        /// their positions (`1`), as the subcolumns of a tuple are. Several elements can be a prefix of the name
+        /// (`u` with a field `m`, and `u.m`): `IDataType::getSubcolumnInfo` takes the lookup from the last element
+        /// that resolves the rest of the name, so the elements are tried from the last one, and the one that
+        /// resolves it is the only one converted. The prefix is compared as it is spelled: a name that is not
+        /// declared is not matched case-insensitively (see `NestedColumnExtractHelper::resolveSubcolumn`).
+        for (size_t i = tuple->getElements().size(); i-- > 0;)
         {
             const String element_name = tuple->getNameByPosition(i + 1);
-            if (subcolumn.size() <= element_name.size() + 1 || subcolumn[element_name.size()] != '.')
+            if (subcolumn.size() <= element_name.size() + 1 || subcolumn[element_name.size()] != '.'
+                || !subcolumn.starts_with(element_name))
                 continue;
-            const std::string_view prefix = subcolumn.substr(0, element_name.size());
-            if (case_insensitive ? !boost::iequals(prefix, element_name) : prefix != element_name)
+            const std::string_view element_subcolumn = subcolumn.substr(element_name.size() + 1);
+            if (!tuple->getElement(i)->tryGetSubcolumnType(element_subcolumn))
                 continue;
             DataTypePtr element_hint = keyLookupSourceHint(
-                tuple->getElement(i), subcolumn.substr(element_name.size() + 1), subcolumn_type,
+                tuple->getElement(i), element_subcolumn, subcolumn_type,
                 tuple->hasExplicitNames() ? ArrowIPC::tupleElementHint(requested_stripped, element_name, i, case_insensitive)
                                           : ArrowIPC::tupleElementHintByPosition(requested_stripped, i),
                 child_path(element_name), array_depth, find_requested, case_insensitive);
             if (!element_hint)
-                continue;
+                return nullptr;
             /// A named tuple hint with only this element: `reinterpretRawBytes` leaves the other elements as
             /// decoded. An unnamed tuple is matched by position, so the other elements get their decoded types,
             /// which keep them as they are.
@@ -1693,9 +1714,11 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         return requested_it->second.type;
                     return nullptr;
                 };
-                key_lookup_hint = keyLookupSourceHint(
-                    decoded[nested_it->second].type, std::string_view(header_column.name).substr(nested_table_name.size() + 1),
-                    header_column.type, /*requested=*/nullptr, search_nested, /*array_depth=*/0, find_requested, case_insensitive);
+                const std::string_view subcolumn = std::string_view(header_column.name).substr(nested_table_name.size() + 1);
+                if (!isDeclaredSubcolumn(decoded[nested_it->second].type, subcolumn, case_insensitive))
+                    key_lookup_hint = keyLookupSourceHint(
+                        decoded[nested_it->second].type, subcolumn, header_column.type, /*requested=*/nullptr, search_nested,
+                        /*array_depth=*/0, find_requested, case_insensitive);
             }
             if (key_lookup_hint)
             {
