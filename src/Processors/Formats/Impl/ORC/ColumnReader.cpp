@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ORC/ColumnReader.h>
+#include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
@@ -365,7 +366,10 @@ public:
         : ColumnReader(type, stripe)
         , writer_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getWriterTimezone())
         , reader_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getReaderTimezone())
-        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone())
+        , writer_offset_of(writer_timezone)
+        , reader_offset_of(reader_timezone)
+        , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone()
+              || (writer_offset_of.fixedOffset() && writer_offset_of.fixedOffset() == reader_offset_of.fixedOffset()))
     {
         /// The base of the seconds is 2015-01-01 00:00:00 in the time zone of the writer.
         static constexpr Int64 UTC_2015_01_01 = 1420070400;
@@ -421,15 +425,15 @@ public:
             if (!same_timezone)
             {
                 /// Keep the same wall clock time when the writer and the reader time zones differ.
-                Int64 writer_offset = writer_timezone.timezoneOffset(writer_time);
-                Int64 reader_offset = reader_timezone.timezoneOffset(writer_time);
+                Int64 writer_offset = writer_offset_of(writer_time);
+                Int64 reader_offset = reader_offset_of(writer_time);
                 if (writer_offset != reader_offset)
                 {
                     /// If the adjustment crosses a DST boundary, the offset has to be reevaluated.
                     Int64 adjusted_time = 0;
                     if (common::addOverflow(writer_time, writer_offset - reader_offset, adjusted_time))
                         throwInvalidTimestamp(seconds[i], encoded_nanos);
-                    Int64 adjusted_reader_offset = reader_timezone.timezoneOffset(adjusted_time);
+                    Int64 adjusted_reader_offset = reader_offset_of(adjusted_time);
                     if (common::addOverflow(writer_time, writer_offset - adjusted_reader_offset, writer_time))
                         throwInvalidTimestamp(seconds[i], encoded_nanos);
                 }
@@ -456,6 +460,8 @@ private:
 
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
+    const TimezoneOffset writer_offset_of;
+    const TimezoneOffset reader_offset_of;
     const bool same_timezone;
     Int64 epoch_offset = 0;
     std::unique_ptr<IntRleDecoder> seconds_rle;
@@ -544,7 +550,7 @@ protected:
 
     /// The scale of each value is read from the file. The valid scales are from 0 to 38, the bound
     /// also keeps the differences of the scales and the rescaling work small.
-    Int32 getValueScale(Int64 value_scale) const
+    [[nodiscard]] Int32 getValueScale(Int64 value_scale) const
     {
         if (value_scale < -Int64(MAX_PRECISION_128) || value_scale > Int64(MAX_PRECISION_128))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Decimal scale {} is out of range in ORC column {}", value_scale, column_id);
@@ -1043,7 +1049,7 @@ public:
     }
 
 private:
-    size_t checkedTag(UInt8 tag) const
+    [[nodiscard]] size_t checkedTag(UInt8 tag) const
     {
         if (tag >= num_children)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid union tag {} for union with {} children in ORC column {}", static_cast<UInt32>(tag), num_children, column_id);

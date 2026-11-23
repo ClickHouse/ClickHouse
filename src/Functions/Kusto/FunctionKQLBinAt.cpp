@@ -48,13 +48,13 @@ public:
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionKQLDateTimeBinAt>(std::move(context_)); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 3; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 3; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isDateTime64(removeNullable(arguments[0])) || !isInterval(removeNullable(arguments[1]))
             || !isDateTime64(removeNullable(arguments[2])))
@@ -67,7 +67,7 @@ public:
         return makeNullable(std::make_shared<DataTypeDateTime64>(result_scale, value_type));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows) const override
     {
         struct Operand
         {
@@ -125,7 +125,7 @@ public:
     }
 
 private:
-    const FormatSettings::DateTimeOverflowBehavior overflow_behavior;
+    const FormatSettingsEnums::DateTimeOverflowBehavior overflow_behavior;
 
     static Int128 nanosecondsAt(const IColumn & column, const IDataType & type, size_t row)
     {
@@ -159,13 +159,13 @@ private:
 
             if (value < min || value > max)
             {
-                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Throw)
                     throw Exception(
                         ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                         "The result of {} is out of bounds of type DateTime64({})",
                         getName(),
                         datetime64->getScale());
-                if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                if (overflow_behavior == FormatSettingsEnums::DateTimeOverflowBehavior::Saturate)
                     value = std::clamp<Int128>(value, min, max);
             }
 

@@ -1,0 +1,12 @@
+Table function 'remoteSecure'
+too many result addresses: 2000, while at most 1000 are allowed
+'table_function_remote_max_addresses' setting
+Table engine 'Remote'
+too many result addresses: 2000, while at most 1000 are allowed
+'table_function_remote_max_addresses' setting
+Table engine 'RemoteSecure'
+too many result addresses: 2000, while at most 1000 are allowed
+Database engine 'Remote'
+too many result addresses: 2000, while at most 1000 are allowed
+Database engine 'RemoteSecure'
+too many result addresses: 2000, while at most 1000 are allowed
