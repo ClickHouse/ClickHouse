@@ -505,6 +505,9 @@ public:
     AnalysisResultPtr getOrCreateAnalyzedResult() const { return analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(); }
 
     const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
+    /// Whether the read was built over projection parts: by the projection optimizers or `mergeTreeProjection`.
+    /// Known from construction on, since a later analysis may select no parts at all.
+    bool readsProjectionParts() const { return reads_projection_parts; }
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -835,6 +838,7 @@ private:
 
     RangesInDataPartsPtr prepared_parts;
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    bool reads_projection_parts = false;
 
     Names all_column_names;
 

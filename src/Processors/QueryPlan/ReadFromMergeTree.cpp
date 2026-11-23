@@ -618,6 +618,9 @@ ReadFromMergeTree::ReadFromMergeTree(
     , is_parallel_reading_from_replicas(enable_parallel_reading_)
     , number_of_current_replica(number_of_current_replica_)
 {
+    reads_projection_parts = (prepared_parts && !prepared_parts->empty() && prepared_parts->front().data_part->isProjectionPart())
+        || (analyzed_result_ptr && analyzed_result_ptr->readFromProjection());
+
     if (is_parallel_reading_from_replicas)
     {
         /// Taken exactly as given: a read marked by `enableParallelReadingFromReplicasForSerialization`

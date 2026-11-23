@@ -1,9 +1,10 @@
 -- Random settings limits: enable_shared_storage_snapshot_in_query=(1, 1)
 
--- A read answered from a projection has a storage snapshot of its own, and the plan with parallel replicas
--- does not use projections. When such a read lies outside the subtree the decision is matched on, here on
--- the other side of a `JOIN`, the plans still match, and the transplant of the index analysis must decline
--- the projection read before it compares the snapshots.
+-- A read of projection parts has a storage snapshot of its own. When such a read lies outside the subtree the
+-- decision is matched on, here on the other side of a `JOIN`, the plans still match, and the transplant of the
+-- index analysis must decline the projection read before it compares the snapshots. Both kinds of projection
+-- read are covered: one chosen by the projection optimization, which comes with its index analysis, and one of
+-- `mergeTreeProjection`, whose analysis is lazy.
 
 DROP TABLE IF EXISTS t_autopr_proj_left;
 DROP TABLE IF EXISTS t_autopr_proj_right;
@@ -34,19 +35,29 @@ FROM (SELECT v, sum(k) FROM t_autopr_proj_left WHERE k < 5000000 GROUP BY v) AS 
 JOIN (SELECT a, b FROM t_autopr_proj_right WHERE b = 7) AS r ON l.v = r.a
 SETTINGS log_comment = 'projection_join_2';
 
+SELECT count()
+FROM (SELECT v, sum(k) FROM t_autopr_proj_left WHERE k < 5000000 GROUP BY v) AS l
+JOIN (SELECT a, b FROM mergeTreeProjection(currentDatabase(), t_autopr_proj_right, by_b) WHERE b = 7) AS r ON l.v = r.a
+SETTINGS query_plan_optimize_join_order_limit = 0, log_comment = 'table_function_join_1';
+SELECT count()
+FROM (SELECT v, sum(k) FROM t_autopr_proj_left WHERE k < 5000000 GROUP BY v) AS l
+JOIN (SELECT a, b FROM mergeTreeProjection(currentDatabase(), t_autopr_proj_right, by_b) WHERE b = 7) AS r ON l.v = r.a
+SETTINGS query_plan_optimize_join_order_limit = 0, log_comment = 'table_function_join_2';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT
+SELECT log_comment,
     ProfileEvents['AutoParallelReplicasApplied'] AS applied,
     ProfileEvents['AutoParallelReplicasPlansNotComparable'] > 0 AS not_comparable,
-    has(projections, currentDatabase() || '.t_autopr_proj_right.by_b') AS used_projection
+    has(projections, currentDatabase() || '.t_autopr_proj_right.by_b') AS used_projection_optimization
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - toIntervalMinute(15)
   AND current_database = currentDatabase() AND type = 'QueryFinish'
-  AND log_comment = 'projection_join_2'
-  AND query_id = initial_query_id;
+  AND log_comment IN ('projection_join_2', 'table_function_join_2')
+  AND query_id = initial_query_id
+ORDER BY log_comment;
 
 DROP TABLE t_autopr_proj_left;
 DROP TABLE t_autopr_proj_right;

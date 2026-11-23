@@ -781,20 +781,18 @@ bool transplantAnalysisToAllReads(
     /// metadata it was captured with.
     for (const auto & [replicas_read, single_node_read] : paired_by_replicas_read)
     {
-        /// A read that a projection answered selects that projection's parts and columns. The
-        /// candidate is built with `optimize_projection` off, so its reads are of the base table and
-        /// none of that applies to them. The pairing cannot tell the two apart: a projection read
-        /// keeps the table and the table expression name of the base read it replaced. The hash of the
-        /// matched node tells them apart only inside its subtree; a projection read outside it, such as
-        /// the other side of a `JOIN`, gets here. It has a snapshot of its own, so it is checked before
-        /// the snapshots are compared. A projection read is always built with its analysis, so this
-        /// needs no new one.
-        if (const auto & analyzed = single_node_read->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
+        /// A read of projection parts selects that projection's parts and columns, and its snapshot is
+        /// its own: the projection optimizers and `mergeTreeProjection` build it with a `cloneEmpty`
+        /// mutations snapshot, so it never equals the snapshot its counterpart has. Decline it before
+        /// the snapshots are compared. The pairing cannot tell it from a base read: it keeps the table
+        /// and the table expression name of the read it replaced, and the hash of the matched node sets
+        /// them apart only inside its subtree, not, for example, on the other side of a `JOIN`.
+        if (single_node_read->readsProjectionParts() || replicas_read->readsProjectionParts())
         {
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
-                "Read of {} in the single-node plan is answered from a projection, which the plan for parallel "
-                "replicas does not use; not transplanting index analysis. Skipping optimization",
+                "Read of {} reads projection parts, which have a storage snapshot of their own; not transplanting "
+                "index analysis. Skipping optimization",
                 single_node_read->getStorageID().getNameForLogs());
             return false;
         }
