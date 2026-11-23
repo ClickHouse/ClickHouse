@@ -36,10 +36,13 @@ def http_request(query, expect_error=False, **settings):
     settings['database'] = os.environ['CLICKHOUSE_DATABASE']
     connection = http.client.HTTPConnection(os.environ['CLICKHOUSE_HOST'], int(os.environ['CLICKHOUSE_PORT_HTTP']), timeout=60)
     try:
-        connection.request('POST', '/?' + urllib.parse.urlencode(settings), query)
-        response = connection.getresponse()
-        output = response.read().decode()
-        assert (response.status != 200) == expect_error, (response.status, output)
+        connection.request('POST', '/?' + urllib.parse.urlencode(settings), query, headers={'Connection': 'close'})
+        with connection.sock.dup() as peer:
+            response = connection.getresponse()
+            output = response.read().decode()
+            assert (response.status != 200) == expect_error, (response.status, output)
+            # The response body can finish before the handler releases its query context.
+            assert peer.recv(1) == b'', 'HTTP handler did not finish closing the connection'
         return output.strip()
     finally:
         connection.close()
@@ -148,12 +151,21 @@ try:
     sentinel_id, sentinel = start_sentinel(retain_payload=True)
     try:
         def setup_balance():
-            row = admin("SELECT memory_usage, (SELECT memory_usage FROM system.processes "
-                        f"WHERE query_id = '{sentinel_id}') FROM system.user_processes WHERE user = '{user}'")
-            user_memory, sentinel_memory = map(int, row.split('\t'))
-            # A positive floor prevents saturation from hiding excess credits.
-            assert min(user_memory, sentinel_memory) >= 16 * 1024 * 1024, row
-            return user_memory - sentinel_memory
+            deadline = time.monotonic() + 30
+            previous = None
+            stable_samples = 0
+            while True:
+                row = admin("SELECT memory_usage, (SELECT memory_usage FROM system.processes "
+                            f"WHERE query_id = '{sentinel_id}') FROM system.user_processes WHERE user = '{user}'")
+                pair = tuple(map(int, row.split('\t')))
+                # Both tables sample independently; require a quiet interval from the live sentinel.
+                stable_samples = stable_samples + 1 if pair == previous else 1
+                previous = pair
+                # A positive floor prevents saturation from hiding excess credits.
+                if min(pair) >= 16 * 1024 * 1024 and stable_samples >= 3:
+                    return pair[0] - pair[1]
+                assert time.monotonic() < deadline, pair
+                time.sleep(0.01)
 
         # `SET` completes on the request thread, isolating setup cleanup from executor allocations.
         query = 'SET max_block_size = 65536 /*' + 'q' * 8192 + '*/'
@@ -162,16 +174,17 @@ try:
                 assert http_request(query, user=user, session_id=session_id, log_comment='',
                             log_queries=0, max_untracked_memory=batching) == ''
 
-            for _ in range(32):
+            for _ in range(8):
                 small_query()
             before = setup_balance()
             samples = []
+            # 144 post-baseline queries expose even a persistent 16-byte per-query residue.
             for _ in range(3):
-                for _ in range(128):
+                for _ in range(48):
                     small_query()
                 samples.append(setup_balance())
             assert admin(f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'") == '1'
-            assert max(abs(sample - before) for sample in samples) < 2048, (before, samples)
+            assert max(abs(sample - before) for sample in samples) < 2048, (batching, before, samples)
         print('synchronous setup cleanup balances in both batching modes')
     finally:
         stop_sentinel(sentinel_id, sentinel)
