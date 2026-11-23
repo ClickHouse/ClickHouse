@@ -237,18 +237,6 @@ GPUElementType GPUCompressedLayout::elementTypeOf(size_t column) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU read of {} columns", column, numColumns());
 }
 
-void GPUStagedBatch::Column::clear()
-{
-    staged.clear();
-    blocks.clear();
-    codec.reset();
-    raw = false;
-    decompressed_bytes = 0;
-    skipped_bytes = 0;
-    kept_bytes = 0;
-    cut = false;
-}
-
 void GPUStagedBatch::clear()
 {
     for (auto & column : columns)
@@ -285,7 +273,7 @@ GPUBlockStager::GPUBlockStager(std::shared_ptr<const GPUCompressedLayout> layout
 {
 }
 
-GPUStagedBatch::Column & GPUBlockStager::columnOrThrow(size_t column)
+CompressedHostColumn & GPUBlockStager::columnOrThrow(size_t column)
 {
     if (column >= current->columns.size() || layout->isAliased(column))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU read of {} columns is not read", column, current->columns.size());
@@ -299,8 +287,8 @@ bool GPUBlockStager::isFull() const
     {
         if (layout->isAliased(c))
             continue;
-        const GPUStagedBatch::Column & column = current->columns[c];
-        if (column.staged.size() >= max_column_bytes)
+        const CompressedHostColumn & column = current->columns[c];
+        if (column.bytes.size() >= max_column_bytes)
             return true;
         /// The bytes of a `String` make no rows of their own: its sizes do.
         if (layout->isVariable(c))
@@ -346,25 +334,24 @@ void GPUBlockStager::addCompressedBlock(
 
     /// A batch has one run of bytes of each column: it starts at a block that skips bytes, and ends at one cut short.
     {
-        const GPUStagedBatch::Column & column = columnOrThrow(column_index);
-        if (column.raw || column.cut || (!column.blocks.empty() && (skipped_bytes != 0 || column.codec != codec)))
+        const CompressedHostColumn & column = columnOrThrow(column_index);
+        const bool decompressed = !column.empty() && !column.isCompressed();
+        if (decompressed || column.isCut() || (!column.blocks.empty() && (skipped_bytes != 0 || column.codec != codec)))
             seal();
     }
 
-    GPUStagedBatch::Column & column = current->columns[column_index];
+    CompressedHostColumn & column = current->columns[column_index];
     if (column.blocks.empty())
     {
         column.skipped_bytes = skipped_bytes;
-        column.staged.reserve(std::min(max_column_bytes, std::max(expected_bytes, payload.size())));
+        column.bytes.reserve(std::min(max_column_bytes, std::max(expected_bytes, payload.size())));
     }
     column.kept_bytes += kept_bytes;
-    column.cut = skipped_bytes + kept_bytes != decompressed_bytes;
     column.codec = codec;
 
-    column.staged.resize_fill(alignedUp(column.staged.size()), 0);
-    column.blocks.push_back({.offset = column.staged.size(), .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
-    appendHostBytes(column.staged, payload);
-    column.decompressed_bytes += decompressed_bytes;
+    column.bytes.resize_fill(alignedUp(column.bytes.size()), 0);
+    column.blocks.push_back({.offset = column.bytes.size(), .compressed_bytes = payload.size(), .decompressed_bytes = decompressed_bytes});
+    appendHostBytes(column.bytes, payload);
 
     if (isFull())
         seal();
@@ -373,27 +360,25 @@ void GPUBlockStager::addCompressedBlock(
 std::span<char> GPUBlockStager::reserveRawBytes(size_t column_index, size_t max_bytes, size_t expected_bytes)
 {
     {
-        const GPUStagedBatch::Column & column = columnOrThrow(column_index);
-        if (!column.blocks.empty() || column.staged.size() >= max_column_bytes)
+        const CompressedHostColumn & column = columnOrThrow(column_index);
+        if (column.isCompressed() || column.bytes.size() >= max_column_bytes)
             seal();
     }
 
-    GPUStagedBatch::Column & column = current->columns[column_index];
-    column.raw = true;
-    column.staged.reserve(std::min(max_column_bytes, column.staged.size() + std::max<size_t>(expected_bytes, 1)));
+    CompressedHostColumn & column = current->columns[column_index];
+    column.bytes.reserve(std::min(max_column_bytes, column.bytes.size() + std::max<size_t>(expected_bytes, 1)));
     return {
-        column.staged.data() + column.staged.size(),
-        std::min({max_bytes, max_column_bytes - column.staged.size(), column.staged.capacity() - column.staged.size()})};
+        column.bytes.data() + column.bytes.size(),
+        std::min({max_bytes, max_column_bytes - column.bytes.size(), column.bytes.capacity() - column.bytes.size()})};
 }
 
 void GPUBlockStager::commitRawBytes(size_t column_index, size_t bytes)
 {
-    GPUStagedBatch::Column & column = columnOrThrow(column_index);
-    if (!column.raw || column.staged.size() + bytes > column.staged.capacity())
+    CompressedHostColumn & column = columnOrThrow(column_index);
+    if (column.isCompressed() || column.bytes.size() + bytes > column.bytes.capacity())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} raw bytes of a column for the GPU committed beyond what was reserved", bytes);
 
-    growBy(column.staged, bytes);
-    column.decompressed_bytes += bytes;
+    growBy(column.bytes, bytes);
     column.kept_bytes += bytes;
 
     if (isFull())
@@ -555,8 +540,8 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
     size_t compressed_total = 0;
     for (const auto & column : staged.columns)
     {
-        if (!column.raw)
-            compressed_total += alignedUp(column.staged.size());
+        if (column.isCompressed())
+            compressed_total += alignedUp(column.bytes.size());
     }
     DeviceBuffer uploaded(own);
     char * const uploaded_base = compressed_total ? uploaded.grow(compressed_total) : nullptr;
@@ -579,16 +564,14 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
         if (layout->isAliased(c))
             continue;
 
-        const GPUStagedBatch::Column & column = staged.columns[c];
+        const CompressedHostColumn & column = staged.columns[c];
         const DeviceBuffer & carried_of_column = carried[c];
-        const size_t expanded = column.raw ? column.decompressed_bytes : decompressedBytesOf(column.blocks);
-        if (column.raw && column.staged.size() != expanded)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} raw bytes of column {} staged for the GPU, {} counted", column.staged.size(), c, expanded);
+        const size_t expanded = column.expandedBytes();
 
         char * destination = nullptr;
         if (layout->isSizes(c))
         {
-            if (column.skipped_bytes != 0 || column.cut)
+            if (column.skipped_bytes != 0 || column.isCut())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "The sizes of a column of varying width for the GPU read in ranges of marks");
             const size_t carried_entries = carried_of_column.empty() ? 1 : carried_of_column.size() / sizeof(UInt64);
             const DeviceBuffer & tail = carried_size_tails[c];
@@ -631,16 +614,16 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
 
         if (expanded == 0)
             continue;
-        if (column.raw)
+        if (!column.isCompressed())
         {
             checkCuda(
-                cudaMemcpyAsync(destination, column.staged.data(), column.staged.size(), cudaMemcpyHostToDevice, own.get()),
+                cudaMemcpyAsync(destination, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, own.get()),
                 "Cannot send raw bytes to the device");
             continue;
         }
         char * const at = uploaded_base + uploaded_at;
         checkCuda(
-            cudaMemcpyAsync(at, column.staged.data(), column.staged.size(), cudaMemcpyHostToDevice, own.get()),
+            cudaMemcpyAsync(at, column.bytes.data(), column.bytes.size(), cudaMemcpyHostToDevice, own.get()),
             "Cannot send compressed blocks to the device");
         char * expand_to = destination;
         if (reinterpret_cast<uintptr_t>(destination) % expand_alignment != 0)
@@ -650,11 +633,11 @@ std::optional<GPUDeviceBatch> GPUBatchUploader::expand(const GPUStagedBatch & st
         }
         pieces_of(*column.codec).push_back({
             .device_compressed = at,
-            .compressed_bytes = column.staged.size(),
+            .compressed_bytes = column.bytes.size(),
             .blocks = column.blocks,
             .destination = expand_to,
         });
-        uploaded_at += alignedUp(column.staged.size());
+        uploaded_at += alignedUp(column.bytes.size());
     }
 
     /// The staged memory is free once the uploads are done; nvcomp waits for them as well.

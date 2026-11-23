@@ -4,6 +4,7 @@
 
 #if USE_GPU
 
+#include <GPU/CompressedHostColumn.h>
 #include <GPU/CudfGroupBy.cuh>
 #include <GPU/CudfReduction.cuh>
 #include <GPU/GPUDecompression.h>
@@ -78,26 +79,10 @@ public:
     const size_t batch_rows;
 };
 
-/// One batch of a reader, staged in pinned memory: of each column, its compressed blocks or its raw bytes.
+/// One batch of a reader on the host: of each column of the layout, the run of it that the batch has, compressed.
 struct GPUStagedBatch
 {
-    struct Column
-    {
-        PinnedBuffer staged;
-        std::vector<CompressedBlock> blocks;
-        std::optional<GPUCodec> codec;
-        bool raw = false;
-        /// What the blocks, or the raw bytes, expand to; the column takes `kept_bytes` of it after `skipped_bytes`.
-        size_t decompressed_bytes = 0;
-        size_t skipped_bytes = 0;
-        size_t kept_bytes = 0;
-        /// The last block keeps less than all of its bytes: the next block starts another batch.
-        bool cut = false;
-
-        void clear();
-    };
-
-    std::vector<Column> columns;
+    std::vector<CompressedHostColumn> columns;
     /// Set on the last batch of a part: the rows of the part. The uploader then sends every row it holds.
     std::optional<size_t> part_rows;
 
@@ -149,7 +134,7 @@ public:
     std::unique_ptr<GPUStagedBatch> takeSealed();
 
 private:
-    GPUStagedBatch::Column & columnOrThrow(size_t column);
+    CompressedHostColumn & columnOrThrow(size_t column);
     bool isFull() const;
     void seal(std::optional<size_t> part_rows = {});
 
