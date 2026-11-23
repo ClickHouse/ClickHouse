@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <filesystem>
@@ -51,9 +52,13 @@ bool removeDirectoryIfEmpty(const fs::path & directory)
 {
     if (0 == ::rmdir(directory.c_str()))
         return true;
-    if (errno == ENOENT || errno == ENOTEMPTY || errno == EEXIST)
+
+    /// Saved because building the exception message may change `errno`.
+    const int rmdir_errno = errno;
+    if (rmdir_errno == ENOENT || rmdir_errno == ENOTEMPTY || rmdir_errno == EEXIST)
         return false;
-    ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, directory, "Cannot remove directory {}", directory.string());
+    ErrnoException::throwFromPathWithErrno(
+        ErrorCodes::CANNOT_RMDIR, directory, rmdir_errno, "Cannot remove directory {}", directory.string());
 }
 
 }
@@ -854,6 +859,20 @@ public:
         return popUnlocked();
     }
 
+    /// For a failed initial load: a retried load would queue the same directories again.
+    void dropEmptyKeyDirectoriesFromStartup()
+    {
+        std::lock_guard lock(mutex);
+
+        size_t dropped_elements = 0;
+        for (const auto & [_, keys_from_startup] : empty_key_directories_from_startup)
+            dropped_elements += keys_from_startup.size();
+        size -= dropped_elements;
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheDelayedCleanupElements, dropped_elements);
+
+        empty_key_directories_from_startup.clear();
+    }
+
     void cancel()
     {
         {
@@ -885,6 +904,9 @@ private:
         {
             auto it = empty_key_directories_from_startup.begin();
             task.key = it->second.back();
+            /// The copy allocates, and the cleanup threads retry a pop which throws at once,
+            /// so a memory limit must not fail it.
+            LockMemoryExceptionInThread lock_memory_exceptions(VariableContext::Global);
             task.key_prefix_directory_from_startup = it->first;
             it->second.pop_back();
             if (it->second.empty())
@@ -1321,6 +1343,11 @@ bool KeyMetadata::addToDownloadQueue(FileSegmentPtr file_segment)
 void CacheMetadata::addEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key)
 {
     cleanup_queue->addEmptyKeyDirectoryFromStartup(key_prefix_directory, key);
+}
+
+void CacheMetadata::dropEmptyKeyDirectoriesFromStartup()
+{
+    cleanup_queue->dropEmptyKeyDirectoriesFromStartup();
 }
 
 void KeyMetadata::addToCleanupQueue()

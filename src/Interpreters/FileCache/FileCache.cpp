@@ -604,6 +604,8 @@ void FileCache::initializeImpl(bool load_metadata)
         /// initialization does not leave an orphaned task rescheduling on `this`.
         if (background_cleanup_task)
             background_cleanup_task->deactivate();
+        /// The cleanup thread is not started, and a retried load would queue these directories again.
+        metadata.dropEmptyKeyDirectoriesFromStartup();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;

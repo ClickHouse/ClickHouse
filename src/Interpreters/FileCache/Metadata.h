@@ -246,6 +246,8 @@ public:
 
     /// Hands a key directory that the initial load found empty to the cleanup thread.
     void addEmptyKeyDirectoryFromStartup(const std::string & key_prefix_directory, const Key & key);
+    /// Forgets the directories handed over by an initial load which failed.
+    void dropEmptyKeyDirectoriesFromStartup();
 
     /// Returns true if the client was fully purged; false if any key kept
     /// non-releasable (held) segments and survived — retry on a later sweep.
