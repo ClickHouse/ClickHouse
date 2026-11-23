@@ -154,6 +154,12 @@ void StatementGenerator::addParallelReplicasSettings(RandomGenerator & rg, Setti
     add("parallel_replicas_mode", "'read_tasks'");
     add("make_distributed_plan", "0");
     add("parallel_replicas_for_queries_with_multiple_tables", "1");
+    /// TODO: temporary, so that the reach of these queries can be measured in `system.query_log`
+    add("log_queries", "1");
+    add("log_profile_events", "1");
+    add("log_queries_min_query_duration_ms", "0");
+    add("log_queries_min_type", "'QUERY_START'");
+    add("log_queries_probability", "1");
     add("parallel_replicas_allow_in_with_subquery", "1");
     /// Set either way: an inherited mode 2 only collects statistics, which keeps a query off the replicas
     add("automatic_parallel_replicas_mode", automatic ? "1" : "0");
