@@ -487,10 +487,17 @@ ASTPtr makeNumericNonConstantInReplacement(
             any_match = any_match ? makeASTFunction("or", std::move(any_match), std::move(match)) : std::move(match);
             continue;
         }
-        if ((isNumber(left_bare_type) || isBool(left_bare_type) || isStringOrFixedString(left_bare_type) || isEnum(left_bare_type)
-                || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type)
-                || isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type))
-            && (isDynamic(element_bare_type) || isVariant(element_bare_type)))
+        const bool scalar_left = isNumber(left_bare_type) || isBool(left_bare_type)
+            || isStringOrFixedString(left_bare_type) || isEnum(left_bare_type)
+            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(left_bare_type)
+            || isUUID(left_bare_type) || isIPv4(left_bare_type) || isIPv6(left_bare_type);
+        const bool scalar_source = isNumber(element_bare_type) || isBool(element_bare_type)
+            || isStringOrFixedString(element_bare_type) || isEnum(element_bare_type)
+            || isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(element_bare_type)
+            || isUUID(element_bare_type) || isIPv4(element_bare_type) || isIPv6(element_bare_type);
+        if (scalar_left && (isDynamic(element_bare_type) || isVariant(element_bare_type)
+            || (scalar_source && !left_bare_type->equals(*element_bare_type)
+                && !(isNumber(left_bare_type) && isNumber(element_bare_type)))))
         {
             auto equals = makeASTFunction("__scalarCarrierValueEqualsForIn", left_operand->clone(), std::move(candidate));
             auto match = makeASTFunction("ifNull", std::move(equals), make_intrusive<ASTLiteral>(0u));
