@@ -2407,7 +2407,9 @@ void StorageDistributed::delayInsertOrThrowIfNeeded(const std::function<bool()> 
 
     UInt64 total_bytes = *totalBytes(getContext());
 
-    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert])
+    /// A rejection at shutdown would drop rows that a Buffer or an asynchronous insert flush has already acknowledged.
+    if ((*distributed_settings)[DistributedSetting::bytes_to_throw_insert] && total_bytes > (*distributed_settings)[DistributedSetting::bytes_to_throw_insert]
+        && !getContext()->isShutdownCalled())
     {
         ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
         throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
@@ -2815,7 +2817,12 @@ Clusters are configured in the [server configuration file](/concepts/features/co
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries
-             default: no secret (no authentication will be performed)
+             default: no secret (no authentication will be performed). Shards will
+             execute Distributed queries received over a remote connection as the
+             user configured for the replica. The initiator checks only the
+             privileges on the Distributed table, and the shard checks the
+             privileges of the configured user. A local replica
+             (prefer_localhost_replica) executes the query as the querying user.
 
              If set, then Distributed queries will be validated on shards, so at least:
              - such cluster should exist on the shard,
@@ -2978,7 +2985,12 @@ void registerStorageRemote(StorageFactory & factory)
             /* is_cluster_function = */ false,
             secure,
             help_message,
-            /* dependent_table_id = */ &args.table_id);
+            /* dependent_table_id = */ &args.table_id,
+            RemoteDescriptionCaller{
+                fmt::format("Table engine '{}'", secure ? "RemoteSecure" : "Remote"),
+                TABLE_FUNCTION_REMOTE_MAX_ADDRESSES_SETTING,
+                /*listing_alternative=*/ {}},
+            /* limit_total_addresses = */ !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()));
 
         DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
         if (args.storage_def->settings)

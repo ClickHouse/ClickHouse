@@ -1,5 +1,6 @@
--- The adaptive aggregator takes Nullable keys whose method packs the null map into the key. Every key
--- has NULL next to its nested default value, and every result is compared with the ordinary path.
+-- The adaptive aggregator takes Nullable keys, whose method either packs the null map into the key or keeps
+-- NULL in a slot of its own outside the cells of the table. Every key has NULL next to its nested default
+-- value, and every result is compared with the ordinary path.
 
 -- The free-memory cap of the thread count is off, so the queries keep their four streams on a loaded server.
 SET max_threads = 4;
@@ -115,7 +116,7 @@ SELECT 'rollup',
         FROM numbers_mt(300000) GROUP BY ROLLUP(a, b)) SETTINGS enable_adaptive_aggregator = 1, group_by_use_nulls = 1)
 SETTINGS log_comment = '05340_arm_rollup';
 
--- nullable_key64 keeps NULL in a separate cell and stays on the ordinary path
+-- nullable_key64, which keeps NULL in a slot of its own
 SELECT 'single',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, 0), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, toUInt64(number % 100000)) AS a, count() AS c, sum(number) AS s
@@ -126,7 +127,7 @@ SELECT 'single',
         FROM numbers_mt(300000) GROUP BY a) SETTINGS enable_adaptive_aggregator = 1)
 SETTINGS log_comment = '05340_arm_single';
 
--- nullable_key_string keeps NULL in a separate cell and stays on the ordinary path
+-- nullable_key_string, which keeps NULL in a slot of its own
 SELECT 'single_string',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, ''), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, if(number % 13 = 0, '', toString(number % 100000))) AS a, count() AS c, sum(number) AS s
@@ -137,7 +138,7 @@ SELECT 'single_string',
         FROM numbers_mt(300000) GROUP BY a) SETTINGS enable_adaptive_aggregator = 1)
 SETTINGS log_comment = '05340_arm_single_string';
 
--- nullable_key_fixed_string keeps NULL in a separate cell and stays on the ordinary path
+-- nullable_key_fixed_string, which keeps NULL in a slot of its own
 SELECT 'single_fixed_string',
     (SELECT count(), sum(c), sum(cityHash64(isNull(a), ifNull(a, toFixedString('', 6)), c, s)) FROM (
         SELECT if(number % 7 = 0, NULL, if(number % 13 = 0, toFixedString('', 6), toFixedString(toString(number % 100000), 6))) AS a,
