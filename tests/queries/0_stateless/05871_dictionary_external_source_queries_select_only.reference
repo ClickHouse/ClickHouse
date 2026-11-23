@@ -16,9 +16,12 @@ MySQL comment in where: OK
 Heredoc: OK
 Typographic quotes: OK
 PostgreSQL backslash: OK
+ODBC square brackets: OK
 --- Every way to create a dictionary from a definition is checked
 ON CLUSTER: OK
 CREATE OR REPLACE: OK
+--- The source is evaluated once, so the stored query is the checked one
+1	0
 --- SELECT is accepted
 MySQL: OK
 MySQL with expressions: OK
@@ -37,5 +40,14 @@ With the grant: created
 0
 1
 With the grant, the name is an expression: created
+0
+1
+--- The collection name is evaluated once, so the stored collection is the authorized one
+1	0
+--- An ODBC source requires the privilege READ ON ODBC
+Without the grant: denied, not created
+1
+0
+With the grant: created
 0
 1

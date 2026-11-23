@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: zookeeper, no-fasttest
 # no-fasttest: the MySQL and PostgreSQL integrations are not available in the fast test build.
 
 # The queries of an external database source (`query`, `where`, `update_field`, `invalidate_query`) are sent
@@ -19,6 +19,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 nc="${CLICKHOUSE_TEST_UNIQUE_NAME}_mysql"
 user="${CLICKHOUSE_TEST_UNIQUE_NAME}_user"
+replicated_db="${CLICKHOUSE_DATABASE}_replicated"
 
 NOT_SELECT="Only SELECT query can be used as a dictionary"
 DIFFERENT_READING="cannot contain comments, heredocs, typographic quotes or backslashes"
@@ -29,6 +30,8 @@ function cleanup()
     $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
     $CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS $user"
     $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS $nc"
+    $CLICKHOUSE_CLIENT --query "DROP NAMED COLLECTION IF EXISTS ${nc}_secret"
+    $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${replicated_db} SYNC"
 }
 trap cleanup EXIT
 cleanup
@@ -101,10 +104,26 @@ check_rejected "MySQL comment in where" "$CREATE" "$MYSQL TABLE 't' WHERE 'id > 
 check_rejected "Heredoc" "$CREATE" "$MYSQL QUERY 'SELECT \$\$a\$\$ AS id, value FROM t')" "$DIFFERENT_READING"
 check_rejected "Typographic quotes" "$CREATE" "$MYSQL TABLE 't' INVALIDATE_QUERY 'SELECT 1 AS ‘, 2 INTO OUTFILE ''/tmp/x'' ’')" "$DIFFERENT_READING"
 check_rejected "PostgreSQL backslash" "$CREATE" "$POSTGRESQL TABLE 't' UPDATE_FIELD 'value = ''\\\\'' OR updated')" "$DIFFERENT_READING"
+# SQL Server reads `[']` as an identifier in brackets, and the rest as more statements.
+check_rejected "ODBC square brackets" "$CREATE" "ODBC(CONNECTION_STRING 'DSN=none' TABLE 't' INVALIDATE_QUERY 'SELECT [''] = 1 DROP TABLE victim SELECT [''] = 1')" "cannot contain square brackets"
 
 echo '--- Every way to create a dictionary from a definition is checked'
 check_rejected "ON CLUSTER" "$CREATE ON CLUSTER test_shard_localhost" "$MYSQL QUERY 'DROP TABLE t')" "$NOT_SELECT source"
 check_rejected "CREATE OR REPLACE" "CREATE OR REPLACE DICTIONARY dict_select_only" "$MYSQL QUERY 'DROP TABLE t')" "$NOT_SELECT source"
+
+echo '--- The source is evaluated once, so the stored query is the checked one'
+# `randConstant()` returns a new value at each evaluation. 20 dictionaries are created in one client, each with about one chance
+# in two to pass the check. Prints whether any was created, and how many store `DROP TABLE`.
+queries=""
+for i in {1..20}; do
+    queries+="CREATE DICTIONARY dict_random_query_$i (id UInt64, value String) PRIMARY KEY id
+        SOURCE($MYSQL QUERY if(randConstant() % 2 = 0, 'SELECT id, value FROM t', 'DROP TABLE victim')))
+        LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);"
+done
+$CLICKHOUSE_CLIENT --ignore-error --multiquery --query "$queries" >/dev/null 2>&1
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0, countIf(create_table_query LIKE '%DROP TABLE victim%')
+    FROM system.tables WHERE database = currentDatabase() AND name LIKE 'dict_random_query_%'"
 
 echo '--- SELECT is accepted'
 check_accepted "MySQL" "$MYSQL QUERY 'SELECT id, value FROM t WHERE {condition}' UPDATE_FIELD 'updated' INVALIDATE_QUERY 'SELECT max(updated) FROM t')"
@@ -142,3 +161,40 @@ echo 'With the grant: created'
 create_as_user "" "$nc"
 echo 'With the grant, the name is an expression: created'
 create_as_user "" "concat('$nc', '')"
+
+echo '--- The collection name is evaluated once, so the stored collection is the authorized one'
+# A `Replicated` database creates the dictionary with full access, so only the check of the query of the user applies.
+# The user has the grant on `$nc` only. Prints whether any dictionary was created, and how many store the other collection.
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE NAMED COLLECTION ${nc}_secret AS host = '127.0.0.1', port = 1, user = 'admin', password = 'secret', db = 'd';
+    CREATE DATABASE ${replicated_db} ENGINE = Replicated('/clickhouse/{database}/replicated_db', 'shard_1', 'replica_1');
+    GRANT CREATE DICTIONARY, DROP DICTIONARY ON ${replicated_db}.* TO $user;"
+queries=""
+for i in {1..20}; do
+    queries+="CREATE DICTIONARY ${replicated_db}.dict_random_name_$i (id UInt64, value String) PRIMARY KEY id
+        SOURCE(MYSQL(NAME if(randConstant() % 2 = 0, '$nc', '${nc}_secret') TABLE 't'))
+        LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1);"
+done
+$CLICKHOUSE_CLIENT --user "$user" --ignore-error --multiquery --query "$queries" >/dev/null 2>&1
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() > 0, countIf(create_table_query LIKE '%${nc}_secret%')
+    FROM system.tables WHERE database = '${replicated_db}' AND name LIKE 'dict_random_name_%'"
+
+
+echo '--- An ODBC source requires the privilege READ ON ODBC'
+# The source can use the credentials of a DSN configured on the server, as the `odbc` table function.
+$CLICKHOUSE_CLIENT --query "REVOKE READ ON ODBC FROM $user"
+function create_odbc_as_user()
+{
+    $CLICKHOUSE_CLIENT --user "$user" --query "
+        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict_select_only (id UInt64, value String) PRIMARY KEY id
+            SOURCE(ODBC(CONNECTION_STRING 'DSN=none' TABLE 't')) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)" 2>&1 \
+        | grep -qE "necessary to have the grant READ ON ODBC" && echo 1 || echo 0
+    dictionary_exists
+    $CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS dict_select_only"
+}
+echo 'Without the grant: denied, not created'
+create_odbc_as_user
+$CLICKHOUSE_CLIENT --query "GRANT READ ON ODBC TO $user"
+echo 'With the grant: created'
+create_odbc_as_user
