@@ -16,6 +16,8 @@
 #include <mutex>
 #include <thread>
 
+#include <magic_enum.hpp>
+
 #include <Core/ServerUUID.h>
 #include <Common/ThreadStatus.h>
 #include <Common/iota.h>
@@ -169,6 +171,8 @@ using State = FileSegment::State;
 using States = std::vector<State>;
 using Holder = FileSegmentsHolder;
 using HolderPtr = FileSegmentsHolderPtr;
+using SplitQueue = IFileCachePriority::ObservedQueue::SplitQueue;
+using SLRUQueue = IFileCachePriority::ObservedQueue::SLRUQueue;
 
 fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
@@ -4617,9 +4621,9 @@ try
         FileCacheKey key;
         Range range;
         /// `Data` or `System` in a split cache, which is also the directory of the segment there.
-        std::optional<String> split_queue = std::nullopt;
+        SplitQueue split_queue = SplitQueue::None;
         /// `Protected` or `Probationary` with the SLRU policy.
-        std::optional<String> slru_queue = std::nullopt;
+        SLRUQueue slru_queue = SLRUQueue::None;
     };
 
     auto assert_observed = [&](const FileSegmentSummaryInfoList & infos, const std::vector<ExpectedSegment> & expected)
@@ -4639,7 +4643,9 @@ try
             ASSERT_EQ(info.slru_queue, segment.slru_queue);
             ASSERT_TRUE(info.path.ends_with(fmt::format("/{}_{}", segment.range.left, segment.range.size())));
             /// For the split cache, checks that the segment is in the directory of its queue.
-            ASSERT_TRUE(!segment.split_queue || info.path.contains(fmt::format("/{}/", *segment.split_queue)));
+            ASSERT_TRUE(
+                segment.split_queue == SplitQueue::None
+                || info.path.contains(fmt::format("/{}/", magic_enum::enum_name(segment.split_queue))));
             ASSERT_TRUE(fs::exists(info.path));
         }
     };
@@ -4802,10 +4808,10 @@ try
         assertProbationary(cache.dumpQueue(), {Range(15, 19), Range(20, 24)});
         assertProtected(cache.dumpQueue(), {Range(0, 9), Range(10, 14)});
 
-        const ExpectedSegment probationary_head{key, Range(15, 19), std::nullopt, "Probationary"};
-        const ExpectedSegment probationary_tail{key, Range(20, 24), std::nullopt, "Probationary"};
-        const ExpectedSegment protected_head{key, Range(0, 9), std::nullopt, "Protected"};
-        const ExpectedSegment protected_tail{key, Range(10, 14), std::nullopt, "Protected"};
+        const ExpectedSegment probationary_head{key, Range(15, 19), SplitQueue::None, SLRUQueue::Probationary};
+        const ExpectedSegment probationary_tail{key, Range(20, 24), SplitQueue::None, SLRUQueue::Probationary};
+        const ExpectedSegment protected_head{key, Range(0, 9), SplitQueue::None, SLRUQueue::Protected};
+        const ExpectedSegment protected_tail{key, Range(10, 14), SplitQueue::None, SLRUQueue::Protected};
 
         /// The probationary queue is colder than the protected one.
         assert_observed(
@@ -4857,10 +4863,10 @@ try
         add_range(cache, system_key, system_origin, 5, 5);
         hit_range(cache, data_key, data_origin, 0, 10);
 
-        const ExpectedSegment data_head{data_key, Range(10, 19), "Data"};
-        const ExpectedSegment data_tail{data_key, Range(0, 9), "Data"};
-        const ExpectedSegment system_head{system_key, Range(0, 4), "System"};
-        const ExpectedSegment system_tail{system_key, Range(5, 9), "System"};
+        const ExpectedSegment data_head{data_key, Range(10, 19), SplitQueue::Data};
+        const ExpectedSegment data_tail{data_key, Range(0, 9), SplitQueue::Data};
+        const ExpectedSegment system_head{system_key, Range(0, 4), SplitQueue::System};
+        const ExpectedSegment system_tail{system_key, Range(5, 9), SplitQueue::System};
 
         /// The system queue is more important one: 'hottest' walks it first, 'coldest' last, so one order is the reverse of the other.
         assert_observed(cache.observeFilesystemCache(10, 100, Order::COLDEST), {data_head, data_tail, system_head, system_tail});
@@ -4910,9 +4916,9 @@ try
         add_range(cache, system_key, system_origin, 0, 5);
         hit_range(cache, data_key, data_origin, 0, 5);
 
-        const ExpectedSegment data_probationary{data_key, Range(5, 9), "Data", "Probationary"};
-        const ExpectedSegment data_protected{data_key, Range(0, 4), "Data", "Protected"};
-        const ExpectedSegment system_probationary{system_key, Range(0, 4), "System", "Probationary"};
+        const ExpectedSegment data_probationary{data_key, Range(5, 9), SplitQueue::Data, SLRUQueue::Probationary};
+        const ExpectedSegment data_protected{data_key, Range(0, 4), SplitQueue::Data, SLRUQueue::Protected};
+        const ExpectedSegment system_probationary{system_key, Range(0, 4), SplitQueue::System, SLRUQueue::Probationary};
 
         assert_observed(
             cache.observeFilesystemCache(10, 100, Order::COLDEST), {data_probationary, data_protected, system_probationary});

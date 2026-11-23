@@ -133,11 +133,10 @@ void SplitFileCachePriority::iterate(
     const ObservedQueue & observed_queue,
     FileSegmentSummaryInfos & result)
 {
-    /// The same names as in `system.filesystem_cache.segment_type`.
     ObservedQueue observed_data = observed_queue;
-    observed_data.split_queue = magic_enum::enum_name(SegmentType::Data);
+    observed_data.split_queue = ObservedQueue::SplitQueue::Data;
     ObservedQueue observed_system = observed_queue;
-    observed_system.split_queue = magic_enum::enum_name(SegmentType::System);
+    observed_system.split_queue = ObservedQueue::SplitQueue::System;
 
     /// System is more important than Data + it is much smaller size
     if (query_order == IterationOrder::HOTTEST)

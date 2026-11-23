@@ -280,10 +280,14 @@ public:
     /// e.g. a split cache with the SLRU policy reports both.
     struct ObservedQueue
     {
-        /// `Data` or `System`, the same as `system.filesystem_cache.segment_type`; empty if the cache is not split.
-        std::optional<std::string_view> split_queue;
-        /// `Protected` or `Probationary`; empty if the policy is not SLRU.
-        std::optional<std::string_view> slru_queue;
+        /// `Data` and `System` are the same names as in `system.filesystem_cache.segment_type`.
+        enum class SplitQueue : uint8_t { None, Data, System };
+        enum class SLRUQueue : uint8_t { None, Probationary, Protected };
+
+        /// `None` if the cache is not split.
+        SplitQueue split_queue = SplitQueue::None;
+        /// `None` if the policy is not SLRU.
+        SLRUQueue slru_queue = SLRUQueue::None;
     };
 
     /// Returns the file segments of the queue, selected by their priority.

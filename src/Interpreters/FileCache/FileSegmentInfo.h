@@ -97,8 +97,8 @@ namespace DB
         UInt64 size;
         String state;
         /// See `IFileCachePriority::ObservedQueue`.
-        std::optional<String> split_queue;
-        std::optional<String> slru_queue;
+        IFileCachePriority::ObservedQueue::SplitQueue split_queue;
+        IFileCachePriority::ObservedQueue::SLRUQueue slru_queue;
         String user_id;
     };
 

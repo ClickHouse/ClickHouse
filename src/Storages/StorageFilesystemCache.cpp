@@ -13,6 +13,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageSnapshot.h>
 
+#include <magic_enum.hpp>
+
 #include <optional>
 
 
@@ -26,6 +28,15 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// `NULL` for `None`, the name of the queue otherwise.
+template <typename Queue>
+Field queueToField(Queue queue)
+{
+    if (queue == Queue::None)
+        return Field();
+    return String(magic_enum::enum_name(queue));
+}
 
 /// Walks the priority queue on the first call to `generate` and emits the result in chunks of at most `max_block_size` rows.
 class FilesystemCacheSource final : public ISource
@@ -88,9 +99,9 @@ protected:
             else if (name == "state")
                 fill([](const FileSegmentSummaryInfo & info) { return info.state; });
             else if (name == "split_queue")
-                fill([](const FileSegmentSummaryInfo & info) { return info.split_queue ? Field(*info.split_queue) : Field(); });
+                fill([](const FileSegmentSummaryInfo & info) { return queueToField(info.split_queue); });
             else if (name == "slru_queue")
-                fill([](const FileSegmentSummaryInfo & info) { return info.slru_queue ? Field(*info.slru_queue) : Field(); });
+                fill([](const FileSegmentSummaryInfo & info) { return queueToField(info.slru_queue); });
             else if (name == "user_id")
                 fill([](const FileSegmentSummaryInfo & info) { return info.user_id; });
             else

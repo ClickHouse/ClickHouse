@@ -219,9 +219,9 @@ void SLRUFileCachePriority::iterate(UInt64 query_max_elements, UInt64 query_max_
 
     /// Keep `split_queue` from Split above, and add the sub-queue of this SLRU.
     ObservedQueue observed_protected = observed_queue;
-    observed_protected.slru_queue = "Protected";
+    observed_protected.slru_queue = ObservedQueue::SLRUQueue::Protected;
     ObservedQueue observed_probationary = observed_queue;
-    observed_probationary.slru_queue = "Probationary";
+    observed_probationary.slru_queue = ObservedQueue::SLRUQueue::Probationary;
 
     /// underlying implementation of LRUFileCachePriority will take care of respecting query_max_elements and query_order
     /// The probationary queue contains colder segments than the protected one: it comes first in `COLDEST` and `RANDOM`.

@@ -145,8 +145,8 @@ tryGetSummaryInfo(const IFileCachePriority::Entry & entry, const IFileCachePrior
         .offset = entry.offset,
         .size = size,
         .state = FileSegment::stateToString(file_segment->state()),
-        .split_queue = observed_queue.split_queue.transform([](std::string_view name) { return String(name); }),
-        .slru_queue = observed_queue.slru_queue.transform([](std::string_view name) { return String(name); }),
+        .split_queue = observed_queue.split_queue,
+        .slru_queue = observed_queue.slru_queue,
         .user_id = key_metadata->origin->user_id,
     };
 }
