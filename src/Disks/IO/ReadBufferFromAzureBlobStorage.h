@@ -42,7 +42,9 @@ public:
         /// `tryGetFileSize` instead of the size a live `GetProperties` request would return, so that
         /// a wrapper that sizes itself by `getFileSize` (the page cache, for one) sees the very size
         /// the read is bounded by, rather than that of a generation the caller has never seen.
-        std::optional<size_t> file_size_ = {});
+        std::optional<size_t> file_size_ = {},
+        /// The version of the blob to read, or an empty string for the current version.
+        String version_id_ = {});
 
     /// The `ETag` of one generation of a blob arrives in two spellings: quoted in HTTP headers
     /// (`ETag: "0x8DA..."`), as RFC 9110 requires, and unquoted in the XML body of a blob listing
@@ -114,6 +116,7 @@ private:
     mutable std::once_flag blob_client_created;
 
     const String path;
+    const String version_id;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
     ReadSettings read_settings;

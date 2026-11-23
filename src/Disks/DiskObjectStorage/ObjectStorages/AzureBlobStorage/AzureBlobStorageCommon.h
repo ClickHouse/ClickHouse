@@ -134,6 +134,9 @@ public:
 
     [[nodiscard]] bool IsClientForDisk() const;
     [[nodiscard]] BlobClient GetBlobClient(const String & blob_name) const;
+    /// A client for the version `version_id` of the blob, or for its current version if `version_id` is empty.
+    /// It is for reading only: a `Delete` through it would remove that version permanently.
+    [[nodiscard]] BlobClient GetBlobClient(const String & blob_name, const String & version_id) const;
     [[nodiscard]] BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
     [[nodiscard]] BlobContainerPropertiesRespones GetProperties() const;
     [[nodiscard]] ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;

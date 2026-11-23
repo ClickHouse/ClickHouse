@@ -73,6 +73,10 @@
 #include <IO/S3/Client.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #endif
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#endif
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <DistributedCache/DistributedCacheCommon.h>
@@ -307,14 +311,18 @@ namespace
         }
     }
 
-    /// Whether `object_storage` reads a version of an object other than the current one (`?versionId=` of `S3`). The
-    /// caches are keyed on the path and the ETag, and the metadata from a listing is of the current version, so such
-    /// a read must not use them.
+    /// Whether `object_storage` reads a version of an object other than the current one (`?versionId=` of `S3`,
+    /// the `version_id` argument of `azureBlobStorage`). The caches are keyed on the path and the ETag, and the
+    /// metadata from a listing is of the current version, so such a read must not use them.
     bool readsExplicitObjectVersion([[maybe_unused]] const IObjectStorage & object_storage)
     {
 #if USE_AWS_S3
         if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(&object_storage))
             return !s3_object_storage->getURI().version_id.empty();
+#endif
+#if USE_AZURE_BLOB_STORAGE
+        if (const auto * azure_object_storage = dynamic_cast<const AzureObjectStorage *>(&object_storage))
+            return !azure_object_storage->getBlobVersionId().empty();
 #endif
         return false;
     }
@@ -782,6 +790,15 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         if (const auto * s3_configuration = dynamic_cast<const StorageS3Configuration *>(&configuration);
             s3_configuration && !s3_configuration->url.version_id.empty())
             result += fmt::format("#versionId={}", s3_configuration->url.version_id);
+    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    /// The same for the `version_id` argument of `azureBlobStorage`.
+    if (include_connection_info)
+    {
+        if (const auto * azure_configuration = dynamic_cast<const StorageAzureConfiguration *>(&configuration);
+            azure_configuration && !azure_configuration->getBlobVersionId().empty())
+            result += fmt::format("#versionId={}", azure_configuration->getBlobVersionId());
     }
 #endif
 

@@ -35,7 +35,8 @@ public:
         const AzureBlobStorage::ConnectionParams & connection_params_,
         const String & object_namespace_,
         const String & description_,
-        const String & common_key_prefix_);
+        const String & common_key_prefix_,
+        const String & blob_version_id_ = {});
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -58,6 +59,10 @@ public:
     std::string getCommonKeyPrefix() const override { return common_key_prefix; }
 
     std::string getDescription() const override { return description; }
+
+    /// The version of a blob that the reads and the metadata requests are made for (the `version_id` argument of
+    /// `azureBlobStorage`), or an empty string for the current version. Writes and removals do not use it.
+    const String & getBlobVersionId() const { return blob_version_id; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -180,6 +185,7 @@ private:
     const String description;
 
     const String common_key_prefix;
+    const String blob_version_id;
 
     /// The parameters the current `client` was built from (the auth method included). Swapped
     /// together with the client by `applyNewSettings`, so the ADLS paths, which build a client

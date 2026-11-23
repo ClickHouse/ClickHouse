@@ -3,6 +3,7 @@
 import functools
 import gzip
 import io
+import os
 import random
 import re
 import threading
@@ -17,6 +18,7 @@ from azure.storage.blob import (
 )
 
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV, assert_logs_contain_with_retry
 from helpers.utility import SafeThread
 
@@ -2174,3 +2176,47 @@ def test_server_credentials_on_reload(cluster):
     node.query("DROP TABLE test_server_credentials_include_disk_reload SYNC")
     node.query("DROP TABLE system.test_server_credentials_system_disk_reload SYNC")
     node.query("DROP NAMED COLLECTION azure_server_credentials_reload")
+
+
+def test_read_blob_version(cluster):
+    # With the `version_id` argument, a read returns that version of a blob: its data, its size and its schema.
+    # The mock serves a deleted blob: it has two previous versions and no current one, so a request finds
+    # the data only if it names a version with `versionid`.
+    node = cluster.instances["node"]
+    port = 18086
+    start_mock_servers(
+        cluster,
+        os.path.join(os.path.dirname(__file__), "mocks"),
+        [("blob_versions_mock.py", "node", str(port))],
+    )
+    url = f"http://127.0.0.1:{port}/devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    old_version = "2026-11-20T10:00:00.0000001Z"
+    new_version = "2026-11-20T10:00:01.0000002Z"
+
+    def blob(version_id=None, structure="x UInt64"):
+        structure = f", '{structure}'" if structure else ""
+        version_id = f", version_id = '{version_id}'" if version_id else ""
+        return (
+            f"azureBlobStorage('{url}', 'cont', 'data.csv', 'devstoreaccount1', '{account_key}', "
+            f"'CSV', 'auto'{structure}{version_id})"
+        )
+
+    assert "1\n2\n3\n" == azure_query(node, f"SELECT * FROM {blob(old_version)} ORDER BY x")
+    assert "9\n" == azure_query(node, f"SELECT * FROM {blob(new_version)}")
+    assert "6\n" == azure_query(node, f"SELECT DISTINCT _size FROM {blob(old_version)}")
+    assert "c1\tNullable(Int64)\n" == azure_query(
+        node, f"SELECT name, type FROM (DESCRIBE TABLE {blob(old_version, structure=None)})"
+    )
+
+    # The same with a named collection.
+    assert "9\n" == azure_query(
+        node,
+        f"SELECT * FROM azureBlobStorage(azure_conf2, storage_account_url = '{url}', container = 'cont', "
+        f"blob_path = 'data.csv', format = 'CSV', structure = 'x UInt64', version_id = '{new_version}')",
+    )
+
+    # The blob has no current version.
+    azure_query(node, f"SELECT * FROM {blob()}", expect_error=True)
+    # A version that does not exist.
+    azure_query(node, f"SELECT * FROM {blob('2026-11-20T10:00:02.0000003Z')}", expect_error=True)

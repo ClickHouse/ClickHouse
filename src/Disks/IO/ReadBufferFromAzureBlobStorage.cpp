@@ -80,10 +80,12 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     BlobStorageLogWriterPtr blob_storage_log_,
     String container_for_logging_,
     String expected_etag_,
-    std::optional<size_t> file_size_)
+    std::optional<size_t> file_size_,
+    String version_id_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , path(path_)
+    , version_id(std::move(version_id_))
     , max_single_read_retries(max_single_read_retries_)
     , max_single_download_retries(max_single_download_retries_)
     , read_settings(read_settings_)
@@ -535,7 +537,7 @@ std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
 
 std::optional<RemoteFileMetadata> ReadBufferFromAzureBlobStorage::getRemoteFileMetadata() const
 {
-    const auto properties = blob_container_client->GetBlobClient(path).GetProperties().Value;
+    const auto properties = getBlobClient().GetProperties().Value;
     const auto last_modification_time = std::chrono::duration_cast<std::chrono::seconds>(
         static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch())
         .count();
@@ -548,7 +550,7 @@ const AzureBlobStorage::BlobClient & ReadBufferFromAzureBlobStorage::getBlobClie
 {
     std::call_once(blob_client_created, [this]
     {
-        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
+        blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path, version_id));
     });
     return *blob_client;
 }

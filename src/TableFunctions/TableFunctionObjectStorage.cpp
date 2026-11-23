@@ -1081,6 +1081,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `WILDCARD`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `HIVE` when `file_like_engine_default_partition_strategy` is `HIVE`; otherwise it uses no partition strategy. |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
 | `extra_credentials`              | Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`).                                                                                                                                                          |
+| `version_id`                     | Optional. The version of the blob to read, passed as a key-value argument: `version_id = '2026-11-23T10:00:00.1234567Z'`. Requires blob versioning to be enabled for the storage account. By default, the current version is read. |
 
 ## Named Collections {#named-collections}
 
@@ -1099,6 +1100,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `structure`                      | No       | Table structure.                                                                                       |
 | `client_id`                      | No       | Client ID for Azure workload identity. Requires `tenant_id` and `storage_account_url`; the server process must have `AZURE_FEDERATED_TOKEN_FILE` set. |
 | `tenant_id`                      | No       | Tenant ID for Azure workload identity. Requires `client_id` and `storage_account_url`; the server process must have `AZURE_FEDERATED_TOKEN_FILE` set. |
+| `version_id`                     | No       | The version of the blob to read. By default, the current version is read.                              |
 
 <Note>
 Named collection key names differ from positional function argument names: `container` (not `container_name`) and `blob_path` (not `blobpath`).
@@ -1160,6 +1162,23 @@ FROM azureBlobStorage(
     'CSVWithNames'
 )
 LIMIT 5;
+```
+
+### Reading a version of a blob {#reading-a-version-of-a-blob}
+
+In a storage account with blob versioning enabled, a version of a blob other than the current one is read with the `version_id` key-value argument. This also reads a version of a deleted blob.
+
+```sql
+SELECT *
+FROM azureBlobStorage(
+    'https://myaccount.blob.core.windows.net/',
+    'mycontainer',
+    'data/file.csv',
+    'myaccount',
+    'mykey...==',
+    'CSVWithNames',
+    version_id = '2026-11-23T10:00:00.1234567Z'
+);
 ```
 
 ### Writing with partitions {#writing-with-partitions}

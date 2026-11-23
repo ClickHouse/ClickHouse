@@ -81,13 +81,15 @@ public:
     AzureIteratorAsync(
         const std::string & path_prefix,
         std::shared_ptr<const AzureBlobStorage::ContainerClient> client_,
-        size_t max_list_size)
+        size_t max_list_size,
+        bool reads_explicit_version_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
             CurrentMetrics::ObjectStorageAzureThreadsScheduled,
             ThreadName::AZURE_LIST_POOL)
         , client(client_)
+        , reads_explicit_version(reads_explicit_version_)
     {
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
@@ -116,6 +118,16 @@ private:
         {
             if (isDirectoryEntry(blob))
                 continue;
+
+            /// The listing describes the current version of each blob, but the blobs are read at the version selected
+            /// by `version_id`, whose size can differ (and the size bounds the read). So the metadata is left unset,
+            /// to be requested with the properties of the selected version where it is needed.
+            if (reads_explicit_version)
+            {
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(blob.Name));
+                continue;
+            }
+
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -137,6 +149,7 @@ private:
     }
 
     std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
+    const bool reads_explicit_version;
     Azure::Storage::Blobs::ListBlobsOptions options;
 };
 
@@ -150,13 +163,15 @@ AzureObjectStorage::AzureObjectStorage(
     const AzureBlobStorage::ConnectionParams & connection_params_,
     const String & object_namespace_,
     const String & description_,
-    const String & common_key_prefix_)
+    const String & common_key_prefix_,
+    const String & blob_version_id_)
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
     , description(description_)
     , common_key_prefix(common_key_prefix_)
+    , blob_version_id(blob_version_id_)
     , connection_params(std::make_unique<AzureBlobStorage::ConnectionParams>(connection_params_))
     , log(getLogger("AzureObjectStorage"))
 {
@@ -173,7 +188,8 @@ ObjectStoragePtr AzureObjectStorage::cloneImpl() const
         *connection_params.get(),
         object_namespace,
         description,
-        common_key_prefix);
+        common_key_prefix,
+        blob_version_id);
 
     std::lock_guard lock(client_inputs_mutex);
     /// The copy is not shared with anyone yet; its mutex is taken to satisfy the thread safety analysis.
@@ -219,7 +235,8 @@ ObjectStorageIteratorPtr AzureObjectStorage::iterate(
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
 
-    return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size);
+    return std::make_shared<AzureIteratorAsync>(
+        path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size, !blob_version_id.empty());
 }
 
 void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -327,7 +344,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         /// that sizes itself by `getFileSize` (`CachedInMemoryReadBufferFromFile` does, and treats
         /// an earlier end of the file as corruption) sees the bound the read has, and not the size
         /// of whatever generation a live `GetProperties` request would meet.
-        /* file_size */ known_size);
+        /* file_size */ known_size,
+        blob_version_id);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -747,7 +765,9 @@ ObjectMetadata AzureObjectStorage::getObjectMetadataOfListedGeneration(const Sto
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     auto client_ptr = client.get();
-    auto blob_client = client_ptr->GetBlobClient(path);
+    /// The metadata must describe the version that `readObject` reads, not the current one:
+    /// the size bounds the read, and the current version can be absent (a deleted blob).
+    auto blob_client = client_ptr->GetBlobClient(path, blob_version_id);
     auto properties = blob_client.GetProperties().Value;
 
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);
