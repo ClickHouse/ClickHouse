@@ -49,7 +49,6 @@
 namespace ProfileEvents
 {
     extern const Event KeeperLogStoreAppend;
-    extern const Event KeeperLogStoreAppendMicroseconds;
     extern const Event KeeperStateMachineCommit;
     extern const Event KeeperStateMachineCommitMicroseconds;
     extern const Event KeeperSnapshotCreations;
@@ -919,7 +918,6 @@ TEST_P(CoordinationTestWithCompression, TestPhaseProfileEvents)
     using namespace DB;
 
     const auto log_store_appends_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogStoreAppend];
-    const auto log_store_append_us_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogStoreAppendMicroseconds];
     const auto state_machine_commits_before = ProfileEvents::global_counters[ProfileEvents::KeeperStateMachineCommit];
     const auto state_machine_commit_us_before = ProfileEvents::global_counters[ProfileEvents::KeeperStateMachineCommitMicroseconds];
     const auto snapshot_write_us_before = ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotWriteMicroseconds];
@@ -931,8 +929,8 @@ TEST_P(CoordinationTestWithCompression, TestPhaseProfileEvents)
     (*settings)[DB::CoordinationSetting::rotate_log_storage_interval] = 10;
     testLogAndStateMachine(settings, 15, GetParam());
 
+    /// Only the count is checked for appends: the time is truncated to whole microseconds on each call, and an append can take less than that.
     EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperLogStoreAppend], log_store_appends_before);
-    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperLogStoreAppendMicroseconds], log_store_append_us_before);
     EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperStateMachineCommit], state_machine_commits_before);
     EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperStateMachineCommitMicroseconds], state_machine_commit_us_before);
     EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperSnapshotWriteMicroseconds], snapshot_write_us_before);
