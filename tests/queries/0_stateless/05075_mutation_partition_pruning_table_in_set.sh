@@ -26,6 +26,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --ast_fuzzer_runs 0 << 'EOF'
 SET mutations_sync = 0;
+-- CI may disable the pruning whose assigned partitions are checked below.
+SET optimize_mutations_with_partition_pruning = 1;
 
 DROP TABLE IF EXISTS t_prune_in_table_keys;
 DROP TABLE IF EXISTS t_prune_in_table;

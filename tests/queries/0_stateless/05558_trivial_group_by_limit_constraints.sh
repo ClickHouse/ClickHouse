@@ -21,13 +21,17 @@ do
         CREATE USER $user IDENTIFIED WITH no_password SETTINGS max_rows_to_group_by = $profile;
         GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO $user;
     "
+    # CI may randomize `optimize_trivial_group_by_limit_query`: use the value the profile pins, otherwise the default.
+    trivial=1
+    [[ "$profile" == *"optimize_trivial_group_by_limit_query = 0"* ]] && trivial=0
     for table in t d
     do
         echo -n "$profile, $table: "
         $CLICKHOUSE_CLIENT --user "$user" -q "
             SELECT x FROM $table GROUP BY x LIMIT 30
             SETTINGS max_block_size = 10, max_threads = 1, prefer_localhost_replica = 0,
-                optimize_aggregation_in_order = 0, enable_parallel_replicas = 0
+                optimize_aggregation_in_order = 0, enable_parallel_replicas = 0,
+                optimize_trivial_group_by_limit_query = $trivial
         " 2>&1 | awk '/TOO_MANY_ROWS/ { error = 1 } END { print error ? "TOO_MANY_ROWS" : NR }'
     done
 done

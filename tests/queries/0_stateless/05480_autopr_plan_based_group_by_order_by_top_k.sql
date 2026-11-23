@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS t_05480;
 CREATE TABLE t_05480 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY v;
 INSERT INTO t_05480 SELECT intHash64(number) % 100000, number FROM numbers(1000000);
 
+-- CI may inject a tiny adaptive aggregator freeze threshold, which changes the statistics `AutoParallelReplicasNoStatistics` checks.
+SET adaptive_aggregator_freeze_threshold = 16384;
 SET parallel_replicas_plan_based = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     automatic_parallel_replicas_min_bytes_per_replica = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
