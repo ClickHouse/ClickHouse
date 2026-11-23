@@ -199,7 +199,8 @@ private:
     std::optional<size_t> addLevelsOnlyPrimitive(size_t leaves_start, size_t leaves_end, UInt8 arrays, const String & name);
 
     /// If the requested column at `pos` is `arr.missing`, where `arr` is in tuples_in_arrays and has
-    /// no element `missing`, outputs it as arrays of defaults sized like `arr` and returns true.
+    /// no element `missing`, outputs it as arrays of its `initial-default` (or of defaults, if missing columns are allowed)
+    /// sized like `arr` and returns true.
     bool addMissingElementOfTupleInArray(size_t pos);
 
     void processPrimitiveColumn(

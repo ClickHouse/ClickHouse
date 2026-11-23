@@ -155,10 +155,10 @@ void SchemaConverter::prepareForReading()
         const auto & missing_column = sample_block->getByPosition(i);
         const String field = column_mapper ? column_mapper->getIcebergFieldPath(missing_column.name) : String{};
         auto missing_column_default = getAbsentFieldDefault(field, missing_column.name, missing_column.type);
-        if (!options.format.parquet.allow_missing_columns && !missing_column_default)
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", missing_column.name);
         if (!missing_column_default && addMissingElementOfTupleInArray(i))
             continue;
+        if (!options.format.parquet.allow_missing_columns && !missing_column_default)
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", missing_column.name);
 
         OutputColumnInfo & missing_output = output_columns.emplace_back();
         missing_output.idx_in_output_block = i;
@@ -1258,7 +1258,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     /// Only for a struct that is the field of the mapper with its id: one with another id can have the same name.
     if (column_mapper && column_mapper->hasIcebergInitialDefaults() && node.element->__isset.field_id
         && column_mapper->getFieldIdToClickHouseName().contains(node.element->field_id))
-        struct_field_ids[node.name] = std::move(element_field_ids);
+        struct_field_ids[node.getColumnMapperPath()] = std::move(element_field_ids);
 
     if (!node.requested)
     {
@@ -1282,9 +1282,11 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         {
             if (elements[i] != UINT64_MAX)
                 continue;
-            String missing_name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+            const String missing_element = tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1);
+            String missing_name = node.name + "." + missing_element;
+            const String missing_field = node.getColumnMapperPath() + "." + missing_element;
             const DataTypePtr & missing_type = tuple_type_hint->getElement(i);
-            auto missing_column_default = getAbsentFieldDefault(missing_name, missing_name, missing_type);
+            auto missing_column_default = getAbsentFieldDefault(missing_field, missing_field, missing_type);
             /// A map element that is not read is filled with defaults, sized by the offsets of the other one.
             const bool skipped_map_element = node.schema_context == SchemaContext::MapTuple && node.map_element_to_skip == i;
             if (!options.format.parquet.allow_missing_columns && !missing_column_default && !skipped_map_element)
@@ -1498,6 +1500,12 @@ bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
     if (!arrays_match)
         return false;
 
+    const String missing_field = tuple->column_mapper_path + "." + String(rest);
+    std::optional<Field> missing_default = getAbsentFieldDefault(missing_field, missing_field, element_type);
+    if (!missing_default && !options.format.parquet.allow_missing_columns)
+        return false;
+    const bool report_as_missing = !missing_default;
+
     std::optional<size_t> levels_only_primitive
         = addLevelsOnlyPrimitive(tuple->leaves_start, tuple->leaves_end, tuple->levels.back().rep, tuple->name);
     if (!levels_only_primitive.has_value())
@@ -1510,6 +1518,7 @@ bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
     missing_output.input_type = element_type;
     missing_output.output_type = element_type;
     missing_output.is_missing_column = true;
+    missing_output.missing_column_default = std::move(missing_default);
 
     for (size_t i = tuple->levels.size() - 1; i > 0; --i)
     {
@@ -1527,7 +1536,7 @@ bool SchemaConverter::addMissingElementOfTupleInArray(size_t pos)
         output_idx = output_columns.size() - 1;
     }
     output_columns[output_idx].idx_in_output_block = pos;
-    output_columns[output_idx].report_as_missing = true;
+    output_columns[output_idx].report_as_missing = report_as_missing;
     return true;
 }
 

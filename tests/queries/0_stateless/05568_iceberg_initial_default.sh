@@ -423,12 +423,15 @@ for format in Parquet ORC Avro; do
         after+="
             SELECT a, t, l, d, r, s, n, ll FROM icebergLocal('${table}/');
             SELECT t.x, t.y, s.x, n.x FROM icebergLocal('${table}/');
+            SELECT l.x, l.y FROM icebergLocal('${table}/');
+            SELECT a FROM icebergLocal('${table}/') WHERE has(l.y, 5);
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 1;
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 0;"
         if [ "${format}" = Parquet ]; then
             # A field with a default is not a missing column.
             after+="
-                SELECT a, t, l, d, r, s, ll FROM icebergLocal('${table}/') SETTINGS input_format_parquet_allow_missing_columns = 0;"
+                SELECT a, t, l, d, r, s, ll FROM icebergLocal('${table}/') SETTINGS input_format_parquet_allow_missing_columns = 0;
+                SELECT l.y FROM icebergLocal('${table}/') SETTINGS input_format_parquet_allow_missing_columns = 0;"
         fi
     fi
 
