@@ -165,8 +165,9 @@ String formatArrowDecimal(std::string_view coefficient, Int32 scale)
         return text;
     }
 
-    /// `0.0123`
-    text.insert(static_cast<size_t>(sign_size), static_cast<size_t>(scale - num_digits + 2), '0');
+    /// `0.0123`: the scale is not less than the number of digits here.
+    const size_t leading_zeros = static_cast<size_t>(scale) - static_cast<size_t>(num_digits) + 2;
+    text.insert(static_cast<size_t>(sign_size), leading_zeros, '0');
     text[static_cast<size_t>(sign_size) + 1] = '.';
     return text;
 }
