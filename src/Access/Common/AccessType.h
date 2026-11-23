@@ -153,14 +153,14 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType : uint16_t
 {
-/// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
+/// Macros M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
 /// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
-#define APPLY_FOR_ACCESS_TYPES(M) \
+#define APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M_OBSOLETE) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
     M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
@@ -171,7 +171,7 @@ enum class AccessType : uint16_t
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
     M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
-    M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
+    M(SHOW_FILESYSTEM_CACHES, "", GLOBAL, ALL) /* allows to execute SHOW FILESYSTEM CACHES, DESCRIBE FILESYSTEM CACHE and SELECT from system.filesystem_cache_settings */\
     \
     M(SELECT, "", COLUMN, ALL) \
     M(INSERT, "", COLUMN, ALL) \
@@ -342,7 +342,7 @@ enum class AccessType : uint16_t
     M(SYSTEM_DROP_STATISTICS_CACHE, "SYSTEM CLEAR STATISTICS CACHE, DROP STATISTICS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_COLUMNS_CACHE, "SYSTEM CLEAR COLUMNS CACHE, SYSTEM DROP COLUMNS CACHE, DROP COLUMNS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_UNCOMPRESSED_CACHE, "SYSTEM CLEAR UNCOMPRESSED CACHE, SYSTEM DROP UNCOMPRESSED, DROP UNCOMPRESSED CACHE, DROP UNCOMPRESSED", GLOBAL, SYSTEM_DROP_CACHE) \
-    M(SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, "SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE, SYSTEM DROP VECTOR SIMILARITY INDEX CACHE, DROP VECTOR SIMILARITY INDEX CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, "SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE, SYSTEM DROP VECTOR SIMILARITY INDEX CACHE, DROP VECTOR SIMILARITY INDEX CACHE", TABLE, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE, "SYSTEM CLEAR TEXT INDEX TOKENS CACHE, SYSTEM DROP TEXT INDEX TOKENS CACHE, DROP TEXT INDEX TOKENS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE, "SYSTEM CLEAR TEXT INDEX HEADER CACHE, SYSTEM DROP TEXT INDEX HEADER CACHE, DROP TEXT INDEX HEADER CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE, "SYSTEM CLEAR TEXT INDEX POSTINGS CACHE, SYSTEM DROP TEXT INDEX POSTINGS CACHE, DROP TEXT INDEX POSTINGS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
@@ -364,8 +364,8 @@ enum class AccessType : uint16_t
     M(SYSTEM_RELOAD_CONFIG, "RELOAD CONFIG", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_USERS, "RELOAD USERS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_DICTIONARY, "SYSTEM RELOAD DICTIONARIES, RELOAD DICTIONARY, RELOAD DICTIONARIES, SYSTEM UNLOAD DICTIONARY, SYSTEM UNLOAD DICTIONARIES, UNLOAD DICTIONARY, UNLOAD DICTIONARIES", GLOBAL, SYSTEM_RELOAD) \
-    /* The CatBoost integration is removed, but the privilege is kept in place, so that access entities granted before the removal still parse after an upgrade, and so that the numeric values of the other access types in `system.privileges` and `system.grants` do not change. */ \
-    M(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, SYSTEM_RELOAD) \
+    /* The CatBoost integration is removed, but the privilege is kept in place, so that access entities granted before the removal still parse after an upgrade, and so that the numeric values of the other access types in `system.privileges` and `system.grants` do not change. It must stay at this position also so that it remains a member of the `SYSTEM RELOAD`, `SYSTEM`, and `ALL` groups. */ \
+    M_OBSOLETE(SYSTEM_RELOAD_MODEL, "SYSTEM RELOAD MODELS, RELOAD MODEL, RELOAD MODELS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_FUNCTION, "SYSTEM RELOAD FUNCTIONS, RELOAD FUNCTION, RELOAD FUNCTIONS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_EMBEDDED_DICTIONARIES, "RELOAD EMBEDDED DICTIONARIES", GLOBAL, SYSTEM_RELOAD) /* implicitly enabled by the grant SYSTEM_RELOAD_DICTIONARY ON *.* */\
     M(SYSTEM_RELOAD_ASYNCHRONOUS_METRICS, "RELOAD ASYNCHRONOUS METRICS", GLOBAL, SYSTEM_RELOAD) \
@@ -477,6 +477,9 @@ enum class AccessType : uint16_t
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
+/// Applies M to all access types, including the obsolete ones.
+#define APPLY_FOR_ACCESS_TYPES(M) APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(M, M)
+
 #define DECLARE_ACCESS_TYPE_ENUM_CONST(name, aliases, node_type, parent_group_name) \
     name,
 
@@ -486,5 +489,7 @@ enum class AccessType : uint16_t
 
 
 std::string_view toString(AccessType type);
+
+bool isObsolete(AccessType type);
 
 }

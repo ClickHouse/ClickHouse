@@ -244,7 +244,7 @@
     M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
     M(IcebergCompactionMerge, "Number of executing background Iceberg compaction merges.") \
     M(IcebergCompactionSourceFiles, "Number of input source files (data files and position delete files) participating in currently executing Iceberg compaction merges.") \
-    M(IcebergCompactionCleanupTasks, "Number of background tasks for removing data files superseded by Iceberg compaction, which are scheduled or still retained by Iceberg tables.") \
+    M(IcebergCompactionCleanupTasks, "Number of Iceberg tables with the background task that expires their outdated snapshots and removes the files only these snapshots reference, enabled by `enable_cleanup_old_data_files_compaction`.") \
     M(ObjectStorageSharedLeases, "Number of keys, such as Iceberg snapshots being read, currently leased in object storage by the queries of this server.") \
     M(ObjectStorageExclusiveLeases, "Number of exclusive leases, such as the compaction of an Iceberg table, currently held in object storage by this server.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
@@ -343,6 +343,7 @@
     M(AttachedDatabase, "Active databases.") \
     M(AttachedTable, "Active tables.") \
     M(AttachedReplicatedTable, "Active replicated tables.") \
+    M(AttachedSharedTable, "Active SharedMergeTree tables.") \
     M(AttachedView, "Active views.") \
     M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
@@ -387,6 +388,8 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
+    M(IcebergRESTCatalogWarehouseCacheSize, "Size of the warehouse cache of the Iceberg REST catalog server. Each warehouse counts as 1") \
+    M(IcebergRESTCatalogWarehouseCacheEntries, "Number of warehouses in the warehouse cache of the Iceberg REST catalog server") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(DeltaLakeMetadataCacheBytes, "Size of the Delta Lake metadata cache in bytes") \
@@ -503,6 +506,7 @@
     M(SharedMergeTreeMinReplicas, "The minimum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMinActiveReplicas and SharedMergeTreeMinInactiveReplicas") \
     M(SharedMergeTreeMinPartitions, "The minimum number of partitions registered in Keeper across all SharedMergeTree tables") \
     M(SharedMergeTreeMaxPartitions, "The maximum number of partitions registered in Keeper across all SharedMergeTree tables") \
+    M(SharedMergeTreePartsUpdateLeaderLocksHeld, "Parts update leader locks held or being acquired by this replica, one per SharedMergeTree table where it is the leader") \
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
@@ -518,7 +522,9 @@
     M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
     M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
-    M(DistrCacheServerRegistryConnections, "Number of active connections to ClickHouse server from Distributed Cache (not marked as cancelled because of limit)") \
+    M(DistrCacheServerRegistryConnections, "Number of client connections listed in the distributed cache server's registry, the ones marked for closing included") \
+    M(DistrCacheServerClientsSlowingDown, "Number of distributed cache clients whose slow-down window is open, as of the last stuck-request scan") \
+    M(DistrCacheServerStuckRequests, "Number of in-flight distributed cache server requests that made no progress for at least `distributed_cache_stuck_request_no_progress_timeout_ms`, or ran past `distributed_cache_max_request_processing_time_ms` without ending itself within one scan interval, as of the last stuck-request scan") \
     M(DistrCacheServerCommittedTemporaryFiles, "Number of committed temporary files owned by this distributed cache server process") \
     M(DistrCacheServerCommittedTemporaryFilesBytes, "Total size in bytes of committed temporary files owned by this distributed cache server process") \
     M(DistrCacheTemporaryDataServers, "Number of servers with committed temporary data") \
