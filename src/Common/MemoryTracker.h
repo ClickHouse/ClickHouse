@@ -399,6 +399,11 @@ public:
         page_cache.store(nullptr);
     }
 
+    DB::PageCache * getPageCache() const noexcept
+    {
+        return page_cache.load(std::memory_order_relaxed);
+    }
+
     /// Reset the accumulated data
     void resetCounters();
 

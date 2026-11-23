@@ -49,13 +49,13 @@ public:
     /// Return the current size of the WASM linear memory in bytes, empty when the module
     /// exports no linear memory at all - which is not the same as exporting one that holds
     /// no pages yet.
-    virtual std::optional<size_t> getLinearMemorySize() const = 0;
+    [[nodiscard]] virtual std::optional<size_t> getLinearMemorySize() const = 0;
 
     /// Return the size, in bytes, the module declares its linear memory to start with, empty
     /// when the module exports no linear memory at all. Unlike the current size, this does not
     /// move with `memory.grow`, so a caller sizing work against it gets the same answer for
     /// every instance of the module whatever earlier calls made it grow to.
-    virtual std::optional<size_t> getInitialLinearMemorySize() const = 0;
+    [[nodiscard]] virtual std::optional<size_t> getInitialLinearMemorySize() const = 0;
 
     /// Return the effective ceiling, in bytes, that the WASM linear memory can actually
     /// reach in this engine - not merely the configured `memory_limit`. An engine must
@@ -69,7 +69,7 @@ public:
     /// neither the host cap nor a maximum declared by the module can lift the memory past
     /// `WASM_MAX_LINEAR_MEMORY_SIZE`, so for it the empty case only means the engine cannot
     /// tell what the ceiling is.
-    virtual std::optional<size_t> getMaxLinearMemorySize() const = 0;
+    [[nodiscard]] virtual std::optional<size_t> getMaxLinearMemorySize() const = 0;
 
     /// Invoke a function expecting to return a single value of specific result type or void, if no return value expected.
     /// If function returns multiple values or different type, an exception is thrown.
@@ -97,8 +97,8 @@ public:
         size_t fuel_limit = 0;
         FuelMode fuel_mode;
 
-        bool usesFuelAccounting() const { return fuel_mode == FuelMode::Enabled; }
-        bool hasFiniteFuelLimit() const { return usesFuelAccounting() && fuel_limit != 0; }
+        [[nodiscard]] bool usesFuelAccounting() const { return fuel_mode == FuelMode::Enabled; }
+        [[nodiscard]] bool hasFiniteFuelLimit() const { return usesFuelAccounting() && fuel_limit != 0; }
     };
 
     /** Creates a new instance of WasmCompartment using the code of this module.
@@ -106,12 +106,12 @@ public:
       * `stop_token` is observed while the module's `(start)` function (if any) runs — letting the caller cancel a
       * hanging start function via the same path used to cancel regular calls.
       */
-    virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const = 0;
+    [[nodiscard]] virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const = 0;
 
-    virtual VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const = 0;
+    [[nodiscard]] virtual VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const = 0;
     virtual void linkFunction(WasmHostFunction host_function) = 0;
 
-    virtual WasmFunctionDeclaration getExport(std::string_view function_name) const = 0;
+    [[nodiscard]] virtual WasmFunctionDeclaration getExport(std::string_view function_name) const = 0;
 
     virtual ~WasmModule() = default;
 };
@@ -122,7 +122,7 @@ public:
 class IWasmEngine
 {
 public:
-    virtual std::unique_ptr<WasmModule> compileModule(
+    [[nodiscard]] virtual std::unique_ptr<WasmModule> compileModule(
         std::string_view module_name,
         std::string_view wasm_code,
         FuelMode fuel_mode) const = 0;

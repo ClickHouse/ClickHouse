@@ -30,7 +30,7 @@ struct CSNEntryData
     UUID replica_id;
     std::vector<MergeTreeTransaction::AffectedSMTTable> smt;
 
-    String serialize() const;
+    [[nodiscard]] String serialize() const;
     /// Also reads pre-version-1 bodies, which hold a bare TID and no SMT fan-out.
     static CSNEntryData deserialize(const String & data);
 };
@@ -42,7 +42,7 @@ struct StampData
     TransactionID tid = Tx::EmptyTID;
     String zk_path;
 
-    String serialize() const;
+    [[nodiscard]] String serialize() const;
     static StampData deserialize(const String & data);
 };
 
@@ -56,7 +56,7 @@ struct ProcessedData
     Int64 virtual_parts_version = 0;
     UUID writing_replica_id;
 
-    String serialize() const;
+    [[nodiscard]] String serialize() const;
     static ProcessedData deserialize(const String & data);
 };
 
