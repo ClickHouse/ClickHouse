@@ -2706,7 +2706,7 @@ Certain MergeTree settings can be overridden at column level:
 - `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. A compressed block holds at most 256 MiB of uncompressed data, so values above 256 MiB act as 256 MiB. Data written in larger blocks by older versions cannot be read.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
 
-For a column with a `Quantized` codec, both settings apply only to its vectors (the array elements); its array sizes and quantized codes use the table-level values.
+For a column with a `Quantized` codec, both settings apply only to its vectors (the array elements); its array sizes and quantized codes use the table-level values. Array sizes shared by several columns of a `Nested` structure are written once, with the settings of the column that writes them first.
 
 Example:
 
