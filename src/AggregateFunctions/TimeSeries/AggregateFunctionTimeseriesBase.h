@@ -567,13 +567,23 @@ protected:
             /// Each populated bucket holds at least one sample, so this bounds their number.
             auto aggregator = derived().createAggregator(getStackSizeForTwoStacks(std::min(samples.size(), bucket_count)));
 
-            /// Stores the results of the grid points whose windows end before bucket `bucket_index`.
             size_t grid_index = 0;
+            /// The buckets that left the window of a grid point are removed once, before a bucket that enters it is added.
+            size_t removed_for = grid_size;
+            auto remove_out_of_window = [&]
+            {
+                if (removed_for == grid_index)
+                    return;
+                removeOutOfWindow(aggregator, grid_index);
+                removed_for = grid_index;
+            };
+
+            /// Stores the results of the grid points whose windows end before bucket `bucket_index`.
             auto store_results_before = [&](size_t bucket_index)
             {
                 for (; grid_index < grid_size && bucketRangeInWindow(grid_index).second <= bucket_index; ++grid_index)
                 {
-                    removeOutOfWindow(aggregator, grid_index);
+                    remove_out_of_window();
                     writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
                 }
             };
@@ -583,6 +593,7 @@ protected:
                 if (bucket_index == NO_BUCKET)
                     return;
                 store_results_before(bucket_index);
+                remove_out_of_window();
                 aggregator.add(run, bucketEnd(bucket_index));
             });
             store_results_before(NO_BUCKET);
