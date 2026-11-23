@@ -194,13 +194,10 @@ postprocessor	[1]
 postprocessor	[1]
 postprocessor	[1]
 1
--- A needle cut inside a UTF-8 character
-cut needle	[2,3]
-cut needle	[2,3]
-cut needle	[2,3]
-whole character	[2,3]
-whole character	[2,3]
-whole character	[2,3]
+-- A needle that is not valid UTF-8
+broken needle	[1]
+broken needle	[1]
+broken needle	[1]
 -- A map key the map does not hold
 absent key	[2]
 absent key	[2]

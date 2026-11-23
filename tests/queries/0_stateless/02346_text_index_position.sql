@@ -481,28 +481,24 @@ SELECT count() FROM (
 
 DROP TABLE tab;
 
-SELECT '-- A needle cut inside a UTF-8 character';
+SELECT '-- A needle that is not valid UTF-8';
 
 CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = asciiCJK)
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 1;
 
-INSERT INTO tab VALUES (1, 'hello world'), (2, 'x你好y'), (3, '你 hello');
+INSERT INTO tab VALUES (1, 'one two\xF0-x three four'), (2, 'one two three four');
 
--- The last two bytes of '你'.
-SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 0;
-SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
-SELECT 'cut needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '\xBD\xA0') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
-
-SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(message, '你') > 0 SETTINGS use_skip_indexes = 0;
-SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(message, '你') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
-SELECT 'whole character', arraySort(groupArray(id)) FROM tab WHERE position(message, '你') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+-- 0xF0 starts a 4-byte character: as a LIKE pattern, it takes '-x ' into the token 'two\xF0-x three', which the row does not have.
+SELECT 'broken needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'one two\xF0-x three four') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'broken needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'one two\xF0-x three four') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'broken needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'one two\xF0-x three four') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab;
 
