@@ -19,5 +19,11 @@
 2	2	2	SimpleAggregateFunction(sum, UInt64)
 1	2	1	2	1	1	1
 2	2	1	2	1	1	1
+3	1	1	1	1	1	1
+1	1	1
 1	1	1	1	1
 (true)	\N	('{"a":1}')	\N
+1	1
+2	1
+3	1
+[1,2]	\N

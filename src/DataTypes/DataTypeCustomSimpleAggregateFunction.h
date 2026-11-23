@@ -55,8 +55,9 @@ DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & funct
 DataTypePtr getSimpleAggregateFunctionStorageType(const DataTypePtr & type);
 
 /// `SimpleAggregateFunction(f, T)` -> `T`, nested layers too, but `UInt8` instead of `Bool` unless `isSimpleAggregateFunctionOfBool`
-/// holds for the outermost layer; any other type is returned unchanged.
-DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type);
+/// holds for the outermost layer or `from_type`, the type converted to `type`, is text: such a type converts numbers like
+/// `UInt8` but parses text like `Bool`. Any other type is returned unchanged.
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type, const DataTypePtr & from_type = nullptr);
 
 /// True for `SimpleAggregateFunction(f, Bool)` whose `f` returns `Bool`; such a type keeps `Bool` values under its own name.
 bool isSimpleAggregateFunctionOfBool(const IDataType & type);

@@ -299,14 +299,14 @@ struct ExpressionRenaming
 };
 
 /// Builds accurateCastOrNull(node, 'TypeName'): NULL for values that do not convert exactly,
-/// the result type is Nullable(target_type).
+/// the result type is Nullable(target_type), with the storage type of a `SimpleAggregateFunction`.
 const ActionsDAG::Node & addAccurateCastOrNull(
     ActionsDAG & dag,
     const ActionsDAG::Node & node,
     const DataTypePtr & target_type,
     const ContextPtr & query_context)
 {
-    auto type_name = target_type->getName();
+    auto type_name = removeSimpleAggregateFunction(target_type, node.result_type)->getName();
     auto type_name_column = DataTypeString().createColumnConst(0, type_name);
     /// The name is prefixed to avoid a collision with a column of the subplan header.
     const auto & type_name_node = dag.addColumn(std::move(type_name_column), std::make_shared<DataTypeString>(), "__correlated_cast_type_" + type_name);

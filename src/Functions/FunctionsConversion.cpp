@@ -1484,7 +1484,7 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
     /// nested target so the conversion assembles a consistent column; removeNullable() below strips it.
     const DataTypePtr nested_target_type
         = (cast_type == CastType::accurateOrNull && (isDynamic(from_nested_type) || isVariant(from_nested_type)))
-        ? makeNullable(to_nested_type)
+        ? makeNullable(getSimpleAggregateFunctionStorageType(to_nested_type))
         : to_nested_type;
 
     return [nested_function = prepareUnpackDictionaries(from_nested_type, nested_target_type),

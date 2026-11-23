@@ -56,6 +56,10 @@ SELECT m, if(k > 0, m, m), CASE WHEN k > 0 THEN m ELSE m END, toTypeName(if(k > 
 CREATE TABLE b (k UInt32, v SimpleAggregateFunction(sumWithOverflow, Bool), a SimpleAggregateFunction(any, Bool), s SimpleAggregateFunction(sumWithOverflow, SimpleAggregateFunction(any, Bool))) ENGINE = Memory;
 INSERT INTO b SELECT 1, toUInt16(2), toUInt16(2), toUInt16(2);
 INSERT INTO b SELECT 2, toNullable(toUInt16(2)), toNullable(toUInt16(2)), toNullable(toUInt16(2)) SETTINGS insert_null_as_default = 1;
+INSERT INTO b SELECT 3, toNullable('true'), toNullable('true'), toNullable('true') SETTINGS insert_null_as_default = 1;
 SELECT k, toUInt8(v), toUInt8(a), toUInt8(s), toUInt16(2) IN (SELECT v FROM b WHERE k = 1), toUInt16(2) IN (SELECT a FROM b WHERE k = 1), toUInt16(2) IN (SELECT s FROM b WHERE k = 1) FROM b ORDER BY k;
+SELECT 'true' IN (SELECT CAST(1, 'SimpleAggregateFunction(sumWithOverflow, Bool)')), toFixedString('true', 4) IN (SELECT CAST(1, 'SimpleAggregateFunction(groupBitOr, Bool)')), 'true' IN (SELECT s FROM b WHERE k = 3);
 SELECT tuple('true') IN (SELECT tuple(a) FROM b), tuple('true') IN (SELECT tuple(CAST(true, 'SimpleAggregateFunction(sumWithOverflow, Bool)'))), tuple('(2)') IN (SELECT tuple(CAST(tuple(2), 'SimpleAggregateFunction(any, Tuple(UInt64))'))), tuple('{"a":1}') IN (SELECT tuple(CAST('{"a":1}', 'SimpleAggregateFunction(any, JSON)'))), tuple(CAST('true' AS Variant(String, UInt64))) IN (SELECT tuple(a) FROM b);
 SELECT accurateCastOrNull(tuple('true'), 'Tuple(SimpleAggregateFunction(sumWithOverflow, Bool))'), accurateCastOrNull(tuple('x'), 'Tuple(SimpleAggregateFunction(any, Bool))'), accurateCastOrNull(tuple(map('a', 1)), 'Tuple(SimpleAggregateFunction(any, JSON))'), accurateCastOrNull(tuple('x'), 'Tuple(SimpleAggregateFunction(any, JSON))');
+SELECT k, (SELECT count() FROM numbers(5) WHERE number = b.v) FROM b ORDER BY k;
+SELECT accurateCastOrNull(CAST([1., 2.], 'Array(Dynamic)'), 'QBit(SimpleAggregateFunction(max, Float32), 2)'), accurateCastOrNull(CAST([1., 'a'], 'Array(Variant(Float64, String))'), 'QBit(SimpleAggregateFunction(max, Float32), 2)');

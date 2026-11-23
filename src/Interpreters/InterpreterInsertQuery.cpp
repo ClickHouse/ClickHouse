@@ -448,7 +448,8 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
                         col_idx,
                         ColumnWithTypeAndName(
                             makeNullableOrLowCardinalityNullable(query_columns[col_idx].column),
-                            makeNullableOrLowCardinalityNullable(removeSimpleAggregateFunction(query_columns[col_idx].type)),
+                            makeNullableOrLowCardinalityNullable(
+                                removeSimpleAggregateFunction(query_columns[col_idx].type, input_columns[col_idx].type)),
                             query_columns[col_idx].name));
                 }
             }

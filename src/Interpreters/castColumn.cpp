@@ -66,7 +66,7 @@ ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePt
 
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn(CastType::accurateOrNull, arg, removeSimpleAggregateFunction(type), cache);
+    return castColumn(CastType::accurateOrNull, arg, removeSimpleAggregateFunction(type, arg.type), cache);
 }
 
 ColumnPtr castColumnAccurateSkipNulls(

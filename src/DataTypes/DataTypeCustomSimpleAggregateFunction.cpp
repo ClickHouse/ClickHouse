@@ -211,10 +211,11 @@ DataTypePtr getSimpleAggregateFunctionStorageType(const DataTypePtr & type)
     return result;
 }
 
-DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type, const DataTypePtr & from_type)
 {
     DataTypePtr result = getSimpleAggregateFunctionStorageType(type);
-    if (result != type && isBool(result) && !isSimpleAggregateFunctionOfBool(*type))
+    if (result != type && isBool(result) && !isSimpleAggregateFunctionOfBool(*type)
+        && !(from_type && isStringOrFixedString(removeLowCardinalityAndNullable(from_type))))
         return std::make_shared<DataTypeUInt8>();
     return result;
 }

@@ -557,7 +557,7 @@ namespace
         if (!to_type_no_lc->canBeInsideNullable())
             return {};
 
-        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(removeSimpleAggregateFunction(to_type_no_lc)));
+        auto res = castColumnAccurateOrNull({col, from_type, std::string()}, makeNullable(removeSimpleAggregateFunction(to_type_no_lc, from_type)));
         if (res->onlyNull())
             return nullptr;
 
