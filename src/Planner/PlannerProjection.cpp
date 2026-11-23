@@ -136,7 +136,7 @@ void writeStoredName(const QueryTreeNodePtr & node, const ContextPtr & context, 
         /// analysis takes for the name of the query. This is not for a call that the analysis replaces
         /// with a call of other arguments (`count(*)`, `sum(1)`).
         const auto * written_function
-            = function_node->isAggregateFunction() && node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
+            = function_node->isAggregationCall() && node->hasOriginalAST() ? node->getOriginalAST()->as<ASTFunction>() : nullptr;
         bool has_written_name = written_function
             && (written_function->arguments ? written_function->arguments->children.size() : 0) == function_node->getArguments().getNodes().size();
         auto nulls_action = has_written_name ? written_function->getNullsAction() : function_node->getNullsAction();
@@ -280,7 +280,7 @@ bool collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNode
 {
     size_t size_before = result.size();
     const auto * function_node = node->as<FunctionNode>();
-    bool has_window_function = function_node && function_node->isWindowFunction();
+    bool has_window_function = function_node && function_node->isWindowCall();
     for (const auto & child : node->getChildren())
         if (child && !isQueryOrUnionNode(child))
             has_window_function |= collectExpressionsBeforeWindow(child, result);
