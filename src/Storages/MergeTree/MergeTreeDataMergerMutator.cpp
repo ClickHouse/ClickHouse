@@ -554,7 +554,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         if (entry_context->isBackgroundContext())
         {
             /// Latched, because a blocker released between two independent polls must not resurrect the read.
-            auto is_cancelled = [&blocker = merges_blocker,
+            auto merge_cancelled = [&blocker = merges_blocker,
                                  &ttl_blocker = ttl_merges_blocker,
                                  is_ttl_merge = isTTLMergeType(future_part->merge_type),
                                  merge_entry,
@@ -577,10 +577,10 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
 
             /// Installed before the first attach: `MergeTask::prepare` replaces it only at its end, after its first reads.
             (*merge_entry)->thread_group->setQueryCancellationPredicates(
-                is_cancelled,
-                [is_cancelled]
+                merge_cancelled,
+                [merge_cancelled]
                 {
-                    if (is_cancelled())
+                    if (merge_cancelled())
                         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
                 });
         }
