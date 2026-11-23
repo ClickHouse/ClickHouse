@@ -389,7 +389,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     };
 
     /// Flushed after every step, whether it returned rows or not: what a reader loaded is read all the same.
-    first_reader.getReader()->flushCompressedBlocksRead();
+    first_reader.getReader()->registerReadRanges();
 
     if (read_result.num_rows != 0)
     {
@@ -414,7 +414,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
-        range_readers[i].getReader()->flushCompressedBlocksRead();
+        range_readers[i].getReader()->registerReadRanges();
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
         /// It's also needed to properly advancing streams in later steps.
@@ -877,7 +877,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
 
         const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
         auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, main_block, last_read_patch);
-        patch_readers[i]->getReader()->flushCompressedBlocksRead();
+        patch_readers[i]->getReader()->registerReadRanges();
         patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }

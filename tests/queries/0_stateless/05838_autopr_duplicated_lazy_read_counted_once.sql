@@ -37,7 +37,8 @@ SYSTEM FLUSH LOGS query_log, text_log;
 
 -- The two halves load at most the blocks of the part that the read without lazy materialization loads, and may load
 -- fewer: the main half only the blocks of its columns, the lazy half only those of the top rows.
-WITH duplicated AS
+WITH anyIf(bytes, name = '05838_not_lazy') AS not_lazy, anyIf(bytes, name = '05838_lazy') AS lazy,
+duplicated AS
 (
     SELECT q.log_comment AS name, toUInt64(extract(t.message, 'duplicated bytes=(\\d+)')) AS bytes
     FROM system.text_log AS t
@@ -47,11 +48,7 @@ WITH duplicated AS
         AND t.event_date >= yesterday() AND t.message LIKE 'Collected statistics:%'
 )
 SELECT not_lazy > 0 AND lazy > 0 AND lazy <= not_lazy * 1.1 AS counted_once
-FROM
-(
-    SELECT anyIf(bytes, name = '05838_not_lazy') AS not_lazy, anyIf(bytes, name = '05838_lazy') AS lazy
-    FROM duplicated
-);
+FROM duplicated;
 
 DROP TABLE t_probe;
 DROP TABLE t_build;

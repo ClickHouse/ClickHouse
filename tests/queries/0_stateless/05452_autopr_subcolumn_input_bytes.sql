@@ -71,13 +71,10 @@ SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Compact parts compress each column apart (`compress_per_column_in_compact_parts`): with blocks shared by the
--- columns, reading one of them loads the others too.
--- The bytes on disk of what each query reads: `key`, plus the stream of `s.size` if it has one and all of `s`
--- otherwise, or the offsets `n.size0` that `n.a` and `n.b` share. The compact tables report no per-column sizes;
--- they hold the same rows as `t_wide` and `t_nested`, and so does the renamed table, whose part is still the one
--- written for `t_wide`'s columns. A stream read by several columns is charged once.
-WITH on_disk AS
+-- The bytes on disk of what each query reads: `key`, plus the stream of `s.size` if it has one and all of `s` otherwise,
+-- or the offsets `n.size0`. The compact and renamed tables have the same rows as `t_wide` and are compared with its sizes.
+WITH if(log_comment IN ('05452_nested_shared_stream', '05452_wide_single_stream_full_and_size'), 1.25, 2) AS tolerance,
+on_disk AS
 (
     SELECT table, sum(multiIf(
         column = 'key', column_data_compressed_bytes,
@@ -89,11 +86,8 @@ WITH on_disk AS
     WHERE database = currentDatabase() AND active AND table IN ('t_wide', 't_wide_single_stream', 't_nested')
     GROUP BY table
 )
-SELECT log_comment, input_bytes_match_disk FROM
-(
 SELECT
     log_comment,
-    if(log_comment IN ('05452_nested_shared_stream', '05452_wide_single_stream_full_and_size'), 1.25, 2) AS tolerance,
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] BETWEEN on_disk.bytes / tolerance AND on_disk.bytes * tolerance AS input_bytes_match_disk
 FROM system.query_log
 JOIN on_disk ON on_disk.table = multiIf(
@@ -104,7 +98,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND
     AND log_comment IN ('05452_wide', '05452_wide_single_stream', '05452_compact', '05452_renamed',
         '05452_nested_shared_stream', '05452_wide_single_stream_full_and_size')
     AND type = 'QueryFinish'
-)
 ORDER BY log_comment;
 
 -- A compact part reports no per-column sizes, and keeps the offsets of each array of a `Nested` apart: what it reads
@@ -147,9 +140,7 @@ DROP TABLE IF EXISTS t_skew_compact;
 CREATE TABLE t_skew_wide (key UInt64, flag UInt8, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1,
     index_granularity = 8192, index_granularity_bytes = '10Mi';
-CREATE TABLE t_skew_compact (key UInt64, flag UInt8, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1,
-    index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE t_skew_compact AS t_skew_wide SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1;
 
 INSERT INTO t_skew_wide SELECT number, number < 1000, if(number < 1000, repeat('x', 1024), '') FROM numbers(2e5);
 INSERT INTO t_skew_compact SELECT * FROM t_skew_wide;
@@ -168,9 +159,7 @@ DROP TABLE IF EXISTS t_one_block_compact;
 CREATE TABLE t_one_block_wide (key String, value UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = '10Mi', max_compress_block_size = '10Mi',
     index_granularity = 128, index_granularity_bytes = '10Mi';
-CREATE TABLE t_one_block_compact (key String, value UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, min_compress_block_size = '10Mi',
-    max_compress_block_size = '10Mi', index_granularity = 128, index_granularity_bytes = '10Mi';
+CREATE TABLE t_one_block_compact AS t_one_block_wide SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
 INSERT INTO t_one_block_wide SELECT toString(number), number FROM numbers(1e4);
 INSERT INTO t_one_block_compact SELECT * FROM t_one_block_wide;
 

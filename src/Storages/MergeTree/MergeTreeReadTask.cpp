@@ -88,16 +88,6 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
-void MergeTreeReadTask::Readers::countCompressedBytesRead(const CountedCompressedBlocksPtr & counted)
-{
-    main->countCompressedBytesRead(counted);
-    for (auto & reader : prewhere)
-        reader->countCompressedBytesRead(counted);
-    /// A replica reading the same granules reads their patches too.
-    for (auto & patch : patches)
-        patch->getReader()->countCompressedBytesRead(counted);
-}
-
 void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
 {
     main->updateReadRequestMap(request_map);
@@ -129,7 +119,15 @@ MergeTreeReadTask::MergeTreeReadTask(
     , updater(std::move(updater_))
 {
     if (updater)
-        readers.countCompressedBytesRead(updater->getCountedCompressedBlocks());
+    {
+        const auto & registry = updater->getReadRangesRegistry();
+        readers.main->setReadRangesRegistry(registry);
+        for (auto & reader : readers.prewhere)
+            reader->setReadRangesRegistry(registry);
+        /// A replica reading the same granules reads their patches too.
+        for (auto & patch : readers.patches)
+            patch->getReader()->setReadRangesRegistry(registry);
+    }
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.

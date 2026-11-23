@@ -453,6 +453,8 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         settings,
         /*expected_buffer_size=*/ std::nullopt,
         /*use_page_cache_lookahead=*/ false);
+    if (read_ranges_registry)
+        positions_stream->setRangesReadSink(&positions_ranges_read.ranges);
 
     positions_stream->seekToStart();
 }
@@ -647,17 +649,73 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
     }
 }
 
-std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info) const
+std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makePostingsStream(const TokenPostingsInfo & token_info)
 {
     /// use_page_cache_lookahead: a cursor can skip segments forward (`getPostingsStream`),
     /// and a whole-list read drops the stream at the end of the list (`readAllPostingsForToken`).
-    return makeTextIndexInputStream(
+    auto stream = makeTextIndexInputStream(
         *data_part_info_for_read,
         index_read_task.index.index->getFileName(),
         index_read_task.index.index->getSubstreams()[2],
         settings,
         estimatePostingListBufferSize(token_info),
         /*use_page_cache_lookahead=*/ false);
+    if (read_ranges_registry)
+        stream->setRangesReadSink(&postings_ranges_read.ranges);
+    return stream;
+}
+
+void MergeTreeReaderTextIndex::setReadRangesRegistry(ReadRangesRegistryPtr registry)
+{
+    if (fallback_reader)
+        fallback_reader->setReadRangesRegistry(registry);
+    IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    if (!read_ranges_registry)
+        return;
+    /// The streams created later get their sink when they are created.
+    for (auto & [_, stream] : postings_streams)
+        stream->setRangesReadSink(&postings_ranges_read.ranges);
+    if (positions_stream)
+        positions_stream->setRangesReadSink(&positions_ranges_read.ranges);
+}
+
+void MergeTreeReaderTextIndex::registerReadRanges()
+{
+    if (fallback_reader)
+        fallback_reader->registerReadRanges();
+    if (!read_ranges_registry)
+        return;
+
+    for (auto & [_, stream] : postings_streams)
+        stream->recordBytesConsumed();
+    if (positions_stream)
+        positions_stream->recordBytesConsumed();
+
+    ReadRangesRegistry::Batch batch;
+    auto register_file = [&](FileRangesRead & file, std::string_view kind)
+    {
+        if (file.ranges.empty())
+            return;
+        if (!file.read_ranges)
+            file.read_ranges = &read_ranges_registry->getReadRanges(fmt::format(
+                "{}/{}.{}", data_part_info_for_read->getDataPartStorage()->getFullPath(), index_read_task.index.index->getFileName(), kind));
+        read_ranges_registry->registerRanges(batch, *file.read_ranges, file.ranges);
+    };
+    register_file(postings_ranges_read, "postings");
+    register_file(positions_ranges_read, "positions");
+    read_ranges_registry->commit(batch);
+
+    if (read_ranges_registry->stopped())
+    {
+        /// The streams created later get no sink either.
+        for (auto & [_, stream] : postings_streams)
+            stream->setRangesReadSink(nullptr);
+        if (positions_stream)
+            positions_stream->setRangesReadSink(nullptr);
+        postings_ranges_read = {};
+        positions_ranges_read = {};
+        read_ranges_registry.reset();
+    }
 }
 
 MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info)
@@ -1046,7 +1104,7 @@ struct PhraseSearchStats
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + decode_us);
         ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
-        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, ranges_read);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
         ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, bytes_read);
     }
@@ -1056,7 +1114,7 @@ struct PhraseSearchStats
     UInt64 directory_us = 0;
     UInt64 decode_us = 0;
     UInt64 match_us = 0;
-    size_t blocks_read = 0;
+    size_t ranges_read = 0;
     size_t blocks_total = 0;
     UInt64 bytes_read = 0;
 };
@@ -1140,7 +1198,7 @@ private:
                     stats.bytes_read += block_bytes;
                 }
                 parsed_blocks[u] = block_idx;
-                ++stats.blocks_read;
+                ++stats.ranges_read;
             }
 
             const auto & doc_offsets = scratches[u].doc_offsets;
@@ -1219,6 +1277,7 @@ std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(co
 
                 stream->seekToMark({token_info.offsets[0], 0});
                 postings_serialization->deserializeToArray(*stream->getDataBuffer(), token_info, 0, *docs);
+                stream->recordBytesConsumed();
             }
             cursors.push_back(std::make_shared<PostingListCursor>(std::move(docs)));
         }

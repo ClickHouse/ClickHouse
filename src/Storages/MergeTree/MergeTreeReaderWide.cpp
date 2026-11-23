@@ -37,14 +37,6 @@ namespace FailPoints
 namespace
 {
     constexpr auto DATA_FILE_EXTENSION = ".bin";
-
-    /// The streams of these columns are known only after reading the serialization prefixes:
-    /// the structure of dynamic types and the number of buckets of non-basic `Map`s are stored there.
-    bool streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
-    {
-        return column.getTypeInStorage()->hasDynamicStructure()
-            || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
-    }
 }
 
 namespace ErrorCodes
@@ -1178,27 +1170,39 @@ CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream
     return ranges_read[stream_name].ranges;
 }
 
-void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+void MergeTreeReaderWide::setReadRangesRegistry(ReadRangesRegistryPtr registry)
 {
-    IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+    IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    if (!read_ranges_registry)
+        return;
     /// The streams created later get their sink in `getOrAddStream`.
-    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
+    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setRangesReadSink(&getRangesRead(stream_name)); });
 }
 
-void MergeTreeReaderWide::flushCompressedBlocksRead()
+void MergeTreeReaderWide::registerReadRanges()
 {
-    if (!counted_compressed_blocks)
+    if (!read_ranges_registry)
         return;
 
+    ReadRangesRegistry::Batch batch;
     std::lock_guard lock(ranges_read_mutex);
     for (auto & [stream_name, stream_ranges] : ranges_read)
     {
         if (stream_ranges.ranges.empty())
             continue;
-        if (!stream_ranges.counted)
-            stream_ranges.counted = &counted_compressed_blocks->getCountedRanges(
+        if (!stream_ranges.read_ranges)
+            stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-        counted_compressed_blocks->count(*stream_ranges.counted, stream_ranges.ranges);
+        read_ranges_registry->registerRanges(batch, *stream_ranges.read_ranges, stream_ranges.ranges);
+    }
+    read_ranges_registry->commit(batch);
+
+    if (read_ranges_registry->stopped())
+    {
+        /// The streams created later get no sink either.
+        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setRangesReadSink(nullptr); });
+        ranges_read.clear();
+        read_ranges_registry.reset();
     }
 }
 
@@ -1262,8 +1266,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
-            if (counted_compressed_blocks)
-                stream->setBlocksReadSink(&getRangesRead(stream_name));
+            if (read_ranges_registry)
+                stream->setRangesReadSink(&getRangesRead(stream_name));
             return stream;
         };
 
@@ -1671,6 +1675,12 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+}
+
+bool MergeTreeReaderWide::streamsDependOnPrefixes(const NameAndTypePair & column, const SerializationInfoByName & infos)
+{
+    return column.getTypeInStorage()->hasDynamicStructure()
+        || infos.getSettings().map_serialization_version != MergeTreeMapSerializationVersion::BASIC;
 }
 
 std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()

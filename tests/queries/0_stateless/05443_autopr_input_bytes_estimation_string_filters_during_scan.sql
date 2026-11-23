@@ -9,8 +9,7 @@
 
 SET use_uncompressed_cache=0;
 
--- A read served from the columns cache records no statistics, and lowers `ReadCompressedBytes` below the
--- estimate for every query after the first one.
+-- A reader that writes to the columns cache reads the values whole, without the filter.
 SET use_columns_cache=0;
 
 -- The query condition cache would skip the granules without matches on the second run.
@@ -36,8 +35,7 @@ DROP TABLE IF EXISTS t_compact_small_blocks;
 CREATE TABLE t_wide(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
 
-CREATE TABLE t_compact(id UInt64, s String) ENGINE=MergeTree ORDER BY id
-SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
+CREATE TABLE t_compact AS t_wide SETTINGS min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
 
 -- Only the column that is read counts, here the column that is not read compresses much worse than the one that is.
 -- The columns are compressed separately, otherwise reading one of them reads the other one as well.
@@ -52,8 +50,7 @@ INSERT INTO t_compact_unread_incompressible SELECT id, concat(if(id % 100 = 0, '
 
 -- A compact part is read in whole granules, so a block can have many more rows than requested: here a granule of
 -- 8192 rows is read for a block of 1 row. Only the first row matches, and the replaced values do not compress at all.
-CREATE TABLE t_compact_small_blocks(id UInt64, s String) ENGINE=MergeTree ORDER BY id
-SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes='10Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+CREATE TABLE t_compact_small_blocks AS t_wide SETTINGS index_granularity_bytes='10Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_small_blocks SELECT number, if(number = 0, 'needle', concat(
     reinterpretAsString(cityHash64(number)), reinterpretAsString(cityHash64(number, 1)), reinterpretAsString(cityHash64(number, 2)), reinterpretAsString(cityHash64(number, 3)), reinterpretAsString(cityHash64(number, 4)),
     reinterpretAsString(cityHash64(number, 5)), reinterpretAsString(cityHash64(number, 6)), reinterpretAsString(cityHash64(number, 7)), reinterpretAsString(cityHash64(number, 8)), reinterpretAsString(cityHash64(number, 9))))
