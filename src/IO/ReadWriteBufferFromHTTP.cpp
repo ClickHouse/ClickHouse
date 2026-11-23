@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 ReadInterruptedException::ReadInterruptedException(std::exception_ptr original_exception_)
@@ -239,7 +240,8 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     HTTPHeaderEntries http_header_entries_,
     RedirectCallback redirect_callback_,
     bool delay_initialization,
-    std::optional<HTTPFileInfo> file_info_)
+    std::optional<HTTPFileInfo> file_info_,
+    String expected_etag_)
     : SeekableReadBuffer(nullptr, 0)
     , connection_group(connection_group_)
     , initial_uri(uri_)
@@ -259,6 +261,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
+    , expected_etag(std::move(expected_etag_))
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
     , cancellation(std::move(cancellation_))
@@ -336,6 +339,24 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
     assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects, requestCredentialSecrets(request));
+
+    /// Each request (a retry, a seek, `readBigAt`) can get another generation of the resource. A response without
+    /// an `ETag` cannot be checked, so it fails as well.
+    if (!expected_etag.empty() && !isRedirect(response.getStatus()))
+    {
+        if (redirects > 0)
+            throw Exception(
+                ErrorCodes::FILE_CHANGED_DURING_READ,
+                "The resource {} was changed during the read (it is redirected to {}, expected ETag {}); retry the query",
+                maskedURI(initial_uri), maskedURI(current_uri), expected_etag);
+
+        const String response_etag = response.get("ETag", "");
+        if (response_etag != expected_etag)
+            throw Exception(
+                ErrorCodes::FILE_CHANGED_DURING_READ,
+                "The resource {} was changed during the read (expected ETag {}, the response has ETag {}); retry the query",
+                maskedURI(current_uri), expected_etag, response_etag.empty() ? "<none>" : response_etag);
+    }
 
     return response_body;
 }
@@ -431,6 +452,17 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             callable();
             return;
         }
+        catch (Poco::Net::MalformedMessageException & e)
+        {
+            /// The server has sent a response that violates the protocol, e.g. a bare CR inside a
+            /// header field. It will send the same response again. A response cut short is
+            /// `MessageException` and is retried. A header that exceeds a limit is reported as
+            /// `LIMIT_EXCEEDED` by `receiveHTTPResponse` and is not retried either.
+            is_retriable = false;
+
+            error_message = e.displayText();
+            exception = std::current_exception();
+        }
         catch (Poco::Net::NetException & e)
         {
             error_message = e.displayText();
@@ -451,6 +483,14 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (Exception & e)
         {
+            is_retriable = false;
+
+            error_message = e.displayText();
+            exception = std::current_exception();
+        }
+        catch (Poco::SyntaxException & e)
+        {
+            /// E.g. a status code that is not a number, or a malformed redirect location.
             is_retriable = false;
 
             error_message = e.displayText();
@@ -507,16 +547,17 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             if (on_retry)
                 on_retry();
 
-            if (!mute_logging)
-                LOG_TRACE(log,
-                         "Failed to make request to '{}'{}. "
-                         "Error: {}. "
-                         "Failed at try {}/{}. "
-                         "Will retry with current backoff wait is {}/{} ms.",
-                         maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
-                         error_message,
-                         attempt + 1, read_settings.http_settings.max_tries,
-                         milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
+            /// The retries are logged even for a request whose final error is muted: they can take
+            /// minutes, and the user must see what the query is waiting for.
+            LOG_TRACE(log,
+                     "Failed to make request to '{}'{}. "
+                     "Error: {}. "
+                     "Failed at try {}/{}. "
+                     "Will retry with current backoff wait is {}/{} ms.",
+                     maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
+                     error_message,
+                     attempt, read_settings.http_settings.max_tries,
+                     milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
 
             const bool cancelled = waitBeforeRetry(milliseconds_to_wait);
             milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
@@ -1140,7 +1181,8 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         header_entries,
         redirect_callback,
         delay_initialization,
-        /*file_info_=*/ std::nullopt));
+        /*file_info_=*/ std::nullopt,
+        expected_etag));
     return ptr;
 }
 

@@ -434,8 +434,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys
-    /// and enable the shared kept-keys cutoff, which keeps the aggregate values of the kept keys
+    /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys.
+    /// With aggregate functions, enable the shared kept-keys cutoff, which keeps the values of the kept keys
     /// exact under parallel aggregation (see `Aggregator::Params::shared_kept_keys_for_overflow_any`).
     /// External aggregation stays configured as usual: before the kept keys are frozen a spill
     /// abandons the cutoff, and after the freeze a table already rebuilt to the kept keys still
@@ -457,7 +457,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys)
         aggregator_params.empty_result_for_aggregation_by_empty_set = true;
 
-    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
+    aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value() && !aggregate_descriptions.empty();
 
     return aggregator_params;
 }
@@ -552,8 +552,8 @@ void applyTopKPushdownToPartialAggregation(
     const auto * before_order_by_dag
         = expression_analysis_result.hasSort() ? &expression_analysis_result.getSort().before_order_by_actions->dag : nullptr;
 
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
+    VectorWithMemoryTracking<int> directions;
+    VectorWithMemoryTracking<int> nulls_directions;
     directions.reserve(sort_description.size());
     nulls_directions.reserve(sort_description.size());
 
@@ -1792,6 +1792,7 @@ void addWindowSteps(QueryPlan & query_plan,
                 0 /*limit*/,
                 sort_settings);
             sorting_step->setStepDescription("Sorting for window '" + window_description.window_name + "'", max_step_description_length);
+            sorting_step->setWindowSorting();
             query_plan.addStep(std::move(sorting_step));
         }
 

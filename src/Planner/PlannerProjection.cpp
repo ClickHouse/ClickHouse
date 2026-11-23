@@ -13,7 +13,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -143,8 +142,8 @@ void writeStoredName(const QueryTreeNodePtr & node, const ContextPtr & context, 
         auto nulls_action = has_written_name ? written_function->getNullsAction() : function_node->getNullsAction();
 
         if (has_written_name)
-            out << getAggregateFunctionCanonicalNameIfAny(
-                QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(written_function->name, nulls_action, context));
+            out << getAggregateFunctionCanonicalNameIfAny(QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
+                written_function->name, nulls_action, function_node->getArgumentTypes(), function_node->getAggregateFunction()->getParameters(), context));
         else
             out << function_node->getFunctionName();
         if (!function_node->getParameters().getNodes().empty())
@@ -276,19 +275,26 @@ void collectSourceColumnNodes(const QueryTreeNodePtr & node, const QueryTreeNode
 
 
 /// a projection stores what a window function reads, not its result
-void collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNodes & result)
+/// returns true if the node has a window function
+bool collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNodes & result)
 {
+    size_t size_before = result.size();
+    const auto * function_node = node->as<FunctionNode>();
+    bool has_window_function = function_node && function_node->isWindowFunction();
+    for (const auto & child : node->getChildren())
+        if (child && !isQueryOrUnionNode(child))
+            has_window_function |= collectExpressionsBeforeWindow(child, result);
+
     auto node_type = node->getNodeType();
     bool is_expression = node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT;
-    if (is_expression && !hasWindowFunctionNodes(node))
+    if (is_expression && !has_window_function)
     {
+        /// the part stores the expression, not its arguments
+        result.resize(size_before);
         result.push_back(node);
-        return;
     }
 
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectExpressionsBeforeWindow(child, result);
+    return has_window_function;
 }
 
 }
@@ -485,11 +491,10 @@ QueryPlan ProjectionPlanner::buildPlanForSource(Block source)
         auto filter_column_name = filter_dag.getOutputs().front()->result_name;
         /// the next step reads the source columns again, so the filter keeps the columns that it reads
         for (const auto * input : filter_dag.getInputs())
-            if (input->result_name != filter_column_name)
-                filter_dag.getOutputs().push_back(input);
+            filter_dag.getOutputs().push_back(input);
 
         plan.addStep(std::make_unique<FilterStep>(
-            plan.getCurrentHeader(), std::move(filter_dag), filter_column_name, /*remove_filter_column_=*/false));
+            plan.getCurrentHeader(), std::move(filter_dag), filter_column_name, /*remove_filter_column_=*/true));
     }
 
     return plan;

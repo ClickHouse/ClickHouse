@@ -1,5 +1,8 @@
 -- a column of the table can have the name that the planner gives to another column
 
+-- parallel replicas can reject a forced projection, and they do not read a column that has such a name
+SET enable_parallel_replicas = 0;
+
 DROP TABLE IF EXISTS t_projection_identifier_name;
 
 CREATE TABLE t_projection_identifier_name

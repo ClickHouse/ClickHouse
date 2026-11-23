@@ -60,7 +60,7 @@ namespace
 /// (this is what makes the pushdown useful: `event_date` and the times prune partitions and ranges
 /// of the backing table) and the scalar identity columns. Comparing any of them with a constant
 /// cannot fail per row.
-const std::unordered_set<std::string_view> pushable_columns
+[[clang::no_destroy]] const std::unordered_set<std::string_view> pushable_columns
 {
     "type",
     "event_date",
@@ -79,7 +79,7 @@ const std::unordered_set<std::string_view> pushable_columns
 
 /// The functions that may appear in a pushed-down predicate: logical connectives and comparisons.
 /// They never throw depending on the value of an argument row.
-const std::unordered_set<std::string_view> pushable_functions
+[[clang::no_destroy]] const std::unordered_set<std::string_view> pushable_functions
 {
     "and",
     "or",
@@ -99,7 +99,7 @@ const std::unordered_set<std::string_view> pushable_functions
 /// The pattern argument of the LIKE family is compiled once only when it is constant. A pattern
 /// coming from a cell would be compiled per row, and a malformed pattern (e.g. a trailing escape)
 /// throws, which would make it an error-based oracle on other users' rows.
-const std::unordered_set<std::string_view> functions_with_constant_second_argument
+[[clang::no_destroy]] const std::unordered_set<std::string_view> functions_with_constant_second_argument
 {
     "like",
     "notLike",

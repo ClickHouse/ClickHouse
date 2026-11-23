@@ -39,6 +39,7 @@ public:
     ActionsDAG buildBeforeAggregationActions(ActionsDAG::NodeRawConstPtrs & stored_keys);
 
     /// the plan that calculates a normal projection with WHERE from a block of the source columns
+    /// the plan does not sort the rows: the writer of the part sorts them by the sorting key of the projection
     QueryPlan buildPlanForNormalProjection(Block source);
 
     /// the plan that calculates the aggregate states of an aggregate projection from a block of the source columns
