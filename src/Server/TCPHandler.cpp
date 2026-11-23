@@ -624,6 +624,9 @@ void TCPHandler::runImpl()
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
+        /// Failed setup can retain a context above its limit until `query_state` is destroyed.
+        /// Enable this only on failure, keeping error capture, delivery and cleanup non-throwing for memory limits.
+        std::optional<LockMemoryExceptionInThread> exception_memory_lock;
         std::unique_ptr<DB::Exception> exception;
 
         SCOPE_EXIT({
@@ -1154,10 +1157,12 @@ void TCPHandler::runImpl()
         }
         catch (const Exception & e)
         {
+            exception_memory_lock.emplace(VariableContext::Global);
             exception.reset(e.clone());
         }
         catch (const Poco::Exception & e)
         {
+            exception_memory_lock.emplace(VariableContext::Global);
             exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
 // Server should die on std logic errors in debug, like with chassert()
@@ -1165,6 +1170,7 @@ void TCPHandler::runImpl()
 #ifdef DEBUG_OR_SANITIZER_BUILD
         catch (const std::logic_error & e)
         {
+            exception_memory_lock.emplace(VariableContext::Global);
             tryLogCurrentException(log);
             if (query_state)
                 query_state->io.onException();
@@ -1175,10 +1181,12 @@ void TCPHandler::runImpl()
 #endif
         catch (const std::exception & e)
         {
+            exception_memory_lock.emplace(VariableContext::Global);
             exception = std::make_unique<DB::Exception>(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
+            exception_memory_lock.emplace(VariableContext::Global);
             exception = std::make_unique<DB::Exception>(getCurrentExceptionMessageAndPattern(false), ErrorCodes::UNKNOWN_EXCEPTION);
         }
 
