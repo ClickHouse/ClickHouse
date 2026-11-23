@@ -2,6 +2,7 @@
 #include <memory>
 
 #include <filesystem>
+#include <unordered_set>
 
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -1597,8 +1598,15 @@ namespace
             return;
         }
 
+        /// A later occurrence of a repeated source setting replaces the earlier one, as it does in the source table.
+        std::unordered_set<String> explicit_names;
+        for (const auto & change : storage.settings->changes)
+            explicit_names.insert(change.name);
         for (const auto & change : source_settings->changes)
-            storage.settings->changes.insertSetting(change.name, change.value);
+        {
+            if (!explicit_names.contains(change.name))
+                storage.settings->changes.setSetting(change);
+        }
     }
 
     /// Inherit the storage definition of the source table (in `CREATE TABLE x AS y <storage_clauses>` without
