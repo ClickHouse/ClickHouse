@@ -27,7 +27,7 @@ namespace Poco {
 namespace XML {
 
 
-const XMLString AbstractContainerNode::WILDCARD(toXMLString("*"));
+[[clang::no_destroy]] const XMLString AbstractContainerNode::WILDCARD(toXMLString("*"));
 
 
 AbstractContainerNode::AbstractContainerNode(Document* pOwnerDocument):
@@ -428,7 +428,7 @@ const Node* AbstractContainerNode::findNode(XMLString::const_iterator& it, const
 				Poco::UnicodeConverter::convert(xmlIndex, index);
 				int i = Poco::NumberParser::parse(index);
 #else
-				int i = Poco::NumberParser::parse(xmlIndex);
+				int i = Poco::NumberParser::parse(fromXMLString(xmlIndex));
 #endif
 				indexBound = true;
 				bool ib;

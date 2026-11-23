@@ -212,22 +212,22 @@ struct AlterCommand
 
     /// Determines whether this command requires a mutation and identifies every setting
     /// that enables a matching lazy metadata conversion.
-    MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    [[nodiscard]] MutationStageDecision getMutationStageDecision(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
     /// Checks that only settings changed by alter
-    bool isSettingsAlter() const;
+    [[nodiscard]] bool isSettingsAlter() const;
 
     /// Checks that only comment changed by alter
-    bool isCommentAlter() const;
+    [[nodiscard]] bool isCommentAlter() const;
 
     /// Checks that any TTL changed by alter
-    bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
+    [[nodiscard]] bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
 
     /// Command removing some property from column or table
-    bool isRemovingProperty() const;
+    [[nodiscard]] bool isRemovingProperty() const;
 
     /// Checks that command will drop something or rename column.
-    bool isDropOrRename() const;
+    [[nodiscard]] bool isDropOrRename() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -268,17 +268,20 @@ public:
         const MergeTreeSettings * settings_defaults = nullptr,
         std::vector<std::pair<int, String>> * secondary_index_errors = nullptr) const;
 
+    /// Indices the commands actually add: `ADD INDEX IF NOT EXISTS` of an existing name adds nothing.
+    [[nodiscard]] NameSet getAddedIndexNames(const IndicesDescription & existing) const;
+
     /// At least one command modify settings or comments.
-    bool hasNonReplicatedAlterCommand() const;
+    [[nodiscard]] bool hasNonReplicatedAlterCommand() const;
 
     /// All commands modify settings or comments.
-    bool areNonReplicatedAlterCommands() const;
+    [[nodiscard]] bool areNonReplicatedAlterCommands() const;
 
     /// All commands modify settings only.
-    bool isSettingsAlter() const;
+    [[nodiscard]] bool isSettingsAlter() const;
 
     /// All commands modify comments only.
-    bool isCommentAlter() const;
+    [[nodiscard]] bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of
     /// alter. If alter can be performed as pure metadata update, than result is
@@ -287,7 +290,7 @@ public:
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
     /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    [[nodiscard]] MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
