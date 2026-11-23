@@ -105,7 +105,7 @@ DROP TABLE ju;
 SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'Bool')), toUInt8(JSONExtract('{"a":2}', 'a', 'SimpleAggregateFunction(any, Bool)'));
 SELECT toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(Bool)')), toUInt8(JSONExtract('{"a":2}', 'a', 'LowCardinality(SimpleAggregateFunction(any, Bool))'));
 
--- An INSERT from UInt8 stores 2 as is; the correlated equality must not depend on the substitution.
+-- An INSERT from UInt8 stores 2 as 1; the correlated equality must not depend on the substitution.
 SELECT 'correlated';
 DROP TABLE IF EXISTS ov;
 DROP TABLE IF EXISTS i8;

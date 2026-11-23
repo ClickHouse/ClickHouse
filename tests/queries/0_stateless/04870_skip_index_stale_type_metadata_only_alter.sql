@@ -3,8 +3,8 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 13-18 of the series started in 04165_skip_index_stale_type_after_alter: metadata-only ALTERs
--- where no mutation is ever created and only an attribute of the type changes. One test exceeded the
+-- Cases 13-18 of the series started in 04165_skip_index_stale_type_after_alter: ALTERs where only an
+-- attribute of the type changes, metadata-only except case 17 (UInt8 -> Bool). One test exceeded the
 -- flaky-check runtime limit under sanitizers, so the series is split, keeping the original case
 -- numbering.
 
@@ -121,8 +121,7 @@ ALTER TABLE t_keep_agg MODIFY COLUMN v AggregateFunction(max, DateTime('UTC'));
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_agg WHERE toHour(finalizeAggregation(v)) = 5) WHERE explain ILIKE '%Granules: 3/16%';
 
 SELECT '-- 17. custom type name over the same underlying type: UInt8 -> Bool';
--- Bool is a custom name plus a custom serialization over DataTypeNumber<UInt8>, whose equals()
--- compares only typeid, so this ALTER is metadata-only while toString(v) changes '1' to 'true'.
+-- UInt8 -> Bool is a rewriting conversion, so the ALTER creates a mutation, left pending by STOP MERGES.
 DROP TABLE IF EXISTS t_stale_bool;
 CREATE TABLE t_stale_bool (k UInt64, v UInt8, INDEX idx toString(v) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
@@ -132,8 +131,7 @@ ALTER TABLE t_stale_bool MODIFY COLUMN v Bool;
 SELECT count() FROM system.mutations WHERE table = 't_stale_bool' AND database = currentDatabase();
 SELECT count() FROM t_stale_bool WHERE toString(v) = 'true' SETTINGS use_query_condition_cache = 0;
 SELECT count() FROM t_stale_bool WHERE toString(v) = 'true' SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0;
--- Over-fire control: a granule over the bare column holds the raw byte, which the custom name does
--- not alter, so a simple single-column index must keep pruning. Same asymmetry as case 14.
+-- The pending part is converted on read, so its granules over the bare column are not used either.
 DROP TABLE IF EXISTS t_keep_bool;
 CREATE TABLE t_keep_bool (k UInt64, v UInt8, INDEX idx v TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
