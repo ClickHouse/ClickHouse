@@ -80,7 +80,7 @@ private:
 
 
     const Aws::String endpoint;
-    mutable Silk::FiberMutex token_mutex;
+    mutable std::mutex token_mutex;
     mutable Aws::String token;
     LoggerPtr logger;
 };
@@ -135,7 +135,7 @@ private:
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;
     Int64 load_frequency_ms;
     LoggerPtr logger;
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 };
 
 class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -381,7 +381,7 @@ private:
     std::shared_ptr<AWSAssumeRoleClient> client;
     Aws::Auth::AWSCredentials credentials;
     LoggerPtr logger;
-    Silk::FiberMutex get_aws_credentials_mutex;
+    std::mutex get_aws_credentials_mutex;
 };
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
