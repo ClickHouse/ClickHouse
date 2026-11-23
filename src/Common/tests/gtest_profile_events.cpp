@@ -450,14 +450,19 @@ TEST(ProfileEvents, ColdTimerPreparesBeforeCleanup)
     ProfileEvents::Counters counters(VariableContext::Thread, &parent);
     std::optional<ProfileEvents::Timer> timer;
     timer.emplace(counters, event, ProfileEvents::Timer::Resolution::Nanoseconds);
+    bool cleaned_up_during_unwind = false;
     EXPECT_THROW(
         {
-            DENY_ALLOCATIONS_IN_SCOPE;
-            SCOPE_EXIT({ timer.reset(); });
-            /// A default-constructed exception avoids allocating an exception message.
+            SCOPE_EXIT({
+                DENY_ALLOCATIONS_IN_SCOPE;
+                cleaned_up_during_unwind = std::uncaught_exceptions() > 0;
+                timer.reset();
+            });
+            /// Throwing allocates the exception object; only timer cleanup must avoid allocation.
             throw std::exception{};
         },
         std::exception);
+    EXPECT_TRUE(cleaned_up_during_unwind);
     EXPECT_GT(counters[event], 0);
     EXPECT_EQ(counters[event], parent[event]);
 }
