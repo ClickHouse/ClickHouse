@@ -48,8 +48,6 @@ OK
 OK
 -- granted alias column
 OK
--- dictionary identifier
-OK
 -- not granted column
 ACCESS_DENIED SELECT(restricted)
 -- not granted virtual column
@@ -63,6 +61,8 @@ ACCESS_DENIED SELECT(tup.b)
 -- quoted dotted column
 OK
 -- full access
+OK
+-- dictionary identifier
 OK
 -- full access, read
 F-S1
@@ -89,8 +89,8 @@ ok_default2
 c_lambda
 c_field
 c_pub
-c_dict
 p_virtual
 s_a
 d_quoted
 f
+c_dict

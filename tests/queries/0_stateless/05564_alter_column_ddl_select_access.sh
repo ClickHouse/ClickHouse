@@ -100,7 +100,6 @@ check "${U_PARTIAL}" "rename, granted column" "ALTER TABLE t RENAME COLUMN ok_de
 check "${U_COLS}" "lambda parameter" "ALTER TABLE t ADD COLUMN c_lambda Array(UInt64) ALIAS arrayMap(x -> x + id, [1, 2])"
 check "${U_COLS}" "field of a lambda parameter" "ALTER TABLE t ADD COLUMN c_field Array(String) ALIAS arrayMap(x -> x.restricted, arr)"
 check "${U_COLS}" "granted alias column" "ALTER TABLE t ADD COLUMN c_pub String ALIAS concat(pub, '!')"
-check "${U_COLS}" "dictionary identifier" "ALTER TABLE t ADD COLUMN c_dict String ALIAS dictGet(d, 'v', id)"
 check "${U_COLS}" "not granted column" "ALTER TABLE t ADD COLUMN c_restricted String ALIAS restricted" restricted
 check "${U_COLS}" "not granted virtual column" "ALTER TABLE t ADD COLUMN c_virtual String ALIAS _table" _table
 check "${U_PARTIAL}" "granted virtual column" "ALTER TABLE t ADD COLUMN p_virtual String ALIAS _table"
@@ -108,6 +107,7 @@ check "${U_SUB}" "granted subcolumn" "ALTER TABLE t ADD COLUMN s_a String ALIAS 
 check "${U_SUB}" "not granted subcolumn" "ALTER TABLE t ADD COLUMN s_b String ALIAS tup.b" tup.b
 check "${U_DOT}" "quoted dotted column" "ALTER TABLE t ADD COLUMN d_quoted String ALIAS \`q.k\`"
 check "${U_FULL}" "full access" "ALTER TABLE t ADD COLUMN f String ALIAS concat('F-', restricted)"
+check "${U_COLS}" "dictionary identifier" "ALTER TABLE t ADD COLUMN c_dict String ALIAS dictGet(d, 'v', id)"
 
 echo "-- full access, read"
 ${CLICKHOUSE_CLIENT} --user "${U_FULL}" --query "SELECT f FROM t ORDER BY id"
