@@ -54,6 +54,7 @@ bool Lz4InflatingReadBuffer::nextImpl()
                 LZ4F_getErrorName(ret),
                 getExceptionEntryWithFileName(*in));
 
+        at_frame_boundary = ret == 0 || (in_eof && at_frame_boundary);
         in->position() += bytes_read;
 
         if (bytes_written > 0)
@@ -65,6 +66,11 @@ bool Lz4InflatingReadBuffer::nextImpl()
         if (bytes_read == 0)
         {
             chassert(in_eof);
+            if (!at_frame_boundary)
+                throw Exception(
+                    ErrorCodes::LZ4_DECODER_FAILED,
+                    "LZ4 decompression failed: unexpected end of file{}",
+                    getExceptionEntryWithFileName(*in));
             return false;
         }
     }

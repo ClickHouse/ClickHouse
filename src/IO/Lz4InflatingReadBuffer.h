@@ -28,6 +28,7 @@ private:
     LZ4F_dctx* dctx{};
 
     bool in_eof = false;
+    bool at_frame_boundary = true;
 };
 
 }

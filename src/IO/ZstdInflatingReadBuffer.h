@@ -31,6 +31,7 @@ private:
     ZSTD_inBuffer input{};
     ZSTD_outBuffer output{};
     bool eof_flag = false;
+    bool at_frame_boundary = true;
 };
 
 }
