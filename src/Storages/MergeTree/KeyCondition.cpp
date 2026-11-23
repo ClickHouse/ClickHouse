@@ -1720,8 +1720,8 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
     return names;
 }
 
-/// Nodes are matched to the key by name: a column by its raw name, a function by its expression, so a
-/// column named `f(x)` and a node computing `f(x)` look the same on either side.
+/// A filter names a column by its raw name and a key node by its expression, so a column
+/// named `f(x)` and the key node computing `f(x)` look the same.
 static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
 {
     if (!filter_dag.dag)

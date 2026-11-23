@@ -134,7 +134,6 @@ private:
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
-    /// Whether `node`, rendered as `name`, computes a value under the name of a column the index stores.
     [[nodiscard]] bool isExpressionNamedLikeStoredKeyColumn(const ActionsDAG::Node & node, const String & name) const;
 
     String index_name;

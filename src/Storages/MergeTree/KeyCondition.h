@@ -271,8 +271,7 @@ public:
     /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
     static bool fieldHasNullInside(const Field & field);
 
-    /// Names of the columns that `key_expr` reads to compute `key_column_names` and that a function
-    /// can be rendered as (they contain a parenthesis).
+    /// Columns `key_expr` reads to compute `key_column_names` whose names contain a parenthesis, like a function's.
     static NameSet getStoredKeyColumnsNamedLikeExpressions(const ExpressionActions & key_expr, const Names & key_column_names);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
