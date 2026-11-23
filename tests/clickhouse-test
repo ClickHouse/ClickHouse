@@ -2393,8 +2393,12 @@ class MergeTreeSettingsRandomizer:
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
         "object_shared_data_serialization_version": lambda: random.choice(
             ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
-        "object_shared_data_serialization_version_for_zero_level_parts": lambda: random.choice(
+        "object_shared_data_serialization_version_for_small_parts": lambda: random.choice(
             ["map", "map_with_buckets", "advanced", "advanced_chunked"]),
+        "min_bytes_for_object_shared_data_main_serialization_version": threshold_generator(
+            0.3, 0.3, 0, 100 * 1024 * 1024
+        ),
+        "min_level_for_object_shared_data_main_serialization_version": lambda: random.randint(0, 2),
         "object_shared_data_buckets_for_compact_part": lambda: random.randint(1, 32),
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),

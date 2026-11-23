@@ -406,14 +406,33 @@ The number of buckets for `map_with_buckets`, `advanced`, and `advanced_chunked`
 )", 0, \
         {"25.12", "map", "advanced", "Enable advanced shared data serialization version by default"}, \
         {"25.8", "map", "map", "Add a setting to control JSON serialization versions"}) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
-This setting allows to specify different serialization version of the
-shared data inside JSON type for zero level parts that are created during inserts.
-It's recommended not to use `advanced` or `advanced_chunked` shared data serialization for zero level parts because it can increase
-the insertion time significantly.
-)", 0, \
+    DECLARE_WITH_ALIAS(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_small_parts, "map_with_buckets", R"(
+Serialization version of the shared data inside JSON type for small parts.
+A part is small if its uncompressed size or level is below
+[min_bytes_for_object_shared_data_main_serialization_version](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_object_shared_data_main_serialization_version) or
+[min_level_for_object_shared_data_main_serialization_version](/reference/settings/merge-tree-settings/min-level#min_level_for_object_shared_data_main_serialization_version).
+Other parts use the main version from [object_shared_data_serialization_version](#object_shared_data_serialization_version).
+
+By default, parts created by inserts and small merged parts are small. They are merged again soon, so it's recommended not to use
+`advanced` or `advanced_chunked` shared data serialization for them, because it makes inserts and merges significantly slower.
+)", 0, object_shared_data_serialization_version_for_zero_level_parts, \
+        {"26.12", "map_with_buckets", "map_with_buckets", "Renamed from object_shared_data_serialization_version_for_zero_level_parts, applies to all parts below the size and level minimums"}, \
         {"25.12", "map", "map_with_buckets", "Enable map_with_buckets shared data serialization version for zero level parts by default"}, \
         {"25.8", "map", "map", "Add a setting to control JSON serialization versions for zero level parts"}) \
+    DECLARE(UInt64, min_bytes_for_object_shared_data_main_serialization_version, 0, R"(
+Minimal uncompressed size in bytes of a part to write the shared data inside JSON type with the main version from
+[object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version).
+Smaller parts use [object_shared_data_serialization_version_for_small_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+For a merged part, the size is the total size of the merged parts. `0` disables the size check.
+)", 0, \
+        {"26.12", 0, 0, "New setting"}) \
+    DECLARE(UInt32, min_level_for_object_shared_data_main_serialization_version, 1, R"(
+Minimal level of a part to write the shared data inside JSON type with the main version from
+[object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version).
+Parts of lower levels use [object_shared_data_serialization_version_for_small_parts](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_small_parts).
+With the default value `1`, parts created by inserts always use the version for small parts to keep inserts fast. `0` disables the level check.
+)", 0, \
+        {"26.12", 1, 1, "New setting"}) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
 The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets`, `advanced`, and `advanced_chunked` shared data serializations.
 The maximum allowed value is 256.

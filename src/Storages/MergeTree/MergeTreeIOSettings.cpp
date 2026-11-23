@@ -62,8 +62,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_compact_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_target_chunk_rows;
@@ -76,6 +74,23 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
     extern const MergeTreeSettingsNonZeroUInt64 adaptive_codec_selection_period;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+MergeTreeObjectSharedDataSerializationVersion getObjectSharedDataSerializationVersion(const IMergeTreeDataPart & data_part)
+{
+    if (!data_part.object_shared_data_serialization_version)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JSON shared data serialization version is not chosen for part {}", data_part.name);
+    return *data_part.object_shared_data_serialization_version;
+}
+
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -111,7 +126,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_compact_variant_discriminators_serialization((*storage_settings)[MergeTreeSetting::use_compact_variant_discriminators_serialization])
     , dynamic_serialization_version(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization] ? MergeTreeDynamicSerializationVersion::V1 : (*storage_settings)[MergeTreeSetting::dynamic_serialization_version])
     , object_serialization_version(global_settings[Setting::merge_tree_use_v1_object_and_dynamic_serialization] ? MergeTreeObjectSerializationVersion::V1 : (*storage_settings)[MergeTreeSetting::object_serialization_version])
-    , object_shared_data_serialization_version(data_part->isZeroLevel() ? (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts] : (*storage_settings)[MergeTreeSetting::object_shared_data_serialization_version])
+    , object_shared_data_serialization_version(getObjectSharedDataSerializationVersion(*data_part))
     , object_shared_data_buckets(isCompactPart(data_part) ? (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] : (*storage_settings)[MergeTreeSetting::object_shared_data_buckets_for_wide_part])
     , object_shared_data_target_chunk_rows((*storage_settings)[MergeTreeSetting::object_shared_data_target_chunk_rows])
     , object_typed_shared_data_serialization_version((*storage_settings)[MergeTreeSetting::object_typed_shared_data_serialization_version])

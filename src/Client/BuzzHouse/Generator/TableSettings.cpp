@@ -412,6 +412,12 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_bytes_for_compact_part", bytesRangeSetting},
     {"min_bytes_for_full_part_storage", bytesRangeSetting},
+    {"min_bytes_for_object_shared_data_main_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, UINT32_C(100) * UINT32_C(1024) * UINT32_C(1024))); },
+         {"0", "1"},
+         false)},
     {"min_bytes_for_wide_part",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -434,6 +440,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"min_level_for_full_part_storage",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); },
+         {"0", "1"},
+         false)},
+    {"min_level_for_object_shared_data_main_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 3)); },
          {"0", "1"},
          false)},
     {"min_level_for_wide_part",
@@ -523,7 +534,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"},
          false)},
-    {"object_shared_data_serialization_version_for_zero_level_parts",
+    {"object_shared_data_serialization_version_for_small_parts",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {

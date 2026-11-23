@@ -610,6 +610,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         global_ctx->new_data_part = std::move(*builder).build();
     }
+
+    {
+        size_t bytes_uncompressed = 0;
+        for (const auto & part : global_ctx->future_part->parts)
+            bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
+
+        /// A projection part has a fake part info, so it takes the level of its parent, as when it is written by `writeProjectionPart`.
+        UInt32 level = global_ctx->parent_part ? global_ctx->parent_part->info.level : global_ctx->future_part->part_info.level;
+        global_ctx->new_data_part->object_shared_data_serialization_version = global_ctx->data->chooseObjectSharedDataSerializationVersion(
+            bytes_uncompressed, level, global_ctx->projection);
+    }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
     /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
