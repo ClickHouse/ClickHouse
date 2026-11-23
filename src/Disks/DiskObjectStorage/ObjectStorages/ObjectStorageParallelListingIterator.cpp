@@ -41,9 +41,14 @@ namespace
     constexpr std::chrono::milliseconds CANCELLATION_POLL_INTERVAL{100};
 
     /// A fresh hierarchical range whose first page descends into at least this many sub-"directories"
-    /// (none of them pruned) is a candidate for recursive listing; see `probeRecursiveListing`. Below it the
-    /// per-directory requests are too few to be worth the extra probe request.
-    constexpr size_t MIN_CHILDREN_FOR_RECURSIVE_PROBE = 16;
+    /// (none of them pruned) is a candidate for recursive listing; see `probeRecursiveListing`. The threshold
+    /// is deliberately low: partitioned layouts often have only a few values per level (e.g.
+    /// `year=*/month=*/` or `type=*/year=*/quarter=*/`) and small leaf directories, so a whole subtree fits
+    /// in one or a few recursive pages, while the delimited walk pays one request per leaf directory (on
+    /// real S3 this made such listings up to several times slower than the serial one). The price is one
+    /// extra request for a range where the probe does not pay off. A range with a single sub-"directory"
+    /// is not probed: the walk just descends into it.
+    constexpr size_t MIN_CHILDREN_FOR_RECURSIVE_PROBE = 2;
 
     /// The recursive probe page of such a range must span at least this many sub-"directories" for the
     /// range to be listed recursively: the delimited walk costs at least one request per descended

@@ -2005,6 +2005,48 @@ TEST(ObjectStorageParallelListing, SparseDirectoriesOfTrailingSlashGlobAreListed
     assertGlobListing(s3, "root/*/", expected, /* max_requests */ 15, /* max_recursive_requests */ 12);
 }
 
+TEST(ObjectStorageParallelListing, FewValuesPerPartitionLevelAreListedRecursively)
+{
+    /// Regression: a partitioned layout with only a few values per level and small leaf directories, which
+    /// the glob does not prune. The whole tree fits in one recursive page, while descending into every
+    /// directory takes one request per directory (1 + 2 + 16 + 64 = 83 requests here). The walk must probe
+    /// the recursive listing even though no level has many sub-directories.
+    FakeS3 s3;
+    s3.page_size = 1000;
+    std::vector<std::string> expected;
+    for (const auto * type : {"fixed", "mobile"})
+        for (size_t year = 2019; year < 2027; ++year)
+            for (size_t quarter = 1; quarter <= 4; ++quarter)
+                expected.push_back(fmt::format("root/type={}/year={}/quarter={}/data.parquet", type, year, quarter));
+    s3.keys = expected;
+    s3.finalize();
+    std::sort(expected.begin(), expected.end());
+
+    /// The first delimited page and the recursive page.
+    assertGlobListing(s3, "root/type=*/year=*/quarter=*/*.parquet", expected, /* max_requests */ 2, /* max_recursive_requests */ 1);
+}
+
+TEST(ObjectStorageParallelListing, SmallSubtreesBelowFewValuesAreListedRecursively)
+{
+    /// The same when the whole tree does not fit in one recursive page, but every subtree of the first
+    /// level does: 11 years of 12 months of 26 files each. The recursive probe of the root spans too few
+    /// directories to pay off, so the walk descends into the years, and each year is then listed with one
+    /// recursive page instead of one request per month (1 + 11 + 132 = 144 requests).
+    FakeS3 s3;
+    s3.page_size = 1000;
+    std::vector<std::string> expected;
+    for (size_t year = 2016; year < 2027; ++year)
+        for (size_t month = 1; month <= 12; ++month)
+            for (size_t file = 0; file < 26; ++file)
+                expected.push_back(fmt::format("root/year={}/month={:02}/{:02}.csv", year, month, file));
+    s3.keys = expected;
+    s3.finalize();
+    std::sort(expected.begin(), expected.end());
+
+    /// The delimited page and the failed recursive probe of the root, then the same two requests per year.
+    assertGlobListing(s3, "root/year=*/month=*/*.csv", expected, /* max_requests */ 24, /* max_recursive_requests */ 12);
+}
+
 TEST(ObjectStorageParallelListing, DenseDirectoriesKeepDelimitedWalk)
 {
     /// Directories with many files each: a recursive page spans a single directory, so listing them
