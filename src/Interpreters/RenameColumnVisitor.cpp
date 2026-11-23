@@ -17,7 +17,7 @@ void RenameColumnData::visit(ASTIdentifier & identifier, ASTPtr & ast) const
     {
         identifier.setShortName(rename_to);
     }
-    else if (rename_subcolumns && identifier_column_name->starts_with(column_name + "."))
+    else if (identifier_column_name->starts_with(column_name + "."))
     {
         /// `column_name.x` (written as a compound identifier, or as one part as the key expressions built from the metadata
         /// of a data lake are written) is a subcolumn unless the table has a physical column with this name, such as

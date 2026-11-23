@@ -16,10 +16,8 @@ struct RenameColumnData
 
     String column_name;
     String rename_to;
-    /// Also rename the column in a reference to its subcolumn, such as `column_name.x`.
-    bool rename_subcolumns = false;
-    /// With `rename_subcolumns`: the columns of the table. A name `column_name.x` is renamed only if it is not a column of
-    /// the table itself or a subcolumn of one.
+    /// The columns of the table after the rename. A reference to a subcolumn, such as `column_name.x`, is renamed too, unless
+    /// it is a column of the table itself or a subcolumn of one.
     const ColumnsDescription * columns = nullptr;
 
     void visit(ASTIdentifier & identifier, ASTPtr & ast) const;

@@ -202,6 +202,7 @@
 #include <chrono>
 #include <exception>
 #include <limits>
+#include <list>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -6637,10 +6638,18 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// definition stays as it was, up to a column rename.
         if (is_initial_alter)
         {
+            /// Each rename sees the columns as they are right after it, as in `AlterCommand::apply`.
             std::vector<RenameColumnData> renames;
+            std::list<ColumnsDescription> columns_after_renames;
             for (const auto & command : commands)
-                if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
-                    renames.push_back({command.column_name, command.rename_to, /*rename_subcolumns=*/true, &new_metadata.columns});
+            {
+                if (command.type != AlterCommand::RENAME_COLUMN || command.ignore)
+                    continue;
+                columns_after_renames.push_back(columns_after_renames.empty() ? old_metadata.columns : columns_after_renames.back());
+                if (columns_after_renames.back().has(command.column_name))
+                    columns_after_renames.back().rename(command.column_name, command.rename_to);
+                renames.push_back({command.column_name, command.rename_to, &columns_after_renames.back()});
+            }
 
             auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
             {

@@ -1373,7 +1373,7 @@ void AlterCommand::apply(
         if (should_skip_column_operation(column_name))
             return;
         metadata.columns.rename(column_name, rename_to);
-        RenameColumnData rename_data{column_name, rename_to, /*rename_subcolumns=*/true, &metadata.columns};
+        RenameColumnData rename_data{column_name, rename_to, &metadata.columns};
         RenameColumnVisitor rename_visitor(rename_data);
         for (const auto & column : metadata.columns)
         {

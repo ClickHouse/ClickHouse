@@ -1439,7 +1439,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         {
             if (command.type != AlterCommand::RENAME_COLUMN)
                 continue;
-            RenameColumnData rename_data{command.column_name, command.rename_to, /*rename_subcolumns=*/true, &new_metadata.columns};
+            RenameColumnData rename_data{command.column_name, command.rename_to, &new_metadata.columns};
             RenameColumnVisitor(rename_data).visit(renamed);
         }
         return renamed;
