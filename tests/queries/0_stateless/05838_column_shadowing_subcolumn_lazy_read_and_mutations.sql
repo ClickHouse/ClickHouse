@@ -49,3 +49,55 @@ ALTER TABLE t_shadow_mutate CLEAR COLUMN `a.x` SETTINGS mutations_sync = 2;
 SELECT id, a, `a.x`, b FROM t_shadow_mutate ORDER BY id;
 
 DROP TABLE t_shadow_mutate;
+
+SELECT '-- a projection computed from the recorded default of a missing column stays usable';
+DROP TABLE IF EXISTS t_shadow_marker;
+CREATE TABLE t_shadow_marker (id UInt64, a Array(UInt64), `a.size0` UInt64,
+    PROJECTION p (SELECT sum(`a.size0`)))
+ENGINE = MergeTree ORDER BY id
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_shadow_marker (id, a) VALUES (1, [1, 2, 3]), (2, [4]);
+INSERT INTO t_shadow_marker (id, a) VALUES (3, [5, 6]);
+SELECT sum(`a.size0`) FROM t_shadow_marker SETTINGS optimize_use_projections = 0;
+SELECT sum(`a.size0`) FROM t_shadow_marker SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+OPTIMIZE TABLE t_shadow_marker FINAL;
+SELECT sum(`a.size0`) FROM t_shadow_marker SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+ALTER TABLE t_shadow_marker UPDATE a = [7] WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT sum(`a.size0`) FROM t_shadow_marker SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_shadow_marker;
+
+SELECT '-- a skip index over a subcolumn of a missing column is not answered by a path of the JSON column';
+DROP TABLE IF EXISTS t_shadow_index;
+CREATE TABLE t_shadow_index (id UInt64, a JSON, `a.x` Tuple(y UInt64) DEFAULT tuple(7),
+    INDEX i `a.x.y` TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1;
+INSERT INTO t_shadow_index (id, a) VALUES (1, '{"x" : {"y" : 11}}'), (2, '{"x" : {"y" : 22}}');
+SELECT id, `a.x.y` FROM t_shadow_index ORDER BY id;
+SELECT count() FROM t_shadow_index WHERE `a.x.y` = 7 SETTINGS use_skip_indexes = 1, optimize_move_to_prewhere = 0;
+SELECT count() FROM t_shadow_index WHERE `a.x.y` = 7 SETTINGS use_skip_indexes = 0, optimize_move_to_prewhere = 0;
+SELECT count() FROM t_shadow_index WHERE `a.x.y` = 11 SETTINGS use_skip_indexes = 1, optimize_move_to_prewhere = 0;
+DROP TABLE t_shadow_index;
+
+SELECT '-- a skip index is computed on insert from the subcolumn that the table gives the name';
+-- `a.x.y` is the element `y` of the column `a.x`, not the path `x.y` of the `JSON` column `a`.
+DROP TABLE IF EXISTS t_shadow_index_insert;
+CREATE TABLE t_shadow_index_insert (id UInt64, a JSON, `a.x` Tuple(y Dynamic), INDEX i toUInt64(`a.x.y`) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_shadow_index_insert VALUES (1, '{"x" : {"y" : 11}}', tuple(5::UInt64)), (2, '{"x" : {"y" : 22}}', tuple(6::UInt64));
+SELECT id, `a.x.y` FROM t_shadow_index_insert ORDER BY id;
+SELECT count() FROM t_shadow_index_insert WHERE toUInt64(`a.x.y`) = 5 SETTINGS use_skip_indexes = 1, optimize_move_to_prewhere = 0;
+SELECT count() FROM t_shadow_index_insert WHERE toUInt64(`a.x.y`) = 5 SETTINGS use_skip_indexes = 0, optimize_move_to_prewhere = 0;
+SELECT count() FROM t_shadow_index_insert WHERE toUInt64(`a.x.y`) = 11 SETTINGS use_skip_indexes = 1, optimize_move_to_prewhere = 0;
+DROP TABLE t_shadow_index_insert;
+
+-- The same for a sorting key and a partition key.
+DROP TABLE IF EXISTS t_shadow_key_insert;
+CREATE TABLE t_shadow_key_insert (id UInt64, a JSON, `a.x` Tuple(y UInt64))
+ENGINE = MergeTree ORDER BY `a.x.y` PARTITION BY `a.x.y` % 2;
+INSERT INTO t_shadow_key_insert VALUES (1, '{"x" : {"y" : 11}}', tuple(6)), (2, '{"x" : {"y" : 22}}', tuple(5));
+SELECT id, `a.x.y`, _partition_id FROM t_shadow_key_insert ORDER BY `a.x.y`;
+SELECT count() FROM t_shadow_key_insert WHERE `a.x.y` = 5;
+DROP TABLE t_shadow_key_insert;

@@ -522,7 +522,7 @@ NamesAndTypesList MergeTreePartition::executePartitionByExpression(const Storage
     for (const auto & required_column : adjusted_partition_key.expression->getRequiredColumns())
     {
         if (!block.has(required_column))
-            block.insert(block.getSubcolumnByName(required_column));
+            block.insert(metadata_snapshot->getColumns().getSubcolumnFromBlock(block, required_column));
     }
     adjusted_partition_key.expression->execute(block);
     return adjusted_partition_key.sample_block.getNamesAndTypesList();

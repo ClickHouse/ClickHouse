@@ -269,6 +269,12 @@ public:
     std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
 
+    /// A subcolumn that an expression over the columns of the table requires, extracted from a block of these columns.
+    /// The name is resolved as the table resolves it, not by the first column of the block that offers such a
+    /// subcolumn: next to a `JSON` column `a` and a `Tuple` column `a.x`, the subcolumn `a.x.y` is the element of
+    /// `a.x`, not the path `x.y` of `a`. A name that the table does not resolve is looked up in the block.
+    ColumnWithTypeAndName getSubcolumnFromBlock(const Block & block, const String & subcolumn_name) const;
+
     /// A subcolumn of any column by its full name (`payload.ts`). Nothing for the name of a column or for an unknown name.
     std::optional<NameAndTypePair> tryGetSubcolumn(const String & subcolumn_name) const;
 

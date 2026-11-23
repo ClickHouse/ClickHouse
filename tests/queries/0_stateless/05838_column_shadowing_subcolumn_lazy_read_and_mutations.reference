@@ -18,3 +18,23 @@
 2	{"x":22}	7	2
 1	{"x":11}	7	1
 2	{"x":22}	7	2
+-- a projection computed from the recorded default of a missing column stays usable
+0
+0
+0
+0
+-- a skip index over a subcolumn of a missing column is not answered by a path of the JSON column
+1	7
+2	7
+2
+2
+0
+-- a skip index is computed on insert from the subcolumn that the table gives the name
+1	5
+2	6
+1
+1
+0
+2	5	1
+1	6	0
+1

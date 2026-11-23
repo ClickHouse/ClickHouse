@@ -79,6 +79,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_TEXT;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
@@ -986,6 +987,23 @@ NameAndTypePair ColumnsDescription::getColumn(const GetColumnsOptions & options,
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     return tryGetColumn(GetColumnsOptions(kind).withSubcolumns(), column_name);
+}
+
+ColumnWithTypeAndName ColumnsDescription::getSubcolumnFromBlock(const Block & block, const String & subcolumn_name) const
+{
+    auto column_in_table = tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, subcolumn_name);
+    if (!column_in_table || !column_in_table->isSubcolumn())
+        return block.getSubcolumnByName(subcolumn_name);
+
+    const auto & column = block.getByName(column_in_table->getNameInStorage());
+    auto subcolumn_type = column.type->tryGetSubcolumnType(column_in_table->getSubcolumnName());
+    auto subcolumn = column.type->tryGetSubcolumn(column_in_table->getSubcolumnName(), column.column);
+    if (!subcolumn_type || !subcolumn)
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+            "Not found subcolumn {} of column {} in block. There are only columns: {}",
+            column_in_table->getSubcolumnName(), column_in_table->getNameInStorage(), block.dumpNames());
+
+    return ColumnWithTypeAndName(subcolumn, subcolumn_type, subcolumn_name);
 }
 
 std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const
