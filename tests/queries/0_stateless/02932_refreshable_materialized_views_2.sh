@@ -96,8 +96,8 @@ $CLICKHOUSE_CLIENT -q "drop table rmv_f;"
 query_no_scheduling "select '<28: drop during refresh>', view, status from refreshes"
 $CLICKHOUSE_CLIENT -q "select '<28: drop during refresh>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase()"
 
-# Try OFFSET and RANDOMIZE FOR. Two views draw independent offsets: an offset under a second does not show in the
-# DateTime next_refresh_time, which happens about once in 350k draws.
+# Try OFFSET and RANDOMIZE FOR. The offset is within half the spread on either side of the timeslot. Two views draw
+# independent offsets: an offset in [0, 1 s) does not show in the DateTime next_refresh_time (about once in 350k draws).
 $CLICKHOUSE_CLIENT -q "
     create materialized view rmv_g refresh every 1 week offset 3 day 4 hour randomize for 4 day 1 hour (x Int64) engine Memory empty as select 42 as x;
     create materialized view rmv_gg refresh every 1 week offset 3 day 4 hour randomize for 4 day 1 hour (x Int64) engine Memory empty as select 42 as x;
@@ -111,7 +111,7 @@ do
 done
 $CLICKHOUSE_CLIENT -q "
     with '2050-02-10 04:00:00'::DateTime as expected
-    select '<29: randomize>', min(abs(next_refresh_time::Int64 - expected::Int64) <= 3600*(24*4+1)), max(next_refresh_time != expected) from refreshes;"
+    select '<29: randomize>', min(abs(next_refresh_time::Int64 - expected::Int64) <= 3600*(24*4+1)/2), max(next_refresh_time != expected) from refreshes;"
 # The offset is drawn once per timeslot, not on every scheduling pass: the pass reruns on every timer
 # tick, and redrawing would keep moving next_refresh_time so nothing could tell when a refresh is due.
 first_next_refresh_time=$($CLICKHOUSE_CLIENT -q "select next_refresh_time from refreshes where view = 'rmv_g' -- $LINENO")
