@@ -80,7 +80,7 @@ elseif(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using sccache: ${CCACHE_EXECUTABLE}")
     set(LAUNCHER ${CCACHE_EXECUTABLE})
 
-    option(ENABLE_SCCACHE_BASEDIRS "Share sccache entries with checkouts at other paths: run the sccache server with SCCACHE_BASEDIRS set to the source directory and without preprocessor cache mode (needs sccache 0.20.0 and ENABLE_BUILD_PATH_MAPPING)" OFF)
+    option(ENABLE_SCCACHE_BASEDIRS "Share sccache entries with checkouts at other paths: run the sccache server with SCCACHE_BASEDIRS set to the source directory and without preprocessor cache mode (needs sccache 0.20.0 and ENABLE_BUILD_PATH_MAPPING)" ON)
     if (ENABLE_SCCACHE_BASEDIRS AND ENABLE_BUILD_PATH_MAPPING AND NOT DEFINED ENV{SCCACHE_BASEDIRS})
         execute_process(COMMAND "${CCACHE_EXECUTABLE}" --version OUTPUT_VARIABLE SCCACHE_VERSION ERROR_QUIET)
         string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" SCCACHE_VERSION "${SCCACHE_VERSION}")
