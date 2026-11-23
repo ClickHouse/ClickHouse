@@ -129,3 +129,16 @@ SELECT t, toStartOfHour(t), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 
 WITH reinterpret(toInt64(-62167240408 + 3700), 'DateTime64(0, \'Asia/Kolkata\')') AS t
 SELECT t, toStartOfHour(t), dateTrunc('hour', t), toStartOfInterval(t, INTERVAL 1 HOUR);
 SET enable_extended_results_for_datetime_functions = 0;
+
+SELECT 'with an origin, the distance from it is not rounded on the clock of a transition day';
+-- The distance from the origin is a duration. Here, read as a time, it falls on the day of the change of the offset.
+WITH toDateTime('2024-04-06 17:40:00', 'UTC') AS t, toDateTime('1970-01-01 01:00:00', 'UTC') AS origin
+SELECT toTimeZone(toStartOfInterval(t, INTERVAL 1 HOUR, origin, 'Australia/Lord_Howe'), 'UTC'),
+       toTimeZone(toStartOfInterval(t, INTERVAL 60 MINUTE, origin, 'Australia/Lord_Howe'), 'UTC');
+WITH toDateTime64('2024-04-06 17:40:00.123', 3, 'UTC') AS t, toDateTime64('1970-01-01 01:00:00', 3, 'UTC') AS origin
+SELECT toTimeZone(toStartOfInterval(t, INTERVAL 1 HOUR, origin, 'Australia/Lord_Howe'), 'UTC'),
+       toTimeZone(toStartOfInterval(t, INTERVAL 60 MINUTE, origin, 'Australia/Lord_Howe'), 'UTC');
+-- For every minute of the day of the change, the result is a whole number of hours after the origin.
+SELECT countIf(s > t OR t - s >= 3600 OR (toUnixTimestamp(s) - toUnixTimestamp(origin)) % 3600 != 0)
+FROM (SELECT t, origin, toStartOfInterval(t, INTERVAL 1 HOUR, origin, 'Australia/Lord_Howe') AS s
+      FROM (SELECT toDateTime('2024-04-06 13:00:00', 'UTC') + number * 60 AS t, toDateTime('1970-01-01 01:00:00', 'UTC') AS origin FROM numbers(1470)));
