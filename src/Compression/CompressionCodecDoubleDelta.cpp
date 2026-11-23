@@ -123,8 +123,8 @@ class CompressionCodecDoubleDelta : public ICompressionCodec
 public:
     explicit CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -134,12 +134,12 @@ protected:
 
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    bool isDeltaCompression() const override { return true; }
-    String getDescription() const override { return "Stores difference between neighboring delta values; suitable for time series data."; }
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isDeltaCompression() const override { return true; }
+    [[nodiscard]] String getDescription() const override { return "Stores difference between neighboring delta values; suitable for time series data."; }
 
 private:
     UInt8 data_bytes_size;
