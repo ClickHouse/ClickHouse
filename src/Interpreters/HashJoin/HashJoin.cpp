@@ -509,8 +509,8 @@ HashJoin::HashJoin(
         }
     }
 
-    /// Each small bucket allocation is charged to the thread, which passes the total to the query only past
-    /// `max_untracked_memory`, so a 256-bucket layout can leave a megabyte uncharged. Flush it so the query's limit applies now.
+    /// The thread passes allocations to the query only past `max_untracked_memory`, so the small allocations of the
+    /// tables may not be charged yet. Flush them so the query's limit applies now.
     CurrentThread::flushUntrackedMemory();
     CurrentMemoryTracker::check();
 }

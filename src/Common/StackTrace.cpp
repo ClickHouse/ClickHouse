@@ -123,15 +123,21 @@ static void * getCallerAddress(const ucontext_t & context);
 static bool isCFICheckTrap([[maybe_unused]] int sig, [[maybe_unused]] const ucontext_t & context)
 {
     [[maybe_unused]] static constexpr uint8_t cfi_check_fail_kind = 2;
-    [[maybe_unused]] const auto * pc = static_cast<const uint8_t *>(getCallerAddress(context));
+    /// Check `sig` before touching `context`: for a signal whose handler returns (`SIGTSTP`) it is already dangling.
 #if defined(__x86_64__)
     static constexpr uint8_t trap[] = {0x67, 0x0f, 0xb9, 0x40, cfi_check_fail_kind};
-    return sig == SIGILL && pc && memcmp(pc, trap, sizeof(trap)) == 0;
+    if (sig != SIGILL)
+        return false;
+    const auto * pc = static_cast<const uint8_t *>(getCallerAddress(context));
+    return pc && memcmp(pc, trap, sizeof(trap)) == 0;
 #elif defined(__aarch64__)
     static constexpr uint32_t trap = 0xd4200000 | ((0x5500 | cfi_check_fail_kind) << 5);
-    uint32_t instruction = 0;
-    if (sig != SIGTRAP || !pc)
+    if (sig != SIGTRAP)
         return false;
+    const auto * pc = static_cast<const uint8_t *>(getCallerAddress(context));
+    if (!pc)
+        return false;
+    uint32_t instruction = 0;
     memcpy(&instruction, pc, sizeof(instruction));
     return instruction == trap;
 #else

@@ -271,9 +271,7 @@ if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
-# Add a section with the hash of the compiled machine code for integrity checks.
-# Only for official builds, because adding a section can be time consuming (rewrite of several GB).
-# And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
+# Add a section with the hash of the compiled machine code for integrity checks. Only for official builds.
 if (CLICKHOUSE_OFFICIAL_BUILD AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
@@ -450,6 +448,12 @@ endif()
 # Note: it's not enabled on RISC-V64 due to bugs in LLVM.
 if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X))
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+endif ()
+
+# Trap when a value-returning C++ function reaches its end without a `return`. Not in sanitizer and fuzzer builds (the
+# UBSan ones report it), nor with Emscripten, which links its UBSan runtime for any UBSan check.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING AND NOT OS_WASM)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=return -fsanitize-trap=return")
 endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
@@ -631,6 +635,8 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
+        # Do not verify every module with debug info again on each load and import; the LTO pipeline still verifies each module.
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-disable-auto-upgrade-debug-info")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
         # ThinLTO generates code in the linker, which does not see -falign-loops.
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")

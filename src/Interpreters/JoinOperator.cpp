@@ -31,7 +31,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
-    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -99,7 +98,7 @@ namespace Setting
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
+    extern const QueryPlanSerializationSettingsQueryPlanJoinAlgorithm join_algorithm;
     extern const QueryPlanSerializationSettingsBool allow_block_nested_loop_join;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
@@ -366,7 +365,7 @@ static bool producesJoinForStep(JoinAlgorithm algorithm, const JoinOperator & jo
 
     /// `FullSortingMergeJoin::isSupported` and `MergeJoin::isSupported` are the kind / strictness predicate plus
     /// conditions on the `ON` clause that a plain equi-join satisfies. A `direct` join needs a key-value right side
-    /// a plan step never has, `ie_join` claims a step before the list is consulted at all: neither is relied upon.
+    /// a plan step never has, `inequality` claims a step before the list is consulted at all: neither is relied upon.
     if (!isPlainEquiJoin(join_operator))
         return false;
 
@@ -398,7 +397,7 @@ static bool runsStepWithHashFamily(JoinAlgorithm algorithm, const JoinOperator &
 /// the top level. `JoinStepLogical::buildPhysicalJoinImpl` turns exactly those predicates into the join keys of a
 /// single `TableJoin` clause (`addJoinPredicatesToTableJoin`), which is what `TableJoin::oneDisjunct` checks.
 /// Without one, the step never has a one-clause hash join on either side: a single top-level `OR` is split into
-/// one clause per disjunct, two inequalities become an `IEJoinStep` when `ie_join` is enabled, an `INNER ALL` join
+/// one clause per disjunct, two inequalities become an `InequalityJoinStep` when `inequality` is enabled, an `INNER ALL` join
 /// is converted to a CROSS join with a residual filter, and anything else is refused - none of which spills.
 static bool hasEqualityKeys(const JoinOperator & join_operator)
 {
@@ -436,7 +435,7 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
     /// Only a `GraceHashJoin` (standalone, or inside the `SpillingHashJoin` of the hash family) treats the size
     /// limits as a spill trigger, and only a step it supports can ever be run by one, on either side. An ASOF join,
     /// a kind outside INNER / LEFT / RIGHT / FULL, and an `ON` clause without equality keys (a disjunction, an
-    /// inequality-only join that becomes an `IEJoinStep` or a CROSS join) are run by algorithms that check the
+    /// inequality-only join that becomes an `InequalityJoinStep` or a CROSS join) are run by algorithms that check the
     /// limits as hard caps on both sides, and the spill threshold does not apply to any of them.
     if (!graceHashSupports(join_operator))
         return false;
@@ -472,7 +471,7 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy(const JoinOperator & join_oper
         }
     }
 
-    /// Nothing in the list is known to run the step (`direct`, `ie_join`, a merge algorithm the `ON` clause could
+    /// Nothing in the list is known to run the step (`direct`, `inequality`, a merge algorithm the `ON` clause could
     /// make decline it): with a size limit the answer depends on more than the step tells, so stay on the safe side.
     return size_limits_set;
 }
@@ -574,37 +573,8 @@ bool JoinSettings::canRunGraceHash() const
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
 {
-    std::optional<UInt64> threshold;
-    if (max_bytes_before_external_join != 0)
-        threshold = max_bytes_before_external_join;
-
-    if (max_bytes_ratio_before_external_join != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_join;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_join should be >= 0 and < 1 ({:.3f})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            UInt64 ratio_in_bytes = static_cast<UInt64>(static_cast<double>(*available_system_memory) * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {:.3f}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("JoinSettings"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_join");
-        }
-    }
-
-    return threshold.value_or(0);
+    return getMaxBytesBeforeExternalProcessing(
+        max_bytes_before_external_join, max_bytes_ratio_before_external_join, "max_bytes_ratio_before_external_join");
 }
 
 String toString(const JoinActionRef & node)

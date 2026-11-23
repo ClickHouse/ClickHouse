@@ -168,6 +168,14 @@ bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 }
 
+static bool mergeTreeReadCanBeCoordinated(const ReadFromMergeTree & read)
+{
+    /// `createParallelReplicasPlan` checks the read's context, where the planner may have disabled parallel replicas.
+    /// Only a coordinated read has to pass it: a read which is only shipped, like the broadcast side of a join or the
+    /// read of an `IN` set, is executed whole by every replica.
+    return mergeTreeReadCanBeShipped(read) && ClusterProxy::canUseParallelReplicasOnInitiator(read.getContext());
+}
+
 /// The broadcast side of a shipped join is executed in full by every replica, so its MergeTree reads must
 /// pass the same rules as the coordinated ones - otherwise each replica would join against its own data.
 static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
@@ -392,13 +400,18 @@ class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplic
 {
     QueryPlan::Nodes & nodes;
     const QueryPlanOptimizationSettings & optimization_settings;
+    const Optimization::ExtraSettings & extra_settings;
 
 public:
     ApplyParallelReplicasVisitor(
-        QueryPlan::Node * root_, QueryPlan::Nodes & nodes_, const QueryPlanOptimizationSettings & optimization_settings_)
+        QueryPlan::Node * root_,
+        QueryPlan::Nodes & nodes_,
+        const QueryPlanOptimizationSettings & optimization_settings_,
+        const Optimization::ExtraSettings & extra_settings_)
         : QueryPlanVisitor<ApplyParallelReplicasVisitor>(root_)
         , nodes(nodes_)
         , optimization_settings(optimization_settings_)
+        , extra_settings(extra_settings_)
     {
     }
 
@@ -605,6 +618,11 @@ public:
             partial_aggregation_node.step->setStepDescription("partial");
             partial_aggregation_node.children = {original_split_node->children.front()};
 
+            /// The heap the aggregation would get under `ORDER BY ... LIMIT`, before the fragment is serialized, so that the
+            /// replicas run it too.
+            if (auto * limit_node = stack.size() >= 3 ? limitAbove(stack.size() - 3) : nullptr)
+                applyOrderedGroupByTopKToSplit(limit_node, parent_node, *partial_aggregation_step, nodes, extra_settings);
+
             /// Add gather
             auto & new_split_node = nodes.emplace_back();
             new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(partial_aggregation_node.step->getOutputHeader());
@@ -702,6 +720,16 @@ public:
     }
 
 private:
+    /// The `Limit` of `GROUP BY ... ORDER BY ... LIMIT`: the node of the frame `index`, or of one of the two frames above it,
+    /// with the sort and the expression in between.
+    [[nodiscard]] QueryPlan::Node * limitAbove(size_t index) const
+    {
+        for (size_t i = 0; i < 3 && i <= index; ++i)
+            if (auto * node = stack[index - i].node; typeid_cast<const LimitStep *>(node->step.get()))
+                return node;
+        return nullptr;
+    }
+
     /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).
     [[nodiscard]] bool mustReadTillEnd() const
     {
@@ -828,7 +856,7 @@ static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(Query
 
     if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
     {
-        if (!mergeTreeReadCanBeShipped(*read))
+        if (!mergeTreeReadCanBeCoordinated(*read))
             return {};
         return {{node, read->getMergeTreeData().getStorageID()}};
     }
@@ -842,6 +870,10 @@ static VectorWithMemoryTracking<ReadToDistribute> collectReadsToDistribute(Query
         if (auto * merge = typeid_cast<ReadFromMerge *>(node->step.get()))
         {
             if (!merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+                return {};
+
+            /// The reads of the underlying tables do not exist yet, so ask the context of the `Merge` read itself.
+            if (!ClusterProxy::canUseParallelReplicasOnInitiator(merge->getContext()))
                 return {};
 
             const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
@@ -1011,16 +1043,21 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
         parent->children[i] = make_split_above(parent->children[i]);
 }
 
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
+void applyParallelReplicas(
+    QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &, const Optimization::ExtraSettings &);
 
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
+void applyParallelReplicas(
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & settings,
+    const Optimization::ExtraSettings & extra_settings)
 {
     if (!settings.enable_parallel_replicas)
         return;
 
     insertParallelReplicasSplit(query_plan, nodes);
 
-    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes, settings).visit();
+    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes, settings, extra_settings).visit();
 
     ConvertToDistributedVisitor(query_plan).visit();
 }

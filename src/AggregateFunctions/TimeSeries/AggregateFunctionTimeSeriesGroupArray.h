@@ -519,20 +519,25 @@ public:
                 "Expected tuple size 2, got {}",
                 tuple.tupleSize());
 
-        TimestampColumnType & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0));
-        ValueColumnType & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1));
+        auto & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0)).getData();
+        auto & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1)).getData();
 
         Data & data = this->data(place);
 
         data.sort(arena);
 
-        for (const Element & element : data.elements)
+        const size_t num_elements = data.elements.size();
+        const size_t timestamps_offset = timestamps_to.size();
+        const size_t values_offset = values_to.size();
+        timestamps_to.resize(timestamps_offset + num_elements);
+        values_to.resize(values_offset + num_elements);
+        for (size_t i = 0; i != num_elements; ++i)
         {
-            timestamps_to.insert(element.timestamp);
-            values_to.insert(element.value);
+            timestamps_to[timestamps_offset + i] = data.elements[i].timestamp;
+            values_to[values_offset + i] = data.elements[i].value;
         }
 
-        offsets_to.push_back(offsets_to.back() + data.elements.size());
+        offsets_to.push_back(offsets_to.back() + num_elements);
     }
 
 private:
