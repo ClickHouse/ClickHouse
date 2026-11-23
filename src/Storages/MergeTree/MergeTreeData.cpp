@@ -8739,10 +8739,10 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         /// so it may refuse to start. Let's create an empty part that covers them.
         /// We don't need to commit it to zk, and don't even need to activate it.
         ///
-        /// The part is written before the covered parts leave the working set, because writing it can throw
-        /// (e.g. `MEMORY_LIMIT_EXCEEDED`). If it threw after the removal, the covered parts would already be
-        /// outdated without a covering part, a following `REPLACE_RANGE` would find no active parts to cover,
-        /// and the parts would be removed from ZooKeeper only, becoming unexpected parts after a restart.
+        /// The part is written and committed before the covered parts leave the working set, because writing or
+        /// committing it can throw (e.g. `MEMORY_LIMIT_EXCEEDED`). If it threw after the removal, the covered parts
+        /// would already be outdated without a covering part, a following `REPLACE_RANGE` would find no active parts
+        /// to cover, and the parts would be removed from ZooKeeper only, becoming unexpected parts after a restart.
 
         MergeTreePartInfo empty_info = drop_range;
         empty_info.level = empty_info.mutation = 0;
@@ -8809,24 +8809,30 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         }
     };
 
-    /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
-    removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
-
     if (empty_covering_part)
     {
+        empty_covering_part->getDataPartStorage().commitTransaction();
+        undo_empty_covering_part_guard.release();
+
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         scope_guard rollback_tx_guard = [&]() { transaction.rollback(&lock); };
 
-        renameTempPartAndAdd(empty_covering_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
-        empty_covering_part->getDataPartStorage().commitTransaction();
+        auto covered_parts = renameTempPartAndReplaceUnlocked(empty_covering_part, lock, transaction, /*rename_in_transaction=*/ false);
+        if (covered_parts.size() != parts_to_remove.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty covering part {} covers {} active parts instead of {}",
+                empty_covering_part->name, covered_parts.size(), parts_to_remove.size());
+
+        /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
+        removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
         rollback_tx_guard.reset();
-        undo_empty_covering_part_guard.release();
 
         empty_covering_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
         /// So we don't have locks for shared data in zk for them, and can just remove blobs (this avoids leaving garbage in S3)
         empty_covering_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS_OF_NOT_TEMPORARY;
     }
+    else
+        removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
 
     /// Since we can return parts in Deleting state, we have to use a wrapper that restricts access to such parts.
     PartsToRemoveFromZooKeeper parts_to_remove_from_zookeeper;

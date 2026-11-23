@@ -311,3 +311,54 @@ def test_retry_rejected_after_failed_commit(cluster, kind, policy):
     assert node.query(f"SELECT count() FROM system.parts WHERE table = '{TABLE_NAME}' AND active") == "1\n"
     node.query(f"DROP TABLE {TABLE_NAME} SYNC")
     check_objects_restored(cluster, objects_before)
+
+
+@pytest.mark.parametrize("kind", ["drop", "replace"])
+def test_covering_part_commit_failure(cluster, kind):
+    """If the empty part that covers a dropped range fails to commit, the dropped parts stay active, so that the retry
+    covers them, instead of staying on disk uncovered and making the table read-only after a restart.
+    """
+    node = cluster.instances["node1"]
+    node.query(
+        f"CREATE TABLE {TABLE_NAME} (id UInt64)"
+        f" ENGINE=ReplicatedMergeTree('/clickhouse/tables/{TABLE_NAME}_{random_string(10)}', '1')"
+        " ORDER BY id SETTINGS storage_policy='s3'"
+    )
+    node.query(
+        f"CREATE TABLE {TABLE_NAME}_src (id UInt64) ENGINE=MergeTree ORDER BY id SETTINGS storage_policy='s3'"
+    )
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES (1)")
+    # Keep the dropped part on disk until the table is attached again.
+    node.query(f"SYSTEM STOP CLEANUP {TABLE_NAME}")
+
+    injected = "SELECT sum(value) FROM system.errors WHERE name = 'FAULT_INJECTED'"
+    injected_before = int(node.query(injected))
+    # The next commit of an object storage transaction is the one of the empty covering part.
+    node.query(
+        "SYSTEM ENABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction"
+    )
+    try:
+        if kind == "drop":
+            node.query(f"ALTER TABLE {TABLE_NAME} DROP PARTITION tuple()")
+        else:
+            assert "FAULT_INJECTED" in node.query_and_get_error(
+                f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION tuple() FROM {TABLE_NAME}_src"
+                " SETTINGS allow_replace_partition_from_empty_source = 1"
+            )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction"
+        )
+        node.query(f"DROP TABLE {TABLE_NAME}_src SYNC")
+    assert int(node.query(injected)) > injected_before
+
+    node.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
+    node.query(f"DETACH TABLE {TABLE_NAME} SYNC")
+    node.query(f"ATTACH TABLE {TABLE_NAME}")
+    assert (
+        node.query(
+            f"SELECT is_readonly FROM system.replicas WHERE table = '{TABLE_NAME}'"
+        )
+        == "0\n"
+    )
+    assert node.query(f"SELECT count() FROM {TABLE_NAME}") == "0\n"
