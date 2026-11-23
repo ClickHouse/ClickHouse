@@ -376,6 +376,18 @@ std::vector<std::string> extractConfigValues(const std::string & config_file, co
     return (code == 0) ? std::move(lines) : std::vector<std::string>{};
 }
 
+/// The value of a configuration key as the server takes it: from the server arguments if they set it, even to an
+/// empty value (e.g. `-- --http_port=` disables the listener), else from the configuration file.
+std::string getEffectiveConfigValue(
+    const std::vector<std::string> & server_args, const std::string & config_file, const std::string & key)
+{
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> config = new Poco::Util::LayeredConfiguration;
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, 0);
+    if (config->has(key))
+        return config->getString(key);
+    return extractConfigValue(config_file, key);
+}
+
 /// Recursively chown a path. Logs warnings but does not abort on failure.
 void recursiveChown(const std::string & path_str, uid_t uid, gid_t gid)
 {
@@ -472,8 +484,9 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
 }
 
 /// Whether an element included from ZooKeeper (`from_zk`) under `element` can change the users configuration file
-/// the server selects: the root, an `<include>` directly under it (its contents are spliced into the root), or
-/// `users_config`, `user_directories`, and anything inside them. Others, e.g. `<macros from_zk="..."/>`, cannot.
+/// the server selects: the root, an `<include>` directly under it (its contents are spliced into the root),
+/// `include_from` (the file of the `incl` substitutions, which can select the users file), or `users_config`,
+/// `user_directories`, and anything inside them. Others, e.g. `<macros from_zk="..."/>`, cannot.
 bool hasZooKeeperIncludeSelectingUsersFile(const Poco::XML::Element & element, bool is_root, bool in_selector)
 {
     if ((is_root || in_selector) && element.hasAttribute("from_zk"))
@@ -484,7 +497,7 @@ bool hasZooKeeperIncludeSelectingUsersFile(const Poco::XML::Element & element, b
             continue;
         const Poco::XML::XMLString & name = child->nodeName();
         bool child_in_selector = in_selector
-            || (is_root && (name == "users_config" || name == "user_directories" || name == "include"));
+            || (is_root && (name == "users_config" || name == "user_directories" || name == "include" || name == "include_from"));
         if (hasZooKeeperIncludeSelectingUsersFile(
                 *static_cast<const Poco::XML::Element *>(child), /* is_root = */ false, child_in_selector))
             return true;
@@ -956,9 +969,7 @@ bool initClickHouseDB(
 
     /// The temporary server gets the same arguments as the final one (e.g. `--path`), so the port of its clients
     /// is the one the arguments set, if any, the same as the server takes it.
-    std::string native_port = getOverriddenConfigValue(extra_server_args, "tcp_port");
-    if (native_port.empty())
-        native_port = extractConfigValue(config_file, "tcp_port");
+    std::string native_port = getEffectiveConfigValue(extra_server_args, config_file, "tcp_port");
     if (native_port.empty())
         native_port = "9000";
 
@@ -967,16 +978,14 @@ bool initClickHouseDB(
     /// of `default` and an init script passes that password itself.
     /// A configuration with only the native interface has nothing to ping, so then the check is the answer of
     /// the native port to an HTTP request, which needs no credentials either.
-    std::string ping_port = getOverriddenConfigValue(extra_server_args, "http_port");
-    if (ping_port.empty())
-        ping_port = extractConfigValue(config_file, "http_port");
+    /// A port set to an empty value in the server arguments (`-- --http_port=`) opens no listener, so it is not taken
+    /// from the configuration file then.
+    std::string ping_port = getEffectiveConfigValue(extra_server_args, config_file, "http_port");
     bool ping_secure = false;
 #if USE_SSL
     if (ping_port.empty())
     {
-        ping_port = getOverriddenConfigValue(extra_server_args, "https_port");
-        if (ping_port.empty())
-            ping_port = extractConfigValue(config_file, "https_port");
+        ping_port = getEffectiveConfigValue(extra_server_args, config_file, "https_port");
         ping_secure = true;
     }
 #endif
