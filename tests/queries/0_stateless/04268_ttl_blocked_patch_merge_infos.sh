@@ -350,3 +350,42 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE t_ttl_patch_group_by_src2;
     DROP TABLE t_ttl_patch_group_by_two;
 "
+
+# Case 23: a patch setting a TTL to zero (never expires) keeps that row once TTL resumes
+#
+# MergeTreeDataPartTTLInfo::update skips zero, so the recalculation step bounded only the
+# expired row and the next TTL merge took the drop-all / whole-column fast path over both.
+# -------------------------------------------------------------------
+echo "-- Case 23: a zero TTL set by a blocked patched merge survives the resumed TTL"
+
+# $1: table name, $2: columns, engine and TTL
+run_zero_ttl_case()
+{
+    ${CLICKHOUSE_CLIENT} -q "
+        CREATE TABLE $1 $2
+        SETTINGS
+            max_number_of_merges_with_ttl_in_pool = 0,
+            apply_patches_on_merge = 1,
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1,
+            min_bytes_for_wide_part = 0;
+
+        SYSTEM STOP MERGES $1;
+        INSERT INTO $1 VALUES (1, '2000-01-01 00:00:00', 42), (2, '2000-01-01 00:00:00', 42);
+
+        UPDATE $1 SET ts = toDateTime(0) WHERE id = 1
+        SETTINGS enable_lightweight_update = 1, mutations_sync = 2;
+
+        SYSTEM STOP TTL MERGES $1;
+        SYSTEM START MERGES $1;
+        OPTIMIZE TABLE $1 FINAL;
+        SYSTEM START TTL MERGES $1;
+        OPTIMIZE TABLE $1 FINAL;
+    "
+    # The expired row 2 still goes (rows TTL) or loses x (column TTL); row 1 keeps everything.
+    ${CLICKHOUSE_CLIENT} -q "SELECT id, toUnixTimestamp(ts) = 0, x FROM $1 ORDER BY id;"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE $1;"
+}
+
+run_zero_ttl_case t_ttl_patch_zero_rows "(id UInt64, ts DateTime, x UInt64) ENGINE = MergeTree ORDER BY id TTL ts"
+run_zero_ttl_case t_ttl_patch_zero_column "(id UInt64, ts DateTime, x UInt64 TTL ts) ENGINE = MergeTree ORDER BY id"

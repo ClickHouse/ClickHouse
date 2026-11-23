@@ -15,3 +15,7 @@ rolled up after the blocked patched merge: 1
 -- Case 22: a blocked patched merge of two rolled-up parts stays schedulable
 20
 rolled up: 1
+-- Case 23: a zero TTL set by a blocked patched merge survives the resumed TTL
+1	1	42
+1	1	42
+2	0	0

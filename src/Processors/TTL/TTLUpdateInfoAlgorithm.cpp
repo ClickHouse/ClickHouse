@@ -31,6 +31,10 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     if (ttl_update_field == TTLUpdateField::ROWS_WHERE_TTL)
         where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
 
+    /// A zero TTL never expires, but `update` skips it, so a bound over the other rows alone would let
+    /// a TTL merge drop the whole part or reset the whole column. Such a row pushes `max` to the last DateTime.
+    const bool zero_keeps_max_open = ttl_update_field == TTLUpdateField::TABLE_TTL || ttl_update_field == TTLUpdateField::COLUMNS_TTL;
+
     const size_t rows = block.rows();
     PaddedPODArray<Int64> timestamps;
     extractTimestamps(ttl_column.get(), timestamps);
@@ -40,6 +44,8 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
         if (where_column && !where_column->getBool(i))
             continue;
         new_ttl_info.update(timestamps[i]);
+        if (zero_keeps_max_open && timestamps[i] == 0)
+            new_ttl_info.max = std::max<time_t>(new_ttl_info.max, std::numeric_limits<UInt32>::max());
     }
 }
 
