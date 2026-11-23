@@ -36,3 +36,24 @@ $CLICKHOUSE_CLIENT --log_queries=1 --query_id "$query_id" --query "CREATE TABLE 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, text_log"
 $CLICKHOUSE_CLIENT --query "SELECT query FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND event_date >= yesterday() SETTINGS enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT --query "SELECT countIf(message LIKE '%TopSecretValue%'), countIf(logger_name = 'executeQuery' AND message LIKE '%[HIDDEN]%') > 0 FROM system.text_log WHERE query_id = '$query_id' AND event_date >= yesterday() AND event_time >= now() - 600 SETTINGS enable_parallel_replicas = 0"
+
+# A call in the table function argument of a table function: an unknown name is hidden, a function stays visible.
+while read -r query; do
+    $CLICKHOUSE_FORMAT --oneline --query "$query"
+done <<'EOF'
+SELECT * FROM remote('127.0.0.1', s3Clustr('http://127.0.0.1:1/x/', 'minio', 'TopSecretValue'))
+SELECT * FROM remoteSecure('127.0.0.1', s3Clustr('TopSecretValue'), 'user', 'TopSecretValue')
+SELECT * FROM remote(named_collection, database = s3Clustr('TopSecretValue'))
+SELECT * FROM cluster(test_shard_localhost, s3Clustr('TopSecretValue'))
+SELECT * FROM clusterAllReplicas(test_shard_localhost, s3Clustr('TopSecretValue'))
+SELECT * FROM loop(s3Clustr('TopSecretValue'))
+SELECT * FROM remote('127.0.0.1', concat('visible', ''), 'visible')
+SELECT * FROM loop(concat('visible', ''), 'visible')
+SELECT * FROM remote('127.0.0.1', numbers(1))
+EOF
+
+query_id="${CLICKHOUSE_DATABASE}_unknown_nested_table_function"
+$CLICKHOUSE_CLIENT --log_queries=1 --query_id "$query_id" --query "SELECT * FROM remote('127.0.0.1', s3Clustr('http://127.0.0.1:1/x/', 'minio', 'TopSecretValue'))" 2>&1 | grep -o -m1 UNKNOWN_FUNCTION
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, text_log"
+$CLICKHOUSE_CLIENT --query "SELECT query, exception_code, position(exception, 'TopSecretValue') = 0 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id' AND event_date >= yesterday() SETTINGS enable_parallel_replicas = 0"
+$CLICKHOUSE_CLIENT --query "SELECT countIf(message LIKE '%TopSecretValue%'), countIf(logger_name = 'executeQuery' AND message LIKE '%[HIDDEN]%') > 0 FROM system.text_log WHERE query_id = '$query_id' AND event_date >= yesterday() AND event_time >= now() - 600 SETTINGS enable_parallel_replicas = 0"

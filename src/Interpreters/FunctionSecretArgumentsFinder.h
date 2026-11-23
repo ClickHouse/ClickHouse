@@ -56,6 +56,11 @@ public:
     /// hides every other positional argument.
     void maskPositionalsAfterCollectionName();
 
+    /// Hides argument `index` of a slot that takes a table function when it calls a name that is neither a table function
+    /// nor a function (a misspelled table function can carry credentials). For a `key = value` argument
+    /// (`argument_is_named`) the value is the slot, and only the value is hidden.
+    void maskUnknownTableFunction(size_t index, bool argument_is_named = false);
+
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
 

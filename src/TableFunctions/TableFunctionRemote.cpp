@@ -5,6 +5,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Access/Common/AccessFlags.h>
@@ -118,6 +119,17 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
         is_cluster_function ? 4 : 6,
         is_cluster_function ? "[<cluster name or default if not specified>, [<database.table> | [<name of remote database>, <name of remote table>] | <table function>]] [, sharding_key]"
                             : "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]");
+}
+
+namespace
+{
+
+/// cluster('cluster_name', table_function(...))
+SecretArgumentsSpec clusterSecretArguments()
+{
+    return {.custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskUnknownTableFunction(1); }};
+}
+
 }
 
 void registerTableFunctionRemote(TableFunctionFactory & factory)
@@ -349,8 +361,8 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 - [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 - [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
-    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, clusterSecretArguments(), {.allow_readonly = true}});
+    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, clusterSecretArguments(), {.allow_readonly = true}});
 }
 
 }

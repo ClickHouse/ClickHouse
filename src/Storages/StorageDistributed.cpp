@@ -2523,6 +2523,12 @@ void findRemoteFunctionSecretArguments(FunctionSecretArgumentsFinder & finder)
     /// remote('addresses_expr', 'db', 'table', 'user' [, 'password'] [, sharding_key])
     /// remote('addresses_expr', table_function(), 'user' [, 'password'] [, sharding_key])
 
+    /// remote('addresses_expr', table_function(...)), remote(named_collection, database = table_function(...))
+    finder.maskUnknownTableFunction(1);
+    for (std::string_view key : {"database", "db"})
+        for (ssize_t i = finder.findNamedArgument(nullptr, key, 1); i >= 0; i = finder.findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+            finder.maskUnknownTableFunction(static_cast<size_t>(i), /*argument_is_named=*/ true);
+
     /// But we should check the number of arguments first because we don't need to do any replacements in case of
     /// remote('addresses_expr', db.table)
     if (finder.function->arguments->size() < 3)

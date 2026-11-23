@@ -19,3 +19,15 @@ SELECT * FROM s3Clustr(\'[HIDDEN]\', \'[HIDDEN]\', \'[HIDDEN]\')
 UNKNOWN_FUNCTION
 CREATE TABLE t AS s3Clustr(\'[HIDDEN]\')(\'[HIDDEN]\')
 0	1
+SELECT * FROM remote('127.0.0.1', '[HIDDEN]')
+SELECT * FROM remoteSecure('127.0.0.1', '[HIDDEN]', 'user', '[HIDDEN]')
+SELECT * FROM remote(named_collection, database = '[HIDDEN]')
+SELECT * FROM cluster(test_shard_localhost, '[HIDDEN]')
+SELECT * FROM clusterAllReplicas(test_shard_localhost, '[HIDDEN]')
+SELECT * FROM loop('[HIDDEN]')
+SELECT * FROM remote('127.0.0.1', concat('visible', ''), 'visible')
+SELECT * FROM loop(concat('visible', ''), 'visible')
+SELECT * FROM remote('127.0.0.1', numbers(1))
+UNKNOWN_FUNCTION
+SELECT * FROM remote(\'127.0.0.1\', \'[HIDDEN]\')	46	1
+0	1

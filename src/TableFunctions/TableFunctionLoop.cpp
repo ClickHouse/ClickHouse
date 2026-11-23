@@ -4,6 +4,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/Exception.h>
@@ -248,7 +249,12 @@ SELECT * FROM loop(numbers(3)) LIMIT 7;
 SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
 ...
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{.custom = [](FunctionSecretArgumentsFinder & finder)
+        {
+            /// loop(table_function(...)); in `loop(database, table)` the first argument is a database name.
+            if (finder.function->arguments->size() == 1)
+                finder.maskUnknownTableFunction(0);
+        }});
     }
 
 }
