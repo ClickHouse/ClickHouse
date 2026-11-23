@@ -286,8 +286,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (is_final && read_from_merge_tree_step && read_from_merge_tree_step->isPrewhereDeferredAfterFinal())
         return;
 
-    /// A runtime filter whose key can throw is not moved before the existing PREWHERE or FINAL, which remove rows.
-    if ((existing_prewhere_info || is_final)
+    /// A runtime filter whose key can throw is not moved before the existing PREWHERE, FINAL or SAMPLE, which remove rows.
+    if ((existing_prewhere_info || is_final || (read_from_merge_tree_step && read_from_merge_tree_step->isQueryWithSampling()))
         && ActionsDAG::hasRuntimeFilterWithThrowingKey(&filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName())))
         return;
 

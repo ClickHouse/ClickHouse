@@ -486,6 +486,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             return; /// Already inside an InputSelectorStep — avoid infinite re-application.
     }
 
+    /// The set-building read below skips FINAL, so it would compute the key of such a runtime filter on the rows FINAL removes.
+    if (filter_step && ActionsDAG::hasRuntimeFilterWithThrowingKey(&filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName())))
+        return;
+
     /// We need either a filter or prewhere/row_policy to make this worthwhile.
     if (!filter_step && !reading_step->getPrewhereInfo() && !reading_step->getRowLevelFilter())
         return;
