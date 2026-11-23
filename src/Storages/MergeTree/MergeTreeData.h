@@ -929,6 +929,9 @@ public:
     virtual std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
     virtual size_t getMaxOutdatedPartsCountForPartition() const;
 
+    /// Whether background merges are still delayed after the startup, see `delay_merges_after_startup_seconds`.
+    bool areMergesDelayedAfterStartup() const;
+
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
@@ -2418,6 +2421,14 @@ protected:
 
     StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
     void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
+
+    void delayMergesAfterStartup();
+    void stopDelayingMergesAfterStartup();
+
+    /// Only a table the server loads from its metadata at startup delays its merges.
+    bool merges_can_be_delayed_after_startup = false;
+    /// `CLOCK_MONOTONIC` time of the startup in nanoseconds, 0 if the delay is not armed.
+    std::atomic<UInt64> startup_time_ns = 0;
 
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
