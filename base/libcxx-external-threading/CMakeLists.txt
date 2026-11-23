@@ -1,0 +1,6 @@
+if (ENABLE_SILK)
+    add_library(libcxx-external-threading STATIC external_threading.cpp)
+    target_compile_options(libcxx-external-threading PRIVATE -Wno-pragma-clang-attribute)
+    target_link_libraries(libcxx-external-threading PRIVATE ch_contrib::silk_fibers)
+    target_link_libraries(cxx PUBLIC $<LINK_ONLY:libcxx-external-threading>)
+endif ()

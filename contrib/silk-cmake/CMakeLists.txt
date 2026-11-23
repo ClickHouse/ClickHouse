@@ -30,7 +30,7 @@ add_library(ch_contrib::silk_util ALIAS _silk_util)
 
 # silk-fibers
 file(GLOB SILK_FIBERS_SOURCES CONFIGURE_DEPENDS "${SILK_SOURCE_DIR}/src/fibers/*.cpp")
-add_library(_silk_fibers STATIC ${SILK_FIBERS_SOURCES} "${ClickHouse_SOURCE_DIR}/base/libcxx-external-threading/external_threading.cpp")
+add_library(_silk_fibers STATIC ${SILK_FIBERS_SOURCES})
 target_include_directories(_silk_fibers SYSTEM
     PUBLIC "${SILK_SOURCE_DIR}/include"
     PRIVATE "${SILK_SOURCE_DIR}/src"
@@ -40,5 +40,3 @@ target_link_libraries(_silk_fibers
     PRIVATE boost::context ch_contrib::liburing
 )
 add_library(ch_contrib::silk_fibers ALIAS _silk_fibers)
-
-target_link_libraries(cxx PUBLIC $<LINK_ONLY:ch_contrib::silk_fibers>)

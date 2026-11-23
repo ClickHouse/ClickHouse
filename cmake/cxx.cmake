@@ -16,6 +16,10 @@ if (ENABLE_SILK AND NOT SILK_SUPPORTED)
     message (FATAL_ERROR "ENABLE_SILK requires Linux on x86-64-v2 or AArch64")
 endif ()
 
+if (ENABLE_SILK AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/silk/include")
+    message (FATAL_ERROR "ENABLE_SILK requires the contrib/silk submodule, pass -DENABLE_SILK=0 to build without Silk")
+endif ()
+
 if (ENABLE_SILK)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_LIBCPP_HAS_THREAD_API_EXTERNAL=1 -isystem ${ClickHouse_SOURCE_DIR}/base/libcxx-external-threading")
 endif ()

@@ -16,6 +16,14 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#if __has_feature(thread_sanitizer)
+#    include <sanitizer/linux_syscall_hooks.h>
+#    include <sanitizer/tsan_interface.h>
+#    define TSAN_ANNOTATE(expr) expr
+#else
+#    define TSAN_ANNOTATE(expr)
+#endif
+
 _LIBCPP_BEGIN_NAMESPACE_STD
 
 struct __clickhouse_condvar_waiter
@@ -54,18 +62,26 @@ bool needSilkAwareWait()
     return silk::FiberScheduler::getCurrentFiberId().raw != 0 && !Silk::SuspensionBlocker::isActive();
 }
 
+long futexImpl(uint32_t * word, int op, uint32_t val, const timespec * timeout, uint32_t val3)
+{
+    TSAN_ANNOTATE(__sanitizer_syscall_pre_futex(word, op, val, timeout, nullptr, val3));
+    const long res = ::syscall(SYS_futex, word, op, val, timeout, nullptr, val3);
+    TSAN_ANNOTATE(__sanitizer_syscall_post_futex(res, word, op, val, timeout, nullptr, val3));
+    return res;
+}
+
 int futexWait(uint32_t & word, uint32_t expected, uint64_t deadline)
 {
     const timespec timeout{.tv_sec = static_cast<time_t>(deadline / 1'000'000'000), .tv_nsec = static_cast<long>(deadline % 1'000'000'000)};
-    if (::syscall(SYS_futex, &word, FUTEX_WAIT_BITSET_PRIVATE, expected, deadline == UINT64_MAX ? nullptr : &timeout, nullptr, FUTEX_BITSET_MATCH_ANY)
+    if (futexImpl(&word, FUTEX_WAIT_BITSET_PRIVATE, expected, deadline == UINT64_MAX ? nullptr : &timeout, FUTEX_BITSET_MATCH_ANY)
         && errno == ETIMEDOUT)
         return ETIMEDOUT;
     return 0;
 }
 
-void futexWake(uint32_t * word, int count)
+void futexWake(uint32_t * word, uint32_t count)
 {
-    ::syscall(SYS_futex, word, FUTEX_WAKE_PRIVATE, count, nullptr, nullptr, 0);
+    futexImpl(word, FUTEX_WAKE_PRIVATE, count, nullptr, 0);
 }
 
 class Mutex
@@ -79,20 +95,27 @@ public:
 
     void lock()
     {
+        TSAN_ANNOTATE(__tsan_mutex_pre_lock(&storage, 0));
         uint32_t current = 0;
         if (!state.compare_exchange_weak(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed))
             lockSlow();
+        TSAN_ANNOTATE(__tsan_mutex_post_lock(&storage, 0, 0));
     }
 
     bool tryLock()
     {
+        TSAN_ANNOTATE(__tsan_mutex_pre_lock(&storage, __tsan_mutex_try_lock));
         uint32_t current = 0;
-        return state.compare_exchange_weak(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed);
+        const bool locked = state.compare_exchange_weak(current, LOCKED, std::memory_order_acquire, std::memory_order_relaxed);
+        TSAN_ANNOTATE(__tsan_mutex_post_lock(&storage, locked ? __tsan_mutex_try_lock : __tsan_mutex_try_lock | __tsan_mutex_try_lock_failed, 0));
+        return locked;
     }
 
     void unlock()
     {
+        TSAN_ANNOTATE(__tsan_mutex_pre_unlock(&storage, 0));
         const uint32_t previous = state.exchange(0, std::memory_order_release);
+        TSAN_ANNOTATE(__tsan_mutex_post_unlock(&storage, 0));
         if (previous & THREAD_WAITERS)
             futexWake(&storage.__state, 1);
         if (previous & FIBER_WAITERS)
@@ -112,7 +135,11 @@ private:
         while (previous & LOCKED)
         {
             if (fiber)
+            {
+                TSAN_ANNOTATE(__tsan_mutex_pre_divert(&storage, 0));
                 silk::FiberScheduler::suspend(suspendCallback, this);
+                TSAN_ANNOTATE(__tsan_mutex_post_divert(&storage, 0));
+            }
             else
                 futexWait(storage.__state, previous | contended, UINT64_MAX);
             previous = state.fetch_or(contended, std::memory_order_acquire);
@@ -446,6 +473,7 @@ int __libcpp_recursive_mutex_unlock(__libcpp_recursive_mutex_t * m)
 
 int __libcpp_recursive_mutex_destroy(__libcpp_recursive_mutex_t * m)
 {
+    TSAN_ANNOTATE(__tsan_mutex_destroy(&m->__mutex, 0));
     if constexpr (_LIBCPP_HARDENING_MODE & (_LIBCPP_HARDENING_MODE_EXTENSIVE | _LIBCPP_HARDENING_MODE_DEBUG))
         if (m->__count)
             return EBUSY;
@@ -479,8 +507,9 @@ int __libcpp_mutex_unlock(__libcpp_mutex_t * m)
     return 0;
 }
 
-int __libcpp_mutex_destroy(__libcpp_mutex_t *)
+int __libcpp_mutex_destroy([[maybe_unused]] __libcpp_mutex_t * m)
 {
+    TSAN_ANNOTATE(__tsan_mutex_destroy(m, 0));
     return 0;
 }
 
