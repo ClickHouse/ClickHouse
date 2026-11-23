@@ -173,6 +173,34 @@ std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
     return {};
 }
 
+void translateVersionIdToGCS(Aws::Http::HttpRequest & request)
+{
+    static constexpr std::string_view version_id_prefix = "versionId=";
+    static constexpr std::string_view generation_prefix = "generation=";
+
+    /// The query string starts with `?`. It is edited in place rather than parsed and rebuilt,
+    /// so the other parameters, a parameter without a value (`?tagging`) too, stay as they are.
+    const Aws::String & query = request.GetUri().GetQueryString();
+    size_t pos = query.starts_with('?') ? 1 : 0;
+    while (pos < query.size())
+    {
+        size_t end = query.find('&', pos);
+        if (end == Aws::String::npos)
+            end = query.size();
+
+        if (std::string_view(query).substr(pos, end - pos).starts_with(version_id_prefix))
+        {
+            Aws::String translated = query.substr(0, pos);
+            translated += generation_prefix;
+            translated += query.substr(pos + version_id_prefix.size());
+            request.GetUri().SetQueryString(translated);
+            return;
+        }
+
+        pos = end + 1;
+    }
+}
+
 void translateHeadersToGCS(Aws::Http::HttpRequest & request)
 {
     const auto before = request.GetHeaders();

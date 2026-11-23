@@ -719,6 +719,17 @@ Peak memory usage: 192.27 KiB.
 
 Passing the parameter `headers('x-amz-request-payer' = 'requester')` to the `s3` function works as well.
 
+## Reading a version of an object {#reading-a-version-of-an-object}
+
+In a bucket with versioning enabled, a version of an object other than the current one is read by adding the `versionId` query parameter to the URL. This also reads a version of a deleted object, whose current version is a delete marker.
+
+```sql
+SELECT *
+FROM s3('https://my-bucket.s3.amazonaws.com/data.csv?versionId=3sL4kqtJlcpXroDTDmJ.rUZz1oIu9Cx7', 'CSV');
+```
+
+Reading a version requires the `s3:GetObjectVersion` permission.
+
 ## Resolving relative URLs {#resolving-relative-urls}
 
 The [s3_base](/reference/settings/session-settings/s3#s3_base) setting allows passing a relative URL to the `s3` function. When `s3_base` is set and the function argument has no scheme, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), using the same rules as the [url_base](/reference/settings/session-settings/url#url_base) setting of the [url](/reference/functions/table-functions/url#resolving-relative-urls) function. Absolute URLs are passed through unchanged.
@@ -960,6 +971,15 @@ CREATE NAMED COLLECTION creds AS
         secret_access_key = '***';
 SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
+```
+
+## Reading a version of an object {#reading-a-version-of-an-object}
+
+In a bucket with object versioning enabled, a version of an object other than the live one is read by adding the `versionId` query parameter to the URL, with the generation number of the version as its value. This also reads a noncurrent version of a deleted object. ClickHouse sends the value to GCS as the `generation` query parameter.
+
+```sql
+SELECT *
+FROM gcs('https://storage.googleapis.com/my-bucket/data.csv?versionId=1700000000000000', 'CSV');
 ```
 
 ## Partitioned Write {#partitioned-write}

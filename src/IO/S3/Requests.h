@@ -133,6 +133,10 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
 
 void translateHeadersToGCS(Aws::Http::HttpRequest & request);
 
+/// GCS names the version of an object `generation`, so the `versionId` query parameter that the SDK
+/// adds to a request for a version of an object is renamed. GCS does not know `versionId`.
+void translateVersionIdToGCS(Aws::Http::HttpRequest & request);
+
 /// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
 /// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
 std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);

@@ -1127,6 +1127,10 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
 
     if (api_mode == ApiMode::GCS)
         translateHeadersToGCS(*httpRequest);
+
+    /// Unlike the headers, the query parameter has one spelling for every kind of credentials.
+    if (provider_type == ProviderType::GCS)
+        translateVersionIdToGCS(*httpRequest);
 }
 
 SecretString Client::getGCSOAuthToken() const

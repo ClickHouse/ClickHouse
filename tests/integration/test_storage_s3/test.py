@@ -1007,6 +1007,7 @@ def run_s3_mocks(started_cluster):
             ("no_list_objects.py", "resolver", "8083"),
             ("gcs_transcode_mock.py", "resolver", "8084"),
             ("requester_pays.py", "resolver", "8085"),
+            ("gcs_versions_mock.py", "resolver", "8086"),
         ],
     )
 
@@ -3945,6 +3946,85 @@ def test_schema_cache_key_includes_object_version(started_cluster):
         assert expected == instance.query(
             f"SELECT * FROM {s3('schema.csv', 'CSVWithNames', version_id=version_id)} FORMAT TSVWithNames"
         )
+
+
+def test_read_object_version(started_cluster):
+    # A read with `?versionId=` returns that version of an object: its data, its size and its schema. It also does
+    # after the object was deleted: the current version is then a delete marker, and only a request that names
+    # a version finds the data.
+    instance = started_cluster.instances["dummy"]
+    minio_client = started_cluster.minio_client
+    bucket = "versioned"
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+    minio_client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    key = f"test_read_object_version-{uuid.uuid4()}"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{key}"
+    auth = f"'minio', '{minio_secret_key}'"
+
+    def s3(version_id=None, structure="auto"):
+        versioned_url = url if version_id is None else f"{url}?versionId={version_id}"
+        return f"s3('{versioned_url}', {auth}, 'Native', '{structure}', 'zstd')"
+
+    def put_version(structure, query):
+        instance.query(f"INSERT INTO FUNCTION {s3(structure=structure)} {query} SETTINGS s3_truncate_on_insert = 1")
+        return minio_client.stat_object(bucket, key)
+
+    # The versions differ in size and in schema, so a read that mixes the versions up cannot pass.
+    old = put_version("x UInt64", "SELECT number FROM numbers(1000)")
+    new = put_version("s String", "SELECT 'current'")
+    assert old.version_id != new.version_id and old.size > new.size
+
+    def check_versions():
+        # The schema cache could answer without a request, which would hide a wrong `HEAD`.
+        settings = {"schema_inference_use_cache_for_s3": 0}
+        assert "1000\t499500\n" == instance.query(
+            f"SELECT count(), sum(x) FROM {s3(old.version_id)}", settings=settings
+        )
+        assert "current\n" == instance.query(f"SELECT * FROM {s3(new.version_id)}", settings=settings)
+        assert "x\tUInt64\n" == instance.query(
+            f"SELECT name, type FROM (DESCRIBE TABLE {s3(old.version_id)})", settings=settings
+        )
+        assert "s\tString\n" == instance.query(
+            f"SELECT name, type FROM (DESCRIBE TABLE {s3(new.version_id)})", settings=settings
+        )
+        assert f"{old.size}\n" == instance.query(
+            f"SELECT DISTINCT _size FROM {s3(old.version_id)}", settings=settings
+        )
+
+    check_versions()
+    assert "current\n" == instance.query(f"SELECT * FROM {s3()}")
+
+    # In a bucket with versioning, a removal only adds a delete marker as the current version.
+    minio_client.remove_object(bucket, key)
+    instance.query_and_get_error(f"SELECT * FROM {s3(structure='s String')}")
+    check_versions()
+
+    # A version that never existed is an error, not a read of another version.
+    instance.query_and_get_error(f"SELECT * FROM {s3(str(uuid.uuid4()), 's String')}")
+
+
+def test_gcs_read_object_version(started_cluster):
+    # GCS names the version of an object `generation`. The mock at resolver:8086 serves a deleted object by
+    # `generation` only and rejects `versionId`, so the reads below work only if `versionId` is sent as `generation`.
+    instance = started_cluster.instances["dummy"]
+    # The S3 client deduces the GCS provider from the endpoint, so reach the mock under a GCS host name.
+    host = "gcs-versions.storage.googleapis.com"
+    instance.append_hosts(host, started_cluster.get_instance_ip("resolver"))
+    url = f"http://{host}:8086/bucket/data.csv"
+
+    for auth in ["NOSIGN", "'GOOG1EXAMPLE', 'secret'"]:
+        assert "1\n2\n3\n" == instance.query(
+            f"SELECT * FROM s3('{url}?versionId=1700000000000001', {auth}, 'CSV', 'x UInt64') ORDER BY x"
+        )
+        assert "9\n" == instance.query(f"SELECT * FROM s3('{url}?versionId=1700000000000002', {auth}, 'CSV', 'x UInt64')")
+        assert "c1\tNullable(Int64)\n" == instance.query(
+            f"SELECT name, type FROM (DESCRIBE TABLE s3('{url}?versionId=1700000000000001', {auth}, 'CSV'))"
+        )
+        # The object has no live version.
+        instance.query_and_get_error(f"SELECT * FROM s3('{url}', {auth}, 'CSV', 'x UInt64')")
+        # A generation that does not exist.
+        instance.query_and_get_error(f"SELECT * FROM s3('{url}?versionId=1700000000000003', {auth}, 'CSV', 'x UInt64')")
 
 
 def test_gcs_decompressive_transcoding(started_cluster):
