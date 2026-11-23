@@ -1,7 +1,6 @@
 -- Tests that the has() -> IN rewrite reaches a constant array coming from a scalar subquery
 -- (kept as a __getScalar call rather than folded into a literal) and a LowCardinality needle.
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_has_to_in = 1;
 SET enable_scalar_subquery_optimization = 1;
 SET explain_query_plan_default = 'legacy';

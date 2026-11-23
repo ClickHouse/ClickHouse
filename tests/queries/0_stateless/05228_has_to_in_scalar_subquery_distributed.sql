@@ -7,7 +7,6 @@
 -- This is only observable when the predicate's value crosses the network, which is why 05227's
 -- `WHERE`-only distributed coverage does not see it.
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_has_to_in = 1;
 SET enable_scalar_subquery_optimization = 1;
 SET rewrite_in_to_join = 0;
