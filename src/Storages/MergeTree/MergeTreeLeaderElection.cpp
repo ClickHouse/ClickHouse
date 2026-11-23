@@ -747,8 +747,9 @@ void MergeTreeLeaderElection::publishReaderView(std::chrono::steady_clock::time_
     /// The newest write of the lease that this node had read before the listing started: the listing shows
     /// everything that the leader had committed before it started that write. If there is none, the previous
     /// value stays: a newer listing shows at least what an older one showed.
-    for (size_t i = observed_lease_writes.size(); i-- > 0;)
+    for (size_t end = observed_lease_writes.size(); end > 0; --end)
     {
+        const size_t i = end - 1;
         if (observed_lease_writes[i].observed_at <= view_time)
         {
             reader_view_lease_incarnation = observed_lease_writes[i].incarnation;
