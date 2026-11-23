@@ -42,7 +42,8 @@ void TableFunctionFactory::registerFunction(
 
 TableFunctionPtr TableFunctionFactory::get(
     const ASTPtr & ast_function,
-    ContextPtr context) const
+    ContextPtr context,
+    bool is_replayed_definition) const
 {
     const auto * table_function = ast_function->as<ASTFunction>();
     if (!table_function)
@@ -58,6 +59,7 @@ TableFunctionPtr TableFunctionFactory::get(
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
     }
 
+    res->setReplayedDefinition(is_replayed_definition);
     res->parseArguments(ast_function, context);
     return res;
 }

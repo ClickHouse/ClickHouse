@@ -21,6 +21,7 @@ BlockIO InterpreterCheckGrantQuery::execute()
     elements_to_check_grant.throwIfFilterIsNotCompilable();
     String current_database = getContext()->getCurrentDatabase();
     elements_to_check_grant.replaceEmptyDatabase(current_database);
+    elements_to_check_grant.eraseNotGrantable();
 
     auto current_user_access = getContext()->getAccess();
     bool is_granted = current_user_access->isGranted(elements_to_check_grant);

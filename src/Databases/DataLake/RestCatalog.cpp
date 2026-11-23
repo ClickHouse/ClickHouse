@@ -41,6 +41,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -107,13 +108,13 @@ namespace ProfileEvents
 
 namespace DB::DatabaseDataLakeSetting
 {
-    extern const DatabaseDataLakeSettingsString catalog_credential;
-    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsSecretString catalog_credential;
+    extern const DatabaseDataLakeSettingsSecretString auth_header;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
-    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
-    extern const DatabaseDataLakeSettingsString onelake_refresh_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsSecretString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
-    extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsSecretString onelake_client_secret;
 }
 
 namespace DataLake
@@ -126,7 +127,7 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 static constexpr auto UNKNOWN_EXPIRATION_TOKEN_LIFETIME = std::chrono::minutes(1);
 static constexpr auto ONELAKE_DFS_HOST_SUFFIX = ".dfs.fabric.microsoft.com";
 
-DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
+DB::HTTPHeaderEntry parseAuthHeader(std::string_view auth_header)
 {
     /// Parse a string of format "Authorization: <auth_scheme> <auth_token>"
     /// into a key-value header "Authorization", "<auth_scheme> <auth_token>"
@@ -165,13 +166,13 @@ std::pair<std::string_view, std::string_view> splitLocationURI(std::string_view 
     return {authority, path};
 }
 
-std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
+std::pair<std::string, DB::SecretString> parseCatalogCredential(std::string_view catalog_credential)
 {
     /// Parse a string of format "<client_id>:<client_secret>"
     /// into separare strings client_id and client_secret.
 
     std::string client_id;
-    std::string client_secret;
+    DB::SecretString client_secret;
     if (!catalog_credential.empty())
     {
         auto pos = catalog_credential.find(':');
@@ -283,13 +284,14 @@ std::string RestCatalog::Config::toString() const
 RestCatalog::RestCatalog(
     const std::string & warehouse_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     const std::string & auth_scope_,
-    const std::string & auth_header_,
+    std::string_view auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -298,6 +300,7 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -325,7 +328,8 @@ RestCatalog::RestCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -334,6 +338,7 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , snapshot_loading_mode(snapshot_loading_mode_)
 {
 }
 
@@ -355,16 +360,29 @@ RestCatalog::Config RestCatalog::loadConfig(const CatalogState & catalog_state, 
     Config result;
 
     auto defaults_object = object->get("defaults").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(defaults_object, result);
+    parseCatalogConfigurationSettings(defaults_object, result, result.default_snapshot_loading_mode);
 
     auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
-    parseCatalogConfigurationSettings(overrides_object, result);
+    parseCatalogConfigurationSettings(overrides_object, result, result.override_snapshot_loading_mode);
+
+    auto warn_if_unknown = [&](std::string_view section, const std::string & mode)
+    {
+        if (!mode.empty() && mode != "all" && mode != "refs")
+            LOG_WARNING(
+                log,
+                "Unknown `snapshot-loading-mode` '{}' in the `{}` of the catalog configuration, it is treated as `all`",
+                mode,
+                section);
+    };
+    warn_if_unknown("defaults", result.default_snapshot_loading_mode);
+    warn_if_unknown("overrides", result.override_snapshot_loading_mode);
 
     LOG_DEBUG(log, "Parsed catalog configuration settings: {}", result.toString());
     return result;
 }
 
-void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result)
+void RestCatalog::parseCatalogConfigurationSettings(
+    const Poco::JSON::Object::Ptr & object, Config & result, std::string & snapshot_loading_mode)
 {
     if (!object)
         return;
@@ -374,6 +392,8 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
 
     if (object->has("default-base-location"))
         result.default_base_location = object->get("default-base-location").extract<String>();
+
+    snapshot_loading_mode = Poco::toLower(object->optValue<std::string>("snapshot-loading-mode", ""));
 }
 
 void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
@@ -419,7 +439,7 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token));
         return headers;
     }
     return {};
@@ -430,15 +450,18 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & base_url_,
     const std::string & onelake_tenant_id,
     const std::string & onelake_client_id,
-    const std::string & onelake_client_secret,
-    const std::string & bearer_token_,
-    const std::string & refresh_token_,
+    std::string_view onelake_client_secret,
+    std::string_view bearer_token_,
+    std::string_view refresh_token_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
+    : RestCatalog(
+        warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
+        snapshot_loading_mode_)
 {
     CatalogState initial_state;
     initial_state.tenant_id = onelake_tenant_id;
@@ -449,7 +472,7 @@ OneLakeCatalog::OneLakeCatalog(
             /// Pre-obtained token scoped to https://storage.azure.com. Used for both catalog header
             /// and Azure Blob access. Does not support refresh.
             initial_state.bearer_token = bearer_token_;
-            initial_state.auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + bearer_token_);
+            initial_state.auth_header = DB::HTTPHeaderEntry("Authorization", fmt::format("Bearer {}", bearer_token_));
             validateAuthHeaders(initial_state.auth_header.value());
             break;
         }
@@ -591,7 +614,7 @@ void RestCatalog::applySettingsChangesToState(
         /// fail the ALTER right here, and the config reload authenticates with that token
         /// instead of the cached one.
         new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
 }
 
@@ -632,7 +655,7 @@ DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(const CatalogState & catalo
     if (!catalog_state.refresh_token.empty())
     {
         const auto token = getValidAccessToken(catalog_state, update_token);
-        headers.emplace_back("Authorization", "Bearer " + token.token);
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", token.token));
     }
     else
     {
@@ -655,7 +678,7 @@ AccessToken OneLakeCatalog::getValidAccessToken(const CatalogState & catalog_sta
     return *current;
 }
 
-std::pair<std::string, std::chrono::system_clock::time_point> OneLakeCatalog::getCurrentAccessToken() const
+std::pair<DB::SecretString, std::chrono::system_clock::time_point> OneLakeCatalog::getCurrentAccessToken() const
 {
     const auto state_snapshot = state.get();
     const auto token = getValidAccessToken(*state_snapshot, /* force_update */ false);
@@ -719,7 +742,7 @@ void OneLakeCatalog::applySettingsChangesToState(
 
     if (auth_mode == AuthMode::BearerToken)
     {
-        new_state.auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + new_state.bearer_token);
+        new_state.auth_header = DB::HTTPHeaderEntry("Authorization", fmt::format("Bearer {}", new_state.bearer_token));
         validateAuthHeaders(new_state.auth_header.value());
     }
     else if (auth_mode == AuthMode::RefreshToken)
@@ -728,7 +751,7 @@ void OneLakeCatalog::applySettingsChangesToState(
         /// fails the ALTER right here, and the config reload authenticates with the fresh
         /// access token instead of the cached one.
         new_access_token = std::make_unique<AccessToken>(retrieveAccessTokenViaRefreshToken(new_state));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
     else if (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret)
     {
@@ -736,27 +759,30 @@ void OneLakeCatalog::applySettingsChangesToState(
         /// fail the ALTER right here, and the config reload authenticates with that token
         /// instead of the cached one.
         new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
 }
 
-std::pair<std::string, std::string> HorizonCatalog::parseHorizonCredential(const std::string & catalog_credential)
+std::pair<std::string, DB::SecretString> HorizonCatalog::parseHorizonCredential(std::string_view catalog_credential)
 {
     /// Always secret-only. Snowflake PATs may contain `:`, so we must not split like RestCatalog.
-    return {"", catalog_credential};
+    return {"", DB::SecretString(catalog_credential)};
 }
 
 HorizonCatalog::HorizonCatalog(
     const std::string & warehouse_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     const std::string & auth_scope_,
-    const std::string & auth_header_,
+    std::string_view auth_header_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
+    DB::ContextPtr context_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
+    : RestCatalog(
+        warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
+        snapshot_loading_mode_)
 {
     CatalogState initial_state;
     if (!catalog_credential_.empty())
@@ -818,7 +844,7 @@ void HorizonCatalog::applySettingsChangesToState(
     if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret))
     {
         new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
 }
 
@@ -867,7 +893,7 @@ namespace
 
 }
 
-AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, const std::string & client_secret) const
+AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, std::string_view client_secret) const
 {
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
@@ -885,7 +911,7 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
         Poco::URI::QueryParameters params = {
             {"grant_type", "client_credentials"},
             {"scope", auth_scope},
-            {"client_secret", client_secret},
+            {"client_secret", String(client_secret)},
         };
         /// Snowflake Horizon OAuth uses secret-only credentials (PAT/JWT); omit empty client_id.
         if (!client_id.empty())
@@ -1040,12 +1066,14 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_service_account_,
     const std::string & google_metadata_service_,
     const std::string & google_adc_client_id_,
-    const std::string & google_adc_client_secret_,
-    const std::string & google_adc_refresh_token_,
+    std::string_view google_adc_client_secret_,
+    std::string_view google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
+    std::string_view google_service_account_key_,
     DB::ContextPtr context_,
-    bool allow_server_credentials_in_user_queries_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
+    bool allow_server_credentials_in_user_queries_,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_, snapshot_loading_mode_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
     , google_metadata_service(google_metadata_service_)
@@ -1053,11 +1081,19 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , google_service_account_key(google_service_account_key_)
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
+    if (!google_service_account_key.empty()
+        && (!google_adc_client_id.empty() || !google_adc_client_secret.empty() || !google_adc_refresh_token.empty()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "BigLake credentials are ambiguous: specify either google_service_account_key or the ADC credentials "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token), not both");
+
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
@@ -1070,9 +1106,9 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
 {
     /// Google Cloud OAuth2 for BigLake.
     /// Uses GCP metadata service or Application Default Credentials to get access token.
-    /// Only use Google OAuth if explicitly configured (google_project_id or google_adc_client_id).
+    /// Only use Google OAuth if explicitly configured (`google_project_id`, `google_adc_client_id` or `google_service_account_key`).
     /// https://developers.google.com/identity/protocols/oauth2
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         auto current = access_token.get();
         if (!current || update_token || current->isExpired())
@@ -1082,7 +1118,7 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token));
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -1118,15 +1154,34 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
     return token;
 }
 
+AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromServiceAccountKey() const
+{
+    const auto & context = getContext();
+    auto [assertion, token_endpoint] = DB::makeGCPServiceAccountAssertion(google_service_account_key, DB::GCP_CLOUD_PLATFORM_OAUTH_SCOPE);
+    /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
+    context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
+
+    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+    auto result = DB::fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, timeouts);
+
+    AccessToken token;
+    token.token = std::move(result.access_token);
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10);
+    return token;
+}
+
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
     const auto & context = getContext();
 
-    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
-    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
-    /// mint a token with the server's own identity.
+    /// An explicit Application Default Credentials triple or a service account key is a user-supplied credential,
+    /// so it is honored. Fail closed if it does not work: do not fall back to the server's GCP metadata service,
+    /// which would mint a token with the server's own identity.
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return retrieveGoogleCloudAccessTokenFromRefreshToken();
+
+    if (!google_service_account_key.empty())
+        return retrieveGoogleCloudAccessTokenFromServiceAccountKey();
 
     /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
     /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
@@ -1136,8 +1191,8 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
         throw DB::Exception(
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
-            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token)"
+            "metadata service. Provide google_service_account_key or an explicit Google ADC triple "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token)"
 #if CLICKHOUSE_CLOUD
             ".");
 #else
@@ -1391,6 +1446,20 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     /// 0x1F is a unit separator
     /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
     return {{"parent", fmt::format("{}", fmt::join(splitNamespaceLevels(base_namespace), "\x1F"))}};
+}
+
+Poco::URI::QueryParameters RestCatalog::getLoadTableParams(const Config & config) const
+{
+    /// The REST spec merge order: server overrides, then the client configuration, then server defaults.
+    std::string mode = config.override_snapshot_loading_mode;
+    if (mode.empty() && snapshot_loading_mode != DB::DatabaseDataLakeSnapshotLoadingMode::AUTO)
+        mode = DB::SettingFieldDatabaseDataLakeSnapshotLoadingModeTraits::toString(snapshot_loading_mode);
+    if (mode.empty())
+        mode = config.default_snapshot_loading_mode;
+
+    if (mode == "refs")
+        return {{"snapshots", "refs"}};
+    return {};
 }
 
 bool RestCatalog::hasFlatNamespaces() const
@@ -1772,7 +1841,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     const auto state_snapshot = state.get();
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
+    auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, getLoadTableParams(state_snapshot->config), headers, /* auth_headers */ std::nullopt);
 
     if (buf->eof())
     {
@@ -1817,6 +1886,7 @@ bool RestCatalog::getTableMetadataImpl(
         const bool allow_geo_parser
             = getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg].value;
         auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
+        DB::Iceberg::IcebergSchemaProcessor::checkTableSchemas(*metadata_object);
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -2061,15 +2131,18 @@ std::optional<std::string> RestCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(*namespace_location) / table_name);
 }
 
-void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+std::string RestCatalog::getCreateTableEndpoint(const CatalogState & catalog_state, const String & namespace_name) const
 {
-    const auto state_snapshot = state.get();
-    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+    return (base_url / catalog_state.config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+}
 
+Poco::JSON::Object::Ptr RestCatalog::buildCreateTableRequestBody(
+    const String & table_name, const std::optional<String> & location, Poco::JSON::Object::Ptr metadata_content) const
+{
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
-    if (!managesTableLocation())
-        request_body->set("location", metadata_content->getValue<String>("location"));
+    if (location)
+        request_body->set("location", *location);
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
@@ -2095,6 +2168,18 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
 
     request_body->set("properties", properties);
+    return request_body;
+}
+
+void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = getCreateTableEndpoint(*state_snapshot, namespace_name);
+
+    std::optional<String> location;
+    if (!managesTableLocation())
+        location = metadata_content->getValue<String>("location");
+    auto request_body = buildCreateTableRequestBody(table_name, location, metadata_content);
 
     try
     {
@@ -2139,6 +2224,31 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
 }
 
+void RestCatalog::createTableAtDefaultLocation(const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr metadata_content) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = getCreateTableEndpoint(*state_snapshot, namespace_name);
+    auto request_body = buildCreateTableRequestBody(table_name, /* location */ std::nullopt, metadata_content);
+
+    try
+    {
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw DB::Exception(
+                DB::ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog: {}", namespace_name, table_name, ex.displayText());
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}.{}: {}", namespace_name, table_name, ex.displayText());
+    }
+}
 
 bool RestCatalog::tableHasSnapshot(const std::string & namespace_name, const std::string & table_name, Int64 snapshot_id) const
 {
@@ -2194,7 +2304,7 @@ bool RestCatalog::tableHasSnapshot(const std::string & namespace_name, const std
     }
 }
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
+bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, const String & /*base_catalog_metadata_location*/, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr /*new_metadata*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
@@ -2214,12 +2324,15 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         requirement->set("type", "assert-ref-snapshot-id");
         requirement->set("ref", "main");
 
+        /// `snapshot-id` is required; `null` asserts that `main` does not exist yet.
+        Poco::Dynamic::Var expected_main_snapshot_id;
         if (new_snapshot->has("parent-snapshot-id"))
         {
             auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
             if (parent_snapshot_id != -1)
-                requirement->set("snapshot-id", parent_snapshot_id);
+                expected_main_snapshot_id = parent_snapshot_id;
         }
+        requirement->set("snapshot-id", expected_main_snapshot_id);
 
         /// Models a commit the catalog refuses because `main` is not at the parent it asserts.
         fiu_do_on(DB::FailPoints::iceberg_catalog_commit_stale_parent,
@@ -2309,7 +2422,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
             if (new_snapshot->has(DB::Iceberg::f_metadata_sequence_number))
                 successor->set(
                     DB::Iceberg::f_metadata_sequence_number, new_snapshot->getValue<Int64>(DB::Iceberg::f_metadata_sequence_number) + 1);
-            updateMetadata(namespace_name, table_name, "", successor);
+            updateMetadata(namespace_name, table_name, "", "", successor, nullptr);
             throw DB::HTTPException(
                 DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
                 endpoint,
@@ -2540,6 +2653,7 @@ bool RestCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & /*new_metadata_path*/,
+    const String & /*base_catalog_metadata_location*/,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id) const
 {
@@ -2700,7 +2814,8 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
 ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(
     const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
 {
-    return [this, storage_id] () -> std::shared_ptr<IStorageCredentials>
+    /// `self` keeps catalog alive while S3 client holds this callback.
+    return [this, self = shared_from_this(), storage_id] () -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
@@ -2711,7 +2826,7 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         const auto & table = storage_id.getTableName();
         auto [namespace_name, table_name] = DataLake::parseTableName(table);
         const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, headers, /* auth_headers */ std::nullopt);
+        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint, getLoadTableParams(state_snapshot->config), headers, /* auth_headers */ std::nullopt);
 
         if (buf->eof())
         {
