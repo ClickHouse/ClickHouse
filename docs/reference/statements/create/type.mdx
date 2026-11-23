@@ -47,7 +47,9 @@ There are a few restrictions:
   parameter name may not be repeated.
 - The `name` must not be the name of a built-in data type, of one of its aliases, or of
   a type family. User-defined types are resolved before the built-in types, so such a
-  name would change the meaning of that built-in type everywhere.
+  name would change the meaning of that built-in type everywhere. The comparison with the
+  built-in names is case-insensitive: `array`, `enum8` and `uint8` are rejected too,
+  because the parser recognizes some built-in names in any case.
 - A type may reference other user-defined types, but the definitions may not form a
   cycle: `CREATE TYPE OR REPLACE` is rejected if the new definition would refer, directly
   or through other types, to the type being defined. A type that other types are defined
@@ -71,6 +73,13 @@ setting decides whether the types that already exist are kept (the default), rep
 cause an error. All restored definitions are validated before any of them is stored, and
 if storing one of them fails, the types already stored by the restore are reverted. Restoring requires the `CREATE TYPE` privilege, and also `DROP TYPE` with
 `create_function = 'replace'`.
+
+The types are a part of the schema: when a backup contains both tables and
+`system.user_defined_types`, the types are restored before the tables are created, also
+with the `structure_only` and `restore_table_data = false` restore settings. In a
+`RESTORE ... ON CLUSTER` into servers that share `user_defined_zookeeper_path`, one server
+restores the types of all of them; if the backup has different definitions of the same
+type for these servers, the restore fails.
 
 **Example: a simple alias**
 

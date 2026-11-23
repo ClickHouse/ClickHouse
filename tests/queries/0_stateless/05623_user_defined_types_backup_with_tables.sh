@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-replicated-database
 # Tag no-parallel: user-defined types live in a single process-wide namespace, and the backup of
 # `system.user_defined_types` contains all of them.
 # Tag no-fasttest: uses the `backups` disk.
+# Tag no-replicated-database: the table refers to the type by name, and the other replicas of the database are separate
+# servers with their own user-defined types, so they cannot create the table.
 
 # A table can refer to a user-defined type by name in a persisted expression (`ORDER BY CAST(x, 'T')`), so `RESTORE`
 # of a backup with both the table and `system.user_defined_types` recreates the types before the tables.
@@ -29,6 +31,19 @@ $CLICKHOUSE_CLIENT --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.bt, TABLE syste
 $CLICKHOUSE_CLIENT --query "SELECT create_query FROM system.user_defined_types WHERE name = '${KEY_TYPE}'" | sed "s/${CLICKHOUSE_DATABASE}/DB/g"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM bt WHERE CAST(x, '${KEY_TYPE}') = 10"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM bt ORDER BY x"
+
+# The types are a part of the schema: they are restored with `structure_only` too, otherwise the table cannot be created.
+$CLICKHOUSE_CLIENT --query "DROP TABLE bt SYNC"
+$CLICKHOUSE_CLIENT --query "DROP TYPE ${KEY_TYPE}"
+$CLICKHOUSE_CLIENT --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.bt, TABLE system.user_defined_types FROM ${BACKUP} SETTINGS structure_only = 1" | cut -f2
+$CLICKHOUSE_CLIENT --query "SELECT create_query FROM system.user_defined_types WHERE name = '${KEY_TYPE}'" | sed "s/${CLICKHOUSE_DATABASE}/DB/g"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM bt"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE bt SYNC"
+$CLICKHOUSE_CLIENT --query "DROP TYPE ${KEY_TYPE}"
+$CLICKHOUSE_CLIENT --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.bt, TABLE system.user_defined_types FROM ${BACKUP} SETTINGS restore_table_data = 0" | cut -f2
+$CLICKHOUSE_CLIENT --query "SELECT create_query FROM system.user_defined_types WHERE name = '${KEY_TYPE}'" | sed "s/${CLICKHOUSE_DATABASE}/DB/g"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM bt"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE bt SYNC"
 $CLICKHOUSE_CLIENT --query "DROP TYPE ${KEY_TYPE}"

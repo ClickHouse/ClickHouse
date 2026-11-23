@@ -8,12 +8,14 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/config.xml"],
+    external_dirs=["/backups/"],
     with_zookeeper=True,
     stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.xml"],
+    external_dirs=["/backups/"],
     with_zookeeper=True,
     stay_alive=True,
 )
@@ -86,3 +88,50 @@ def test_replication():
     node2.query("DROP TYPE ReplPair")
     node2.query("DROP TYPE ReplId")
     assert_eq_with_retry(node1, "SHOW TYPES", "")
+
+
+def test_backup_restore_on_cluster():
+    # Both servers share one storage of types, so one of them restores the types of both, and the other one reloads
+    # them before it creates its tables: the table refers to the type by name in a persisted expression.
+    node1.query("CREATE TYPE BackupKey AS UInt64")
+    assert_eq_with_retry(node2, "SHOW TYPES", "BackupKey\n")
+    node1.query(
+        "CREATE TABLE udt_tbl ON CLUSTER 'cluster' (x UInt8) ENGINE = MergeTree ORDER BY CAST(x, 'BackupKey')"
+    )
+    node1.query("INSERT INTO udt_tbl VALUES (1)")
+    node2.query("INSERT INTO udt_tbl VALUES (2)")
+
+    backup_name = "Disk('backups', 'types_on_cluster')"
+    node1.query(
+        f"BACKUP TABLE default.udt_tbl, TABLE system.user_defined_types ON CLUSTER 'cluster' TO {backup_name}"
+    )
+
+    node1.query("DROP TABLE udt_tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TYPE BackupKey")
+    assert_eq_with_retry(node2, "SHOW TYPES", "")
+
+    node2.query(
+        f"RESTORE TABLE default.udt_tbl, TABLE system.user_defined_types ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+    assert node1.query("SHOW TYPES") == "BackupKey\n"
+    assert node2.query("SHOW TYPES") == "BackupKey\n"
+    assert node1.query("SELECT x FROM udt_tbl WHERE CAST(x, 'BackupKey') = 1") == "1\n"
+    assert node2.query("SELECT x FROM udt_tbl WHERE CAST(x, 'BackupKey') = 2") == "2\n"
+
+    # The same with `structure_only`: the types are a part of the schema.
+    node1.query("DROP TABLE udt_tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TYPE BackupKey")
+    assert_eq_with_retry(node2, "SHOW TYPES", "")
+
+    node1.query(
+        f"RESTORE TABLE default.udt_tbl, TABLE system.user_defined_types ON CLUSTER 'cluster' FROM {backup_name} "
+        "SETTINGS structure_only = 1"
+    )
+    assert node1.query("SHOW TYPES") == "BackupKey\n"
+    assert node2.query("SHOW TYPES") == "BackupKey\n"
+    assert node1.query("SELECT count() FROM udt_tbl") == "0\n"
+    assert node2.query("SELECT count() FROM udt_tbl") == "0\n"
+
+    node1.query("DROP TABLE udt_tbl ON CLUSTER 'cluster' SYNC")
+    node1.query("DROP TYPE BackupKey")
+    assert_eq_with_retry(node2, "SHOW TYPES", "")

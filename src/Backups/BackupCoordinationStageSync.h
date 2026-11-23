@@ -69,6 +69,10 @@ public:
     /// `restoreNamedCollections`).
     bool doesInitiatorTakeNamedCollectionsAccessDecisions() const;
 
+    /// Whether the initiating host of a RESTORE ON CLUSTER requires the rights restoring user-defined types needs of
+    /// the initiating user before dispatching the query, which its coordination version shows.
+    bool doesInitiatorCheckUserDefinedTypesRestoreRights() const;
+
     /// Returns a printable name of a specific host. For empty host the function returns "initiator".
     static String getHostDesc(const String & host);
     static String getHostsDesc(const Strings & hosts);

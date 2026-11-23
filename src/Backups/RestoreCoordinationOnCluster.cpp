@@ -69,6 +69,7 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_dirs", "");
             zk->createIfNotExists(zookeeper_path + "/repl_workload_entities_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_named_collections_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_named_collections", "");
@@ -289,6 +290,69 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
             result = zk->get(path) == toString(current_host_index);
         });
     return result;
+}
+
+namespace
+{
+    String getReplicatedSQLObjectsDirsPath(const String & zookeeper_path, const String & loader_zk_path, UserDefinedSQLObjectType object_type)
+    {
+        String path = zookeeper_path + "/repl_sql_objects_dirs/";
+        switch (object_type)
+        {
+            case UserDefinedSQLObjectType::Function:
+                path += "functions_";
+                break;
+            case UserDefinedSQLObjectType::Type:
+                path += "types_";
+                break;
+        }
+        return path + escapeForFileName(loader_zk_path);
+    }
+}
+
+void RestoreCoordinationOnCluster::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path)
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::addReplicatedSQLObjectsDir");
+    auto holder = with_retries.createRetriesControlHolder("addReplicatedSQLObjectsDir");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+            /// An initiator predating this node has not created it in `createRootNodes`.
+            zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_dirs", "");
+            String path = getReplicatedSQLObjectsDirsPath(zookeeper_path, loader_zk_path, object_type);
+            zk->createIfNotExists(path, "");
+            path += "/" + current_host;
+            zk->createIfNotExists(path, dir_path);
+        });
+}
+
+Strings RestoreCoordinationOnCluster::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::getReplicatedSQLObjectsDirs");
+    Strings dirs;
+    auto holder = with_retries.createRetriesControlHolder("getReplicatedSQLObjectsDirs");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            dirs.clear();
+            with_retries.renewZooKeeper(zk);
+            String path = getReplicatedSQLObjectsDirsPath(zookeeper_path, loader_zk_path, object_type);
+            if (!zk->exists(path))
+                return; /// No host sharing this storage found such objects in the backup.
+            for (const String & host_id : zk->getChildren(path))
+            {
+                String dir = zk->get(path + "/" + host_id);
+                if (std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
+                    dirs.push_back(dir);
+            }
+        });
+    return dirs;
+}
+
+bool RestoreCoordinationOnCluster::doesInitiatorCheckUserDefinedTypesRestoreRights() const
+{
+    return stage_sync.doesInitiatorCheckUserDefinedTypesRestoreRights();
 }
 
 bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const String & loader_zk_path)

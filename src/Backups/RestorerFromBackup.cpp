@@ -32,6 +32,8 @@
 #include <Common/NamedCollections/NamedCollectionsBackup.h>
 #include <DataTypes/UserDefinedTypeFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -206,6 +208,9 @@ void RestorerFromBackup::run(Mode mode_)
     /// hosts sharing it (see restoreNamedCollections below), and the stage barrier below makes
     /// every registration visible to it before it reads them.
     registerNamedCollectionsForRestore();
+
+    /// The same for user-defined types (see restoreUserDefinedTypes below).
+    registerUserDefinedTypesForRestore();
 
     /// Check access rights.
     setStage(Stage::CHECKING_ACCESS_RIGHTS);
@@ -426,7 +431,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 {
                     /// RESTORE registers the types directly, bypassing InterpreterCreateTypeQuery's own access check,
                     /// so require the access of CREATE TYPE, and of CREATE OR REPLACE TYPE in 'replace' mode.
-                    if (table_info.has_data && restore_settings.shouldRestoreTableData())
+                    /// The types are restored even under `structure_only`, see restoreUserDefinedTypes.
+                    if (table_info.has_data)
                     {
                         required_access.emplace_back(AccessType::CREATE_TYPE);
                         if (restore_settings.create_function == RestoreUDFCreationMode::kReplace)
@@ -904,17 +910,30 @@ String RestorerFromBackup::findUserDefinedTypesDataPathInBackup() const
     return {};
 }
 
-void RestorerFromBackup::restoreUserDefinedTypes()
+void RestorerFromBackup::registerUserDefinedTypesForRestore()
 {
-    if (!restore_settings.shouldRestoreTableData())
+    /// The initiating host of a RESTORE ON CLUSTER query checks access rights through a restorer
+    /// without a coordination (see BackupsWorker) and restores nothing, so it registers nothing.
+    if (!restore_coordination)
         return;
 
     String data_path_in_backup = findUserDefinedTypesDataPathInBackup();
     if (data_path_in_backup.empty())
         return;
 
-    UserDefinedTypeFactory::instance().restore(*this, data_path_in_backup);
-    user_defined_types_restored = true;
+    DB::registerUserDefinedSQLObjectsDirForRestore(*this, data_path_in_backup, UserDefinedSQLObjectType::Type);
+}
+
+void RestorerFromBackup::restoreUserDefinedTypes()
+{
+    /// The types are a part of the schema: a table restored with `structure_only` or `restore_table_data = false` is
+    /// still created, and its persisted expressions can refer to the types by name. So the types are restored
+    /// whenever `system.user_defined_types` is selected for the restore, independently of these settings.
+    ///
+    /// The data path is empty when this host's part of the backup holds no types, but a host sharing a replicated
+    /// storage with this one may still restore the types of its own part, and then this host has to reload them after
+    /// the stage barrier; the return value covers both.
+    user_defined_types_restored = UserDefinedTypeFactory::instance().restore(*this, findUserDefinedTypesDataPathInBackup());
 }
 
 void RestorerFromBackup::applyCustomStoragePolicy(ASTPtr query_ptr)

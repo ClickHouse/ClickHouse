@@ -69,6 +69,22 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     virtual bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) = 0;
 
+    /// Adds the directory in the backup from which this host would restore user-defined SQL objects into a replicated
+    /// (Keeper) storage. The storage is shared by the hosts using it, so the one host which acquires the restore
+    /// (see acquireReplicatedSQLObjects) restores the directories added by every host sharing it: the directories hold
+    /// different objects when the backup was taken from hosts with storages not shared the same way, e.g. a local
+    /// storage on every host.
+    virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
+
+    /// Returns all the directories added for the given storage by addReplicatedSQLObjectsDir.
+    [[nodiscard]] virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
+
+    /// Whether the initiating host of the RESTORE ON CLUSTER query requires the rights restoring user-defined types
+    /// needs (`CREATE TYPE`, and `DROP TYPE` to replace existing ones) of the initiating user before dispatching the
+    /// query. An internal restore must not restore the types when the initiator predates that check, because the
+    /// dispatched query may be executed with full access (see `restoreUserDefinedTypes`).
+    [[nodiscard]] virtual bool doesInitiatorCheckUserDefinedTypesRestoreRights() const = 0;
+
     /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
     /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
     virtual bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) = 0;

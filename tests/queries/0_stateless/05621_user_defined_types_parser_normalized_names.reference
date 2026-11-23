@@ -1,3 +1,4 @@
 0
+e	Enum8(\'a\' = 1)
 m	Map(String, UInt8)
 x	Array(UInt8)

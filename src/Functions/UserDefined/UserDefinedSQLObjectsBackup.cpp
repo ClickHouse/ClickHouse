@@ -13,6 +13,8 @@
 #include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Common/quoteString.h>
+#include <base/sort.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 
@@ -85,80 +87,169 @@ void backupUserDefinedSQLObjects(
 }
 
 
+namespace
+{
+    const IUserDefinedSQLObjectsStorage & getStorage(const ContextPtr & context, UserDefinedSQLObjectType object_type)
+    {
+        return (object_type == UserDefinedSQLObjectType::Type)
+            ? context->getUserDefinedTypesStorage()
+            : context->getUserDefinedSQLObjectsStorage();
+    }
+
+    /// Reads the objects from the directories of the backup. The same object can be in several directories (the backup
+    /// of a shared storage has an identical directory for every host sharing it), so identical definitions collapse
+    /// into one. The same name with different definitions means the directories hold objects which could not have
+    /// coexisted in one storage; picking one of them would silently restore a wrong definition, so it is rejected.
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>>
+    readUserDefinedSQLObjects(RestorerFromBackup & restorer, const Strings & data_paths_in_backup, UserDefinedSQLObjectType object_type)
+    {
+        auto context = restorer.getContext();
+        auto backup = restorer.getBackup();
+
+        VectorWithMemoryTracking<std::pair<String, ASTPtr>> res;
+        std::unordered_map<String /* object name */, String /* formatted statement */> statements_by_name;
+
+        for (const auto & data_path_in_backup : data_paths_in_backup)
+        {
+            fs::path data_path_in_backup_fs{data_path_in_backup};
+
+            Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
+            ::sort(filenames.begin(), filenames.end());
+
+            for (const auto & filename : filenames)
+            {
+                if (!filename.ends_with(".sql"))
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Cannot restore user-defined SQL objects: File name {} doesn't have the extension .sql",
+                        String{data_path_in_backup_fs / filename});
+                }
+            }
+
+            for (const auto & filename : filenames)
+            {
+                String escaped_object_name = filename.substr(0, filename.length() - strlen(".sql"));
+                String object_name = unescapeForFileName(escaped_object_name);
+
+                String filepath = data_path_in_backup_fs / filename;
+                auto in = backup->readFile(filepath);
+                String statement_def;
+                readStringUntilEOF(statement_def, *in);
+
+                auto parse = [&](IParser & parser)
+                {
+                    return parseQuery(
+                        parser,
+                        statement_def.data(),
+                        statement_def.data() + statement_def.size(),
+                        "in file " + filepath + " from backup " + backup->getNameForLogging(),
+                        0,
+                        context->getSettingsRef()[Setting::max_parser_depth],
+                        context->getSettingsRef()[Setting::max_parser_backtracks]);
+                };
+
+                ASTPtr ast;
+                switch (object_type)
+                {
+                    case UserDefinedSQLObjectType::Function:
+                    {
+                        ParserCreateFunctionQuery parser;
+                        ast = parse(parser);
+                        break;
+                    }
+                    case UserDefinedSQLObjectType::Type:
+                    {
+                        ParserCreateTypeQuery parser;
+                        ast = parse(parser);
+                        break;
+                    }
+                }
+
+                String statement = ast->formatWithSecretsOneLine();
+                auto [it, inserted] = statements_by_name.emplace(object_name, statement);
+                if (!inserted)
+                {
+                    if (it->second != statement)
+                        throw Exception(
+                            ErrorCodes::CANNOT_RESTORE_TABLE,
+                            "Cannot restore user-defined SQL objects from backup {}: the object {} has different "
+                            "definitions on the hosts of the backup which are restored into one replicated storage: "
+                            "{} and {}",
+                            backup->getNameForLogging(), backQuote(object_name), it->second, statement);
+                    continue;
+                }
+
+                res.emplace_back(std::move(object_name), ast);
+            }
+        }
+
+        return res;
+    }
+}
+
+
 VectorWithMemoryTracking<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
 {
-    auto context = restorer.getContext();
-    const auto & storage = (object_type == UserDefinedSQLObjectType::Type)
-        ? context->getUserDefinedTypesStorage()
-        : context->getUserDefinedSQLObjectsStorage();
+    const auto & storage = getStorage(restorer.getContext(), object_type);
 
     if (storage.isReplicated() && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(storage.getReplicationID(), object_type))
         return {}; /// Other replica is already restoring user-defined SQL objects.
 
-    auto backup = restorer.getBackup();
-    fs::path data_path_in_backup_fs{data_path_in_backup};
+    return readUserDefinedSQLObjects(restorer, {data_path_in_backup}, object_type);
+}
 
-    Strings filenames = backup->listFiles(data_path_in_backup, /*recursive*/ false);
-    if (filenames.empty())
-        return {}; /// Nothing to restore.
 
-    for (const auto & filename : filenames)
+void registerUserDefinedSQLObjectsDirForRestore(
+    RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
+{
+    const auto & storage = getStorage(restorer.getContext(), object_type);
+    if (!storage.isReplicated())
+        return;
+    restorer.getRestoreCoordination()->addReplicatedSQLObjectsDir(storage.getReplicationID(), object_type, data_path_in_backup);
+}
+
+
+bool restoreUserDefinedSQLObjectsOfAllHosts(
+    RestorerFromBackup & restorer,
+    const String & data_path_in_backup,
+    UserDefinedSQLObjectType object_type,
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> & objects)
+{
+    objects.clear();
+    const auto & storage = getStorage(restorer.getContext(), object_type);
+
+    if (!storage.isReplicated())
     {
-        if (!filename.ends_with(".sql"))
-        {
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot restore user-defined SQL objects: File name {} doesn't have the extension .sql",
-                String{data_path_in_backup_fs / filename});
-        }
+        if (data_path_in_backup.empty())
+            return false;
+        objects = readUserDefinedSQLObjects(restorer, {data_path_in_backup}, object_type);
+        return true;
     }
 
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> res;
+    auto restore_coordination = restorer.getRestoreCoordination();
+    String replication_id = storage.getReplicationID();
 
-    for (const auto & filename : filenames)
-    {
-        String escaped_object_name = filename.substr(0, filename.length() - strlen(".sql"));
-        String object_name = unescapeForFileName(escaped_object_name);
+    /// The directories registered by every host sharing this storage. They hold identical objects when the backup was
+    /// taken from hosts sharing a storage the same way, but a backup taken from hosts with per-host storages has the
+    /// objects of each host in its own directory, and restoring just the directory of this host would silently lose
+    /// the objects of the others.
+    Strings data_paths = restore_coordination->getReplicatedSQLObjectsDirs(replication_id, object_type);
+    if (!data_path_in_backup.empty() && std::find(data_paths.begin(), data_paths.end(), data_path_in_backup) == data_paths.end())
+        data_paths.push_back(data_path_in_backup);
 
-        String filepath = data_path_in_backup_fs / filename;
-        auto in = backup->readFile(filepath);
-        String statement_def;
-        readStringUntilEOF(statement_def, *in);
+    /// This host's part of the backup may have no such objects while a host sharing the storage restores the ones of
+    /// its own part; then this host only has to reload them.
+    if (data_paths.empty())
+        return false;
 
-        auto parse = [&](IParser & parser)
-        {
-            return parseQuery(
-                parser,
-                statement_def.data(),
-                statement_def.data() + statement_def.size(),
-                "in file " + filepath + " from backup " + backup->getNameForLogging(),
-                0,
-                context->getSettingsRef()[Setting::max_parser_depth],
-                context->getSettingsRef()[Setting::max_parser_backtracks]);
-        };
+    if (!restore_coordination->acquireReplicatedSQLObjects(replication_id, object_type))
+        return true; /// Other replica is already restoring the objects into the shared storage.
 
-        ASTPtr ast;
-        switch (object_type)
-        {
-            case UserDefinedSQLObjectType::Function:
-            {
-                ParserCreateFunctionQuery parser;
-                ast = parse(parser);
-                break;
-            }
-            case UserDefinedSQLObjectType::Type:
-            {
-                ParserCreateTypeQuery parser;
-                ast = parse(parser);
-                break;
-            }
-        }
-
-        res.emplace_back(std::move(object_name), ast);
-    }
-
-    return res;
+    ::sort(data_paths.begin(), data_paths.end());
+    objects = readUserDefinedSQLObjects(restorer, data_paths, object_type);
+    return true;
 }
 
 }

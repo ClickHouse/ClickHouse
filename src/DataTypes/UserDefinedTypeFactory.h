@@ -77,7 +77,10 @@ public:
     /// Restores user-defined types from the backup. The `create_function` restore setting decides what happens to the
     /// types that already exist. Every definition is validated against the set of types after the restore before any
     /// of them is stored, and the stored ones are reverted if storing another one fails.
-    void restore(RestorerFromBackup & restorer, const String & data_path_in_backup) const;
+    /// `data_path_in_backup` is empty if this host's part of the backup has no types. With a replicated storage, one
+    /// host restores the types of every host sharing the storage. Returns whether types are restored into the storage
+    /// of this host, by this host or by another one.
+    bool restore(RestorerFromBackup & restorer, const String & data_path_in_backup) const;
 
 private:
     UserDefinedTypeFactory() = default;

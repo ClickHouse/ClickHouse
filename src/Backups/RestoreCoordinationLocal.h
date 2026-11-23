@@ -4,6 +4,7 @@
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Common/Logger.h>
+#include <map>
 #include <mutex>
 #include <set>
 #include <unordered_set>
@@ -48,6 +49,11 @@ public:
     /// Sets that this replica is going to restore replicated user-defined functions.
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) override;
+    void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) override;
+    Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
+
+    /// A restore without ON CLUSTER checks the rights in the same query that restores.
+    bool doesInitiatorCheckUserDefinedTypesRestoreRights() const override { return true; }
 
     /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
     /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
@@ -86,6 +92,7 @@ private:
     std::unordered_map<String /* rocksdb_dir */, String /* election_id */> rocksdb_data_owner TSA_GUARDED_BY(mutex);
     std::unordered_set<String /* table_zk_path */> acquired_shared_databases;
     std::unordered_map<String /* replication_id */, Strings /* dir_paths */> replicated_named_collections_dirs TSA_GUARDED_BY(mutex);
+    std::map<std::pair<String /* loader_zk_path */, UserDefinedSQLObjectType>, Strings /* dir_paths */> replicated_sql_objects_dirs TSA_GUARDED_BY(mutex);
 
     mutable std::mutex mutex;
 

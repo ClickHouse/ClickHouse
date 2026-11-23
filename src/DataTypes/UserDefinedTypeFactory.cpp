@@ -1,9 +1,12 @@
 #include <DataTypes/UserDefinedTypeFactory.h>
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/IBackup.h>
+#include <Backups/IRestoreCoordination.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -25,6 +28,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -35,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_RESTORE_TABLE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_TYPE;
@@ -422,7 +427,7 @@ void checkDependentsAfterReplacement(const IUserDefinedSQLObjectsStorage & stora
         {
             if (parameter_names.empty())
             {
-                data_type_factory.get(dependent.base_type);
+                std::ignore = data_type_factory.get(dependent.base_type);
                 continue;
             }
 
@@ -432,7 +437,7 @@ void checkDependentsAfterReplacement(const IUserDefinedSQLObjectsStorage & stora
                     return false;
                 if (!affected.contains(ref.name) || dependsOnParameters(ref.node, parameter_names))
                     return true;
-                data_type_factory.get(ref.node);
+                std::ignore = data_type_factory.get(ref.node);
                 return false;
             });
         }
@@ -485,7 +490,7 @@ void checkNumbersOfArguments(const ASTCreateTypeQuery & create, const std::unord
 
             try
             {
-                data_type_factory.get(substituteTypeParameters(ref.node, substitutions));
+                std::ignore = data_type_factory.get(substituteTypeParameters(ref.node, substitutions));
                 return true;
             }
             catch (Exception & exception)
@@ -705,12 +710,24 @@ ASTPtr UserDefinedTypeFactory::prepareType(
 
     /// `DataTypeFactory` resolves user-defined types before the built-in ones, so a user-defined type named after
     /// a built-in type, alias or family would hijack every later use of that name: `CREATE TYPE UInt64 AS String`
-    /// would change the meaning of `UInt64` everywhere. `ParserDataType` also replaces every spelling of some
-    /// built-in names followed by arguments with the canonical one (`array(T)` is parsed as `Array(T)`), so a type
-    /// with such a name could be created but never used: reject these spellings too.
+    /// would change the meaning of `UInt64` everywhere. `ParserDataType` also recognizes some built-in names in any
+    /// case, although they are registered case-sensitively: `array(T)` is parsed as `Array(T)`, `enum8('a' = 1)` as
+    /// an enum, and `uint8(1)` as an integer with a display width. A type with such a name could be created but not
+    /// used as defined. So every spelling of a built-in name is rejected, whatever the case.
     const auto & data_type_factory = DataTypeFactory::instance();
-    if (data_type_factory.hasNameOrAlias(type_name) || data_type_factory.hasNameOrAlias(Poco::toLower(type_name))
-        || data_type_factory.hasNameOrAlias(String(getCanonicalNameOfDataTypeWithArguments(type_name))))
+    bool is_built_in_name = data_type_factory.hasNameOrAlias(type_name);
+    if (!is_built_in_name)
+    {
+        for (const auto & built_in_name : data_type_factory.getAllRegisteredNames())
+        {
+            if (equalsCaseInsensitive(built_in_name, type_name))
+            {
+                is_built_in_name = true;
+                break;
+            }
+        }
+    }
+    if (is_built_in_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Cannot create user-defined type {}: a built-in data type with this name already exists",
                         backQuote(type_name));
@@ -729,7 +746,7 @@ ASTPtr UserDefinedTypeFactory::prepareType(
     /// number of arguments. (Referenced user-defined types still expand to their current definitions here.)
     auto normalized_query = normalizeCreateTypeQuery(create);
     if (parameter_names.empty())
-        data_type_factory.get(create.base_type);
+        std::ignore = data_type_factory.get(create.base_type);
     else
         checkNumbersOfArguments(create, parameter_names);
 
@@ -854,9 +871,28 @@ void UserDefinedTypeFactory::backup(BackupEntriesCollector & backup_entries_coll
         backup_entries_collector.getContext()->getUserDefinedTypesStorage().getAllObjects());
 }
 
-void UserDefinedTypeFactory::restore(RestorerFromBackup & restorer, const String & data_path_in_backup) const
+bool UserDefinedTypeFactory::restore(RestorerFromBackup & restorer, const String & data_path_in_backup) const
 {
-    auto restored_types = restoreUserDefinedSQLObjects(restorer, data_path_in_backup, UserDefinedSQLObjectType::Type);
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> restored_types;
+    if (!restoreUserDefinedSQLObjectsOfAllHosts(restorer, data_path_in_backup, UserDefinedSQLObjectType::Type, restored_types))
+        return false;
+    if (restored_types.empty())
+        return true;
+
+    /// An internal restore executes a query dispatched by the initiating host of a `RESTORE ON CLUSTER`, possibly with
+    /// full access (the default `distributed_ddl_use_initial_user_and_roles = false`), so the rights restoring the
+    /// types requires (see `RestorerFromBackup::getRequiredAccess`) must be required of the initiating user by the
+    /// initiating host before the query is dispatched. An initiator predating user-defined types does not have the
+    /// `system.user_defined_types` table and requires nothing for it, so the types must not be restored: fail close.
+    /// Its coordination version shows whether the initiator ran the check.
+    if (restorer.getRestoreSettings().internal && !restorer.getRestoreCoordination()->doesInitiatorCheckUserDefinedTypesRestoreRights())
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore the user-defined types from backup {}: the initiating host of this ON CLUSTER query is too "
+            "old to check the rights restoring them requires against the initiating user. Upgrade the initiating host "
+            "or run the restore on an upgraded host",
+            restorer.getBackup()->getNameForLogging());
+
     sortByDependencies(restored_types);
 
     const auto & restore_settings = restorer.getRestoreSettings();
@@ -927,5 +963,7 @@ void UserDefinedTypeFactory::restore(RestorerFromBackup & restorer, const String
         }
         throw;
     }
+
+    return true;
 }
 }
