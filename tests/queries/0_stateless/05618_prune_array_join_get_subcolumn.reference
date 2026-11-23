@@ -39,6 +39,9 @@ nst.y
 3	2
 \N	9
 nst.x
+-- a limit of one column is enough, as with the old analyzer
+6
+6
 -- element name with a dot
 1
 2

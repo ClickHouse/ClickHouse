@@ -39,6 +39,10 @@ SELECT '-- join_use_nulls';
 SELECT n.x + 1, r.k FROM t_nested ARRAY JOIN nst AS n RIGHT JOIN (SELECT 2 AS k UNION ALL SELECT 9) AS r ON r.k = n.x ORDER BY r.k SETTINGS join_use_nulls = 1;
 SELECT extract(explain, 'nst\\.\\w+') FROM (EXPLAIN header = 1 SELECT n.x + 1, r.k FROM t_nested ARRAY JOIN nst AS n RIGHT JOIN (SELECT 2 AS k) AS r ON r.k = n.x SETTINGS join_use_nulls = 1) WHERE match(explain, '^\\W*(Header: )?nst\\.');
 
+SELECT '-- a limit of one column is enough, as with the old analyzer';
+SELECT sum(n.x) FROM t_nested ARRAY JOIN nst AS n SETTINGS max_columns_to_read = 1;
+SELECT sum(n.x) FROM t_nested LEFT ARRAY JOIN nst AS n SETTINGS max_columns_to_read = 1;
+
 DROP TABLE t_nested;
 
 -- the type resolves `k.a.b` to the element `a.b`, not to a subcolumn of the element `a`.
