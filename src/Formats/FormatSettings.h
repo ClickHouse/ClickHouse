@@ -254,6 +254,12 @@ struct FormatSettings : FormatSettingsEnums
         UInt64 output_record_batch_bytes = 0;
         /// Upper bound on one record batch, as opposed to the targets above, which combine small blocks.
         UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
+        /// Not settings, but choices of the formats that hand their data over as Arrow arrays (`Vortex`):
+        /// a `FixedString` is written as `Utf8` when `output_string_as_string` is set, unless this is unset;
+        /// a `DateTime` as a timestamp in seconds instead of `UInt32`; `Nothing` as the Arrow `Null` type.
+        bool output_fixed_string_as_string = true;
+        bool output_datetime_as_timestamp = false;
+        bool output_nothing_as_null = false;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -379,9 +385,11 @@ struct FormatSettings : FormatSettingsEnums
         bool write_bloom_filter = false;
         bool write_checksums = true;
         bool use_alp_encoding = false;
+        bool use_data_page_v2 = false;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
+        size_t data_page_row_limit = 20000;
         size_t write_batch_size = 1024;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;

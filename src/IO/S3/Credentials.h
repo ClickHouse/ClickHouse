@@ -80,7 +80,7 @@ private:
 
 
     const Aws::String endpoint;
-    mutable std::recursive_mutex token_mutex;
+    mutable Silk::FiberMutex token_mutex;
     mutable Aws::String token;
     LoggerPtr logger;
 };
@@ -114,6 +114,7 @@ public:
     explicit AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
 
     struct CacheKey
     {
@@ -130,11 +131,11 @@ protected:
 
 private:
     Aws::Auth::AWSCredentials GetAWSCredentialsImpl();
-    void refreshIfExpired();
 
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;
     Int64 load_frequency_ms;
     LoggerPtr logger;
+    Silk::FiberMutex get_aws_credentials_mutex;
 };
 
 class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
@@ -355,6 +356,7 @@ public:
             std::shared_ptr<AWSAssumeRoleClient> client_);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+    void SetNeedRefresh() override;
 
     struct CacheKey
     {
@@ -379,6 +381,7 @@ private:
     std::shared_ptr<AWSAssumeRoleClient> client;
     Aws::Auth::AWSCredentials credentials;
     LoggerPtr logger;
+    Silk::FiberMutex get_aws_credentials_mutex;
 };
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(

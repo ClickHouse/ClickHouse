@@ -271,6 +271,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.write_checksums = settings[Setting::output_format_parquet_write_checksums];
     format_settings.parquet.use_alp_encoding = settings[Setting::output_format_parquet_use_alp_encoding];
+    format_settings.parquet.use_data_page_v2 = settings[Setting::output_format_parquet_use_data_page_v2];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -279,6 +280,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 
     format_settings.parquet.parallel_encoding = settings[Setting::output_format_parquet_parallel_encoding];
     format_settings.parquet.data_page_size = settings[Setting::output_format_parquet_data_page_size];
+    format_settings.parquet.data_page_row_limit = settings[Setting::output_format_parquet_data_page_row_limit];
     format_settings.parquet.write_batch_size = settings[Setting::output_format_parquet_batch_size];
     format_settings.parquet.write_page_index = settings[Setting::output_format_parquet_write_page_index];
     format_settings.parquet.write_bloom_filter = settings[Setting::output_format_parquet_write_bloom_filter];
