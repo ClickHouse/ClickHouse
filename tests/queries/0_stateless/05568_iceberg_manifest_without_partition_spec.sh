@@ -22,6 +22,18 @@ q()
 # Equality deletes, applied within the partition of the spec named by the manifest list.
 q "SELECT * FROM icebergLocal('$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete_equality_partitioned') ORDER BY ALL"
 
+# The optional `sequence_number` column is hidden in the data manifests (`-m0`): without it and without `format-version`,
+# the required `data_file.content` still marks them as v2, so their files inherit the sequence numbers of the manifest list.
+work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_no_sequence_number"
+rm -rf "./${work_dir}"
+mkdir -p "./${work_dir}"
+cp -r "$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete_equality_partitioned" "./${work_dir}/"
+for manifest in "./${work_dir}"/iceberg_v2_delete_equality_partitioned/metadata/*-m0.avro; do
+    python3 -c 'import sys; p = sys.argv[1]; d = open(p, "rb").read(); open(p, "wb").write(d.replace(b"\"sequence_number\"", b"\"sequence_numbeX\""))' "$manifest"
+done
+q "SELECT * FROM icebergLocal('$PWD/${work_dir}/iceberg_v2_delete_equality_partitioned') ORDER BY ALL"
+rm -rf "./${work_dir}"
+
 # All manifests are written with spec 0 (`d`), while the default spec of the table is 1 (`d`, `i`).
 q "SELECT * FROM icebergLocal('$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete_equality_partition_evolution') ORDER BY ALL"
 q "SELECT * FROM icebergLocal('$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete_equality_partition_evolution') WHERE i = 2 ORDER BY ALL SETTINGS use_iceberg_partition_pruning = 1"

@@ -137,12 +137,12 @@ Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() con
     }
 
     /// Older ClickHouse versions wrote both manifest lists and manifest files without the
-    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
-    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
-    /// manifest entries, but is absent from their v1 counterparts, and v3 adds `first_row_id`.
+    /// `format-version` Avro metadata key, so we fall back to schema-based detection: v1 has
+    /// neither the `sequence_number` required by v2 manifest lists nor the `data_file.content`
+    /// required by v2 manifest entries (whose `sequence_number` is optional), and v3 adds `first_row_id`.
     if (hasPath(f_manifest_first_row_id) || hasPath(c_data_file_first_row_id))
         return 3;
-    if (hasPath(f_sequence_number))
+    if (hasPath(f_sequence_number) || hasPath(c_data_file_content))
         return 2;
     return 1;
 }
@@ -176,8 +176,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     /// Iceberg v2 makes `snapshot_id` optional on the manifest entry: a missing Avro column
     /// or a null value is inherited from the manifest list (`added_snapshot_id`). Not gated
     /// on `format_version > 1` because the version comes from the Avro `format-version` key
-    /// or, failing that, from the presence of `sequence_number` -- a writer omitting both
-    /// would be misclassified as v1 and rejected here.
+    /// or, failing that, from the manifest schema -- a manifest misclassified as v1 would
+    /// be rejected here.
     std::optional<Int64> snapshot_id;
     const bool has_snapshot_id_column = hasPath(f_snapshot_id);
     if (has_snapshot_id_column)
