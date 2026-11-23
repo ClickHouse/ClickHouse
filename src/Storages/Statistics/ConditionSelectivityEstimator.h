@@ -79,7 +79,7 @@ public:
             explicit RangesOrSet(PlainRanges ranges_) : ranges(std::move(ranges_)) {}
             explicit RangesOrSet(std::shared_ptr<const Set> set_) : set(std::move(set_)) {}
 
-            const PlainRanges & get() const;
+            [[nodiscard]] const PlainRanges & get() const;
 
             std::shared_ptr<const Set> set;
             std::optional<PlainRanges> ranges;
