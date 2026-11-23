@@ -25,7 +25,9 @@ inline bool isWKTSeparator(char ch)
 
 /// Leave untagged WKT unchanged; validate explicitly dimensioned coordinates before dropping extra ordinates.
 /// Geometry structure is left intact for the existing 2D parser to validate.
-inline std::optional<std::string> normalizeWKTDimensions(std::string_view wkt)
+/// With `allow_two_ordinate_measure`, coordinates under the `M` tag may omit the measure: the SQL readers have always
+/// ignored the `M` tag, so `LINESTRING M (1 2,3 4)` was accepted for every geometry type and has to stay accepted.
+inline std::optional<std::string> normalizeWKTDimensions(std::string_view wkt, bool allow_two_ordinate_measure)
 {
     size_t pos = 0;
     auto skip_separators = [&]
@@ -34,19 +36,19 @@ inline std::optional<std::string> normalizeWKTDimensions(std::string_view wkt)
             ++pos;
     };
     skip_separators();
-    const size_t geometry_start = pos;
     while (pos < wkt.size() && !isWKTSeparator(wkt[pos]) && wkt[pos] != '(')
         ++pos;
-    const auto geometry = wkt.substr(geometry_start, pos - geometry_start);
     skip_separators();
     const size_t tag_start = pos;
     while (pos < wkt.size() && !isWKTSeparator(wkt[pos]) && wkt[pos] != '(')
         ++pos;
     const auto tag = wkt.substr(tag_start, pos - tag_start);
     size_t dimensions = 0;
+    const bool measure_only = boost::iequals(tag, "M");
+    const bool measure_is_optional = measure_only && allow_two_ordinate_measure;
     if (boost::iequals(tag, "ZM"))
         dimensions = 4;
-    else if (boost::iequals(tag, "Z") || boost::iequals(tag, "M"))
+    else if (boost::iequals(tag, "Z") || measure_only)
         dimensions = 3;
     else
         return std::nullopt;
@@ -88,9 +90,8 @@ inline std::optional<std::string> normalizeWKTDimensions(std::string_view wkt)
                 xy_end = pos;
             const size_t number_end = pos;
             skip_separators();
-            /// Preserve the legacy two-ordinate `POINT M` syntax without relaxing other dimension tags or geometries.
-            if (ordinate == 1 && boost::iequals(geometry, "POINT") && boost::iequals(tag, "M")
-                && pos < wkt.size() && wkt[pos] == ')')
+            /// The legacy two-ordinate `M` syntax. The `Z` and `ZM` tags are not relaxed.
+            if (ordinate == 1 && measure_is_optional && pos < wkt.size() && (wkt[pos] == ')' || wkt[pos] == ','))
                 break;
             if (ordinate + 1 < dimensions && number_end == pos)
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Expected {} WKT ordinates separated by whitespace", dimensions);

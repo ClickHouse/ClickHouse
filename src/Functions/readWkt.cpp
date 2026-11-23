@@ -55,7 +55,7 @@ bool isEmptyPointWKT(const String & str)
 template <typename T>
 void readWKT(const String & str, T & out)
 {
-    auto normalized = normalizeWKTDimensions(str);
+    auto normalized = normalizeWKTDimensions(str, /* allow_two_ordinate_measure = */ true);
     try
     {
         boost::geometry::read_wkt(normalized ? *normalized : str, out);

@@ -410,7 +410,7 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
         String dimensioned;
         readStringUntilEOF(dimensioned, in_buffer);
         dimensioned.insert(0, type + " ");
-        auto normalized = normalizeWKTDimensions(dimensioned);
+        auto normalized = normalizeWKTDimensions(dimensioned, /* allow_two_ordinate_measure = */ false);
         if (!normalized)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: invalid dimension tag");
         ReadBufferFromString normalized_buffer(*normalized);
