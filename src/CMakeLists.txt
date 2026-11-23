@@ -598,6 +598,7 @@ set_property(SOURCE
     WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
     WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
     WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
+    WindowFunctions/Aggregate/AggregateWindowFunctionSliding.cpp     # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
