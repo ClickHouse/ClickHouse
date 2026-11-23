@@ -135,6 +135,28 @@ TEST(QueryPlanExecutionLimits, ExtractSubplanPreservesLimitsAndResources)
     EXPECT_EQ(source.getInterpretersContexts().size(), 1u);
 }
 
+/// The static overload used by plan optimizations (e.g. `tryConvertJoinToIn`) works on the node list
+/// of the plan being optimized, so the plan to inherit the limits and resources from is passed explicitly.
+TEST(QueryPlanExecutionLimits, ExtractSubplanFromNodesPreservesSourceLimitsAndResources)
+{
+    auto owner = makeSourcePlan();
+    auto * root = owner.getRootNode();
+    auto [nodes, owner_resources] = QueryPlan::detachNodesAndResources(std::move(owner));
+
+    auto source = makeSourcePlan();
+    source.setMaxThreads(4);
+    source.setConcurrencyControl(true);
+    source.addInterpreterContext(Context::createCopy(getContext().context));
+
+    auto subplan = QueryPlan::extractSubplan(root, nodes, source);
+
+    EXPECT_TRUE(nodes.empty());
+    EXPECT_EQ(subplan.getMaxThreads(), 4u);
+    EXPECT_TRUE(subplan.getConcurrencyControl());
+    EXPECT_EQ(subplan.getInterpretersContexts().size(), 1u);
+    EXPECT_EQ(source.getInterpretersContexts().size(), 1u);
+}
+
 /// `unitePlans` already merged `max_threads` across the children; `concurrency_control` has to be
 /// OR-ed the same way, so a united plan honours it whenever any child asked for it. Both child
 /// orders are asserted: the folds accumulate over every child, so the result must not depend on

@@ -53,6 +53,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int METADATA_MISMATCH;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -230,7 +231,8 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    if (!update_registry_thread)
+    /// Only `unordered` mode uses the active-server hash ring.
+    if (mode == ObjectStorageQueueMode::UNORDERED && !update_registry_thread)
         update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
 
@@ -400,7 +402,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     Coordination::Stat stat;
     auto metadata_str = zookeeper->get(fs::path(zookeeper_path) / "metadata", &stat);
     auto metadata_from_zk = ObjectStorageQueueTableMetadata::parse(metadata_str);
-    auto new_table_metadata{table_metadata};
+    auto new_table_metadata{metadata_from_zk};
 
     for (const auto & change : changes)
     {
@@ -426,7 +428,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         if (change.name == "processing_threads_num")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.processing_threads_num == value)
+            if (new_table_metadata.processing_threads_num == value)
             {
                 LOG_TRACE(log, "Setting `processing_threads_num` already equals {}. "
                         "Will do nothing", value);
@@ -437,7 +439,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "loading_retries")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.loading_retries == value)
+            if (new_table_metadata.loading_retries == value)
             {
                 LOG_TRACE(log, "Setting `loading_retries` already equals {}. "
                         "Will do nothing", value);
@@ -448,7 +450,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "after_processing")
         {
             const auto value = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
-            if (table_metadata.after_processing == value)
+            if (new_table_metadata.after_processing == value)
             {
                 LOG_TRACE(log, "Setting `after_processing` already equals {}. "
                         "Will do nothing", value);
@@ -459,7 +461,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_files_limit")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.tracked_files_limit == value)
+            if (new_table_metadata.tracked_files_limit == value)
             {
                 LOG_TRACE(log, "Setting `tracked_files_limit` already equals {}. "
                         "Will do nothing", value);
@@ -470,7 +472,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
         else if (change.name == "tracked_file_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.tracked_files_ttl_sec == value)
+            if (new_table_metadata.tracked_files_ttl_sec == value)
             {
                 LOG_TRACE(log, "Setting `tracked_file_ttl_sec` already equals {}. "
                         "Will do nothing", value);
@@ -499,6 +501,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             if (table_metadata.buckets == value)
             {
                 LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
+                new_table_metadata.buckets = value;
                 continue;
             }
             if (buckets_num > 1)
@@ -528,7 +531,10 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     if (is_initial_query)
         zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
-    table_metadata.syncChangeableSettings(new_table_metadata);
+    NameSet changed_names;
+    for (const auto & change : changes)
+        changed_names.insert(change.name);
+    table_metadata.syncChangeableSettings(new_table_metadata, changed_names);
 }
 
 void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
@@ -556,10 +562,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const ColumnsDescription & columns,
     const std::string & format,
     const ContextPtr & context,
-    bool is_attach,
+    const ObjectStorageQueueTableMetadata::Source & source,
+    bool strict,
     LoggerPtr log)
 {
-    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
+    ObjectStorageQueueTableMetadata table_metadata(settings, columns, format, source);
 
     std::vector<std::string> metadata_paths;
     size_t buckets_num = 0;
@@ -600,16 +607,38 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         {
             auto zk_client = getZooKeeper(log, zookeeper_name);
             std::optional<ObjectStorageQueueTableMetadata> metadata_from_zk;
+            Coordination::Stat stat;
             if (zk_client->exists(table_metadata_path))
             {
-                const auto metadata_str = zk_client->get(table_metadata_path);
+                const auto metadata_str = zk_client->get(table_metadata_path, &stat);
                 LOG_TRACE(log, "Metadata in keeper: {}", metadata_str);
                 metadata_from_zk.emplace(ObjectStorageQueueTableMetadata::parse(metadata_str));
             }
             if (metadata_from_zk.has_value())
             {
                 table_metadata.adjustFromKeeper(metadata_from_zk.value());
+                /// A named collection can change without an `ALTER` of the table, so its source is always checked.
+                if (!strict && !source.from_named_collection && !metadata_from_zk->source_hash.empty()
+                    && table_metadata.source_hash != metadata_from_zk->source_hash)
+                {
+                    LOG_WARNING(log, "The source of this table differs from the source of the queue");
+                    table_metadata.source_hash = metadata_from_zk->source_hash;
+                }
                 table_metadata.checkEquals(metadata_from_zk.value());
+                if (metadata_from_zk->source_hash.empty())
+                {
+                    if (strict)
+                        throw Exception(
+                            ErrorCodes::METADATA_MISMATCH,
+                            "Existing table metadata in ZooKeeper has no source, as an older version wrote it. "
+                            "Attach the main table (following the same `keeper_path`) of this queue on an upgraded server, or use another `keeper_path`");
+
+                    if (!table_metadata.source_hash.empty())
+                    {
+                        metadata_from_zk->source_hash = table_metadata.source_hash;
+                        code = zk_client->trySet(table_metadata_path, metadata_from_zk->toString(), stat.version);
+                    }
+                }
                 return;
             }
 
@@ -622,7 +651,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     "either `buckets`>1 or `processing_threads_num`>1 (works as `buckets` if it's not specified) "
                     "will not work properly. Please specify them in the CREATE query. See documentation for more details.");
 
-                if (is_attach)
+                if (!strict)
                 {
                     LOG_WARNING(log, message);
                     warned = true;
@@ -688,11 +717,15 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                         *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
                 continue;
             }
+            /// Keeper was changed after the metadata was read, for example by another server, so start again.
+            if (*code == Coordination::Error::ZBADVERSION)
+                continue;
             if (*code == Coordination::Error::ZNONODE)
             {
                 /// The parent node can be removed concurrently, when the last other table under it is dropped
-                /// (see `StorageObjectStorageQueue::tryRemoveEmptyDatabaseNode`). Recreate it and retry.
-                LOG_INFO(log, "Parent of {} does not exist, it was removed concurrently, will retry", zookeeper_path.string());
+                /// (see `StorageObjectStorageQueue::tryRemoveEmptyDatabaseNode`), so recreate it before starting again.
+                /// Creating the ancestors is a no-op if the node was changed in some other way.
+                LOG_INFO(log, "Some node for {} does not exist, it was changed concurrently, will retry", zookeeper_path.string());
                 zk_retries.resetFailures();
                 zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
                 continue;

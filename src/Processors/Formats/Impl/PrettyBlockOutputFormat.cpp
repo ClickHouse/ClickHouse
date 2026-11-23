@@ -1135,6 +1135,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         is_cut = true;
         serialized_fragment.resize(UTF8::computeBytesBeforeWidth(
             reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix, format_settings.pretty.max_value_width));
+        /// Narrower than `max_value_width` when a wide character does not fit.
+        size_t kept_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
 
         if (color)
         {
@@ -1146,7 +1148,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         else
             serialized_fragment += ellipsis;
 
-        value_width = format_settings.pretty.max_value_width;
+        value_width = kept_width;
     }
 
     auto write_padding = [&]()
@@ -1177,7 +1179,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (start_from_offset != serialized_value->size())
+    /// After a cut, the ellipsis takes the place of the line feed marker: the next line starts with `line_continuation`.
+    if (start_from_offset != serialized_value->size() && !is_cut)
     {
         if (color)
             out << "\033[90m";
