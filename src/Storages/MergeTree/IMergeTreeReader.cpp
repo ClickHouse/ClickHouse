@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
@@ -311,7 +312,11 @@ void IMergeTreeReader::fillMissingColumns(
                         if (!res_columns[column_index] && !missing_info->type_name.empty())
                         {
                             auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
-                            auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                            /// A marker stands for `insert(getDefault())`, the value the writer checks before skipping;
+                            /// for `JSON` it differs from `createColumnConstWithDefaultValue`.
+                            auto frozen_value = frozen_type->createColumn();
+                            frozen_value->insert(frozen_type->getDefault());
+                            auto frozen_column = ColumnConst::create(std::move(frozen_value), num_rows)->convertToFullColumnIfConst();
                             if (column.isSubcolumn())
                                 frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
                             res_columns[column_index] = std::move(frozen_column);
@@ -698,9 +703,10 @@ void IMergeTreeReader::initColumnsCache(bool can_read)
     columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName());
 
     column_identities.reserve(requested_column_names.size());
-    for (const auto & name : requested_column_names)
+    for (size_t pos = 0; pos < requested_column_names.size(); ++pos)
         column_identities.push_back(getColumnsCacheColumnIdentity(
-            data_part_info_for_read->getTableUUID(), columns_cache_part_name, name, settings.columns_cache_schema_identity));
+            data_part_info_for_read->getTableUUID(), columns_cache_part_name, requested_column_names[pos],
+            settings.columns_cache_schema_identity, columns_to_read[pos].name));
 
     /// Capture the invalidation generation once, before anything is read, so that any
     /// invalidation racing with this reader is observed. It is passed to `setMany` by every

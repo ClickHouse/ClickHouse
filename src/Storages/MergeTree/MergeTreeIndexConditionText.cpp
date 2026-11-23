@@ -1232,7 +1232,10 @@ static std::optional<FixedStringPaddingSemantics> fixedStringPaddingSemantics(co
 
 static std::string_view withoutTrailingZeros(std::string_view value)
 {
-    return value.substr(0, value.find_last_not_of('\0') + 1);
+    const size_t last_non_zero = value.find_last_not_of('\0');
+    /// An all-zero value has no such byte, and `npos + 1` wrapped to 0 here; return that empty
+    /// prefix explicitly instead.
+    return last_non_zero == std::string_view::npos ? value.substr(0, 0) : value.substr(0, last_non_zero + 1);
 }
 
 /// Strips or re-pads the needle's trailing zero bytes in place to the form the index stores; false when no single form covers every match.
@@ -1351,6 +1354,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
         bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+
+        /// The array phrase of `hasPhrase` is a token sequence taken verbatim. It matches the stored tokens of a string value
+        /// only without a preprocessor, which direct read does not apply to a JSON path.
+        if (function_name == "hasPhrase" && !has_preprocessor
+            && WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString())
+            is_special_text_index_function = true;
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
