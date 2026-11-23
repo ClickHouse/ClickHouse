@@ -19,3 +19,11 @@
 6
 [2,3]
 0
+-- a missing tag in a Nullable dedicated column is an empty value
+[2]
+[2]
+[1,3]
+-- a missing tag in a LowCardinality(Nullable) dedicated column is an empty value
+[2]
+[2]
+[1,3]

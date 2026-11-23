@@ -357,9 +357,11 @@ namespace
         if (tag_name == TimeSeriesTagNames::MetricName)
             return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
 
+        /// A dedicated column can be Nullable with NULL for a missing tag, which PromQL matches as an empty value,
+        /// so NULL is replaced with '' as `arrayElement` below returns for a missing key.
         auto it = column_name_by_tag_name.find(tag_name);
         if (it != column_name_by_tag_name.end())
-            return make_intrusive<ASTIdentifier>(it->second);
+            return makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(it->second), make_intrusive<ASTLiteral>(String{}));
 
         /// arrayElement() can be used to extract a value from a Map too.
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));

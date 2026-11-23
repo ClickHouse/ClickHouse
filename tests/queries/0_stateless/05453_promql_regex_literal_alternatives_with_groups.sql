@@ -51,3 +51,32 @@ SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx, concat('a_t
 SELECT count() FROM timeSeriesSelector(rx, concat('{__name__="no_such_metric", job=~"', repeat('(', 50000), 'api', repeat(')', 50000), '"}'), 0, 2000, 'timestamp_and_value');
 
 DROP TABLE rx;
+
+-- A missing tag is stored as NULL in a Nullable dedicated column, and a list with an empty string must match it as an empty value.
+DROP TABLE IF EXISTS rx_nullable;
+DROP TABLE IF EXISTS rx_lc_nullable;
+CREATE TABLE rx_nullable ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, tags_to_columns = {'job': 'job'}
+TAGS INNER COLUMNS (job Nullable(String));
+CREATE TABLE rx_lc_nullable ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0, tags_to_columns = {'job': 'job'}
+TAGS INNER COLUMNS (job LowCardinality(Nullable(String)));
+
+INSERT INTO rx_nullable (metric_name, tags, samples) VALUES
+    ('a_total', {'job':'api'}, [(1000, 1.)]),
+    ('a_total', {'job':'web'}, [(1000, 2.)]),
+    ('a_total', {'instance':'x'}, [(1000, 3.)]);
+INSERT INTO rx_lc_nullable (metric_name, tags, samples) VALUES
+    ('a_total', {'job':'api'}, [(1000, 1.)]),
+    ('a_total', {'job':'web'}, [(1000, 2.)]),
+    ('a_total', {'instance':'x'}, [(1000, 3.)]);
+
+SELECT '-- a missing tag in a Nullable dedicated column is an empty value';
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_nullable, 'a_total{job!~"(api|)()"}', 1000) ORDER BY value) SETTINGS transform_null_in = 1;
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_nullable, 'a_total{job!~"(api|)()"}', 1000) ORDER BY value) SETTINGS transform_null_in = 0;
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_nullable, 'a_total{job=~"(api|)()"}', 1000) ORDER BY value);
+SELECT '-- a missing tag in a LowCardinality(Nullable) dedicated column is an empty value';
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_lc_nullable, 'a_total{job!~"(api|)()"}', 1000) ORDER BY value) SETTINGS transform_null_in = 1;
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_lc_nullable, 'a_total{job!~"(api|)()"}', 1000) ORDER BY value) SETTINGS transform_null_in = 0;
+SELECT groupArray(value) FROM (SELECT value FROM prometheusQuery(rx_lc_nullable, 'a_total{job=~"(api|)()"}', 1000) ORDER BY value);
+
+DROP TABLE rx_nullable;
+DROP TABLE rx_lc_nullable;
