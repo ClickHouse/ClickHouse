@@ -153,6 +153,11 @@ public:
     /// `tryAddJoinRuntimeFilter`.
     [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
+
+    /// Whether the runtime filter pass installed `BuildRuntimeFilterStep` / `__applyFilter` for this join.
+    /// The physical `JoinStep` inherits it and refuses `clone` because of it, see `JoinStep::clone`.
+    [[nodiscard]] bool hasRuntimeFilters() const { return has_runtime_filters; }
+    void setHasRuntimeFilters() { has_runtime_filters = true; }
     [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
     [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -227,6 +232,15 @@ public:
     [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
+    /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded.
+    struct PlannedMergeOrder
+    {
+        String column;
+        bool sharded = false;
+    };
+    [[nodiscard]] const std::optional<PlannedMergeOrder> & getPlannedMergeOrder() const { return planned_merge_order; }
+    void setPlannedMergeOrder(PlannedMergeOrder order) { planned_merge_order = std::move(order); }
+
     /// Swap left and right sides
     void swapInputs();
 
@@ -298,6 +312,10 @@ protected:
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
 
+    /// Whether the runtime filter pass added runtime filters for this join. Travels with the step, so that
+    /// the physical step built from a copy also knows that its plan carries runtime filter identities.
+    bool has_runtime_filters = false;
+
     /// Runtime info, do not serialize
 
     std::optional<UInt64> result_rows_estimation = {};
@@ -326,9 +344,14 @@ private:
 
     bool disjunctions_optimization_applied = false;
     std::optional<JoinAlgorithm> planned_algorithm;
+    std::optional<PlannedMergeOrder> planned_merge_order;
 };
 
 
+/// Intentionally does not implement `clone` (unlike `JoinStep`): it owns `prepared_join_storage`,
+/// a live handle into `StorageJoin` or an `IKeyValueEntity`, whose sharing semantics between two
+/// executing plans are not defined, and its own `child_plan`. `IN`-subquery plans with this step
+/// take the destructive fallback in `FutureSetFromSubquery::buildOrderedSetInplace`.
 class JoinStepLogicalLookup final : public ISourceStep
 {
 public:
