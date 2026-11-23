@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.log_parser import FuzzerLogParser
-from ci.jobs.stress_job import has_sanitizer_report, select_replica_failures
+from ci.jobs.stress_job import find_log, has_sanitizer_report, select_replica_failures
 
 _ORACLE_MISMATCH_LOG = (
     "2026.09.04 00:44:57.972626 [ 1068 ] {q} <Fatal> ASTFuzzer: "
@@ -134,3 +134,16 @@ def test_recovered_cfi_report_in_stderr_is_detected(tmp_path):
         "failed during non-virtual call (vtable address 0x7f8482817808)\n"
     )
     assert has_sanitizer_report(tmp_path)
+
+
+def test_recovered_report_left_in_server_log_dir_is_detected(tmp_path):
+    # The runner exits before moving `stderr.log` to the results, so it stays with the server logs.
+    result_path, server_log_path = tmp_path / "result_path", tmp_path / "server_log"
+    result_path.mkdir()
+    server_log_path.mkdir()
+    assert not has_sanitizer_report(result_path, server_log_path)
+    (server_log_path / "stderr.log").write_text(
+        "src/Foo.cpp:1:1: runtime error: control flow integrity check for type 'void ()' failed\n"
+    )
+    assert has_sanitizer_report(result_path, server_log_path)
+    assert find_log("stderr.log", result_path, server_log_path) == server_log_path / "stderr.log"
