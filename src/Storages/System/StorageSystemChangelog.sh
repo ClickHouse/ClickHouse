@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# Regenerates StorageSystemChangelog.generated.cpp from the curated CHANGELOG.md at the repository
-# root. Rerun after the changelog is updated for a release and commit the result, like
-# StorageSystemContributors.generated.cpp.
+# Generates StorageSystemChangelog.generated.cpp from the curated CHANGELOG.md at the repository root.
+# CMake runs it at configure time and writes the result into the build directory.
+# Usage: StorageSystemChangelog.sh <CHANGELOG.md> <output.cpp>
 
 set -e
 
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-cd "$CUR_DIR"
-
-CHANGELOG_FILE=${CHANGELOG_FILE:="$CUR_DIR/../../../CHANGELOG.md"}
-GENERATED_FILE=${GENERATED_FILE:="$CUR_DIR/StorageSystemChangelog.generated.cpp"}
+CHANGELOG_FILE=${1:?path to CHANGELOG.md is required}
+GENERATED_FILE=${2:?path of the generated file is required}
 
 python3 - "$CHANGELOG_FILE" "$GENERATED_FILE" <<'PYTHON'
 import datetime
