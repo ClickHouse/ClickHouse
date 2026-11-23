@@ -2,7 +2,9 @@
 #include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <algorithm>
 #include <atomic>
+#include <deque>
 #include <tuple>
 #include <utility>
 
@@ -40,6 +42,7 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -67,6 +70,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -610,15 +614,13 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     return shards;
 }
 
-ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
+Strings DatabaseReplicated::getReplicasInfoPaths(const Cluster & cluster_) const
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
     Strings paths;
-
     paths.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
 
-    const auto & addresses_with_failover = cluster_->getShardsAddresses();
-    const auto & shards_info = cluster_->getShardsInfo();
+    const auto & addresses_with_failover = cluster_.getShardsAddresses();
+    const auto & shards_info = cluster_.getShardsInfo();
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
         for (const auto & replica : addresses_with_failover[shard_index])
@@ -628,73 +630,140 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
             paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
         }
     }
+    return paths;
+}
 
+template <typename MultiGetResponses>
+ReplicasInfo DatabaseReplicated::parseReplicasInfo(const Cluster & cluster_, MultiGetResponses & responses) const
+{
+    const auto & max_log_ptr_zk = responses[0];
+    if (max_log_ptr_zk.error != Coordination::Error::ZOK)
+        throw Coordination::Exception(max_log_ptr_zk.error);
+
+    UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
+
+    UInt64 local_recovery_time = 0;
+    bool unsynced_after_recovery = false;
+    {
+        /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
+        /// access to it must hold the lock. Read both members here.
+        std::lock_guard lock(ddl_worker_mutex);
+        if (ddl_worker)
+        {
+            local_recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+            unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
+        }
+    }
+
+    std::vector<ReplicaInfo> replicas_info;
+    replicas_info.resize((responses.size() - 1) / 2);
+
+    const auto & addresses_with_failover = cluster_.getShardsAddresses();
+    const auto & shards_info = cluster_.getShardsInfo();
+    size_t global_replica_index = 0;
+    for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
+    {
+        for (const auto & replica : addresses_with_failover[shard_index])
+        {
+            const auto & replica_active = responses[2 * global_replica_index + 1];
+            const auto & replica_log_ptr = responses[2 * global_replica_index + 2];
+
+            replicas_info[global_replica_index] = ReplicaInfo{
+                .is_active = replica_active.error == Coordination::Error::ZOK,
+                .unsynced_after_recovery = unsynced_after_recovery,
+                .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
+                .recovery_time = replica.is_local ? local_recovery_time : 0,
+            };
+
+            ++global_replica_index;
+        }
+    }
+
+    return ReplicasInfo{.replicas = std::move(replicas_info), .replicas_belong_to_shared_catalog = false};
+}
+
+/// Logs the exception being handled; `code` is its `getCurrentExceptionCode`. Same rationale as in `tryGetCluster`: the caller (e.g. `system.clusters`)
+/// treats an empty `ReplicasInfo` as "skip the replica state columns for this database", and the Keeper state of a
+/// `Replicated` database can be in flux during normal lifecycle operations. Log expected coordination/connection
+/// failures at `information` so they do not leak into the client stderr at the default `send_logs_level = warning`,
+/// but keep anything unexpected at the default `error` level.
+static void logReplicasInfoFailure(const LoggerPtr & log, int code)
+{
+    if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+        tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+    else
+        tryLogCurrentException(log);
+}
+
+ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
     try
     {
-        auto current_zookeeper = getZooKeeper();
-        auto zk_res = current_zookeeper->tryGet(paths);
-
-        auto max_log_ptr_zk = zk_res[0];
-        if (max_log_ptr_zk.error != Coordination::Error::ZOK)
-            throw Coordination::Exception(max_log_ptr_zk.error);
-
-        UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
-
-        std::vector<ReplicaInfo> replicas_info;
-        replicas_info.resize((zk_res.size() - 1) / 2);
-
-        size_t global_replica_index = 0;
-        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
-        {
-            for (const auto & replica : addresses_with_failover[shard_index])
-            {
-                auto replica_active = zk_res[2 * global_replica_index + 1];
-                auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
-
-                UInt64 recovery_time = 0;
-                bool unsynced_after_recovery = false;
-                {
-                    /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
-                    /// access to it must hold the lock. Read both members here.
-                    std::lock_guard lock(ddl_worker_mutex);
-                    if (ddl_worker)
-                    {
-                        if (replica.is_local)
-                            recovery_time = ddl_worker->getCurrentInitializationDurationMs();
-                        unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
-                    }
-                }
-
-                replicas_info[global_replica_index] = ReplicaInfo{
-                    .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .unsynced_after_recovery = unsynced_after_recovery,
-                    .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
-                    .recovery_time = recovery_time,
-                };
-
-                ++global_replica_index;
-            }
-        }
-
-        return ReplicasInfo{.replicas = replicas_info, .replicas_belong_to_shared_catalog = false};
+        auto responses = getZooKeeper()->tryGet(getReplicasInfoPaths(*cluster_));
+        return parseReplicasInfo(*cluster_, responses);
     }
     catch (...)
     {
-        /// Same rationale as in `tryGetCluster` above: the caller (e.g.
-        /// `system.clusters`) treats an empty `ReplicasInfo` as "skip the
-        /// replica state columns for this database", and the Keeper state
-        /// of a Replicated database can be in flux during normal lifecycle
-        /// operations. Log expected coordination/connection failures at
-        /// `information` so they do not leak into the client stderr at the
-        /// default `send_logs_level = warning`, but keep anything
-        /// unexpected at the default `error` level.
-        const auto code = getCurrentExceptionCode();
-        if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-            tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
-        else
-            tryLogCurrentException(log);
+        logReplicasInfoFailure(log, getCurrentExceptionCode());
         return {};
     }
+}
+
+std::vector<ReplicasInfo> DatabaseReplicated::tryGetReplicasInfoBatch(std::span<const ReplicasInfoTarget> targets)
+{
+    /// The component name is the one of the method that did the whole read before, for the continuity of its metrics.
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
+
+    /// The Keeper session is shared with everything else on the server (e.g. `ReplicatedMergeTree` tables), so the
+    /// requests of one query are bounded. With the MultiRead feature it is one request per target, a quarter of the
+    /// client request queue; without it, a target sends `1 + 2 * replicas` requests and the queue applies backpressure.
+    static constexpr size_t max_targets_in_flight = 256;
+
+    struct InFlight
+    {
+        size_t index;
+        zkutil::ZooKeeper::MultiTryGetResponse responses;
+    };
+
+    std::vector<ReplicasInfo> result(targets.size());
+    std::deque<InFlight> in_flight;
+
+    auto wait_oldest = [&]
+    {
+        auto oldest = std::move(in_flight.front());
+        in_flight.pop_front();
+        const auto & target = targets[oldest.index];
+        try
+        {
+            result[oldest.index] = target.database->parseReplicasInfo(*target.cluster, oldest.responses);
+        }
+        catch (...)
+        {
+            logReplicasInfoFailure(target.database->log, getCurrentExceptionCode());
+        }
+    };
+
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        if (in_flight.size() >= max_targets_in_flight)
+            wait_oldest();
+
+        const auto & target = targets[i];
+        try
+        {
+            in_flight.push_back({i, target.database->getZooKeeper()->asyncTryGet(target.database->getReplicasInfoPaths(*target.cluster))});
+        }
+        catch (...)
+        {
+            logReplicasInfoFailure(target.database->log, getCurrentExceptionCode());
+        }
+    }
+
+    while (!in_flight.empty())
+        wait_oldest();
+
+    return result;
 }
 
 void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
@@ -702,8 +771,8 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
     auto collection = NamedCollectionFactory::instance().get(collection_name);
 
     cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
-    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
-    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
+    cluster_auth_info.cluster_password = collection->getOrDefault<SecretString>("cluster_password");
+    cluster_auth_info.cluster_secret = collection->getOrDefault<SecretString>("cluster_secret");
     cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 }
 
@@ -1100,7 +1169,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             {
                 std::lock_guard lock{mutex};
                 for (const auto & table : tables)
-                    digest += getMetadataHash(table.first);
+                    digest = common::addIgnoreOverflow(digest, getMetadataHash(table.first));
                 LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", tables.size(), digest);
             }
 
@@ -1212,7 +1281,7 @@ void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zooke
             const String table_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
             add_ops({zkutil::makeCreateRequest(table_metadata_zk_path, statement, zkutil::CreateMode::Persistent)});
 
-            digest += DB::getMetadataHash(table_name, statement);
+            digest = common::addIgnoreOverflow(digest, DB::getMetadataHash(table_name, statement));
         }
 
         tables_metadata_digest = digest;
@@ -1484,7 +1553,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     {
         std::lock_guard lock{mutex};
         for (const auto & table : tables)
-            local_digest += getMetadataHash(table.first);
+            local_digest = common::addIgnoreOverflow(local_digest, getMetadataHash(table.first));
     }
 
     if (local_digest != tables_metadata_digest)
@@ -1540,6 +1609,24 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     checkTableEngine(*create, *inner_table_engine, query_context);
             }
         }
+    }
+
+    if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        for (const auto & elem : rename->getElements())
+        {
+            String from_database = elem.from.database ? elem.from.getDatabase() : query_context->getCurrentDatabase();
+            String to_database = elem.to.database ? elem.to.getDatabase() : query_context->getCurrentDatabase();
+            if (from_database != getDatabaseName())
+                throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
+            if (to_database != getDatabaseName())
+            {
+                DatabaseCatalog::instance().assertDatabaseExists(to_database);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
+            }
+        }
+
+        rename->resetDatabases();
     }
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())
@@ -1845,7 +1932,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
-            new_digest -= getMetadataHash(broken_table_name);
+            new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(broken_table_name));
             DatabaseAtomic::renameTable(make_query_context(), broken_table_name, *to_db_ptr, to_name, /* exchange */ false, /* dictionary */ false);
             tables_metadata_digest = new_digest;
             assertDigest(getContext());
@@ -1872,7 +1959,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
-            new_digest -= getMetadataHash(table_name);
+            new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
 
             DatabaseAtomic::dropTableImpl(make_query_context(), table_name, /* sync */ true);
 
@@ -1907,8 +1994,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         std::lock_guard lock{metadata_mutex};
         UInt64 new_digest = tables_metadata_digest;
         String statement = readMetadataFile(from);
-        new_digest -= DB::getMetadataHash(from, statement);
-        new_digest += DB::getMetadataHash(to, statement);
+        new_digest = common::subIgnoreOverflow(new_digest, DB::getMetadataHash(from, statement));
+        new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(to, statement));
 
         DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
 
@@ -1934,6 +2021,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
+
+    /// The tables are created with the UUIDs stored in ZooKeeper, so a table can get the data path and part names
+    /// of a dropped table with the same UUID, and the caches keyed by them must not serve the dropped table's data.
+    if (std::ranges::any_of(table_name_to_metadata, [&](const auto & table) { return !isTableExist(table.first, getContext()); }))
+        getContext()->clearCaches();
 
     /// Create all needed tables in a proper order
     TablesDependencyGraph tables_dependencies("DatabaseReplicated (" + getDatabaseName() + ")");
@@ -2704,7 +2796,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_name);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -2774,12 +2866,12 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     }
 
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= DB::getMetadataHash(table_name, statement);
-    new_digest += DB::getMetadataHash(to_table_name, statement);
+    new_digest = common::subIgnoreOverflow(new_digest, DB::getMetadataHash(table_name, statement));
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(to_table_name, statement));
     if (exchange)
     {
-        new_digest -= DB::getMetadataHash(to_table_name, statement_to);
-        new_digest += DB::getMetadataHash(table_name, statement_to);
+        new_digest = common::subIgnoreOverflow(new_digest, DB::getMetadataHash(to_table_name, statement_to));
+        new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(table_name, statement_to));
     }
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
@@ -2792,12 +2884,10 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 
 void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                       ContextPtr query_context)
+                       const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
     chassert(txn || !isDDLWorkerCurrentlyActive());
-
-    String statement = getObjectDefinitionFromCreateQuery(query.clone());
 
     /// For CREATE OR REPLACE, the metadata node for the temporary table is intentionally omitted
     /// from the transaction because renameTable will create it under the final name atomically.
@@ -2816,11 +2906,11 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest += DB::getMetadataHash(query.getTable(), statement);
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(query.getTable(), statement));
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
-    DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
+    DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
 
     /// commitCreateTable() commits the txn, so no need to try to attach it to txn
@@ -2841,8 +2931,8 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_id.table_name);
-    new_digest += DB::getMetadataHash(table_id.table_name, statement);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_id.table_name));
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(table_id.table_name, statement));
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -2883,7 +2973,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_name);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -2909,7 +2999,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     UInt64 new_digest = tables_metadata_digest;
     if (attach)
     {
-        new_digest += getMetadataHash(table_name);
+        new_digest = common::addIgnoreOverflow(new_digest, getMetadataHash(table_name));
         if (txn && !is_recovering)
             txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
     }
@@ -2927,7 +3017,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 void DatabaseReplicated::adjustDigestOnTableLostFromRestart(const String & table_name)
 {
     std::lock_guard lock{metadata_mutex};
-    tables_metadata_digest -= getMetadataHash(table_name);
+    tables_metadata_digest = common::subIgnoreOverflow(tables_metadata_digest, getMetadataHash(table_name));
     LOG_WARNING(log, "Table {} was lost from in-memory tables map due to failed SYSTEM RESTART REPLICA. "
                      "Adjusted in-memory digest to {}. The table will be restored on server restart or recovery.",
                 table_name, tables_metadata_digest);

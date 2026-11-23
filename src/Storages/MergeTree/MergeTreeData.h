@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <mutex>
 #include <span>
 #include <string_view>
@@ -50,9 +51,12 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
+#include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
 {
+
+struct QueryIdHolder;
 
 /// Number of streams is not number parts, but number or parts*files, hence 100.
 const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
@@ -103,7 +107,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 class UniqueKeyDenseIndexOps;
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 
 namespace ErrorCodes
 {
@@ -234,7 +238,7 @@ class MergeTreeData : public WithMutableContext, public IStorage, public IBackgr
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
-    using BrokenPartCallback = std::function<void (const String &)>;
+    using BrokenPartCallback = std::function<void (const String & part_name, bool after_read_error)>;
     using DataPart = IMergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
@@ -377,10 +381,6 @@ public:
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
-    /// return pair <exists, pointer to part>. Sometimes we may fail to load existing part (network issues, oom and so on),
-    /// in this case pair of <true, nullptr> is returned.
-    std::pair<bool, MutableDataPartPtr> loadDataPartForRemovalIfExists(const String & name, bool ignore_no_such_key = false);
-
     MergeTreeDataPartBuilder getDataPartBuilder(
         const String & name,
         const VolumePtr & volume,
@@ -414,15 +414,15 @@ public:
         /// state to temporary. Useful for new parts which not present in table.
         void rollbackPartsToTemporaryState();
 
-        size_t size() const { return precommitted_parts.size(); }
-        bool isEmpty() const { return precommitted_parts.empty(); }
+        [[nodiscard]] size_t size() const { return precommitted_parts.size(); }
+        [[nodiscard]] bool isEmpty() const { return precommitted_parts.empty(); }
 
         ~Transaction();
         void clear();
 
-        TransactionID getTID() const;
+        [[nodiscard]] TransactionID getTID() const;
 
-        MergeTreeTransaction * getMergeTreeTransaction() const { return txn; }
+        [[nodiscard]] MergeTreeTransaction * getMergeTreeTransaction() const { return txn; }
 
     private:
         friend class MergeTreeData;
@@ -515,12 +515,12 @@ public:
         /// checks that would break the loading of already-existing tables are gated on it.
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const;
 
-        String getModeName() const;
+        [[nodiscard]] String getModeName() const;
 
         /// True when both tables would merge a part with identical semantics, i.e. every
         /// field that feeds the merge transforms matches. Used to decide whether an adopted
         /// part's merge level may be preserved (see getLevelForAdoptedPart).
-        bool hasSameMergeSemantics(const MergingParams & rhs) const
+        [[nodiscard]] bool hasSameMergeSemantics(const MergingParams & rhs) const
         {
             return mode == rhs.mode
                 && sign_column == rhs.sign_column
@@ -556,7 +556,7 @@ public:
                   std::unique_ptr<MergeTreeSettings> settings_,
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
-                  BrokenPartCallback broken_part_callback_ = [](const String &){});
+                  BrokenPartCallback broken_part_callback_ = [](const String &, bool){});
 
     /// Out-of-line so the forward-declared `UniqueKeyDenseIndexOps`
     /// doesn't force a full-type include in callers that destroy
@@ -613,11 +613,19 @@ public:
         const std::function<void(size_t)> & load_part,
         const std::function<void(size_t)> & consume_part);
 
+    /// Adds the getColumnAndSubcolumnSizes of every part to `result`; the parts that read files are sized on up to `max_threads` threads.
+    static void addColumnSizesOfParts(
+        const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result);
+
     bool supportsFinal() const override;
+
+    bool supportsParallelInsert() const override { return true; }
+    bool isInsertOrderSensitive() const override;
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
 
+    bool supportsSubcolumnOptimizationWithFinal() const override;
     bool hasBucketedMapSerialization() const override;
 
     bool supportsTTL() const override { return true; }
@@ -666,17 +674,17 @@ public:
 
         /// Returns mutation commands that are required to be applied to the `part`.
         /// @return list of mutation commands in order: oldest to newest.
-        virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
-        virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
-        virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
+        [[nodiscard]] virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
+        [[nodiscard]] virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
+        [[nodiscard]] virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
-        virtual NameSet getColumnsChangedOnFly() const = 0;
+        [[nodiscard]] virtual NameSet getColumnsChangedOnFly() const = 0;
 
-        virtual bool hasPatchParts() const = 0;
-        virtual bool hasDataMutations() const = 0;
-        virtual bool hasAlterMutations() const = 0;
-        virtual bool hasMetadataMutations() const = 0;
-        virtual bool hasLightweightDeletedMask() const = 0;
+        [[nodiscard]] virtual bool hasPatchParts() const = 0;
+        [[nodiscard]] virtual bool hasDataMutations() const = 0;
+        [[nodiscard]] virtual bool hasAlterMutations() const = 0;
+        [[nodiscard]] virtual bool hasMetadataMutations() const = 0;
+        [[nodiscard]] virtual bool hasLightweightDeletedMask() const = 0;
     };
 
     struct MutationsSnapshotBase : public IMutationsSnapshot
@@ -690,18 +698,24 @@ public:
         MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_);
 
         void addPatches(DataPartsVector patches_) override;
-        PatchParts getPatchesForPart(const DataPartPtr & part) const final;
+        [[nodiscard]] PatchParts getPatchesForPart(const DataPartPtr & part) const final;
 
-        bool hasPatchParts() const final { return !patches_by_partition.empty(); }
-        bool hasDataMutations() const final { return counters.num_data > 0; }
-        bool hasAlterMutations() const final { return counters.num_alter > 0; }
-        bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
-        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
-        bool hasLightweightDeletedMask() const final;
+        [[nodiscard]] bool hasPatchParts() const final { return !patches_by_partition.empty(); }
+        [[nodiscard]] bool hasDataMutations() const final { return counters.num_data > 0; }
+        [[nodiscard]] bool hasAlterMutations() const final { return counters.num_alter > 0; }
+        [[nodiscard]] bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
+        [[nodiscard]] bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
+        [[nodiscard]] bool hasLightweightDeletedMask() const final;
 
     protected:
-        NameSet getColumnsUpdatedInPatches() const;
+        [[nodiscard]] NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+
+        /// Drops the commands that name partitions other than @partition_id: a command with
+        /// `IN PARTITION` applies to the partitions it names alone. Reads the partition ids resolved
+        /// on the command itself (`MutationCommand::partition_ids`) and evaluates nothing.
+        void filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const;
+
         /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
         void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
@@ -751,6 +765,11 @@ public:
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    /// Removes the snapshot of this table from the query-scoped snapshot cache of
+    /// `enable_shared_storage_snapshot_in_query`, so that the next `getStorageSnapshot` in the query
+    /// takes a fresh one. Holders of the removed snapshot keep it.
+    void discardSharedStorageSnapshot(const ContextPtr & query_context) const;
+
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
@@ -771,7 +790,7 @@ public:
         PrimaryIndexCachePtr primary_index_cache;
         StatisticsCachePtr statistics_cache;
 
-        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
+        [[nodiscard]] bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
     };
 
     /// Returns caches that should be prewarmed for a part of the given size.
@@ -910,6 +929,9 @@ public:
 
     virtual std::pair<size_t, size_t> getMaxPartsCountAndSizeForPartition() const;
     virtual size_t getMaxOutdatedPartsCountForPartition() const;
+
+    /// Whether background merges are still delayed after the startup, see `delay_merges_after_startup_seconds`.
+    bool areMergesDelayedAfterStartup() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
@@ -1078,9 +1100,9 @@ public:
         }
 
         /// It's safe to get name of any part
-        const String & getPartName() const { return part->name; }
+        [[nodiscard]] const String & getPartName() const { return part->name; }
 
-        DataPartPtr getPartIfItWasActive() const
+        [[nodiscard]] DataPartPtr getPartIfItWasActive() const
         {
             return was_active ? part : nullptr;
         }
@@ -1209,9 +1231,22 @@ public:
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
+    /// Throws if an element of the sorting, primary or sampling key, of a skip index or of the sorting key of a projection that
+    /// stores the column is not the column itself but has the name of a stored column: writes and key analysis address columns
+    /// by name, so one would be used for the other.
+    /// With `old_metadata`, only an element that it does not have already is refused.
+    static void checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata);
+
+    /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
+    /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
+    /// which checks the user's access to their functions and rejects functions that are not executed in the background.
+    static void checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context);
+
     /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
     /// Only for a definition written now: an existing table with such a column must still load and replicate.
     static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
+
+    static void checkVectorSimilarityIndexIsAllowed(const MergingParams & merging_params, const MergeTreeSettings & settings);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -1517,6 +1552,24 @@ public:
 
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
 
+    /** For every command that names partitions (`... IN PARTITION p`), resolves the partition ids into
+      * `MutationCommand::partition_ids`, so that the per-part command selection of a mutations snapshot
+      * can respect the scope without evaluating anything itself.
+      *
+      * A partition expression is arbitrary user SQL (`getPartitionIDFromQuery` ends in
+      * `evaluateConstantExpression`, and the expression may even contain a subquery over the table
+      * being read), so it is resolved exactly once - when the mutation entry is created - and never
+      * while a storage snapshot is being built. The expression is also replaced in `ast_text` with the
+      * `ID '...'` it resolved to, so the persisted entry pins the partitions: loading it again after a
+      * restart or on another replica resolves the same ids and evaluates nothing. Only the commands that
+      * have a partition are parsed, so an entry of the ordinary kind pays nothing here.
+      *
+      * With @only_pinned, which is used when a persisted entry is read back, only the commands whose
+      * partitions are all named as `ID '...'` are resolved; a partition expression of an entry created
+      * by an older version is left unresolved and is not evaluated.
+      */
+    void resolvePartitionIdsOfScopedCommands(MutationCommands & commands, ContextPtr local_context, bool only_pinned = false) const;
+
     /// Return alter conversions for part which must be applied on fly.
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
@@ -1581,12 +1634,12 @@ public:
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get expression on columns for which part-level min-max index will be calculated.
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key,
+    static ExpressionActionsPtr getMinMaxExpr(const StorageInMemoryMetadata & metadata,
                                               const MergeTreeSettingsPtr & data_settings,
                                               const ExpressionActionsSettings & expr_settings);
     /// Get the columns covered by the part-level min-max index.
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
-    static NamesAndTypesList getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings);
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to);
+    static NamesAndTypesList getMinMaxColumns(const StorageInMemoryMetadata & metadata, const MergeTreeSettingsPtr & data_settings);
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
@@ -1770,6 +1823,9 @@ public:
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+
+    /// Removes the entries of the data parts of this table from the vector similarity index cache.
+    void clearVectorSimilarityIndexCache() const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -2066,9 +2122,22 @@ protected:
         bool attach = false,
         ContextPtr local_context = nullptr);
 
+    /// The part of `setProperties` that runs after `new_metadata` is published.
+    void updateCachesAfterMetadataPublish(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata);
+
+    /// Same as `setProperties`, but publishes the metadata and rebuilds `serialization_hints` under one `parts_lock`:
+    /// a committing part reads both under that lock and must not see new column types with old-typed hints.
+    void setPropertiesAndResetSerializationHints(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        bool attach = false,
+        ContextPtr local_context = nullptr);
+
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
-    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
+    void checkPartitionKeyAndInitMinMax(const StorageInMemoryMetadata & new_metadata);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 
@@ -2192,12 +2261,15 @@ protected:
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
+    /// Aggregates the active parts' serialization infos for `storage_columns` without publishing.
+    SerializationInfoByName buildSerializationHints(const ColumnsDescription & storage_columns, const DataPartsLock & lock) const;
+
     void resetSerializationHints(const DataPartsLock & lock);
 
     template <typename AddedParts, typename RemovedParts>
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
 
-    SerializationInfoByName getSerializationHints() const override;
+    SerializationInfoByName getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const override;
 
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
@@ -2350,6 +2422,14 @@ protected:
 
     StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
     void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
+
+    void delayMergesAfterStartup();
+    void stopDelayingMergesAfterStartup();
+
+    /// Only a table the server loads from its metadata at startup delays its merges.
+    bool merges_can_be_delayed_after_startup = false;
+    /// `CLOCK_MONOTONIC` time of the startup in nanoseconds, 0 if the delay is not armed.
+    std::atomic<UInt64> startup_time_ns = 0;
 
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
