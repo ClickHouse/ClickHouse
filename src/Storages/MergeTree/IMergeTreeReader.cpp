@@ -781,9 +781,10 @@ void IMergeTreeReader::initColumnsCache(bool can_read)
     columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName());
 
     column_identities.reserve(requested_column_names.size());
-    for (const auto & name : requested_column_names)
+    for (size_t pos = 0; pos < requested_column_names.size(); ++pos)
         column_identities.push_back(getColumnsCacheColumnIdentity(
-            data_part_info_for_read->getTableUUID(), columns_cache_part_name, name, settings.columns_cache_schema_identity));
+            data_part_info_for_read->getTableUUID(), columns_cache_part_name, requested_column_names[pos],
+            settings.columns_cache_schema_identity, columns_to_read[pos].name));
 
     /// Capture the invalidation generation once, before anything is read, so that any
     /// invalidation racing with this reader is observed. It is passed to `setMany` by every

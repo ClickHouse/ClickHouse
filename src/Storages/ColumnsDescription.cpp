@@ -404,7 +404,7 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 
     const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
     WhichDataType nested = array_type ? WhichDataType(array_type->getNestedType()) : WhichDataType(column.type);
-    const bool is_byte_vector = nested.isInt8() || nested.isUInt8();
+    const bool is_byte_vector = nested.isInt8() || (nested.isUInt8() && array_type && !isBool(array_type->getNestedType()));
     if (!array_type || !(nested.isFloat32() || nested.isFloat64() || nested.isBFloat16() || is_byte_vector))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Column {} has a Quantized codec, which is only supported for Array(Float32), Array(Float64), "
