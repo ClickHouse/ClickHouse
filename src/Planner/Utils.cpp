@@ -321,7 +321,7 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
     {
         CollectInNullModes modes;
         modes.visit(query_node);
-        if (modes.mode && *modes.mode != query->getContext()->getSettingsRef()[Setting::in_null_as_unknown])
+        if (modes.mode && (*modes.mode || *modes.mode != query->getContext()->getSettingsRef()[Setting::in_null_as_unknown]))
         {
             auto * select_query = ast->as<ASTSelectQuery>();
             if (!select_query)

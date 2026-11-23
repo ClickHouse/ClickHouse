@@ -1727,6 +1727,7 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
             const bool calendar_cast_required = needsCalendarDateInCast(source_element_type, target_type);
             const bool exact_cast_required = !calendar_cast_required && needsExactInCastCheck(source_element_type, target_type);
             if (!target_type->onlyNull()
+                && !isNothingOrNullableNothing(source_element_type)
                 && target_type->canBeInsideNullable()
                 && !both_numeric
                 && !source_aware_scalar_array
@@ -1758,7 +1759,13 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         }
 
         QueryTreeNodePtr match_result;
-        if (source_array_type
+        if (source_array_type && isNothingOrNullableNothing(source_array_type->getNestedType()))
+        {
+            /// Every list member was handled separately; `array()` has type
+            /// `Array(Nothing)` and contributes no matching value.
+            match_result = std::make_shared<ConstantNode>(Field{0u});
+        }
+        else if (source_array_type
             && isCompoundCarrierForIn(element_arg->getResultType(), source_array_type->getNestedType()))
         {
             const String candidate_name = "__in_compound_carrier_array_candidate";
