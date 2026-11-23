@@ -40,6 +40,11 @@ def ldap_cluster():
 
 
 def add_ldap_group(ldap_cluster, group_cn, member_cn):
+    # `member_cn` is either a name of a user or a list of such names.
+    member_cns = [member_cn] if isinstance(member_cn, str) else member_cn
+    members = "\n".join(
+        f"member: cn={cn},ou=users,dc=example,dc=org" for cn in member_cns
+    )
     code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
         [
             "sh",
@@ -47,7 +52,7 @@ def add_ldap_group(ldap_cluster, group_cn, member_cn):
             """echo "dn: cn={group_cn},dc=example,dc=org
 objectClass: top
 objectClass: groupOfNames
-member: cn={member_cn},ou=users,dc=example,dc=org" | \
+{members}" | \
 ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
     """.format(
                 host=ldap_cluster.ldap_host,
@@ -55,7 +60,7 @@ ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
                 admin_bind_dn=LDAP_ADMIN_BIND_DN,
                 admin_password=LDAP_ADMIN_PASSWORD,
                 group_cn=group_cn,
-                member_cn=member_cn,
+                members=members,
             ),
         ],
         demux=True,
@@ -407,4 +412,45 @@ def test_failed_role_reconciliation_is_retried(ldap_cluster):
     finally:
         instance1.query("SYSTEM DISABLE FAILPOINT ldap_access_storage_fail_role_reconciliation", **admin)
         instance1.query("DROP ROLE IF EXISTS retried_role, retried_role_renamed, retried_role_unrelated", **admin)
+        delete_ldap_group(ldap_cluster, group_cn=group_cn)
+
+
+def test_partially_applied_role_reconciliation_is_reverted(ldap_cluster):
+    # Two users are mapped to a role which is created after they have logged in. The reconciliation of the new role
+    # fails after the first user is updated, so that user already has the role while the second one does not.
+    # Then the role is renamed before a successful retry: the mapped name is resolved to a role
+    # neither before nor after that change, but the role granted by the failed attempt must be revoked anyway.
+    admin = {"user": "common_user", "password": "qwerty"}
+    failpoint = "ldap_access_storage_fail_role_reconciliation_after_first_user"
+    group_cn = "clickhouse-partial_role"
+    ldap_users = [("janedoe", "qwerty"), ("johndoe", "qwertz")]
+    add_ldap_group(ldap_cluster, group_cn=group_cn, member_cn=[name for name, _ in ldap_users])
+
+    def current_roles(user, password):
+        return instance1.query(
+            "SELECT role_name FROM system.current_roles", user=user, password=password
+        )
+
+    try:
+        for user, password in ldap_users:
+            assert current_roles(user, password) == ""
+
+        instance1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("CREATE ROLE partial_role", **admin)
+
+        # The users are updated in the order of their names.
+        instance1.wait_for_log_line(
+            "Injected failure of the reconciliation of LDAP role changes after the update of the first user"
+        )
+        assert current_roles("janedoe", "qwerty") == TSV([["partial_role"]])
+        assert current_roles("johndoe", "qwertz") == ""
+
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("ALTER ROLE partial_role RENAME TO partial_role_renamed", **admin)
+
+        for user, password in ldap_users:
+            assert current_roles(user, password) == ""
+    finally:
+        instance1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", **admin)
+        instance1.query("DROP ROLE IF EXISTS partial_role, partial_role_renamed", **admin)
         delete_ldap_group(ldap_cluster, group_cn=group_cn)

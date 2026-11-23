@@ -71,6 +71,7 @@ private: // IAccessStorage implementations.
     mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
     mutable std::map<String, UUID> granted_role_ids;            // (currently granted) configured or mapped role name -> id of the role it is resolved to
     std::unordered_set<UUID> pending_role_ids;                  // ids of the changed roles which are not reconciled with the users yet (see processRoleChanges)
+    std::map<String, std::set<UUID>> unreconciled_role_ids;     // role name -> ids of the roles which failed reconciliations may have granted to a part of the users of this name
     bool pending_role_may_exist = false;                        // whether any of the pending changes is an addition or an update of a role (not a removal)
     scope_guard role_change_subscription;
     mutable MemoryAccessStorage memory_storage;

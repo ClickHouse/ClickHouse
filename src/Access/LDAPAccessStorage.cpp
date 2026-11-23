@@ -28,6 +28,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char ldap_access_storage_fail_role_reconciliation[];
+    extern const char ldap_access_storage_fail_role_reconciliation_after_first_user[];
 }
 
 LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
@@ -97,6 +98,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     granted_role_ids.clear();
     pending_role_ids.clear();
     pending_role_may_exist = false;
+    unreconciled_role_ids.clear();
 
     role_change_subscription = access_control.subscribeForChanges<Role>(
         [this] (const std::vector<AccessChangesNotifier::Change> & changes)
@@ -137,6 +139,7 @@ void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifi
     {
         pending_role_ids.clear();
         pending_role_may_exist = false;
+        unreconciled_role_ids.clear();
     };
 
     // The mappings are keyed by the role names as they are configured or mapped from LDAP, and these names are resolved
@@ -149,6 +152,8 @@ void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifi
     for (const auto & [role_name, user_names] : users_per_roles)
         role_names.insert(role_name);
     for (const auto & [role_name, role_id] : granted_role_ids)
+        role_names.insert(role_name);
+    for (const auto & [role_name, role_ids] : unreconciled_role_ids)
         role_names.insert(role_name);
 
     // The new resolution of the names is prepared separately and replaces `granted_role_ids` only after the users
@@ -163,15 +168,21 @@ void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifi
         if (auto it = granted_role_ids.find(role_name); it != granted_role_ids.end())
             old_role_id = it->second;
 
+        // A failed reconciliation could have granted the roles this name was resolved to at that time to a part of
+        // the users. `granted_role_ids` does not know about these roles, so such a name is always processed,
+        // even if it is not resolved to any role neither before nor after the current changes.
+        const auto unreconciled_it = unreconciled_role_ids.find(role_name);
+        const bool is_unreconciled = unreconciled_it != unreconciled_role_ids.end();
+
         // The removal of a role cannot change the resolution of a name which was not resolved to that role.
-        if (!any_role_exists && !is_in_batch(old_role_id))
+        if (!any_role_exists && !is_in_batch(old_role_id) && !is_unreconciled)
             continue;
 
         // A name already resolved to a changed role is processed too: it could have been resolved during the login
         // of another user after the role had been added but before this notification was delivered, so some users
         // of this name may still lack the role.
         const auto new_role_id = access_control.find<Role>(role_name);
-        if (!is_in_batch(old_role_id) && !is_in_batch(new_role_id))
+        if (!is_in_batch(old_role_id) && !is_in_batch(new_role_id) && !is_unreconciled)
             continue;
 
         if (new_role_id)
@@ -183,6 +194,8 @@ void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifi
             changed_role_ids.insert(*old_role_id);
         if (new_role_id)
             changed_role_ids.insert(*new_role_id);
+        if (is_unreconciled)
+            changed_role_ids.insert(unreconciled_it->second.begin(), unreconciled_it->second.end());
         changed_role_names.insert(role_name);
     }
 
@@ -219,10 +232,21 @@ void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifi
 
     // Update the granted roles of the relevant users. A user keeps a role if any of its configured or mapped names
     // is still resolved to that role.
-    auto update_func = [this, &changed_role_ids, &new_granted_role_ids] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
+    size_t num_updated_users = 0;
+    auto update_func = [this, &changed_role_ids, &new_granted_role_ids, &num_updated_users] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
     {
         if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
         {
+            if (num_updated_users)
+            {
+                fiu_do_on(FailPoints::ldap_access_storage_fail_role_reconciliation_after_first_user,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure of the reconciliation of LDAP role changes after the update of the first user");
+                });
+            }
+            ++num_updated_users;
+
             auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
 
             std::set<UUID> resolved_role_ids;
@@ -265,8 +289,17 @@ void LDAPAccessStorage::processRoleChanges(const std::vector<AccessChangesNotifi
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of the reconciliation of LDAP role changes");
     });
 
-    // Updating a user again is harmless, so if only a part of the users is updated before a failure,
-    // the next attempt just processes all of them once more.
+    // Remember the roles which are going to be granted before updating the first user. If only a part of the users
+    // is updated before a failure, these roles are already granted to them, while `granted_role_ids` still holds
+    // the previous resolution of the names. The next attempts have to visit the users of these names and revoke
+    // these roles if the names are resolved differently by then, e.g. if the role is renamed before the retry.
+    // Updating a user again is harmless, so the next attempt just processes all the users once more.
+    for (const auto & role_name : changed_role_names)
+    {
+        if (const auto it = new_granted_role_ids.find(role_name); it != new_granted_role_ids.end())
+            unreconciled_role_ids[role_name].insert(it->second);
+    }
+
     memory_storage.update(user_ids, update_func);
 
     granted_role_ids.swap(new_granted_role_ids);

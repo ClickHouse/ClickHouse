@@ -38,6 +38,7 @@ static struct InitFiu
     ONCE(nats_fail_resubscribe_within_query) \
     ONCE(reverse_index_build_index_throw) \
     REGULAR(replicated_queue_unfail_entries) \
+    REGULAR(ldap_access_storage_fail_role_reconciliation_after_first_user) \
     REGULAR(executing_graph_add_node_fail) \
     ONCE(transaction_metadata_store_fail) \
     ONCE(transaction_mutation_csn_store_fail) \
