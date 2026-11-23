@@ -565,16 +565,37 @@ static bool addFilters(
     /// been analyzed. Turning it back into SQL and putting it in a subquery's
     /// `HAVING` can reanalyze `IN` under different settings. The query node's
     /// context does not necessarily include the subquery's `SETTINGS`, so keep
-    /// ordinary `IN` filters local while the opt-in mode is active. Also use
-    /// the function's captured mode when it differs from the rewrite context.
+    /// ordinary `IN` filters local when the opt-in mode is active or the SQL
+    /// being shipped changes that mode.
+    bool has_ordinary_in = false;
     for (const auto & node : pushed_down_filters.getNodes())
     {
         if (!node.function_base)
             continue;
         const auto & name = node.function_base->getName();
-        if ((settings[Setting::in_null_as_unknown] || node.function_base->useNullAsUnknownSemanticsForIn())
-            && (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn"))
+        if (name != "in" && name != "notIn" && name != "globalIn" && name != "globalNotIn")
+            continue;
+        has_ordinary_in = true;
+        if (settings[Setting::in_null_as_unknown] || node.function_base->useNullAsUnknownSemanticsForIn())
             return false;
+    }
+    if (has_ordinary_in)
+    {
+        StackWithMemoryTracking<const IAST *> pending;
+        pending.push(query_ast.get());
+        while (!pending.empty())
+        {
+            const auto * ast = pending.top();
+            pending.pop();
+            if (const auto * set_query = ast->as<ASTSetQuery>())
+            {
+                for (const auto & change : set_query->changes)
+                    if (change.name == "in_null_as_unknown")
+                        return false;
+            }
+            for (const auto & child : ast->children)
+                pending.push(child.get());
+        }
     }
 
     /// We are building a set with projection names and a map with execution names here.
