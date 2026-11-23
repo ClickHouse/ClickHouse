@@ -8,6 +8,8 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Parsers/NullsAction.h>
 
@@ -18,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const
@@ -303,6 +306,178 @@ void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & ag
         aggregate.function = AggregateFunctionFactory::instance().get(
             function_name, NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
     }
+}
+
+void checkDeserializedAggregateArguments(const AggregateDescriptions & aggregates, const Block & header)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        /// `AggregateFunctionFactory` resolves functions for the types without `LowCardinality`,
+        /// and the `Aggregator` removes it from the argument columns accordingly.
+        const auto & argument_types = aggregate.function->getArgumentTypes();
+        if (argument_types.size() != aggregate.argument_names.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Aggregate function {} of a deserialized query plan step has {} argument types for {} arguments",
+                aggregate.column_name, argument_types.size(), aggregate.argument_names.size());
+
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            const auto & name = aggregate.argument_names[i];
+            const auto * column = header.findByName(name);
+            if (!column)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Argument {} of aggregate function {} is not in the input of a deserialized query plan step",
+                    name, aggregate.column_name);
+
+            if (!recursiveRemoveLowCardinality(column->type)->equals(*recursiveRemoveLowCardinality(argument_types[i])))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Argument {} of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                    "but the function is resolved for {}",
+                    name, aggregate.column_name, column->type->getName(), argument_types[i]->getName());
+        }
+    }
+}
+
+void checkDeserializedFinalizedAggregates(const AggregateDescriptions & aggregates, const Block & header)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        const auto * column = header.findByName(aggregate.column_name);
+        if (!column)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} is not in the input of a deserialized query plan step",
+                aggregate.column_name);
+
+        const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column->type.get());
+        if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                "which is not a state of {}",
+                aggregate.column_name, column->type->getName(), aggregate.function->getName());
+    }
+}
+
+void checkDeserializedAggregateOutputNames(const Names & keys, const AggregateDescriptions & aggregates)
+{
+    /// The output header has a column for every key and aggregate, and the finalization finds the states by name,
+    /// so a repeated name would leave a state of the second occurrence unfinalized under a finalized type.
+    NameSet names;
+    for (const auto & key : keys)
+        if (!names.insert(key).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate key or aggregate function {} in a deserialized query plan step", key);
+    for (const auto & aggregate : aggregates)
+        if (!names.insert(aggregate.column_name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step", aggregate.column_name);
+}
+
+void checkDeserializedMergedAggregatesLayout(
+    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout, bool exact)
+{
+    const size_t keys_size = keys.size();
+    if (exact && layout.size() != keys_size + aggregates.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The input of a deserialized query plan step merging aggregate states has {} columns "
+            "instead of {} keys and {} aggregate functions",
+            layout.size(), keys_size, aggregates.size());
+    if (layout.size() < keys_size + aggregates.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The input of a deserialized query plan step merging aggregate states has {} columns "
+            "for {} keys and {} aggregate functions",
+            layout.size(), keys_size, aggregates.size());
+
+    /// The `Aggregator` looks up the types of the keys and the states by name, but merges the columns
+    /// by position. With distinct names at the expected positions, both refer to the same columns.
+    NameSet names;
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (!names.insert(keys[i]).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states", keys[i]);
+        if (layout[i].name != keys[i])
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Key {} is expected at position {} of the input of a deserialized query plan step merging aggregate states, "
+                "but there is {}",
+                keys[i], i, layout[i].name);
+    }
+
+    for (size_t i = 0; i < aggregates.size(); ++i)
+    {
+        const auto & aggregate = aggregates[i];
+        const auto & column = layout[keys_size + i];
+        if (!names.insert(aggregate.column_name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states",
+                aggregate.column_name);
+        if (column.name != aggregate.column_name)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} is expected at position {} of the input of a deserialized query plan step, "
+                "but there is {}",
+                aggregate.column_name, keys_size + i, column.name);
+
+        const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (!state_type || !state_type->getFunction()->haveSameStateRepresentation(*aggregate.function))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                "which is not a state of {}",
+                aggregate.column_name, column.type->getName(), aggregate.function->getName());
+    }
+
+    /// The headers of the merge-only steps are built from the whole input, so a later column with the name
+    /// of a key or a state would also be there, but not in the merged chunks.
+    for (size_t i = keys_size + aggregates.size(); i < layout.size(); ++i)
+    {
+        if (names.contains(layout[i].name))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Duplicate key or aggregate function {} in a deserialized query plan step merging aggregate states",
+                layout[i].name);
+    }
+}
+
+namespace
+{
+
+/// A single chunk of a merge-only input is finalized as is, with the functions of its columns rather than those of the plan,
+/// while the output header takes the result types from the plan. Functions with the same state representation
+/// (like `quantile` and `quantiles`) may have different result types. `layout` is already checked to start with the keys and the states.
+void checkDeserializedMergedStatesResultTypes(
+    const Names & keys, const AggregateDescriptions & aggregates, const ColumnsWithTypeAndName & layout)
+{
+    for (size_t i = 0; i < aggregates.size(); ++i)
+    {
+        const auto & aggregate = aggregates[i];
+        const auto & column = layout[keys.size() + i];
+        const auto & state_function = typeid_cast<const DataTypeAggregateFunction &>(*column.type).getFunction();
+        if (!state_function->getResultType()->equals(*aggregate.function->getResultType()))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The state of aggregate function {} has type {} in the input of a deserialized query plan step, "
+                "which is finalized to {} instead of {}",
+                aggregate.column_name, column.type->getName(), state_function->getResultType()->getName(),
+                aggregate.function->getResultType()->getName());
+    }
+}
+
+}
+
+void checkDeserializedMergeOnlyInput(const Names & keys, const AggregateDescriptions & aggregates, const Block & header)
+{
+    /// The transforms address the whole input with a mask built for the keys and the states only.
+    const auto & layout = header.getColumnsWithTypeAndName();
+    checkDeserializedMergedAggregatesLayout(keys, aggregates, layout, /*exact=*/ true);
+    /// Checked even without `final`: the step may be made final later (`setFinal`), and the states
+    /// of a legitimate plan come from the same functions anyway.
+    checkDeserializedMergedStatesResultTypes(keys, aggregates, layout);
+}
+
+void checkDeserializedGroupByModifierInput(
+    const Names & keys, const AggregateDescriptions & aggregates, bool final, const Block & header)
+{
+    /// `RollupTransform` and `CubeTransform` always finalize the states (both planners build the steps with `final`),
+    /// so a step without it would advertise states in the output header but produce finalized values.
+    if (!final)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "A deserialized `Rollup` or `Cube` step must finalize the aggregate states");
+
+    checkDeserializedMergeOnlyInput(keys, aggregates, header);
 }
 
 }
