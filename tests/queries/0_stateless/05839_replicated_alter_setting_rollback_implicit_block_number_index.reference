@@ -1,3 +1,4 @@
+comment	
 index	auto_minmax_index__block_number
 setting kept	1
 columns	['a']

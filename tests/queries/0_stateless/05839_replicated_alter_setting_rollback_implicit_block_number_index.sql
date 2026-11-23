@@ -24,7 +24,13 @@ ALTER TABLE t_rollback_block_index MODIFY SETTING enable_block_number_column = 0
 -- The mixed path, which writes a replicated entry.
 ALTER TABLE t_rollback_block_index ADD COLUMN x UInt8, MODIFY SETTING enable_block_number_column = 0; -- { serverError FAULT_INJECTED }
 
+-- The settings-plus-comment path, which is applied locally like the settings-only one.
+ALTER TABLE t_rollback_block_index MODIFY COMMENT 'x', MODIFY SETTING enable_block_number_column = 0; -- { serverError FAULT_INJECTED }
+
 SYSTEM DISABLE FAILPOINT rmt_alter_settings_fail_before_metadata_install;
+
+SELECT 'comment', comment FROM system.tables
+WHERE database = currentDatabase() AND name = 't_rollback_block_index';
 
 SELECT 'index', name FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 't_rollback_block_index' ORDER BY name;
