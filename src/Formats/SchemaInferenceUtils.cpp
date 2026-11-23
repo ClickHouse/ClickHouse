@@ -637,8 +637,9 @@ namespace
         auto transform_func = [&](DataTypePtr & type1, DataTypePtr & type2){ transformInferredJSONTypesIfNeeded(type1, type2, settings, json_info); };
         for (auto & type : data_types)
         {
-            if (const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get()))
-                merged_type->merge(*json_type, transform_func);
+            const auto * json_type = typeid_cast<const DataTypeJSONPaths *>(type.get());
+            if (json_type && !merged_type->merge(*json_type, transform_func))
+                return;
         }
 
         for (auto & type : data_types)
