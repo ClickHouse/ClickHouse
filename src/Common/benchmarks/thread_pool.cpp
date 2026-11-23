@@ -80,6 +80,7 @@ bool limitCpus(size_t cpus)
         return mask;
     }();
 
+    cpu_set_t available = initial;
     cpu_set_t mask = initial;
     if (cpus)
     {
@@ -89,7 +90,7 @@ bool limitCpus(size_t cpus)
         size_t taken = 0;
         for (int cpu = 0; cpu < CPU_SETSIZE && taken < cpus; ++cpu)
         {
-            if (CPU_ISSET(cpu, &initial))
+            if (CPU_ISSET(cpu, &available))
             {
                 CPU_SET(cpu, &mask);
                 ++taken;
@@ -167,7 +168,7 @@ struct Run;
 struct OnPhaseEnd
 {
     Run * run;
-    void operator()() noexcept;
+    void operator()() const noexcept;
 };
 
 /// State shared by the schedulers of one case, set up by thread 0. Every scheduler runs units of work (`unit`
@@ -285,7 +286,7 @@ struct Run
     }
 };
 
-void OnPhaseEnd::operator()() noexcept
+void OnPhaseEnd::operator()() const noexcept
 {
     run->onPhaseEnd();
 }
@@ -322,7 +323,7 @@ void FreePool(benchmark::State & state)
         run.startWarmup();
     }
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         if (!run.ok)
         {
@@ -394,7 +395,7 @@ void QueryPools(benchmark::State & state)
         run.startWarmup();
     }
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         if (!run.ok)
         {
