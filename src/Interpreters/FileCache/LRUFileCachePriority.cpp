@@ -372,10 +372,9 @@ void LRUFileCachePriority::iterate(
 
     auto add_entries = [&](auto && entries)
     {
-        size_t walked = 0;
         for (const auto & entry : entries)
         {
-            if (++walked % observe_check_cancellation_every == 0 && result.isCancelled())
+            if (result.isCancelled())
                 return;
 
             if (!add_entry(entry))

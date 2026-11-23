@@ -180,10 +180,9 @@ IFileCachePriority::observeFilesystemCache(
     std::unordered_set<FileCacheKeyAndOffset, FileCacheKeyAndOffsetHash> returned_segments;
     returned_segments.reserve(walk.entries.size());
     UInt64 total_size = 0;
-    size_t read_entries = 0;
     for (const auto & observed : walk.entries)
     {
-        if (++read_entries % observe_check_cancellation_every == 0 && walk.isCancelled())
+        if (walk.isCancelled())
             return {};
 
         const auto & entry = *observed.entry;

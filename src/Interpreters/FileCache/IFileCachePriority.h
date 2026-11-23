@@ -584,9 +584,6 @@ protected:
     /// return a redirected guard, and by the Overcommit/Split wrappers to throw.
     virtual CachePriorityGuard & getPriorityGuard() const { return priority_guard; }
 
-    /// `observeFilesystemCache` checks the cancellation flag once per this many entries: a cancelled query only has to stop soon.
-    static constexpr size_t observe_check_cancellation_every = 1024;
-
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
