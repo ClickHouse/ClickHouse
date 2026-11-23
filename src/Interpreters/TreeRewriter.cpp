@@ -78,6 +78,7 @@ namespace Setting
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool legacy_column_name_of_tuple_literal;
     extern const SettingsBool normalize_function_names;
