@@ -1494,6 +1494,35 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
     }
 }
 
+void MergeTreeData::addColumnSizesOfParts(
+    const DataPartsVector & parts, const Names & column_names, bool with_columns, size_t max_threads, ColumnSizeByName & result)
+{
+    std::vector<std::vector<std::pair<String, ColumnSize>>> sizes_of_parts(parts.size());
+    loadStatisticsOfPartsInParallel(
+        parts.size(),
+        max_threads,
+        [&](size_t part_index)
+        {
+            auto sizes = parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ true);
+            if (!sizes)
+                return false;
+            sizes_of_parts[part_index] = std::move(*sizes);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            sizes_of_parts[part_index]
+                = *parts[part_index]->getColumnAndSubcolumnSizes(column_names, with_columns, /* only_from_memory = */ false);
+        },
+        [&](size_t part_index)
+        {
+            /// Moved out, so that the memory of a consumed part is released.
+            const auto sizes = std::move(sizes_of_parts[part_index]);
+            for (const auto & [name, size] : sizes)
+                result[name].add(size);
+        });
+}
+
 bool MergeTreeData::isInsertOrderSensitive() const
 {
     /// These modes resolve rows by insertion order, which parallel sinks do not preserve.
@@ -2413,6 +2442,53 @@ void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata &
     for (const auto & [name, _] : new_metadata.column_ttls_by_name)
         if (key_columns.contains(name))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Trying to set TTL for key column {}", name);
+}
+
+void MergeTreeData::checkKeyExpressionNamesForCollision(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata * old_metadata)
+{
+    using Violations = std::vector<std::pair<String, String>>;
+    auto get_violations = [](const StorageInMemoryMetadata & metadata)
+    {
+        Violations violations;
+        auto add = [&](const String & owner, const ASTPtr & expression_list, const Names & names, const ColumnsDescription * projection_columns = nullptr)
+        {
+            if (!expression_list)
+                return;
+            const auto & elements = expression_list->children;
+            chassert(elements.size() == names.size());
+            for (size_t i = 0; i < elements.size(); ++i)
+                if (!elements[i]->as<ASTIdentifier>() && metadata.columns.hasPhysical(names[i])
+                    && (!projection_columns || projection_columns->hasPhysical(names[i])))
+                    violations.emplace_back(owner, names[i]);
+        };
+
+        add("sorting key", metadata.sorting_key.expression_list_ast, metadata.sorting_key.column_names);
+        /// An undefined primary key mirrors the sorting key, and `MODIFY ORDER BY` turns it into a defined one.
+        add("primary key", metadata.primary_key.expression_list_ast, metadata.primary_key.column_names);
+        add("sampling key", metadata.sampling_key.expression_list_ast, metadata.sampling_key.column_names);
+        for (const auto & index : metadata.secondary_indices)
+            if (!index.isImplicitlyCreated())
+                add("skip index " + backQuoteIfNeed(index.name), index.expression_list_ast, index.column_names);
+        /// A projection part is sorted by its own key, which replaces only a column that the projection stores.
+        for (const auto & projection : metadata.projections)
+            add("sorting key of projection " + backQuoteIfNeed(projection.name), projection.metadata->sorting_key.expression_list_ast,
+                projection.metadata->sorting_key.column_names, &projection.metadata->columns);
+        return violations;
+    };
+
+    const Violations old_violations = old_metadata ? get_violations(*old_metadata) : Violations{};
+    for (const auto & violation : get_violations(new_metadata))
+    {
+        if (std::ranges::contains(old_violations, violation))
+            continue;
+
+        const auto & [owner, name] = violation;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The expression {} of the {} has the same name as the column {}, so the table would use one in place of the "
+            "other when it is written or queried. Rename the column or change the expression. "
+            "To suppress this exception, rerun the command with setting 'allow_suspicious_indices = 1'",
+            name, owner, backQuote(name));
+    }
 }
 
 namespace
@@ -7491,6 +7567,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
+    if (!is_secondary_replay && !settings[Setting::allow_suspicious_indexes])
+        checkKeyExpressionNamesForCollision(new_metadata, &old_metadata);
 
     /// The TTL is analyzed while the table is loaded, when the table itself cannot be read yet.
     const bool modifies_ttl = std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL; });
@@ -10077,15 +10155,13 @@ IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns, 
         parts.assign(committed_parts_range.begin(), committed_parts_range.end());
     }
 
-    for (const auto & part : parts)
-    {
-        for (const auto & col_name : subcolumn_names)
-        {
-            auto column = part->tryGetColumn(col_name);
-            if (column && column->isSubcolumn())
-                result[col_name].add(part->getSubcolumnSize(col_name));
-        }
-    }
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    addColumnSizesOfParts(
+        parts,
+        subcolumn_names,
+        /* with_columns = */ false,
+        query_context ? static_cast<size_t>(query_context->getSettingsRef()[Setting::max_threads]) : 1,
+        result);
 
     return result;
 }
@@ -15720,10 +15796,32 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
 }
 
-SerializationInfoByName MergeTreeData::getSerializationHints() const
+SerializationInfoByName MergeTreeData::getSerializationHints(const StorageInMemoryMetadata & metadata_snapshot) const
 {
     auto lock = readLockParts();
-    return serialization_hints.clone();
+
+    /// `setPropertiesAndResetSerializationHints` publishes the new column types and the hints built for them under one `parts_lock`,
+    /// so under the lock `serialization_hints` match the current metadata. The snapshot of the caller may be taken before
+    /// a concurrent `ALTER` (or after it, if the lock is taken later), so keep only the hints of the columns
+    /// whose types are the same in both. For example, the hint of a `String` column must not be given to the `Tuple` type
+    /// it had before `ALTER TABLE ... MODIFY COLUMN`.
+    const auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    if (&*current_metadata == &metadata_snapshot)
+        return serialization_hints.clone();
+
+    const auto & current_columns = current_metadata->getColumns();
+    const auto & snapshot_columns = metadata_snapshot.getColumns();
+
+    SerializationInfoByName res(serialization_hints.getSettings());
+    for (const auto & [name, info] : serialization_hints)
+    {
+        auto current_column = current_columns.tryGetPhysical(name);
+        auto snapshot_column = snapshot_columns.tryGetPhysical(name);
+        if (current_column && snapshot_column && current_column->type->equals(*snapshot_column->type))
+            res.emplace(name, info->clone());
+    }
+
+    return res;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

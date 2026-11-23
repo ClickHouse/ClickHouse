@@ -1,0 +1,120 @@
+{
+  "cases": [
+    {
+      "id": "geometry-crs84",
+      "valid": true,
+      "input": "geometry(OGC:CRS84)",
+      "decoded": { "type": "geometry", "crs": "OGC:CRS84" },
+      "canonical": "geometry(OGC:CRS84)",
+      "clause": "geometry(C) with explicit CRS; the canonical serialized form is the unquoted \"geometry(<C>)\"",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "geometry-srid",
+      "valid": true,
+      "input": "geometry(srid:4326)",
+      "decoded": { "type": "geometry", "crs": "srid:4326" },
+      "canonical": "geometry(srid:4326)",
+      "clause": "geometry(C) example from Appendix C is the unquoted \"geometry(srid:4326)\"",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "geometry-default-crs",
+      "valid": true,
+      "input": "geometry",
+      "decoded": { "type": "geometry", "crs": "OGC:CRS84" },
+      "clause": "geometry(C): if C is not specified, C is OGC:CRS84 (spec.md:284-285); the read/parse direction is a MUST",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "geometry-default-crs-write",
+      "valid": true,
+      "normative_level": "should",
+      "input": "geometry",
+      "decoded": { "type": "geometry", "crs": "OGC:CRS84" },
+      "canonical": "geometry(OGC:CRS84)",
+      "clause": "geometry(C) re-serialize: Appendix C's canonical is fully parameterized, but whether a writer may elide the default is unsettled, so the write direction is advisory",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "geography-crs84-spherical",
+      "valid": true,
+      "input": "geography(OGC:CRS84, spherical)",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "spherical" },
+      "canonical": "geography(OGC:CRS84, spherical)",
+      "clause": "geography(C, A) with explicit CRS and algorithm; the canonical serialized form is the unquoted \"geography(<C>, <A>)\"",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "geography-default",
+      "valid": true,
+      "input": "geography",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "spherical" },
+      "clause": "geography(C, A): if not specified, C is OGC:CRS84 and A is spherical (spec.md:284-285); the read/parse direction is a MUST",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "geography-default-write",
+      "valid": true,
+      "normative_level": "should",
+      "input": "geography",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "spherical" },
+      "canonical": "geography(OGC:CRS84, spherical)",
+      "clause": "geography(C, A) re-serialize: Appendix C's canonical is fully parameterized, but whether a writer may elide the defaults is unsettled, so the write direction is advisory",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "geography-crs-only",
+      "valid": true,
+      "normative_level": "should",
+      "input": "geography(OGC:CRS84)",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "spherical" },
+      "canonical": "geography(OGC:CRS84, spherical)",
+      "clause": "geography(C): the 1-arg form (CRS given, algorithm omitted) is not in Appendix C grammar; cross-checked against Java reference behavior, which defaults A to spherical and re-serializes to the Appendix C canonical geography(<C>, <A>)",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "geography-vincenty",
+      "valid": true,
+      "input": "geography(OGC:CRS84, vincenty)",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "vincenty" },
+      "canonical": "geography(OGC:CRS84, vincenty)",
+      "clause": "geography edge-interpolation algorithm vincenty (a v3 allowed algorithm)",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "geography-thomas",
+      "valid": true,
+      "input": "geography(OGC:CRS84, thomas)",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "thomas" },
+      "canonical": "geography(OGC:CRS84, thomas)",
+      "clause": "geography edge-interpolation algorithm thomas (a v3 allowed algorithm)",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "geography-andoyer",
+      "valid": true,
+      "input": "geography(OGC:CRS84, andoyer)",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "andoyer" },
+      "canonical": "geography(OGC:CRS84, andoyer)",
+      "clause": "geography edge-interpolation algorithm andoyer (a v3 allowed algorithm)",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "geography-karney",
+      "valid": true,
+      "input": "geography(OGC:CRS84, karney)",
+      "decoded": { "type": "geography", "crs": "OGC:CRS84", "algorithm": "karney" },
+      "canonical": "geography(OGC:CRS84, karney)",
+      "clause": "geography edge-interpolation algorithm karney (a v3 allowed algorithm)",
+      "spec_ref": "format/spec.md#primitive-types"
+    },
+    {
+      "id": "geography-unknown-algorithm",
+      "valid": false,
+      "input": "geography(OGC:CRS84, bogus)",
+      "clause": "geography edge-interpolation algorithm A must be one of the closed set (spherical, vincenty, thomas, andoyer, karney); an out-of-set value is rejected",
+      "spec_ref": "format/spec.md#primitive-types"
+    }
+  ]
+}

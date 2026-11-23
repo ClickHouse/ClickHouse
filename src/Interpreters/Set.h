@@ -118,6 +118,7 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
+    bool insertFromColumns(const Columns & columns, size_t max_keys, size_t & rows_taken);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 
     void fillSetElements();
@@ -250,7 +251,7 @@ private:
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
-    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, size_t & rows_taken);
     ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
     /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
@@ -260,24 +261,26 @@ private:
     ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
 
     template <typename Method>
-    void insertFromBlockImpl(
+    size_t insertFromBlockImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
         ColumnUInt8::Container * out_filter,
-        ColumnUInt64::Container * out_new_rows);
+        ColumnUInt64::Container * out_new_rows,
+        size_t max_keys);
 
     template <typename Method, bool has_null_map, bool build_filter, bool collect_new_rows>
-    void insertFromBlockImplCase(
+    size_t insertFromBlockImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
         ColumnUInt8::Container * out_filter,
-        ColumnUInt64::Container * out_new_rows);
+        ColumnUInt64::Container * out_new_rows,
+        size_t max_keys);
 
     template <typename Method>
     void executeImpl(
