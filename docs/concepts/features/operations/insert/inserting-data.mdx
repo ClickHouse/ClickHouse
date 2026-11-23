@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Inserting into ClickHouse vs. OLTP databases {#inserting-into-clickhouse-vs-oltp-databases}
 
 As an OLAP (Online Analytical Processing) database, ClickHouse is optimized for high performance and scalability, allowing potentially millions of rows to be inserted per second.
@@ -64,7 +62,15 @@ If large batches can't be inserted, you can delegate batching to ClickHouse usin
 
 With asynchronous inserts, data is inserted into a buffer first and then written to the database storage later in 3 steps, as illustrated by the diagram below:
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts"/>
+<div className="ch-image-md">
+
+<Frame>
+
+![Postgres inserts](/images/guides/postgres-inserts.webp)
+
+</Frame>
+
+</div>
 
 With asynchronous inserts enabled, ClickHouse:
 
@@ -87,7 +93,7 @@ Full details on configuring asynchronous inserts can be found [here](/concepts/f
 ClickHouse has clients in the most popular programming languages.
 These are optimized to ensure that inserts are performed correctly and natively support asynchronous inserts either directly as in e.g. the [Go client](/integrations/language-clients/go/clickhouse-api#async-insert), or indirectly when enabled in the query, user or connection level settings.
 
-See [Native Clients and Interfaces](/concepts/features/interfaces/native-clients-interfaces-index) for a full list of available ClickHouse clients and drivers.
+See [Connect to ClickHouse](/concepts/features/connect-to-clickhouse) for a full list of available ClickHouse clients and drivers.
 
 ### Prefer the native format {#prefer-the-native-format}
 
@@ -112,7 +118,7 @@ We expect small differences in insert performance with the native protocol, whic
 Existing clients use either of these protocols (in some cases both e.g. the Go client).
 The native protocol does allow query progress to be easily tracked.
 
-See [HTTP Interface](/concepts/features/interfaces/http) for further details.
+See [HTTP Interface](/concepts/features/connect-to-clickhouse/protocols/http) for further details.
 
 ## Basic example {#basic-example}
 
@@ -165,7 +171,7 @@ If you need help inserting large datasets or encounter any errors when importing
 - `clickhouse-server` is running
 - You have access to a terminal with `wget`, `zcat` and `curl`
 
-In this example you'll see how to insert a CSV file into ClickHouse from the command line using clickhouse-client in batch mode. For more information and examples of inserting data via command line using clickhouse-client in batch mode, see ["Batch mode"](/concepts/features/interfaces/client#batch-mode).
+In this example you'll see how to insert a CSV file into ClickHouse from the command line using clickhouse-client in batch mode. For more information and examples of inserting data via command line using clickhouse-client in batch mode, see ["Batch mode"](/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client#batch-mode).
 
 We'll be using the [Hacker News dataset](/get-started/sample-datasets/hacker-news) for this example, which contains 28 million rows of Hacker News data.
 

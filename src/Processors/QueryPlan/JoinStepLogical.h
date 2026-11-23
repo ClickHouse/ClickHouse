@@ -1,6 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -29,7 +32,7 @@ struct StorageID;
 
 struct PreparedJoinStorage
 {
-    std::unordered_map<String, String> column_mapping;
+    UnorderedMapWithMemoryTracking<String, String> column_mapping;
 
     /// At most one of these fields is set
     std::shared_ptr<StorageJoin> storage_join;
@@ -62,7 +65,7 @@ public:
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
         const NameSet & required_output_columns_,
-        const std::unordered_map<String, const ActionsDAG::Node *> & changed_types,
+        const UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> & changed_types,
         bool use_nulls_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
@@ -72,14 +75,14 @@ public:
         const SharedHeader & right_header_,
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
-        std::vector<const ActionsDAG::Node *> actions_after_join_,
+        ActionsDAG::NodeRawConstPtrs actions_after_join_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
 
     ~JoinStepLogical() override;
 
-    String getName() const override { return "JoinLogical"; }
-    String getSerializationName() const override { return "Join"; }
+    [[nodiscard]] String getName() const override { return "JoinLogical"; }
+    [[nodiscard]] String getSerializationName() const override { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -88,34 +91,34 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
-    const JoinSettings & getJoinSettings() const { return join_settings; }
+    [[nodiscard]] const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
+    [[nodiscard]] const JoinSettings & getJoinSettings() const { return join_settings; }
     JoinSettings & getJoinSettings() { return join_settings; }
-    const JoinOperator & getJoinOperator() const { return join_operator; }
+    [[nodiscard]] const JoinOperator & getJoinOperator() const { return join_operator; }
     JoinOperator & getJoinOperator() { return join_operator; }
 
-    const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
-    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
+    [[nodiscard]] const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
+    [[nodiscard]] const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
 
-    std::vector<JoinActionRef> getInputActions() const;
-    std::vector<JoinActionRef> getOutputActions() const;
+    [[nodiscard]] VectorWithMemoryTracking<JoinActionRef> getInputActions() const;
+    [[nodiscard]] VectorWithMemoryTracking<JoinActionRef> getOutputActions() const;
 
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {
         return {std::move(expression_actions), std::move(join_operator)};
     }
 
-    const JoinSettings & getSettings() const { return join_settings; }
+    [[nodiscard]] const JoinSettings & getSettings() const { return join_settings; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    bool hasCorrelatedExpressions() const override
+    [[nodiscard]] bool hasCorrelatedExpressions() const override
     {
         return expression_actions.getActionsDAG()->hasCorrelatedColumns();
     }
@@ -141,25 +144,30 @@ public:
         const QueryPlanOptimizationSettings & optimization_settings,
         QueryPlan::Nodes & nodes);
 
-    std::unordered_set<JoinTableSide> typeChangingSides() const;
+    [[nodiscard]] UnorderedSetWithMemoryTracking<JoinTableSide> typeChangingSides() const;
 
-    bool isOptimized() const { return optimized; }
+    [[nodiscard]] bool isOptimized() const { return optimized; }
 
     /// The runtime filter pass records its small-probe decision here instead of re-deciding per plan
     /// build, because the estimate it compares against is absent from a deserialized step. See
     /// `tryAddJoinRuntimeFilter`.
-    bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
+    [[nodiscard]] bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
-    std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
-    std::optional<double> getEstimatedCost() const { return estimated_cost; }
-    std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
-    bool hasImpreciseEstimate() const { return imprecise_estimate; }
-    const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
-    std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
+
+    /// Whether the runtime filter pass installed `BuildRuntimeFilterStep` / `__applyFilter` for this join.
+    /// The physical `JoinStep` inherits it and refuses `clone` because of it, see `JoinStep::clone`.
+    [[nodiscard]] bool hasRuntimeFilters() const { return has_runtime_filters; }
+    void setHasRuntimeFilters() { has_runtime_filters = true; }
+    [[nodiscard]] std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    [[nodiscard]] std::optional<double> getEstimatedCost() const { return estimated_cost; }
+    [[nodiscard]] std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
+    [[nodiscard]] bool hasImpreciseEstimate() const { return imprecise_estimate; }
+    [[nodiscard]] const UnorderedMapWithMemoryTracking<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
+    [[nodiscard]] std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
 
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
-        std::unordered_map<String, ColumnStats> column_stats_ = {},
+        UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_ = {},
         bool imprecise_estimate_ = false,
         std::optional<double> estimated_cost_ = {},
         std::optional<double> estimated_selectivity_ = {},
@@ -174,7 +182,7 @@ public:
         cluster_id = cluster_id_;
     }
 
-    UInt64 getClusterId() const { return cluster_id; }
+    [[nodiscard]] UInt64 getClusterId() const { return cluster_id; }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
     {
@@ -188,22 +196,22 @@ public:
         right_relation = std::move(right_relation_);
     }
 
-    std::pair<std::reference_wrapper<const String>, std::reference_wrapper<const String>> getInputLabels() const
+    [[nodiscard]] std::pair<std::reference_wrapper<const String>, std::reference_wrapper<const String>> getInputLabels() const
     {
         return {std::cref(left_relation.name), std::cref(right_relation.name)};
     }
 
-    String getReadableRelationName() const;
+    [[nodiscard]] String getReadableRelationName() const;
 
-    ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
+    [[nodiscard]] ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
 
-    std::string_view getTableStatsHint() const { return table_stats_hint; }
+    [[nodiscard]] std::string_view getTableStatsHint() const { return table_stats_hint; }
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
-    bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+    [[nodiscard]] bool canRemoveUnusedColumns() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions, const VectorWithMemoryTracking<PrunedInput> & inputs) override;
 
-    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
+    [[nodiscard]] UnneededInputPositions getUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const override;
 
     /// Passes a column of one side through the join unchanged: the join reads it from that side and outputs
     /// it under the same name, last. For the side the join can leave unmatched it comes out the way the join
@@ -216,13 +224,22 @@ public:
     /// `addPassThroughColumn` passes a new one. `input` must be an input of `getActionsDAG`.
     void addInputToOutputs(const ActionsDAG::Node * input);
 
-    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    [[nodiscard]] bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
     /// The algorithm the join order optimizer chose for this join, if any. `join_algorithms` stays the user's list: the
     /// physical join tries the planned algorithm first and falls back to that list.
-    std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
+    [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
+
+    /// For a join planned as `full_sorting_merge`: the output column its result is sorted by, and whether it is sharded.
+    struct PlannedMergeOrder
+    {
+        String column;
+        bool sharded = false;
+    };
+    [[nodiscard]] const std::optional<PlannedMergeOrder> & getPlannedMergeOrder() const { return planned_merge_order; }
+    void setPlannedMergeOrder(PlannedMergeOrder order) { planned_merge_order = std::move(order); }
 
     /// Swap left and right sides
     void swapInputs();
@@ -234,14 +251,16 @@ public:
     /// The index of the input of `side`, which is also its index in the children of the plan node.
     static constexpr size_t getInputIndex(JoinTableSide side) { return side == JoinTableSide::Left ? 0 : 1; }
 
-    UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
+    static bool isDummyResultColumn(const ActionsDAG::Node & node);
+
+    [[nodiscard]] UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
-    UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
+    [[nodiscard]] UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
     void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
 
 protected:
-    SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
+    [[nodiscard]] SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
@@ -257,7 +276,7 @@ protected:
         /// A dropped output is also erased from `actions_after_join`, the nodes computed on the joined block,
         /// so that the list does not point to a node removed from the DAG.
         /// The dummy column, when one is added, is appended after the outputs that remain.
-        std::vector<size_t> dropped_output_positions;
+        VectorWithMemoryTracking<size_t> dropped_output_positions;
         /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
         /// input per side that would otherwise lose every column.
         ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
@@ -268,10 +287,10 @@ protected:
         bool adds_dummy_output = false;
     };
 
-    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    [[nodiscard]] UnneededColumnsPlan analyzeUnneededColumns(const VectorWithMemoryTracking<size_t> & unneeded_output_positions) const;
 
-    std::vector<std::pair<String, String>> describeJoinProperties() const;
-    JoinEstimation getEstimation() const;
+    [[nodiscard]] VectorWithMemoryTracking<std::pair<String, String>> describeJoinProperties() const;
+    [[nodiscard]] JoinEstimation getEstimation() const;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
@@ -293,13 +312,17 @@ protected:
     /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
     bool runtime_filter_declined_small_probe = false;
 
+    /// Whether the runtime filter pass added runtime filters for this join. Travels with the step, so that
+    /// the physical step built from a copy also knows that its plan carries runtime filter identities.
+    bool has_runtime_filters = false;
+
     /// Runtime info, do not serialize
 
     std::optional<UInt64> result_rows_estimation = {};
     std::optional<double> estimated_cost = {};
     std::optional<double> estimated_selectivity = {};
     UInt64 cluster_id = 0;
-    std::unordered_map<String, ColumnStats> result_column_stats = {};
+    UnorderedMapWithMemoryTracking<String, ColumnStats> result_column_stats = {};
 
     /// True when the row count estimation used by join reordering was derived from the primary index
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
@@ -321,9 +344,14 @@ private:
 
     bool disjunctions_optimization_applied = false;
     std::optional<JoinAlgorithm> planned_algorithm;
+    std::optional<PlannedMergeOrder> planned_merge_order;
 };
 
 
+/// Intentionally does not implement `clone` (unlike `JoinStep`): it owns `prepared_join_storage`,
+/// a live handle into `StorageJoin` or an `IKeyValueEntity`, whose sharing semantics between two
+/// executing plans are not defined, and its own `child_plan`. `IN`-subquery plans with this step
+/// take the destructive fallback in `FutureSetFromSubquery::buildOrderedSetInplace`.
 class JoinStepLogicalLookup final : public ISourceStep
 {
 public:
@@ -333,6 +361,7 @@ public:
     String getName() const override { return "JoinStepLogicalLookup"; }
 
     QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
+    QueryPlanRawPtrs getBuiltChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 
@@ -349,13 +378,13 @@ private:
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
 
-/// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
+/// Whether the InequalityJoin algorithm is preferred for this join: `inequality` is listed first in
 /// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
 /// For optimization passes that would otherwise claim the join for a hash-family algorithm
 /// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
-/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
+/// physical step applies, so `true` means InequalityJoin takes the join unless the right side is a
 /// prepared `Join` storage (which those passes exclude on their own).
-bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
+bool isInequalityJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 
 }

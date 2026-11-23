@@ -73,6 +73,8 @@ namespace Setting
     extern const SettingsHashJoinLayout hash_join_layout;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const SettingsUInt64 min_rows_for_packed_string_keys_in_hash_join;
+    extern const SettingsUInt64 min_string_column_bytes_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
@@ -289,7 +291,7 @@ static void buildJoinClauseImpl(
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
+        if (!function_node->isOrdinaryCall())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
@@ -493,7 +495,7 @@ static void buildJoinClause(
     if (function_node)
     {
         function_name = function_node->getFunctionName();
-        if (!function_node->isOrdinaryFunction())
+        if (!function_node->isOrdinaryCall())
         {
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
@@ -1023,33 +1025,6 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
 }
 
-void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join)
-{
-    StoragePtr storage;
-
-    if (auto * table_node = table_expression->as<TableNode>())
-        storage = table_node->getStorage();
-    else if (auto * table_function = table_expression->as<TableFunctionNode>())
-        storage = table_function->getStorage();
-
-    auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load);
-    if (storage_join)
-    {
-        table_join->setStorageJoin(storage_join);
-        return;
-    }
-
-    if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT) && !table_join->isEnabledAlgorithm(JoinAlgorithm::DEFAULT))
-        return;
-
-    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
-        storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
-        /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
-        table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
-    else if (auto storage_key_value = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_key_value)
-        table_join->setStorageJoin(storage_key_value);
-}
-
 static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
@@ -1208,7 +1183,15 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         && (row_store_ratio == 0.0
             || (params.rhs_size_estimation && row_store_output
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
-    table_join->setRowStoreEnabled(enable_row_store);
+    if (enable_row_store)
+        table_join->setRowStoreCandidateColumns(
+            computeRowStoreCandidateColumns(
+                *table_join, *right_table_expression_header, params.rhs_size_estimation.value_or(0),
+                params.min_string_column_bytes_for_hash_join_row_store));
+
+    /// The hash table of a small right side stays in the cache. There, hashing the long keys costs more than packed keys save.
+    if (params.rhs_size_estimation && *params.rhs_size_estimation < params.min_rows_for_packed_string_keys_in_hash_join)
+        table_join->setPackedStringKeysInHashJoinEnabled(false);
 
     const auto build_layout
         = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold)
@@ -1336,6 +1319,8 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     hash_join_layout = settings[Setting::hash_join_layout];
     enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
+    min_rows_for_packed_string_keys_in_hash_join = settings[Setting::min_rows_for_packed_string_keys_in_hash_join];
+    min_string_column_bytes_for_hash_join_row_store = settings[Setting::min_string_column_bytes_for_hash_join_row_store];
 
     grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[Setting::grace_hash_join_max_buckets];
@@ -1370,6 +1355,8 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     hash_join_layout = join_settings.hash_join_layout;
     enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
+    min_rows_for_packed_string_keys_in_hash_join = join_settings.min_rows_for_packed_string_keys_in_hash_join;
+    min_string_column_bytes_for_hash_join_row_store = join_settings.min_string_column_bytes_for_hash_join_row_store;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
     grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;

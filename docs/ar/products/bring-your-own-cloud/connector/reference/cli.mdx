@@ -1,7 +1,7 @@
 ---
 title: 'مرجع CLI'
 sidebarTitle: 'CLI'
-description: 'مرجع لأوامر clicklink clctl: init وpreflight وجلسات الدعم وgateway trust والتدقيق وتهيئة الوصول والخدمات المُدارة وموافقة المنصة'
+description: 'مرجع لأوامر clicklink clctl: init وpreflight وجلسات الدعم وgateway trust والتدقيق وتهيئة الوصول والخدمات المُدارة وموافقة المنصة والسياقات وترقيات الموصل'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 يُوزَّع الموصل كملف ثنائي واحد باسم `clicklink`، وتوجد الأوامر التي تشغّلها ضمن `clicklink clctl`. تغطي هذه الصفحة الأوامر المستخدمة أثناء التثبيت والتشغيل اليومي. شغّل أي أمر باستخدام `--help` لعرض نص المساعدة الكامل.
 
-يمكن أيضًا تمرير العلامات ضمن التفرعات الفرعية `troubleshoot` و`scraper` و`preflight` و`executor` و`instances create` و`platform`، إضافةً إلى العلامتين العامتين `--endpoint` و`--cluster`، عبر متغيرات البيئة `CLCTL_*` (المذكورة في مخرجات المساعدة لكل علامة) أو عبر `~/.clicklink/clctl.yaml`. تسجّل العلامة العامة `-v` طلبات واجهة برمجة تطبيقات الإدارة التي يُجريها الأمر، بينما تضيف `-vv` متون الطلبات.
+يمكن أيضًا تمرير العلامات ضمن التفرعات الفرعية `troubleshoot` و`scraper` و`preflight` و`executor` و`instances create` و`platform` و`connector upgrade`، إضافةً إلى العلامات العامة `--endpoint` و`--cluster` و`--infra-context`، عبر متغيرات البيئة `CLCTL_*` (المذكورة في مخرجات المساعدة لكل علامة) أو عبر `~/.clicklink/clctl.yaml`. تسجّل العلامة العامة `-v` طلبات واجهة برمجة تطبيقات الإدارة التي يُجريها الأمر، بينما تضيف `-vv` متون الطلبات.
 
 يقرأ الأمران `instances` و`commands`، وكذلك `executor teardown`، واجهة برمجة التطبيقات المحلية للمنفّذ. وتحدّدها علامتان عامتان: `--endpoint <url>` (القيمة الافتراضية `http://127.0.0.1:9999`، متغير البيئة `CLCTL_ENDPOINT`) و`--cluster <name>` (متغير البيئة `CLCTL_CLUSTER`) التي تحدّد اسم العنقود المُدار عندما يحتاج الأمر إلى ذلك. في Kubernetes، افتح `kubectl port-forward` إلى Deployment المنفّذ أولًا؛ انظر [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#status).
 
@@ -411,6 +411,34 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output-dir <path>`                             | جذر الوصول الذي تُزال منه حزمة `_platform` (الافتراضي `/etc/clicklink/access/executor`).                                                   |
 | `--secret-namespace <ns>`، `--secret-name <name>` | لعمليات التثبيت على Kubernetes: يزيل بدلاً من ذلك Secret حزمة المنصة في مساحة أسماء الموصّل (الاسم الافتراضي `clicklink-platform-bundle`). |
 | `--dry-run`                                       | يتحقق من وجود خدمات ويطبع خطة إعادة التعيين دون تغيير العنقود.                                                                             |
+
+## clicklink clctl context {#context}
+
+يعثر `clctl` على الموصل المُسجَّل من خلال سياق مُسمّى: ففي Kubernetes يكون هذا السياق هو سياق Kubeconfig الذي يعمل ضمنه، أما على الجهاز الافتراضي فيكون ملف التهيئة الموجود على المضيف. يحفظ الأمر `context add` سياقًا جديدًا (ويصبح أول سياق محفوظ هو السياق الحالي)، ويُبدّل `context use <name>` إلى سياق آخر، ويعرض كلٌّ من `context list` و`context current` السياقات، بينما يحذف `context remove <name>` سياقًا محددًا. ويتجاوز `--infra-context <name>` (أو متغير البيئة `CLCTL_INFRA_CONTEXT`) السياق الحالي لعملية تشغيل واحدة فقط. ويوفّر السياق الحالي القيم الافتراضية لكلٍّ من `--context` و`--config` و`--cluster` في الأوامر التي تقبلها، مع بقاء الأولوية لخيارات سطر الأوامر المُحدَّدة صراحةً ولمتغيرات `CLCTL_*`. ويتطلب الأمر `connector upgrade` وجود سياق.
+
+```bash
+clicklink clctl context add <name> --kube-context <kubectl context>
+```
+
+| العلامة                      | الوصف                                                                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--kube-context <name>`      | الاسم الدقيق لسياق kubeconfig كما يظهر في ناتج `kubectl config get-contexts`، ويُتحقق من صحته محليًا. يُستخدم مع عمليات التثبيت على Kubernetes. |
+| `--config <path>`            | ملف إعدادات الموصل على هذا المضيف. يُستخدم مع عمليات التثبيت على الأجهزة الافتراضية. مطلوب تحديد أحد الخيارين `--kube-context` أو `--config`.   |
+| `--connector-namespace <ns>` | مساحة الأسماء الخاصة بمخطط Helm للموصل إذا كانت غير `clicklink`.                                                                                |
+| `--use`                      | يجعل هذا السياق هو السياق الحالي حتى لو كان سياق آخر محددًا حاليًا.                                                                             |
+
+## clicklink clctl connector upgrade {#connector-upgrade}
+
+يُرقّي تثبيت Kubernetes من مستودع المخططات العام، مستخدمًا سياق Kubeconfig الذي حُفظ عبر `context add`. يعرض المخطط والصورة الحاليين والمستهدفين، ثم يطلب التأكيد. يحتفظ بقيم الإصدار (مع مسح قيمة `image.tag` المتقادمة)، وينفّذ الترقية عبر عميل Helm المدمج فيه، وينتظر اكتمال الطرح، ثم يتحقق من أن جميع pod التابعة لكل مكوّن مفعّل تعمل بالصورة الجديدة. يرفض أي سياق Kubernetes يختلف عنقوده أو حسابه أو منطقته عن تهيئة الموصل، كما يرفض أي إصدار لا يكون مستودع صوره هو المستودع العام (أي [مرآة خاصة](/ar/products/bring-your-own-cloud/connector/configuration#private-mirrors)). راجع [العمليات](/ar/products/bring-your-own-cloud/connector/operations#upgrades-kubernetes).
+
+| العلامة             | الوصف                                                                                                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `--version <X.Y.Z>` | إصدار المخطط المراد تثبيته، وهو وسم الإصدار دون البادئة `v`. يلزم تحديد أحد الخيارين `--version` أو `--latest`. |
+| `--latest`          | يحدّد أحدث مخطط منشور ويثبّته.                                                                                  |
+| `--set <key=value>` | تجاوز لقيمة Helm، ويمكن تكراره. يقتصر أثره على الإصدار، ولا يُحدَّث الملف `clicklink-values.yaml`.              |
+| `--dry-run`         | يتوقف بعد محاكاة Helm من جهة الخادم (server-side)، دون إجراء أي تغيير.                                          |
+| `--yes`, `-y`       | يتخطى موجّه التأكيد.                                                                                            |
+| `--timeout <dur>`   | الحدّ الزمني للطرح، وحدّ مستقل للتحقق من الصورة (القيمة الافتراضية `15m`).                                      |
 
 ## علامات القناة البعيدة {#channel-flags}
 

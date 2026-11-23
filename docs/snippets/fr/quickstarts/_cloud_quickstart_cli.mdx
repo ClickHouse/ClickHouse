@@ -2,27 +2,29 @@
 title: Guide de démarrage rapide de Cloud CLI
 ---
 
-Cette page explique comment provisionner un service ClickHouse Cloud, s’y connecter et charger des données, le tout depuis la ligne de commande à l’aide de [ClickHouse CLI](/fr/products/cloud/features/cli) (`clickhousectl`). Les commandes sont non interactives ; `clickhousectl` génère du JSON avec `--json`.
+Cette page explique comment provisionner un service ClickHouse Cloud, s’y connecter et charger des données, le tout depuis la ligne de commande à l’aide de [Interface en ligne de commande de ClickHouse](/fr/concepts/features/interfaces/cli) (`clickhousectl`). À l’exception de la connexion facultative via `--interactive`, les commandes sont non interactives. `clickhousectl` génère du JSON avec `--json`, et le fait automatiquement lorsqu’il est exécuté par un agent de code.
 
 ## Prérequis {#prerequisites}
 
-Installez la ClickHouse CLI :
+Installez l&#39;interface en ligne de commande de ClickHouse :
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
+
+Le script installe `~/.local/bin/clickhousectl` ainsi qu&#39;un alias `chctl`. Assurez-vous que `~/.local/bin` figure dans votre `PATH`.
 
 Vous aurez également besoin de `jq`.
 
-Vous devez disposer d’un compte ClickHouse Cloud. Si vous n’en avez pas encore, `clickhousectl cloud auth signup` ouvre la page d’inscription dans votre navigateur.
+Vous devez disposer d&#39;un compte ClickHouse Cloud. Si vous n&#39;en avez pas encore, la commande `clickhousectl cloud auth signup` ouvre la page d&#39;inscription dans votre navigateur.
 
-Les opérations d’écriture (création, suppression) nécessitent une [authentification par clé API](/fr/products/cloud/features/admin-features/api/openapi) ; la connexion OAuth est en lecture seule :
+La connexion via le navigateur (`clickhousectl cloud auth login`) ne donne qu&#39;un accès en lecture seule. Pour créer et supprimer un service, ou pour exécuter du SQL avec l&#39;API de requête, vous avez besoin d&#39;une [API key](/fr/products/cloud/features/admin-features/api/openapi) dont le rôle permet de créer des services et de gérer les points de terminaison de l’API de requêtes ; l&#39;option `--help` de chaque commande indique les autorisations requises. Connectez-vous avec la clé ; l&#39;option `--interactive` vous invite à saisir la clé et le secret, ce qui évite que le secret ne soit enregistré dans l&#39;historique de votre interpréteur de commandes :
 
 ```bash
-clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+clickhousectl cloud auth login --interactive
 ```
 
-Vous pouvez également définir les variables d’environnement `CLICKHOUSE_CLOUD_API_KEY` et `CLICKHOUSE_CLOUD_API_SECRET`. Vérifiez avec `clickhousectl cloud auth status` : une entrée dont le scope est `read/write` doit s’afficher.
+Vous pouvez également passer `--api-key` et `--api-secret`, ou définir les variables d’environnement `CLICKHOUSE_CLOUD_API_KEY` et `CLICKHOUSE_CLOUD_API_SECRET`. Un agent de code ou un script doit utiliser les variables d’environnement. La connexion vérifie la clé et affiche l’identité associée ; vous pouvez vérifier à tout moment les identifiants actifs avec `clickhousectl cloud auth whoami`. Si vous appartenez à plusieurs organisations, ajoutez `--org-id <org-id>` (ou `--org-name <name>`) à chaque commande `cloud` de ce guide.
 
 ## Créer un service ClickHouse {#create-service}
 
@@ -87,31 +89,33 @@ while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "
 done
 ```
 
-## Exécuter du SQL avec la Query API {#run-sql}
+## Exécuter du SQL avec l’API de requête {#run-sql}
 
-`clickhousectl cloud service query` exécute des requêtes SQL via HTTP, sans nécessiter de binaire `clickhouse` local ni de mot de passe de service. Le premier appel provisionne automatiquement un endpoint de Query API et une clé API limitée au service :
+`clickhousectl cloud service query` exécute du SQL via HTTP, sans binaire `clickhouse` local ni mot de passe du service. Lors du premier appel, clickhousectl ajoute votre API key au point de terminaison de l’API de requêtes du service, en créant ce point de terminaison si nécessaire ; aucune nouvelle clé n’est créée. Passez l’option `--no-auto-enable` pour que la commande échoue plutôt :
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json --query "SHOW databases"
+clickhousectl cloud service query "$CH_ID" --json --query "SHOW databases"
 ```
 
+La première ligne de la sortie ci-dessous est écrite sur stderr et n&#39;apparaît que lorsque la CLI change d&#39;endpoint :
+
 ```text
-Provisioning Query API endpoint + key for service 'quickstart-ch'...
+Binding the authenticated API key to the Query API endpoint for service 'quickstart-ch'...
 {"name":"INFORMATION_SCHEMA"}
 {"name":"default"}
 {"name":"information_schema"}
 {"name":"system"}
 ```
 
-La sortie utilise par défaut le format `PrettyCompact` dans un terminal et `TabSeparated` lorsqu&#39;elle est redirigée via un pipe. `--json`, utilisé ci-dessus, sélectionne `JSONEachRow` ; pour tout autre format, passez plutôt `--format` (`--json` et `--format` ne peuvent pas être combinés).
+Par défaut, la sortie est au format `PrettyCompact` dans un terminal, `TabSeparated` lorsqu&#39;elle est redirigée via un pipe, et `JSONEachRow` lorsqu&#39;un agent de code exécute la commande. L&#39;option `--json`, utilisée ci-dessus, sélectionne `JSONEachRow` ; pour tout autre format, utilisez plutôt `--format` (`--json` et `--format` ne peuvent pas être combinées). Un script qui analyse la sortie doit toujours passer l&#39;une de ces deux options.
 
 ## Créer une base de données et une table {#create-database-and-table}
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE DATABASE IF NOT EXISTS helloworld"
 
-clickhousectl cloud service query --id "$CH_ID" \
+clickhousectl cloud service query "$CH_ID" \
   --query "CREATE TABLE helloworld.my_first_table (
     user_id UInt32,
     message String,
@@ -121,21 +125,22 @@ clickhousectl cloud service query --id "$CH_ID" \
   PRIMARY KEY (user_id, timestamp)"
 ```
 
-Les deux commandes affichent `OK`. Insérez quelques lignes :
+Chaque commande affiche `OK` sur stderr. Insérez quelques lignes :
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" \
-  --query "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
-    (101, 'Hello, ClickHouse!', now(), -1.0),
-    (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
-    (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
-    (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)"
+clickhousectl cloud service query "$CH_ID" <<'SQL'
+INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+  (101, 'Hello, ClickHouse!', now(), -1.0),
+  (102, 'Insert a lot of rows per batch', yesterday(), 1.41421),
+  (102, 'Sort your data based on your commonly-used queries', today(), 2.718),
+  (101, 'Granules are the smallest chunks of data read', now() + 5, 3.14159)
+SQL
 ```
 
 Vérifiez que l’opération a réussi :
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT * FROM helloworld.my_first_table ORDER BY timestamp"
 ```
 
@@ -162,13 +167,15 @@ Supposons que le texte suivant se trouve dans un fichier CSV nommé `data.csv` :
 
 ```bash
 printf 'INSERT INTO helloworld.my_first_table FORMAT CSV\n' | cat - data.csv \
-  | clickhousectl cloud service query --id "$CH_ID"
+  | clickhousectl cloud service query "$CH_ID"
 ```
+
+L&#39;API de requête cesse d&#39;attendre au bout d&#39;environ 30 secondes, et un `INSERT` ayant expiré peut tout de même avoir été exécuté ; vérifiez donc le nombre de lignes avant toute nouvelle tentative. Pour les fichiers volumineux, utilisez plutôt [`clickhouse client`](#native-client).
 
 Vérifiez que les nouvelles lignes ont bien été insérées :
 
 ```bash
-clickhousectl cloud service query --id "$CH_ID" --json \
+clickhousectl cloud service query "$CH_ID" --json \
   --query "SELECT count() FROM helloworld.my_first_table"
 ```
 
@@ -178,15 +185,15 @@ clickhousectl cloud service query --id "$CH_ID" --json \
 
 ## Se connecter avec clickhouse client {#native-client}
 
-Vous pouvez également vous connecter via le protocole natif à l’aide de [**clickhouse client**](/fr/concepts/features/interfaces/client). La ClickHouse CLI gère le binaire `clickhouse` pour vous ; vous n’avez donc pas besoin d’installer un client séparément :
+Vous pouvez également vous connecter via le protocole natif à l’aide de [**clickhouse client**](/fr/concepts/features/interfaces/client). L’Interface en ligne de commande de ClickHouse gère le binaire `clickhouse` pour vous ; vous n’avez donc pas besoin d’installer un client séparément :
 
 ```bash
 clickhousectl local use latest
 ```
 
-Cela installe le dernier binaire `clickhouse` et crée un lien symbolique vers `~/.local/bin/clickhouse`, afin que la commande `clickhouse` soit disponible globalement dans votre `PATH`.
+Cela installe la dernière version de ClickHouse et crée un lien symbolique vers `~/.local/bin/clickhouse`, ce qui vous permet d’exécuter directement la commande `clickhouse` dès que `~/.local/bin` figure dans votre `PATH` (la commande affiche un message si ce n&#39;est pas le cas).
 
-Connectez-vous ensuite à l’aide du hostname et du mot de passe indiqués dans la réponse de création. Avec `--query`, le résultat s’affiche, puis le client se ferme ; sans cette option, vous accédez à l’invite interactive (`:)`), que vous quittez avec `exit` :
+Connectez-vous ensuite à l’aide du hostname et du mot de passe indiqués dans la réponse de création. Avec `--query`, le résultat s’affiche, puis le client se ferme ; sans cette option, vous accédez à l’invite interactive (`:)`), que vous quittez avec `exit` :
 
 ```bash
 clickhouse client --host "$CH_HOST" --secure --port 9440 \
@@ -195,16 +202,16 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
 ```
 
 ```text
+103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
+102	This is data in a file	2022-02-22 10:43:28	123.45
+101	It is comma-separated	2022-02-23 00:00:00	456.78
 102	Insert a lot of rows per batch	2026-08-26 00:00:00	1.41421
 102	Sort your data based on your commonly-used queries	2026-08-27 00:00:00	2.718
 101	Hello, ClickHouse!	2026-08-27 10:41:28	-1
 101	Granules are the smallest chunks of data read	2026-08-27 10:41:33	3.14159
-103	Use FORMAT to specify the format	2022-02-21 10:43:30	678.9
-102	This is data in a file	2022-02-22 10:43:28	123.45
-101	It is comma-separated	2022-02-23 00:00:00	456.78
 ```
 
-La même syntaxe de commande permet de téléverser des fichiers :
+La même syntaxe de commande permet de téléverser des fichiers. Elle n’est pas soumise au délai d’attente de l’API de requête ; utilisez-la donc pour les fichiers volumineux :
 
 ```bash
 clickhouse client --host "$CH_HOST" --secure --port 9440 \
@@ -212,9 +219,11 @@ clickhouse client --host "$CH_HOST" --secure --port 9440 \
   --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
 ```
 
+ClickHouse Cloud déduplique les blocs insérés identiques : charger une seconde fois le même fichier `data.csv` n’ajoute donc aucune ligne.
+
 ## Nettoyage {#cleanup}
 
-La suppression d’un service efface définitivement toutes ses données. `--force` arrête d’abord un service en cours d’exécution :
+La suppression d’un service efface définitivement toutes ses données. `--force` arrête d’abord un service en cours d’exécution et attend que l’arrêt soit terminé, ce qui peut prendre plusieurs minutes :
 
 ```bash
 clickhousectl cloud service delete "$CH_ID" --force
