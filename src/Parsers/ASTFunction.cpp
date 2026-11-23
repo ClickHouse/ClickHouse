@@ -696,7 +696,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
+
+    /// `f | g` stays an operator also where operators are written as calls (e.g. in `CODEC`):
+    /// `__compose(f, g)` is an ordinary call, see `updateTreeHashImpl`. The name must stay in sync with
+    /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
+    if (isOperator() && arguments && !parameters && getNullsAction() == NullsAction::EMPTY && !isWindowFunction()
+        && arguments->children.size() == 2 && name == "__compose"sv)
+    {
+        if (frame.need_parens)
+            ostr << '(';
+        arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+        ostr << " | ";
+        arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+        if (frame.need_parens)
+            ostr << ')';
+        written = true;
+    }
+
+    if (!written && isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY
         && !isWindowFunction())
     {
         /// Unary prefix operators.
@@ -1077,22 +1094,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
         }
 
-        /// The function composition operator `f | g`. `__compose` is an ordinary (if unusual)
-        /// function name a user can define a function with, so only a call the parser marked as
-        /// operator syntax is formatted back as the operator. The name must stay in sync with
-        /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
-        if (!written && arguments->children.size() == 2 && name == "__compose"sv && isOperator())
-        {
-            if (frame.need_parens)
-                ostr << '(';
-            arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-            ostr << " | ";
-            arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-            if (frame.need_parens)
-                ostr << ')';
-            written = true;
-        }
-
         if (!written && name == "array"sv && isOperator())
         {
             ostr << '[';
@@ -1155,6 +1156,11 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// In function-call form `not(x)` re-parses as `NOT (x)`, same AST, so skip quoting
     bool is_plain_not_call = !frame.allow_operators && equalsCaseInsensitive(name, "not") && arguments
         && arguments->children.size() == 1 && !parameters && getNullsAction() == NullsAction::EMPTY && !isWindowFunction();
+
+    /// `not(` is the prefix operator `NOT`, so it takes the parentheses an operator would get, e.g. as an operand of `|`.
+    const bool plain_not_call_needs_parens = is_plain_not_call && frame.need_parens;
+    if (plain_not_call_needs_parens)
+        ostr << '(';
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (is_plain_not_call)
@@ -1321,6 +1327,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     }
 
     if (need_parens)
+        ostr << ')';
+
+    if (plain_not_call_needs_parens)
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);
