@@ -1205,7 +1205,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
     }
     static UInt32 execute(UInt32 t, Int64 hours, const DateLUTImpl & time_zone, Int64)
     {
-        return time_zone.toStartOfHourInterval(t, hours);
+        /// Inlined into the per-row loop of the caller, so that the checks of `hours` and of the properties of
+        /// the time zone are done once before the loop. Without it, the compiler makes a call for every row,
+        /// which is a quarter slower for a one hour interval in zones such as `Asia/Kolkata`.
+        [[clang::always_inline]] return time_zone.toStartOfHourInterval(t, hours);
     }
     static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
