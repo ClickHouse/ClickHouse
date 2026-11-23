@@ -3999,8 +3999,8 @@ The ratio of available memory that is allowed for `GROUP BY`. Once reached,
 external memory is used for aggregation.
 
 For example, if set to `0.6`, `GROUP BY` will allow using 60% of the available memory
-(to server/user/merges) at the beginning of the execution, after that, it will
-start using external aggregation.
+(under the query's `max_memory_usage` and the server/user/merges limits) at the beginning of the execution, after that, it will
+start using external aggregation. The userspace page cache above `page_cache_min_size` counts as available memory.
 )", 0, \
         {"25.1", 0.0, 0.5, "Enable automatic spilling to disk by default."}, \
         {"24.12", 0., 0., "New setting."}) \
@@ -4056,7 +4056,7 @@ Possible values:
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
 The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
 
-For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (under the query's `max_memory_usage` and the server/user/merges limits) at the beginning of the execution, after that, it will start using external sort. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
 )", 0, \
@@ -4080,14 +4080,12 @@ See [DISTINCT in external memory](/reference/statements/select/distinct#distinct
 )", 0, \
         {"26.9", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
-Fraction of available server or user memory used to calculate the external `DISTINCT` threshold at
-the start of execution. For example, `0.5` uses half of the available memory.
+Fraction of the memory available under the query's `max_memory_usage` and the server or user memory limits,
+used to calculate the external `DISTINCT` threshold at the start of execution. For example, `0.5` uses half
+of the available memory. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
-server or user memory limit, the ratio has no effect.
-
-`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
-use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
+query, server or user memory limit, the ratio has no effect.
 )", 0, \
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
     \
@@ -4103,14 +4101,13 @@ See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
         {"26.10", 0, 0, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_set` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_set, 0.5, R"(
-Fraction of available server or user memory used to calculate the threshold for spilling the set of `IN`
-with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
+Fraction of the memory available under the query's `max_memory_usage` and the server or user memory limits,
+used to calculate the threshold for spilling the set of `IN` with a subquery to disk, at the start of
+execution. For example, `0.5` uses half of the available memory. The userspace page cache above
+`page_cache_min_size` counts as available memory.
 
 Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
-server or user memory limit, the ratio has no effect.
-
-`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
-use `max_bytes_before_external_set`, leaving room for additional memory usage.
+query, server or user memory limit, the ratio has no effect.
 )", 0, \
         {"26.11", 0.5, 0.5, "The default change to 0.5 was backported to 26.10."}, \
         {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
@@ -4546,7 +4543,7 @@ value honors this setting, including the ones that spill to disk: reaching the
 limit stops the query rather than triggering a spill. The exception is
 `legacy_join_size_limits_trigger_spilling`: with it on, the part of a join that
 already runs on disk spills further instead of acting on this setting.
-`ie_join` honors it as well, on the input it accumulates from both sides. `partial_merge` still
+`inequality` honors it as well, on the input it accumulates from both sides. `partial_merge` still
 handles the limits by switching strategy — see
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
@@ -4582,7 +4579,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,ie_join", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,inequality", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -4646,11 +4643,11 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
-- ie_join
+- inequality
 
- The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
+ The sort-based [inequality join](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`. The former name `ie_join` is accepted as an alias.
 
- The position in the list sets the priority. Listed after other algorithms, as in the default value, `ie_join` is used only when the `ON` section has no equality conditions. Listed first, it is used whenever the `ON` section has two inequality conditions, and any remaining conditions are applied as a filter over the join result. When there are more than two inequality conditions, the two used by the algorithm are chosen by their estimated selectivity from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics); without statistics, the first two in syntax order are used. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other join kinds as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+ The position in the list sets the priority. Listed after other algorithms, as in the default value, `inequality` is used only when the `ON` section has no equality conditions. Listed first, it is used whenever the `ON` section has two inequality conditions, and any remaining conditions are applied as a filter over the join result. When there are more than two inequality conditions, the two used by the algorithm are chosen by their estimated selectivity from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics); without statistics, the first two in syntax order are used. Without `inequality` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other join kinds as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
  Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
@@ -4676,8 +4673,9 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
  Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
 )", 0, \
+        {"26.12", "direct,hash,ie_join", "direct,hash,inequality", "Renamed `ie_join` to `inequality`. The former name `ie_join` is still accepted as an alias."}, \
         {"26.11", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."}, \
-        {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` to the default list, so a join whose `ON` section has only inequality conditions is executed with IEJoin instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
+        {"26.8", "direct,parallel_hash,hash", "direct,parallel_hash,hash,ie_join", "Appended `ie_join` (now named `inequality`) to the default list, so a join whose `ON` section has only inequality conditions is executed with the inequality join algorithm instead of a `CROSS JOIN` with a filter. Being last, it is used only when the other algorithms do not apply."}, \
         {"24.12", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
 Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
@@ -10954,7 +10952,7 @@ If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `def
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, a hash join spills the right-side data to disk. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. After the spill, the join continues as a grace hash join, or as a partial merge join when the query plan needs the left stream's row order (see `max_bytes_before_external_join`).
 
-For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
+For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (under the query's `max_memory_usage` and the server/user/merges limits) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk. The userspace page cache above `page_cache_min_size` counts as available memory.
 
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
@@ -11820,7 +11818,8 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to too many relations or disconnected components), the next one is used as a fallback.
 )", BETA, \
-        {"26.11", "greedy", "dpsub,greedy", "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}, \
+        {"26.11", "dpsub,greedy", "dpsub,greedy", "The change was backported to 26.10 and is recorded there."}, \
+        {"26.10", "greedy", "dpsub,greedy", "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}, \
         {"25.12", "greedy", "greedy", "New experimental setting."}) \
     DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::CD_C, R"(
 Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
@@ -11829,14 +11828,16 @@ decide which join reorderings are valid. The following values are available:
  - `'a'` - the CD-A conflict detector, which is correct but incomplete
  - `'c'` (default) - the CD-C conflict detector, which is correct and complete
 )", BETA, \
-        {"26.11", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
+        {"26.11", "c", "c", "The change was backported to 26.10 and is recorded there."}, \
+        {"26.10", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
         {"26.9", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}) \
     DECLARE(Bool, query_plan_join_order_use_interesting_orders, true, R"(
 Only affects the `dpsub` join order algorithm. Makes it aware of the sort order of the joined tables: for each inner equi-join it chooses between a hash join and `full_sorting_merge` by cost, and keeps partial plans whose result is sorted by a join key that a later join can use.
 
 An input counts as sorted by a join key when `optimize_read_in_order` can read it in the order of that key from a `MergeTree` table, or when it is the result of a `full_sorting_merge` join on that key. A join chosen to run as `full_sorting_merge` tries it first, with the `join_algorithm` list as its fallback. The choice is made only when `join_algorithm` has its default value: any other list is a priority list, used as it is. Requires `enable_join_transitive_predicates`.
 )", BETA, \
-        {"26.11", false, true, "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}) \
+        {"26.11", true, true, "The change was backported to 26.10 and is recorded there."}, \
+        {"26.10", false, true, "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}) \
     DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
 Allow database engine `DataLakeCatalog` with `catalog_type = 'paimon_rest'`
 )", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog, \
