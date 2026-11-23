@@ -986,6 +986,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
             return false;
 
+        /// A `Bool` set over a non-`Bool` key matches every nonzero value, while its element cast into the index type hashes only 1.
+        if (KeyCondition::setElementHasBoolOverNonBoolKey(type, index_type))
+            return false;
+
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
 
         /// An `Array` index holds one hash per element, so a set array is looked up by its elements
@@ -1123,6 +1127,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
+            if (KeyCondition::setElementHasBoolOverNonBoolKey(type, array_nested_type))
+                return false;
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
         }
@@ -1160,7 +1166,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & array_nested_type = array_type->getNestedType();
-    if (!bloomFilterHashDomainMatches(type, array_nested_type))
+    if (!bloomFilterHashDomainMatches(type, array_nested_type) || KeyCondition::setElementHasBoolOverNonBoolKey(type, array_nested_type))
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);

@@ -3794,12 +3794,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 return false;
 
             /// The key cast into a `Bool` element matches every nonzero value, while the element cast into the key names only 1.
-            const auto has_bool = [](const DataTypePtr & type)
-            {
-                return anyInTypeTree(*type, [](const IDataType & node)
-                    { return node.getName() == "Bool" || isSimpleAggregateFunctionOfBool(node); });
-            };
-            if (has_bool(element_type) && !has_bool(predicate_column_type))
+            if (setElementHasBoolOverNonBoolKey(element_type, predicate_column_type))
                 return false;
         }
 
@@ -8226,6 +8221,34 @@ bool KeyCondition::mayReadNullKeyValue(
     }
 
     return false;
+}
+
+bool KeyCondition::setElementHasBoolOverNonBoolKey(const DataTypePtr & element_type, const DataTypePtr & key_type)
+{
+    const auto is_bool = [](const IDataType & type) { return type.getName() == "Bool" || isSimpleAggregateFunctionOfBool(type); };
+    const auto element = removeLowCardinalityAndNullable(element_type);
+    const auto key = removeLowCardinalityAndNullable(key_type);
+
+    if (is_bool(*element))
+        return !is_bool(*key);
+
+    const auto * element_tuple = typeid_cast<const DataTypeTuple *>(element.get());
+    const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
+    if (element_tuple && key_tuple && element_tuple->getElements().size() == key_tuple->getElements().size())
+    {
+        for (size_t i = 0; i < element_tuple->getElements().size(); ++i)
+            if (setElementHasBoolOverNonBoolKey(element_tuple->getElement(i), key_tuple->getElement(i)))
+                return true;
+        return false;
+    }
+
+    const auto * element_array = typeid_cast<const DataTypeArray *>(element.get());
+    const auto * key_array = typeid_cast<const DataTypeArray *>(key.get());
+    if (element_array && key_array)
+        return setElementHasBoolOverNonBoolKey(element_array->getNestedType(), key_array->getNestedType());
+
+    /// The shapes differ, so the position of a `Bool` in the key is unknown.
+    return anyInTypeTree(*element, is_bool);
 }
 
 bool KeyCondition::fieldHasNullInside(const Field & field)

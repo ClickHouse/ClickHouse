@@ -267,6 +267,11 @@ public:
     /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
     static bool fieldHasNullInside(const Field & field);
 
+    /// Whether a `Bool` or `SimpleAggregateFunction(f, Bool)` of a set element sits where the key has neither, e.g. the
+    /// first field of a `Tuple(Bool, Bool)` element over a `Tuple(UInt16, Bool)` key. `Set::execute` casts the key into
+    /// such an element, which matches every nonzero value, while the element cast into the key names only 1.
+    static bool setElementHasBoolOverNonBoolKey(const DataTypePtr & element_type, const DataTypePtr & key_type);
+
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
