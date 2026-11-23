@@ -467,7 +467,32 @@ bool createDirectoryAndChown(const std::string & dir, uid_t uid, gid_t gid, bool
     return true;
 }
 
-/// Write the user management XML to `/etc/clickhouse-server/users.d/default-user.xml`.
+/// The users configuration file the server loads the users from, as `AccessControl::addStoragesFromMainConfig`
+/// finds it: `users_config`, else the main configuration itself if it has no `user_directories`, else the path of
+/// the `users.xml` storage in `user_directories`. A relative path is taken from the directory of the main
+/// configuration if it exists there. Empty if the configuration has no users configuration file.
+std::string getUsersConfigFile(const std::string & config_file)
+{
+    const fs::path config_dir = fs::path(config_file).parent_path();
+    auto resolve = [&](const std::string & path)
+    {
+        if (fs::path(path).is_relative() && fs::exists(config_dir / path))
+            return (config_dir / path).string();
+        return path;
+    };
+
+    if (std::string path = extractConfigValue(config_file, "users_config"); !path.empty())
+        return resolve(path);
+    for (const char * storage : {"users_xml", "users_config"})
+        if (std::string path = extractConfigValue(config_file, std::string("user_directories.") + storage + ".path"); !path.empty())
+            return resolve(path);
+    if (getConfigChildren(config_file, "user_directories").empty())
+        return config_file;
+    return {};
+}
+
+/// Write the user management XML to `default-user.xml` in the `.d` directory of the users configuration file
+/// (`/etc/clickhouse-server/users.d` for the shipped configuration).
 /// Returns false if a user-requested setup (CLICKHOUSE_USER/PASSWORD/ACCESS_MANAGEMENT)
 /// is invalid or the file cannot be written — caller should treat this as fatal.
 bool manageClickHouseUser(
@@ -483,7 +508,39 @@ bool manageClickHouseUser(
         return true;
     }
 
-    const std::string users_d_dir = "/etc/clickhouse-server/users.d";
+    bool has_custom_user = !clickhouse_user.empty() && clickhouse_user != "default";
+    bool has_password = !clickhouse_password.empty();
+    bool has_access_mgmt = access_management != "0";
+    bool setup_requested = has_custom_user || has_password || has_access_mgmt;
+
+    std::string abs_users_xml;
+    try
+    {
+        abs_users_xml = getUsersConfigFile(config_file);
+    }
+    catch (...)
+    {
+        std::cerr << "docker-init: error: cannot find the users configuration file of " << config_file << ": "
+                  << DB::getCurrentExceptionMessage(false) << "\n";
+        return false;
+    }
+    if (abs_users_xml.empty())
+    {
+        if (setup_requested)
+        {
+            std::cerr << "docker-init: error: " << config_file << " has no `users.xml` storage in `user_directories`, "
+                         "so CLICKHOUSE_USER, CLICKHOUSE_PASSWORD, and CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT cannot be applied; "
+                         "set CLICKHOUSE_SKIP_USER_SETUP=1 to manage the users yourself\n";
+            return false;
+        }
+        std::cerr << "docker-init: " << config_file << " has no `users.xml` storage in `user_directories`, "
+                     "so there is no user 'default' to restrict to local connections\n";
+        return true;
+    }
+
+    /// The server merges `<users file without extension>.d` into the users file, as `config.d` into `config.xml`:
+    /// write there, so the generated user applies to the users file the configuration selects.
+    const std::string users_d_dir = fs::path(abs_users_xml).replace_extension("d").string();
     const std::string default_user_xml = users_d_dir + "/default-user.xml";
 
     std::error_code ec;
@@ -491,12 +548,7 @@ bool manageClickHouseUser(
 
     /// Detect whether the default user was customised via a mounted config file.
     bool clickhouse_default_changed = false;
-    std::string users_xml_path = extractConfigValue(config_file, "user_directories.users_xml.path");
-    if (!users_xml_path.empty())
     {
-        std::string abs_users_xml = (users_xml_path[0] == '/')
-            ? users_xml_path
-            : (fs::path(config_file).parent_path() / users_xml_path).string();
 
         auto join = [](const std::vector<std::string> & v)
         {
@@ -535,19 +587,15 @@ bool manageClickHouseUser(
         fs::remove_all(tmp_dir, ec);
         auto [c2, processed] = captureCommand({
             g_clickhouse_binary, "extract-from-config",
-            "--config-file", config_file,
-            "--users", "--key", "users.default", "--try",
+            "--config-file", abs_users_xml,
+            "--key", "users.default", "--try",
         });
 
         if (c1 == 0 && c2 == 0 && join(original) != join(processed))
             clickhouse_default_changed = true;
     }
 
-    bool has_custom_user = !clickhouse_user.empty() && clickhouse_user != "default";
-    bool has_password = !clickhouse_password.empty();
-    bool has_access_mgmt = access_management != "0";
-
-    if (has_custom_user || has_password || has_access_mgmt)
+    if (setup_requested)
     {
         if (access_management != "0" && access_management != "1")
         {
@@ -773,7 +821,8 @@ bool runInitScripts(const std::vector<std::string> & client_base)
                     escaped_path += c;
             }
             std::vector<std::string> decompress_args = {
-                g_clickhouse_binary, "local",
+                /// `--tmp`: no persistent storage in the home directory, which can be read-only (`docker run --read-only`).
+                g_clickhouse_binary, "local", "--tmp",
                 "--query",
                 "SELECT * FROM file('" + escaped_path + "', RawBLOB) FORMAT RawBLOB",
             };

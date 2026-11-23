@@ -70,8 +70,10 @@ clickhouse client --query 'SELECT throwIf(1)'
 echo 'init-script-continued-after-failure'
 SCRIPT
 
-# A failed command in a pipeline fails the script too, as `set -o pipefail` in `entrypoint.sh`.
+# A failed command in a pipeline fails the script too, as `set -o pipefail` in `entrypoint.sh`. Both sides are shell
+# builtins: the busybox mounted as `/bin/sh` provides no other commands, and a missing one would fail the pipeline
+# by itself, with or without `pipefail`.
 checkFailFast <<'SCRIPT'
-clickhouse client --query 'SELECT throwIf(1)' | cat
+false | true
 echo 'init-script-continued-after-failure'
 SCRIPT
