@@ -76,6 +76,7 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -137,7 +138,8 @@ public:
         std::shared_ptr<const S3::Client> client_,
         size_t max_list_size,
         bool with_tags_,
-        const std::optional<std::string> & start_after_)
+        const std::optional<std::string> & start_after_,
+        const std::string & version_id_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
@@ -146,6 +148,7 @@ public:
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
+        , reads_explicit_version(!version_id_.empty())
         , start_after_set(start_after_.has_value() && !start_after_->empty())
         , description(fmt::format("Bucket: {}, Prefix: {}", bucket_, path_prefix))
     {
@@ -199,16 +202,25 @@ private:
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
+                /// The listing describes the current version of each object, but the objects are read at the version
+                /// selected by `?versionId=`, whose size can differ (and the size bounds the read). So the metadata
+                /// is left unset, to be requested with a `HEAD` of the selected version where it is needed.
+                if (reads_explicit_version)
+                {
+                    batch.emplace_back(std::make_shared<RelativePathWithMetadata>(String(object.GetKey())));
+                    continue;
+                }
+
                 ObjectMetadata metadata{
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
+                    .etag = String(object.GetETag()),
                     .tags = {},
                     .attributes = {},
                 };
                 if (with_tags)
                     metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
-                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(String(object.GetKey()), std::move(metadata)));
             }
 
             /// It returns false when all objects were returned
@@ -224,6 +236,7 @@ private:
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
+    const bool reads_explicit_version;
     bool start_after_set;
     const std::string description;
 };
@@ -379,7 +392,7 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after);
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after, uri.version_id);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -412,11 +425,11 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         /// would silently drop every object after it.
         for (const auto & object : objects)
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                object.GetKey(),
+                String(object.GetKey()),
                 ObjectMetadata{
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
+                    .etag = String(object.GetETag()),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -543,7 +556,7 @@ static void putObjectsTagOnS3(
                 existing_tag_set.end(),
                 [&] (const Aws::S3::Model::Tag& tag)
                 {
-                    return tag.GetKey() == tag_key && tag.GetValue() == tag_value;
+                    return std::string_view(tag.GetKey()) == tag_key && std::string_view(tag.GetValue()) == tag_value;
                 })
             != existing_tag_set.end());
         if (present)
@@ -597,7 +610,9 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 {
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, {}, /* with_metadata= */ true, with_tags);
+    /// The metadata must describe the version that `readObject` reads (`?versionId=`), not the current one:
+    /// its size bounds the read (e.g. with the small-file prefetch).
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, uri.version_id, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -618,9 +633,10 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     auto settings_ptr = s3_settings.get();
     const auto [bucket, key] = splitBucketAndKey(path);
     S3::ObjectInfo object_info;
+    /// Of the version that `readObject` reads (`?versionId=`), see `tryGetObjectMetadata`.
     try
     {
-        object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+        object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
     catch (DB::Exception & e)
     {
@@ -631,7 +647,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
             if (new_client)
             {
                 client.set(std::move(new_client));
-                object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+                object_info = S3::getObjectInfo(*client.get(), bucket, key, uri.version_id, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
                 updated = true;
             }
         }
@@ -786,6 +802,16 @@ void S3ObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
+    /// The client is shared by all sessions and a query uses it after this call, so a session never changes its
+    /// restriction mode (`s3_allow_server_credentials_in_user_queries`): a restricted session may not use a client
+    /// built with the opt-in, and a client built restricted stays restricted. Only a forced rebuild (config reload,
+    /// or a rebuild by the server itself) follows the given context. Server disks are never restricted.
+    const bool session_restricts = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
+    if (!options.force_client_rebuild)
+        checkSessionMayUseServerCredentials(context);
+    const bool restricts_now = options.force_client_rebuild ? session_restricts : (!for_disk_s3 && client_restricts_server_credentials);
+    const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
+
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
 
     settings_from_config->loadFromConfigForObjectStorage(
@@ -794,11 +820,14 @@ void S3ObjectStorage::applyNewSettings(
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
     /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
+    /// So does a restricted client: the parsing of a restricted query dropped the server's authentication material
+    /// (`role_arn`, headers, GCP OAuth) from its settings, and the config must not bring it back.
+    const bool merge_auth_from_config = options.allow_client_change && !restricts_now;
     auto apply_endpoint_settings = [&]
     {
         if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
         {
-            if (options.allow_client_change)
+            if (merge_auth_from_config)
                 modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
             modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
         }
@@ -806,7 +835,7 @@ void S3ObjectStorage::applyNewSettings(
 
     auto apply_config_settings = [&]
     {
-        if (options.allow_client_change)
+        if (merge_auth_from_config)
             modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
         modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
     };
@@ -832,14 +861,13 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    /// The effective credentials of a non-disk S3 storage depend on the accessing session's restriction mode
-    /// (`s3_allow_server_credentials_in_user_queries`), not only on the stored settings. Rebuild the client when
-    /// that mode differs from the one the current client was built under, so an opt-in session cannot leave a
-    /// credentialed client in the shared slot for a later restricted session to reuse (and a restricted session
-    /// keeps using an anonymous client). Server disks (`for_disk_s3`) are never restricted, so their mode is
-    /// constant and this adds no rebuilds.
-    const bool restricts_now = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
-    const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
+    ContextPtr client_context = context;
+    if (restricts_now && !session_restricts)
+    {
+        auto restricted_context = Context::createCopy(context);
+        restricted_context->setSetting("s3_allow_server_credentials_in_user_queries", Field{false});
+        client_context = std::move(restricted_context);
+    }
 
     auto current_settings = s3_settings.get();
     /// The client is rebuilt only when a setting it is built from changes (see `S3Settings::hasChangesAffectingClient`):
@@ -848,20 +876,27 @@ void S3ObjectStorage::applyNewSettings(
     /// proxy resolver is re-created from the config on every call) reach the client only on a forced rebuild, which
     /// the config reload of a server disk requests (see `DiskObjectStorage::applyNewSettings`).
     ///
-    /// A change in the accessing session's restriction mode forces a client rebuild even for an otherwise static
-    /// configuration: the restriction is a per-session security property, not a stored setting. Without this, a
-    /// table whose client was built credentialed by an opt-in session (or at create) would keep serving those
-    /// server credentials to later restricted sessions. The rebuild under the restricted context fails closed
-    /// (getClient throws ACCESS_DENIED), which read() propagates instead of falling back to the cached client.
+    /// The restriction mode changes only on a forced rebuild, or once for a server disk, whose initial mode is restricted.
     if ((options.allow_client_change && current_settings->hasChangesAffectingClient(*modified_settings))
         || restriction_mode_changed
         || options.force_client_rebuild)
     {
-        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3, disk_name);
+        auto new_client = getClient(uri, *modified_settings, client_context, for_disk_s3, disk_name);
         client.set(std::move(new_client));
         client_restricts_server_credentials = restricts_now;
     }
     s3_settings.set(std::move(modified_settings));
+}
+
+void S3ObjectStorage::checkSessionMayUseServerCredentials(const ContextPtr & context) const
+{
+    /// The settings of such a client may hold server-derived material (a `role_arn`, headers) that only the parsing
+    /// of a restricted query drops, so it is refused as a whole.
+    if (!for_disk_s3 && !client_restricts_server_credentials && context->shouldRestrictUserQueryS3Credentials())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "This S3 storage was created with `s3_allow_server_credentials_in_user_queries` enabled, so it may use the "
+            "server's credentials, and the setting is disabled for this session");
 }
 
 ObjectStoragePtr S3ObjectStorage::cloneImpl() const
