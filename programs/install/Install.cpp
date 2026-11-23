@@ -4,8 +4,12 @@
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
+#include <cerrno>
 #include <csignal>
+#include <cstring>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #if defined(OS_LINUX)
     #include <syscall.h>
@@ -20,6 +24,8 @@
 #include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
+#include <Common/TerminalSize.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/shellQuote.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
@@ -95,6 +101,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_KILL;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_CLOSE_FILE;
+    extern const int REQUIRED_PASSWORD;
 }
 
 }
@@ -1269,10 +1278,61 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
             /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
 
-            char buf[1000] = {};
+            /// Echo every typed character as a mask, so the user can notice a stray character.
+            const int mask_flags = terminalDisplaysBulletInOneColumn() ? RPP_MASK_BULLET : 0;
+            auto read_password = [mask_flags](const char * prompt, char * buf, size_t size, int flags)
+            {
+                const size_t prompt_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(prompt), strlen(prompt));
+                return readpassphrase_masked(prompt, prompt_width, buf, size, mask_flags | flags);
+            };
+
+            /// Without a controlling terminal, `readpassphrase` reads the password from stdin.
+            /// Decide it once, so that an error with the terminal is not taken for its absence later.
+            bool password_from_terminal = false;
+            {
+                int tty_fd = open("/dev/tty", O_RDWR | O_CLOEXEC);
+                if (tty_fd >= 0)
+                {
+                    password_from_terminal = true;
+                    if (0 != close(tty_fd))
+                        throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close /dev/tty");
+                }
+                else if (errno != ENXIO && errno != ENOENT)
+                    throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open /dev/tty to ask the password for the default user");
+            }
+            const int tty_flags = password_from_terminal ? RPP_REQUIRE_TTY : 0;
+
+            /// The password typed in the terminal is asked twice, so that a typo does not lock the user out.
+            /// If the password cannot be read, the installation fails instead of leaving the default user without a password.
             std::string password;
-            if (auto * result = readpassphrase("Set up the password for the default user: ", buf, sizeof(buf), 0))
+            while (true)
+            {
+                char buf[1000] = {};
+                const char * result = read_password("Set up the password for the default user: ", buf, sizeof(buf), tty_flags);
+                if (!result)
+                    throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read the password for the default user");
                 password = result;
+                /// There is nothing to repeat if the password is read from stdin.
+                if (password.empty() || !password_from_terminal)
+                    break;
+
+                char confirmation_buf[1000] = {};
+                const char * confirmation = read_password("Repeat the password: ", confirmation_buf, sizeof(confirmation_buf), tty_flags);
+                if (!confirmation)
+                    throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read the confirmation of the password for the default user");
+                /// An empty confirmation (Enter or Ctrl+D) fails the installation instead of leaving the default user
+                /// without a password: an automated installation that answers only the first prompt must not succeed.
+                /// Asking again would loop forever if the answer is always empty.
+                if (!*confirmation)
+                    throw Exception(ErrorCodes::REQUIRED_PASSWORD,
+                        "The password for the default user is not confirmed. Run the installation again; "
+                        "to set up no password, leave the first prompt empty");
+                if (password == confirmation)
+                    break;
+
+                password.clear();
+                fmt::print("Passwords do not match, try again.\n");
+            }
 
             if (!password.empty())
             {
