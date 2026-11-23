@@ -2,7 +2,6 @@
 
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
 #include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -12,6 +11,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/Logger_fwd.h>
 
 
 namespace DB
@@ -19,6 +20,10 @@ namespace DB
 
 struct Range;
 using Ranges = VectorWithMemoryTracking<Range>;
+
+struct NonClearableSet;
+template <typename Variant> struct SetVariantsTemplate;
+using SetVariants = SetVariantsTemplate<NonClearableSet>;
 
 class Context;
 class IFunctionBase;
@@ -113,6 +118,7 @@ public:
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
     bool insertFromColumns(const Columns & columns);
+    bool insertFromColumns(const Columns & columns, size_t max_keys, size_t & rows_taken);
     bool insertFromBlock(const ColumnsWithTypeAndName & columns);
 
     void fillSetElements();
@@ -148,7 +154,7 @@ public:
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements || (!set_elements.empty() && set_elements.front()->size() == data->getTotalRowCount()); }
+    bool hasExplicitSetElements() const;
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
@@ -158,6 +164,10 @@ public:
     /// notably the two plan builds that automatic parallel replicas performs for one query.
     /// Returns null for a multi-column (tuple) set, which has no single-column range representation.
     std::shared_ptr<const PlainRanges> getPlainRanges() const;
+
+    /// The explicit elements sorted by their columns in order (ascending, NULLs last), as `MergeTreeSetIndex` orders them.
+    /// The copy is shared while someone holds it; the set keeps it only weakly.
+    std::shared_ptr<const Columns> getSortedSetElements() const;
 
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -188,7 +198,7 @@ private:
     /// This holds the keys in memory. Spilling releases the table and its arena. Spilling while the set is
     /// used changes how the set stores its keys but not which keys it has, so `execute` stays `const`, and
     /// the members that `spillAfterBuild` replaces are `mutable`.
-    mutable std::unique_ptr<SetVariants> data = std::make_unique<SetVariants>();
+    mutable std::unique_ptr<SetVariants> data;
 
     /// They are kept after the build, so the set can spill while it is used.
     SetSpillSettings spill_settings;
@@ -231,6 +241,9 @@ private:
     mutable std::shared_ptr<const PlainRanges> plain_ranges;
     mutable OnceFlag plain_ranges_once;
 
+    mutable std::mutex sorted_set_elements_mutex;
+    mutable std::weak_ptr<const Columns> sorted_set_elements;
+
     /// Protects the keys of the set. `insertFromBlock` takes it exclusively and `execute` shares it; they
     /// run at the same time only for `StorageSet`, whose inserts can run while queries use the set.
     /// Scheduler spills also take it exclusively while building, including explicit-element updates.
@@ -241,7 +254,7 @@ private:
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
-    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder);
+    bool insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder, size_t max_keys, size_t & rows_taken);
     ProcessorMemoryStats getMemoryStatsUnlocked() const;
 
     /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
@@ -251,22 +264,24 @@ private:
     ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
 
     template <typename Method>
-    void insertFromBlockImpl(
+    size_t insertFromBlockImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        size_t max_keys);
 
     template <typename Method, bool has_null_map, bool build_filter>
-    void insertFromBlockImplCase(
+    size_t insertFromBlockImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
         ConstNullMapPtr null_map,
-        ColumnUInt8::Container * out_filter);
+        ColumnUInt8::Container * out_filter,
+        size_t max_keys);
 
     template <typename Method>
     void executeImpl(
@@ -365,7 +380,8 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(
+        const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_, const Set * source_set = nullptr);
 
     [[nodiscard]] size_t size() const { return ordered_set.at(0)->size(); }
 
@@ -437,6 +453,8 @@ private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
+    /// Keeps the sorted copy shared with the source set alive while this index uses it.
+    std::shared_ptr<const Columns> shared_ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.

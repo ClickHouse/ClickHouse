@@ -23,6 +23,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
@@ -117,9 +118,9 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
         const auto & names_offsets = names_array.getOffsets();
         const auto & values_offsets = values_array.getOffsets();
 
-        const size_t names_start = last_row == 0 ? 0 : names_offsets[last_row - 1];
+        const size_t names_start = last_row == 0 ? 0 : names_offsets[static_cast<ssize_t>(last_row) - 1];
         const size_t names_end = names_offsets[last_row];
-        const size_t values_start = last_row == 0 ? 0 : values_offsets[last_row - 1];
+        const size_t values_start = last_row == 0 ? 0 : values_offsets[static_cast<ssize_t>(last_row) - 1];
 
         /// `_headers.name` and `_headers.value` share the Nested prefix `_headers`, so
         /// `NestedElementsValidationTransform` guarantees both arrays have equal sizes here.
@@ -135,8 +136,11 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
         }
     }
 
-    while (!shutdown_called)
+    while (true)
     {
+        if (shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
         try
         {
             producer->produce(builder);
@@ -171,6 +175,8 @@ void KafkaProducer::finish()
         {
             if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
             {
+                if (shutdown_called)
+                    throw Exception(ErrorCodes::ABORTED, "Table is detached");
                 CurrentThread::checkIfNotCancelled();
                 continue;
             }

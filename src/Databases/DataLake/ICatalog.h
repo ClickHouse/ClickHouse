@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SecretString.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
@@ -11,6 +12,7 @@
 #include <Poco/JSON/Object.h>
 
 #include <functional>
+#include <memory>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -81,7 +83,7 @@ public:
     [[nodiscard]] bool hasStorageCredentials() const;
     [[nodiscard]] bool hasDataLakeSpecificProperties() const;
 
-    void setLocation(const std::string & location_);
+    void setLocation(std::string_view location_);
     [[nodiscard]] std::string getLocation() const;
     [[nodiscard]] std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
     [[nodiscard]] std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
@@ -206,7 +208,7 @@ struct CatalogSettings
 {
     String storage_endpoint;
     String aws_access_key_id;
-    String aws_secret_access_key;
+    DB::SecretString aws_secret_access_key;
     String region;
     String aws_role_arn;
     String aws_role_session_name;
@@ -217,7 +219,7 @@ struct CatalogSettings
 
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
-class ICatalog
+class ICatalog : public std::enable_shared_from_this<ICatalog>
 {
 public:
     using Namespaces = std::vector<std::string>;
