@@ -403,10 +403,18 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column)
 
     const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
     WhichDataType nested = array_type ? WhichDataType(array_type->getNestedType()) : WhichDataType(column.type);
-    if (!array_type || !(nested.isFloat32() || nested.isFloat64() || nested.isBFloat16()))
+    const bool is_byte_vector = nested.isInt8() || (nested.isUInt8() && array_type && !isBool(array_type->getNestedType()));
+    if (!array_type || !(nested.isFloat32() || nested.isFloat64() || nested.isBFloat16() || is_byte_vector))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Column {} has a Quantized codec, which is only supported for Array(Float32), Array(Float64) or "
-            "Array(BFloat16) columns, but its type is {}", column.name, column.type->getName());
+            "Column {} has a Quantized codec, which is only supported for Array(Float32), Array(Float64), "
+            "Array(BFloat16), Array(Int8) or Array(UInt8) columns, but its type is {}", column.name, column.type->getName());
+
+    /// Quantizing one-byte elements to one-byte `Int8` codes saves nothing.
+    if (is_byte_vector && (params->method == "int8" || params->method == "prefix_int8"))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Column {} of type {} has a Quantized codec with method '{}', which is not supported for Array(Int8) and "
+            "Array(UInt8) columns", column.name, column.type->getName(),
+            params->method == "int8" ? "int8" : "prefix' with format 'int8");
 
     auto custom_serialization = std::make_shared<SerializationQuantizedVector>(column.type->getDefaultSerialization(), *params);
     column.type->setCustomization(std::make_unique<DataTypeCustomDesc>(nullptr, std::move(custom_serialization)));
