@@ -3,6 +3,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Block.h>
@@ -1098,6 +1099,42 @@ VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntim
 VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
 {
     return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
+}
+
+void collectRuntimeFilterApplications(const ActionsDAG & dag, VectorWithMemoryTracking<RuntimeFilterApplication> & out)
+{
+    for (const auto & dag_node : dag.getNodes())
+    {
+        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base
+            || dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() < 2)
+            continue;
+
+        const auto * key_argument = dag_node.children.front();
+        if (!key_argument->column)
+            continue;
+
+        const auto * key_constant = typeid_cast<const ColumnConst *>(key_argument->column.get());
+        if (!key_constant)
+            continue;
+
+        /// Unwrap the probed expression to its input column, looking through renames and the cast
+        /// to the filter element type.
+        const auto * probed = dag_node.children[1];
+        while (true)
+        {
+            if (probed->type == ActionsDAG::ActionType::ALIAS && !probed->children.empty())
+                probed = probed->children.front();
+            else if (
+                probed->type == ActionsDAG::ActionType::FUNCTION && probed->function_base
+                && (probed->function_base->getName() == "CAST" || probed->function_base->getName() == "_CAST") && !probed->children.empty())
+                probed = probed->children.front();
+            else
+                break;
+        }
+        out.push_back(
+            {.filter_key = String(key_constant->getDataAt(0)),
+             .key_column = probed->type == ActionsDAG::ActionType::INPUT ? probed->result_name : String{}});
+    }
 }
 
 }

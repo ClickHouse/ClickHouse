@@ -17,6 +17,7 @@ namespace DB
 
 class AggregatingStep;
 class JoinStepLogical;
+class JoinActionRef;
 class ReadFromMergeTree;
 
 class FutureSetFromSubquery;
@@ -159,6 +160,10 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// The equal same-typed (left, right) keys `tryPushDownFilter` substitutes over the `JoinStepLogical` at `join_node`,
+/// including those made equal by its equivalence classes of keys, which also span the inner joins below.
+VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> getEquivalentJoinKeys(const QueryPlan::Node & join_node);
+
 /// Fuse a FilterStep directly above an ArrayJoinStep: element-only conjuncts become the ArrayJoinStep's
 /// element filter, applied before expansion so filtered elements are never expanded or replicated.
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
@@ -250,9 +255,16 @@ size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode)
 /// finds the unused columns of the whole plan at once.
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+struct RuntimeFiltersKeptForKeyPath;
+
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
-bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+/// `kept_for_key_path`, if set, receives the filters created for a small probe side, see `RuntimeFiltersKeptForKeyPath`.
+bool tryAddJoinRuntimeFilter(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    VectorWithMemoryTracking<RuntimeFiltersKeptForKeyPath> * kept_for_key_path = nullptr);
 
 /// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution
 /// so that index pruning (MergeTree primary key) on the other side picks them up

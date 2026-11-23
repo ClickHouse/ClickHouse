@@ -21,6 +21,17 @@ namespace DB
 VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
 VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
 
+struct RuntimeFilterApplication
+{
+    String filter_key; /// Value of the label constant: the rendezvous key, random so it cannot collide across plan builds.
+    String key_column; /// The probed input column; empty when the probed key is not a plain column.
+};
+
+/// Collects every `__applyFilter` call in the DAG, unlike `findAppliedRuntimeFilters` also one that is not a conjunct of
+/// the filter or does not probe a bare column. Only FUNCTION nodes count, so a leftover alias whose computation was pushed
+/// further down is ignored.
+void collectRuntimeFilterApplications(const ActionsDAG & dag, VectorWithMemoryTracking<RuntimeFilterApplication> & out);
+
 using NodeSet = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
 using NodeMap = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>;
 
