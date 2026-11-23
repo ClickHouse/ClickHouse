@@ -43,7 +43,8 @@ public:
 
     /// The grants needed by settings that make a table send its data to another place, e.g. the move destination of a queue.
     /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
-    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
+    /// If `own_engine`, also the grants for settings that modify the source files, e.g. `after_processing` of a queue.
+    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes, bool own_engine);
 
     struct Arguments
     {
@@ -177,6 +178,8 @@ public:
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
     AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    /// For `changes` of a table with `engine`: the destinations of every engine, as below, and the source files of `engine` only.
+    AccessRightsElements getExportAccess(const SettingsChanges & changes, const String & engine) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
     AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
