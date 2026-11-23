@@ -161,7 +161,7 @@ Per-table counterpart of the query-level setting of the same name: number of mer
 publishes them in a new snapshot.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
-    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 100, R"(
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Per-table counterpart of the query-level setting of the same name: max number of data files merged by one compaction merge.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
