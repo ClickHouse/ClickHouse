@@ -504,8 +504,7 @@ std::optional<Float64> ColumnStatistics::estimateEqualForAll(const IColumn & val
         return std::nullopt;
 
     const auto basic = stats.find(StatisticsType::Basic);
-    /// `Basic` converts a value to the column type and counts only the column default exactly. An integer, `String`
-    /// or `UUID` of the column's own type converts to itself, so only its default values can get another estimate.
+    /// `Basic` answers only for the column default, and an integer, `String` or `UUID` of the column's type converts to itself.
     const WhichDataType which(values_type);
     const bool only_defaults = (which.isNativeInteger() || which.isString() || which.isUUID())
         && values_type.equals(*removeLowCardinalityAndNullable(stats_desc.data_type));
