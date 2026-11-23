@@ -173,7 +173,7 @@ private:
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
-    static std::mutex reservation_mutex;
+    mutable std::mutex reservation_mutex;
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};
