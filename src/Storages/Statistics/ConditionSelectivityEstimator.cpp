@@ -665,7 +665,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 if (set_for_ranges_is_mutable)
                 {
                     const auto set_ranges = set_for_ranges->getPlainRanges();
-                    chassert(set_ranges);
+                    if (!set_ranges)
+                        return false;
                     target_ranges.emplace(column_name, *set_ranges);
                 }
                 else
