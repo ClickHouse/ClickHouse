@@ -3578,7 +3578,7 @@ public:
             subquery->buildSetInplace(context_);
     }
 
-    String getName() const override { return "TTL_CALC"; }
+    [[nodiscard]] String getName() const override { return "TTL_CALC"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
