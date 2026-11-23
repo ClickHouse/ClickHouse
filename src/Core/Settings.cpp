@@ -7262,7 +7262,7 @@ The setting has no effect on tables in a catalog that writes the metadata files 
 
 The default is the default of the table property `write.metadata.previous-versions-max`, see https://iceberg.apache.org/docs/latest/configuration/.
 )", 0, \
-        {"26.11", std::numeric_limits<UInt64>::max(), 100, "New setting. Writes into Iceberg tables bound the `metadata-log`, which previously grew with every commit."}) \
+        {"26.12", std::numeric_limits<UInt64>::max(), 100, "New setting. Writes into Iceberg tables bound the `metadata-log`, which previously grew with every commit."}) \
     DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
 Data files smaller than this are selected for compaction.
 
