@@ -18,3 +18,7 @@ DESC format(MySQLDump, $$INSERT INTO `t` VALUES (1,_binary 'A\0B');
 $$);
 SELECT c1, hex(c2) FROM format(MySQLDump, $$INSERT INTO `t` VALUES (1,_binary 'A\0B');
 $$);
+
+-- The introducer is case-insensitive, and the quote can follow it with no space.
+SELECT id, hex(b) FROM format(MySQLDump, 'id Int32, b String', $$INSERT INTO `t` VALUES (1,_BINARY 'A\0B'),(2,_Binary'C');
+$$) ORDER BY id;

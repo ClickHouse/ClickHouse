@@ -423,7 +423,7 @@ static void skipFieldDelimiter(ReadBuffer & in)
 
 static void skipBinaryIntroducerIfAny(ReadBuffer & in)
 {
-    if (checkString("_binary", in))
+    if (checkStringCaseInsensitive("_binary", in))
         skipWhitespaceIfAny(in);
 }
 
