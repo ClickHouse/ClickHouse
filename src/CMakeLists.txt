@@ -200,6 +200,11 @@ if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
 
+if (USE_PULSAR)
+    add_subdirectory(Storages/Pulsar/Client/Proto)
+    add_headers_and_sources(dbms Storages/Pulsar/Client)
+endif()
+
 add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
@@ -364,7 +369,7 @@ if (TARGET ch_contrib::azure_sdk)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
-target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::stringzilla)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::heks)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
@@ -607,6 +612,7 @@ endif()
 
 # Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
 add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/Impl/Vortex)
+add_object_library(clickhouse_processors_formats_impl_puffin Processors/Formats/Impl/Puffin)
 
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
@@ -1025,10 +1031,6 @@ if (TARGET ch_contrib::prometheus_protobufs)
     target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
-if (TARGET ch_rust::skim)
-    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(dbms PUBLIC ch_rust::skim)
-endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
     target_link_libraries(dbms PUBLIC ch_contrib::google_cloud_cpp)
@@ -1064,6 +1066,10 @@ endif()
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (USE_PULSAR)
+    target_link_libraries(dbms PRIVATE clickhouse_pulsar_proto)
 endif()
 
 if (TARGET ch_rust::wasmtime)
@@ -1114,6 +1120,15 @@ if (ENABLE_TESTS)
         ch_contrib::lz4)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
+
+    if (USE_PULSAR)
+        target_link_libraries(unit_tests_dbms PRIVATE clickhouse_pulsar_proto)
+    endif()
+
+    # `gtest_memchr_strlen_page_boundary` calls every x86_64 `memchr` / `strlen` tier directly.
+    if (TARGET libllvmlibc_str_test_candidates)
+        target_link_libraries(unit_tests_dbms PRIVATE libllvmlibc_str_test_candidates)
+    endif()
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)

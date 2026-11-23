@@ -1,4 +1,7 @@
 #include <Access/ContextAccess.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
@@ -47,7 +50,7 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        checkSourceAccessForURI(context, type_to_check, *access_object, getFunctionURI());
+        checkSourceAccessForURI(context, type_to_check, *access_object, String(getFunctionURI()));
     }
 }
 
@@ -281,7 +284,8 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
         if (hasDotSegment(path) || path.contains("//"))
             return {};
         /// `url` expands `{}` and splits `|` failover across the whole URI, but the subject escapes them only in the path.
-        if ((decoded.getScheme() + decoded.getAuthority() + decoded.getRawQuery()).find_first_of("{}|") != String::npos)
+        if ((decoded.getScheme() + decoded.getAuthority()).find_first_of("{}|") != String::npos
+            || decoded.getRawQuery().find_first_of("{}|") != std::string_view::npos)
             return {};
         if (source == AccessTypeObjects::Source::S3)
         {
@@ -322,6 +326,32 @@ void ITableFunction::checkSourceAccessForURI(
     if (subject != escaped_subject && !access->isGrantedWithFilter(flags, source_name, escaped_subject))
         subject.clear();
     access->checkAccessWithFilter(flags, source_name, subject);
+}
+
+void ITableFunction::appendNamedArgumentIndexes(
+    const QueryTreeNodePtr & query_node_table_function, VectorWithMemoryTracking<size_t> & result, const Strings & wrapper_names)
+{
+    const auto & arguments = query_node_table_function->as<TableFunctionNode &>().getArguments().getNodes();
+    auto is_wrapper = [&](const FunctionNode * function_node)
+    { return function_node && std::ranges::find(wrapper_names, function_node->getFunctionName()) != wrapper_names.end(); };
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+        if (is_wrapper(arguments[i]->as<FunctionNode>()))
+            result.push_back(i);
+
+    for (size_t i = arguments.size(); i > 0;)
+    {
+        --i;
+        const auto * function_node = arguments[i]->as<FunctionNode>();
+        if (!function_node)
+            break;
+        if (is_wrapper(function_node))
+            continue;
+        const auto & function_arguments = function_node->getArguments().getNodes();
+        if (function_node->getFunctionName() != "equals" || function_arguments.size() != 2 || !function_arguments[0]->as<IdentifierNode>())
+            break;
+        result.push_back(i);
+    }
 }
 
 }
