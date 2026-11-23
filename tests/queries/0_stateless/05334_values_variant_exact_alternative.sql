@@ -38,3 +38,9 @@ DROP TABLE t_variant_values_array;
 DROP TABLE t_variant_values_tuple;
 DROP TABLE t_variant_values_map;
 DROP TABLE t_variant_values_nested;
+
+-- Where no alternative has the exact type of the value, a boolean literal is converted as before, to `true` and not to `1`.
+CREATE TABLE t_variant_values_bool (id UInt8, v Variant(String), a Variant(Array(String))) ENGINE = Memory;
+INSERT INTO t_variant_values_bool VALUES (1, true, [true]), (2, false, [false]);
+SELECT id, v, a FROM t_variant_values_bool ORDER BY id;
+DROP TABLE t_variant_values_bool;

@@ -669,19 +669,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    /// A `Field` does not keep the discriminators of a `Variant` nested in the value, so for a `Variant` column keep
-    /// the evaluated column as well.
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(&type);
-    ColumnPtr value_column;
-    std::pair<Field, DataTypePtr> value_raw;
-    if (variant_type)
-    {
-        auto constant = evaluateConstantExpressionAsColumn(ast, context);
-        value_column = constant.getColumn();
-        value_raw = {constant.getField(), constant.getType()};
-    }
-    else
-        value_raw = evaluateConstantExpression(ast, context);
+    auto value_raw = evaluateConstantExpression(ast, context);
 
     Field & expression_value = value_raw.first;
 
@@ -715,7 +704,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// would put it into the first alternative that accepts it, for example Array(Date) for an Array(UInt64).
     if (type.hasDynamicStructure() || (variant_type && variant_type->tryGetVariantDiscriminator(value_raw.second->getName())))
     {
-        ColumnPtr const_column = value_column ? value_column : value_raw.second->createColumnConst(1, expression_value);
+        /// A `Field` does not keep the discriminators of a `Variant` nested in the value, so for a `Variant` column
+        /// the expression is evaluated as a column. A literal has no nested `Variant`, and a `Field` keeps its `Bool`.
+        ColumnPtr const_column = variant_type && !type.hasDynamicStructure() && !ast->as<ASTLiteral>()
+            ? evaluateConstantExpressionAsColumn(ast, context).getColumn()
+            : value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
