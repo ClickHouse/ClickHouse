@@ -806,11 +806,9 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     if (remote_table_function_ptr)
         return;
 
-    /// A replica that is this server reads `remote_table` from here, whatever `prefer_localhost_replica` says, so that table's
-    /// types are the ones its shard sorts by. Nothing is known about the tables behind the other replicas, and a local table that
-    /// merely shares their name would be unrelated to them. An empty remote database means the replica's default database: the
-    /// query's current database for a local replica (`createLocalPlan` runs the shard query in a copy of this context), and its
-    /// `default_database` for a replica that has one.
+    /// A replica on this server reads `remote_table` here, whatever `prefer_localhost_replica` says; nothing is known about the
+    /// tables of other replicas, even one that shares the name here. An empty remote database is the replica's `default_database`,
+    /// or for a local replica the query's current database (`createLocalPlan` runs the shard query in a copy of this context).
     NameOrderedSet remote_database_names;
     if (cluster->getLocalShardCount() > 0)
         remote_database_names.insert(remote_database.empty() ? local_context->getCurrentDatabase() : remote_database);

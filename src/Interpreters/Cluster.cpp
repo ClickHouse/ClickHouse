@@ -74,12 +74,8 @@ std::optional<Poco::Net::SocketAddress> Cluster::Address::getResolvedAddress() c
 
 bool Cluster::Address::isThisServer(UInt16 clickhouse_port) const
 {
-    /// If there is replica, for which:
-    /// - its port is the same that the server is listening;
-    /// - its host is resolved to set of addresses, one of which is the same as one of addresses of network interfaces of the server machine*;
-    /// then we must go to this shard without any inter-process communication.
-    ///
-    /// * - this criteria is somewhat approximate.
+    /// A replica is this server if its port is the one the server listens on and its host resolves to an address
+    /// of one of this machine's network interfaces (the criterion is approximate).
     if (auto resolved = getResolvedAddress())
         return isLocalAddress(*resolved, clickhouse_port);
     return false;
