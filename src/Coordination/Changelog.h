@@ -779,10 +779,16 @@ private:
     /// Waits for removals of changelogs superseded by `writeAt` at `index`. Terminates if one failed:
     /// appending the rewrite while a superseded changelog may remain would make the changelog inconsistent.
     void waitSupersededChangelogRemovals(const std::vector<ChangelogFileOperationPtr> & removes, uint64_t index);
-    /// Removes retained recovery copies synchronously: during startup cleanup, before `writeAt`
+    /// Retires retained recovery copies synchronously: during startup cleanup, before `writeAt`
     /// rewrites the registered changelog of the range, and before the write thread appends to it. A rewritten changelog can be renamed by a later
     /// rotation, and a stale copy under the old name would compete with it on restart.
+    /// The leftover source of a move is removed. A copy that startup inventoried is detached instead,
+    /// see `detachRetainedChangelogCopy`.
     void removeRetainedChangelogCopies(uint64_t from_log_index, ChangelogFileDescription & registered);
+    /// Moves a recovery copy that startup inventoried into the detached directory of its disk, where
+    /// restart does not look for changelogs. Its contents were never compared with the selected
+    /// changelog, so it can hold entries that the selected one lacks, and is kept for manual recovery.
+    void detachRetainedChangelogCopy(const ChangelogFileDescription & copy);
     /// Removes the retained recovery copies that the entries appended by the current writer supersede:
     /// those of its range and of every later range, and those of the ranges that startup detached,
     /// which are no longer registered in `existing_changelogs`. Called by the write thread before it

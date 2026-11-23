@@ -5164,6 +5164,8 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPrefersHigherPrecedenceMark
     };
     write_log(regular_disk, 2);
     write_log(latest_disk, 1);
+    const auto complete_copy_size = fs::file_size(fs::path(regular.path) / "changelog_1_10.bin");
+    ASSERT_GT(complete_copy_size, fs::file_size(fs::path(latest.path) / "changelog_1_10.bin"));
 
     this->keeper_context->setLogDisk(regular_disk);
     this->keeper_context->setLatestLogDisk(latest_disk);
@@ -5171,14 +5173,34 @@ TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPrefersHigherPrecedenceMark
     ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
     EXPECT_EQ(recovered.getNextEntryIndex(), 2);
     /// The writer appends to the selected copy, so the other copy is stale and is retired: after a
-    /// rotation renames the appended changelog, it could otherwise win on restart.
+    /// rotation renames the appended changelog, it could otherwise win on restart. It holds an entry
+    /// that the selected copy lacks, so it is detached for manual recovery instead of being removed.
     EXPECT_FALSE(regular_disk->existsFile("changelog_1_10.bin"));
     EXPECT_TRUE(latest_disk->existsFile("changelog_1_10.bin"));
+    const auto find_detached_copies = [&]
+    {
+        std::vector<fs::path> copies;
+        for (const auto & dir_entry : fs::recursive_directory_iterator(fs::path(regular.path) / "detached"))
+            if (dir_entry.is_regular_file())
+                copies.push_back(dir_entry.path());
+        return copies;
+    };
+    auto detached_copies = find_detached_copies();
+    ASSERT_EQ(detached_copies.size(), 1);
+    EXPECT_EQ(detached_copies.front().filename(), "changelog_1_10.bin");
+    EXPECT_EQ(fs::file_size(detached_copies.front()), complete_copy_size);
 
-    recovered.compact(10);
+    /// Restart does not look for changelogs in the detached directory.
     recovered.shutdown();
+    DB::Changelog restarted(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(restarted.getNextEntryIndex(), 2);
+
+    restarted.compact(10);
+    restarted.shutdown();
     EXPECT_FALSE(regular_disk->existsFile("changelog_1_10.bin"));
     EXPECT_FALSE(latest_disk->existsFile("changelog_1_10.bin"));
+    EXPECT_EQ(find_detached_copies(), detached_copies);
 }
 
 TYPED_TEST(CoordinationChangelogTest, StartupRecoveryPreservesMarkerlessCopyWhenSelectedCopyIsEmpty)

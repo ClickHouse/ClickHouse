@@ -5580,11 +5580,66 @@ void Changelog::removeRetainedChangelogCopies(uint64_t from_log_index, Changelog
             duplicate->path,
             duplicate->disk->getName(),
             from_log_index);
-        removeKeeperFileIfExists(duplicate->disk, duplicate->path);
+        /// The source of a move that published its destination was validated against it, so it holds
+        /// nothing that the registered changelog lacks. Any other copy was only inventoried at startup,
+        /// where the registered changelog was selected by disk precedence without comparing contents:
+        /// the copy can hold entries that the registered changelog lacks, so it is detached, not removed.
+        if (duplicate->may_be_absent)
+            removeKeeperFileIfExists(duplicate->disk, duplicate->path);
+        else
+            detachRetainedChangelogCopy(*duplicate);
         if (duplicate->recovery_marker_path)
             removeKeeperFileIfExists(duplicate->disk, *duplicate->recovery_marker_path);
     }
     retained_duplicate_changelogs.erase(duplicate_it);
+}
+
+void Changelog::detachRetainedChangelogCopy(const ChangelogFileDescription & copy)
+{
+    const auto & disk = copy.disk;
+    if (!disk->existsFile(copy.path))
+        return;
+
+    /// The copy stays on its own disk: the startup scan skips the detached directory of every disk.
+    const auto detached_folder = fs::path(changelogs_detached_dir) / getCurrentTimestampFolder();
+    disk->createDirectories(detached_folder.generic_string());
+
+    /// Copies of one range on different disks have the same name, and so does the registered changelog
+    /// if it is detached too, so the name alone is not unique.
+    const auto file_name = fs::path(copy.path).filename().string();
+    auto detached_path = (detached_folder / file_name).generic_string();
+    for (size_t suffix = 1; disk->existsFile(detached_path); ++suffix)
+        detached_path = (detached_folder / fmt::format("{}.{}", file_name, suffix)).generic_string();
+
+    LOG_WARNING(
+        log, "Detaching retained recovery copy {} on disk {} to {} instead of removing it", copy.path, disk->getName(), detached_path);
+
+    try
+    {
+        disk->moveFile(copy.path, detached_path);
+    }
+    catch (const DB::Exception & e)
+    {
+        if (e.code() != DB::ErrorCodes::NOT_IMPLEMENTED)
+            throw;
+
+        /// The disk cannot rename a file, so copy it and remove the source. The copy must not stay at
+        /// its path, where restart would find it, so every failure is an error.
+        const auto move_result
+            = moveFileBetweenDisks(disk, copy.path, disk, detached_path, [] { return true; }, log, keeper_context);
+        if (!move_result)
+            throw Exception(
+                ErrorCodes::SYSTEM_ERROR,
+                "Cannot detach retained recovery copy {} on disk {} to {}: the move stopped at stage {}",
+                copy.path,
+                disk->getName(),
+                detached_path,
+                magic_enum::enum_name(move_result.error()));
+        return;
+    }
+
+    syncKeeperParentDirectory(disk, detached_path);
+    syncKeeperParentDirectory(disk, copy.path);
 }
 
 void Changelog::removeRetainedChangelogCopiesSupersededByWriter()
