@@ -54,7 +54,7 @@ public:
         markAsShardLimit();
     }
 
-    const std::optional<SortDescription> & getDistributedTopKCandidateSortDescription() const
+    [[nodiscard]] const std::optional<SortDescription> & getDistributedTopKCandidateSortDescription() const
     {
         return distributed_top_k_candidate_sort_description;
     }
