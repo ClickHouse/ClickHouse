@@ -1,0 +1,18 @@
+path	Source: a.b
+type hint	Source: a.b
+array hint	Source: a
+sub-object	Source: a.b
+combined	Source: a
+prefix inside path	Source: true
+whole document	Source: true
+whole document and path	Source: true
+virtual only	Source: false
+path in WHERE	Source: x
+duplicates	Source: a.b, x
+inside typed path	Source: a
+typed path	Source: a
+overlapping typed path	Source: a.b
+escaped dot, setting off	Source: a%2Eb
+escaped dot, setting on	Source: true
+plain dot, setting on	Source: a.b
+json	a.b, x
