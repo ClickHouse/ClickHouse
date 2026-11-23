@@ -112,9 +112,11 @@ public:
     /// Enables `registerReadRanges`. The readers of a read share `registry`, so a block several of them load is counted
     /// once. A reader is reused only for the tasks of its read, so `registry` doesn't change.
     /// A granule served from the columns cache loads nothing from the part and could not be measured, so the reader stops
-    /// reading from the cache; it still writes to it.
+    /// reading from the cache; it still writes to it. Nothing is enabled once the counting stopped.
     virtual void setReadRangesRegistry(ReadRangesRegistryPtr registry)
     {
+        if (registry->stopped())
+            return;
         chassert(!read_ranges_registry || read_ranges_registry == registry);
         read_ranges_registry = std::move(registry);
         columns_cache_reads_possible = false;

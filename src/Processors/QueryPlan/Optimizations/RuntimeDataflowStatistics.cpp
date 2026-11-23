@@ -88,6 +88,15 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
         return;
     }
 
+    if (counted_ranges_limit_exceeded)
+    {
+        LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "The input is not measured, the statistics only record that");
+        dataflow_cache.update(cache_key, {.total_rows_to_read = total_rows_to_read, .input_not_measured = true});
+        if (undecided_query_key)
+            dataflow_cache.forgetUndecided(undecided_query_key);
+        return;
+    }
+
     auto log_stats = [](const auto & stats, auto type) TSA_REQUIRES(stats.mutex)
     {
         LOG_TEST(

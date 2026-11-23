@@ -1173,6 +1173,8 @@ CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream
 void MergeTreeReaderWide::setReadRangesRegistry(ReadRangesRegistryPtr registry)
 {
     IMergeTreeReader::setReadRangesRegistry(std::move(registry));
+    if (!read_ranges_registry)
+        return;
     /// The streams created later get their sink in `getOrAddStream`.
     streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setRangesReadSink(&getRangesRead(stream_name)); });
 }
@@ -1182,6 +1184,7 @@ void MergeTreeReaderWide::registerReadRanges()
     if (!read_ranges_registry)
         return;
 
+    ReadRangesRegistry::Batch batch;
     std::lock_guard lock(ranges_read_mutex);
     for (auto & [stream_name, stream_ranges] : ranges_read)
     {
@@ -1190,7 +1193,16 @@ void MergeTreeReaderWide::registerReadRanges()
         if (!stream_ranges.read_ranges)
             stream_ranges.read_ranges = &read_ranges_registry->getReadRanges(
                 data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
-        read_ranges_registry->registerRanges(*stream_ranges.read_ranges, stream_ranges.ranges);
+        read_ranges_registry->registerRanges(batch, *stream_ranges.read_ranges, stream_ranges.ranges);
+    }
+    read_ranges_registry->commit(batch);
+
+    if (read_ranges_registry->stopped())
+    {
+        /// The streams created later get no sink either.
+        streams.forEach([](const String &, MergeTreeReaderStream & stream) { stream.setRangesReadSink(nullptr); });
+        ranges_read.clear();
+        read_ranges_registry.reset();
     }
 }
 

@@ -329,6 +329,7 @@ struct QueryPlanOptimizationSettings
     bool automatic_parallel_replicas_ignore_thresholds;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
+    size_t automatic_parallel_replicas_max_counted_ranges;
     float automatic_parallel_replicas_statistics_drift_ratio;
     bool automatic_parallel_replicas_remember_boundary = true;
     UInt64 automatic_parallel_replicas_undecided_retry_after_executions = 0;

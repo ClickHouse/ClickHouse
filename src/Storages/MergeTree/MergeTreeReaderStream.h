@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <base/defines.h>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/Stopwatch.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <mutex>
@@ -23,7 +24,8 @@ class CachedCompressedReadBuffer;
 struct RuntimeDataflowStatisticsBlock;
 
 /// The ranges of the files the readers of a read load, counted into its statistics, each range once however many readers
-/// load it.
+/// load it. The ranges kept for that are reserved from `automatic_parallel_replicas_max_counted_ranges` before the maps
+/// grow; past it, the counting stops and the statistics record that the input was not measured.
 class ReadRangesRegistry
 {
 public:
@@ -36,7 +38,7 @@ public:
         friend class ReadRangesRegistry;
 
         /// The bytes of the ranges not counted yet, which become counted. Clears the ranges.
-        size_t add(CompressedBlockRanges & ranges);
+        size_t add(CompressedBlockRanges & ranges) TSA_REQUIRES(mutex);
 
         std::mutex mutex;
         /// Merged, by their begin.
@@ -46,15 +48,34 @@ public:
     /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
     ReadRanges & getReadRanges(const String & path);
 
-    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet. Clears `ranges`.
-    void registerRanges(ReadRanges & file_ranges, CompressedBlockRanges & ranges);
+    /// What a reader counted from its files since the last `registerReadRanges`, added to the statistics at once.
+    struct Batch
+    {
+        Stopwatch watch;
+        size_t bytes = 0;
+        /// Reserved from the limit and not taken by the ranges yet, released by `commit`.
+        size_t reserved = 0;
+    };
+
+    /// Adds the bytes of `ranges`, which a reader loaded from the file of `file_ranges`, that are not counted yet, to `batch`.
+    /// Clears `ranges`.
+    void registerRanges(Batch & batch, ReadRanges & file_ranges, CompressedBlockRanges & ranges);
+    void commit(const Batch & batch);
+
+    /// Past the limit: nothing is counted any more, and the readers stop collecting the ranges.
+    [[nodiscard]] bool stopped() const;
 
 private:
+    /// Reserves `units` of the limit; past it, stops the counting instead.
+    bool reserve(size_t units);
+
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
 
     std::mutex mutex;
     UnorderedMapWithMemoryTracking<String, ReadRanges> read_ranges_by_path TSA_GUARDED_BY(mutex);
+    /// Given out for the files looked up once the counting stopped, which then take nothing.
+    ReadRanges not_registered;
 };
 
 using ReadRangesRegistryPtr = std::shared_ptr<ReadRangesRegistry>;
