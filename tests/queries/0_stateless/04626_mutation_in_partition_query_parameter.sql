@@ -157,3 +157,34 @@ SET param_lossy_time = '12:00:00.5009';
 ALTER TABLE t_mutation_param_lossy_time64 DROP PARTITION {lossy_time:Time64(4)}; -- { serverError INVALID_PARTITION_VALUE }
 SELECT count() FROM t_mutation_param_lossy_time64;
 DROP TABLE t_mutation_param_lossy_time64;
+
+DROP TABLE IF EXISTS t_mutation_param_lossy_array;
+CREATE TABLE t_mutation_param_lossy_array (ts Array(DateTime64(3, 'UTC')), k UInt8)
+ENGINE = MergeTree PARTITION BY ts ORDER BY k;
+INSERT INTO t_mutation_param_lossy_array VALUES (['2024-01-01 00:00:00.500'], 1);
+
+SET param_lossy_array = '[''2024-01-01 00:00:00.5009'']';
+ALTER TABLE t_mutation_param_lossy_array DROP PARTITION {lossy_array:Array(DateTime64(4, 'UTC'))}; -- { serverError INVALID_PARTITION_VALUE }
+SELECT count() FROM t_mutation_param_lossy_array;
+DROP TABLE t_mutation_param_lossy_array;
+
+DROP TABLE IF EXISTS t_mutation_param_lossy_tuple1;
+CREATE TABLE t_mutation_param_lossy_tuple1 (ts Tuple(DateTime64(3, 'UTC')), k UInt8)
+ENGINE = MergeTree PARTITION BY ts ORDER BY k;
+INSERT INTO t_mutation_param_lossy_tuple1 VALUES (tuple('2024-01-01 00:00:00.500'), 1);
+
+SET param_lossy_tuple1 = '(''2024-01-01 00:00:00.5009'')';
+ALTER TABLE t_mutation_param_lossy_tuple1 DROP PARTITION {lossy_tuple1:Tuple(DateTime64(4, 'UTC'))}; -- { serverError INVALID_PARTITION_VALUE }
+SELECT count() FROM t_mutation_param_lossy_tuple1;
+DROP TABLE t_mutation_param_lossy_tuple1;
+
+DROP TABLE IF EXISTS t_mutation_param_lossy_dynamic;
+CREATE TABLE t_mutation_param_lossy_dynamic (ts DateTime64(3, 'UTC'), k UInt8)
+ENGINE = MergeTree PARTITION BY ts ORDER BY k;
+INSERT INTO t_mutation_param_lossy_dynamic VALUES ('2024-01-01 00:00:00.500', 1);
+
+ALTER TABLE t_mutation_param_lossy_dynamic DROP PARTITION CAST(CAST('2024-01-01 00:00:00.5009', 'DateTime64(4, \'UTC\')'), 'Dynamic'); -- { serverError INVALID_PARTITION_VALUE }
+SELECT count() FROM t_mutation_param_lossy_dynamic;
+ALTER TABLE t_mutation_param_lossy_dynamic DROP PARTITION CAST(CAST('2024-01-01 00:00:00.5000', 'DateTime64(4, \'UTC\')'), 'Dynamic');
+SELECT count() FROM t_mutation_param_lossy_dynamic;
+DROP TABLE t_mutation_param_lossy_dynamic;

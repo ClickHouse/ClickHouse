@@ -11131,6 +11131,22 @@ static std::string_view getDatePartOfDateText(std::string_view text)
     return text;
 }
 
+/// Whether the field is or contains a `Decimal` (also a `DateTime64` or `Time64`) value.
+static bool containsDecimalField(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::Array:
+            return std::ranges::any_of(value.safeGet<Array>(), containsDecimalField);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(value.safeGet<Tuple>(), containsDecimalField);
+        case Field::Types::Map:
+            return std::ranges::any_of(value.safeGet<Map>(), containsDecimalField);
+        default:
+            return Field::isDecimal(value.getType());
+    }
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -11149,16 +11165,14 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
         Field converted = convertFieldToTypeOrThrow(value, *type);
 
         /// A `Decimal`, `DateTime64` or `Time64` value is truncated to the scale of the key, so `.5009` of a
-        /// `DateTime64(4)` value would name the `.500` partition of a `DateTime64(3)` key.
-        if (value_type && !value.isNull())
-        {
-            const WhichDataType which_value(removeLowCardinalityAndNullable(value_type));
-            if ((which_value.isDecimal() || which_value.isDateTime64() || which_value.isTime64())
-                && tryConvertFieldToTypeExact(value, *type, value_type.get()).isNull())
-                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
-                                "Partition value {} of type {} is not a valid value of type {}: it is read as {}",
-                                value, value_type->getName(), type->getName(), converted);
-        }
+        /// `DateTime64(4)` value would name the `.500` partition of a `DateTime64(3)` key. The fields are checked,
+        /// not the type, to also catch such a value in an `Array`, a `Tuple` or a `Dynamic`. Inside an `Array` or
+        /// a `Tuple` only the strict conversion is used: the round trip cannot compare an element parsed from a string.
+        if (containsDecimalField(value)
+            && tryConvertFieldToTypeExact(value, *type, Field::isDecimal(value.getType()) ? value_type.get() : nullptr).isNull())
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Partition value {} of type {} is not a valid value of type {}: it is read as {}",
+                            value, value_type ? value_type->getName() : value.getTypeName(), type->getName(), converted);
 
         return converted;
     }
