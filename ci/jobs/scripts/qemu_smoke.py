@@ -143,7 +143,10 @@ def write_config(config_source, work):
     for name in ("config.xml", "users.xml"):
         shutil.copy(config_source / name, conf / name)
     (conf / "config.d").mkdir()
+    # The filesystem isolation of the default config is turned off: it requires a single-threaded process, and under QEMU
+    # the emulator's own helper thread shows in /proc/self/task, so the server would exit at start-up.
     (conf / "config.d" / "zz_smoke.xml").write_text(f"""<clickhouse>
+    <filesystem_isolation>disabled</filesystem_isolation>
     <logger>
         <level>information</level>
         <log>{work}/log/clickhouse-server.log</log>
