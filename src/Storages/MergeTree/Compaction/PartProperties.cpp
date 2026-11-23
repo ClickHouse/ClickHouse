@@ -94,6 +94,7 @@ PartProperties buildPartProperties(
         .rows = part->rows_count,
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
+        .stores_block_offset_without_block_number = part->storesBlockOffsetWithoutBlockNumber(),
     };
 }
 

@@ -394,7 +394,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_statistics_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
-    extern const MergeTreeSettingsBool apply_patches_on_merge;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
@@ -1011,9 +1010,24 @@ PatchParts MergeTreeData::MutationsSnapshotBase::getPatchesForPart(const DataPar
         return {};
 
     PatchParts res;
+    const bool stores_block_offset_without_block_number = part->storesBlockOffsetWithoutBlockNumber();
+
     for (const auto & patch_part : in_partition->second)
     {
         auto patch_infos = DB::getPatchesForPart(part->info, patch_part);
+
+        /// The patch stores the `_block_offset` of the rows of such part read when it was written.
+        /// `Merge` mode matches rows by `_part_offset`.
+        if (stores_block_offset_without_block_number)
+        {
+            auto block_offset = patch_part->getPatchPartIndex().blockOffsetsAreRowPositions() ? PatchBlockOffset::RowPosition : PatchBlockOffset::Stored;
+            for (auto & patch_info : patch_infos)
+            {
+                if (patch_info.mode != PatchMode::Merge)
+                    patch_info.block_offset = block_offset;
+            }
+        }
+
         std::move(patch_infos.begin(), patch_infos.end(), std::back_inserter(res));
     }
     return res;
@@ -12384,7 +12398,7 @@ void MergeTreeData::optimizeDryRun(
         choice.range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time));
     }
 
-    if ((*getSettings())[MergeTreeSetting::apply_patches_on_merge])
+    if (shouldApplyPatchesOnMerge(choice.range, *getSettings()))
     {
         const auto partition_id = choice.range.front().info.getPartitionId();
         auto all_patch_parts = getPatchPartsVectorForPartition(partition_id);
@@ -14907,6 +14921,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
             .perform_alter_conversions = patch.perform_alter_conversions,
             .sorting_key = std::move(patch.sorting_key),
             .stored_sorting_key_columns = std::move(patch.stored_sorting_key_columns),
+            .block_offset = patch.block_offset,
         });
     }
 
@@ -14941,8 +14956,9 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
 
     /// This metadata depends only on the structure of the patch part.
     /// Patches V2 has information about the names and types of the columns in hash in the partition id.
+    /// The structure hash in the partition id of v2 patches also depends on `blockOffsetsAreRowPositions`.
     auto cache_key = patch_part_index.getFormatVersion() == MergeTreePatchPartsVersion::V1
-        ? getColumnsHashWithTypes(patch_part.getColumnsDescription())
+        ? getColumnsHashWithTypes(patch_part.getColumnsDescription()) + (patch_part_index.blockOffsetsAreRowPositions() ? "-row-positions" : "")
         : getStructureHashOfPatch(patch_part.info.getPartitionId());
 
     std::lock_guard lock(patch_parts_metadata_mutex);
@@ -14956,17 +14972,20 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     patch_metadata.version = patch_part_index.getFormatVersion();
+    patch_metadata.block_offsets_are_row_positions = patch_part_index.blockOffsetsAreRowPositions();
 
     switch (patch_metadata.version)
     {
         case MergeTreePatchPartsVersion::V1:
         {
-            patch_metadata.metadata = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV1(
+                patch_part.getColumnsDescription(), patch_metadata.block_offsets_are_row_positions, local_context);
             break;
         }
         case MergeTreePatchPartsVersion::V2:
         {
-            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), patch_part_index.getSortingKeyDesc(), local_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(
+                patch_part.getColumnsDescription(), patch_part_index.getSortingKeyDesc(), patch_metadata.block_offsets_are_row_positions, local_context);
             break;
         }
     }
@@ -15087,6 +15106,13 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
+    /// The reader returns the row position as `_block_offset` of parts that store `_block_offset` without `_block_number`,
+    /// so the patch is marked (see `PatchPartIndex::blockOffsetsAreRowPositions`). Only if there are such parts, so that
+    /// the patches of other tables are put to the same partitions as by older versions. It is checked before the parts
+    /// to read are taken: no such parts are created while `use_block_offset_only_with_block_number` is enabled.
+    const bool block_offsets_are_row_positions = (*getSettings())[MergeTreeSetting::use_block_offset_only_with_block_number]
+        && std::ranges::any_of(getDataPartsVectorForInternalUsage(), [](const auto & part) { return part->storesBlockOffsetWithoutBlockNumber(); });
+
     MutationsInterpreter interpreter(
         shared_from_this(), metadata_snapshot,
         commands_to_run, query_context, mutation_settings);
@@ -15111,17 +15137,19 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
 
     PatchPartMetadata patch_metadata;
     patch_metadata.version = patch_parts_version;
+    patch_metadata.block_offsets_are_row_positions = block_offsets_are_row_positions;
 
     switch (patch_parts_version)
     {
         case MergeTreePatchPartsVersion::V1:
         {
-            patch_metadata.metadata = DB::getPatchPartMetadataV1(pipeline.getHeader(), query_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV1(pipeline.getHeader(), patch_metadata.block_offsets_are_row_positions, query_context);
             break;
         }
         case MergeTreePatchPartsVersion::V2:
         {
-            patch_metadata.metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), metadata_snapshot->getSortingKey(), query_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(
+                pipeline.getHeader(), metadata_snapshot->getSortingKey(), patch_metadata.block_offsets_are_row_positions, query_context);
             break;
         }
     }

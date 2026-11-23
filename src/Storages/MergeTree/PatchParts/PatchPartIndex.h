@@ -17,6 +17,11 @@ class PatchPartIndex
 {
 public:
     static constexpr UInt8 MAX_SUPPORTED_FORMAT_VERSION = static_cast<UInt8>(MergeTreePatchPartsVersion::V2);
+    /// The serialized index starts with the format version of the patch part. If some flag is set, it starts with
+    /// `SERIALIZATION_VERSION_WITH_FLAGS` instead, followed by the format version and the flags, so that older
+    /// versions, which don't know the flags, refuse to read it.
+    static constexpr UInt8 SERIALIZATION_VERSION_WITH_FLAGS = 2;
+    static_assert(MAX_SUPPORTED_FORMAT_VERSION < SERIALIZATION_VERSION_WITH_FLAGS);
     static constexpr auto FILENAME = "source_parts.dat";
 
     PatchPartIndex(MergeTreePatchPartsVersion format_version_, String sorting_key_desc_);
@@ -32,8 +37,15 @@ public:
 
     /// The table's sorting key the v2 patch was written with, as a one-line formatted text.
     [[nodiscard]] const String & getSortingKeyDesc() const { return sorting_key_desc; }
-    /// Returns an index with the same format version and sorting key but without source parts.
-    [[nodiscard]] PatchPartIndex cloneEmpty() const { return PatchPartIndex(format_version, sorting_key_desc); }
+    /// Whether the patch stores the row position as `_block_offset` of rows of parts that store `_block_offset`
+    /// without `_block_number` (see `IMergeTreeDataPart::storesBlockOffsetWithoutBlockNumber`). True for patches
+    /// written with `use_block_offset_only_with_block_number` while the table has such parts. Patches written by
+    /// older versions store the stored `_block_offset`. Patches with different values are put to different
+    /// partitions, so they are never merged.
+    [[nodiscard]] bool blockOffsetsAreRowPositions() const { return block_offsets_are_row_positions; }
+
+    /// Returns an index with the same format version, sorting key and `blockOffsetsAreRowPositions` but without source parts.
+    [[nodiscard]] PatchPartIndex cloneEmpty() const;
 
     void addSourcePart(const String & name, UInt64 data_version);
 
@@ -47,7 +59,8 @@ public:
         const Block & block,
         UInt64 data_version,
         MergeTreePatchPartsVersion format_version,
-        String sorting_key_desc);
+        String sorting_key_desc,
+        bool block_offsets_are_row_positions);
 
     static PatchPartIndex merge(const DataPartsVector & source_parts);
     void writeBinary(WriteBuffer & out) const;
@@ -69,6 +82,8 @@ private:
     MergeTreePatchPartsVersion format_version = MergeTreePatchPartsVersion::V1;
     /// One-line text of the sorting key the v2 patch was written with.
     String sorting_key_desc;
+    /// Serialized as a flag, see `SERIALIZATION_VERSION_WITH_FLAGS`.
+    bool block_offsets_are_row_positions = false;
 };
 
 /// Returns set with source parts with _part column from block and data_version.

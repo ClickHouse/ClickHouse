@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -49,7 +50,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsBool enable_max_bytes_limit_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
-    extern const MergeTreeSettingsBool apply_patches_on_merge;
 }
 
 namespace
@@ -481,7 +481,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         }
     }
 
-    bool apply_patch_parts = (*data.getSettings())[MergeTreeSetting::apply_patches_on_merge];
+    bool apply_patch_parts = shouldApplyPatchesOnMerge(parts, *data.getSettings());
     auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(parts) : PartsRange{};
 
     LOG_TRACE(log, "Selected {} parts from {} to {}. Will apply {} patch parts", parts.size(), parts.front().name, parts.back().name, patch_parts.size());

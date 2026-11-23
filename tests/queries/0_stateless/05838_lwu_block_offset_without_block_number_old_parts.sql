@@ -47,7 +47,7 @@ UPDATE t_lwu_old_v1 SET v = 'X' WHERE v = 'a';
 -- The patch is applied in `Merge` mode.
 SELECT v FROM t_lwu_old_v1 ORDER BY v;
 
--- The part is rewritten with both columns, the patch stays and is applied in `Join` mode.
+-- The part is rewritten with both columns. The merge applies the patch even with `apply_patches_on_merge = 0`, because it rewrites `_block_offset`.
 OPTIMIZE TABLE t_lwu_old_v1 FINAL;
 SELECT v FROM t_lwu_old_v1 ORDER BY v;
 

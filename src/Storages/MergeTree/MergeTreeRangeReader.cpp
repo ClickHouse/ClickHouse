@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <base/range.h>
 #include <base/scope_guard.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -1037,6 +1038,13 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     part_granule_offset_position = read_sample_block.findPositionByName("_part_granule_offset");
     distance_position = read_sample_block.findPositionByName("_distance");
 
+    if (block_offset_position)
+    {
+        const auto & part_info = *merge_tree_reader->data_part_info_for_read;
+        stores_block_offset_without_block_number = part_info.storesBlockOffsetWithoutBlockNumber();
+        ignores_stored_block_offset = stores_block_offset_without_block_number && part_info.ignoresStoredBlockOffset();
+    }
+
     if (prewhere_info)
     {
         const auto & step = *prewhere_info;
@@ -1336,7 +1344,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-    fillVirtualColumns(result.columns, result);
+    fillVirtualColumns(result.columns, result, /*is_first_step=*/ true);
 
     /// A step that materializes no on-disk column (constant PREWHERE, or a filter over a column
     /// absent from the part) reports no rows read, though the granule sizes taken from the index
@@ -1370,7 +1378,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(
     return result;
 }
 
-void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & result)
+void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & result, bool is_first_step)
 {
     ColumnPtr part_offset_column;
 
@@ -1390,9 +1398,35 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (part_offset_position)
         add_part_offset_column(*part_offset_position);
 
-    /// Column _block_offset is the same as _part_offset if it's not persisted in part.
-    if (block_offset_position)
+    if (block_offset_position && stores_block_offset_without_block_number)
+    {
+        auto & block_offset_column = columns[*block_offset_position];
+        if (!block_offset_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The stored `_block_offset` of part {} was not read",
+                merge_tree_reader->data_part_info_for_read->getPartName());
+
+        if (!part_offset_column)
+            part_offset_column = createPartOffsetColumn(result);
+
+        /// Patches are read and applied after the first reader. Patches written before
+        /// `use_block_offset_only_with_block_number` was enabled are matched with the stored offsets.
+        if (is_first_step)
+        {
+            if (!result.columns_for_patches.has(STORED_BLOCK_OFFSET_FOR_PATCHES))
+                result.columns_for_patches.insert({block_offset_column, BlockOffsetColumn::type, STORED_BLOCK_OFFSET_FOR_PATCHES});
+
+            if (!result.columns_for_patches.has(ROW_POSITION_FOR_PATCHES))
+                result.columns_for_patches.insert({part_offset_column, BlockOffsetColumn::type, ROW_POSITION_FOR_PATCHES});
+        }
+
+        if (ignores_stored_block_offset)
+            block_offset_column = part_offset_column;
+    }
+    else if (block_offset_position)
+    {
+        /// Column _block_offset is the same as _part_offset if it's not persisted in part.
         add_part_offset_column(*block_offset_position);
+    }
 
     if (part_granule_offset_position)
     {
@@ -1646,7 +1680,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
             columns.push_back(std::move(shared_columns[i]));
     }
 
-    fillVirtualColumns(columns, result);
+    fillVirtualColumns(columns, result, /*is_first_step=*/ false);
 
     updatePerformanceCounters(num_rows);
     result.addNumBytesRead(getTotalBytesInColumns(columns));

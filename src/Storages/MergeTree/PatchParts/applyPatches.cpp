@@ -340,6 +340,8 @@ Block getBlockWithSortingKey(const Block & block, const Block & key_columns, con
 struct MergeOnKeyGroup
 {
     const KeyDescription * sorting_key = nullptr;
+    /// Patches matched with different `_block_offset` of the result block are applied in different groups.
+    PatchBlockOffset block_offset = PatchBlockOffset::AsRead;
     std::vector<const Names *> updated_columns;
     std::vector<const Block *> blocks;
 };
@@ -816,13 +818,14 @@ void applyPatchesToBlock(
         /// effective key, so semantically equal keys are pointer-identical here.
         auto group_it = std::ranges::find_if(merge_on_key_groups, [&](const auto & group)
         {
-            return group.sorting_key == patch.sorting_key.get();
+            return group.sorting_key == patch.sorting_key.get() && group.block_offset == patch.block_offset;
         });
 
         if (group_it == merge_on_key_groups.end())
         {
             group_it = merge_on_key_groups.emplace(merge_on_key_groups.end());
             group_it->sorting_key = patch.sorting_key.get();
+            group_it->block_offset = patch.block_offset;
         }
 
         const auto & patch_data = typeid_cast<const PatchMergeOnKeyReadResult &>(*read_result);
@@ -834,7 +837,9 @@ void applyPatchesToBlock(
     /// and is applied directly, without combining with other patches.
     for (const auto & group : merge_on_key_groups)
     {
-        auto merge_on_key_patches = applyPatchesMergeOnKey(result_block, key_columns, group);
+        Block result_block_holder;
+        const auto & result_block_for_group = getBlockForPatchMatching(result_block, group.block_offset, result_block_holder);
+        auto merge_on_key_patches = applyPatchesMergeOnKey(result_block_for_group, key_columns, group);
 
         for (auto & patch_indices : merge_on_key_patches)
         {

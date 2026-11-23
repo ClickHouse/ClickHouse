@@ -29,6 +29,13 @@ PatchPartIndex::PatchPartIndex(MergeTreePatchPartsVersion format_version_, Strin
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description must be empty for v1 patch part. Got: {}", sorting_key_desc);
 }
 
+PatchPartIndex PatchPartIndex::cloneEmpty() const
+{
+    PatchPartIndex res(format_version, sorting_key_desc);
+    res.block_offsets_are_row_positions = block_offsets_are_row_positions;
+    return res;
+}
+
 void PatchPartIndex::addSourcePart(const String & name, UInt64 data_version)
 {
     if (min_max_versions_by_part.contains(name))
@@ -168,7 +175,8 @@ PatchPartIndex PatchPartIndex::build(
     const Block & block,
     UInt64 data_version,
     MergeTreePatchPartsVersion format_version,
-    String sorting_key_)
+    String sorting_key_,
+    bool block_offsets_are_row_positions)
 {
     const auto & column_part_name = block.getByName("_part").column;
     const auto & part_name_lc = assert_cast<const ColumnLowCardinality &>(*column_part_name);
@@ -176,6 +184,7 @@ PatchPartIndex PatchPartIndex::build(
     const auto & part_name_str = assert_cast<const ColumnString &>(*part_name_dict);
 
     PatchPartIndex parts_set(format_version, std::move(sorting_key_));
+    parts_set.block_offsets_are_row_positions = block_offsets_are_row_positions;
 
     for (size_t i = 0; i < part_name_str.size(); ++i)
     {
@@ -195,7 +204,7 @@ PatchPartIndex PatchPartIndex::merge(const DataPartsVector & source_parts)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot patch part indexes from empty vector of source parts");
 
     const auto & first_set = source_parts.front()->getPatchPartIndex();
-    PatchPartIndex merged_set(first_set.format_version, first_set.sorting_key_desc);
+    PatchPartIndex merged_set = first_set.cloneEmpty();
 
     for (const auto & part : source_parts)
     {
@@ -206,6 +215,9 @@ PatchPartIndex PatchPartIndex::merge(const DataPartsVector & source_parts)
 
         if (set.sorting_key_desc != merged_set.sorting_key_desc)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description mismatch in patch part index. Got: {}, expected: {}", set.sorting_key_desc, merged_set.sorting_key_desc);
+
+        if (set.block_offsets_are_row_positions != merged_set.block_offsets_are_row_positions)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch parts {} and {} store different `_block_offset`, but are merged", source_parts.front()->name, part->name);
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
         {
@@ -224,9 +236,32 @@ PatchPartIndex PatchPartIndex::merge(const DataPartsVector & source_parts)
     return merged_set;
 }
 
+namespace
+{
+
+/// Flags of the index serialized with `PatchPartIndex::SERIALIZATION_VERSION_WITH_FLAGS`.
+constexpr UInt64 FLAG_BLOCK_OFFSETS_ARE_ROW_POSITIONS = 1;
+constexpr UInt64 ALL_FLAGS = FLAG_BLOCK_OFFSETS_ARE_ROW_POSITIONS;
+
+}
+
 void PatchPartIndex::writeBinary(WriteBuffer & out) const
 {
-    writeBinaryLittleEndian(static_cast<UInt8>(format_version), out);
+    UInt64 flags = 0;
+    if (block_offsets_are_row_positions)
+        flags |= FLAG_BLOCK_OFFSETS_ARE_ROW_POSITIONS;
+
+    /// Without flags the index is written as by older versions, so that they can read it.
+    if (flags)
+    {
+        writeBinaryLittleEndian(SERIALIZATION_VERSION_WITH_FLAGS, out);
+        writeBinaryLittleEndian(static_cast<UInt8>(format_version), out);
+        writeBinaryLittleEndian(flags, out);
+    }
+    else
+    {
+        writeBinaryLittleEndian(static_cast<UInt8>(format_version), out);
+    }
 
     if (format_version == MergeTreePatchPartsVersion::V2)
     {
@@ -246,8 +281,22 @@ void PatchPartIndex::writeBinary(WriteBuffer & out) const
 PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
 {
     UInt8 read_version = 0;
+    UInt64 flags = 0;
     String read_sorting_key_desc;
     readBinaryLittleEndian(read_version, in);
+
+    if (read_version == SERIALIZATION_VERSION_WITH_FLAGS)
+    {
+        readBinaryLittleEndian(read_version, in);
+        readBinaryLittleEndian(flags, in);
+
+        if (flags & ~ALL_FLAGS)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown flags of PatchPartIndex: {}", flags);
+
+        /// The index is serialized with flags only if some flag is set.
+        if (flags == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "PatchPartIndex is serialized with flags, but no flags are set");
+    }
 
     if (read_version > MAX_SUPPORTED_FORMAT_VERSION)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of PatchPartIndex: {}", std::to_string(read_version));
@@ -257,6 +306,7 @@ PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
         readStringBinary(read_sorting_key_desc, in);
 
     PatchPartIndex res(format_version, std::move(read_sorting_key_desc));
+    res.block_offsets_are_row_positions = flags & FLAG_BLOCK_OFFSETS_ARE_ROW_POSITIONS;
     UInt64 num_parts = 0;
     readBinaryLittleEndian(num_parts, in);
 
@@ -316,7 +366,7 @@ PatchPartIndex buildPatchPartIndex(
         sorting_key_desc = sorting_key_expr_list->formatWithSecretsOneLine();
     }
 
-    return PatchPartIndex::build(block, data_version, patch_metadata.version, std::move(sorting_key_desc));
+    return PatchPartIndex::build(block, data_version, patch_metadata.version, std::move(sorting_key_desc), patch_metadata.block_offsets_are_row_positions);
 }
 
 }
