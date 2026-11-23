@@ -11,7 +11,6 @@ INSERT INTO t1 SELECT number FROM numbers(1000);
 INSERT INTO t2 SELECT number FROM numbers(2);
 
 SET query_plan_optimize_join_order_limit = 16;
-SET enable_analyzer = 1;
 
 SELECT t1.b FROM t0
 LEFT JOIN t1 ON t0.a = t1.b

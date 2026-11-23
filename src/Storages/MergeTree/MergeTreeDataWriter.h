@@ -43,9 +43,21 @@ struct MergeTreeTemporaryPart
     {
         std::unique_ptr<MergedBlockOutputStream> stream;
         MergedBlockOutputStream::Finalizer finalizer;
+        /// Projection whose part this stream wrote; empty when it wrote `part` itself.
+        String projection_name = {};
     };
 
     std::vector<Stream> streams;
+
+    /// Marks of a projection whose stream was finalized, and released, before prewarmCaches() runs.
+    struct ProjectionMarks
+    {
+        String projection_name;
+        PlainMarksByName marks;
+        PlainMarksByName index_marks;
+    };
+
+    std::vector<ProjectionMarks> released_projection_marks;
 
     /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
     /// Empty when the part keeps the block's row order.
@@ -91,6 +103,8 @@ public:
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
+      * `defer_fsync`: do not fsync the part files even if `fsync_after_insert` is enabled,
+      * because the caller will fsync them later, before acknowledging the insert.
       * `txn`, when set, stamps the part's `creation_tid` instead of the context's transaction: an
       * INSERT commits each partition under its own, and for `INSERT ... SELECT` the context's is the SELECT's.
       */
@@ -99,6 +113,7 @@ public:
         StorageMetadataPtr metadata_snapshot,
         ContextPtr context,
         bool may_have_leftover = true,
+        bool defer_fsync = false,
         const MergeTreeTransactionPtr & txn = nullptr);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
@@ -109,7 +124,7 @@ public:
         ContextPtr context,
         bool may_have_leftover = true);
 
-    MergeTreeData::MergingParams::Mode getMergingMode() const
+    [[nodiscard]] MergeTreeData::MergingParams::Mode getMergingMode() const
     {
         return data.merging_params.mode;
     }
@@ -155,6 +170,7 @@ private:
         ContextPtr context,
         UInt64 block_number,
         bool may_have_leftover,
+        bool defer_fsync,
         const MergeTreeTransactionPtr & txn = nullptr);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(

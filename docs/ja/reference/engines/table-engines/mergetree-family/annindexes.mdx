@@ -33,17 +33,13 @@ LIMIT <N>
 これには、利用可能な任意の[距離関数](/ja/reference/functions/regular-functions/distance-functions)を使用できます。
 `<N>` は、返す近傍の数を指定します。
 
-<div id="exact-nearest-neighbor-search">
-  ## 厳密ベクトル検索
-</div>
+## 厳密ベクトル検索 {#exact-nearest-neighbor-search}
 
 厳密ベクトル検索は、上記の SELECT クエリをそのまま実行することで行えます。
 このようなクエリの実行時間は、一般に格納されているベクトルの数、ベクトル要素数 (= 次元) 、およびベクトル要素のビット幅に比例します。
 また、ClickHouse はすべてのベクトルを総当たりでスキャンするため、実行時間はクエリで使用されるスレッド数にも依存します ([max&#95;threads](/ja/reference/settings/session-settings/max-threads#max_threads) 設定を参照) 。
 
-<div id="exact-nearest-neighbor-search-example">
-  ### 例
-</div>
+### 例 {#exact-nearest-neighbor-search-example}
 
 ```sql
 CREATE TABLE tab
@@ -73,13 +69,9 @@ LIMIT 3;
    └────┴─────────┘
 ```
 
-<div id="approximate-nearest-neighbor-search">
-  ## 近似ベクトル検索
-</div>
+## 近似ベクトル検索 {#approximate-nearest-neighbor-search}
 
-<div id="vector-similarity-index">
-  ### ベクトル類似度索引
-</div>
+### ベクトル類似度索引 {#vector-similarity-index}
 
 ClickHouse には、近似ベクトル検索を実行するための特別な「ベクトル類似度」索引が用意されています。
 
@@ -88,9 +80,7 @@ ClickHouse には、近似ベクトル検索を実行するための特別な「
   問題が発生した場合は、[ClickHouse リポジトリ](https://github.com/clickhouse/clickhouse/issues) で issue を登録してください。
 </Note>
 
-<div id="creating-a-vector-similarity-index">
-  #### ベクトル類似度索引の作成
-</div>
+#### ベクトル類似度索引の作成 {#creating-a-vector-similarity-index}
 
 新しいテーブルには、次のようにベクトル類似度索引を作成できます。
 
@@ -214,9 +204,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 
 上記の式では、事前割り当てバッファやcacheなどの実行時データ構造をベクトル類似度索引が確保するために必要な追加メモリは考慮されていません。
 
-<div id="using-a-vector-similarity-index">
-  #### ベクトル類似度索引を使う
-</div>
+#### ベクトル類似度索引を使う {#using-a-vector-similarity-index}
 
 <Note>
   ベクトル類似度索引を使用するには、設定 [compatibility](/ja/reference/settings/session-settings/compatibility#compatibility) を `''` (デフォルト値) にするか、`'25.1'` 以降に設定する必要があります。
@@ -425,9 +413,7 @@ Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
   rescoring なし (`vector_search_with_rescoring = 0`) で実行し、かつ並列レプリカが有効なクエリでは、rescoring にフォールバックする場合があります。
 </Note>
 
-<div id="performance-tuning">
-  #### パフォーマンスチューニング
-</div>
+#### パフォーマンスチューニング {#performance-tuning}
 
 **圧縮の調整**
 
@@ -578,9 +564,7 @@ result = chclient.query(
 この例では、参照ベクトルはバイナリ形式のまま送信され、サーバー上で浮動小数点数の配列として再解釈されます。
 これにより、サーバー側のCPU時間を節約でき、サーバーログや `system.query_log` の肥大化も防げます。
 
-<div id="administration">
-  #### 管理と監視
-</div>
+#### 管理と監視 {#administration}
 
 ベクトル類似度索引のディスク上のサイズは、[system.data&#95;skipping&#95;indices](/ja/reference/system-tables/data_skipping_indices) で確認できます。
 
@@ -598,9 +582,15 @@ WHERE type = 'vector_similarity';
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
-<div id="differences-to-regular-skipping-indexes">
-  #### 通常の スキッピング索引 との違い
-</div>
+#### 削除された行 {#deleted-rows}
+
+ベクトル類似度索引はパーツの書き込み、マージ、またはミューテーション適用時に構築されるため、その後に[論理削除](/ja/reference/statements/delete)で削除された行や、保留中の `ALTER TABLE ... DELETE` ミューテーションによって削除される行は索引に反映されません。
+そのため、こうした行も索引からは候補として返され、読み取り後に除外されます。その結果、クエリが返す行数が `LIMIT N` 行に満たなかったり、残っている行の中の最近傍を取りこぼしたりする可能性があります。
+正しい結果を保証するため、ClickHouse は削除された行を含むパーツではベクトル類似度索引を使用せず、代わりにそれらのパーツを全件読み取ります (完全検索)。
+マージまたはミューテーションによってパーツが書き換えられると (たとえば `OPTIMIZE TABLE ... FINAL` の実行後)、そのパーツでは再び索引が使用されるようになります。
+設定 `apply_deleted_mask = 0` を指定した場合は、論理削除された行もクエリ結果に含まれるため、クエリで `_row_exists` による明示的なフィルタを行わない限り、索引は引き続き使用されます。
+
+#### 通常の スキッピング索引 との違い {#differences-to-regular-skipping-indexes}
 
 通常の [スキッピング索引](/ja/concepts/features/performance/skip-indexes/skipping-indexes) と同様に、ベクトル類似度索引は グラニュール 単位で構築され、各 index block は `GRANULARITY = [N]` 個の グラニュール で構成されます (通常の スキッピング索引 のデフォルトでは `[N]` = 1) 。
 たとえば、table のプライマリインデックスの granularity が 8192 (設定 `index_granularity = 8192`) で、`GRANULARITY = 2` の場合、各 index block には 16384 行が含まれます。
@@ -626,9 +616,7 @@ rescoring を行わない場合、ClickHouse は virtual column `_distance` を�
 一般に、ベクトル類似度索引では大きな `GRANULARITY` を使用し、ベクトル類似度 structure の memory consumption が大きすぎるといった問題がある場合にのみ、より小さい `GRANULARITY` の値を使うことが推奨されます。
 ベクトル類似度索引で `GRANULARITY` が指定されていない場合、デフォルト値は 1 億です。
 
-<div id="approximate-nearest-neighbor-search-example">
-  #### 例
-</div>
+#### 例 {#approximate-nearest-neighbor-search-example}
 
 クエリ:
 
@@ -666,18 +654,14 @@ LIMIT 3;
 * [dbpedia](/ja/get-started/sample-datasets/dbpedia)
 * [hackernews](/ja/get-started/sample-datasets/hacker-news-vector-search)
 
-<div id="vector-search-with-quantized-codecs">
-  ### 量子化コーデックを使用したベクトル検索
-</div>
+### 量子化コーデックを使用したベクトル検索 {#vector-search-with-quantized-codecs}
 
 <ExperimentalBadge />
 
 `Quantized` コーデックを有効にするには、まず `SET enable_quantized_codec = 1` を実行してください。
 問題が発生した場合は、[ClickHouseリポジトリ](https://github.com/clickhouse/clickhouse/issues)で issue を作成してください。
 
-<div id="quantized-codecs-introduction">
-  #### はじめに
-</div>
+#### はじめに {#quantized-codecs-introduction}
 
 [ベクトル類似度索引](#vector-similarity-index)は、グラフを走査して最近傍クエリに応答します。グラフ全体をメモリに保持できる場合、非常に高い性能を発揮します。
 ただし、次の2つの条件により適用範囲が制限されます。
@@ -702,9 +686,7 @@ LIMIT 3;
 * **分散。** 分片化されたクラスターでは、処理が複数のマシンに分散されます。各分片が自身のスライスを並列にスキャンし、コーディネーターがショートリストをマージします。
 * **追加の構築コストなし。** 量子化コードはベクトルの書き込み時に生成されます。構築、調整、再構築が必要な追加の索引はないため、テーブルはデータが書き込まれるとすぐに検索可能になります。
 
-<div id="quantized-codecs-declaring">
-  #### コーデックの適用
-</div>
+#### コーデックの適用 {#quantized-codecs-declaring}
 
 `Array(Float32)` (または `Array(Float64)` / `Array(BFloat16)`) カラムに `Quantized(...)` コーデックを指定します。
 
@@ -722,9 +704,7 @@ ORDER BY ...;
 
 コーデックは後から `ALTER TABLE` で追加または変更することはできません。
 
-<div id="quantized-codecs-methods">
-  #### 量子化方式
-</div>
+#### 量子化方式 {#quantized-codecs-methods}
 
 各量子化方式には、サイズと精度の間で異なるトレードオフがあります。`dimensions` 引数はベクトル長です。
 
@@ -736,9 +716,7 @@ ORDER BY ...;
 
 `rabitq` と `turboquant` では、`dimensions` は 8 の倍数である必要があります。
 
-<div id="quantized-codecs-searching">
-  #### コーデック の使用
-</div>
+#### コーデック の使用 {#quantized-codecs-searching}
 
 通常の上位 `k` クエリ形式では、コーデック が自動的に使用されます ([完全検索](#exact-nearest-neighbor-search)を参照) 。
 
@@ -760,9 +738,7 @@ SETTINGS vector_search_use_quantized_codes = 1;
 乗数を大きくすると、再スコアリングが増える代わりに再現率が向上します。
 デフォルトは `1` (オーバーサンプリングなし) です。良好な再現率を得るには、通常これを (たとえば `10` に) 増やす必要があります。
 
-<div id="approximate-nearest-neighbor-search-qbit">
-  ### 量子化ビット (QBit)
-</div>
+### 量子化ビット (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 厳密ベクトル検索を高速化する一般的な方法の 1 つは、より低精度の [float data type](/ja/reference/data-types/float) を使用することです。
 たとえば、ベクトルを `Array(Float32)` ではなく `Array(BFloat16)` として保存すると、データサイズは半分になり、クエリの実行時間もそれに応じて短くなることが期待されます。
@@ -789,9 +765,7 @@ column_name QBit(element_type, dimension[, stride])
 * `dimension` – 各ベクトルの要素数
 * `stride` – 任意。`dimension` の約数で、次元を `dimension / stride` 個の連続したグループに分割し、それぞれを別々のストリームに格納します。これにより、先頭側の次元だけを対象とする検索では、読み取るストリーム数を減らせます (Matryoshka 埋め込みで有用です)。既定値は `dimension` で、この場合、この型はストライドなしの `QBit` とバイト単位で同一です。詳細は [`QBit` data type page](/ja/reference/data-types/qbit) を参照してください。
 
-<div id="qbit-create">
-  #### `QBit` テーブルの作成とデータの追加
-</div>
+#### `QBit` テーブルの作成とデータの追加 {#qbit-create}
 
 ```sql
 CREATE TABLE fruit_animal (
@@ -809,9 +783,7 @@ INSERT INTO fruit_animal VALUES
     ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<div id="qbit-search">
-  #### `QBit` を使ったベクトル検索
-</div>
+#### `QBit` を使ったベクトル検索 {#qbit-search}
 
 L2距離を使って、単語「lemon」を表すベクトルの最近傍を見つけてみましょう。距離関数の3番目のパラメータでは、ビット単位の精度を指定します。値が大きいほど精度は高くなりますが、そのぶん必要な計算量も増えます。
 
@@ -861,18 +833,14 @@ ORDER BY distance;
 
 12ビットの量子化では、距離を十分に良好に近似しつつ、クエリをより高速に実行できることがわかります。相対的な順序もおおむね保たれており、&#39;apple&#39; が引き続き最も近い一致です。
 
-<div id="qbit-performance">
-  #### パフォーマンスに関する考慮事項
-</div>
+#### パフォーマンスに関する考慮事項 {#qbit-performance}
 
 `QBit` のパフォーマンス上の利点は、精度を下げるほどストレージから読み込むデータ量が減り、I/O 操作が少なくなることにあります。さらに、`QBit` に `Float32` データが含まれている場合、精度パラメーターが 16 以下であれば、計算量の削減によるさらなる効果も得られます。精度パラメーターは、精度と速度のトレードオフを直接左右します。
 
 * **より高い精度** (元のデータ幅に近い) : 結果はより正確になりますが、クエリは遅くなります
 * **より低い精度**: 近似結果になる代わりにクエリが高速化し、メモリ使用量も削減されます
 
-<div id="references">
-  ### 参考資料
-</div>
+### 参考資料 {#references}
 
 ブログ:
 
