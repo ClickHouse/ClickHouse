@@ -93,3 +93,18 @@ If you prefer to connect to a single node in your cluster, you can skip replica 
 For replica set connection, you can set up PrivateLink for MongoDB with either VPC Resource or VPC Endpoint Service. If you go with VPC Resource, you would need to create a `GROUP` resource configuration, plus a `CHILD` resource configuration for each node in the cluster. If you go with VPC Endpoint Service, you would need to create a separate Endpoint Service (and a separate NLB) for each node in the cluster. 
 
 See the [AWS PrivateLink](/integrations/clickpipes/networking/aws-privatelink) documentation for more details. Please reach out to ClickHouse support for assistance.
+
+### Why is the `_peerdb_raw_mirror_*` table so large, and how do I limit it? {#raw-mirror-table-retention}
+
+A CDC ClickPipe first writes change events to a raw table named `_peerdb_raw_mirror_<pipe id>` in the destination database, then normalizes them into the target tables. ClickPipes doesn't truncate this table. Depending on when the pipe was created, the table may have no TTL and keep every event. Check with `SHOW CREATE TABLE`, and add or change the TTL with:
+
+```sql
+ALTER TABLE <db>._peerdb_raw_mirror_<id>
+    MODIFY TTL toDateTime(fromUnixTimestamp64Nano(_peerdb_timestamp)) + INTERVAL 30 DAY;
+```
+
+If the raw table has no partition key, the first TTL pass rewrites existing parts and can cause noticeable background I/O on a large table. Follow its progress in `system.mutations`.
+
+<Warning>
+The TTL is evaluated on wall-clock time and doesn't know the pipe state. If the pipe is paused or stalled for longer than the TTL, events that weren't normalized yet are deleted and never reach the target tables. Choose a retention longer than any planned pause.
+</Warning>

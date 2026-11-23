@@ -27,15 +27,15 @@ Writes are not supported for engine
 -- paimon, synchronous insert: unchanged
 Writes are not supported for engine
 -- plain object storage, globbed path, asynchronous insert that does not wait
-the table is in readonly mode
+Table is in readonly mode
 -- rows queued by it: 0
 -- plain object storage, archive path, asynchronous insert that does not wait
 Write into archive is not supported
 -- plain object storage through a table function, globbed path, asynchronous insert that does not wait
-the table is in readonly mode
+Table is in readonly mode
 -- entries it left in the queue: 0
 -- plain object storage through a cluster table function, globbed path, asynchronous insert that does not wait
-the table is in readonly mode
+Table is in readonly mode
 -- entries it left in the queue: 0
 -- plain object storage, ordinary path: still accepted on the initiator
 -- accepted on the initiator: rc=0 output_lines=0

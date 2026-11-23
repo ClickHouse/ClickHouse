@@ -256,7 +256,8 @@ SinkToStoragePtr StorageObjectStorageCluster::write(
         configuration->update(object_storage, local_context);
 
     return StorageObjectStorage::createSink(
-        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 void StorageObjectStorageCluster::checkInsertIsAllowed(ContextPtr local_context) const
@@ -353,7 +354,7 @@ void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & com
 Pipe StorageObjectStorageCluster::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
-    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+    return configuration->alterPartition(object_storage, commands, std::move(context), catalog, getStorageID());
 }
 
 void StorageObjectStorageCluster::checkAlterPartitionIsPossible(
@@ -390,6 +391,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -403,6 +407,9 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const Sto
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
+    if (query_context->totalsWithoutStorageAccess())
+        return std::nullopt;
+
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
@@ -571,7 +578,9 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         nullptr,
         local_context->getFileProgressCallback(),
         /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        /*skip_object_metadata=*/true,
+        /*with_tags=*/false,
+        format_settings);
 
     if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
     {
@@ -600,17 +609,18 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         iterator,
         std::move(ids_of_hosts),
         /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes],
-        /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()));
+        /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()),
+        local_context->getProcessListElementSafe());
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context](size_t number_of_current_replica, const std::atomic_bool & stop_waiting) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
                 sleepForSeconds(10);
             });
 
-            auto task = task_distributor->getNextTask(number_of_current_replica);
+            auto task = task_distributor->getNextTask(number_of_current_replica, &stop_waiting);
             if (task)
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
             return std::make_shared<ClusterFunctionReadTaskResponse>();

@@ -157,7 +157,7 @@ ${CLICKHOUSE_CLIENT} -q "
 echo '-- plain object storage, globbed path, asynchronous insert that does not wait'
 QID="${CLICKHOUSE_DATABASE}_globs_nowait"
 ${CLICKHOUSE_CLIENT} "${ASYNC_NOWAIT[@]}" --query_id="${QID}" \
-    -q "INSERT INTO t_globs VALUES (1)" 2>&1 | grep -o -m1 'the table is in readonly mode'
+    -q "INSERT INTO t_globs VALUES (1)" 2>&1 | grep -o -m1 'Table is in readonly mode'
 echo "-- rows queued by it: $(queued_rows t_globs "${QID}")"
 
 echo '-- plain object storage, archive path, asynchronous insert that does not wait'
@@ -168,7 +168,7 @@ echo '-- plain object storage through a table function, globbed path, asynchrono
 QID="${CLICKHOUSE_DATABASE}_globs_tf_nowait"
 ${CLICKHOUSE_CLIENT} "${ASYNC_NOWAIT[@]}" --query_id="${QID}" -q \
     "INSERT INTO FUNCTION s3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_tf_*.parquet', 'clickhouse', 'clickhouse', Parquet, 'k UInt64') VALUES (1)" 2>&1 \
-    | grep -o -m1 'the table is in readonly mode'
+    | grep -o -m1 'Table is in readonly mode'
 echo "-- entries it left in the queue: $(queued_now "${QID}")"
 
 # The cluster storage is a carrier of its own, and only an explicit cluster function builds it on the
@@ -177,7 +177,7 @@ echo '-- plain object storage through a cluster table function, globbed path, as
 QID="${CLICKHOUSE_DATABASE}_globs_cluster_nowait"
 ${CLICKHOUSE_CLIENT} "${ASYNC_NOWAIT[@]}" --query_id="${QID}" -q \
     "INSERT INTO FUNCTION s3Cluster('test_shard_localhost', 'http://localhost:11111/test/${CLICKHOUSE_DATABASE}_cl_*.parquet', 'clickhouse', 'clickhouse', Parquet, 'k UInt64') VALUES (1)" 2>&1 \
-    | grep -o -m1 'the table is in readonly mode'
+    | grep -o -m1 'Table is in readonly mode'
 echo "-- entries it left in the queue: $(queued_now "${QID}")"
 
 # The initiator must not start refusing a writable plain object storage table. Asserted positively,

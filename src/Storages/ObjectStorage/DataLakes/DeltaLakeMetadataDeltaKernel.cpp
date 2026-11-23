@@ -229,6 +229,7 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context
     auto snapshot_version = getSnapshotVersion(settings);
     try
     {
+        checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
         return getTableSnapshot(snapshot_version)->getTotalRows();
     }
     catch (...)
@@ -252,6 +253,7 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
     auto snapshot_version = getSnapshotVersion(settings);
     try
     {
+        checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
         return getTableSnapshot(snapshot_version)->getTotalBytes();
     }
     catch (...)
@@ -264,6 +266,9 @@ std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr contex
 
 void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
+    /// The kernel takes the server's identity from the shared connection parameters, whose restriction flag concurrent
+    /// sessions overwrite, so every entrypoint checks the session itself.
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     if (!snapshot_version.has_value())
     {
@@ -291,11 +296,13 @@ DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper, header, format_settings, format_name, context);
 }
 
 std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTableStateSnapshot(ContextPtr context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
 
@@ -305,8 +312,9 @@ std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTable
 }
 
 std::unique_ptr<StorageInMemoryMetadata> DeltaLakeMetadataDeltaKernel::buildStorageMetadataFromState(
-    const DataLakeTableStateSnapshot & state, ContextPtr) const
+    const DataLakeTableStateSnapshot & state, ContextPtr context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     chassert(std::holds_alternative<DeltaLake::TableStateSnapshot>(state));
     const auto & delta_state = std::get<DeltaLake::TableStateSnapshot>(state);
     auto snapshot = getTableSnapshot(static_cast<SnapshotVersion>(delta_state.version));
@@ -329,6 +337,7 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     StorageMetadataPtr storage_metadata_snapshot,
     ContextPtr context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
     logMetadataFiles(context);
 
     FailPointInjection::pauseFailPoint(FailPoints::delta_lake_metadata_iterate_pause);
@@ -352,6 +361,7 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, local_context);
     const auto & settings = local_context->getSettingsRef();
     if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
         start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
@@ -667,6 +677,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     bool supports_subset_of_columns,
     bool /*supports_tuple_elements*/)
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, context);
+
     /// The below code is similar to what can be found in `prepareReadingFromFormat.cpp`,
     /// but is adjusted for delta-lake.
     ReadFromFormatInfo info;
@@ -741,6 +753,8 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             storage_columns,
             delta_schema,
             log);
+        if (result_name_and_type.name != name_and_type.name)
+            info.columns_read_under_other_names.insert(name_and_type.name);
         name_and_type = result_name_and_type;
     }
 
@@ -786,12 +800,19 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
+    /// Build a new description rather than rename in place: the physical name of a column may be the logical name of
+    /// another column that is not renamed yet (`k` renamed to `k_old` under column mapping keeps the physical name `k`),
+    /// and `ColumnsDescription::rename` to an existing name erases the column, under the iteration over the description.
+    ColumnsDescription physical_columns_description;
     for (const auto & column : info.columns_description)
-        info.columns_description.rename(
-            column.name,
-            getPhysicalNameAndType(
-                NameAndTypePair(column.name, column.type), readable_columns_with_subcolumns, physical_names_map, storage_columns, delta_schema, log)
-                .first.name);
+    {
+        ColumnDescription physical_column = column;
+        physical_column.name = getPhysicalNameAndType(
+            NameAndTypePair(column.name, column.type), readable_columns_with_subcolumns, physical_names_map, storage_columns, delta_schema, log)
+            .first.name;
+        physical_columns_description.add(std::move(physical_column));
+    }
+    info.columns_description = std::move(physical_columns_description);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
@@ -820,6 +841,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage_, context);
     checkInsertIsPossible(context);
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
@@ -1001,6 +1023,8 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
+
+    checkSessionMayUseServerIdentityIgnoringSharedFlag(*object_storage, local_context);
 
     /// Columnless CREATE is allowed only to register/attach an existing table (schema read from the
     /// `_delta_log`); a new table needs an explicit schema.
