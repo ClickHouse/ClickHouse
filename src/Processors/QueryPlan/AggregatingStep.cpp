@@ -1729,6 +1729,9 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     /// AggregatingInOrderTransform cannot run the top-K heap.
     if (top_k && has_in_order)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Top-K parameters on an in-order aggregation in a serialized query plan");
+    /// The aggregation of a grouping set gets only that set's keys, fewer than `key_columns` may count.
+    if (top_k && has_grouping_sets)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Top-K parameters on a grouping-sets aggregation in a serialized query plan");
 
     StatsCollectingParams stats_collecting_params(
         stats_key,
