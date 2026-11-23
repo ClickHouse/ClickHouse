@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from shlex import quote
@@ -222,6 +223,16 @@ UNSTABLE_README = (
     "https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/README.md"
     "#unstable-queries-in-a-new-or-changed-test"
 )
+# It also reruns such a test this many times with the tested build on both servers, within this many seconds, and fails
+# when the report would mark a query changed or unstable in RERUN_MIN_FLAGGED reruns, or when in one rerun the two servers
+# read a different number of parts for it and the report would show it as changed.
+CHANGED_TEST_RERUNS = 5
+CHANGED_TEST_RERUN_BUDGET_SEC = 600
+RERUN_MIN_FLAGGED = 2
+# The report's thresholds of a query without a row in `report/thresholds.tsv`, and how much lower it shows a change.
+REPORT_CHANGED_FLOOR = 0.15
+REPORT_UNSTABLE_FLOOR = 0.25
+REPORT_SHOW_MARGIN = 0.05
 # A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
 JOB_START = time.monotonic()
 # Kept free at the end of the job: a dashboard poll in flight at the deadline, the end of a cut
@@ -1443,7 +1454,7 @@ class CHServer:
     # JemallocSample flamegraphs. Must match compare.sh.
     JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
-    def __init__(self, is_left=False, nightly=False, readiness_timeout=60):
+    def __init__(self, is_left=False, nightly=False, readiness_timeout=60, binary=None, path=None):
         if is_left:
             server_port = self.LEFT_SERVER_PORT
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
@@ -1451,7 +1462,6 @@ class CHServer:
             inter_server_port = self.LEFT_SERVER_INTERSERVER_PORT
             http_port = self.LEFT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/left"
-            log_file = f"{serever_path}/server.log"
         else:
             server_port = self.RIGHT_SERVER_PORT
             keeper_port = self.RIGHT_SERVER_KEEPER_PORT
@@ -1459,7 +1469,10 @@ class CHServer:
             inter_server_port = self.RIGHT_SERVER_INTERSERVER_PORT
             http_port = self.RIGHT_SERVER_HTTP_PORT
             serever_path = f"{temp_dir}/perf_wd/right"
-            log_file = f"{serever_path}/server.log"
+        # The side's ports and config, with this server executable and the directory of `db`, `coordination` and the log.
+        binary = binary or f"{serever_path}/clickhouse-server"
+        path = path or serever_path
+        log_file = f"{path}/server.log"
 
         self.log_fd = None
         self.readiness_timeout = readiness_timeout
@@ -1484,12 +1497,12 @@ class CHServer:
         # command line (a documented config override, see Server.cpp) with a
         # distinct port per server, so that shell-script tests can talk to the
         # server over HTTP.
-        self.start_cmd = f"{taskset_prefix}{NO_ASLR_PREFIX}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
-            -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
+        self.start_cmd = f"{taskset_prefix}{NO_ASLR_PREFIX}{binary} --config-file={serever_path}/config/config.xml \
+            -- --path {path}/db --user_files_path {path}/db/user_files \
             --top_level_domains_path {perf_wd}/top_level_domains --tcp_port {server_port} \
             --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
-            --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
+            --keeper_server.storage_path {path}/coordination --zookeeper.node.port {keeper_port} \
             --interserver_http_port {inter_server_port} \
             --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
         # Nightly Arrow Flight tests: a ticket is freed after its `DoGet`, tickets expire after 60 s (default 600 s).
@@ -1560,7 +1573,8 @@ class CHServer:
     @classmethod
     def run_test(
         cls, test_file, runs=None, max_queries=0, pr_number=0, results_path=f"{temp_dir}/perf_wd/", long=False,
-        table_engine=None,
+        table_engine=None, binaries=(f"{perf_left}/clickhouse", f"{perf_right}/clickhouse"), profile_seconds=10,
+        queries_to_run=None, timeout_sec=None,
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -1568,18 +1582,22 @@ class CHServer:
         # requested; by default the adaptive run policy decides the counts.
         runs_arg = f"--runs {runs}" if runs is not None else ""
         timeout_prefix = f"timeout -k 60 {cls.NIGHTLY_TEST_TIMEOUT_SEC} " if long else ""
+        if timeout_sec is not None:
+            timeout_prefix = f"timeout -k 10 {timeout_sec} "
+        # After the test file: the greedy nargs='*' of --queries-to-run would swallow it.
+        queries_arg = f" --queries-to-run {' '.join(map(str, queries_to_run))}" if queries_to_run else ""
         if long:
             print(f"test-start {format_utc_date_time(utc_now())}")
         res, out, err = Shell.get_res_stdout_stderr(
             f"{timeout_prefix}./tests/performance/scripts/perf.py --host localhost localhost \
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
-                --binary {perf_left}/clickhouse {perf_right}/clickhouse \
+                --binary {binaries[0]} {binaries[1]} \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
                 {runs_arg} --max-queries {max_queries} --soft-max-queries \
-                --profile-seconds 10 \
+                --profile-seconds {profile_seconds} \
                 --pr-number {pr_number} \
                 --stop-merges \
-                {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}",
+                {f'--table-engine {table_engine} ' if table_engine else ''}{test_file}{' --long' if long else ''}{queries_arg}",
             verbose=True,
             strip=False,
         )
@@ -2581,10 +2599,237 @@ def find_unstable_queries(workdir, series, test_names, tests_only, skip):
     return sorted(unstable, key=lambda q: (q["test"], q["query_index"]))
 
 
-def changed_tests_gate(info, test_files, workdir, same_build):
+def cleanup_user_files(db_dirs):
+    # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
+    # drop_query only drops tables. Keep the symlinks made in Configure, remove everything else.
+    for db_dir in db_dirs:
+        user_files = Path(db_dir) / "user_files"
+        if not user_files.is_dir():
+            continue
+        for entry in user_files.iterdir():
+            # Dataset files are hardlinked from db_path and must outlive the tests.
+            if (Path(db_path) / "user_files" / entry.name).exists():
+                continue
+            if entry.is_symlink():
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+
+
+def rerun_changed_tests(tests, deadline, pr_number, clear_s3):
+    """Rerun `tests` ({name: query indexes}) up to CHANGED_TEST_RERUNS times each, round-robin, while a rerun fits before
+    `deadline`, with the tested build on both servers, both started from a copy of the tested server's data.
+
+    Returns `({(rerun, test): raw file, or None if the rerun failed}, {(rerun, test, query_index, server): the set of
+    SelectedPartsTotal of its measured runs})`."""
+    rerun_dir = f"{perf_wd}/rerun"
+    estimates = {}
+    if Path(f"{perf_wd}/wall-clock-times.tsv").is_file():
+        for fields in (line.split("\t") for line in Path(f"{perf_wd}/wall-clock-times.tsv").read_text().splitlines()):
+            if len(fields) == 2 and _TSV_FLOAT_RE.fullmatch(fields[1]):
+                estimates[fields[0]] = float(fields[1])
+
+    def fits(test):
+        return time.monotonic() + estimates.get(test, 60) <= deadline
+
+    reruns, parts = {}, {}
+    if not any(map(fits, tests)):
+        return reruns, parts
+    # Like compare.sh's restart, without a shell: `pkill -f` would match the shell's command line and kill it.
+    while subprocess.run(["pkill", "-f", "clickhouse-serv"], check=False).returncode == 0:
+        time.sleep(1)
+    shutil.rmtree(rerun_dir, ignore_errors=True)
+    for side in ("left", "right"):
+        db = f"{rerun_dir}/{side}/db"
+        Shell.check(f"mkdir -p {rerun_dir}/{side}/coordination && cp -al {perf_right}/db {db}", strict=True, verbose=True)
+        # Each server creates its own system tables, as Configure leaves them out of db0.
+        Shell.check(
+            f"rm -rf {db}/preprocessed_configs {db}/data/system {db}/metadata/system {db}/metadata/system.sql {db}/status",
+            strict=True,
+            verbose=True,
+        )
+
+    def clear_object_store():
+        if clear_s3 and not s3_service.clear_write_namespaces():
+            raise RuntimeError("the S3 cleanup before a rerun failed")
+
+    clear_object_store()
+    servers = [
+        CHServer(is_left=True, binary=f"{perf_right}/clickhouse-server", path=f"{rerun_dir}/left"),
+        CHServer(is_left=False, path=f"{rerun_dir}/right"),
+    ]
+    try:
+        for server in servers:
+            if not server.start():
+                raise RuntimeError(f"the {server.name} server for the reruns did not start")
+        failed = set()
+        for rerun in range(CHANGED_TEST_RERUNS):
+            results_path = f"{rerun_dir}/run{rerun}"
+            os.makedirs(results_path, exist_ok=True)
+            for test in sorted(tests):
+                if test in failed or not fits(test):
+                    continue
+                starts = [
+                    Shell.get_output(f'clickhouse-client --port {s.port} --query "SELECT now64(6)"', strict=True)
+                    for s in servers
+                ]
+                CHServer.run_test(
+                    f"./tests/performance/{test}.xml",
+                    max_queries=0,
+                    pr_number=pr_number,
+                    results_path=results_path,
+                    binaries=(f"{perf_right}/clickhouse", f"{perf_right}/clickhouse"),
+                    profile_seconds=0,
+                    queries_to_run=tests[test],
+                    timeout_sec=max(1, math.ceil(deadline - time.monotonic())),
+                )
+                cleanup_user_files([f"{rerun_dir}/{side}/db" for side in ("left", "right")])
+                clear_object_store()
+                raw = f"{results_path}/{test}-raw.tsv"
+                if Path(f"{results_path}/{test}-err.log").exists() or not Path(raw).is_file():
+                    if time.monotonic() >= deadline:
+                        # Cut by the deadline: not a verdict on the test.
+                        return reruns, parts
+                    reruns[rerun, test] = None
+                    failed.add(test)
+                    continue
+                partial = [line.split("\t")[1] for line in Path(raw).read_text().splitlines() if line.startswith("partial\t")]
+                if partial:
+                    # perf.py measures a query that fails on the first server on the other one only.
+                    Path(f"{results_path}/{test}-err.log").write_text(
+                        f"query {', '.join(partial)} failed on the left server of the rerun (rerun/left/server.log in "
+                        "the job's logs) and ran on the right one only\n"
+                    )
+                    reruns[rerun, test] = None
+                    failed.add(test)
+                    continue
+                reruns[rerun, test] = raw
+                for server_index, (server, start) in enumerate(zip(servers, starts)):
+                    Shell.check(f'clickhouse-client --port {server.port} --query "SYSTEM FLUSH LOGS"', strict=True)
+                    rows = Shell.get_output(
+                        f"clickhouse-client --port {server.port} --query "
+                        + quote(
+                            "SELECT query_id, sum(ProfileEvents['SelectedPartsTotal']) FROM system.query_log "
+                            f"WHERE type = 'QueryFinish' AND event_time_microseconds >= '{start}' "
+                            f"AND startsWith(query_id, '{test}.query') GROUP BY query_id FORMAT TSV"
+                        ),
+                        strict=True,
+                    )
+                    for query_id, value in (row.split("\t") for row in rows.splitlines()):
+                        match = re.fullmatch(rf"{re.escape(test)}\.query(\d+)\.run\d+", query_id)
+                        if match:
+                            parts.setdefault((rerun, test, int(match.group(1)), server_index), set()).add(int(value))
+    finally:
+        for server in servers:
+            if hasattr(server, "proc"):
+                server.terminate()
+    return reruns, parts
+
+
+def rerun_statistics(path, left, right):
+    """The report's `(diff, stat_threshold)` of a query with these run times on the two servers (eqmed.sql)."""
+    with open(path, "w", encoding="utf-8") as f:
+        for version, times in enumerate((left, right)):
+            f.writelines(f"test\t0\t0\t{version}\t[{t!r}]\n" for t in times)
+    out = subprocess.run(
+        [
+            "clickhouse-local", "--file", path,
+            "--structure", "test text, query text, run int, version UInt8, metrics Array(float)",
+            "--query", (Path(__file__).resolve().parent / "scripts/perf/eqmed.sql").read_text(),
+            *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS,
+        ],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    fields = out.rstrip("\n").split("\t")
+    # l, r, diff, stat_threshold (one element each: one metric), test, query
+    values = [json.loads(fields[k]) for k in (2, 3)] if len(fields) == 6 else []
+    if [len(v) for v in values] != [1, 1]:
+        raise ValueError(f"unexpected eqmed.sql output: {out!r}")
+    return values[0][0], values[1][0]
+
+
+def rerun_error(log):
+    """The error of a failed rerun in its err log: the first `DB::Exception:` message (the log goes on with its C++
+    stack), else the last line, at most 300 characters."""
+    lines = [line.rstrip() for line in log.splitlines() if line.strip()]
+    for line in lines:
+        if "DB::Exception:" in line:
+            return line[line.index("DB::Exception:"):].removesuffix(" Stack trace:")[:300]
+    return lines[-1].strip()[:300] if lines else "no error output"
+
+
+def find_rerun_unstable_queries(workdir, reruns, parts):
+    """The queries of the reruns (see `rerun_changed_tests`) that the report would mark changed or unstable in
+    RERUN_MIN_FLAGGED reruns, or show as changed in a rerun where the two servers read different numbers of parts, each
+    the same on all runs of the server; and the failed reruns. A dict per entry in (test, query_index) order.
+
+    Raises on a row of `report/thresholds.tsv` of a rerun test that does not parse."""
+    tests = {test for _, test in reruns}
+    path = f"{workdir}/report/thresholds.tsv"
+    with open(path, encoding="utf-8", newline="") as f:
+        rows = list(csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE))
+    if rows[:1] != [["test", "query_index", "changed_threshold", "unstable_threshold", "query_display_name"]]:
+        raise ValueError(f"unexpected header of [{path}]: {rows[:1]!r}")
+    thresholds = {}
+    for fields in rows[2:]:
+        if not fields or fields[0] not in tests:
+            continue
+        if len(fields) != 5 or not _TSV_UINT_RE.fullmatch(fields[1]) or not all(
+            _TSV_FLOAT_RE.fullmatch(fields[k]) for k in (2, 3)
+        ):
+            raise ValueError(f"unexpected row in [{path}]: {fields!r}")
+        thresholds[fields[0], int(fields[1])] = (float(fields[2]), float(fields[3]))
+
+    found, runs = [], {}
+    for (rerun, test), raw in sorted(reruns.items()):
+        if raw is None:
+            err = Path(f"{workdir}/rerun/run{rerun}/{test}-err.log")
+            found.append({"test": test, "rerun": rerun, "error": rerun_error(err.read_text() if err.is_file() else "")})
+            continue
+        with open(raw, encoding="utf-8", newline="") as f:
+            for fields in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+                if fields and fields[0] == "query":
+                    row = _parse_query_run(fields)
+                    if row is None:
+                        raise ValueError(f"unexpected row in [{raw}]: {fields!r}")
+                    runs.setdefault((test, row[0], rerun), ([], []))[row[1]].append(row[3])
+    jobs = {key: times for key, times in runs.items() if all(times)}
+    os.makedirs(f"{workdir}/rerun/stats", exist_ok=True)
+    with ThreadPoolExecutor(os.cpu_count()) as pool:
+        stats = dict(zip(jobs, pool.map(
+            lambda key: rerun_statistics(f"{workdir}/rerun/stats/{key[0]}-{key[1]}-{key[2]}.tsv", *jobs[key]), jobs
+        )))
+
+    for test, query_index in sorted({key[:2] for key in stats}):
+        changed_threshold, unstable_threshold = thresholds.get(
+            (test, query_index), (REPORT_CHANGED_FLOOR, REPORT_UNSTABLE_FLOOR)
+        )
+        judged = []
+        for (t, q, rerun), (diff, stat_threshold) in sorted(stats.items()):
+            if (t, q) != (test, query_index):
+                continue
+            left, right = (parts.get((rerun, test, query_index, server), set()) for server in (0, 1))
+            shown = abs(diff) > changed_threshold - REPORT_SHOW_MARGIN and abs(diff) >= stat_threshold
+            judged.append({
+                "diff": diff,
+                "stat_threshold": stat_threshold,
+                "flagged": (abs(diff) > changed_threshold and abs(diff) >= stat_threshold)
+                or stat_threshold > unstable_threshold,
+                "parts": (min(left), min(right)) if shown and len(left) == len(right) == 1 and left != right else None,
+            })
+        if sum(r["flagged"] for r in judged) >= RERUN_MIN_FLAGGED or any(r["parts"] for r in judged):
+            found.append({"test": test, "query_index": query_index, "reruns": judged,
+                          "changed_threshold": changed_threshold, "unstable_threshold": unstable_threshold})
+    return sorted(found, key=lambda q: (q["test"], q.get("query_index", -1), q.get("rerun", -1)))
+
+
+def changed_tests_gate(info, test_files, workdir, same_build, end=None, needs_s3=False):
     """The checks of the tests this PR adds or changes in this shard: queries whose time keeps growing with each run,
-    and unstable queries. `same_build` is whether the reference is a performance reference build of the sources of the
-    tested master commit.
+    and unstable queries, also when rerun with the tested build on both servers. `same_build` is whether the reference
+    is a performance reference build of the sources of the tested master commit; the reruns end before `end`, and
+    `needs_s3` is whether the job runs the job-local object store.
     Returns `(fail, message suffix, Check Results children)`."""
     changed_files = info.get_changed_files()
     if changed_files is None:
@@ -2599,7 +2844,7 @@ def changed_tests_gate(info, test_files, workdir, same_build):
             for name in test_discovery.changed_tests(changed_files, "./tests/performance/")
             if name in test_files
         }
-        trends, unstable = [], []
+        trends, unstable, rerun_unstable = [], [], []
         if names:
             query_runs = read_query_runs(f"{workdir}/analyze/query-runs.tsv", names)
             trends = find_run_trends(query_runs)
@@ -2608,10 +2853,39 @@ def changed_tests_gate(info, test_files, workdir, same_build):
             unstable = find_unstable_queries(
                 workdir, query_runs, names, tests_only, {(t["test"], t["query_index"]) for t in trends}
             )
+            to_rerun = {}
+            for test in sorted(names):
+                indexes = sorted(q for t, q in query_runs if t == test)
+                if indexes and not Path(f"{workdir}/{test}-err.log").exists():
+                    to_rerun[test] = indexes
+            if to_rerun:
+                deadline = time.monotonic() + CHANGED_TEST_RERUN_BUDGET_SEC
+                reruns, parts = rerun_changed_tests(
+                    to_rerun, deadline if end is None else min(deadline, end), info.pr_number, needs_s3
+                )
+                done = {test: sum(t == test for _, t in reruns) for test in to_rerun}
+                failed_tests = {test for (_, test), raw in reruns.items() if raw is None}
+                short = [
+                    f"{test} {done[test]}/{CHANGED_TEST_RERUNS}"
+                    for test in sorted(to_rerun)
+                    if test not in failed_tests and done[test] < CHANGED_TEST_RERUNS
+                ]
+                if short:
+                    print(f"WARNING: the time budget cut the reruns short: {', '.join(short)}")
+                    info.add_workflow_warning(
+                        f"Performance comparison: the time budget allowed fewer than {CHANGED_TEST_RERUNS} reruns with "
+                        f"the tested build on both servers of: {', '.join(short)}"
+                    )
+                flagged = {(q["test"], q["query_index"]) for q in trends + unstable}
+                rerun_unstable = [
+                    q
+                    for q in (find_rerun_unstable_queries(workdir, reruns, parts) if reruns else [])
+                    if (q["test"], q.get("query_index")) not in flagged
+                ]
     except Exception as e:
         traceback.print_exc()
         return True, f"; could not check the queries of the tests this PR adds or changes: {e}", []
-    if not trends and not unstable:
+    if not trends and not unstable and not rerun_unstable:
         return False, "", []
 
     def series(times):
@@ -2662,6 +2936,44 @@ def changed_tests_gate(info, test_files, workdir, same_build):
             "tests/performance/README.md."
         )
         children.append(Result(name=name, status=Result.Status.FAIL, info=text, links=[UNSTABLE_README]))
+    see_readme = ' See "Unstable queries in a new or changed test" in tests/performance/README.md.'
+    for q in rerun_unstable:
+        if "error" in q:
+            name = f"Test {q['test']} failed when rerun with the tested build on both servers"
+            text = (
+                f"The test ran in this job, but its rerun {q['rerun'] + 1} with the tested build on both servers "
+                f"failed: {q['error'].rstrip('.')}. A rerun runs the test again on the tables the job left on the "
+                "tested server, so its drop queries must drop everything it creates (perf.py runs them before the "
+                "setup too)." + see_readme
+            )
+        elif any(r["parts"] for r in q["reruns"]):
+            name = f"Query {q['test']} #{q['query_index']} reads a different part layout on each server"
+            layouts = [r for r in q["reruns"] if r["parts"]]
+            text = (
+                f"In {len(layouts)} of {len(q['reruns'])} reruns with the tested build on both servers, the servers "
+                "read a different number of parts for the query and the report would show the difference ("
+                + "; ".join(
+                    f"{r['parts'][0]} and {r['parts'][1]} parts, relative difference {r['diff']:+.3f}" for r in layouts
+                )
+                + f"; the report shows a change above {q['changed_threshold'] - REPORT_SHOW_MARGIN:.2f}). The part "
+                "layout the setup leaves depends on timing, for example on merges that run during an INSERT of the "
+                "setup; stop the merges of the table before the INSERT." + see_readme
+            )
+        else:
+            name = f"Query {q['test']} #{q['query_index']} is unstable with the tested build on both servers"
+            text = (
+                f"The job reran the test {len(q['reruns'])} times with the tested build on both servers; in "
+                f"{sum(r['flagged'] for r in q['reruns'])} of them the report would mark the query changed or unstable "
+                f"(the check fails at {RERUN_MIN_FLAGGED}): relative differences "
+                + ", ".join(f"{r['diff']:+.3f}" for r in q["reruns"])
+                + ", randomization thresholds "
+                + ", ".join(f"{r['stat_threshold']:.3f}" for r in q["reruns"])
+                + f" (changed above {q['changed_threshold']:.2f}, unstable above {q['unstable_threshold']:.2f}). Both "
+                "servers ran the same code, so master would flag the query as often. Usually the query runs for a few "
+                "milliseconds or waits for something besides its own work, such as Keeper or the network; make each "
+                "run do more work." + see_readme
+            )
+        children.append(Result(name=name, status=Result.Status.FAIL, info=text, links=[UNSTABLE_README]))
     for child in children:
         print(f"{child.name}: {child.info}")
     suffix = ""
@@ -2671,6 +2983,17 @@ def changed_tests_gate(info, test_files, workdir, same_build):
     if unstable:
         subject = "1 query" if len(unstable) == 1 else f"{len(unstable)} queries"
         suffix += f"; {subject} of the tests this PR adds or changes {'is' if len(unstable) == 1 else 'are'} unstable"
+    rerun_queries = [q for q in rerun_unstable if "error" not in q]
+    if rerun_queries:
+        subject = "1 query" if len(rerun_queries) == 1 else f"{len(rerun_queries)} queries"
+        suffix += (
+            f"; {subject} of the tests this PR adds or changes {'is' if len(rerun_queries) == 1 else 'are'} unstable "
+            "with the tested build on both servers"
+        )
+    rerun_failed = len(rerun_unstable) - len(rerun_queries)
+    if rerun_failed:
+        subject = "1 test" if rerun_failed == 1 else f"{rerun_failed} tests"
+        suffix += f"; {subject} this PR adds or changes failed when rerun with the tested build on both servers"
     return True, suffix, children
 
 
@@ -3818,24 +4141,6 @@ def main():
             for old_result in Path(perf_wd).glob(pattern):
                 old_result.unlink()
 
-        def cleanup_user_files():
-            # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
-            # drop_query only drops tables. Keep the symlinks made in Configure, remove everything else.
-            for server_path in (perf_left, perf_right):
-                user_files = Path(server_path) / "db" / "user_files"
-                if not user_files.is_dir():
-                    continue
-                for entry in user_files.iterdir():
-                    # Dataset files are hardlinked from db_path and must outlive the tests.
-                    if (Path(db_path) / "user_files" / entry.name).exists():
-                        continue
-                    if entry.is_symlink():
-                        continue
-                    if entry.is_dir():
-                        shutil.rmtree(entry)
-                    else:
-                        entry.unlink()
-
         def run_tests():
             last_flush = time.monotonic()
             for test in test_files:
@@ -3847,7 +4152,7 @@ def main():
                     long=nightly,
                     table_engine=TABLE_ENGINE,
                 )
-                cleanup_user_files()
+                cleanup_user_files((f"{perf_left}/db", f"{perf_right}/db"))
                 writes_s3 = TABLE_ENGINE == "iceberg_s3" or (nightly and f"./tests/performance/{test}" in s3_paths)
                 # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
                 if clean and writes_s3 and not s3_service.clear_write_namespaces():
@@ -4251,7 +4556,7 @@ def main():
         changed_tests_children = []
         if compare_against_master and not nightly and not TABLE_ENGINE and info.pr_number > 0 and not info.is_local_run:
             changed_tests_fail, changed_tests_suffix, changed_tests_children = changed_tests_gate(
-                info, test_files, perf_wd, same_build
+                info, test_files, perf_wd, same_build, end, needs_s3
             )
             if changed_tests_fail:
                 status = Result.Status.FAIL
