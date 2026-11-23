@@ -4789,6 +4789,7 @@ CONV_FN(SystemCommand, cmd)
         {CmdType::kFlushAsyncInsertQueue, {"FLUSH ASYNC INSERT QUEUE", true}},
         {CmdType::kSyncFilesystemCache, {"SYNC FILESYSTEM CACHE", true}},
         {CmdType::kDropVectorSimilarityIndexCache, {"DROP VECTOR SIMILARITY INDEX CACHE", true}},
+        {CmdType::kDropSkippingIndexCache, {"DROP SKIPPING INDEX CACHE", true}},
         {CmdType::kUnloadDictionaries, {"UNLOAD DICTIONARIES", true}},
         {CmdType::kDropQueryConditionCache, {"DROP QUERY CONDITION CACHE", true}},
         {CmdType::kIcebergMetadataCache, {"DROP ICEBERG METADATA CACHE", true}},

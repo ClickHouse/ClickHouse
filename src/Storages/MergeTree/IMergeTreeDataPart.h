@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
+#include <Storages/MergeTree/SkippingIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -546,6 +547,7 @@ public:
     IndexPtr tryGetIndex() const;
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
+    void removeFromSkippingIndexCache(SkippingIndexCache * skipping_index_cache) const;
 
     /// The path that identifies the part in the caches shared between tables.
     String getPathForCacheKey() const;

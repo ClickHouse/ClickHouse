@@ -2552,6 +2552,7 @@ message SystemCommand {
         bool flush_async_insert_queue = 59;
         bool sync_filesystem_cache = 60;
         bool drop_vector_similarity_index_cache = 61;
+        bool drop_skipping_index_cache = 128;
         ExprSchemaTable reload_dictionary = 62;
         ExprSchemaTable flush_distributed = 63;
         ExprSchemaTable stop_distributed_sends = 64;

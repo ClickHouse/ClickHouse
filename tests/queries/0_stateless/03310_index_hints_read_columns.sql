@@ -51,14 +51,17 @@ INSERT INTO t_index_hint (a, s) VALUES (1, 'Text with my_token') (2, 'Another te
 
 SYSTEM CLEAR MARK CACHE;
 SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM CLEAR SKIPPING INDEX CACHE;
 SELECT count() FROM t_index_hint WHERE s LIKE '%my_token%' SETTINGS max_threads = 1;
 
 SYSTEM CLEAR MARK CACHE;
 SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM CLEAR SKIPPING INDEX CACHE;
 SELECT count() FROM t_index_hint WHERE has(s_tokens, 'my_token') AND s LIKE '%my_token%' SETTINGS max_threads = 1, force_data_skipping_indices = 'idx_tokens';
 
 SYSTEM CLEAR MARK CACHE;
 SYSTEM CLEAR INDEX MARK CACHE;
+SYSTEM CLEAR SKIPPING INDEX CACHE;
 SELECT count() FROM t_index_hint WHERE indexHint(has(s_tokens, 'my_token')) AND s LIKE '%my_token%' SETTINGS max_threads = 1, force_data_skipping_indices = 'idx_tokens';
 
 SYSTEM FLUSH LOGS query_log;

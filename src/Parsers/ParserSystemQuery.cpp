@@ -305,6 +305,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP INDEX MARK CACHE", Type::CLEAR_INDEX_MARK_CACHE},
             {"DROP INDEX UNCOMPRESSED CACHE", Type::CLEAR_INDEX_UNCOMPRESSED_CACHE},
             {"DROP VECTOR SIMILARITY INDEX CACHE", Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE},
+            {"DROP SKIPPING INDEX CACHE", Type::CLEAR_SKIPPING_INDEX_CACHE},
             {"DROP TEXT INDEX TOKENS CACHE", Type::CLEAR_TEXT_INDEX_TOKENS_CACHE},
             {"DROP TEXT INDEX HEADER CACHE", Type::CLEAR_TEXT_INDEX_HEADER_CACHE},
             {"DROP TEXT INDEX POSTINGS CACHE", Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE},
@@ -1408,6 +1409,10 @@ SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR T
 With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed.
 
 Requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege for all or a single table.
+
+## SYSTEM CLEAR|DROP SKIPPING INDEX CACHE {#drop-skipping-index-cache}
+
+Clears the cache of deserialized data skipping index granules (`bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`).
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
