@@ -24,6 +24,9 @@ node6 = cluster.add_instance("node6", main_configs=["configs/config_for_remote.x
 node8 = cluster.add_instance(
     "node8", main_configs=["configs/config_with_pinned_port.xml"]
 )  # Allows only 127.0.0.1:3306 (port-pinned entry).
+node9 = cluster.add_instance(
+    "node9", main_configs=[], stay_alive=True
+)  # Starts without `remote_url_allow_hosts`; a test adds it and restarts the server.
 
 if not is_arm():
     node7 = cluster.add_instance(
@@ -474,6 +477,56 @@ def test_mysql_dictionary_replica_inherited_port_host_filter(start_cluster):
     )
     assert "not allowed" not in error, f"Filter rejected an allowed replica: {error}"
     node8.query("DROP DICTIONARY IF EXISTS default.test_mysql_own_port")
+
+
+def test_tables_created_before_allowlist_are_loaded(start_cluster):
+    # `remote_url_allow_hosts` is checked when a `PostgreSQL`, `MySQL`, `Redis` or `MongoDB` table is
+    # created. It was also checked when the server loaded the table again at startup, so adding the list
+    # later left every table with a host outside of it impossible to load, list, detach or drop (and a
+    # server that does not start with `async_load_databases = 0`).
+    # None of these databases has to exist: nothing connects to them.
+    tables = {
+        "t_postgresql": "(a Int32) ENGINE = PostgreSQL('127.0.0.99:5432', 'db1', 'tbl1', 'user1', 'pass1')",
+        "t_mysql": "(a Int32) ENGINE = MySQL('127.0.0.99:3306', 'db1', 'tbl1', 'user1', 'pass1')",
+        "t_redis": "(k String, v String) ENGINE = Redis('127.0.0.99:6379') PRIMARY KEY (k)",
+        "t_mongodb": "(a Int32) ENGINE = MongoDB('127.0.0.99:27017', 'db1', 'coll1', 'user1', 'pass1')",
+    }
+    for name, definition in tables.items():
+        node9.query(f"CREATE TABLE {name} {definition}")
+
+    allowlist = "/etc/clickhouse-server/config.d/remote_url_allow_hosts.xml"
+    node9.replace_config(
+        allowlist,
+        "<clickhouse><remote_url_allow_hosts><host>allowed.example.com</host></remote_url_allow_hosts></clickhouse>",
+    )
+    try:
+        node9.restart_clickhouse()
+
+        names = ", ".join(f"'{name}'" for name in tables)
+        assert (
+            node9.query(
+                f"SELECT name FROM system.tables WHERE database = 'default' AND name IN ({names}) ORDER BY name"
+            )
+            == "t_mongodb\nt_mysql\nt_postgresql\nt_redis\n"
+        )
+
+        # A short `ATTACH` reads the definition that the server stored, like the startup does.
+        node9.query("DETACH TABLE t_postgresql")
+        node9.query("ATTACH TABLE t_postgresql")
+
+        # A definition that is brought in now is still checked, also by an `ATTACH` with a full definition.
+        for name, definition in tables.items():
+            assert "not allowed" in node9.query_and_get_error(
+                f"CREATE TABLE {name}_new {definition}"
+            )
+        assert "not allowed" in node9.query_and_get_error(
+            f"ATTACH TABLE t_postgresql_full UUID '00001111-2222-3333-4444-555566667780' {tables['t_postgresql']}"
+        )
+
+        for name in tables:
+            node9.query(f"DROP TABLE {name}")
+    finally:
+        node9.exec_in_container(["rm", "-f", allowlist])
 
 
 def test_table_function_remote(start_cluster):
