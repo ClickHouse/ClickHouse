@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações se aplicam ao servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="s3_allow_server_credentials_for_system_table_disks">
-  ## s3_allow_server_credentials_for_system_table_disks
-</div>
+## s3_allow_server_credentials_for_system_table_disks {#s3_allow_server_credentials_for_system_table_disks}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 
@@ -25,21 +23,23 @@ operador de nuvem ao banco de dados `system`). Ao contrário da configuração d
 no nível do servidor, portanto a isenção também se aplica quando a tabela é recarregada a partir dos metadados na reinicialização. Ela tem escopo restrito ao banco de dados `system`,
 no qual usuários comuns não podem criar tabelas, portanto não flexibiliza a restrição para consultas de usuário.
 
-<div id="s3_credentials_provider_max_cache_size">
-  ## s3_credentials_provider_max_cache_size
-</div>
+Ela se aplica da mesma forma a um `disk(type = azure_blob_storage, ...)` dinâmico: esse disco pode usar a identidade
+Azure do próprio servidor (a workload identity do AKS ou a identidade gerenciada da máquina), apesar da restrição
+`s3_allow_server_credentials_in_user_queries`.
+
+Também disponível pelo alias `allow_server_credentials_for_system_table_disks`, já que também se aplica ao Azure.
+
+## s3_credentials_provider_max_cache_size {#s3_credentials_provider_max_cache_size}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />O número máximo de provedores de credenciais do S3 que podem ser armazenados em cache
 
-<div id="s3_load_table_anonymously_if_credentials_restricted">
-  ## s3_load_table_anonymously_if_credentials_restricted
-</div>
+## s3_load_table_anonymously_if_credentials_restricted {#s3_load_table_anonymously_if_credentials_restricted}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 Controla o que acontece quando uma tabela persistente `S3` ou `S3Queue`, um `disk(type = s3, ...)` dinâmico ou um
 banco de dados `DataLakeCatalog` (Glue, BigLake) é carregado a partir de metadados existentes (inicialização do servidor ou `RESTORE`) e
-sua definição resolveria as credenciais S3/cloud do próprio servidor (ambientais), que são bloqueadas para
+sua definição resolveria as credenciais S3/cloud do próprio servidor (do ambiente), que são bloqueadas para
 consultas de usuário por `s3_allow_server_credentials_in_user_queries`.
 
 Quando habilitado (o padrão), o objeto é carregado sem essas credenciais em vez de abortar a inicialização: uma
@@ -50,18 +50,25 @@ origem permitida. Ele nunca recupera silenciosamente a identidade do servidor. I
 por exemplo, um criado em uma versão mais antiga, antes de a restrição existir, ou um cuja coleção nomeada foi
 posteriormente reassociada a `use_environment_credentials = 1` — aborte a inicialização do servidor.
 
+O mesmo vale para o Azure: uma tabela persistente `AzureBlobStorage` ou `AzureQueue`, ou uma tabela em um
+`disk(type = azure_blob_storage, ...)` dinâmico, cuja definição se autenticaria com a própria identidade Azure do servidor
+(a Workload Identity do AKS ou a identidade gerenciada da máquina) é carregada na inicialização do servidor com um cliente sem
+nenhuma credencial. O `RESTORE` cria tabelas Azure da mesma forma que o `CREATE`, portanto, nesse caso, essa tabela é recusada. Uma tabela em
+um disco Azure dinâmico desse tipo só é carregada se o carregamento não ler nada do Azure, por exemplo, uma tabela `MergeTree` vazia
+com metadados locais; uma tabela com partes de dados, ou um disco com metadados `plain_rewritable`, ainda pode falhar ao ser carregado,
+porque essas requisições também são negadas. Um disco Azure dinâmico criado com
+`s3_allow_server_credentials_in_user_queries` mantém a identidade do servidor e não é afetado.
+
 Quando desabilitado, o carregamento desse tipo de objeto falha, o que pode impedir a inicialização do servidor. Use isso apenas
 se você preferir uma falha explícita a uma tabela, disco ou banco de dados de catálogo silenciosamente inacessível.
 
-<div id="s3_max_redirects">
-  ## s3_max_redirects
-</div>
+Também disponível pelo alias `load_table_anonymously_if_credentials_restricted`, já que também se aplica ao Azure.
+
+## s3_max_redirects {#s3_max_redirects}
 
 <SettingsInfoBlock type="UInt64" default_value="10" changeable_without_restart="No" />Número máximo de redirecionamentos do S3 permitidos.
 
-<div id="s3_retry_attempts">
-  ## s3_retry_attempts
-</div>
+## s3_retry_attempts {#s3_retry_attempts}
 
 <SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Configuração para Aws::Client::RetryStrategy; o Aws::Client faz novas tentativas por conta própria; 0 significa nenhuma nova tentativa
 
