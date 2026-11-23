@@ -78,40 +78,11 @@ static const ExprIn * findInSubquery(const google::protobuf::Message & message)
 void StatementGenerator::injectDistributedShapes(RandomGenerator & rg, google::protobuf::Message & message, const bool in_subquery)
 {
     const google::protobuf::Descriptor * desc = message.GetDescriptor();
-    bool next_in_subquery = in_subquery;
+    const google::protobuf::Reflection * refl = message.GetReflection();
+    const bool is_select_core = desc == SelectStatementCore::descriptor();
 
     checkStackSize();
-    if (desc == SelectStatementCore::descriptor())
-    {
-        SelectStatementCore & core = static_cast<SelectStatementCore &>(message);
-
-        /// The same subquery twice in one query is one set, built once and looked up by every use
-        if (core.has_where() && rg.nextBool())
-        {
-            if (const ExprIn * ein = findInSubquery(core.where()))
-            {
-                Expr copy;
-
-                copy.mutable_comp_expr()->mutable_expr_in()->CopyFrom(*ein);
-                addConjunctToWhere(core, copy);
-            }
-        }
-        /// A constant longer than `optimize_const_name_size` is shipped to the replicas as a `__getScalar` call,
-        /// which changes the hash of the subquery around it. `materialize` keeps the filter from folding away
-        if (rg.nextMediumNumber() < (in_subquery ? 61 : 21))
-        {
-            static const std::vector<uint32_t> lengths = {1, 31, 32, 33, 255, 256, 257, 300, 1000};
-            Expr conjunct;
-
-            conjunct.mutable_lit_val()->set_no_quote_str(
-                fmt::format("materialize(repeat('x', {})) != ''", rg.pickRandomly(lengths)));
-            addConjunctToWhere(core, conjunct);
-        }
-        next_in_subquery = true;
-    }
-
-    const google::protobuf::Reflection * refl = message.GetReflection();
-
+    /// Nested queries first: a subquery copied below must be final, or its copies diverge and are no longer one set
     for (int i = 0; i < desc->field_count(); i++)
     {
         const google::protobuf::FieldDescriptor * field = desc->field(i);
@@ -124,13 +95,40 @@ void StatementGenerator::injectDistributedShapes(RandomGenerator & rg, google::p
         {
             for (int j = 0; j < refl->FieldSize(message, field); j++)
             {
-                injectDistributedShapes(rg, *refl->MutableRepeatedMessage(&message, field, j), next_in_subquery);
+                injectDistributedShapes(rg, *refl->MutableRepeatedMessage(&message, field, j), in_subquery || is_select_core);
             }
         }
         else if (refl->HasField(message, field))
         {
-            injectDistributedShapes(rg, *refl->MutableMessage(&message, field), next_in_subquery);
+            injectDistributedShapes(rg, *refl->MutableMessage(&message, field), in_subquery || is_select_core);
         }
+    }
+    if (!is_select_core)
+    {
+        return;
+    }
+    SelectStatementCore & core = static_cast<SelectStatementCore &>(message);
+
+    /// The same subquery twice in one query is one set, built once and looked up by every use
+    if (core.has_where() && rg.nextBool())
+    {
+        if (const ExprIn * ein = findInSubquery(core.where()))
+        {
+            Expr copy;
+
+            copy.mutable_comp_expr()->mutable_expr_in()->CopyFrom(*ein);
+            addConjunctToWhere(core, copy);
+        }
+    }
+    /// A constant longer than `optimize_const_name_size` is shipped to the replicas as a `__getScalar` call,
+    /// which changes the hash of the subquery around it. `materialize` keeps the filter from folding away
+    if (rg.nextMediumNumber() < (in_subquery ? 61 : 21))
+    {
+        static const std::vector<uint32_t> lengths = {1, 31, 32, 33, 255, 256, 257, 300, 1000};
+        Expr conjunct;
+
+        conjunct.mutable_lit_val()->set_no_quote_str(fmt::format("materialize(repeat('x', {})) != ''", rg.pickRandomly(lengths)));
+        addConjunctToWhere(core, conjunct);
     }
 }
 
@@ -152,6 +150,11 @@ void StatementGenerator::addParallelReplicasSettings(RandomGenerator & rg, Setti
     add("parallel_replicas_for_non_replicated_merge_tree", "1");
     add("parallel_replicas_local_plan", automatic || rg.nextSmallNumber() < 8 ? "1" : "0");
     add("parallel_replicas_min_number_of_rows_per_replica", "0");
+    /// Settings the session may have randomized, each of which turns off what this query targets
+    add("parallel_replicas_mode", "'read_tasks'");
+    add("make_distributed_plan", "0");
+    add("parallel_replicas_for_queries_with_multiple_tables", "1");
+    add("parallel_replicas_allow_in_with_subquery", "1");
     if (automatic)
     {
         add("automatic_parallel_replicas_mode", "1");
