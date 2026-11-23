@@ -1,0 +1,9 @@
+LowCardinality(String)	1
+1
+1
+LowCardinality(String)	1
+LowCardinality(String)	1
+1
+0	a	a	a	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
+1	\N	\N	\N	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
+2	a			LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))

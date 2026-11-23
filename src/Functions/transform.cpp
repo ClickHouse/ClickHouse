@@ -243,13 +243,18 @@ namespace
         }
 
         /// The `LowCardinality` result for a constant default (see `optimize_if_transform_const_strings_to_lowcardinality`).
-        /// The dictionary holds the values of `array_to` and the default, and is built once. Then the mapping runs
-        /// as usual, but with the dictionary indexes in place of the values, instead of inserting every row into a new
-        /// dictionary.
+        /// The mapping runs as usual, but it produces the numbers of the values of `array_to` and of the default instead
+        /// of the values. Then the dictionary is built of the values that the block refers to, instead of inserting
+        /// every row into a new dictionary.
         [[nodiscard]] ColumnPtr executeForLowCardinalityResultImpl(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
             if (arguments.size() != 4)
+                return nullptr;
+
+            /// The default implementation maps the dictionary of a `LowCardinality` argument instead of its rows,
+            /// which is cheaper than mapping every row here.
+            if (arguments[0].type->lowCardinality())
                 return nullptr;
 
             /// The same conversion as in the default implementation for `LowCardinality`.
@@ -275,23 +280,36 @@ namespace
             if (cache->is_empty || !cache->default_column)
                 return nullptr;
 
-            std::call_once(low_cardinality_once_flag, [&] { low_cardinality = buildLowCardinalityResult(low_cardinality_type); });
+            std::call_once(low_cardinality_once_flag, [&] { low_cardinality = buildLowCardinalityResult(); });
 
-            auto indexes = FunctionTransform(low_cardinality->index_cache).executeImpl(args, low_cardinality->index_type, input_rows_count);
-            return ColumnLowCardinality::create(low_cardinality->dictionary, indexes, /*is_shared=*/true);
+            auto value_numbers = FunctionTransform(low_cardinality->index_cache).executeImpl(args, low_cardinality->index_type, input_rows_count);
+            auto mutable_value_numbers = IColumn::mutate(value_numbers->convertToFullColumnIfConst());
+            const auto & values = *low_cardinality->values;
+
+            /// The dictionary gets only the values that the block refers to: a function that takes the result is
+            /// executed over the whole dictionary, and it must not get (and possibly throw on) the other values.
+            switch (low_cardinality->index_type->getTypeId())
+            {
+                case TypeIndex::UInt8:
+                    return createLowCardinalityOfReferencedValues<UInt8>(low_cardinality_type, values, std::move(mutable_value_numbers));
+                case TypeIndex::UInt16:
+                    return createLowCardinalityOfReferencedValues<UInt16>(low_cardinality_type, values, std::move(mutable_value_numbers));
+                default:
+                    return createLowCardinalityOfReferencedValues<UInt32>(low_cardinality_type, values, std::move(mutable_value_numbers));
+            }
         }
 
     private:
         struct LowCardinalityResult
         {
-            /// Shared by the results of all blocks.
-            ColumnPtr dictionary;
-            /// Like `cache`, but maps to the indexes in `dictionary`.
+            /// The values of `array_to` followed by the default, as a column of the dictionary type.
+            ColumnPtr values;
+            /// Like `cache`, but maps to the numbers of the rows of `values`.
             TransformCachePtr index_cache;
             DataTypePtr index_type;
         };
 
-        std::shared_ptr<const LowCardinalityResult> buildLowCardinalityResult(const DataTypeLowCardinality & type) const
+        std::shared_ptr<const LowCardinalityResult> buildLowCardinalityResult() const
         {
             const size_t num_mapped_values = cache->to_column->size();
             auto values = cache->to_column->cloneEmpty();
@@ -299,31 +317,32 @@ namespace
             values->insertRangeFrom(*cache->to_column, 0, num_mapped_values);
             values->insertFrom(*cache->default_column, 0);
 
-            LowCardinalityOfKnownValues known_values(type, *values);
-
             auto result = std::make_shared<LowCardinalityResult>();
-            const size_t dictionary_size = known_values.dictionary->size();
-            if (dictionary_size <= std::numeric_limits<UInt8>::max() + 1)
+            /// The same column holds the numbers of the values and then the indexes of a dictionary, which has
+            /// at most two more values: the default value and NULL.
+            const size_t max_dictionary_size = values->size() + 2;
+            if (max_dictionary_size <= std::numeric_limits<UInt8>::max() + 1)
                 result->index_type = std::make_shared<DataTypeUInt8>();
-            else if (dictionary_size <= std::numeric_limits<UInt16>::max() + 1)
+            else if (max_dictionary_size <= std::numeric_limits<UInt16>::max() + 1)
                 result->index_type = std::make_shared<DataTypeUInt16>();
             else
                 result->index_type = std::make_shared<DataTypeUInt32>();
 
-            auto positions = ColumnUInt64::create();
-            positions->getData().assign(known_values.positions.begin(), known_values.positions.end());
-            auto indexes = castColumn({std::move(positions), std::make_shared<DataTypeUInt64>(), ""}, result->index_type);
+            auto numbers = ColumnUInt64::create();
+            for (size_t i = 0; i < values->size(); ++i)
+                numbers->insertValue(i);
+            auto value_numbers = castColumn({std::move(numbers), std::make_shared<DataTypeUInt64>(), ""}, result->index_type);
 
             auto index_cache = std::make_shared<TransformCache>();
             index_cache->table_num_to_idx = cache->table_num_to_idx;
             index_cache->table_string_to_idx = cache->table_string_to_idx;
             index_cache->table_anything_to_idx = cache->table_anything_to_idx;
             index_cache->from_column = cache->from_column;
-            index_cache->to_column = indexes->cut(0, num_mapped_values);
-            index_cache->default_column = indexes->cut(num_mapped_values, 1);
+            index_cache->to_column = value_numbers->cut(0, num_mapped_values);
+            index_cache->default_column = value_numbers->cut(num_mapped_values, 1);
 
             result->index_cache = std::move(index_cache);
-            result->dictionary = std::move(known_values.dictionary);
+            result->values = std::move(values);
             return result;
         }
 

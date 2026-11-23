@@ -16,7 +16,6 @@
 #include <Columns/IColumn.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <array>
 #include <limits>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -570,22 +569,15 @@ private:
             const auto & value = assert_cast<const ColumnConst &>(*instruction.source).getDataColumn();
             values->insertFrom(*value.convertToFullColumnIfLowCardinality(), 0);
         }
-        LowCardinalityOfKnownValues known_values(*low_cardinality_type, *values);
-
         /// `calculateInserts` leaves `instructions.size()` in the rows where no condition holds, which cannot
         /// happen, as the last instruction is the `else` branch. Map it to the default value anyway.
-        std::array<UInt8, std::numeric_limits<UInt8>::max() + 1> dictionary_index_of_branch{};
-        for (size_t i = 0; i < instructions.size(); ++i)
-            dictionary_index_of_branch[i] = static_cast<UInt8>(known_values.positions[i]);
-        dictionary_index_of_branch[instructions.size()] = static_cast<UInt8>(known_values.dictionary->getDefaultValueIndex());
+        values->insertDefault();
 
-        auto indexes = ColumnUInt8::create(rows, static_cast<UInt8>(instructions.size()));
-        auto & indexes_data = indexes->getData();
-        calculateInserts(instructions, rows, indexes_data);
-        for (auto & index : indexes_data)
-            index = dictionary_index_of_branch[index];
+        auto branches = ColumnUInt8::create(rows, static_cast<UInt8>(instructions.size()));
+        calculateInserts(instructions, rows, branches->getData());
 
-        return ColumnLowCardinality::create(MutableColumnPtr(std::move(known_values.dictionary)), MutableColumnPtr(std::move(indexes)), /*is_shared=*/false);
+        /// The dictionary gets only the branches that are chosen by some row.
+        return createLowCardinalityOfReferencedValues<UInt8>(*low_cardinality_type, *values, std::move(branches));
     }
 
     static void executeInstructions(VectorWithMemoryTracking<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
