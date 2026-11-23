@@ -511,11 +511,27 @@ UInt64 MergeTreeReadTask::estimateNumRows() const
         rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
     }
 
+    const auto & index_granularity = info->data_part_info->getIndexGranularity();
+
+    /// A finished stream stands at the last mark of its range, but keeps the offset in the granule it was reading
+    /// (it is finished early when the reader returns fewer rows than requested), and this offset can exceed
+    /// the rows after that mark. The next read starts the next range from its first row.
+    if (readers_chain.isCurrentRangeFinished())
+    {
+        if (mark_ranges.empty())
+            return rows_to_read;
+
+        size_t next_mark = mark_ranges.front().begin;
+        if (index_granularity.getMarkRows(next_mark) >= rows_to_read)
+            return rows_to_read;
+
+        return index_granularity.countRowsForRows(next_mark, rows_to_read, 0);
+    }
+
     auto unread_rows_in_current_granule = readers_chain.numPendingRowsInCurrentGranule();
     if (unread_rows_in_current_granule >= rows_to_read)
         return rows_to_read;
 
-    const auto & index_granularity = info->data_part_info->getIndexGranularity();
     return index_granularity.countRowsForRows(readers_chain.currentMark(), rows_to_read, readers_chain.numReadRowsInCurrentGranule());
 }
 
