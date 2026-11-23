@@ -9,7 +9,6 @@ add_headers_and_sources(clickhouse_dictionaries "${CMAKE_CURRENT_BINARY_DIR}/gen
 set(LIBCPP_HARDENING_DISABLE_FILES
     HashedDictionary.cpp
     HashedArrayDictionary.cpp
-    RangeHashedDictionary.cpp
 )
 set_property(SOURCE ${LIBCPP_HARDENING_DISABLE_FILES}
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
