@@ -571,6 +571,12 @@ void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANA
     finish(nullptr);
 }
 
+Tables DatabaseWithOwnTablesBase::getAttachedTables() const
+{
+    std::lock_guard lock(mutex);
+    return tables;
+}
+
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
     if (!mayShadowDeferredTable(table_name))
