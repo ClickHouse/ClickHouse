@@ -822,7 +822,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         if (!literal)
         {
             bool not_in_schema = false;
-            std::string_view child_name = useColumnMapperIfNeeded(child, node.name, not_in_schema);
+            std::string_view child_name = useColumnMapperIfNeeded(child, node.getColumnMapperPath(), not_in_schema);
             literal = !not_in_schema
                 && tuple_type_hint->tryGetPositionByName(child_name, options.format.parquet.case_insensitive_column_matching).has_value();
         }
@@ -1358,7 +1358,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     {
         const std::optional<Int64> struct_field_id = getFieldId(*node.element);
         if (struct_field_id && column_mapper->getFieldIdToClickHouseName().contains(*struct_field_id))
-            struct_field_ids[node.name] = std::move(element_field_ids);
+            struct_field_ids[node.getColumnMapperPath()] = std::move(element_field_ids);
     }
 
     if (!node.requested)
@@ -1383,9 +1383,11 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         {
             if (elements[i] != UINT64_MAX)
                 continue;
-            String missing_name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+            const String missing_element = tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1);
+            String missing_name = node.name + "." + missing_element;
+            const String missing_field = node.getColumnMapperPath() + "." + missing_element;
             const DataTypePtr & missing_type = tuple_type_hint->getElement(i);
-            auto missing_column_default = getAbsentFieldDefault(missing_name, missing_name, missing_type);
+            auto missing_column_default = getAbsentFieldDefault(missing_field, missing_field, missing_type);
             /// A map element that is not read is filled with defaults, sized by the offsets of the other one.
             const bool skipped_map_element = node.schema_context == SchemaContext::MapTuple && node.map_element_to_skip == i;
             if (!options.format.parquet.allow_missing_columns && !missing_column_default && !skipped_map_element)

@@ -185,7 +185,7 @@ SELECT count() FROM file('$WORK_DIR/t/data/*.parquet') WHERE _file LIKE 'import%
 SELECT id, b FROM file('$WORK_DIR/t/data/*.parquet') ORDER BY id;
 "
 
-# Two metadata files on top of `V_BOTH`, written the way other engines write them: `n` and `s.z` added with an
+# Two metadata files on top of `V_BOTH`, written the way other engines write them: `n`, `s.z` and `l.d` added with an
 # `initial-default`, with the data files read under that schema (as after their manifest is rewritten under it), and the
 # names of `id` and `b` swapped in the mapping. The JOIN runtime filter must not prune by the manifest bounds of `id`.
 echo 'initial-default'
@@ -206,14 +206,17 @@ schema["schema-id"] = 1
 schema["fields"].append({"id": 13, "name": "n", "type": "int", "required": False, "initial-default": 7})
 next(f for f in schema["fields"] if f["name"] == "s")["type"]["fields"].append(
     {"id": 14, "name": "z", "type": "int", "required": False, "initial-default": 8})
+next(f for f in schema["fields"] if f["name"] == "l")["type"]["element"]["fields"].append(
+    {"id": 15, "name": "d", "type": "int", "required": False, "initial-default": 9})
 metadata["schemas"].append(schema)
 metadata["current-schema-id"] = 1
-metadata["last-column-id"] = 14
+metadata["last-column-id"] = 15
 for snapshot in metadata["snapshots"]:
     snapshot["schema-id"] = 1
 defaults_mapping = copy.deepcopy(mapping)
 defaults_mapping.append({"names": ["n"], "field-id": 13})
 next(f for f in defaults_mapping if f["field-id"] == 3)["fields"].append({"names": ["z"], "field-id": 14})
+next(f for f in defaults_mapping if f["field-id"] == 4)["fields"][0]["fields"].append({"names": ["d"], "field-id": 15})
 metadata["properties"]["schema.name-mapping.default"] = json.dumps(defaults_mapping)
 with open(os.path.join(metadata_dir, "00015-initial-default.metadata.json"), "w") as f:
     json.dump(metadata, f)
@@ -228,7 +231,7 @@ with open(os.path.join(metadata_dir, "00016-swapped.metadata.json"), "w") as f:
 PY
 cd "$WORK_DIR" || exit 1
 $CLICKHOUSE_LOCAL -q "
-SELECT id, n, s.z FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00015-initial-default.metadata.json') ORDER BY id;
+SELECT id, n, s.z, l FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00015-initial-default.metadata.json') ORDER BY id;
 SELECT 'join runtime filter';
 SELECT t.id, t.b FROM icebergLocal('name_mapping_import', SETTINGS iceberg_metadata_file_path = 'metadata/00016-swapped.metadata.json') AS t
 INNER JOIN (SELECT 50 AS k) AS r ON t.id = r.k;
