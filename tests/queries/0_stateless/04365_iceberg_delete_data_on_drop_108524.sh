@@ -58,8 +58,9 @@ ${CLICKHOUSE_CLIENT} --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${TABLE}_new"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_new SYNC"
 
-# Setting on: the latest metadata file at the path is another table's, written by another writer under a name this
-# table used before, and that table keeps its files. Also when this table is a format version 1 one without `table-uuid`.
+# Setting on: the latest metadata file at the path is another table's, with manifests this table cannot read, written by
+# another writer under a name this table used before, and that table keeps its files. Also when this table is a format
+# version 1 one without `table-uuid`.
 for format_version in 2 1; do
     rm -rf "${TABLE_PATH}"
     create_table "SETTINGS iceberg_format_version = ${format_version}"
@@ -76,8 +77,8 @@ for format_version in 2 1; do
     fi
     OWN_METADATA="${TABLE_PATH%/}_own/"
     mkdir -p "${OWN_METADATA}" && mv "${TABLE_PATH}metadata/"*.metadata.json "${OWN_METADATA}"
-    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_other (x Int32) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_use_version_hint = 1"
-    ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE}_other SETTINGS allow_insert_into_iceberg = 1 VALUES (2)"
+    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_other (x Date) ENGINE = IcebergLocal('${TABLE_PATH}') PARTITION BY toRelativeDayNum(x) SETTINGS iceberg_use_version_hint = 1"
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE}_other SETTINGS allow_insert_into_iceberg = 1 VALUES ('2020-01-02')"
     cp "${OWN_METADATA}v1.metadata.json" "${TABLE_PATH}metadata/"
     ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --iceberg_delete_data_on_drop=1 --query "DROP TABLE ${TABLE} SYNC"
     if [ "${format_version}" = 2 ]; then

@@ -155,6 +155,18 @@ ReachableFilesResult collectReachableFiles(
         compression_method,
         persistent_table_components.table_uuid);
 
+    return collectReachableFilesFromRoot(object_storage, persistent_table_components, context, log, version, metadata_path, metadata);
+}
+
+ReachableFilesResult collectReachableFilesFromRoot(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log,
+    Int32 version,
+    const String & metadata_path,
+    const Poco::JSON::Object::Ptr & metadata)
+{
     std::unordered_set<String> reachable;
     const auto & resolver = persistent_table_components.path_resolver;
 

@@ -36,7 +36,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
@@ -2339,8 +2338,10 @@ void IcebergMetadata::drop(
         /// Not read through the cache either, for the same reason.
         auto uncached_components = persistent_components;
         uncached_components.metadata_cache = nullptr;
-        auto reachable = Iceberg::collectReachableFiles(
-            object_storage, uncached_components, *data_lake_settings, context, log, catalog, storage_id.getTableName());
+        const auto latest = getLatestMetadataFileAndVersionWithCatalog(
+            object_storage, catalog, storage_id.getTableName(), persistent_components.table_path, *data_lake_settings,
+            /* metadata_cache */ nullptr, context, log.get(), persistent_components.table_uuid,
+            persistent_components.metadata_compression_method, /* ignore_metadata_pointer_overrides */ true);
 
         auto read_metadata = [&](const String & path)
         {
@@ -2348,21 +2349,23 @@ void IcebergMetadata::drop(
                 path, object_storage, /* metadata_cache */ nullptr, context, log,
                 getCompressionMethodFromMetadataFile(path), persistent_components.table_uuid);
         };
-        auto root = read_metadata(reachable.metadata_path);
+        auto root = read_metadata(latest.path);
         std::optional<String> root_uuid;
         if (root->has(Iceberg::f_table_uuid))
             root_uuid = normalizeUuid(root->getValue<String>(Iceberg::f_table_uuid));
-        /// The latest metadata file at a location shared with other tables can be theirs.
+        /// The latest metadata file at a location shared with other tables can be theirs, with manifests this table can fail to read.
         if (!catalog && root_uuid != persistent_components.table_uuid)
         {
             LOG_WARNING(
                 log,
                 "Keeping the files of the Iceberg table at '{}': its latest metadata file '{}' belongs to another table",
                 persistent_components.table_path,
-                reachable.metadata_path);
+                latest.path);
             dropFromCatalog(context, catalog, storage_id);
             return;
         }
+        auto reachable = Iceberg::collectReachableFilesFromRoot(
+            object_storage, uncached_components, context, log, latest.version, latest.path, root);
         /// `metadata-log` can miss versions of the table, e.g. the one written by `CREATE`.
         bool other_metadata = false;
         for (const auto & path : listFiles(*object_storage, persistent_components.table_path, "metadata", ".metadata.json"))
@@ -2390,14 +2393,9 @@ void IcebergMetadata::drop(
     const auto & files = *files_to_drop;
 
     /// Everything but the data files goes after the catalog drop: a retried DROP resolves the table from it.
-    std::vector<String> metadata_files;
     for (const auto & file : files)
-    {
         if (data_files_to_drop.contains(file))
             remove_object(file, "data", /* after_catalog_drop */ false, FailPoints::iceberg_drop_first_data_delete_fail);
-        else
-            metadata_files.push_back(file);
-    }
 
     if (should_swallow(/* after_catalog_drop */ false))
     {
@@ -2416,8 +2414,9 @@ void IcebergMetadata::drop(
     else
         dropFromCatalog(context, catalog, storage_id);
 
-    for (const auto & file : metadata_files)
-        remove_object(file, "metadata", /* after_catalog_drop */ true, FailPoints::iceberg_drop_metadata_anchor_fail);
+    for (const auto & file : files)
+        if (!data_files_to_drop.contains(file))
+            remove_object(file, "metadata", /* after_catalog_drop */ true, FailPoints::iceberg_drop_metadata_anchor_fail);
 }
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_info) const

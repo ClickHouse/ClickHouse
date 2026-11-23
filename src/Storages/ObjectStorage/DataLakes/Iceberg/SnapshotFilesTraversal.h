@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
 
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -65,6 +66,16 @@ ReachableFilesResult collectReachableFiles(
     LoggerPtr log,
     const std::shared_ptr<DataLake::ICatalog> & catalog = nullptr,
     const String & table_identifier = {});
+
+/// The same, rooted at the given metadata file.
+ReachableFilesResult collectReachableFilesFromRoot(
+    ObjectStoragePtr object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log,
+    Int32 version,
+    const String & metadata_path,
+    const Poco::JSON::Object::Ptr & metadata);
 
 }
 
