@@ -8,6 +8,8 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
+from helpers.config_manager import ConfigManager
 from helpers.mock_servers import start_mock_servers, start_s3_mock
 from helpers.test_tools import assert_eq_with_retry
 from helpers.utility import generate_values, replace_config
@@ -32,6 +34,7 @@ def cluster():
                 "configs/config.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
+                "configs/config.d/allowed_disks_for_table_engines.xml",
             ],
             user_configs=[
                 "configs/config.d/users.xml",
@@ -1601,3 +1604,36 @@ def test_no_object_storage_read_when_evicting_index_marks(cluster):
         )
         == 0
     )
+
+
+def test_data_lake_named_custom_disk_remote_host_filter(cluster):
+    node = cluster.instances["node"]
+    named_disk = (
+        "disk(name = 'old_s3', type = 's3', endpoint = 'http://minio1:9001/root/data/old_s3/', "
+        f"access_key_id = 'minio', secret_access_key = '{minio_secret_key}')"
+    )
+    node.query(
+        f"CREATE TABLE t_old_s3 (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {named_disk}"
+    )
+    node.query("INSERT INTO t_old_s3 VALUES (1)")
+
+    queries = [
+        "CREATE TABLE t_lake_disk (x Int64) ENGINE = Iceberg(path = 'lake_disk', format = Parquet) "
+        "SETTINGS disk = '{}'",
+        "SELECT * FROM icebergS3('lake_disk', 'Parquet', 'x Int64', SETTINGS disk = '{}')",
+    ]
+
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
+
+        for query in queries:
+            # `allowed_disks_for_table_engines` allows the name of a custom disk built before the list was tightened.
+            error = node.query_and_get_error(query.format("old_s3"))
+            assert "UNACCEPTABLE_URL" in error, error
+
+            # A disk from the server config is exempt. The path holds no table, so the query fails later.
+            _, error = node.query_and_get_answer_with_error(query.format("s3"))
+            assert "UNACCEPTABLE_URL" not in error, error
+
+    node.query("DROP TABLE IF EXISTS t_lake_disk SYNC")
+    node.query("DROP TABLE t_old_s3 SYNC")
