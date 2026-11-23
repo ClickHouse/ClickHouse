@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -24,7 +25,7 @@ TranslatedName classifyOutputName(const ActionsDAG & dag, const String & output_
 /// Translates distribution column names through the DAG to input names; computed columns drop
 /// out of their equivalence set. Returns false if any set becomes empty (all computed - the
 /// distribution is not derivable from the input).
-bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns);
+bool translateDistributionColumns(const ActionsDAG & dag, VectorWithMemoryTracking<NameSet> & columns);
 
 /// Translates sort column names through the DAG to input names. Returns false if any column is
 /// computed (its order is not derivable from the input).

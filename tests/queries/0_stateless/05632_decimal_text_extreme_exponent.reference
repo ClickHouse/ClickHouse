@@ -1,0 +1,8 @@
+-- huge positive exponent does not fit
+\N	\N	\N
+-- exponent sum out of range
+\N
+-- huge negative exponent rounds to zero
+0	0	0
+-- ordinary exponents
+1500	1.5	1000000000000000	\N

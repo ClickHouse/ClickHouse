@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Random settings limits: output_format_parquet_row_group_size_bytes=(536870912, None)
 
 -- Create an ~80 MB parquet file with one row group and one column.
 insert into function file('03147_parquet_memory_tracking.parquet') select number from numbers(10000000) settings output_format_parquet_compression_method='none', output_format_parquet_row_group_size=1000000000000, engine_file_truncate_on_insert=1;
