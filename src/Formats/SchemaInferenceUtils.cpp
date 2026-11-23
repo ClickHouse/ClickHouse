@@ -27,6 +27,8 @@
 #include <Common/SipHash.h>
 #include <Core/TypeId.h>
 
+#include <Poco/String.h>
+
 namespace DB
 {
 
@@ -1920,6 +1922,14 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, cons
     for (auto & [name, type] : header.getNamesAndTypesList())
         result.emplace_back(name, makeNullableRecursively(type, settings));
     return result;
+}
+
+String getColumnMatchingKeyForSchemaInference(std::string_view name, const FormatSettings & settings)
+{
+    String key(name);
+    if (settings.input_format_column_matching_case_sensitivity == FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE)
+        Poco::toLowerInPlace(key);
+    return key;
 }
 
 bool checkIfTypeIsComplete(const DataTypePtr & type)
