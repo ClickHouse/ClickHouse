@@ -5,7 +5,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISpillable.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -60,27 +59,12 @@ void ExecutionThreadContext::wait(std::atomic_bool & finished)
 {
     std::unique_lock lock(mutex);
 
-    /// Avoid excessive CPU lease parking
-    if (finished || wake_flag)
-    {
-        wake_flag = false;
-        return;
-    }
-
-    /// Park the CPU lease while sleeping, without holding the mutex
-    lock.unlock();
-    CPULeaseParkGuard park_guard;
-    lock.lock();
-
     condvar.wait(lock, [&]
     {
         return finished || wake_flag;
     });
 
     wake_flag = false;
-
-    /// Do not hold mutex during unparking
-    lock.unlock();
 }
 
 void ExecutionThreadContext::wakeUp()
@@ -213,7 +197,7 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
     {
         auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
         if (!cached_clock)
-            cached_clock = step_profiler->findClockForStep(processor->getStepUniqID(), group);
+            cached_clock = step_profiler->findClockForStep(step, group);
 
         clock = cached_clock;
         if (clock)
@@ -254,7 +238,7 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
         clock->onLeave();
 
     if (collect_work_intervals)
-        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, processor->getStepUniqID());
+        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, step);
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
@@ -273,6 +257,12 @@ void ExecutionThreadContext::setException(std::exception_ptr exception_)
 std::exception_ptr ExecutionThreadContext::getException()
 {
     return exception;
+}
+
+void ExecutionThreadContext::rethrowExceptionIfHas()
+{
+    if (exception)
+        std::rethrow_exception(exception);
 }
 
 void ExecutionThreadContext::flushWorkIntervals()

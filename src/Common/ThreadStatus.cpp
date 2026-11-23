@@ -3,11 +3,9 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <base/getPageSize.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
-#include <Common/FiberLocal.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SignalUnsafeMutationGuard.h>
@@ -21,7 +19,6 @@
 
 #include <csignal>
 #include <sys/mman.h>
-#include <unordered_map>
 
 
 namespace DB
@@ -124,7 +121,7 @@ struct ThreadStack
 
         return size;
     }
-    [[nodiscard]] void * getData() const { return data; }
+    void * getData() const { return data; }
 
 private:
     void * data = nullptr;
@@ -147,22 +144,6 @@ ThreadStatus::ThreadStatus(NoOSThreadTag)
 {
 }
 
-#if defined(OS_DARWIN)
-namespace
-{
-    std::mutex thread_statuses_mutex;
-    std::unordered_map<UInt64, ThreadStatus *> thread_statuses TSA_GUARDED_BY(thread_statuses_mutex);
-}
-
-/// The analysis does not see the lock through the returned unique_lock.
-std::pair<std::unique_lock<std::mutex>, ThreadStatus *> ThreadStatus::findByThreadId(UInt64 thread_id) TSA_NO_THREAD_SAFETY_ANALYSIS
-{
-    std::unique_lock lock(thread_statuses_mutex);
-    auto it = thread_statuses.find(thread_id);
-    return {std::move(lock), it == thread_statuses.end() ? nullptr : it->second};
-}
-#endif
-
 ThreadStatus::ThreadStatus(UInt64 thread_id_)
     : thread_id(thread_id_)
 {
@@ -179,34 +160,7 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
     static const LoggerPtr thread_status_log = getLogger("ThreadStatus");
     log = thread_status_log;
 
-#if defined(OS_DARWIN)
-    /// A failed constructor runs no destructor, so the entry is taken back out on any later throw
-    /// (the alternative stack below is allocated on a thread's first ThreadStatus and can throw).
-    if (boundToOSThread())
-    {
-        std::lock_guard lock(thread_statuses_mutex);
-        thread_statuses[thread_id] = this;
-    }
-    scope_guard unregister_on_failure = [this]
-    {
-        if (boundToOSThread())
-        {
-            std::lock_guard lock(thread_statuses_mutex);
-            thread_statuses.erase(thread_id);
-        }
-    };
-#endif
-
-    ThreadStatus * const previous_thread = current_thread;
     current_thread = this;
-    /// A failed constructor runs no destructor, so `current_thread` would keep pointing at the destroyed members
-    /// (the alternative stack below can throw) and the code that handles the exception would use them.
-    /// The allocations made since then are deferred in `untracked_memory`, so they are flushed first, as the destructor does.
-    scope_guard restore_current_thread_on_failure = [this, previous_thread]
-    {
-        flushUntrackedMemory();
-        current_thread = previous_thread;
-    };
 
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
@@ -232,23 +186,12 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
             LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
     }
 #endif
-
-    restore_current_thread_on_failure.release();
-#if defined(OS_DARWIN)
-    unregister_on_failure.release();
-#endif
 }
 
 ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
     chassert(current_thread == this);
     return thread_group;
-}
-
-bool ThreadStatus::hasThreadGroup() const
-{
-    chassert(current_thread == this);
-    return thread_group != nullptr;
 }
 
 void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
@@ -331,7 +274,6 @@ void ThreadStatus::flushUntrackedMemory()
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     untracked_memory.store(0);
-    untracked_memory_flushed_unchecked = std::max<Int64>(0, untracked_memory_flushed_unchecked + current_untracked_memory);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
@@ -343,15 +285,12 @@ void ThreadStatus::publishUntrackedMemory()
 
 namespace
 {
-/// Per fiber: a fiber that suspends inside a blocker must neither block the cancellation of the other fibers on its
-/// thread nor lose its own blocker when it resumes on another thread.
-constinit FiberLocal<bool, FiberLocalSlot::QUERY_CANCELLATION_BLOCKED> query_cancellation_blocked;
+thread_local bool query_cancellation_blocked = false;
 }
 
 ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
-    : previous(query_cancellation_blocked)
+    : previous(std::exchange(query_cancellation_blocked, true))
 {
-    query_cancellation_blocked = true;
 }
 
 ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
@@ -395,13 +334,6 @@ size_t ThreadStatus::getNextPipelineProcessorIndex() const
 
 ThreadStatus::~ThreadStatus()
 {
-#if defined(OS_DARWIN)
-    if (boundToOSThread())
-    {
-        std::lock_guard lock(thread_statuses_mutex);
-        thread_statuses.erase(thread_id);
-    }
-#endif
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     chassert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));

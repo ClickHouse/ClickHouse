@@ -6,12 +6,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Core/Block.h>
 #include <Common/typeid_cast.h>
-#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
-
 
 namespace DB
 {
@@ -219,17 +214,13 @@ static bool constantGranularityUsesBytes(
 
 MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     size_t rows,
-    const std::function<size_t()> & get_bytes_uncompressed,
+    size_t bytes_uncompressed,
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules)
 {
     if (!constantGranularityUsesBytes(rows, settings, info, blocks_are_granules))
         return std::make_shared<MergeTreeIndexGranularityAdaptive>();
-
-    /// computeIndexGranularity uses the byte count only on the adaptive path; a non-adaptive part gets the fixed
-    /// row granularity, so do not pay for get_bytes_uncompressed (which may read a part's prefixes) there.
-    const size_t bytes_uncompressed = info.mark_type.adaptive ? get_bytes_uncompressed() : 0;
 
     size_t computed_granularity = computeIndexGranularity(
         rows,
@@ -248,37 +239,20 @@ MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules)
 {
-    return createMergeTreeIndexGranularity(block.rows(), [&] { return getBlockSizeForGranularity(block); }, settings, info, blocks_are_granules);
+    /// Only size the block (which serializes variable-size AggregateFunction states) when the
+    /// constant-granularity path will actually consume it. On the non-const adaptive path the
+    /// figure is ignored here and recomputed per block by MergeTreeDataPartWriterOnDisk, so
+    /// computing it now would be a wasted serialization pass.
+    if (!constantGranularityUsesBytes(block.rows(), settings, info, blocks_are_granules))
+        return std::make_shared<MergeTreeIndexGranularityAdaptive>();
+
+    return createMergeTreeIndexGranularity(block.rows(), getBlockSizeForGranularity(block), settings, info, blocks_are_granules);
 }
 
 size_t MergeTreeIndexGranularity::getMarksCountForSkipIndex(size_t skip_index_granularity) const
 {
     size_t marks_count = getMarksCountWithoutFinal();
     return (marks_count + skip_index_granularity - 1) / skip_index_granularity;
-}
-
-MergeTreeIndexGranularityPtr readIndexGranularity(ReadBuffer & in)
-{
-    std::string enum_name;
-    in >> "index granularity type: " >> enum_name >> "\n";
-    MergeTreeIndexGranularityType type = magic_enum::enum_cast<MergeTreeIndexGranularityType>(enum_name).value();
-
-    MergeTreeIndexGranularityPtr index_granularity;
-    if (type == MergeTreeIndexGranularityType::ADAPTIVE)
-        index_granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>();
-    else if (type == MergeTreeIndexGranularityType::CONSTANT)
-        index_granularity = std::make_shared<MergeTreeIndexGranularityConstant>();
-    else
-        UNREACHABLE();
-
-    index_granularity->readDataImpl(in);
-    return index_granularity;
-}
-
-void writeIndexGranularity(MergeTreeIndexGranularityPtr index_granularity, WriteBuffer & out)
-{
-    out << "index granularity type: " << magic_enum::enum_name(index_granularity->getType()) << "\n";
-    index_granularity->writeDataImpl(out);
 }
 
 }

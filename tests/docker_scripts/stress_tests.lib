@@ -8,8 +8,6 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 START_SERVER_READY_TIMEOUT=120
-# Where MALLOC_CONF (set by stress_job.py for jemalloc builds) points prof_prefix.
-JEMALLOC_PROFILES_DIR=/var/log/clickhouse-server/jemalloc_profiles
 
 function escaped()
 {
@@ -115,9 +113,6 @@ function configure()
     #
     /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk "$@"
 
-    # jemalloc does not create the prof_prefix directory itself.
-    mkdir -p "$JEMALLOC_PROFILES_DIR"
-
     # These jobs mix config drop-ins and binaries of different versions (the upgrade
     # check boots the previous release with the current repo's configs) - an unknown
     # config option is expected here and must not prevent the server from starting.
@@ -158,27 +153,6 @@ function configure()
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
     # for clickhouse-client
     export ASAN_OPTIONS='malloc_context_size=10 allocator_release_to_os_interval_ms=10000'
-
-    # TSan never gives back its shadow and meta memory, and its allocator keeps freed chunks per
-    # size class, so the RSS of a TSan server only grows. `max_server_memory_usage_to_ram_ratio`
-    # (see `configure_limits`) is enforced on the RSS, so the server ends up pinned at the limit
-    # with little tracked memory and rejects every query, including the hung check.
-    # `memory_limit_mb` makes TSan flush its shadow memory once the process RSS exceeds it,
-    # so it has to be below the server limit (80%). Same 65% as in `clickhouse_proc.py`.
-    # The server inherits it from this shell (`clickhouse start` does not read /etc/environment).
-    if [[ "${TSAN_OPTIONS:-}" != *memory_limit_mb=* ]]; then
-        local tsan_total_mem tsan_cgroup_mem
-        # Multiply in Bash: `mawk` prints large products in scientific notation, which Bash rejects.
-        tsan_total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
-        tsan_total_mem=$(( tsan_total_mem * 1024 )) # bytes
-        tsan_cgroup_mem=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo max)
-        if [[ "$tsan_cgroup_mem" =~ ^[0-9]+$ ]] && (( tsan_cgroup_mem < tsan_total_mem )); then
-            tsan_total_mem=$tsan_cgroup_mem
-        fi
-        export TSAN_OPTIONS="${TSAN_OPTIONS:+$TSAN_OPTIONS }memory_limit_mb=$(( tsan_total_mem * 65 / 100 / 1024 / 1024 ))"
-        echo "TSAN_OPTIONS='${TSAN_OPTIONS}'" >> /etc/environment
-        echo "Setting TSAN_OPTIONS=${TSAN_OPTIONS}"
-    fi
 
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
@@ -222,8 +196,6 @@ EOL
     # window views, and `clickhouse-test --upgrade-check` passes `--fake-drop`, so they stay in the
     # metadata for the new binary to fail on. Keep it readonly, rather than set to `false`, until
     # that suite stops creating them: assigning an obsolete setting makes the new binary warn.
-    # allow_reserved_column_names is readonly too: a column that hides a MergeTree virtual column
-    # can crash merges.
     cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
@@ -259,10 +231,6 @@ EOL
                 <allow_experimental_window_view>
                     <readonly/>
                 </allow_experimental_window_view>
-
-                <allow_reserved_column_names>
-                    <readonly/>
-                </allow_reserved_column_names>
 
             </constraints>
         </default>
@@ -337,47 +305,34 @@ function stop_server()
     fi
 }
 
-function wait_server_ports_free()
+function wait_server_port_free()
 {
-    # Wait for the previous server instance to release its listen ports.
-    # In debug+ThreadFuzzer builds, shutdown is slow and the kernel
-    # may still hold sockets from the previous server instance.
-    # Every TCP listener of a `clickhouse-server` process counts (`clickhouse-serv` is its
-    # 15-character process name, as for `pgrep` below), so ports of new configs need no list.
-    # `ss` reports the owner per listener and may not know it (another user's process, a socket
-    # being torn down), so a listener without an owner counts when its port is a known one:
-    #   8123  HTTP               9010  TCP with proxy protocol
-    #   8443  HTTPS              9022  SSH
-    #   9000  Native TCP         9090  Arrow Flight
-    #   9004  MySQL compat       9100  gRPC
-    #   9005  PostgreSQL compat  9181  Keeper
-    #   9009  Interserver HTTP   9223  Streaming exchange (distributed query)
-    #                            9234  Keeper Raft
-    #                            9440  Native TCP TLS
-    #                            9988  Prometheus
-    # The timeout bounds the whole wait.
-    local timeout=${1:-120}
-    local known_ports="8123|8443|9000|9004|9005|9009|9010|9022|9090|9100|9181|9223|9234|9440|9988"
+    local port=$1
+    local timeout=${2:-120}
     local elapsed=0
-    local busy
-    while true; do
-        # The local address is the 4th column, e.g. `0.0.0.0:9000` or `[::]:9000`, the owner is in `users:((...))`
-        busy=$(ss -tlnp 2>/dev/null | awk -v known="^(${known_ports})\$" '
-            NR > 1 {
-                port = $4
-                sub(/.*:/, "", port)
-                if ($0 ~ /"clickhouse-serv"/ || ($0 !~ /users:\(\(/ && port ~ known))
-                    print port
-            }' | sort -nu | tr '\n' ' ' || true)
-        if [ -z "$busy" ]; then
-            return 0
-        fi
-        if [ "$elapsed" -ge "$timeout" ]; then
-            echo "Warning: ports ${busy}are still in use after ${timeout}s"
-            return 0
-        fi
+    while ss -tlnp | grep -q ":${port}\b" && [ "$elapsed" -lt "$timeout" ]; do
         sleep 1
         elapsed=$((elapsed + 1))
+    done
+    if [ "$elapsed" -ge "$timeout" ]; then
+        echo "Warning: port $port is still in use after ${timeout}s"
+    fi
+}
+
+function wait_server_ports_free()
+{
+    # Wait for all ClickHouse listen ports to become available.
+    # In debug+ThreadFuzzer builds, shutdown is slow and the kernel
+    # may still hold sockets from the previous server instance.
+    #   8123  HTTP               9010  TCP with proxy protocol
+    #   8443  HTTPS              9022  SSH
+    #   9000  Native TCP         9100  gRPC
+    #   9004  MySQL compat       9181  Keeper
+    #   9005  PostgreSQL compat  9234  Keeper Raft
+    #   9009  Interserver HTTP   9440  Native TCP TLS
+    #                            9988  Prometheus
+    for port in 8123 8443 9000 9004 9005 9009 9010 9022 9100 9181 9234 9440 9988; do
+        wait_server_port_free "$port"
     done
 }
 
@@ -471,40 +426,6 @@ function check_logs_for_critical_errors()
     [ -s /test_output/no_such_key_errors.txt ] || rm -f /test_output/no_such_key_errors.txt
 
     dmesg -T > /test_output/dmesg.log
-}
-
-# Arguments: logs of the server(s) that produced the top-level profiles, consulted to decide
-# whether rendering is worth it.
-function collect_jemalloc_profiles()
-{
-    if [[ -z "$(find "$JEMALLOC_PROFILES_DIR" -name '*.heap' -print -quit)" ]]; then
-        echo "No jemalloc profiles were dumped"
-        return 0
-    fi
-
-    # Symbolizing a debug build takes minutes, so render only the latest profile and only when
-    # memory is in question: the total limit was hit, or the server was killed (OOM killer).
-    # The raw .heap files always ship and can be rendered offline with jeprof and the binary.
-    # Only top-level profiles belong to the installed binary (see upgrade_runner.sh). Newest by
-    # mtime: the servers are restarted several times and each restarts jemalloc's dump sequence.
-    local latest
-    latest=$(find "$JEMALLOC_PROFILES_DIR" -maxdepth 1 -name '*.heap' -printf '%T@ %p\n' | sort -n | tail -n1 | cut -d' ' -f2-)
-    if [[ -n "$latest" ]] \
-        && grep -a -q -F -e 'after total memory exceeded' -e '(total) memory limit exceeded' -e 'Child process was terminated by signal 9' "$@"
-    then
-        local collapsed="${latest%.heap}.collapsed"
-        if timeout --verbose --signal=TERM --kill-after=60 600 \
-            jeprof "$(readlink -f "$(command -v clickhouse)")" "$latest" --collapsed > "$collapsed" 2> "${collapsed}.log"
-        then
-            flamegraph.pl --color mem --width 2560 < "$collapsed" > "${latest%.heap}.svg" || rm -f "${latest%.heap}.svg"
-        else
-            echo "Failed to symbolize $latest"
-            rm -f "$collapsed"
-        fi
-    fi
-
-    tar -C "$(dirname "$JEMALLOC_PROFILES_DIR")" -cf - "$(basename "$JEMALLOC_PROFILES_DIR")" | zstd --threads=0 -f -o /test_output/jemalloc.tar.zst \
-        || echo "Failed to archive jemalloc profiles"
 }
 
 function collect_query_and_trace_logs()

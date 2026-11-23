@@ -145,8 +145,7 @@ Deleting the entry is only half of it — the revert must not be left behind as
 an entry of its own either, whatever category the autogenerator gave it. The
 user should see no trace of either side. The one place such a PR still appears
 is as the appended link on an entry it *re-applied* (§2.5), where it records
-the re-apply rather than describing a change — unless that re-apply also
-carries a change of its own with its own entry (case 6).
+the re-apply rather than describing a change.
 
 1. Read the title of the revert PR (`gh pr view <N> --json title,body`) to
    identify which earlier PR it reverts. Most reverts have a title of the
@@ -187,35 +186,6 @@ carries a change of its own with its own entry (case 6).
    `#109946`'s entry with `#114912`'s link appended — and no trace of
    `#114911`. Deleting `#109946` "because it was reverted" drops a fix that
    ships in the release.
-
-   A revert-of-revert can carry more than the re-apply. When its author wrote
-   a changelog entry of its own under a real category (not `NO CL ENTRY` or
-   `NOT FOR CHANGELOG`), read the PR: if the entry describes a change beyond
-   the one it brings back, keep it as a bullet of its own; if it only repeats
-   the re-applied entry, merge it into that entry (§7). Real example from
-   26.11: `#129863` reverted `#129862`, a revert of the tests-only `#129425`,
-   and also fixed `INSERT` into a table whose `PROJECTION` has `GLOBAL IN` in
-   `WHERE`. `#129425` has no entry, so `#129863`'s own `Bug Fix` bullet is the
-   only place the fix appears.
-
-   When the re-applied change does have an entry, such a PR is on two bullets:
-   its link appended to the entry it brought back, and the bullet of its own.
-   The two are separate. The link goes when that entry goes — if the original
-   change is reverted once more, its entry is deleted with the link, and the
-   re-apply's own bullet stays, because its change still ships. And if the
-   re-apply itself is reverted and later put back, both bullets come back,
-   each as it was: the link on the first is not a substitute for the second.
-
-   The same reading applies when the original change is already out again by
-   the time the re-apply's entry is placed (a second revert of the original
-   in the same range). There is then no entry for the link to sit on. An entry
-   that only repeats the original describes a change that is not in the
-   release, so it is deleted with it; an entry describing a change of its own
-   that still ships is kept as a bullet. The same goes for a revert of a
-   revert that puts back nothing of this release for another reason: what it
-   restores is itself a revert of a change of this release (a revert of a
-   re-apply takes the change out again), or a change that was already
-   published in an earlier release.
 
    When a release is edited in daily increments, the three PRs arrive on
    three different days: the entry was integrated on the first day, deleted
@@ -365,7 +335,8 @@ Delete:
 
 - Anything starting `CI:`, `ci:`, `tests:`, `Fix flaky `, `Disable test`,
   `Bump pytest`, `Update version_date.tsv`, `Switch ... workflow`,
-  `Praktika ...`, `Sync ...`, `Refactor `.
+  `Praktika ...`, `Sync ...`, `Refactor `, `chcache: ` (unless it's a
+  user-relevant build issue).
 - Internal coverage / digest / scheduling / artifact-path tweaks.
 
 ### 5. Per-entry text rewrites

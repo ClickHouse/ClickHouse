@@ -1,5 +1,4 @@
--- Tags: no-parallel
--- Random settings limits: input_format_parquet_preserve_order=(0, 0)
+-- Tags: no-parallel, no-fasttest
 
 insert into function file(data_02723.csv) select number from numbers(5) settings engine_file_truncate_on_insert=1;
 

@@ -526,9 +526,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "format_type(a.atttypid, a.atttypmod) AS data_type " /// data type
                 "FROM pg_index i "
                 "JOIN pg_attribute a ON a.attrelid = i.indrelid "
-                "AND a.attnum = ANY(i.indkey[0:i.indnkeyatts - 1]) " /// key columns only, indkey also lists the INCLUDE columns
-                "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary "
-                "ORDER BY array_position(i.indkey::int2[], a.attnum)", where); /// in the order of the index columns
+                "AND a.attnum = ANY(i.indkey) "
+                "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
         table.primary_key_columns
             = readNamesAndTypesList(tx, postgres_table_with_schema, postgres_table_for_messages, query, use_nulls, true);
@@ -549,12 +548,12 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "t.oid = ix.indrelid "
             "and i.oid = ix.indexrelid "
             "and a.attrelid = t.oid "
-            "and a.attnum = ANY(ix.indkey[0:ix.indnkeyatts - 1]) " /// key columns only, as above
+            "and a.attnum = ANY(ix.indkey) "
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
             "and t.relnamespace = {} "
             "and ix.indisreplident = 't' " /// index is is replica identity index
-            "ORDER BY array_position(ix.indkey::int2[], a.attnum)", /// in the order of the index columns
+            "ORDER BY a.attname", /// column name
             quoteStringPostgreSQL(postgres_table),
             /// The same schema the columns above were taken from - see the comment on `where`. Resolving the
             /// replica identity in a different schema than the physical columns would describe two relations.

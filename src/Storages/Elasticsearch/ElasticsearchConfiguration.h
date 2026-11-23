@@ -2,7 +2,6 @@
 
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/SecretString.h>
 #include <Interpreters/SecretArgumentsSpec.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Parsers/IAST_fwd.h>
@@ -16,9 +15,9 @@ struct ElasticsearchConfiguration
     String url;
     String index;
     String user;
-    SecretString password;
-    SecretString bearer_token;
-    SecretString api_key;
+    String password;
+    String bearer_token;
+    String api_key;
     String query = R"({"match_all":{}})";
 
     enum class AuthKind
@@ -33,7 +32,7 @@ struct ElasticsearchConfiguration
 
     String named_collection_name;
 
-    [[nodiscard]] HTTPHeaderEntries authorizationHeaders() const;
+    HTTPHeaderEntries authorizationHeaders() const;
 
     static ElasticsearchConfiguration fromArguments(ASTs & args, ContextPtr context, const StorageID * table_id = nullptr);
 };

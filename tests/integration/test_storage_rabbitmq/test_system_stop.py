@@ -3,7 +3,6 @@
 import json
 import threading
 import time
-import uuid
 
 import pika
 import pytest
@@ -653,28 +652,16 @@ def test_cancel_wakes_flush_wait_promptly(rabbitmq_cluster):
     time.sleep(5)  # let the source read the rows and settle into the flush wait
 
     # CANCEL must wake that wait and abort the in-flight block well within the 30s flush interval.
-    cancel_query_id = f"cancel_wake_{uuid.uuid4().hex}"
-    instance.query(f"SYSTEM CANCEL test.{table}", query_id=cancel_query_id)
-
-    # Measured between server-side events, so harness latency (client start, docker exec) is excluded.
-    aborts, wake_ms = instance.query_with_retry(
-        f"""
-        SYSTEM FLUSH LOGS query_log, text_log;
-        WITH (SELECT query_start_time_microseconds FROM system.query_log
-              WHERE query_id = '{cancel_query_id}' AND type = 'QueryStart') AS cancel_time
-        SELECT count(), dateDiff('millisecond', cancel_time, min(event_time_microseconds))
-        FROM system.text_log
-        WHERE logger_name = 'StorageRabbitMQ (test.{table})'
-          AND message LIKE 'Consumption interrupted: discarding in-flight block%'
-          AND event_time_microseconds >= cancel_time
-        """,
-        check_callback=lambda res: int(res.split()[0]) > 0,
-        retry_count=45,
-        sleep_time=1,
-    ).split()
-    assert int(aborts) > 0, "SYSTEM CANCEL did not abort the in-flight block"
-    assert int(wake_ms) < 10000, (
-        f"SYSTEM CANCEL took {int(wake_ms) / 1000:.1f}s to abort the in-flight block; it should wake the flush "
+    t0 = time.time()
+    instance.query(f"SYSTEM CANCEL test.{table}")
+    instance.wait_for_log_line(
+        f"{table}.*Consumption interrupted: discarding in-flight block",
+        look_behind_lines=5000,
+        timeout=45,
+    )
+    elapsed = time.time() - t0
+    assert elapsed < 10, (
+        f"SYSTEM CANCEL took {elapsed:.1f}s to abort the in-flight block; it should wake the flush "
         "wait promptly instead of waiting out rabbitmq_flush_interval_ms"
     )
 

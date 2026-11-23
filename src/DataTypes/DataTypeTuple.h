@@ -44,7 +44,6 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
     bool isDefaultInsertTrivial() const override;
-    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
 
     bool equals(const IDataType & rhs) const override;
 
@@ -59,11 +58,9 @@ public:
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
-    SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
     SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
     using IDataType::getSerializationInfo;
-    bool hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const override;
 
     DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
@@ -75,9 +72,6 @@ public:
     String getNameByPosition(size_t i) const;
 
     bool hasExplicitNames() const { return has_explicit_names; }
-
-    /// Whether `names` can be the element names of a named `Tuple`: they must be non-empty, unique and not `null`.
-    static bool hasValidElementNames(const Strings & names);
 
     void updateHashImpl(SipHash & hash) const override;
 

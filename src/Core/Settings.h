@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
+#include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/FlatStringMap.h>
 #include <Common/SettingsChanges.h>
@@ -111,7 +112,6 @@ class WriteBuffer;
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
     M(CLASS_NAME, SnappyMode) \
-    M(CLASS_NAME, S3RequestPayer) \
     M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
@@ -130,7 +130,6 @@ class WriteBuffer;
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, JoinOrderConflictDetector) \
-    M(CLASS_NAME, HashJoinLayout) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
@@ -153,15 +152,15 @@ struct Settings
     COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     /// General API as needed
-    [[nodiscard]] bool has(std::string_view name) const;
-    [[nodiscard]] bool isChanged(std::string_view name) const;
-    [[nodiscard]] SettingsTierType getTier(std::string_view name) const;
-    [[nodiscard]] std::string_view getDescription(std::string_view name) const;
-    [[nodiscard]] std::string_view getTypeName(std::string_view name) const;
-    [[nodiscard]] String getDefaultValueString(std::string_view name) const;
+    bool has(std::string_view name) const;
+    bool isChanged(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
+    std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
-    [[nodiscard]] Field get(std::string_view name) const;
+    Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
     /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
@@ -170,7 +169,7 @@ struct Settings
     void setDefaultValue(std::string_view name);
 
     /// Whether any setting currently holds a value that was set by the `compatibility` setting.
-    [[nodiscard]] bool hasSettingsChangedByCompatibility() const;
+    bool hasSettingsChangedByCompatibility() const;
 
     /// Reset settings whose value was set only by the `compatibility` setting back to their defaults (and forget
     /// they were compatibility-derived). Used before transmitting settings so the receiver re-derives them from
@@ -187,10 +186,10 @@ struct Settings
     /// `compatibility` itself and honors its own constraints (e.g. a profile pinning a setting read-only).
     void markSettingsChangedByCompatibilityAsUnchanged();
 
-    [[nodiscard]] VectorWithMemoryTracking<String> getHints(const String & name) const;
-    [[nodiscard]] String toString(bool show_secrets) const;
+    VectorWithMemoryTracking<String> getHints(const String & name) const;
+    String toString(bool show_secrets) const;
 
-    [[nodiscard]] SettingsChanges changes() const;
+    SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
 
     /// Reject `SET name` with no value unless `name` is a Bool setting - `SET name` stands for
@@ -198,18 +197,18 @@ struct Settings
     /// applies changes through `Context::setSetting`, which only sees a name and a value.
     void checkShorthandChange(const SettingChange & change) const;
     void checkShorthandChanges(const SettingsChanges & changes) const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
-    [[nodiscard]] VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
+    VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
+    VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
     void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
-    [[nodiscard]] FlatStringMap changedToFlatMap(bool show_secrets) const;
+    FlatStringMap changedToFlatMap(bool show_secrets) const;
 
-    void write(WriteBuffer & out) const;
-    void read(ReadBuffer & in, bool skip_invalid_values = false);
-    /// Equivalent to Settings().write(out) but faster.
+    void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
+    void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    /// Equivalent to Settings().write(out, <any format>) but faster.
     static void writeEmpty(WriteBuffer & out);
 
     void addToProgramOptions(boost::program_options::options_description & options);
@@ -231,7 +230,7 @@ private:
 };
 
 /// Query parameters are transported as raw (name, value) string pairs using the Custom-setting
-/// wire encoding (strings with flags), but bypassing Settings::set/read and
+/// wire encoding (SettingsWriteFormat::STRINGS_WITH_FLAGS), but bypassing Settings::set/read and
 /// the builtin-setting accessor entirely, so a parameter name colliding with a builtin setting or
 /// alias can never be value-normalized, alias-resolved, or misquoted (issue #85768).
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out);

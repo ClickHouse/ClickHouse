@@ -1,11 +1,8 @@
-#include <Columns/ColumnBLOB.h>
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/SerializationDetached.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -59,7 +56,7 @@ TEST(DataTypeObject, CreateJSONWithNonObjectTypeArgumentChildDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(make_intrusive<ASTLiteral>(Field(UInt64(42))));
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is an `ASTFunction` named
@@ -81,7 +78,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsNullArgumentsDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// The `equals` function has `arguments` with zero children — `children[0]`
@@ -104,7 +101,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsZeroChildrenDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// The `equals` function has only one child — `children[1]` reads past the end.
@@ -127,7 +124,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsOneChildDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is a function that is NOT
@@ -149,7 +146,7 @@ TEST(DataTypeObject, CreateJSONWithParameterWrongFunctionNameIsRejected)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is not an `ASTFunction` at all
@@ -169,7 +166,7 @@ TEST(DataTypeObject, CreateJSONWithParameterNotAFunctionDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// The `path_with_type` of an `ASTObjectTypeArgument` is not an
@@ -189,7 +186,7 @@ TEST(DataTypeObject, CreateJSONWithPathWithTypeWrongKindDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// The `skip_path_regexp` of an `ASTObjectTypeArgument` is not a string literal
@@ -210,7 +207,7 @@ TEST(DataTypeObject, CreateJSONWithSkipPathRegexpWrongKindDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
+    EXPECT_THROW(factory.get("JSON", arguments), Exception);
 }
 
 /// Verify well-formed `JSON(...)` types still parse correctly.
@@ -223,15 +220,6 @@ TEST(DataTypeObject, CreateJSONWithValidAST)
 
     auto type_default = factory.get("JSON");
     ASSERT_NE(type_default, nullptr);
-}
-
-TEST(DataTypeObject, CreateColumnWithDetachedSerialization)
-{
-    auto type = DataTypeFactory::instance().get("JSON(x Nullable(String), max_dynamic_paths=0)");
-    auto serialization = SerializationDetached::create(type->getDefaultSerialization());
-    auto column = type->createColumn(*serialization);
-
-    EXPECT_NE(typeid_cast<const ColumnBLOB *>(column.get()), nullptr);
 }
 
 TEST(DataTypeObject, SubcolumnLookup)

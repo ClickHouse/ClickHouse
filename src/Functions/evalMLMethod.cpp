@@ -46,36 +46,27 @@ public:
     explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
     {}
 
-    [[nodiscard]] String getName() const override
+    String getName() const override
     {
         return name;
     }
 
-    [[nodiscard]] bool isVariadic() const override
+    bool isVariadic() const override
     {
         return true;
     }
 
-    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return true;
     }
 
-    [[nodiscard]] size_t getNumberOfArguments() const override
+    size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    /// Documentation-only — the result type is the aggregate function's
-    /// "return type to predict", which depends on the specific machine-learning
-    /// aggregate stored in the first argument and is not derivable from the
-    /// argument types alone.
-    [[nodiscard]] String getSignatureString() const override
-    {
-        return "(AggregateFunction, Number, ...) -> Number";
-    }
-
-    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
             {"model", &isAggregateFunctionState, nullptr, "AggregateFunctionState"}
@@ -90,7 +81,7 @@ public:
         return agg_function->getReturnTypeToPredict();
     }
 
-    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires at least one argument", getName());

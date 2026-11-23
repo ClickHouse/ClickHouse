@@ -2,6 +2,7 @@
 
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageConfiguration.h>
+#include <Common/randomSeed.h>
 #include <Common/QueryFuzzer.h>
 #include <Processors/ISource.h>
 
@@ -20,8 +21,7 @@ public:
     {
         String query;
         UInt64 max_query_length = 500;
-        /// Without it, every read uses a new seed
-        std::optional<UInt64> random_seed;
+        UInt64 random_seed = randomSeed();
     };
 
     StorageFuzzQuery(
@@ -55,13 +55,13 @@ class FuzzQuerySource final : public ISource
 {
 public:
     FuzzQuerySource(
-        UInt64 block_size_, SharedHeader block_header_, const StorageFuzzQuery::Configuration & config_, ASTPtr query_, UInt64 seed_)
+        UInt64 block_size_, SharedHeader block_header_, const StorageFuzzQuery::Configuration & config_, ASTPtr query_)
         : ISource(block_header_)
         , block_size(block_size_)
         , block_header(block_header_)
         , config(config_)
         , query(query_)
-        , fuzzer(seed_)
+        , fuzzer(config_.random_seed)
     {
     }
 
