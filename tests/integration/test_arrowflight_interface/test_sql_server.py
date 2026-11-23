@@ -461,13 +461,23 @@ def test_cancel_flight_info_after_reading_ticket_is_audited():
 
     for _ in range(60):
         log_content = node.grep_in_log(marker, from_host=True, filename="clickhouse-server.audit.log")
-        records = [line.split("AUDIT: ", 1)[1].split(", ") for line in log_content.strip().split("\n") if "AUDIT: " in line]
+        lines = [line for line in log_content.strip().split("\n") if "AUDIT: " in line]
+        records = [line.split("AUDIT: ", 1)[1].split(", ") for line in lines]
         if records:
             break
         time.sleep(0.5)
     assert len(records) == 1, f"the cancelled query must be audited once: {log_content}"
     assert records[0][0] == "DML", log_content
     assert records[0][2] == "394", log_content
+
+    # The record is written by the thread that cancels the query, but it must carry the ID of the
+    # cancelled query (the record prefix is "timestamp [ thread_id ] {query_id} <Notice> AUDIT: ...").
+    node.query("SYSTEM FLUSH LOGS query_log")
+    query_id = node.query(
+        f"SELECT DISTINCT query_id FROM system.query_log WHERE query LIKE '%{marker}%' AND query NOT LIKE '%query_log%'"
+    ).strip()
+    assert query_id and "\n" not in query_id, query_id
+    assert f"{{{query_id}}} <Notice> AUDIT: " in lines[0], log_content
 
 
 def test_unsupported_action():

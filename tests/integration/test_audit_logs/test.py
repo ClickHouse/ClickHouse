@@ -275,6 +275,30 @@ def test_audit_log_mysql_wrong_password(start_cluster):
     assert "Unknown Host" not in log_content, "Client IP must be recorded for auth failure, not 'Unknown Host'"
 
 
+def test_audit_log_mysql_plaintext_rejected_by_secure_transport(start_cluster):
+    """A plaintext MySQL connection to a server with `mysql_require_secure_transport` is rejected right
+    after the handshake response, before authentication starts. It has already named a user, so it
+    must leave a `LoginFailure` record."""
+    unique_user = f"mysql_plaintext_user_{uuid.uuid4().hex}"
+
+    with pytest.raises(Exception):
+        pymysql.connections.Connection(
+            host=node_mysql_ssl_required.ip_address,
+            user=unique_user,
+            password="",
+            port=9004,
+        )
+
+    assert_audit_log_contain_with_retry(node_mysql_ssl_required, unique_user)
+    log_content = node_mysql_ssl_required.grep_in_log(
+        unique_user, from_host=True, filename="clickhouse-server.audit.log"
+    )
+    records = [line for line in log_content.strip().split("\n") if "AUDIT: " in line]
+    assert len(records) == 1, log_content
+    assert "LoginFailure" in records[0], log_content
+    assert "Unknown Host" not in records[0], log_content
+
+
 def test_audit_log_tcp_preauth_failure(start_cluster):
     """TCP pre-authentication failures (wrong password) must record the real client IP.
 
@@ -978,6 +1002,30 @@ def test_audit_log_fire_and_forget_async_insert_flush_failure_before_start(start
     assert fields[3] == "audit_async_dropped_user", failed[0]
 
     node_dml_misc.query("DROP TABLE IF EXISTS audit_async_dropped_user_table")
+
+
+def test_audit_log_fire_and_forget_async_insert_discarded_on_shutdown(start_cluster):
+    """With `async_insert_queue_flush_on_shutdown = 0` a graceful shutdown discards the queued data
+    without flushing it. The `INSERT` was already audited as successful, so the shutdown must leave
+    a failure record under the ID of the request that queued the data."""
+    table = "audit_async_shutdown_table"
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
+    node_dml_misc.query(f"CREATE TABLE {table} (a UInt32) ENGINE = MergeTree ORDER BY a")
+
+    query_id = f"audit_async_shutdown_{uuid.uuid4().hex}"
+    _queue_async_insert(node_dml_misc, table, "1\n", query_id=query_id)
+    node_dml_misc.restart_clickhouse()
+
+    failed, log_content = _async_flush_records(node_dml_misc, table, failed=True, with_query_id=True)
+    assert len(failed) == 1, f"the discarded entry must be audited once: {log_content}"
+    failed_query_id, failed_fields = failed[0]
+    assert failed_query_id == query_id, log_content
+    assert failed_fields[0] == "DML", log_content
+    assert failed_fields[2] == "159", log_content  # TIMEOUT_EXCEEDED
+    assert failed_fields[4] != "Unknown Host", log_content
+    assert node_dml_misc.query(f"SELECT count() FROM {table}") == "0\n"
+
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
 
 
 def _async_flush_records(node, table, failed, with_query_id=False):

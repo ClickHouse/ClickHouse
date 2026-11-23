@@ -1843,6 +1843,12 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
     String safe_object_names = escapeForAuditField(object_names);
     String safe_user = escapeForAuditField(elem.client_info.current_user);
 
+    /// The record is not always written by a thread attached to the query: a cancellation callback, for example,
+    /// runs on the thread that cancels the query. So identify the query by the ID recorded in `elem`, and leave
+    /// the ID of the current thread only as the last resort (`AuditLog::write` uses it for an empty ID).
+    if (query_id.empty())
+        query_id = elem.client_info.current_query_id;
+
     /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
     LOG_AUDIT_FOR_QUERY(audit_log, query_id, "{}, {}, {}, {}, {}, {}, {}",
             audit_type, query_kind, elem.exception_code, safe_user,
@@ -3891,7 +3897,8 @@ static BlockIO executeQueryImpl(
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();
         const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-            && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+            /// A query plan received from a native client has no AST: there is no query to make a cache key from.
+            && out_ast && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 

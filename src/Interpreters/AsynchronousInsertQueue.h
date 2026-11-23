@@ -427,6 +427,9 @@ private:
     /// Writes the audit record of a flush that failed before its query logging was set up.
     static void auditFlushFailureBeforeStartSafe(const InsertQuery & key, const InsertData & data, const ContextPtr & global_context) noexcept;
 
+    /// Writes the audit records of queued entries that are discarded without a flush.
+    static void auditDiscardedEntriesSafe(const InsertQuery & key, const InsertData & data, const ContextPtr & global_context, int exception_code) noexcept;
+
     static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
     void clear();

@@ -611,14 +611,22 @@ void MySQLHandler::run()
             handshake_response.database,
             handshake_response.auth_plugin_name);
 
+        /// The connection attempts rejected below have already named a user, but never reach `authenticate`,
+        /// so record them in the audit log here.
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
+        {
+            session->recordAuditLoginFailure(handshake_response.username, socket().peerAddress());
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
+        }
 
         /// Check the actual state of the transport, not the capability bit advertised by the client:
         /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
         /// `SSLRequest`, and then the connection stays unencrypted.
         if (secure_required && !secure_connection)
+        {
+            session->recordAuditLoginFailure(handshake_response.username, socket().peerAddress());
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
+        }
 
         /// An empty user name means the default session user: the `default_session_user`
         /// server setting, possibly overridden for this listener in the `protocols` section.

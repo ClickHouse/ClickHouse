@@ -448,6 +448,9 @@ void AsynchronousInsertQueue::flushAndShutdown()
             std::lock_guard lock(shard.mutex);
             for (const auto & [_, elem] : shard.queue)
             {
+                /// The rows are discarded without a flush, so nothing else records their fate.
+                auditDiscardedEntriesSafe(elem.key, *elem.data, getContext(), ErrorCodes::TIMEOUT_EXCEEDED);
+
                 for (const auto & entry : elem.data->entries)
                     entry->finish(
                         std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
@@ -550,6 +553,9 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     }
     catch (...)
     {
+        /// The flush was not admitted to the pool, so `processData` will never report its outcome.
+        auditDiscardedEntriesSafe(*job_key, **data_shared, global_context, getCurrentExceptionCode());
+
         for (auto & entry : (**data_shared).entries)
             entry->finish(std::current_exception());
     }
@@ -1753,6 +1759,22 @@ catch (...)
     finishWithException(key.query, data->entries, Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
 }
 
+static QueryLogElement makeFailedFlushAuditElement(const AsynchronousInsertQueue::InsertQuery & key, int exception_code)
+{
+    const auto now = std::chrono::system_clock::now();
+    QueryLogElement elem;
+    elem.type = QueryLogElementType::EXCEPTION_BEFORE_START;
+    elem.event_time = timeInSeconds(now);
+    elem.event_time_microseconds = timeInMicroseconds(now);
+    elem.query = serializeQuery(*key.query, (*key.settings)[Setting::log_queries_cut_to_length]);
+    elem.query_kind = key.query->getQueryKind();
+    elem.exception_code = exception_code;
+    elem.client_info.current_user = key.current_user;
+    elem.client_info.initial_user = key.initial_user;
+    elem.client_info.authenticated_user = key.authenticated_user;
+    return elem;
+}
+
 void AsynchronousInsertQueue::auditFlushFailureBeforeStartSafe(const InsertQuery & key, const InsertData & data, const ContextPtr & global_context) noexcept
 {
     /// A flush can fail before its context is ready to be logged by `logExceptionBeforeStart`: on shutdown, when
@@ -1763,22 +1785,36 @@ void AsynchronousInsertQueue::auditFlushFailureBeforeStartSafe(const InsertQuery
 
     try
     {
-        const auto now = std::chrono::system_clock::now();
-        QueryLogElement elem;
-        elem.type = QueryLogElementType::EXCEPTION_BEFORE_START;
-        elem.event_time = timeInSeconds(now);
-        elem.event_time_microseconds = timeInMicroseconds(now);
-        elem.query = serializeQuery(*key.query, (*key.settings)[Setting::log_queries_cut_to_length]);
-        elem.query_kind = key.query->getQueryKind();
-        elem.exception_code = getCurrentExceptionCode();
-        elem.client_info.current_user = key.current_user;
-        elem.client_info.initial_user = key.initial_user;
-        elem.client_info.authenticated_user = key.authenticated_user;
-        auditLog(elem, global_context, key.query);
+        auditLog(makeFailedFlushAuditElement(key, getCurrentExceptionCode()), global_context, key.query);
     }
     catch (...)
     {
         tryLogCurrentException("AsynchronousInsertQueue", "Failed to write the audit record of a failed flush");
+    }
+}
+
+void AsynchronousInsertQueue::auditDiscardedEntriesSafe(const InsertQuery & key, const InsertData & data, const ContextPtr & global_context, int exception_code) noexcept
+{
+    /// Queued entries can be discarded without ever reaching `processData`: on a shutdown that does not flush
+    /// the queue, or when the flush cannot be scheduled. Every queued `INSERT` was already audited as
+    /// successful, and there is no flush query to attribute the failure to, so record it for every entry,
+    /// under the ID and the address of the request that submitted it.
+    if (!key.audit_flush)
+        return;
+
+    try
+    {
+        auto elem = makeFailedFlushAuditElement(key, exception_code);
+        for (const auto & entry : data.entries)
+        {
+            elem.client_info.current_query_id = entry->query_id;
+            elem.client_info.current_address = entry->client_address;
+            auditLog(elem, global_context, key.query, entry->query_id);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException("AsynchronousInsertQueue", "Failed to write the audit records of discarded entries");
     }
 }
 

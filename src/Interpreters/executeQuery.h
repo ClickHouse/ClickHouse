@@ -215,6 +215,7 @@ bool decideAuditLog(
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();
 
 /// Write the audit record of a query for which `decideAuditLog` returned true.
-/// `query_id`, if not empty, is written instead of the ID of the query the current thread runs.
+/// The record carries `query_id` if it is not empty, otherwise the query ID recorded in `elem`,
+/// and only if that is empty too, the ID of the query the current thread runs.
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast = nullptr, std::string_view query_id = {});
 }
