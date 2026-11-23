@@ -6059,6 +6059,97 @@ TYPED_TEST(CoordinationChangelogTest, RotationAfterResumedChangelogDoesNotReuseE
 
 #endif
 
+TYPED_TEST(CoordinationChangelogTest, AppendRetiresRecoveryCopiesOfDetachedChangelogs)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the retirement of recovery copies is independent of compression";
+
+    /// Startup resumes an incomplete changelog and detaches the empty changelog that follows it, but
+    /// retains a recovery copy of that range, which has entries. The writer still starts at the first
+    /// index of the resumed changelog, so the copy is not a copy of its range. Appending must retire
+    /// it anyway: otherwise it is the only changelog of the detached range on restart, and its
+    /// obsolete entries are replayed over the appended ones.
+    for (const uint64_t startup_read_max_streams : {1, 4})
+    {
+        SCOPED_TRACE(startup_read_max_streams);
+        ChangelogDirTest regular("./logs_detached_copy_regular");
+        ChangelogDirTest latest("./logs_detached_copy_latest");
+        ChangelogDirTest scratch("./logs_detached_copy_scratch");
+        DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+        DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+        DB::DiskPtr scratch_disk = std::make_shared<DB::DiskLocal>("scratch", scratch.path);
+        const DB::LogFileSettings settings{
+            .force_sync = true,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .startup_read_max_streams = startup_read_max_streams,
+        };
+        constexpr std::string_view resumed_path = "changelog_1_10.bin";
+        constexpr std::string_view detached_path = "changelog_6_15.bin";
+
+        this->keeper_context->setLogDisk(regular_disk);
+        {
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(0, 0);
+            for (uint64_t index = 1; index <= 5; ++index)
+                writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+            writer.flush();
+        }
+        ASSERT_TRUE(regular_disk->existsFile(String(resumed_path)));
+
+        /// A changelog of the range starting at 6, with entries of the old term.
+        this->keeper_context->setLogDisk(scratch_disk);
+        {
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(5, 0);
+            for (uint64_t index = 6; index <= 10; ++index)
+                writer.appendEntry(index, getLogEntry("obsolete_" + std::to_string(index), 1));
+            writer.flush();
+        }
+        ASSERT_TRUE(scratch_disk->existsFile(String(detached_path)));
+
+        /// The latest disk holds that changelog with a marker of an unknown version, so startup retains
+        /// it as a recovery copy and selects the empty changelog on the regular disk.
+        scratch_disk->copyFile(String(detached_path), *latest_disk, String(detached_path), {});
+        {
+            String marker_contents = DB::serializeKeeperMoveMarker(DB::computeKeeperFileDigest(scratch_disk, String(detached_path)));
+            marker_contents[8] = 2;
+            auto marker = latest_disk->writeFile("tmp_" + String(detached_path));
+            marker->write(marker_contents.data(), marker_contents.size());
+            marker->finalize();
+        }
+        {
+            auto empty = regular_disk->writeFile(String(detached_path), DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, {});
+            empty->finalize();
+        }
+
+        this->keeper_context->setLogDisk(regular_disk);
+        this->keeper_context->setLatestLogDisk(latest_disk);
+        {
+            DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+            EXPECT_EQ(recovered.getNextEntryIndex(), 6);
+            EXPECT_TRUE(latest_disk->existsFile(String(resumed_path)));
+            EXPECT_FALSE(regular_disk->existsFile(String(detached_path)));
+            /// Nothing is written yet, so the recovery copy is still there.
+            EXPECT_TRUE(latest_disk->existsFile(String(detached_path)));
+
+            for (uint64_t index = 6; index <= 10; ++index)
+                recovered.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 2));
+            recovered.flush();
+            EXPECT_FALSE(latest_disk->existsFile(String(detached_path)));
+            EXPECT_FALSE(latest_disk->existsFile("tmp_" + String(detached_path)));
+        }
+
+        DB::Changelog restarted(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        ASSERT_NO_THROW(restarted.readChangelogAndInitWriter(0, 0));
+        EXPECT_EQ(restarted.getNextEntryIndex(), 11);
+        EXPECT_EQ(restarted.entryAt(5)->get_term(), 1);
+        for (uint64_t index = 6; index <= 10; ++index)
+            EXPECT_EQ(restarted.entryAt(index)->get_term(), 2);
+    }
+}
+
 TYPED_TEST(CoordinationChangelogTest, FailedBackgroundMoveRemovesUnpublishedDestinationBeforeRewrite)
 {
     if (this->enable_compression)

@@ -712,6 +712,11 @@ private:
     /// Same-range recovery copies retained at startup and removed with the registered range.
     std::unordered_map<uint64_t, std::vector<ChangelogFileDescriptionPtr>> retained_duplicate_changelogs;
 
+    /// The state of `retained_duplicate_changelogs` at the last scan for the copies superseded by the
+    /// writer, to skip the scan on appends that cannot find anything new.
+    std::optional<uint64_t> retained_copies_checked_for_writer_start;
+    size_t retained_copies_checked_count = 0;
+
     using ChangelogIter = decltype(existing_changelogs)::iterator;
 
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end, bool remove_recovery_copies);
@@ -778,6 +783,11 @@ private:
     /// rewrites the registered changelog of the range, and before the write thread appends to it. A rewritten changelog can be renamed by a later
     /// rotation, and a stale copy under the old name would compete with it on restart.
     void removeRetainedChangelogCopies(uint64_t from_log_index, ChangelogFileDescription & registered);
+    /// Removes the retained recovery copies that the entries appended by the current writer supersede:
+    /// those of its range and of every later range, and those of the ranges that startup detached,
+    /// which are no longer registered in `existing_changelogs`. Called by the write thread before it
+    /// appends. Throws if a copy cannot be removed.
+    void removeRetainedChangelogCopiesSupersededByWriter();
     /// Whether a retained recovery copy of the range occupies `path` on `disk`. A move there would
     /// overwrite it, and it may be the only complete copy of the range: for example, when the
     /// selected copy has a torn tail.

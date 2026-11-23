@@ -4474,7 +4474,7 @@ void Changelog::finalizeChangelogsAfterRead(
     /// description and rewrite the changelog in place, on a disk that may be neither the latest log
     /// disk nor one where `sync` makes the entries durable. Detach them so that the writer always
     /// creates its changelog on the latest log disk. Their recovery copies are retained until the
-    /// writer appends.
+    /// writer appends: see `removeRetainedChangelogCopiesSupersededByWriter`.
     for (auto itr = existing_changelogs.upper_bound(max_log_id.load(std::memory_order_relaxed)); itr != existing_changelogs.end();)
     {
         const auto current = itr++;
@@ -4917,14 +4917,16 @@ void Changelog::writeThread()
                 std::lock_guard writer_lock(writer_mutex);
                 chassert(current_writer);
 
-                /// Startup keeps the recovery copies of the range of a new writer as long as nothing is
-                /// written. Once the writer appends, they are stale: a rotation can rename the active
-                /// changelog, and on restart a stale copy under the old name would win and lose entries.
+                /// Startup keeps the recovery copies of the range of a new writer, and of the ranges it
+                /// detached, as long as nothing is written. Once the writer appends, they are stale: a
+                /// rotation can rename the active changelog, and on restart a stale copy under the old
+                /// name would win and lose entries, or a copy of a detached range would be the only
+                /// changelog of that range and replay its obsolete entries over the appended ones.
                 if (!retained_duplicate_changelogs.empty())
                 {
                     try
                     {
-                        removeRetainedChangelogCopies(current_writer->getStartIndex(), *current_writer->getCurrentFileDescription());
+                        removeRetainedChangelogCopiesSupersededByWriter();
                     }
                     catch (...)
                     {
@@ -5583,6 +5585,39 @@ void Changelog::removeRetainedChangelogCopies(uint64_t from_log_index, Changelog
             removeKeeperFileIfExists(duplicate->disk, *duplicate->recovery_marker_path);
     }
     retained_duplicate_changelogs.erase(duplicate_it);
+}
+
+void Changelog::removeRetainedChangelogCopiesSupersededByWriter()
+{
+    const auto writer_start_index = current_writer->getStartIndex();
+
+    /// The write thread calls this for every append, so skip the scan if nothing changed since the last one.
+    if (retained_copies_checked_for_writer_start == writer_start_index
+        && retained_copies_checked_count == retained_duplicate_changelogs.size())
+        return;
+
+    /// The writer supersedes its own range and every range after it. A range that is not registered
+    /// was detached at startup: its retained copies are the only changelogs of that range, so restart
+    /// would replay them whatever the range is, for example over the entries the writer appends past
+    /// its first index. The copies of a registered range before the writer stay with that range.
+    std::vector<uint64_t> superseded_ranges;
+    for (const auto & [from_log_index, copies] : retained_duplicate_changelogs)
+    {
+        if (from_log_index >= writer_start_index || !existing_changelogs.contains(from_log_index))
+            superseded_ranges.push_back(from_log_index);
+    }
+
+    for (const auto from_log_index : superseded_ranges)
+    {
+        /// A copy of a range that is not registered cannot be the file of the writer: the name of a
+        /// changelog contains its first index.
+        const auto registered = existing_changelogs.find(from_log_index);
+        removeRetainedChangelogCopies(
+            from_log_index, registered != existing_changelogs.end() ? *registered->second : *current_writer->getCurrentFileDescription());
+    }
+
+    retained_copies_checked_for_writer_start = writer_start_index;
+    retained_copies_checked_count = retained_duplicate_changelogs.size();
 }
 
 bool Changelog::isOccupiedByRetainedCopy(uint64_t from_log_index, const DiskPtr & disk, const std::string & path) const
