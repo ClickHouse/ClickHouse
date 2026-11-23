@@ -31,6 +31,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char deduplication_log_fail_durable_drop_sync[];
+    extern const char deduplication_log_fail_checkpoint[];
 }
 
 namespace
@@ -82,6 +83,9 @@ std::string getLogPath(const std::string & prefix, size_t number)
     return path;
 }
 
+/// A checkpoint is written to a file with this suffix, which is not a log, and renamed when complete.
+constexpr std::string_view checkpoint_temporary_suffix = ".tmp";
+
 size_t getLogNumber(const std::string & path_str)
 {
     std::filesystem::path path(path_str);
@@ -124,12 +128,21 @@ void MergeTreeDeduplicationLog::load()
         }
     }
 
+    /// A checkpoint that was not published, see `dropOutdatedLogs`. Its records are in the logs it was to replace.
+    Strings unpublished_checkpoints;
     for (auto it = disk->iterateDirectory(logs_dir); it->isValid(); it->next())
     {
         const auto & path = it->path();
+        if (path.ends_with(checkpoint_temporary_suffix))
+        {
+            unpublished_checkpoints.push_back(path);
+            continue;
+        }
         auto log_number = getLogNumber(path);
         existing_logs[log_number] = {path, 0};
     }
+    for (const auto & path : unpublished_checkpoints)
+        disk->removeFileIfExists(path);
 
     /// We should know which logs are exist even in case
     /// of deduplication_window = 0
@@ -283,42 +296,102 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     if (old_records <= 2 * rotate_interval || !current_writer)
         return;
 
-    try
+    /// The metadata of the plain object storage does not implement renaming a file, so there the logs are kept as before.
+    if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get());
+        object_storage && object_storage->getMetadataStorage()->getType() == MetadataStorageType::Plain)
+        return;
+
+    /// Nothing is in the window, so the older logs have nothing to carry over.
+    if (deduplication_map.begin() == deduplication_map.end())
     {
-        for (const auto & node : deduplication_map)
-        {
-            MergeTreeDeduplicationLogRecord record;
-            record.operation = MergeTreeDeduplicationOp::ADD;
-            record.part_name = node.value.getPartNameAndCheckFormat(format_version);
-            record.block_id = node.key;
-            writeRecord(record, *current_writer);
-            existing_logs[current_log_number].entries_count++;
-        }
-
-        /// The records that replace the older logs have to be on disk before those are deleted.
-        current_writer->next();
-        current_writer->sync();
-        if (auto guard = disk->getDirectorySyncGuard(logs_dir))
-            guard->sync();
-
         for (auto itr = existing_logs.begin(); itr != existing_logs.end() && itr->first != current_log_number;)
         {
-            LOG_DEBUG(
-                getLogger("MergeTreeDeduplicationLog"),
-                "Dropping deduplication log {}, its entries are in {}",
-                itr->second.path,
-                existing_logs[current_log_number].path);
             disk->removeFileIfExists(itr->second.path);
             itr = existing_logs.erase(itr);
         }
+        return;
+    }
+
+    /// The entries that are still in the window go to a new log, which is written to a temporary file and renamed when it is complete
+    /// and durable. So a log that is incomplete, or not yet published on an object storage, never replaces the older ones.
+    const size_t checkpoint_log_number = current_log_number + 1;
+    const std::string checkpoint_path = getLogPath(logs_dir, checkpoint_log_number);
+    const std::string temporary_path = checkpoint_path + std::string(checkpoint_temporary_suffix);
+    size_t checkpoint_entries = 0;
+    try
+    {
+        auto writer = disk->writeFile(temporary_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        try
+        {
+            for (const auto & node : deduplication_map)
+            {
+                MergeTreeDeduplicationLogRecord record;
+                record.operation = MergeTreeDeduplicationOp::ADD;
+                record.part_name = node.value.getPartNameAndCheckFormat(format_version);
+                record.block_id = node.key;
+                writeRecord(record, *writer);
+                ++checkpoint_entries;
+
+                fiu_do_on(FailPoints::deduplication_log_fail_checkpoint,
+                {
+                    throw Exception(ErrorCodes::CANNOT_FSYNC, "Injected failure to write the deduplication log checkpoint");
+                });
+            }
+            writer->finalize();
+            writer->sync();
+        }
+        catch (...)
+        {
+            writer->cancel();
+            throw;
+        }
+
+        disk->moveFile(temporary_path, checkpoint_path);
+        if (auto guard = disk->getDirectorySyncGuard(logs_dir))
+            guard->sync();
     }
     catch (...)
     {
-        /// The records that are already written are valid ADD records of entries in the window, and the older logs are still there.
+        /// The older logs are not touched, and the next rotation tries again.
         tryLogCurrentException(
             __PRETTY_FUNCTION__,
-            "Error while checkpointing MergeTree deduplication log in " + logs_dir + ", will retry on the next rotation");
+            "Error while checkpointing MergeTree deduplication log in " + logs_dir + ", will retry on the next rotation",
+            LogsLevel::warning);
+        try
+        {
+            disk->removeFileIfExists(temporary_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        return;
     }
+
+    /// The checkpoint is published. The log that `rotate` opened is empty and the checkpoint takes its place as the last one.
+    /// A writer for the checkpoint is opened by `prepareToWrite` when the next record is written.
+    current_writer->cancel();
+    current_writer.reset();
+
+    for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
+    {
+        LOG_DEBUG(getLogger("MergeTreeDeduplicationLog"), "Dropping deduplication log {}, its entries are in {}", itr->second.path, checkpoint_path);
+        try
+        {
+            disk->removeFileIfExists(itr->second.path);
+        }
+        catch (...)
+        {
+            /// It is replayed before the checkpoint if it stays, which does not change the result.
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove deduplication log " + itr->second.path);
+            ++itr;
+            continue;
+        }
+        itr = existing_logs.erase(itr);
+    }
+
+    existing_logs[checkpoint_log_number] = {checkpoint_path, checkpoint_entries, 0};
+    current_log_number = checkpoint_log_number;
 }
 
 void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()

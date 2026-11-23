@@ -49,6 +49,7 @@ static struct InitFiu
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(parallel_sync_paths_fail_fsync) \
     REGULAR(deduplication_log_fail_durable_drop_sync) \
+    REGULAR(deduplication_log_fail_checkpoint) \
     REGULAR(parallel_sync_paths_interrupt_fsync) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(smt_blobs_list_split_file_writes) \
