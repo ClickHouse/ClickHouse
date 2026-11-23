@@ -63,7 +63,7 @@ namespace
 /// Use within any block that calls into LLVM, so heap allocations made by LLVM (which uses global
 /// `operator new`) don't pollute the default arena. Frees auto-route via jemalloc's per-extent
 /// metadata, so only allocation-side blocks need scoping.
-/// The binary is built with branch protection (`ENABLE_BRANCH_PROTECTION`): generate the JIT code the same
+/// The binary is built with branch protection (`-mbranch-protection`, see `ENABLE_BTI`): generate the JIT code the same
 /// way, and guard its pages with BTI, as `ld.so` does for the binary.
 void setBranchProtectionAttributes([[maybe_unused]] llvm::Module & module)
 {

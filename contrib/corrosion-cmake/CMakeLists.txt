@@ -198,7 +198,7 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
 endif()
 
 # The prebuilt standard library lacks the BTI property, which would disable BTI for the whole executable.
-if (USE_BRANCH_PROTECTION)
+if (USE_BTI)
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zbranch-protection=bti,pac-ret")
 endif()

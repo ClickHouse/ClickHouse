@@ -708,7 +708,7 @@ if (ENABLE_XRAY)
     # * patching a function makes its pages writable and then executable again with `mprotect`, without
     #   `PROT_BTI`, which would leave the patched pages unguarded: add `PROT_BTI` if the kernel supports
     #   BTI (`HWCAP2_BTI`). Both constants are missing in the headers of the sysroot.
-    if (ARCH_AARCH64 AND USE_BRANCH_PROTECTION)
+    if (ARCH_AARCH64 AND USE_BTI)
         # Replaces `source` in `_xray_combined_full` with a copy at `copy` containing `text`.
         function(_xray_use_patched_copy source copy text)
             set(_old_text "")

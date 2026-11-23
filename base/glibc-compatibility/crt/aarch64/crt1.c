@@ -1,6 +1,6 @@
 /// Startup code for AArch64 executables linked against glibc, used instead of `Scrt1.o`, `crti.o`,
-/// `crtbeginS.o`, `crtendS.o`, `crtn.o` and `libc_nonshared.a` when the build enables branch protection
-/// (see `ENABLE_BRANCH_PROTECTION`).
+/// `crtbeginS.o`, `crtendS.o`, `crtn.o` and `libc_nonshared.a` when the build enables BTI
+/// (`ENABLE_BTI`).
 ///
 /// The startup objects of the sysroot predate BTI and lack the BTI property, which makes the linker
 /// drop BTI for the whole executable. They can't be marked as is either: `ld.so` and `__libc_start_main`

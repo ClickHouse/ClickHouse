@@ -50,7 +50,7 @@ if (GLIBC_COMPATIBILITY)
 
     target_link_libraries(global-libs INTERFACE glibc-compatibility)
 
-    if (USE_BRANCH_PROTECTION)
+    if (USE_BTI)
         # Startup code with the BTI property, linked into every executable instead of the startup objects
         # of the sysroot (see cmake/linux/default_libs.cmake). It's copied to a stable path that the link
         # flags reference, and every executable links `glibc-compatibility`, which depends on the copy.
