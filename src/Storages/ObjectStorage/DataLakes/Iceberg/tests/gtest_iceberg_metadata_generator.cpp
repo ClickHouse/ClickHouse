@@ -235,22 +235,21 @@ TEST(IcebergMetadataGenerator, MetadataLogDropsOldestEntries)
     auto metadata = makeMetadataWithLog(5);
     appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ 3);
     auto files = metadataLogFiles(metadata);
-    ASSERT_EQ(files.size(), 4u);
-    EXPECT_EQ(files[0], "old2");
-    EXPECT_EQ(files[1], "old3");
-    EXPECT_EQ(files[2], "old4");
-    EXPECT_NE(files[3].find("v1"), String::npos);
+    ASSERT_EQ(files.size(), 3u);
+    EXPECT_EQ(files[0], "old3");
+    EXPECT_EQ(files[1], "old4");
+    EXPECT_NE(files[2].find("v1"), String::npos);
 }
 
 TEST(IcebergMetadataGenerator, MetadataLogDropsOneEntryAtLimit)
 {
-    auto metadata = makeMetadataWithLog(4);
+    auto metadata = makeMetadataWithLog(3);
     appendSnapshot(metadata, /*parent_snapshot_id=*/ -1, /*metadata_previous_versions_max=*/ 3);
     auto files = metadataLogFiles(metadata);
-    ASSERT_EQ(files.size(), 4u);
+    ASSERT_EQ(files.size(), 3u);
     EXPECT_EQ(files[0], "old1");
-    EXPECT_EQ(files[2], "old3");
-    EXPECT_NE(files[3].find("v1"), String::npos);
+    EXPECT_EQ(files[1], "old2");
+    EXPECT_NE(files[2].find("v1"), String::npos);
 }
 
 TEST(IcebergMetadataGenerator, MetadataLogIsUnboundedWithoutLimit)

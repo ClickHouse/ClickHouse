@@ -123,7 +123,7 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 
 }
 
-void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String & metadata_file, Int64 timestamp, std::optional<UInt64> previous_versions_max)
+void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String & metadata_file, Int64 timestamp, std::optional<UInt64> max_entries)
 {
     if (!metadata_object->has(Iceberg::f_metadata_log))
         metadata_object->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
@@ -134,23 +134,19 @@ void appendToMetadataLog(Poco::JSON::Object::Ptr metadata_object, const String &
     new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
     metadata_log->add(new_metadata_item);
 
-    /// Like the Java implementation, the table property keeps at least one previous version.
+    /// Like the Java implementation, the table property counts the previous versions and keeps at least one.
+    /// The log also holds the entry of the metadata file being written, so the property allows one entry more.
     if (metadata_object->has(Iceberg::f_properties))
     {
         auto properties = metadata_object->getObject(Iceberg::f_properties);
         if (properties && properties->has(Iceberg::f_metadata_previous_versions_max))
-            previous_versions_max = std::max<Int64>(1, parse<Int64>(properties->getValue<String>(Iceberg::f_metadata_previous_versions_max)));
+            max_entries = static_cast<UInt64>(std::max<Int64>(1, parse<Int64>(properties->getValue<String>(Iceberg::f_metadata_previous_versions_max)))) + 1;
     }
 
-    if (!previous_versions_max)
+    if (!max_entries || metadata_log->size() <= *max_entries)
         return;
 
-    /// The log also holds the entry of the metadata file being written, so it keeps one entry more than the number of previous versions.
-    const size_t previous_versions = metadata_log->size() - 1;
-    if (previous_versions <= *previous_versions_max)
-        return;
-
-    const size_t excess = previous_versions - *previous_versions_max;
+    const size_t excess = metadata_log->size() - *max_entries;
     if (excess == 1)
     {
         metadata_log->remove(0);

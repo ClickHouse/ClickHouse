@@ -41,7 +41,7 @@ SELECT 'limit 3', * FROM latest_metadata_log;
 INSERT INTO t VALUES (7);
 SELECT 'limit 3', * FROM latest_metadata_log;
 
--- A limit of one keeps the previous metadata file.
+-- A limit of one keeps only the entry of the metadata file being written.
 SET iceberg_metadata_previous_versions_max = 1;
 DELETE FROM t WHERE id = 1;
 SELECT 'limit 1', * FROM latest_metadata_log;
