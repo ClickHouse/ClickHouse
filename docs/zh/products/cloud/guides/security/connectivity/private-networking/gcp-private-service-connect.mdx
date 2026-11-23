@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Private Service Connect']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="GCP PSC" />
@@ -16,7 +15,15 @@ Private Service Connect (PSC) 是 Google Cloud 的一项网络功能，可让消
 
 服务提供方通过创建 Private Service Connect 服务，将其应用发布给消费者。服务消费者则通过其中一种 Private Service Connect 类型直接访问这些 Private Service Connect 服务。
 
-<Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Private Service Connect 概览" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![Private Service Connect 概览](/images/cloud/security/gcp-psc-overview.webp)
+
+</Frame>
+
+</div>
 
 <Warning>
   GCP Private Service Connect 仅支持从你的 GCP VPC 发起并连接到 ClickHouse Cloud。它不能用于从 ClickHouse Cloud 发起并连接到你 VPC 中的服务，例如[私有数据库](#connecting-to-a-remote-database)。
@@ -98,7 +105,15 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 
 在 ClickHouse Cloud 控制台中，打开要通过 Private Service Connect 连接的服务，然后打开 **设置** 菜单。点击 **设置专用终结点** 按钮。记下 **服务名称** (`endpointServiceId`) 和 **DNS 名称** (`privateDnsHostname`)，后续步骤中会用到它们。
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="lg" alt="专用终结点" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![专用终结点](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api">
   ### 选项 2：API
@@ -146,7 +161,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 在 Google Cloud Console 中，导航到 **Network services -&gt; Private Service Connect**。
 
-<Image img="/images/cloud/security/gcp-psc-open.webp" size="lg" alt="在 Google Cloud Console 中打开 Private Service Connect" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![在 Google Cloud Console 中打开 Private Service Connect](/images/cloud/security/gcp-psc-open.webp)
+
+</Frame>
+
+</div>
 
 点击 **Connect Endpoint** 按钮，打开 Private Service Connect 创建对话框。
 
@@ -156,13 +179,29 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 * **Network/Subnetwork/IP address**：选择要用于该连接的网络。你需要为 Private Service Connect 端点创建一个 IP 地址，或使用现有地址。在我们的示例中，我们预先创建了一个名为 **your-ip-address** 的地址，并将 IP 地址设为 `10.128.0.2`。
 * 若要使该端点可从任何区域访问，可以选中 **Enable global access** 复选框。
 
-<Image img="/images/cloud/security/gcp-psc-enable-global-access.webp" size="md" alt="为 Private Service Connect 启用 Global Access" border />
+<div className="ch-image-md">
+
+<Frame>
+
+![为 Private Service Connect 启用 Global Access](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+</Frame>
+
+</div>
 
 要创建 PSC 端点，请点击 **ADD ENDPOINT** 按钮。
 
 连接获批后，**Status** 列会从 **Pending** 变为 **Accepted**。
 
-<Image img="/images/cloud/security/gcp-psc-copy-connection-id.webp" size="lg" alt="复制 PSC Connection ID" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![复制 PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+</Frame>
+
+</div>
 
 复制 ***PSC Connection ID***；你将在后续步骤中将其用作 ***Endpoint ID***。
 
@@ -246,7 +285,15 @@ output "psc_connection_id" {
 
 要移除端点，请打开 **Organization details -&gt; Private Endpoints**，然后点击删除按钮将其移除。
 
-<Image img="/images/cloud/security/gcp-pe-remove-private-endpoint.webp" size="lg" alt="从 ClickHouse Cloud 移除专用终结点" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![从 ClickHouse Cloud 移除专用终结点](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api">
   ### 选项 2：API
@@ -315,7 +362,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
   如果您想允许来自现有 Private Service Connect 连接的访问，请使用现有端点下拉菜单。
 </Note>
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-filters.webp" size="lg" alt="专用终结点过滤器" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![专用终结点过滤器](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api">
   ### 选项 2：API
@@ -375,7 +430,15 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 在 ClickHouse Cloud 控制台中，前往 **设置**。点击 **设置专用终结点** 按钮。在打开的弹出面板中，复制 **DNS 名称**。
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="lg" alt="专用终结点 DNS 名称" border />
+<div className="ch-image-lg">
+
+<Frame>
+
+![专用终结点 DNS 名称](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+</Frame>
+
+</div>
 
 <div id="option-2-api-3">
   #### 选项 2：API

@@ -24,11 +24,13 @@
     <fill_query>INSERT INTO lazy_join_other SELECT number, repeat(randomPrintableASCII(50), 4) FROM numbers_mt(50000)</fill_query>
     <fill_query>OPTIMIZE TABLE lazy_join_facts FINAL</fill_query>
 
-    <!-- ORDER BY ... LIMIT over a join: the payload of both sides is read for the rows of the LIMIT only. With a much
+    <!-- ORDER BY ... LIMIT over a join, with LIMIT 10, 100 and 1000 (below the default query_plan_max_limit_for_lazy_materialization,
+         10000): the payload of both sides is read for the rows of the LIMIT only. With a much
          larger LIMIT the rows of the LIMIT, spread at random by `ts`, touch most granules, so the lazy read reads the
          payload a second time, as for a single table. -->
     <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 10 FORMAT Null</query>
     <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 100 FORMAT Null</query>
+    <query>SELECT f.k, f.payload, d.name, d.descr FROM lazy_join_facts f JOIN lazy_join_dim d ON f.dim_key = d.dim_key ORDER BY f.ts LIMIT 1000 FORMAT Null</query>
 
     <!-- A LIMIT without ORDER BY, with a filter on the dimension that keeps one key in every 100000 rows, as many rows
          as the LIMIT, so that the joins go through the whole fact table: the payload of those rows is not read. -->

@@ -16,6 +16,14 @@ B. A record whose version disappears entirely (no record is left for that versio
    hidden by deleting the record that announced it.
 C. Editing a record's values or reason, or adding a record under an older version, is always allowed as long as a
    record for that version still exists afterwards (backports, corrections of what an older release recorded).
+D. A record added under a version newer than the current version is never allowed. On master the current version
+   is the newest, so this never triggers; on a release branch a backport that cherry-picks a master record (e.g.
+   a "26.12" record onto the "26.10" branch) must record the change under the branch's own version instead. A
+   newer-version record would make `compatibility` roll the change back on the branch itself: the walk reverts
+   every record whose version exceeds the pin and there is no check against the running server version.
+
+History versions are major.minor (e.g. "26.10"); there is no patch-level granularity, so a change is recorded
+under the current version as a whole.
 
 A default that moves through a constant defined elsewhere is caught at runtime by 03999_stateless_settings_history,
 which requires the newest recorded new_value of every setting to equal its default.
@@ -127,9 +135,10 @@ def parse_declaration_changes(files):
     of `SETTINGS_DECLARATION_FILES`. Only names and versions are returned, never free text from the diff:
 
     - "declarations": `{"namespace", "name", "record_versions"}` of every declaration added or whose default text
-      changed (rule A).
+      changed (rule A), with "default_changed" telling the latter apart.
     - "records": `{"namespace", "name", "record_versions"}` of every setting with a record whose version disappeared
       entirely (rule B), unless the setting itself was removed.
+    - "added_records": `{"namespace", "name", "version"}` of every record the diff adds (rule D), deduplicated.
 
     `record_versions` are the versions of the records the setting has in the final files.
 
@@ -178,7 +187,7 @@ def parse_declaration_changes(files):
         return {"namespace": namespace, "name": name, "record_versions": versions}
 
     declarations = [
-        with_versions(namespace, name)
+        {**with_versions(namespace, name), "default_changed": (namespace, name) in removed_headers}
         for (namespace, name), default in added_headers.items()
         if removed_headers.get((namespace, name), object()) != default
     ]
@@ -192,10 +201,27 @@ def parse_declaration_changes(files):
             continue
         if (namespace, name) not in removed:
             removed.append((namespace, name))
+    added = []
+    seen_added = set()
+    for namespace, name, version, _signature in added_records:
+        key = (namespace, name, version)
+        if key not in seen_added:
+            seen_added.add(key)
+            added.append({"namespace": namespace, "name": name, "version": version})
     return {
         "declarations": declarations,
         "records": [with_versions(namespace, name) for namespace, name in removed],
+        "added_records": added,
     }
+
+
+def _minor_version(version):
+    """`(major, minor)` of a dotted version, missing components as 0, so that a patch-level version compares equal
+    to its minor (`26.10.5` -> `(26, 10)`, the same as `26.10`)."""
+    parts = version.split(".")
+    major = int(parts[0]) if parts and parts[0].isdigit() else 0
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return major, minor
 
 
 def violations(changes, current_version):
@@ -210,15 +236,23 @@ def violations(changes, current_version):
                 result.append(
                     f"  {item['namespace']} setting '{item['name']}' {what}, but it has no '{current_version}' record"
                 )
+    current_minor = _minor_version(current_version)
+    for item in changes.get("added_records", []):
+        if _minor_version(item["version"]) > current_minor:
+            result.append(
+                f"  {item['namespace']} setting '{item['name']}' adds a '{item['version']}' record, newer than "
+                f"the current version '{current_version}'"
+            )
     return sorted(set(result))
 
 
 def violation_message(found, current_version):
     return (
-        f"The settings history must record the changes made now under the current version ('{current_version}'): "
-        f"add a record `{{\"{current_version}\", previous_value, new_value, \"reason\"}}` as the first trailing "
-        f"argument of the setting's declaration. Records under older versions may be added freely (backports, "
-        f"corrections):\n" + "\n".join(found)
+        f"The settings history must record the changes made now under the current version ('{current_version}'), "
+        f"and must not record them under a newer version: add or move the record "
+        f"`{{\"{current_version}\", previous_value, new_value, \"reason\"}}` to the first trailing argument of the "
+        f"setting's declaration. Records under older versions may be added freely (backports, corrections):\n"
+        + "\n".join(found)
     )
 
 
