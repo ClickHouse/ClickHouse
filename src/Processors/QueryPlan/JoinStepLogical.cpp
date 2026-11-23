@@ -3260,6 +3260,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
     result_step->planned_algorithm = planned_algorithm;
+    result_step->planned_merge_order = planned_merge_order;
 
     return result_step;
 }

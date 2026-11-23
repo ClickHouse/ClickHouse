@@ -6381,6 +6381,11 @@ def prepare_protocols(args):
 def check_server_started(args):
     print("Connecting to ClickHouse server...", end="")
 
+    # The last error the server itself answered with, as opposed to a failure to
+    # reach it at all. A server that answers every connection with an error is
+    # running and is not hung, so the caller must not report it as unresponsive.
+    check_server_started.last_server_error = ""
+
     sys.stdout.flush()
     retry_count = args.server_check_retries
     query = "SELECT version(), (SELECT value FROM system.build_options WHERE name = 'GIT_HASH'), (SELECT value FROM system.build_options WHERE name = 'GIT_BRANCH')"
@@ -6406,6 +6411,15 @@ def check_server_started(args):
 
             # HTTPError:
             # Code: 503. Code: 439. DB::Exception: Cannot schedule a task: failed to start the thread (threads=2, jobs=2). (CANNOT_SCHEDULE_TASK)
+            # Only an HTTP response is an answer from the server; a transport
+            # failure means it was not reached, so it must not leave an earlier
+            # answer standing. Keep only the outcome of the last retry.
+            # The server body can span several lines, with the error name on the
+            # last one; fold it into one line, so that a reader of the log that
+            # matches the line with the marker also sees the error name.
+            check_server_started.last_server_error = (
+                " ".join(str(e).split()) if isinstance(e, HTTPError) else ""
+            )
             if args.hung_check:
                 print("Connection error, will retry: ", str(e))
             else:
@@ -6415,9 +6429,11 @@ def check_server_started(args):
             sleep(0.5)
             continue
         except TimeoutError:
+            check_server_started.last_server_error = ""
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
+            check_server_started.last_server_error = ""
             print(
                 "\nUnexpected exception, will not retry: ",
                 type(e).__name__,
@@ -7394,7 +7410,21 @@ def main(args):
     tests_start_time = time()
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot query the server version."
+        # A server that answered every connection with an error is running: it
+        # rejected the query, it did not fail to receive it. Reporting that as
+        # "not responding" is what makes the stress-test hung check file it as a
+        # deadlock. The case seen in CI is a global memory tracker sitting far
+        # above the memory the process really uses, which fails every
+        # allocation, down to the zero-byte check at the start of a connection,
+        # with `MEMORY_LIMIT_EXCEEDED`.
+        server_error = getattr(check_server_started, "last_server_error", "")
+        if server_error:
+            msg = (
+                "Server rejects queries. Cannot query the server version: "
+                + server_error
+            )
+        else:
+            msg = "Server is not responding. Cannot query the server version."
         if args.hung_check:
             print(msg)
             # The probe that just failed is HTTP; this dump goes over TCP.
@@ -7774,6 +7804,12 @@ ORDER BY (test_name, callee_offset)
         # Some queries may execute in background for some time after test was finished. This is normal.
         print("Checking the hung queries: ", end="")
         hung_count = 0
+        # A rejection of the polling query is not necessarily the terminal
+        # outcome: when earlier probes saw running queries, the check goes on to
+        # collect stacktraces and to recheck the processlist. So it is only
+        # recorded here, and the `Server rejects queries.` marker is printed
+        # once, after the final outcome is known.
+        polling_rejection = None
         try:
             deadline = datetime.now() + timedelta(seconds=90)
             while datetime.now() < deadline:
@@ -7793,6 +7829,10 @@ ORDER BY (test_name, callee_offset)
                     attrs=["bold"],
                 )
             )
+            # An HTTP response is an answer from the server: it rejected the
+            # query, it was not unreachable and it is not hung.
+            if isinstance(e, HTTPError):
+                polling_rejection = e
             exit_code.value = 1
 
         processlist = ""
@@ -7805,9 +7845,11 @@ ORDER BY (test_name, callee_offset)
                 # can time out under sanitizers.  Re-check whether the queries
                 # are still running — if they finished in the meantime, it was
                 # not a real hang.
+                recheck_error = None
                 try:
                     hung_count = get_processlist_size(args)
-                except Exception:
+                except Exception as recheck_e:
+                    recheck_error = recheck_e
                     hung_count = -1
                 if hung_count != 0:
                     print(
@@ -7819,6 +7861,20 @@ ORDER BY (test_name, callee_offset)
                             attrs=["bold"],
                         )
                     )
+                    # The recheck is the terminal query here, and its outcome
+                    # supersedes an earlier rejection of the polling query.
+                    # When the server answered it with an error, it rejected
+                    # the query and is not hung: print the marker, so that the
+                    # stress test names the failure after the rejection. A
+                    # transport failure, or a recheck that still sees running
+                    # queries, stays on the deadlock path. It is printed before
+                    # the dumps below, which can outlast the deadline.
+                    polling_rejection = None
+                    if isinstance(recheck_error, HTTPError):
+                        print(
+                            "Server rejects queries. Cannot get the processlist size: "
+                            + " ".join(str(recheck_error).split())
+                        )
                     # stdout is a pipe and the dumps below can outlast the deadline.
                     sys.stdout.flush()
                     # The query that failed is an expensive aggregate over
@@ -7857,6 +7913,16 @@ ORDER BY (test_name, callee_offset)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
+
+        # The rejection of the polling query was the terminal outcome: nothing
+        # after it found running queries or failed in another way. Print the
+        # same marker the startup probe prints, so that the stress test names
+        # the failure after the rejection and not after a deadlock.
+        if polling_rejection is not None and not processlist:
+            print(
+                "Server rejects queries. Cannot get the processlist size: "
+                + " ".join(str(polling_rejection).split())
+            )
 
     if len(restarted_tests) > 0:
         print("\nSome tests were restarted:\n")
@@ -8945,9 +9011,36 @@ if __name__ == "__main__":
         )
         args.encrypted_storage = False
 
+    def print_runner_query_rejection(e):
+        # A query of the runner itself, such as one collecting the build flags
+        # right after the startup probe, or creating the database, was answered
+        # with an error. The server rejected it, it was not unreachable and it
+        # is not hung: print the same marker as the startup probe and the
+        # processlist query, so that the stress test does not file the hung
+        # check as a deadlock. The `HTTPError` can be wrapped into other
+        # exceptions on the way up (e.g. `RuntimeError`, then `StopTesting`, by
+        # the database setup), so look for it through the exception chain.
+        if not args.hung_check:
+            return
+        seen = set()
+        while e is not None and id(e) not in seen:
+            if isinstance(e, HTTPError):
+                print(
+                    "Server rejects queries. A query of the test runner was rejected: "
+                    + " ".join(str(e).split())
+                )
+                sys.stdout.flush()
+                return
+            seen.add(id(e))
+            e = e.__cause__ or e.__context__
+
     try:
         main(args)
+    except HTTPError as e:
+        print_runner_query_rejection(e)
+        raise
     except StopTesting as e:
+        print_runner_query_rejection(e)
         print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(e.exit_code)

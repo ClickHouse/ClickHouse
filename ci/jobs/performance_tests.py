@@ -1001,6 +1001,14 @@ def get_binary_commit_sha(binary):
     return sha
 
 
+def get_binary_link_flags(binary):
+    # A downloaded binary may lack the executable bit.
+    os.chmod(binary, 0o755)
+    return Shell.get_output_or_raise(
+        f"{local_command(binary)} -q \"SELECT value FROM system.build_options WHERE name='LINK_FLAGS'\""
+    )
+
+
 def write_ci_logs_sender_user(config_dir, binary):
     """Write the `ci_logs_sender` user, which the export views run as, into a
     server's users.d - without the settings that build does not know.
@@ -1700,6 +1708,11 @@ def parse_args():
     parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Optional test name pattern", default="")
     parser.add_argument("--reference-path", help="Local reference clickhouse binary", default="")
+    parser.add_argument(
+        "--allow-non-thinlto",
+        action="store_true",
+        help="Compare a tested binary built without ThinLTO with the ThinLTO reference anyway",
+    )
     return parser.parse_args()
 
 
@@ -3499,6 +3512,28 @@ def main():
         ]
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
+        )
+        res = results[-1].is_ok()
+
+    # A PR run builds `amd_release` without ThinLTO, PGO and BOLT when it skips the AMD
+    # performance comparison (`configure_amd_release_thinlto` in `filter_job.py`).
+    # CI does not run this job on such a build, but a local run (`praktika run ... --pr N
+    # --sha SHA`) downloads the variant that the run at that commit built. Comparing a
+    # non-ThinLTO binary with the ThinLTO reference would report bogus changes, so
+    # refuse it, unless the run compares with its own `--reference-path` binary or opts
+    # out explicitly. This does not depend on the stages: a run resumed at any stage
+    # (`--param restart`) can measure the binary that was downloaded for it. Even the
+    # `report` and `check_results` stages run the changed queries again to confirm them
+    # (`confirm_changes` in `compare.sh`).
+    if res and not args.reference_path and not args.allow_non_thinlto:
+        link_flags = get_binary_link_flags(f"{ch_path}/clickhouse")
+        results.append(
+            Result(
+                name="Tested binary is a ThinLTO build",
+                status=Result.Status.OK if "-flto=thin" in link_flags else Result.Status.FAIL,
+                info=f"LINK_FLAGS: {link_flags}"
+                + ("" if "-flto=thin" in link_flags else "; pass --allow-non-thinlto to compare it anyway"),
+            )
         )
         res = results[-1].is_ok()
 
