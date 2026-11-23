@@ -3,4 +3,14 @@
 
     <!-- Lets the tests write `ENGINE = ReplicatedMergeTree` with no arguments. -->
     <default_replica_path>/clickhouse/test_lazy/{database}/{table}/{shard}</default_replica_path>
+
+    <!-- A Kafka consumer is closed without leaving its consumer group, so the group keeps the
+         consumer of a detached table as a member until its session expires, and the consumer
+         created when the table is attached again gets no partition before that. The default
+         session timeout is 45 seconds. This is the lowest one the broker accepts. -->
+    <kafka>
+        <consumer>
+            <session_timeout_ms>6000</session_timeout_ms>
+        </consumer>
+    </kafka>
 </clickhouse>

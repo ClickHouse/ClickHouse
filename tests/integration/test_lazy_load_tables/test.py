@@ -108,6 +108,21 @@ def test_kafka_ingests_after_restart(engine):
             CREATE MATERIALIZED VIEW {DB}.mv TO {DB}.dest AS SELECT key, value FROM {DB}.kafka_src;
             """
         )
+        # The view makes the table create its consumer, which joins the consumer group, and the
+        # reload closes it. A consumer is closed without leaving the group, so the consumer created
+        # after the reload gets the partition only when the session of the closed one expires
+        # (`session_timeout_ms` in `configs/lazy.xml`). A consumer closed in the middle of the join
+        # holds the group for longer than that, so let the join finish first: nothing is produced
+        # yet, so there is nothing for this consumer to read.
+        node.query_with_retry(
+            f"""
+            SELECT count() FROM system.kafka_consumers
+            WHERE database = '{DB}' AND table = 'kafka_src' AND notEmpty(assignments.topic)
+            """,
+            check_callback=lambda result: int(result) == 1,
+            retry_count=120,
+            sleep_time=0.5,
+        )
         reload()
         assert loaded("kafka_src") == "1"
         # Nothing depends on this one, so its consumer would feed nothing and it stays deferred.
