@@ -72,9 +72,9 @@
         </substitution>
     </substitutions>
 
-    <create_query>DROP TABLE IF EXISTS {database}.manifest_pruner_reuse</create_query>
+    <create_query>DROP TABLE IF EXISTS manifest_pruner_reuse</create_query>
     <create_query>
-        CREATE TABLE {database}.manifest_pruner_reuse
+        CREATE TABLE manifest_pruner_reuse
         (
             filter_key Int64,
             join_key Int64,
@@ -88,7 +88,7 @@
          10,000-row data files. Each manifest has one file whose min-max range
          overlaps the query predicate. The other four should be pruned. -->
     <fill_query>
-        INSERT INTO {database}.manifest_pruner_reuse
+        INSERT INTO manifest_pruner_reuse
         SELECT
             toInt64(number * 40 + {offset}) AS filter_key,
             toInt64(number % 1000) AS join_key,
@@ -105,12 +105,12 @@
          so all forty manifests must be considered by both walks. -->
     <query>
         SELECT count(), sum(f.payload)
-        FROM {database}.manifest_pruner_reuse AS f
+        FROM manifest_pruner_reuse AS f
         INNER JOIN (SELECT toInt64(number) AS join_key FROM numbers(1000)) AS d
             ON f.join_key = d.join_key
         WHERE f.filter_key >= 500000
           AND f.filter_key &lt; 600000
     </query>
 
-    <drop_query>DROP TABLE IF EXISTS {database}.manifest_pruner_reuse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS manifest_pruner_reuse</drop_query>
 </test>
