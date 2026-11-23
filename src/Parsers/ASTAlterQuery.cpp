@@ -1251,7 +1251,8 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::EXECUTE_COMMAND)
     {
-        ostr << "EXECUTE " << execute_command_name << "(";
+        /// The parser reads the command name as one identifier.
+        ostr << "EXECUTE " << backQuoteIfNeed(execute_command_name) << "(";
         if (execute_args)
             execute_args->format(ostr, settings, state, frame);
         ostr << ")";

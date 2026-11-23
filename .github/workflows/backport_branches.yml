@@ -5,6 +5,7 @@ name: BackportPR
 on:
   pull_request:
     branches: ['2[1-9].[1-9][0-9]', '2[1-9].[1-9]']
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
@@ -124,6 +125,43 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "BackportPR" --ci --timestamp
+
+  style_check:
+    runs-on: [self-hosted, arm-tiny]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3R5bGUgY2hlY2s=') }}
+    name: "Style check"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Style check' --workflow "BackportPR" --ci --timestamp
 
   build_amd_debug:
     runs-on: [self-hosted, arm-medium-cpu]
@@ -1874,6 +1912,7 @@ jobs:
     - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
     - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
     - stress_test_amd_tsan
+    - style_check
     - unit_tests_asan_ubsan
     - unit_tests_asan_ubsan_function_prop_fuzzer
     - unit_tests_tsan

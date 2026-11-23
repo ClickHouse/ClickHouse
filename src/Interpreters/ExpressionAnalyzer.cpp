@@ -3,6 +3,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -777,22 +778,19 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
         chassert(function_node.isWindowFunction());
 
         WindowFunctionDescription window_function;
-        window_function.function_node = &function_node;
-        window_function.column_name
-            = window_function.function_node->getColumnName();
+        window_function.column_name = function_node.getColumnName();
         window_function.function_parameters
-            = window_function.function_node->parameters
+            = function_node.parameters
                 ? getAggregateFunctionParametersArray(
-                    window_function.function_node->parameters, "", getContext())
+                    function_node.parameters, "", getContext())
                 : Array();
 
         // Requiring a constant reference to a shared pointer to non-const AST
         // doesn't really look sane, but the visitor does indeed require it.
         // Hence, we clone the node (not very sane either, I know).
-        getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
+        getRootActionsNoMakeSet(function_node.clone(), actions);
 
-        const ASTs & arguments
-            = window_function.function_node->arguments->children;
+        const ASTs & arguments = function_node.arguments->children;
         window_function.argument_types.resize(arguments.size());
         window_function.argument_names.resize(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -804,21 +802,45 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             {
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "Unknown identifier '{}' in window function '{}'",
-                    name, window_function.function_node->formatForErrorMessage());
+                    name, function_node.formatForErrorMessage());
             }
 
             window_function.argument_types[i] = node->result_type;
             window_function.argument_names[i] = name;
         }
 
-        AggregateFunctionProperties properties;
-        window_function.aggregate_function = AggregateFunctionFactory::instance().get(
-            window_function.function_node->name,
-            window_function.function_node->getNullsAction(),
-            window_function.argument_types,
-            window_function.function_parameters,
-            properties,
-            AggregateFunctionStateVariant::Window);
+        if (WindowFunctionFactory::instance().isWindowFunctionName(function_node.name))
+        {
+            const DataTypes bound_types = WindowFunctionFactory::instance().bindArgumentTypes(function_node.name, window_function.argument_types);
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (window_function.argument_types[i]->equals(*bound_types[i]))
+                    continue;
+
+                String cast_name = fmt::format("_CAST({}, '{}')", window_function.argument_names[i], bound_types[i]->getName());
+                const auto & argument_node = actions.findInOutputs(window_function.argument_names[i]);
+                actions.addOrReplaceInOutputs(actions.addCast(argument_node, bound_types[i], cast_name, current_context));
+                window_function.argument_types[i] = bound_types[i];
+                window_function.argument_names[i] = std::move(cast_name);
+            }
+
+            window_function.general_function = WindowFunctionFactory::instance().get(
+                function_node.name,
+                function_node.getNullsAction(),
+                window_function.argument_types,
+                window_function.function_parameters);
+        }
+        else
+        {
+            AggregateFunctionProperties properties;
+            window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+                function_node.name,
+                function_node.getNullsAction(),
+                window_function.argument_types,
+                window_function.function_parameters,
+                properties,
+                AggregateFunctionStateVariant::Window);
+        }
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
@@ -1542,20 +1564,23 @@ void SelectQueryExpressionAnalyzer::appendWindowFunctionsArguments(
         getRootActionsNoMakeSet(getSelectQuery()->window(), step.actions()->dag);
     }
 
+    for (const ASTPtr & ast : syntax->window_function_asts)
+    {
+        // (1b) Actions for function arguments, and also the inline window
+        // definitions (1a).
+        // Requiring a constant reference to a shared pointer to non-const AST
+        // doesn't really look sane, but the visitor does indeed require it.
+        getRootActionsNoMakeSet(ast->clone(), step.actions()->dag);
+    }
+
     for (const auto & [_, w] : window_descriptions)
     {
+        // (2b) Required function argument columns.
         for (const auto & f : w.window_functions)
         {
-            // (1b) Actions for function arguments, and also the inline window
-            // definitions (1a).
-            // Requiring a constant reference to a shared pointer to non-const AST
-            // doesn't really look sane, but the visitor does indeed require it.
-            getRootActionsNoMakeSet(f.function_node->clone(), step.actions()->dag);
-
-            // (2b) Required function argument columns.
-            for (const auto & a : f.function_node->arguments->children)
+            for (const auto & name : f.argument_names)
             {
-                step.addRequiredOutput(a->getColumnName());
+                step.addRequiredOutput(name);
             }
         }
 
@@ -2265,7 +2290,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 for (const auto & f : w.window_functions)
                 {
                     query_analyzer.columns_after_window.push_back(
-                        {f.column_name, f.aggregate_function->getResultType()});
+                        {f.column_name, f.getResultType()});
                 }
             }
 
