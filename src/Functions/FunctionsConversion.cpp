@@ -612,7 +612,8 @@ FunctionCast::WrapperType FunctionCast::createStringParsingWrapper(bool requeste
         ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
         const ColumnNullable * column_nullable, size_t input_rows_count) -> ColumnPtr
     {
-        const auto parsing_type = requested_result_is_nullable ? makeNullable(result_type) : result_type;
+        /// `Nullable` cannot wrap a `SimpleAggregateFunction`, so its storage type parses the text.
+        const auto parsing_type = requested_result_is_nullable ? makeNullable(getSimpleAggregateFunctionStorageType(result_type)) : result_type;
         if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
             return ConvertImplGenericFromString<false>::execute(
                 arguments, parsing_type, column_nullable, input_rows_count, settings);
@@ -1993,7 +1994,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(arguments, makeNullable(result_type), nullable_source, input_rows_count, settings);
+                return ConvertImplGenericFromString<false>::execute(
+                    arguments, makeNullable(getSimpleAggregateFunctionStorageType(result_type)), nullable_source, input_rows_count, settings);
 
             return ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, settings);
         };
@@ -2034,7 +2036,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
             if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
+                return ConvertImplGenericFromString<false>::execute(
+                    args_with_json_string, makeNullable(getSimpleAggregateFunctionStorageType(result_type)), nullable_source, input_rows_count, settings);
 
             return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
         };

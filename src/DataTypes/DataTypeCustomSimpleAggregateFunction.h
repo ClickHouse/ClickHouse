@@ -50,6 +50,10 @@ public:
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
 
+/// `SimpleAggregateFunction(f, T)` -> `T`, nested layers too, with the same columns and text serialization; any other type
+/// is returned unchanged.
+DataTypePtr getSimpleAggregateFunctionStorageType(const DataTypePtr & type);
+
 /// `SimpleAggregateFunction(f, T)` -> `T`, nested layers too, but `UInt8` instead of `Bool` unless `isSimpleAggregateFunctionOfBool`
 /// holds for the outermost layer; any other type is returned unchanged.
 DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type);

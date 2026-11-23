@@ -203,11 +203,17 @@ DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & funct
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }
 
-DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
+DataTypePtr getSimpleAggregateFunctionStorageType(const DataTypePtr & type)
 {
     DataTypePtr result = type;
     while (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(result->getCustomName()))
         result = DataTypeFactory::instance().get(simple->getArgumentsDataTypes()[0]->getName());
+    return result;
+}
+
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
+{
+    DataTypePtr result = getSimpleAggregateFunctionStorageType(type);
     if (result != type && isBool(result) && !isSimpleAggregateFunctionOfBool(*type))
         return std::make_shared<DataTypeUInt8>();
     return result;
