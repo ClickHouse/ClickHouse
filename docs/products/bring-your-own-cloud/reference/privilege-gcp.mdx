@@ -1,0 +1,59 @@
+---
+title: 'BYOC privilege on GCP'
+slug: /cloud/reference/byoc/reference/privilege-gcp
+sidebarTitle: 'GCP'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'privilege', 'gcp', 'iam', 'service account']
+description: 'The custom roles, service accounts, and IAM grants that ClickHouse BYOC uses in your Google Cloud project, with their permissions, scope, and purpose'
+doc_type: 'reference'
+---
+
+This page gives the permissions, scope, and purpose of each custom role, service account, and IAM grant that ClickHouse BYOC uses in your Google Cloud project. For a high-level summary of the BYOC permission model, see [BYOC privilege](/products/bring-your-own-cloud/reference/privilege).
+
+## Bootstrap service account {#bootstrap-service-account}
+
+The following table describes each custom role of the bootstrap service account, `clickhouse-management@<project>.iam.gserviceaccount.com`. Only the ClickHouse provisioning service accounts can impersonate it, through `roles/iam.serviceAccountTokenCreator` on this service account. GCP custom roles cannot be limited by resource name, so each role applies to the whole project. For this reason, we recommend a Google Cloud project for BYOC only.
+
+| Custom role | Permissions | Scope | Purpose |
+|---|---|---|---|
+| `clickhouseCommonRole` | Read regions, zones, the project, and the enabled services. Get service accounts. Attach service accounts to resources (`iam.serviceAccounts.actAs`). | Project | Health checks. Attach the BYOC service accounts to the GKE node pools. |
+| `clickhouseVPCRole` | Read and use networks, subnets, routes, and Cloud Routers. Create, change, and delete Private Service Connect service attachments and static IP addresses. | Project | Private Service Connect endpoints and the IP addresses of the load balancers |
+| `clickhouseVPCWriteRole` | Create, change, and delete networks, subnets, routes, and Cloud Routers. Change network peering and subnet IAM policies. | Project | The BYOC VPC. You do not need it if you [bring your own VPC](/products/bring-your-own-cloud/onboarding/customization-gcp#customer-managed-vpc-gcp). |
+| `clickhouseClusterRole` | Create, change, and delete GKE clusters and node pools, and change their managed instance groups. Get cluster credentials. Read and write all Kubernetes resources in the cluster, which includes secrets, RBAC, and custom resource definitions. | Project | Manage the GKE cluster and install the BYOC software |
+| `clickhouseStorageRole` | Create, change, and delete buckets. Read and set bucket IAM policies. No object read or write. | Project | Manage buckets that store ClickHouse table data, backups, and monitoring data |
+| `clickhouseStorageObjectsRole` | List, read, and delete objects | Only buckets whose names end in `_gcp_clickhouse_cloud-monitoring` | Empty the monitoring bucket before ClickHouse deletes it |
+| `clickhouseIamRole` | Read and set the project IAM policy. Create, change, disable, and delete service accounts, and set their IAM policies. Create, change, and delete custom roles. No service account key creation. | Project | Create the service accounts in the next section and give them their roles |
+| `clickhouseTdeRole`  | Create and read KMS key rings and keys. Change keys. Read and set key IAM policies. No key version destruction. | Project | Keys for Transparent Data Encryption (TDE) |
+
+If you use a [Shared VPC](/products/bring-your-own-cloud/onboarding/customization-gcp#shared-vpc-host-project), the module also gives these roles in the host project:
+
+| Custom role | Permissions | Scope | Purpose |
+|---|---|---|---|
+| `clickhouseSharedVPCHostRole` | Read the network and the subnet. Use the subnet. | Host project | Read the host network. Use the Private Service Connect NAT subnet. |
+| `clickhouseGKESharedVPCFirewallRole` | Create, change, and delete firewall rules. Given to the GKE service agent of your BYOC project, not to `clickhouse-management`. | Host project | Firewall rules for the GKE cluster and its load balancers in the host network |
+| `roles/container.hostServiceAgentUser` and `roles/compute.networkUser` | Standard GKE roles for a Shared VPC. Given to the GKE service agent and the Google APIs service agent. `clickhouse-management` also gets `roles/compute.networkUser`. | `roles/container.hostServiceAgentUser`: host project. `roles/compute.networkUser`: the node subnet only. | Standard GKE requirements for a Shared VPC |
+
+For the exact role definitions, see the [Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/blob/main/modules/gcp/roles.tf).
+
+## Additional service accounts created by the controller {#additional-service-accounts-created-by-the-controller}
+
+In addition to the `clickhouse-management` service account created via Terraform, the controller creates several additional service accounts and roles for each BYOC infrastructure.
+Each service account has the name `<infra>-<suffix>`. `<infra>` is the name of your BYOC infrastructure, for example `infra-ab-123`. All ClickHouse services on the infrastructure share these service accounts. ClickHouse does not create service account keys. All access uses short-lived tokens.
+
+| Service account | Permissions | Purpose |
+|---|---|---|
+| `<infra>-dp-mgmt` | A custom role on the project: manage Private Service Connect service attachments. Create, change, and delete buckets, and set their IAM policies. List and delete objects. Create, change, and delete service accounts, and set their IAM policies. Read and connect to the GKE cluster. No project IAM policy change. The ClickHouse management service impersonates it. | Day-to-day management of your ClickHouse services: buckets, access for the ClickHouse server pods, and Private Service Connect |
+| `<infra>-gke-node` | `roles/container.defaultNodeServiceAccount` on the project. Read access to the ClickHouse container registries. | Node identity for all GKE node pools: logs, metrics, and image pulls |
+| `<infra>-clickhouse` | `roles/storage.admin` on the data bucket and the backup bucket of each ClickHouse service. Read access to the source backup bucket when you restore a service from a backup. Write usage data to ClickHouse. Used through Workload Identity by the pods of each ClickHouse service. | Identity of the ClickHouse server pods. Reads and writes table data and backups. |
+| `<infra>-monitoring` | `roles/storage.objectAdmin` on the BYOC monitoring bucket only. Used through Workload Identity by Prometheus and Thanos. | Stores metrics for monitoring |
+| `<infra>-scraper` | No permissions in your project. Write usage data to ClickHouse. | Sends usage data for billing to ClickHouse |
+| `<infra>-kmf` | No permissions in your project. Write metrics to ClickHouse. Can be used only from this cluster. | Sends Kubernetes metrics to ClickHouse for autoscaling |
+| `<infra>-tde-delegate` (only if TDE is on) | `roles/cloudkms.cryptoKeyEncrypterDecrypter` and `roles/cloudkms.viewer` on the TDE key `tde-default-kek` in the key ring `<infra>-tde` only | Encrypts and decrypts the TDE data keys. You can revoke its access to the key. |
+
+The controller also makes the following grants in your project for each BYOC infrastructure:
+
+| Grant | Given to | Purpose |
+|---|---|---|
+| A custom role with `container.clusters.connect` only | The ClickHouse management service account | Lets the ClickHouse management service connect to the GKE API endpoint |
+| `roles/container.clusterViewer` on the project | The ClickHouse deployment service account | Deploys and upgrades the BYOC software in the cluster |
+| `roles/cloudkms.cryptoKeyEncrypter` and `roles/cloudkms.cryptoKeyDecrypter` on the key `snc-kek` in the key ring `<infra>-snc` (only if named collections are on) | Encrypt: `<infra>-dp-mgmt`. Decrypt: `<infra>-clickhouse`. | Encrypts the secrets of named collections. Only the ClickHouse server pods can decrypt them. |
+
