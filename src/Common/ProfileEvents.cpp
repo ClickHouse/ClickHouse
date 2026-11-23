@@ -1879,6 +1879,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetReadMinMaxFromStatistics, "The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)", ValueType::Number) \
     M(ParquetReadPages, "The total number of Parquet data pages read", ValueType::Number) \
     M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
+    M(ParquetColumnChunksPagesLocatedFromHeaders, "Number of Parquet column chunks without an offset index whose pages holding the rows read by lazy materialization were located from their page headers, so that only those pages were read", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
     M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
     M(ParquetColumnDataReadAheadRowGroups, "Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads", ValueType::Number) \
@@ -1911,9 +1912,10 @@ The server successfully detected this situation and will download merged part fr
     M(AutomaticParallelReplicasDecidedWithoutBuildingPlan, "Number of times automatic parallel replicas decided against using parallel replicas at a boundary remembered from an earlier execution, without building a candidate plan to cost. The event saying why, such as `AutoParallelReplicasRejectedByCostModel`, is counted beside it", ValueType::Number) \
     M(AutoParallelReplicasOptimizationMicroseconds, "Time spent in the automatic parallel replicas optimization other than building the plan with parallel replicas", ValueType::Microseconds) \
     M(AutoParallelReplicasPlanBuildMicroseconds, "Time spent building the plan with parallel replicas that automatic parallel replicas compares against the local plan", ValueType::Microseconds) \
-    M(AutoParallelReplicasPlansNotComparable, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \
-    M(AutoParallelReplicasPlanWithoutParallelReplicas, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why", ValueType::Number) \
-    M(AutoParallelReplicasNoStatistics, "Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding", ValueType::Number) \
+    M(AutoParallelReplicasPlansNotComparable, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, or at a boundary remembered from building it earlier, because it could not match that plan with the local one well enough to compare or use it: for example, it could not pair their reads, or tell which read the replicas would split. The `AutoParallelReplicas` logger says which case it was. Also counted, beside `AutoParallelReplicasRetryDeferred`, when such a recent build is why the plan is not built again", ValueType::Number) \
+    M(AutoParallelReplicasPlanWithoutParallelReplicas, "Number of times automatic parallel replicas skipped a query after building the plan with parallel replicas, because the planner did not use parallel replicas in it, for example for too few rows per replica or a correlated subquery. The `Planner` logger says why. Also counted, beside `AutoParallelReplicasRetryDeferred`, when such a recent build is why the plan is not built again", ValueType::Number) \
+    M(AutoParallelReplicasRetryDeferred, "Number of times automatic parallel replicas did not build the plan with parallel replicas because building it for the same plan recently ended without a decision, and fewer than `automatic_parallel_replicas_undecided_retry_after_executions` executions have skipped it since. The event of that earlier outcome, such as `AutoParallelReplicasPlansNotComparable`, is counted beside it", ValueType::Number) \
+    M(AutoParallelReplicasNoStatistics, "Number of times automatic parallel replicas had no statistics yet, so it collected them instead of deciding. Also counted, beside `AutoParallelReplicasRetryDeferred`, when a recent collection that a step could not take part in, or that measured nothing, is why the plan with parallel replicas is not built again", ValueType::Number) \
     M(AutoParallelReplicasStatisticsDrifted, "Number of times the rows read from storage differed from the cached statistics by more than `automatic_parallel_replicas_statistics_drift_ratio`, so automatic parallel replicas recollected them instead of deciding", ValueType::Number) \
     M(AutoParallelReplicasCostModelEvaluated, "Number of times automatic parallel replicas reached the cost model and compared the local plan against the parallel replicas plan", ValueType::Number) \
     M(AutoParallelReplicasApplied, "Number of times automatic parallel replicas replaced the query plan with the parallel replicas one", ValueType::Number) \
@@ -2483,8 +2485,8 @@ double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
     Int64 curr_cpu_wait_microseconds = static_cast<Int64>(load(OSCPUWaitMicroseconds));
     Int64 curr_cpu_virtual_time_microseconds = static_cast<Int64>(load(OSCPUVirtualTimeMicroseconds));
 
-    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
-    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - static_cast<Int64>(prev_cpu_wait_microseconds.load(std::memory_order_acquire));
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - static_cast<Int64>(prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire));
 
     if (reset)
     {
