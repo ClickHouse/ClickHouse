@@ -7,7 +7,9 @@
 
 DROP TABLE IF EXISTS t_packets_big;
 DROP TABLE IF EXISTS t_packets_small;
-CREATE TABLE t_packets_big (bid UInt64, v UInt64) ENGINE = MergeTree ORDER BY bid;
+-- Statistics with the number of distinct `bid` values: with the estimate that the planner makes without
+-- them, as many distinct values as build keys, it would not send the filter.
+CREATE TABLE t_packets_big (bid UInt64, v UInt64) ENGINE = MergeTree ORDER BY bid SETTINGS auto_statistics_types = 'basic, uniq_v2';
 CREATE TABLE t_packets_small (sid UInt64) ENGINE = MergeTree ORDER BY sid;
 -- a merge between planning and the worker read would invalidate the planned part names
 SYSTEM STOP MERGES t_packets_big;
