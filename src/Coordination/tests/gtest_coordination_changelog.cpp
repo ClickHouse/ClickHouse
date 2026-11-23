@@ -2863,6 +2863,50 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadDoesNotPlanIntoCompressedFile)
     }
 }
 
+// Control for ReadAheadDoesNotPlanIntoCompressedFile: with only uncompressed files both read-ahead plans
+// still extend into the next file.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadPlansIntoNextUncompressedFile)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Checks uncompressed files only";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    {
+        DB::KeeperLogStore writer(
+            DB::LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 10},
+            DB::FlushSettings(),
+            DB::ReadAheadSettings{},
+            this->keeper_context);
+        writer.init(0, 0);
+        appendAndWaitDurable(writer, 1, 25);
+    }
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_10.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin"));
+
+    const DB::LogFileSettings cache_settings{.force_sync = false, .compress_logs = false, .rotate_interval = 10, .latest_logs_cache_entry_count_threshold = 5};
+    const DB::ReadAheadSettings readahead_settings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024};
+
+    DB::Changelog changelog(this->log, cache_settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.readChangelogAndInitWriter(0, 0);
+    const auto check_window = [](const DB::LogReadPlan & plan)
+    {
+        ASSERT_TRUE(plan.read_ahead_window.has_value());
+        ASSERT_EQ(plan.read_ahead_window->size(), 2u);
+        const auto & first = (*plan.read_ahead_window)[0];
+        const auto & next = (*plan.read_ahead_window)[1];
+        EXPECT_EQ(first.first_index, 1u);
+        EXPECT_EQ(first.count, 10u);
+        EXPECT_EQ(next.first_index, 11u);
+        EXPECT_EQ(next.count, 10u);
+        EXPECT_NE(first.file_description, next.file_description);
+    };
+    check_window(changelog.getReadAheadPlan(1, 6, 0));
+    check_window(changelog.getCommitReadPlan(1));
+}
+
 // Tests: per-peer read-ahead
 
 namespace DB
