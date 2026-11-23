@@ -338,8 +338,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         else
         {
             const auto & serialization = serializations[column_idx];
-            /// Let Enum conversion functions handle the null value.
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, type.get());
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
@@ -729,11 +728,16 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         /// Check if we can use fast streaming parser instead if using templates
         bool rollback_on_exception = false;
         bool ok = false;
+        bool read = true;
         try
         {
             Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto & serialization = serializations[column_idx];
-            serialization->deserializeTextQuoted(column, *buf, format_settings);
+            const auto & column_type = types[column_idx];
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(column_type))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, column_type.get());
+            else
+                serialization->deserializeTextQuoted(column, *buf, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(*buf);
             if (checkDelimiterAfterValue(column_idx))
@@ -751,7 +755,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (ok)
         {
             parser_type_for_column[column_idx] = ParserType::Streaming;
-            return true;
+            return read;
         }
         if (rollback_on_exception)
             column.popBack(1);
