@@ -35,7 +35,7 @@ public:
         selected_columns.insert(column_node->getColumnName());
     }
 
-    bool isAliasColumn(const QueryTreeNodePtr & node) const
+    [[nodiscard]] bool isAliasColumn(const QueryTreeNodePtr & node) const
     {
         const auto * column_node = node->as<ColumnNode>();
         if (!column_node || !column_node->hasExpression())
@@ -46,13 +46,13 @@ public:
         return column_source->getNodeType() == QueryTreeNodeType::TABLE;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const
+    [[nodiscard]] bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const
     {
         /// Don't go inside alias column expression.
         return !isAliasColumn(parent_node);
     }
 
-    std::vector<String> getSelectedColumns() const
+    [[nodiscard]] std::vector<String> getSelectedColumns() const
     {
         return std::vector<String>(selected_columns.begin(), selected_columns.end());
     }

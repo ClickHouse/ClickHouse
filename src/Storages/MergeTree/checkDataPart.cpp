@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
@@ -26,6 +27,7 @@
 #endif
 #include <Poco/Net/NetException.h>
 
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -37,6 +39,7 @@ namespace DB
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool check_part_use_direct_io;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
@@ -247,10 +250,30 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
     Poco::Logger * log = &Poco::Logger::get("checkDataPart");
 
+    /// `O_DIRECT` is chosen by the read hint, so it has to be the file size. The file is read through the disk,
+    /// because the part storage reads the `skp_idx.packed` index through the page cache.
+    auto read_file = [&read_settings](const IDataPartStorage & storage, const String & name) -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        if (read_settings.local_fs_settings.direct_io_threshold)
+        {
+            if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&storage))
+            {
+                auto disk = disk_storage->getDisk();
+                auto path = fs::path(storage.getRelativePath()) / name;
+                if (disk->existsFile(path))
+                {
+                    size_t size = disk->getFileSize(path);
+                    return disk->readFile(path, read_settings.adjustBufferSize(size), size);
+                }
+            }
+        }
+        return storage.readFile(name, read_settings, std::nullopt);
+    };
+
     NamesAndTypesList columns_txt;
 
     {
-        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt);
+        auto buf = read_file(data_part_storage, "columns.txt");
         columns_txt.readText(*buf);
         assertEOF(*buf);
     }
@@ -265,9 +288,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
     /// The result is partial if the check was cancelled during the read; the callers check for that
     /// before the checksums are compared to anything.
-    auto checksum_compressed_file = [&read_settings, &is_cancelled](const IDataPartStorage & data_part_storage_, const String & file_path)
+    auto checksum_compressed_file = [&read_file, &is_cancelled](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
-        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
+        auto file_buf = read_file(data_part_storage_, file_path);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
@@ -285,7 +308,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         try
         {
-            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
+            auto serialization_file = read_file(data_part_storage, IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
@@ -313,7 +336,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates only checksum of file content (compressed or uncompressed).
     auto checksum_file = [&](const String & file_name)
     {
-        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt);
+        auto file_buf = read_file(data_part_storage, file_name);
         HashingReadBuffer hashing_buf(*file_buf);
         ignoreAllUnlessCancelled(hashing_buf, is_cancelled);
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
@@ -332,6 +355,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else if (part_type == MergeTreeDataPartType::Wide)
     {
+        /// Column files are never in `skp_idx.packed`, but the part storage reads its index through the page cache
+        /// to look up a column named `skp_idx_*`. So with `O_DIRECT` the streams are looked up in the directory listing.
+        const bool lookup_in_listing = read_settings.local_fs_settings.direct_io_threshold != 0;
+        IMergeTreeDataPart::Checksums files_in_listing;
+        if (lookup_in_listing)
+            for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
+                files_in_listing.files[it->name()];
+
         const auto & cols_substreams = data_part->getColumnsSubstreams();
         if (!cols_substreams.empty())
         {
@@ -347,7 +378,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     if (is_cancelled())
                         return {};
 
-                    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
+                    auto stream_name = lookup_in_listing
+                        ? IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", files_in_listing)
+                        : IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
                     if (!stream_name)
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
                             "There is no file for column '{}' (substream {}) in data part '{}'",
@@ -370,9 +403,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             for (const auto & column : columns_list)
             {
                 auto serialization = get_serialization(column);
-                auto data = ISerialization::SubstreamData(serialization)
-                    .withType(column.type)
-                    .withColumn(data_part->getColumnSample(column));
+                auto data = ISerialization::SubstreamData(serialization).withType(column.type);
                 serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                 {
                     if (is_cancelled())
@@ -381,7 +412,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                         return;
 
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
+                    auto stream_name = lookup_in_listing
+                        ? IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", files_in_listing, data_part->storage.getSettings())
+                        : IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
                     if (!stream_name)
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -408,7 +441,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || data_part_storage.existsFile("checksums.txt"))
     {
-        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt);
+        auto buf = read_file(data_part_storage, "checksums.txt");
         checksums_txt.read(*buf);
         assertEOF(*buf);
     }
@@ -487,7 +520,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             NamesAndTypesList projection_columns = projection->getColumns();
             if (projection_columns.empty())
             {
-                auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
+                auto buf = read_file(*projection_storage, "columns.txt");
                 projection_columns.readText(*buf);
                 assertEOF(*buf);
             }
@@ -613,12 +646,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     return checksums_data;
 }
 
+/// Packed parts and object storages read the files of a part in their own way.
+static bool isCheckedWithDirectIO(const IMergeTreeDataPart & part)
+{
+    const auto & storage = part.getDataPartStorage();
+    return (*part.storage.getSettings())[MergeTreeSetting::check_part_use_direct_io]
+        && isFullPartStorage(storage)
+        && storage.getDiskType() == "local";
+}
+
 IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     bool & is_broken_projection,
     std::function<bool()> is_cancelled,
-    bool throw_on_broken_projection)
+    bool throw_on_broken_projection,
+    bool allow_direct_io)
 {
     /// If check of part has failed and it is stored on disk with cache
     /// try to drop cache and check it once again because maybe the cache
@@ -687,6 +730,12 @@ IMergeTreeDataPart::Checksums checkDataPart(
     try
     {
         ReadSettings read_settings;
+        if (allow_direct_io && isCheckedWithDirectIO(*data_part))
+        {
+            read_settings.local_fs_settings.direct_io_threshold = 1;
+            read_settings.local_fs_settings.buffer_size = 4 * 1024 * 1024;
+        }
+
         return checkDataPart(
             data_part,
             data_part->getDataPartStorage(),

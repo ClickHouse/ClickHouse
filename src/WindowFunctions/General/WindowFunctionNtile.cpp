@@ -1,10 +1,9 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
+#include <WindowFunctions/WindowFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -49,29 +48,15 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' argument type must be an unsigned integer (not larger than 64-bit), got {}", name_, argument_types[0]->getName());
     }
 
-    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    [[nodiscard]] WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         return WindowFunctionRequirements{.partition_end = true, .order_by = true};
     }
 
-    size_t sizeOfState() const override { return sizeof(NtileState); }
-    size_t alignOfState() const override { return alignof(NtileState); }
+    [[nodiscard]] size_t sizeOfState() const override { return sizeof(NtileState); }
+    [[nodiscard]] size_t alignOfState() const override { return alignof(NtileState); }
     void createState(char * place) const override { new (place) NtileState(); }
     void resetPartition(char * place) const override { new (place) NtileState(); }
-
-    std::optional<WindowFrame> getDefaultFrame() const override
-    {
-        WindowFrame frame;
-        frame.type = WindowFrame::FrameType::ROWS;
-        frame.end_type = WindowFrame::BoundaryType::Unbounded;
-        return frame;
-    }
-
-    void checkWindowFrameType(const WindowDescription & window) const override
-    {
-        if (window.frame.begin_type != WindowFrame::BoundaryType::Unbounded || window.frame.end_type != WindowFrame::BoundaryType::Unbounded)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING', '{}' given", getName(), window.frame.toString());
-    }
 
     Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
@@ -97,13 +82,13 @@ public:
 
 }
 
-void registerWindowFunctionNtile(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties);
-void registerWindowFunctionNtile(AggregateFunctionFactory & factory, const AggregateFunctionProperties & properties)
+void registerWindowFunctionNtile(WindowFunctionFactory & factory);
+void registerWindowFunctionNtile(WindowFunctionFactory & factory)
 {
     factory.registerFunction("ntile", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNtile>(name, argument_types, parameters));
+            return std::make_shared<WindowFunctionNtile>(name, argument_types, parameters);
         }, {.description = R"DOCS_MD(
 Divides the ordered rows within a partition into a specified number of buckets (groups) of as equal a size as possible, and returns the bucket number that the current row belongs to. Buckets are numbered starting from 1. For each partition, the rows are assigned to buckets in order: if the number of rows is not divisible by the number of buckets, the earlier buckets receive one more row than the later ones.
 
@@ -111,15 +96,14 @@ Divides the ordered rows within a partition into a specified number of buckets (
 
 ```sql
 ntile (buckets)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+  OVER ([[PARTITION BY grouping_column] ORDER BY sorting_column] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] ORDER BY sorting_column)
 ```
 
 For each partition, ntile uses the positive integer bucket count from its first row in window order; subsequent values are ignored
 
-An `ORDER BY` clause is required. The window frame must be the whole partition (`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), which is also the default frame used when none is specified explicitly.
+An `ORDER BY` clause is required. The function always reads the whole partition; a window frame, if specified, is ignored.
 
 For more detail on window function syntax see: [Window Functions - Syntax](/reference/functions/window-functions/index#syntax).
 
@@ -170,7 +154,7 @@ FROM salaries;
 ```
 
 Here there are seven rows and four buckets, so the first three buckets contain two rows each and the last bucket contains a single row.
-)DOCS_MD", .category = FunctionDocumentation::Category::AggregateFunction}, properties}, AggregateFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::WindowFunction}}, WindowFunctionFactory::Case::Insensitive);
 }
 
 }
