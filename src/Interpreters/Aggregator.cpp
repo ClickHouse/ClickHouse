@@ -106,7 +106,6 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
 }
 
@@ -498,37 +497,8 @@ Aggregator::Params::Params(
 
 size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by)
 {
-    std::optional<size_t> threshold;
-    if (max_bytes_before_external_group_by != 0)
-        threshold = max_bytes_before_external_group_by;
-
-    if (max_bytes_ratio_before_external_group_by != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_group_by;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({:.3f})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {:.3f}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("Aggregator"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_group_by");
-        }
-    }
-
-    return threshold.value_or(0);
+    return getMaxBytesBeforeExternalProcessing(
+        max_bytes_before_external_group_by, max_bytes_ratio_before_external_group_by, "max_bytes_ratio_before_external_group_by");
 }
 
 Aggregator::Params::Params(
