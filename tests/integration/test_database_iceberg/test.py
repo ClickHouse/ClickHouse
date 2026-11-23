@@ -2845,8 +2845,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
     current-database reading (table `X.T`) is tried too only when the current database
     supports table namespaces and `X` is not `system`. Database `X` must exist, and both
     existing is an error unless the user can access only one of them. SQL stored in
-    definitions (views, materialized views, row policies, mutations, `ALIAS` columns) always reads `X.T`
-    as table `T` of database `X`.
+    definitions (views, materialized views, row policies, mutations, `ALIAS` columns, projections,
+    constraints) always reads `X.T` as table `T` of database `X`.
     """
     node = started_cluster.instances["node1"]
     on = {"allow_experimental_table_namespaces": 1}
@@ -2859,6 +2859,7 @@ def test_namespace_two_part_name_resolution(started_cluster):
     T2 = f"t2_{test_ref}"
     V, V2, MV = f"v_{test_ref}", f"v2_{test_ref}", f"mv_{test_ref}"
     A = f"a_{test_ref}"
+    PR, C = f"pr_{test_ref}", f"c_{test_ref}"
     policy = f"pol_{test_ref}"
     policy_user = f"u_policy_{test_ref}"
 
@@ -2971,6 +2972,38 @@ def test_namespace_two_part_name_resolution(started_cluster):
         columns = node.query(f"USE {CATALOG_NAME}; SHOW COLUMNS FROM {CATALOG_NAME}.{X}.{T}", settings=on)
         assert "symbol" in columns, f"SHOW COLUMNS must list the table columns: {columns}"
 
+        # a projection and a constraint read `X.T` as the database table; the catalog table has no `id`
+        sync = {**on, "async_insert": 0}
+        node.query(
+            f"USE {CATALOG_NAME}; CREATE TABLE default.{PR} (id UInt64, "
+            f"PROJECTION pr (SELECT id WHERE id IN (SELECT id FROM {X}.{T}) ORDER BY id)) "
+            f"ENGINE = MergeTree ORDER BY id",
+            settings=on,
+        )
+        node.query(f"USE {CATALOG_NAME}; INSERT INTO default.{PR} VALUES (1), (10)", settings=sync)
+        result = node.query(
+            f"USE {CATALOG_NAME}; SELECT groupArray(id) FROM mergeTreeProjection(default, {PR}, pr)", settings=on
+        ).strip()
+        assert result == "[1]", f"projection must filter by the database table, got {result}"
+
+        node.query(
+            f"USE {CATALOG_NAME}; CREATE TABLE default.{C} (id UInt64, "
+            f"CONSTRAINT c CHECK id IN (SELECT id FROM {X}.{T})) ENGINE = MergeTree ORDER BY id",
+            settings=on,
+        )
+        node.query(f"USE {CATALOG_NAME}; INSERT INTO default.{C} VALUES (1)", settings=sync)
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; INSERT INTO default.{C} VALUES (10)", settings=sync
+        )
+        assert "VIOLATED_CONSTRAINT" in err, f"constraint must check against the database table: {err}"
+        result = int(
+            node.query(
+                f"USE {CATALOG_NAME}; SELECT count() FROM default.{C} WHERE id = 1 OR id = 5",
+                settings={**on, "convert_query_to_cnf": 1, "optimize_using_constraints": 1},
+            )
+        )
+        assert result == 1, f"constraint optimization must read the database table, got {result}"
+
         node.query(f"DROP TABLE {CATALOG_NAME}.`{X}.{T}`")
 
         # row 4: X.T only in the database
@@ -3050,6 +3083,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
             result = node.query(f"USE {CATALOG_NAME}; SELECT v, v2 FROM default.{A}", settings=outer).strip()
             assert result == "7\t7", f"ALIAS column, outer {outer}: expected the database table, got {result}"
     finally:
+        for name in (PR, C):
+            node.query(f"DROP TABLE IF EXISTS default.{name}")
         node.query(f"DROP TABLE IF EXISTS default.{A}")
         node.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`{X}.{J}`")
         for kind in ("catalog", "database", "neither"):
