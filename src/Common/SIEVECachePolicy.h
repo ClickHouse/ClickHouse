@@ -50,13 +50,13 @@ public:
         clearImpl();
     }
 
-    size_t sizeInBytes() const override { return current_size_in_bytes; }
+    [[nodiscard]] size_t sizeInBytes() const override { return current_size_in_bytes; }
 
-    size_t count() const override { return cells.size(); }
+    [[nodiscard]] size_t count() const override { return cells.size(); }
 
-    size_t maxSizeInBytes() const override { return max_size_in_bytes; }
+    [[nodiscard]] size_t maxSizeInBytes() const override { return max_size_in_bytes; }
 
-    size_t maxCount() const override { return max_count; }
+    [[nodiscard]] size_t maxCount() const override { return max_count; }
 
     void setMaxCount(size_t max_count_) override
     {
@@ -184,8 +184,8 @@ public:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size_in_bytes += cell.size;
 
-        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - old_size_in_bytes);
-        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - old_size);
+        CurrentMetrics::add(current_size_in_bytes_metric, static_cast<Int64>(current_size_in_bytes) - static_cast<Int64>(old_size_in_bytes));
+        CurrentMetrics::add(count_metric, static_cast<Int64>(cells.size()) - static_cast<Int64>(old_size));
 
         /// Protect the just-inserted tail entry from immediate eviction only when a new entry was
         /// actually appended. On an update no new tail is created, so the hand must walk normally;
