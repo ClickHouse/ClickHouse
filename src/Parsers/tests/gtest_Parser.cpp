@@ -850,7 +850,7 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
 // unlike CREATE / ALTER. See ParserCreateMaskingPolicy::parseImpl.
 INSTANTIATE_TEST_SUITE_P(ParserAttachMaskingPolicyQuery, ParserTest,
     ::testing::Combine(
-        ::testing::Values(std::make_shared<ParserAttachAccessEntity>()),
+        ::testing::Values([] { auto parser = std::make_shared<ParserCreateMaskingPolicy>(); parser->useAttachMode(); return parser; }()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
         {
             "ATTACH MASKING POLICY p ON db.t TO ALL",
