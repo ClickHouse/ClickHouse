@@ -817,6 +817,8 @@ namespace
                 }
                 try
                 {
+                    if (row_num < old_size)
+                        data.insert(text_buffer.data(), text_buffer.data() + text_buffer.size());
                     column_string.getOffsets().push_back(data.size());
                 }
                 catch (...)
