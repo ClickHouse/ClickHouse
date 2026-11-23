@@ -10,12 +10,15 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
@@ -4125,6 +4128,20 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         both_streams_push_down_conjunctions.allowed = std::move(both_streams_value_only_conjunctions);
     }
 
+    /// A runtime filter whose key can throw stays above the join, which may remove the rows the key throws on.
+    for (auto * conjunctions : {&left_stream_push_down_conjunctions, &right_stream_push_down_conjunctions, &both_streams_push_down_conjunctions})
+    {
+        NodeRawConstPtrs kept;
+        for (const auto * conjunct : conjunctions->allowed)
+        {
+            if (hasRuntimeFilterWithThrowingKey(conjunct))
+                conjunctions->rejected.push_back(conjunct);
+            else
+                kept.push_back(conjunct);
+        }
+        conjunctions->allowed = std::move(kept);
+    }
+
     /// getConjunctionNodes() classifies a conjunct as pushable to a side when all of its inputs are
     /// allowed inputs of that side. A conjunct with no inputs (a pure constant such as a literal `1`
     /// or a folded `NULL`) satisfies this trivially, so it is classified as pushable to EVERY side,
@@ -4717,6 +4734,116 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
     }
 
     return atoms;
+}
+
+/// Whether casting `from` to `to` cannot throw. Integer-to-integer conversions wrap around and conversions to a float round.
+static bool canCastWithoutThrowing(const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (isNullableOrLowCardinalityNullable(from) && !isNullableOrLowCardinalityNullable(to))
+        return false;
+
+    const auto from_nested = removeNullable(removeLowCardinality(from));
+    const auto to_nested = removeNullable(removeLowCardinality(to));
+
+    /// `Nothing` has no values, e.g. the elements of `[]`.
+    if (isNothing(from_nested))
+        return true;
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from_nested.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to_nested.get());
+    if (from_array && to_array)
+        return canCastWithoutThrowing(from_array->getNestedType(), to_array->getNestedType());
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from_nested.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to_nested.get());
+    if (from_tuple && to_tuple)
+    {
+        const auto positions = tryGetTupleCastElementPositions(*from_tuple, *to_tuple);
+        if (!positions)
+            return false;
+        for (size_t i = 0; i < positions->size(); ++i)
+        {
+            const auto & position = (*positions)[i];
+            if (position && !canCastWithoutThrowing(from_tuple->getElements()[*position], to_tuple->getElements()[i]))
+                return false;
+        }
+        return true;
+    }
+
+    /// `canBeSafelyCast` pairs tuples inside a `Map` by position and accepts any `QBit` cast.
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from_nested.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to_nested.get());
+    if (from_map && to_map)
+        return canCastWithoutThrowing(from_map->getKeyType(), to_map->getKeyType())
+            && canCastWithoutThrowing(from_map->getValueType(), to_map->getValueType());
+
+    const auto * from_qbit = typeid_cast<const DataTypeQBit *>(from_nested.get());
+    const auto * to_qbit = typeid_cast<const DataTypeQBit *>(to_nested.get());
+    if (from_qbit && to_qbit)
+        return from_qbit->getDimension() == to_qbit->getDimension()
+            && canCastWithoutThrowing(from_qbit->getElementType(), to_qbit->getElementType());
+
+    if (from_map || to_map || from_qbit || to_qbit)
+        return false;
+
+    if (canBeSafelyCast(from, to))
+        return true;
+
+    if (isFloat(to_nested) && (isNumber(from_nested) || isEnum(from_nested)))
+        return true;
+
+    return (isInteger(from_nested) || isEnum(from_nested)) && isInteger(to_nested);
+}
+
+/// A `_CAST` written in the query follows `date_time_overflow_behavior` and looks like the one `addCast` builds, so a cast between dates may throw.
+static bool isConversionThatCannotThrow(const ActionsDAG::Node & node)
+{
+    static constexpr std::string_view numeric_conversions[] = {
+        "toInt8", "toInt16", "toInt32", "toInt64", "toInt128", "toInt256",
+        "toUInt8", "toUInt16", "toUInt32", "toUInt64", "toUInt128", "toUInt256",
+        "toBFloat16", "toFloat32", "toFloat64"};
+
+    const auto & name = node.function_base->getName();
+    const bool is_cast = name == "_CAST" || name == "CAST";
+    const bool is_numeric_conversion = node.children.size() == 1 && std::ranges::find(numeric_conversions, name) != std::end(numeric_conversions);
+    if (node.children.empty() || (!is_cast && !is_numeric_conversion))
+        return false;
+
+    return canCastWithoutThrowing(node.children.front()->result_type, node.result_type);
+}
+
+/// A runtime filter computes the key also on rows that are removed before the join.
+static bool canComputeKeyOnAnyRow(const ActionsDAG::Node * key)
+{
+    return allReachableNodes({key}, [](const ActionsDAG::Node * node)
+    {
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        /// A function with a known constant result is not executed.
+        if (node->type != ActionsDAG::ActionType::FUNCTION || node->column)
+            return true;
+
+        /// `IFunctionBase::canThrow` assumes that every cast, conversion and `tuple` can throw.
+        if (node->function_base->getName() == "tuple" || isConversionThatCannotThrow(*node))
+            return true;
+
+        DataTypesWithConstInfo arguments;
+        arguments.reserve(node->children.size());
+        for (const auto * child : node->children)
+            arguments.push_back({child->result_type, child->column != nullptr, typeid_cast<const ColumnConst *>(child->column.get())});
+        return !node->function_base->canThrow(arguments);
+    });
+}
+
+bool ActionsDAG::hasRuntimeFilterWithThrowingKey(const Node * node)
+{
+    /// By name: `serialize` does not keep `is_runtime_filter_id`.
+    return anyReachableNode({node}, [](const Node * reachable)
+    {
+        return reachable->type == ActionType::FUNCTION && reachable->children.size() == 2
+            && reachable->function_base->getName() == "__applyFilter" && !canComputeKeyOnAnyRow(reachable->children[1]);
+    });
 }
 
 ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const

@@ -172,6 +172,10 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         if (!onlyDependsOnAvailableColumns(node, available_columns))
             return ConditionList{}; /// If the subtree depends on other columns then we cannot include it into partial predicate, so assume it's True
 
+        /// A runtime filter whose key can throw is not copied below the join, which may remove the rows the key throws on.
+        if (ActionsDAG::hasRuntimeFilterWithThrowingKey(&node))
+            return ConditionList{};
+
         if (!isUsefulToPreFilterWith(node))
             return ConditionList{}; /// Nothing to pre-filter with, so assume it's True
 

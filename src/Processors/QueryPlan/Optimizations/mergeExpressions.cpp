@@ -126,6 +126,10 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         if (child_actions.hasArrayJoin())
             return 0;
 
+        /// A runtime filter whose key can throw runs only on the rows the filter below passes.
+        if (ActionsDAG::hasRuntimeFilterWithThrowingKey(&parent_actions.findInOutputs(parent_filter->getFilterColumnName())))
+            return 0;
+
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
         if (child_filter->removesFilterColumn())
             removeFromOutputs(child_actions, child_filter_node);

@@ -1384,6 +1384,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * array_join = typeid_cast<ArrayJoinStep *>(child.get()))
     {
+        /// It removes the rows without elements, unless it is `LEFT` without an element filter.
+        if ((!array_join->isLeft() || array_join->hasElementFilter())
+            && ActionsDAG::hasRuntimeFilterWithThrowingKey(&filter->getExpression().findInOutputs(filter->getFilterColumnName())))
+            return 0;
+
         const auto & keys = array_join->getColumns();
         UnorderedSetWithMemoryTracking<std::string_view> keys_set(keys.begin(), keys.end());
 
