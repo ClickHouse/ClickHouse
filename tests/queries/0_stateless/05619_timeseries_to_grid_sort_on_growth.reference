@@ -6,5 +6,5 @@ addMany (all 1):
 70	70
 many repeats, single state (all 1):
 1
-repeated 4095 timestamps (all 1):
-1
+repeated 4095 timestamps in one bucket (2 of 2):
+2	2
