@@ -161,6 +161,30 @@ include (cmake/cuda.cmake)
 include (cmake/block_build_time_checks.cmake)
 
 option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
+
+# https://clang.llvm.org/docs/ThinLTO.html
+# Applies to clang and linux only.
+# Disabled by default; explicitly enabled in CI for release and performance builds.
+option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
+
+# Control-Flow Integrity (CFI): on by default in the builds that support it (ThinLTO release builds).
+if (ENABLE_THINLTO AND NOT SANITIZE AND NOT ENABLE_TESTS AND OS_LINUX AND CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+    set (ENABLE_CFI_DEFAULT ON)
+else ()
+    set (ENABLE_CFI_DEFAULT OFF)
+endif ()
+option (ENABLE_CFI "Enable Clang Control-Flow Integrity sanitizer (requires ENABLE_THINLTO)" ${ENABLE_CFI_DEFAULT})
+
+if (ENABLE_CFI)
+    if (SANITIZE)
+        message (FATAL_ERROR "ENABLE_CFI is incompatible with SANITIZE: ThinLTO must be enabled for CFI and is disabled by sanitizer builds")
+    endif()
+    message (STATUS "Enabled Control-Flow Integrity (CFI) sanitizer")
+endif()
+
+# Reports CFI violations through the UBSan runtime and continues, so that one run finds all of them.
+# Only for finding violations: production builds must trap.
+option (ENABLE_CFI_DIAGNOSTICS "Report CFI violations and continue instead of trapping (requires ENABLE_CFI)" OFF)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
@@ -577,16 +601,8 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-# https://clang.llvm.org/docs/ThinLTO.html
-# Applies to clang and linux only.
-# Disabled by default; explicitly enabled in CI for release and performance builds.
-option(ENABLE_THINLTO "Clang-specific link time optimization" OFF)
-
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
-# CFI requires ThinLTO. Validate here, after ENABLE_THINLTO has been resolved by
-# the option() call above. sanitize.cmake is included earlier (before the option()
-# declaration) so the check must live here where ENABLE_THINLTO is fully defined.
 if (ENABLE_CFI AND NOT ENABLE_THINLTO)
     message (FATAL_ERROR "ENABLE_CFI requires ENABLE_THINLTO. "
         "CFI needs -flto=thin and -fwhole-program-vtables which are only applied "
