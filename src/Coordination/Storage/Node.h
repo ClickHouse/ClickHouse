@@ -143,19 +143,19 @@ private:
 /// Decode/encode a field stored as a zigzag delta relative to a base value. The arithmetic is done
 /// on unsigned types so wraparound is well-defined (signed overflow would be UB).
 /// (Note: signed and unsigned addition are the same operation. Ditto for subtraction.)
-inline uint64_t decodeZigZagDelta64(uint64_t base, uint64_t zigzag_delta)
+inline uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW decodeZigZagDelta64(uint64_t base, uint64_t zigzag_delta)
 {
     return base + static_cast<uint64_t>(DB::decodeZigZag(zigzag_delta));
 }
-inline uint64_t encodeZigZagDelta64(uint64_t base, uint64_t value)
+inline uint64_t NO_SANITIZE_UNSIGNED_OVERFLOW encodeZigZagDelta64(uint64_t base, uint64_t value)
 {
     return DB::encodeZigZag(static_cast<int64_t>(value - base));
 }
-inline uint32_t decodeZigZagDelta32(uint32_t base, uint32_t zigzag_delta)
+inline uint32_t NO_SANITIZE_UNSIGNED_OVERFLOW decodeZigZagDelta32(uint32_t base, uint32_t zigzag_delta)
 {
     return base + static_cast<uint32_t>(DB::decodeZigZag32(zigzag_delta));
 }
-inline uint32_t encodeZigZagDelta32(uint32_t base, uint32_t value)
+inline uint32_t NO_SANITIZE_UNSIGNED_OVERFLOW encodeZigZagDelta32(uint32_t base, uint32_t value)
 {
     return DB::encodeZigZag32(static_cast<int32_t>(value - base));
 }
