@@ -1,21 +1,9 @@
-lwd horizontal	374	1
-lwd vertical	374	1
-ttl horizontal	374	1
-ttl vertical	374	1
-patch horizontal	400	26	1
-patch vertical	400	26	1
-dedup	400	1
+horizontal	88	11	1
+vertical	88	11	1
+dedup	100	1
 dedup_batch	Horizontal
 dedup_default	Horizontal
 lwd_h_batch	Horizontal
 lwd_h_default	Horizontal
 lwd_v_batch	Vertical
 lwd_v_default	Vertical
-patch_h_batch	Horizontal
-patch_h_default	Horizontal
-patch_v_batch	Vertical
-patch_v_default	Vertical
-ttl_h_batch	Horizontal
-ttl_h_default	Horizontal
-ttl_v_batch	Vertical
-ttl_v_default	Vertical
