@@ -98,6 +98,7 @@ namespace FailPoints
     extern const char keeper_changelog_readahead_pre_drain[];
     extern const char keeper_changelog_readahead_fill_exception[];
     extern const char keeper_changelog_preallocate_no_space[];
+    extern const char keeper_changelog_write_thread_before_append[];
 }
 
 namespace
@@ -4322,6 +4323,8 @@ void Changelog::writeThread()
                 if (!batch_append_ok)
                     continue;
 
+                FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_write_thread_before_append);
+
                 std::lock_guard writer_lock(writer_mutex);
                 chassert(current_writer);
 
@@ -4450,6 +4453,9 @@ void Changelog::compact(uint64_t up_to_log_index)
 {
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before compacting records");
+
+    /// wait for all appends to finish before removing the active changelog file
+    flush();
 
     std::lock_guard lock(writer_mutex);
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id.load(std::memory_order_relaxed));

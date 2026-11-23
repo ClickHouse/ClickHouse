@@ -519,6 +519,7 @@ static struct InitFiu
     PAUSEABLE(object_storage_source_pause_before_virtual_columns) \
     REGULAR(keeper_changelog_readahead_fill_exception) \
     ONCE(keeper_changelog_preallocate_no_space) \
+    PAUSEABLE(keeper_changelog_write_thread_before_append) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(distributed_plan_delay_failed_task_release) \

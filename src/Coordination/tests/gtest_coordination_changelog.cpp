@@ -31,6 +31,7 @@ namespace FailPoints
     extern const char keeper_changelog_read_plan_resolved[];
     extern const char keeper_changelog_removed_from_disk_set[];
     extern const char keeper_changelog_preallocate_no_space[];
+    extern const char keeper_changelog_write_thread_before_append[];
 }
 
 namespace ErrorCodes
@@ -647,6 +648,67 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestCompaction)
     EXPECT_EQ(changelog_reader.start_index(), 7);
     EXPECT_EQ(changelog_reader.next_slot(), 8);
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 60);
+}
+
+TEST_P(CoordinationTestWithCompression, ChangelogTestCompactPastLastEntryWaitsForQueuedAppends)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    const DB::LogFileSettings settings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5};
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 1; i <= 2; ++i)
+    {
+        auto entry = getLogEntry("hello world", i);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    /// The write thread stops before writing entry 3, so 3, 4 and their flush stay queued.
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_write_thread_before_append);
+    for (size_t i = 3; i <= 4; ++i)
+    {
+        auto entry = getLogEntry("hello world", i);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_write_thread_before_append);
+
+    /// A follower installing a snapshot at 7 compacts past its last entry and removes the active file.
+    auto compacted = std::async(std::launch::async, [&] { changelog.compact(7); });
+    SCOPE_EXIT(DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_write_thread_before_append));
+
+    EXPECT_EQ(compacted.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_write_thread_before_append);
+    compacted.get();
+
+    for (size_t i = 8; i <= 9; ++i)
+    {
+        auto entry = getLogEntry("hello world", i);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_EQ(changelog.start_index(), 8);
+    EXPECT_EQ(changelog.next_slot(), 10);
+
+    assertFileDeleted("./logs/changelog_1_5.bin" + this->extension);
+    EXPECT_TRUE(fs::exists("./logs/changelog_8_12.bin" + this->extension));
+
+    DB::KeeperLogStore changelog_reader(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog_reader.init(7, /*logs_to_keep=*/10);
+
+    EXPECT_EQ(changelog_reader.start_index(), 8);
+    EXPECT_EQ(changelog_reader.next_slot(), 10);
+    EXPECT_EQ(changelog_reader.size(), 2);
+    EXPECT_EQ(changelog_reader.entry_at(8)->get_term(), 8);
+    EXPECT_EQ(changelog_reader.entry_at(9)->get_term(), 9);
 }
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperations)
