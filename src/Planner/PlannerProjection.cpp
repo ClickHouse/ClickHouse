@@ -109,7 +109,7 @@ bool collectExpressionsBeforeWindow(const QueryTreeNodePtr & node, QueryTreeNode
 
 ProjectionPlanner::ProjectionPlanner(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
 {
-    query_tree = buildProjectionQueryTree(query_ast, source, createProjectionAnalysisContext(query_ast, context));
+    query_tree = buildProjectionQueryTree(query_ast, source, context);
     auto & query_node = query_tree->as<QueryNode &>();
 
     /// the analysis resolved the tree with the context of the query node

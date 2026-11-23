@@ -34,6 +34,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_positional_arguments_for_projections;
     extern const SettingsBool prefer_column_name_to_alias;
 }
 
@@ -230,8 +231,7 @@ size_t replaceScalarSubqueries(const ASTPtr & ast, const ScalarSubqueryValues & 
     return replaced;
 }
 
-}
-
+/// session settings must not change what a projection means
 ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context)
 {
     auto query_context = Context::createCopy(context);
@@ -261,13 +261,25 @@ ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, cons
     return query_context;
 }
 
+}
+
+void storeSettingsOfProjectionQuery(const ASTPtr & query_ast, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    auto & stored_settings = query_ast->as<ASTSelectQuery &>().settings()->as<ASTSetQuery &>().changes;
+    stored_settings.setSetting("enable_positional_arguments", settings[Setting::enable_positional_arguments_for_projections].value);
+    for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants"})
+        stored_settings.setSetting(setting, settings.get(setting));
+}
+
 QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze)
 {
-    auto query_tree = buildQueryTree(query_ast, context);
+    auto query_context = createProjectionAnalysisContext(query_ast, context);
+    auto query_tree = buildQueryTree(query_ast, query_context);
     auto & query_node = query_tree->as<QueryNode &>();
 
     /// the stored query has no `FROM`: put the source in place of `system.one`
-    query_node.getJoinTreeNode() = std::make_shared<TableNode>(source, context);
+    query_node.getJoinTreeNode() = std::make_shared<TableNode>(source, query_context);
 
     /// the analyzer splits a `tuple` key into its elements, but the part stores it as one column: wrap it once more
     if (query_node.hasGroupBy() && !query_node.isGroupByWithGroupingSets())
@@ -284,13 +296,13 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
         }
     }
 
-    QueryTreePassManager query_tree_pass_manager(context);
+    QueryTreePassManager query_tree_pass_manager(query_context);
     addQueryTreePasses(query_tree_pass_manager, only_analyze);
     /// resolve only: an optimization pass can change a stored expression (`GROUP BY -c0` into `GROUP BY c0`)
     query_tree_pass_manager.runOnlyResolve(query_tree);
 
     /// `count(1)` and `sum(1)` are stored as `count()`
-    NormalizeCountVariantsPass().run(query_tree, context);
+    NormalizeCountVariantsPass().run(query_tree, query_context);
 
     auto table_node = query_node.getJoinTreeNode();
     for (auto & child : query_node.getChildren())
@@ -312,7 +324,7 @@ void storeValuesOfScalarSubqueries(ASTPtr & query_ast, const StoragePtr & source
     if (!hasSubquery(query_ast))
         return;
 
-    auto query_tree = buildProjectionQueryTree(query_ast, source, createProjectionAnalysisContext(query_ast, context), /*only_analyze=*/false);
+    auto query_tree = buildProjectionQueryTree(query_ast, source, context, /*only_analyze=*/false);
     ScalarSubqueryValues values;
     collectScalarSubqueryValues(query_tree, values);
 

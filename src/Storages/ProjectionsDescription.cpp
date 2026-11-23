@@ -62,13 +62,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-namespace Setting
-{
-
-extern const SettingsBool enable_positional_arguments_for_projections;
-
-}
-
 namespace MergeTreeSetting
 {
 
@@ -469,11 +462,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         select_query.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
     }
 
-    /// keep the settings that change what the query means
-    auto & stored_settings = select_query.settings()->as<ASTSetQuery &>().changes;
-    stored_settings.setSetting("enable_positional_arguments", query_context->getSettingsRef()[Setting::enable_positional_arguments_for_projections].value);
-    for (const auto * setting : {"count_distinct_implementation", "rewrite_count_distinct_if_with_count_distinct_implementation", "optimize_normalize_count_variants"})
-        stored_settings.setSetting(setting, query_context->getSettingsRef().get(setting));
+    storeSettingsOfProjectionQuery(result.query_ast, query_context);
 
     auto [planner, source_columns] = planProjectionQuery(result, columns, partition_key, query_context);
     const auto & query_tree = planner.getQueryTree();

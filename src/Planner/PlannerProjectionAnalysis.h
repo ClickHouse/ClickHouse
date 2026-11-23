@@ -10,10 +10,10 @@ namespace DB
 
 /// analysis of a projection query; keeps the column names and key order that existing parts rely on
 
-/// session settings must not change what a projection means
-ContextMutablePtr createProjectionAnalysisContext(const ASTPtr & query_ast, const ContextPtr & context);
+/// keeps in the stored query the settings that change what it means
+void storeSettingsOfProjectionQuery(const ASTPtr & query_ast, const ContextPtr & context);
 
-/// with `only_analyze` scalar subqueries are not run and get a default value
+/// session settings do not change the analysis; with `only_analyze` scalar subqueries are not run and get a default value
 QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context, bool only_analyze = true);
 
 /// the name a projection part stores this expression under
