@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class CachedObjectStorage;
+
 class MetadataStorageFromCacheObjectStorage : public IMetadataStorage
 {
     friend class MetadataStorageFromCacheObjectStorageTransaction;
@@ -15,7 +17,9 @@ class MetadataStorageFromCacheObjectStorage : public IMetadataStorage
 public:
     /// `object_storage_` is the object storage of the wrapped disk. It is asked whether it is read-only on every
     /// call of `hasDeadBlobsQueue`, because its `readonly` setting may change on config reload.
-    MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_);
+    /// `cached_object_storage_` is the object storage of this disk: it drops the cache entries of the removed blobs.
+    MetadataStorageFromCacheObjectStorage(
+        MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_, std::shared_ptr<CachedObjectStorage> cached_object_storage_);
     ~MetadataStorageFromCacheObjectStorage() override = default;
 
     MetadataStoragePtr getUnderlying() const;
@@ -95,11 +99,12 @@ public:
 private:
     const MetadataStoragePtr underlying;
     const ObjectStoragePtr object_storage;
+    const std::shared_ptr<CachedObjectStorage> cached_object_storage;
 
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 
-    /// Queues the blobs removed by a committed transaction and wakes up the blob killer.
+    /// Drops the cache entries of the blobs removed by a committed transaction, queues them and wakes up the blob killer.
     void submitForRemoval(const StoredObjects & blobs);
 
     std::mutex dead_blobs_queued_callback_mutex;

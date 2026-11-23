@@ -1,12 +1,15 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 
 
 namespace DB
 {
 
-MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_)
+MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(
+    MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_, std::shared_ptr<CachedObjectStorage> cached_object_storage_)
     : underlying(std::move(underlying_))
     , object_storage(std::move(object_storage_))
+    , cached_object_storage(std::move(cached_object_storage_))
 {
 }
 
@@ -279,6 +282,11 @@ void MetadataStorageFromCacheObjectStorage::submitForRemoval(const StoredObjects
         std::lock_guard guard(removed_objects_mutex);
         objects_to_remove.submitForRemoval(blobs);
     }
+
+    /// A new file may get the key of a removed blob before the blob killer runs: a `plain_rewritable` storage derives
+    /// keys from paths, and a move copies the blob through the wrapped object storage, which does not drop the cache.
+    /// So the cache entries are dropped right away, otherwise a read of the new file could return the cached old data.
+    cached_object_storage->removeObjectsIfExist(blobs);
 
     /// Called after the blobs are queued, so `hasDeadBlobsQueue` already answers `true` in the woken up round.
     /// The mutex is held during the call, so that the callback is not unregistered while it is running.
