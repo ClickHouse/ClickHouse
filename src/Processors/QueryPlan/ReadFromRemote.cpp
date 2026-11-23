@@ -563,19 +563,18 @@ static bool addFilters(
 
     /// The filter is represented by an actions DAG after the outer query has
     /// been analyzed. Turning it back into SQL and putting it in a subquery's
-    /// `HAVING` makes that subquery analyze `IN` under its own settings. Keep
-    /// the filter on the initiator if its null mode would change there.
-    if (settings[Setting::in_null_as_unknown]
-        != query_node->getContext()->getSettingsRef()[Setting::in_null_as_unknown])
+    /// `HAVING` can reanalyze `IN` under different settings. The query node's
+    /// context does not necessarily include the subquery's `SETTINGS`, so keep
+    /// ordinary `IN` filters local while the opt-in mode is active. Also use
+    /// the function's captured mode when it differs from the rewrite context.
+    for (const auto & node : pushed_down_filters.getNodes())
     {
-        for (const auto & node : pushed_down_filters.getNodes())
-        {
-            if (!node.function_base)
-                continue;
-            const auto & name = node.function_base->getName();
-            if (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
-                return false;
-        }
+        if (!node.function_base)
+            continue;
+        const auto & name = node.function_base->getName();
+        if ((settings[Setting::in_null_as_unknown] || node.function_base->useNullAsUnknownSemanticsForIn())
+            && (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn"))
+            return false;
     }
 
     /// We are building a set with projection names and a map with execution names here.
