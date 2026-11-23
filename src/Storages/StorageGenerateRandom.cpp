@@ -63,7 +63,6 @@
 #include <Functions/FunctionGenerateRandomStructure.h>
 
 #include <pcg_random.hpp>
-#include <Common/re2.h>
 
 #include <algorithm>
 #include <cmath>
@@ -776,9 +775,6 @@ public:
         const DataTypeObject & object_type_, UInt64 seed, const GenerateRandomOptions & options_, size_t & remaining_paths_)
         : object_type(object_type_), options(options_), rng(seed), remaining_paths(remaining_paths_)
     {
-        /// The type has already validated them.
-        for (const auto & regexp : object_type.getPathRegexpsToSkip())
-            skip_regexps.push_back(std::make_unique<re2::RE2>(regexp));
     }
 
     JSONSchema generate()
@@ -911,26 +907,14 @@ private:
         return static_cast<UInt32>(std::min(base * factor, cap));
     }
 
-    /// Repeats `SerializationObject::shouldSkipPath`: a path that the serialization of the type would
-    /// drop must not be generated at all, otherwise its values would silently disappear on insertion.
+    /// A path that the type would drop must not be generated at all, otherwise its values would silently
+    /// disappear on insertion. Partial match of regexps drops a superset of full match.
     [[nodiscard]] bool shouldSkipPath(const String & path) const
     {
         if (object_type.getTypedPaths().contains(path))
             return true;
 
-        for (const auto & skip : object_type.getPathsToSkip())
-        {
-            if (path.starts_with(skip))
-                return true;
-        }
-
-        for (const auto & regexp : skip_regexps)
-        {
-            if (re2::RE2::FullMatch(path, *regexp))
-                return true;
-        }
-
-        return false;
+        return object_type.getPathsToSkip()->shouldSkip(path, /*partial_match_regexps=*/ true);
     }
 
     [[nodiscard]] bool hasTypedChildren(const String & path) const
@@ -948,7 +932,6 @@ private:
     const GenerateRandomOptions & options;
     pcg64 rng;
     size_t & remaining_paths;  /// The budget of the whole column, shared with its nested schemas.
-    std::vector<std::unique_ptr<re2::RE2>> skip_regexps;
     std::vector<JSONSchema::Leaf> leaves;
 };
 

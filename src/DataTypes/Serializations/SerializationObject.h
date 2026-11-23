@@ -74,8 +74,7 @@ public:
         const DataTypeObject::TypedPathsMap & typed_paths_types_,
         const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
         const std::unordered_set<String> & shared_typed_paths_,
-        const std::unordered_set<String> & paths_to_skip_,
-        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypeObject::PathsToSkipPtr & paths_to_skip_,
         const DataTypePtr & dynamic_type_,
         const SerializationPtr & dynamic_serialization_,
         const SerializationPtr & source_serialization_);
@@ -169,7 +168,6 @@ private:
         SubstreamsDeserializeStatesCache * cache);
 
 protected:
-    bool shouldSkipPath(const String & path) const;
     /// Top-level path with the name of the source subcolumn is not allowed in types with `with_source=1`.
     void checkPathIsNotReserved(const String & path) const;
     /// Rejects a reserved path in the shared data of the rows added after prev_size. Only for Native input.
@@ -177,9 +175,7 @@ protected:
 
     DataTypeObject::TypedPathsMap typed_paths_types;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
-    std::unordered_set<String> paths_to_skip;
-    std::vector<String> sorted_paths_to_skip;
-    std::list<re2::RE2> path_regexps_to_skip;
+    DataTypeObject::PathsToSkipPtr paths_to_skip;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
     SerializationPtr source_serialization;

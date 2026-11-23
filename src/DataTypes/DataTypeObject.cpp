@@ -16,7 +16,6 @@
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/castColumn.h>
@@ -81,8 +80,7 @@ bool DataTypeObject::isSourceSubcolumnPath(std::string_view path)
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     TypedPathsMap typed_paths_,
-    std::unordered_set<String> paths_to_skip_,
-    std::vector<String> path_regexps_to_skip_,
+    PathsToSkipPtr paths_to_skip_,
     size_t max_dynamic_paths_,
     size_t max_dynamic_types_,
     std::unordered_set<String> shared_typed_paths_,
@@ -90,8 +88,7 @@ DataTypeObject::DataTypeObject(
     : schema_format(schema_format_)
     , typed_paths(std::move(typed_paths_))
     , shared_typed_paths(std::move(shared_typed_paths_))
-    , paths_to_skip(std::move(paths_to_skip_))
-    , path_regexps_to_skip(std::move(path_regexps_to_skip_))
+    , paths_to_skip(paths_to_skip_ ? std::move(paths_to_skip_) : std::make_shared<const PathsToSkip>(PathsToSkip::Paths{}, std::vector<String>{}))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
     , with_source(with_source_)
@@ -104,40 +101,17 @@ DataTypeObject::DataTypeObject(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified with the data type because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source in types with 'with_source=1'", path, SOURCE_SUBCOLUMN_NAME);
         }
 
-        for (const auto & path : paths_to_skip)
+        for (const auto & path : paths_to_skip->getPaths())
         {
             if (isSourceSubcolumnPath(path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified in the SKIP section because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source in types with 'with_source=1'", path, SOURCE_SUBCOLUMN_NAME);
         }
     }
 
-    /// Check if regular expressions are valid.
-    std::vector<std::unique_ptr<re2::RE2>> compiled_regexps_to_skip;
-    compiled_regexps_to_skip.reserve(path_regexps_to_skip.size());
-    for (const auto & regexp_str : path_regexps_to_skip)
-    {
-        re2::RE2::Options options;
-        /// Don't log errors to stderr.
-        options.set_log_errors(false);
-        auto regexp = std::make_unique<re2::RE2>(regexp_str, options);
-        if (!regexp->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp->error());
-        compiled_regexps_to_skip.push_back(std::move(regexp));
-    }
-
     for (const auto & [typed_path, type] : typed_paths)
     {
-        for (const auto & path_to_skip : paths_to_skip)
-        {
-            if (typed_path.starts_with(path_to_skip))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP path prefix '{}'", typed_path, type->getName(), path_to_skip);
-        }
-
-        for (size_t i = 0; i != compiled_regexps_to_skip.size(); ++i)
-        {
-            if (re2::RE2::FullMatch(typed_path, *compiled_regexps_to_skip[i]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regexps_to_skip[i]);
-        }
+        if (paths_to_skip->shouldSkip(typed_path, /*partial_match_regexps=*/ false))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and is skipped by the SKIP or SKIP REGEXP clauses", typed_path, type->getName());
     }
 
     /// The parser marks a typed path as SHARED, so only a programmatic construction can break this.
@@ -155,10 +129,55 @@ DataTypeObject::DataTypeObject(
 
 DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
     : schema_format(schema_format_)
+    , paths_to_skip(std::make_shared<const PathsToSkip>(PathsToSkip::Paths{}, std::vector<String>{}))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
     , with_source(false)
 {
+}
+
+DataTypeObject::PathsToSkip::PathsToSkip(Paths paths_, std::vector<String> regexps_)
+    : paths(std::move(paths_))
+    , regexps(std::move(regexps_))
+{
+    compiled_regexps.reserve(regexps.size());
+    for (const auto & regexp_str : regexps)
+    {
+        re2::RE2::Options options;
+        /// Don't log errors to stderr.
+        options.set_log_errors(false);
+        auto regexp = std::make_unique<re2::RE2>(regexp_str, options);
+        if (!regexp->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp->error());
+        compiled_regexps.push_back(std::move(regexp));
+    }
+}
+
+DataTypeObject::PathsToSkip::~PathsToSkip() = default;
+
+bool DataTypeObject::PathsToSkip::shouldSkip(std::string_view path, bool partial_match_regexps) const
+{
+    if (!paths.empty())
+    {
+        /// The path itself or any object containing it.
+        size_t end = path.find('.');
+        while (true)
+        {
+            if (paths.contains(path.substr(0, end)))
+                return true;
+            if (end == std::string_view::npos)
+                break;
+            end = path.find('.', end + 1);
+        }
+    }
+
+    for (const auto & regexp : compiled_regexps)
+    {
+        if (partial_match_regexps ? re2::RE2::PartialMatch(path, *regexp) : re2::RE2::FullMatch(path, *regexp))
+            return true;
+    }
+
+    return false;
 }
 
 void DataTypeObject::insertDefaultInto(IColumn & column) const
@@ -199,21 +218,19 @@ void DataTypeObject::insertDefaultInto(IColumn & column) const
     }
 }
 
+Field DataTypeObject::getDefault() const
+{
+    /// An object of the type has all its typed paths (see `ColumnObject::insert`).
+    Object object;
+    for (const auto & [path, type] : typed_paths)
+        object[path] = type->getDefault();
+    return object;
+}
+
 bool DataTypeObject::isDefaultInsertTrivial() const
 {
     return std::all_of(typed_paths.begin(), typed_paths.end(),
         [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
-}
-
-MutableColumnConstPtr DataTypeObject::createColumnConst(size_t size, const Field & field) const
-{
-    /// `ColumnObject::insert` gives each typed path absent from the `Object` the zero of its column.
-    if (field.getType() != Field::Types::Object || !field.safeGet<Object>().empty())
-        return IDataType::createColumnConst(size, field);
-
-    auto column = createColumn();
-    insertDefaultInto(*column);
-    return ColumnConst::create(std::move(column), size);
 }
 
 bool DataTypeObject::equals(const IDataType & rhs) const
@@ -250,7 +267,7 @@ bool DataTypeObject::equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) 
             return false;
     }
 
-    return schema_format == rhs.schema_format && paths_to_skip == rhs.paths_to_skip && path_regexps_to_skip == rhs.path_regexps_to_skip
+    return schema_format == rhs.schema_format && *paths_to_skip == *rhs.paths_to_skip
         && max_dynamic_types == rhs.max_dynamic_types && max_dynamic_paths == rhs.max_dynamic_paths
         && with_source == rhs.with_source;
 }
@@ -288,7 +305,6 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                     typed_paths_serializations,
                     shared_typed_paths,
                     paths_to_skip,
-                    path_regexps_to_skip,
                     getDynamicType(),
                     dynamic_serialization,
                     source_serialization,
@@ -301,7 +317,6 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 typed_paths_serializations,
                 shared_typed_paths,
                 paths_to_skip,
-                path_regexps_to_skip,
                 getDynamicType(),
                 dynamic_serialization,
                 source_serialization,
@@ -312,7 +327,6 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 typed_paths_serializations,
                 shared_typed_paths,
                 paths_to_skip,
-                path_regexps_to_skip,
                 getDynamicType(),
                 dynamic_serialization,
                 source_serialization,
@@ -375,10 +389,7 @@ String DataTypeObject::doGetName() const
             out << backQuoteIfNeed(path) << " " << type->getName();
     }
 
-    std::vector<String> sorted_skip_paths;
-    sorted_skip_paths.reserve(paths_to_skip.size());
-    for (const auto & skip_path : paths_to_skip)
-        sorted_skip_paths.push_back(skip_path);
+    std::vector<String> sorted_skip_paths(paths_to_skip->getPaths().begin(), paths_to_skip->getPaths().end());
     std::sort(sorted_skip_paths.begin(), sorted_skip_paths.end());
     for (const auto & skip_path : sorted_skip_paths)
     {
@@ -386,7 +397,7 @@ String DataTypeObject::doGetName() const
         out << "SKIP " << backQuoteIfNeed(skip_path);
     }
 
-    for (const auto & skip_regexp : path_regexps_to_skip)
+    for (const auto & skip_regexp : paths_to_skip->getRegexps())
     {
         write_separator();
         out << "SKIP REGEXP " << quoteString(skip_regexp);
@@ -416,7 +427,7 @@ DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) 
         new_typed_paths.emplace(sorted_typed_paths[i].first, new_children[i]);
 
     return std::make_shared<DataTypeObject>(
-        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_paths, with_source);
+        schema_format, std::move(new_typed_paths), paths_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_paths, with_source);
 }
 
 namespace
@@ -703,8 +714,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const std::unordered_map<String, SerializationPtr> & all_typed_paths_serializations,
     const SerializationObjectTypedSharedData::SharedTypedPaths & all_shared_typed_paths,
     const DataTypeObject::SchemaFormat & schema_format,
-    const std::unordered_set<String> & paths_to_skip,
-    const std::vector<String> & path_regexps_to_skip,
+    const DataTypeObject::PathsToSkipPtr & paths_to_skip,
     size_t max_dynamic_paths,
     size_t max_dynamic_types,
     const DataTypePtr & dynamic_type,
@@ -744,7 +754,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
         typed_shared_data_serialization = SerializationSubObjectTypedSharedData::create(prefix, std::move(shared_typed_paths_under_prefix), first_shared_path_index, all_shared_typed_paths.size());
 
     auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
+        schema_format, typed_sub_paths, paths_to_skip, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
     auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization, typed_shared_data_serialization);
     return {std::move(sub_object_type), std::move(sub_object_serialization)};
 }
@@ -856,7 +866,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             const String prefix = *sub_object_subcolumn + ".";
             auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
                 prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
+                paths_to_skip, max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
 
             auto res = std::make_unique<SubcolumnInfo>();
             res->data = SubstreamData(sub_object_serialization);
@@ -907,7 +917,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
             auto dynamic_result_type = getDynamicType();
             auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
                 prefix, typed_paths, shared_typed_paths, typed_paths_serializations, object_serialization.getSharedTypedPaths(), schema_format,
-                paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
+                paths_to_skip, max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
 
             auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
 
@@ -999,7 +1009,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
     DataTypeObject::TypedPathsMap typed_paths;
     std::unordered_set<String> shared_typed_paths;
-    std::unordered_set<String> paths_to_skip;
+    DataTypeObject::PathsToSkip::Paths paths_to_skip;
     std::vector<String> path_regexps_to_skip;
 
     size_t max_dynamic_types = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
@@ -1084,7 +1094,8 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     }
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types, std::move(shared_typed_paths), with_source);
+    auto skip = std::make_shared<const DataTypeObject::PathsToSkip>(std::move(paths_to_skip), std::move(path_regexps_to_skip));
+    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(skip), max_dynamic_paths, max_dynamic_types, std::move(shared_typed_paths), with_source);
 }
 
 const DataTypePtr & DataTypeObject::getTypeOfSharedData()
@@ -1122,13 +1133,13 @@ void DataTypeObject::updateHashImpl(SipHash & hash) const
     }
 
     // Include paths to skip in the hash
-    hash.update(paths_to_skip.size());
-    for (const auto & path : paths_to_skip)
+    hash.update(paths_to_skip->getPaths().size());
+    for (const auto & path : paths_to_skip->getPaths())
         hash.update(path);
 
     // Include path regexps to skip in the hash
-    hash.update(path_regexps_to_skip.size());
-    for (const auto & regexp : path_regexps_to_skip)
+    hash.update(paths_to_skip->getRegexps().size());
+    for (const auto & regexp : paths_to_skip->getRegexps())
         hash.update(regexp);
 }
 
@@ -1163,7 +1174,7 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
     /// Skip rules are only relevant while parsing input. This synthetic type represents descendants
     /// that are already stored, and the original rules refer to paths relative to the root object.
     auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
+        schema_format, typed_sub_paths, /*paths_to_skip_=*/ nullptr, max_dynamic_paths, max_dynamic_types, shared_typed_sub_paths);
     auto dynamic_result_type = getDynamicType();
 
     DataTypePtr literal_type;

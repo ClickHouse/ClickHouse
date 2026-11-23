@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int DECIMAL_OVERFLOW;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
@@ -588,6 +590,50 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     if (to_signed)
         return which.isInt256() ? nullptr : std::make_shared<DataTypeInt256>();
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
+}
+
+/// Converts an object like the parser of the type: skipped paths are dropped, the values of typed paths
+/// are converted to their types, and the absent typed paths get their defaults (see `ColumnObject::insert`).
+Field convertObjectToType(
+    const Object & src, const DataTypeObject & type, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
+{
+    const auto & typed_paths = type.getTypedPaths();
+    const auto & paths_to_skip = *type.getPathsToSkip();
+    Object res;
+    for (const auto & [path, value] : src)
+    {
+        if (type.hasSource() && DataTypeObject::isSourceSubcolumnPath(path))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+                path,
+                DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+
+        if (paths_to_skip.shouldSkip(path, format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp))
+            continue;
+
+        auto typed_it = typed_paths.find(path);
+        if (typed_it == typed_paths.end())
+        {
+            res[path] = value;
+            continue;
+        }
+
+        const auto & path_type = *typed_it->second;
+        /// A NULL of a typed path that cannot contain it is the default of the type, as in parsing.
+        if (value.isNull() && !canContainNull(path_type))
+            continue;
+
+        Field converted = convertFieldToType(value, path_type, nullptr, format_settings, strict, convert_inexact_floats);
+        if (converted.isNull() && !value.isNull())
+            return {};
+        res[path] = std::move(converted);
+    }
+
+    for (const auto & [path, path_type] : typed_paths)
+        res.try_emplace(path, path_type->getDefault());
+
+    return res;
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -1486,10 +1532,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// We can insert any field to Dynamic column.
         return src;
     }
-    else if (isObject(type))
+    else if (const auto * type_object = typeid_cast<const DataTypeObject *>(&type))
     {
         if (src.getType() == Field::Types::Object)
-            return src; /// Already in needed type.
+        {
+            const auto & paths_to_skip = *type_object->getPathsToSkip();
+            if (type_object->getTypedPaths().empty() && paths_to_skip.getPaths().empty() && paths_to_skip.getRegexps().empty()
+                && !type_object->hasSource())
+                return src;
+            return convertObjectToType(src.safeGet<Object>(), *type_object, format_settings, strict, convert_inexact_floats);
+        }
 
         /// TODO: add conversion from Map/Tuple to Object.
     }

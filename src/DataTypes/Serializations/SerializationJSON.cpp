@@ -26,13 +26,12 @@ SerializationJSON<Parser>::SerializationJSON(
     const DataTypeObject::TypedPathsMap & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
     const std::unordered_set<String> & shared_typed_paths_,
-    const std::unordered_set<String> & paths_to_skip_,
-    const std::vector<String> & path_regexps_to_skip_,
+    const DataTypeObject::PathsToSkipPtr & paths_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
     const SerializationPtr & source_serialization_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_, source_serialization_)
+    : SerializationObject(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, dynamic_type_, dynamic_serialization_, source_serialization_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }

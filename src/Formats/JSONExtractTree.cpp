@@ -2176,8 +2176,7 @@ public:
     ObjectJSONNode(
         const DataTypeObject::TypedPathsMap & typed_paths_types_,
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
-        const std::unordered_set<String> & paths_to_skip_,
-        const std::vector<String> & path_regexps_to_skip_,
+        const DataTypeObject::PathsToSkipPtr & paths_to_skip_,
         const DataTypePtr & type_of_nested_objects,
         bool source_filled_by_caller_ = false)
         : typed_paths_types(typed_paths_types_)
@@ -2187,11 +2186,6 @@ public:
         , dynamic_serialization(DataTypeDynamic().getDefaultSerialization())
         , source_filled_by_caller(source_filled_by_caller_)
     {
-        sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
-        std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
-        for (const auto & regexp : path_regexps_to_skip_)
-            path_regexps_to_skip.emplace_back(regexp);
-
         all_typed_paths_have_trivial_defaults = std::all_of(
             typed_paths_types_.begin(), typed_paths_types_.end(),
             [](const auto & pair) { return pair.second->isDefaultInsertTrivial(); });
@@ -2586,31 +2580,7 @@ private:
 
     [[nodiscard]] bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
     {
-        if (paths_to_skip.contains(path))
-            return true;
-
-        if (!sorted_paths_to_skip.empty())
-        {
-            auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
-            if (it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it) + "."))
-                return true;
-        }
-
-        for (const auto & regexp : path_regexps_to_skip)
-        {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
-            {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
-            }
-            else
-            {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
-            }
-        }
-
-        return false;
+        return paths_to_skip->shouldSkip(path, insert_settings.use_partial_match_to_skip_paths_by_regexp);
     }
 
     bool insertIntoDynamicPath(ColumnDynamic & column_dynamic, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const
@@ -2997,9 +2967,7 @@ private:
     DataTypeObject::TypedPathsMap typed_paths_types;
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
     bool all_typed_paths_have_trivial_defaults = true;
-    std::unordered_set<String> paths_to_skip;
-    std::vector<String> sorted_paths_to_skip;
-    std::list<re2::RE2> path_regexps_to_skip;
+    DataTypeObject::PathsToSkipPtr paths_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
     bool source_filled_by_caller = false;
@@ -3243,7 +3211,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(
                         typed_paths,
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
-                        object_type.getPathRegexpsToSkip(),
                         object_type.getTypeOfNestedObjects(),
                         json_source_filled_by_caller);
             }

@@ -6,6 +6,10 @@
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+namespace re2
+{
+class RE2;
+}
 
 namespace DB
 {
@@ -40,11 +44,33 @@ public:
     /// The typed paths by name; the hasher takes a string_view, so a prefix of a name is looked up without a copy.
     using TypedPathsMap = std::unordered_map<String, DataTypePtr, StringHashForHeterogeneousLookup, std::equal_to<>>;
 
+    /// The paths the type drops: its SKIP paths (with the paths inside them) and SKIP REGEXP patterns.
+    struct PathsToSkip
+    {
+        using Paths = std::unordered_set<String, StringHashForHeterogeneousLookup, std::equal_to<>>;
+
+        PathsToSkip(Paths paths_, std::vector<String> regexps_);
+        ~PathsToSkip();
+
+        /// `SKIP a` skips `a` and `a.b`, but not `ab`. `partial_match_regexps` is the setting
+        /// `type_json_use_partial_match_to_skip_paths_by_regexp`.
+        bool shouldSkip(std::string_view path, bool partial_match_regexps) const;
+
+        const Paths & getPaths() const { return paths; }
+        const std::vector<String> & getRegexps() const { return regexps; }
+        bool operator==(const PathsToSkip & rhs) const { return paths == rhs.paths && regexps == rhs.regexps; }
+
+    private:
+        Paths paths;
+        std::vector<String> regexps;
+        std::vector<std::unique_ptr<re2::RE2>> compiled_regexps;
+    };
+    using PathsToSkipPtr = std::shared_ptr<const PathsToSkip>;
+
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
         TypedPathsMap typed_paths_ = {},
-        std::unordered_set<String> paths_to_skip_ = {},
-        std::vector<String> path_regexps_to_skip_ = {},
+        PathsToSkipPtr paths_to_skip_ = nullptr,
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
         std::unordered_set<String> shared_typed_paths_ = {},
@@ -58,11 +84,10 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    Field getDefault() const override { return Object(); }
+    Field getDefault() const override;
 
     void insertDefaultInto(IColumn & column) const override;
     bool isDefaultInsertTrivial() const override;
-    MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
 
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
@@ -103,8 +128,7 @@ public:
     /// Returns a map from typed-path name to its default serialization, resolved once.
     /// Used by mergedJSONPatch to serialize/deserialize typed-path values without a type tag.
     UnorderedMapWithMemoryTracking<String, SerializationPtr> getTypedPathSerializations() const;
-    const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
-    const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
+    const PathsToSkipPtr & getPathsToSkip() const { return paths_to_skip; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
@@ -143,10 +167,8 @@ private:
     std::vector<std::pair<String, DataTypePtr>> sorted_typed_paths;
     /// The typed paths declared `SHARED`.
     std::unordered_set<String> shared_typed_paths;
-    /// Set of paths that should be skipped during data parsing.
-    std::unordered_set<String> paths_to_skip;
-    /// List of regular expressions that should be used to skip paths during data parsing.
-    std::vector<String> path_regexps_to_skip;
+    /// Paths and regular expressions of paths that should be skipped during data parsing.
+    PathsToSkipPtr paths_to_skip;
     /// Limit on the number of paths that can be stored as subcolumn.
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.

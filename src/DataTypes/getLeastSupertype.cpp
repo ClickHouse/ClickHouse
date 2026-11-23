@@ -621,8 +621,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// - max_dynamic_paths / max_dynamic_types: take the maximum
             auto merged_typed_paths = first.getTypedPaths();
             std::unordered_set<String> merged_shared_typed_paths = first.getSharedTypedPaths();
-            std::set<String> merged_paths_to_skip(first.getPathsToSkip().begin(), first.getPathsToSkip().end());
-            std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
+            std::set<String> merged_paths_to_skip(first.getPathsToSkip()->getPaths().begin(), first.getPathsToSkip()->getPaths().end());
+            std::set<String> merged_regexps_to_skip(first.getPathsToSkip()->getRegexps().begin(), first.getPathsToSkip()->getRegexps().end());
             size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
             size_t merged_max_dynamic_types = first.getMaxDynamicTypes();
             /// The JSON text is kept only if all types have it.
@@ -656,7 +656,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 std::erase_if(merged_shared_typed_paths, [&](const String & path) { return !current.isSharedTypedPath(path); });
 
                 /// Paths to skip intersection.
-                std::set<String> skip_set(current.getPathsToSkip().begin(), current.getPathsToSkip().end());
+                std::set<String> skip_set(current.getPathsToSkip()->getPaths().begin(), current.getPathsToSkip()->getPaths().end());
                 std::set<String> skip_intersection;
                 std::set_intersection(
                     merged_paths_to_skip.begin(), merged_paths_to_skip.end(),
@@ -665,7 +665,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 merged_paths_to_skip = std::move(skip_intersection);
 
                 /// Path regexps to skip intersection.
-                std::set<String> regexp_set(current.getPathRegexpsToSkip().begin(), current.getPathRegexpsToSkip().end());
+                std::set<String> regexp_set(current.getPathsToSkip()->getRegexps().begin(), current.getPathsToSkip()->getRegexps().end());
                 std::set<String> regexp_intersection;
                 std::set_intersection(
                     merged_regexps_to_skip.begin(), merged_regexps_to_skip.end(),
@@ -684,8 +684,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             return std::make_shared<DataTypeObject>(
                 schema_format,
                 std::move(merged_typed_paths),
-                std::unordered_set<String>(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
-                std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
+                std::make_shared<const DataTypeObject::PathsToSkip>(
+                    DataTypeObject::PathsToSkip::Paths(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
+                    std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end())),
                 merged_max_dynamic_paths,
                 merged_max_dynamic_types,
                 std::move(merged_shared_typed_paths),

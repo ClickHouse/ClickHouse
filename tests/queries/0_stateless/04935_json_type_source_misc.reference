@@ -23,8 +23,6 @@ hidden default rows of a typed path whose column zero is not a value of its type
 {"e":"ok"}
 \N
 \N
-arrayElement out of range returns the type default, consistent with the source
-{"e":"minus"}	{"e":"minus"}
 the common type keeps the source only if all types have it
 JSON(with_source=1)
 JSON(with_source=1, max_dynamic_paths=16)
@@ -51,4 +49,6 @@ a column with only default paths is stored if its source is not the default text
 generateRandom creates the source from the generated objects
 100	100
 100	100
+a default row of a JOIN has the defaults of the types in the value and in the source
+{"e":"minus"}	{"e":"minus"}
 a reserved path from a reinterpreted aggregate state is rejected

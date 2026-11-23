@@ -732,6 +732,26 @@ void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<std::pair<Stri
 void ColumnObject::insert(const Field & x)
 {
     const auto & object = x.safeGet<Object>();
+    /// Inserted field should be already converted to the type, so all typed paths should've been filled.
+    for (const auto & [path, _] : typed_paths)
+    {
+        if (!object.contains(path))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert an object without the typed path '{}' into column {}", path, getName());
+    }
+
+    if (hasSource())
+    {
+        for (const auto & [path, _] : object)
+        {
+            if (DataTypeObject::isSourceSubcolumnPath(path))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Path '{}' is not allowed in JSON types with 'with_source=1' because the name '{}' and paths nested in it are reserved for the subcolumn with JSON source",
+                    path,
+                    DataTypeObject::SOURCE_SUBCOLUMN_NAME);
+        }
+    }
+
     auto & shared_data_offsets = getSharedDataOffsets();
     auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     size_t current_size = size();
@@ -766,21 +786,7 @@ void ColumnObject::insert(const Field & x)
 
     shared_data_offsets.push_back(shared_data_paths->size());
 
-    /// Fill all remaining typed and dynamic paths with default values. With the source the row is written as text,
-    /// so the typed paths get the defaults of their types: the zero of a column is not always a value of its type.
-    if (hasSource() && !object_type)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
-    const auto * object_type_ptr = hasSource() ? &assert_cast<const DataTypeObject &>(*object_type) : nullptr;
-    for (auto & [path, column] : typed_paths)
-    {
-        if (column->size() != current_size)
-            continue;
-        if (object_type_ptr)
-            object_type_ptr->getTypedPaths().at(path)->insertDefaultInto(*column);
-        else
-            column->insertDefault();
-    }
-
+    /// Fill all remaining dynamic paths with default values. All typed paths are in the object.
     for (auto & [_, column] : dynamic_paths_ptrs)
     {
         if (column->size() == current_size)
@@ -798,6 +804,24 @@ bool ColumnObject::tryInsert(const Field & x)
         return false;
 
     const auto & object = x.safeGet<Object>();
+    /// An object without some typed path is not of this type: its default is unknown here. Then `Variant`
+    /// converts the object to the type of the variant (see `convertFieldToType`), and `Dynamic` adds a new variant.
+    for (const auto & [path, _] : typed_paths)
+    {
+        if (!object.contains(path))
+            return false;
+    }
+
+    /// A path reserved for the source subcolumn makes the object not of this type.
+    if (hasSource())
+    {
+        for (const auto & [path, _] : object)
+        {
+            if (DataTypeObject::isSourceSubcolumnPath(path))
+                return false;
+        }
+    }
+
     auto & shared_data_offsets = getSharedDataOffsets();
     auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     size_t prev_size = size();
@@ -878,13 +902,7 @@ bool ColumnObject::tryInsert(const Field & x)
 
     shared_data_offsets.push_back(shared_data_paths->size());
 
-    /// Fill all remaining typed and dynamic paths with default values.
-    for (auto & [_, column] : typed_paths)
-    {
-        if (column->size() == prev_size)
-            column->insertDefault();
-    }
-
+    /// Fill all remaining dynamic paths with default values. All typed paths are in the object.
     for (auto & [_, column] : dynamic_paths_ptrs)
     {
         if (column->size() == prev_size)
@@ -1223,20 +1241,10 @@ void ColumnObject::insertDefault()
     /// roll back the sub-columns that were already modified, otherwise the object is left
     /// with sub-columns of different sizes and popBack would over-pop the shorter ones.
     size_t prev_size = size();
-    /// With the source a default row is written as text, so the typed paths get the defaults of their types:
-    /// the zero of a column is not always a value of its type, and must match the source text.
-    if (hasSource() && !object_type)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
-    const auto * object_type_ptr = hasSource() ? &assert_cast<const DataTypeObject &>(*object_type) : nullptr;
     try
     {
-        for (auto & [path, column] : typed_paths)
-        {
-            if (object_type_ptr)
-                object_type_ptr->getTypedPaths().at(path)->insertDefaultInto(*column);
-            else
-                column->insertDefault();
-        }
+        for (auto & [_, column] : typed_paths)
+            column->insertDefault();
         for (auto & [_, column] : dynamic_paths_ptrs)
             column->insertDefault();
         shared_data->insertDefault();
@@ -1253,18 +1261,10 @@ void ColumnObject::insertDefault()
 void ColumnObject::insertManyDefaults(size_t length)
 {
     size_t prev_size = size();
-    if (hasSource() && !object_type)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
-    const auto * object_type_ptr = hasSource() ? &assert_cast<const DataTypeObject &>(*object_type) : nullptr;
     try
     {
-        for (auto & [path, column] : typed_paths)
-        {
-            if (object_type_ptr)
-                object_type_ptr->getTypedPaths().at(path)->insertManyDefaultsInto(*column, length);
-            else
-                column->insertManyDefaults(length);
-        }
+        for (auto & [_, column] : typed_paths)
+            column->insertManyDefaults(length);
         for (auto & [_, column] : dynamic_paths_ptrs)
             column->insertManyDefaults(length);
         shared_data->insertManyDefaults(length);
@@ -2253,11 +2253,21 @@ bool ColumnObject::isFinalized() const
 
 void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    min = Object();
-    max = Object();
-
     if (start >= end)
+    {
+        /// Like other columns, the extremes of no rows are the zeroes: of the typed paths here, as an object must have them.
+        Object object;
+        for (const auto & [path, column] : typed_paths)
+        {
+            Field path_min;
+            Field path_max;
+            column->getExtremes(path_min, path_max, start, end);
+            object[path] = std::move(path_min);
+        }
+        min = object;
+        max = std::move(object);
         return;
+    }
 
     size_t min_idx = start;
     size_t max_idx = start;

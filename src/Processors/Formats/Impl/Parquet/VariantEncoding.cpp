@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/ListWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -42,7 +41,6 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/isValidUTF8.h>
-#include <Common/re2.h>
 #include <base/arithmeticOverflow.h>
 #include <base/scope_guard.h>
 #include <base/unaligned.h>
@@ -248,30 +246,14 @@ class JSONPathsFilter
 public:
     JSONPathsFilter(const DataTypeObject & type_, bool use_partial_match_)
         : type(type_)
-        , sorted_paths_to_skip(type.getPathsToSkip().begin(), type.getPathsToSkip().end())
         , use_partial_match(use_partial_match_)
         , typed_paths_have_trivial_defaults(type.isDefaultInsertTrivial())
     {
-        std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
-        for (const auto & regexp : type.getPathRegexpsToSkip())
-            path_regexps_to_skip.emplace_back(regexp);
     }
 
     [[nodiscard]] bool shouldSkip(const String & path) const
     {
-        if (type.getPathsToSkip().contains(path))
-            return true;
-
-        auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
-        if (it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it) + "."))
-            return true;
-
-        for (const auto & regexp : path_regexps_to_skip)
-        {
-            if (use_partial_match ? re2::RE2::PartialMatch(path, regexp) : re2::RE2::FullMatch(path, regexp))
-                return true;
-        }
-        return false;
+        return type.getPathsToSkip()->shouldSkip(path, use_partial_match);
     }
 
     [[nodiscard]] const DataTypePtr * findTypedPath(const String & path) const
@@ -285,8 +267,6 @@ public:
 
 private:
     const DataTypeObject & type;
-    VectorWithMemoryTracking<String> sorted_paths_to_skip;
-    ListWithMemoryTracking<re2::RE2> path_regexps_to_skip;
     bool use_partial_match;
     bool typed_paths_have_trivial_defaults;
 };

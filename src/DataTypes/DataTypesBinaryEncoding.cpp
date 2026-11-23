@@ -550,11 +550,11 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
                     writeBinary(UInt8(object_type.isSharedTypedPath(path) ? TYPED_PATH_FLAG_SHARED : 0), buf);
                 encodeDataTypeImpl<encode_for_hash_calculation>(path_type, buf);
             }
-            const auto & paths_to_skip = object_type.getPathsToSkip();
+            const auto & paths_to_skip = object_type.getPathsToSkip()->getPaths();
             writeVarUInt(paths_to_skip.size(), buf);
             for (const auto & path : paths_to_skip)
                 writeStringBinary(path, buf);
-            const auto & path_regexps_to_skip = object_type.getPathRegexpsToSkip();
+            const auto & path_regexps_to_skip = object_type.getPathsToSkip()->getRegexps();
             writeVarUInt(path_regexps_to_skip.size(), buf);
             for (const auto & regexp : path_regexps_to_skip)
                 writeStringBinary(regexp, buf);
@@ -875,7 +875,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             if (paths_to_skip_size > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many paths to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
 
-            std::unordered_set<String> paths_to_skip;
+            DataTypeObject::PathsToSkip::Paths paths_to_skip;
             paths_to_skip.reserve(paths_to_skip_size);
             for (size_t i = 0; i != paths_to_skip_size; ++i)
             {
@@ -900,8 +900,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             return std::make_shared<DataTypeObject>(
                 DataTypeObject::SchemaFormat::JSON,
                 typed_paths,
-                paths_to_skip,
-                path_regexps_to_skip,
+                std::make_shared<const DataTypeObject::PathsToSkip>(std::move(paths_to_skip), std::move(path_regexps_to_skip)),
                 max_dynamic_paths,
                 max_dynamic_types,
                 shared_typed_paths,

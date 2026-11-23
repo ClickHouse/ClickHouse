@@ -60,8 +60,7 @@ SerializationObject::SerializationObject(
     const DataTypeObject::TypedPathsMap & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
     const std::unordered_set<String> & shared_typed_paths_,
-    const std::unordered_set<String> & paths_to_skip_,
-    const std::vector<String> & path_regexps_to_skip_,
+    const DataTypeObject::PathsToSkipPtr & paths_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
     const SerializationPtr & source_serialization_)
@@ -89,10 +88,6 @@ SerializationObject::SerializationObject(
 
     if (!shared_typed_paths.empty())
         typed_shared_data_serialization = SerializationObjectTypedSharedData::create(shared_typed_paths);
-    sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
-    std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
-    for (const auto & regexp_str : path_regexps_to_skip_)
-        path_regexps_to_skip.emplace_back(regexp_str);
 }
 
 void SerializationObject::checkPathIsNotReserved(const String & path) const
@@ -112,42 +107,35 @@ void SerializationObject::checkSharedDataPathsAreNotReserved(const ColumnObject 
 
     const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
     const auto & offsets = column_object.getSharedDataOffsets();
-    for (size_t row = prev_size; row != offsets.size(); ++row)
+    /// The first path of a row in [lo, hi) that is not smaller than `key`.
+    auto lower_bound = [&](size_t lo, size_t hi, std::string_view key)
     {
-        /// The paths of a row are sorted, so the first path that is not smaller than the reserved name is
-        /// the only one that can be reserved.
-        size_t lo = offsets[row - 1];
-        size_t hi = offsets[row];
-        const std::string_view reserved_name = DataTypeObject::SOURCE_SUBCOLUMN_NAME;
         while (lo != hi)
         {
             size_t mid = lo + (hi - lo) / 2;
-            if (shared_data_paths->getDataAt(mid) < reserved_name)
+            if (shared_data_paths->getDataAt(mid) < key)
                 lo = mid + 1;
             else
                 hi = mid;
         }
-        if (lo != static_cast<size_t>(offsets[row]))
-            checkPathIsNotReserved(String(shared_data_paths->getDataAt(lo)));
-    }
-}
+        return lo;
+    };
 
-bool SerializationObject::shouldSkipPath(const String & path) const
-{
-    if (paths_to_skip.contains(path))
-        return true;
-
-    auto it = std::lower_bound(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end(), path);
-    if (it != sorted_paths_to_skip.end() && it != sorted_paths_to_skip.begin() && path.starts_with(*std::prev(it)))
-        return true;
-
-    for (const auto & regexp : path_regexps_to_skip)
+    static const String name = DataTypeObject::SOURCE_SUBCOLUMN_NAME;
+    static const String nested_prefix = name + ".";
+    for (size_t row = prev_size; row != offsets.size(); ++row)
     {
-        if (re2::RE2::FullMatch(path, regexp))
-            return true;
+        /// The paths of a row are sorted, but other paths can sort between the name and the paths nested
+        /// in it (`__source-x` < `__source.x`), so both are looked up.
+        size_t start = offsets[row - 1];
+        size_t end = offsets[row];
+        size_t pos = lower_bound(start, end, name);
+        if (pos != end && shared_data_paths->getDataAt(pos) == name)
+            checkPathIsNotReserved(name);
+        pos = lower_bound(pos, end, nested_prefix);
+        if (pos != end && shared_data_paths->getDataAt(pos).starts_with(nested_prefix))
+            checkPathIsNotReserved(String(shared_data_paths->getDataAt(pos)));
     }
-
-    return false;
 }
 
 SerializationObject::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
@@ -1423,7 +1411,7 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
         String path;
         readStringBinaryGrowing(path, istr);
         checkPathIsNotReserved(path);
-        if (!shouldSkipPath(path))
+        if (!paths_to_skip->shouldSkip(path, settings.json.type_json_use_partial_match_to_skip_paths_by_regexp))
         {
             if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
                 it->second->deserializeBinary(object[path], istr, settings);
@@ -1437,6 +1425,10 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
             dynamic_serialization->deserializeBinary(tmp, istr, settings);
         }
     }
+
+    /// Absent typed paths get their defaults, as in the deserialization into a column.
+    for (const auto & [path, type] : typed_paths_types)
+        object.try_emplace(path, type->getDefault());
 
     field = std::move(object);
 }
@@ -1528,6 +1520,14 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 
     size_t number_of_paths = 0;
     readVarUInt(number_of_paths, istr);
+    if (settings.binary.max_object_size && number_of_paths > settings.binary.max_object_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many paths in a single object: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_object_size",
+            number_of_paths,
+            settings.binary.max_object_size);
+
     std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
     size_t prev_size = column_object.size();
     try
@@ -1538,7 +1538,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             String path;
             readStringBinaryGrowing(path, istr);
             checkPathIsNotReserved(path);
-            if (!shouldSkipPath(path))
+            if (!paths_to_skip->shouldSkip(path, settings.json.type_json_use_partial_match_to_skip_paths_by_regexp))
             {
                 /// Check if we have this path in typed paths.
                 if (auto typed_it = typed_paths_serializations.find(path); typed_it != typed_paths_serializations.end())

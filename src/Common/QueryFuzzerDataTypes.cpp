@@ -323,8 +323,9 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         {
             return makeRandomObject(
                 std::move(typed_paths),
-                fuzzObjectPathsToSkip(type_object->getPathsToSkip()),
-                fuzzObjectPathRegexpsToSkip(type_object->getPathRegexpsToSkip()),
+                fuzzObjectPathsToSkip(std::unordered_set<String>(
+                    type_object->getPathsToSkip()->getPaths().begin(), type_object->getPathsToSkip()->getPaths().end())),
+                fuzzObjectPathRegexpsToSkip(type_object->getPathsToSkip()->getRegexps()),
                 type_object->getMaxDynamicPaths(),
                 type_object->getMaxDynamicTypes(),
                 std::move(shared_typed_paths),
@@ -510,8 +511,8 @@ DataTypePtr QueryFuzzer::makeRandomObject(
     return std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
         std::move(typed_paths),
-        std::move(paths_to_skip),
-        std::move(path_regexps_to_skip),
+        std::make_shared<const DataTypeObject::PathsToSkip>(
+            DataTypeObject::PathsToSkip::Paths(paths_to_skip.begin(), paths_to_skip.end()), std::move(path_regexps_to_skip)),
         max_dynamic_paths,
         max_dynamic_types,
         std::move(shared_typed_paths),
