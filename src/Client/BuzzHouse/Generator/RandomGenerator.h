@@ -41,13 +41,11 @@ private:
     std::uniform_int_distribution<uint32_t> dist4;
     std::uniform_int_distribution<uint32_t> date_years;
     std::uniform_int_distribution<uint32_t> datetime_years;
-    /// Absolute years, unlike the two above, because `Date32` starts at year 0. It spans
-    /// [0000, 9999], but the date LUT only covers [1900, 2299] and everything else takes the
+    /// `Date32` spans [0000, 9999], but the date LUT only covers [1900, 2299] and everything else takes the
     /// cctz escape path, so draw from the two windows separately - a uniform draw over ten
     /// millennia would leave the LUT range, which most queries actually use, at 4% of values.
     std::uniform_int_distribution<uint32_t> date32_years;
     std::uniform_int_distribution<uint32_t> date32_lut_years;
-    std::uniform_int_distribution<uint32_t> months;
     std::uniform_int_distribution<uint32_t> hours;
     std::uniform_int_distribution<uint32_t> minutes;
     std::uniform_int_distribution<uint32_t> subseconds;
@@ -59,20 +57,6 @@ private:
     std::uniform_int_distribution<uint64_t> full_range;
 
     std::uniform_real_distribution<double> zero_one;
-
-    std::uniform_int_distribution<uint32_t> days[12]
-        = {std::uniform_int_distribution<uint32_t>(1, 31),
-           std::uniform_int_distribution<uint32_t>(1, 28),
-           std::uniform_int_distribution<uint32_t>(1, 31),
-           std::uniform_int_distribution<uint32_t>(1, 30),
-           std::uniform_int_distribution<uint32_t>(1, 31),
-           std::uniform_int_distribution<uint32_t>(1, 30),
-           std::uniform_int_distribution<uint32_t>(1, 31),
-           std::uniform_int_distribution<uint32_t>(1, 31),
-           std::uniform_int_distribution<uint32_t>(1, 30),
-           std::uniform_int_distribution<uint32_t>(1, 31),
-           std::uniform_int_distribution<uint32_t>(1, 30),
-           std::uniform_int_distribution<uint32_t>(1, 31)};
 
     const DB::Strings common_english{
         "is",     "was",   "are",   "be",    "have",  "had",   "were",     "can",   "said",  "use",   "do",      "will",  "would",
@@ -124,6 +108,14 @@ private:
         "key with space",
         "key-with-dash"};
 
+    static uint32_t daysInMonth(uint32_t year, uint32_t month);
+
+    /// Random month and day that exist in `year`, no later than `max_month`-`max_day`.
+    std::pair<uint32_t, uint32_t> nextMonthDay(uint32_t year, uint32_t max_month = 12, uint32_t max_day = 31);
+
+    /// `.` plus nine zero-padded digits, or empty without subseconds.
+    String nextSubseconds(bool has_subseconds);
+
 public:
     pcg64_fast generator;
 
@@ -143,11 +135,10 @@ public:
         , dist2(UINT32_C(1), UINT32_C(100))
         , dist3(UINT32_C(1), UINT32_C(1000))
         , dist4(UINT32_C(1), UINT32_C(2))
-        , date_years(0, 2149 - 1970)
-        , datetime_years(0, 2106 - 1970)
+        , date_years(1970, 2149)
+        , datetime_years(1970, 2106)
         , date32_years(0, 9999)
         , date32_lut_years(1900, 2299)
-        , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
         , subseconds(0, UINT32_C(999999999))
@@ -328,7 +319,7 @@ public:
     /// Range [1970-01-01, 2149-06-06]
     String nextDate(const String & separator, bool allow_func);
 
-    /// Range [1900-01-01, 2299-12-31]
+    /// Range [0000-01-01, 9999-12-31], half of the values within the date LUT [1900, 2299]
     String nextDate32(const String & separator, bool allow_func);
 
     /// Range [-999:59:59, 999:59:59]
