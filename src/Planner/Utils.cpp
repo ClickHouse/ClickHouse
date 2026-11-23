@@ -304,7 +304,9 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
             const auto & name = function->getFunctionName();
             if (name != "in" && name != "notIn" && name != "globalIn" && name != "globalNotIn")
                 return;
-            const bool current_mode = function->useNullAsUnknownSemanticsForIn();
+            const auto resolved_function = function->getFunction();
+            const bool current_mode = function->useNullAsUnknownSemanticsForIn()
+                || (resolved_function && resolved_function->useNullAsUnknownSemanticsForIn());
             if (mode && *mode != current_mode)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Cannot ship IN predicates with different captured NULL modes in one distributed SQL query");
