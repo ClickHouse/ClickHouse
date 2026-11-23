@@ -71,7 +71,8 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     size_t read_until_position_,
     HTTPHeaderEntries headers_,
     String expected_etag_)
-    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, getKnownFileSize(file_size_))
+    /// No own memory: the working buffer is either the external one or the one of `impl`.
+    : ReadBufferFromFileBase(0, nullptr, 0, getKnownFileSize(file_size_))
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , urls(std::move(urls_))
