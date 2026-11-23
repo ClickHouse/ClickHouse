@@ -7345,6 +7345,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD INDEX is not supported for tables with the old syntax");
         }
+        if (command.type == AlterCommand::ADD_LOOKUP_INDEX && !is_custom_partitioned)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD LOOKUP INDEX is not supported for tables with the old syntax");
+        }
         if (command.type == AlterCommand::ADD_PROJECTION)
         {
             if (!is_custom_partitioned)

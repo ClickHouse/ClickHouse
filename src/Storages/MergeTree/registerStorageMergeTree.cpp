@@ -517,6 +517,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (!is_extended_storage_def)
     {
+        /// The old syntax does not read the index declarations, so a lookup index would be silently ignored.
+        if (args.query.columns_list && args.query.columns_list->lookup_indices && !args.query.columns_list->lookup_indices->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`LOOKUP INDEX` is not supported for tables with the old syntax");
+
         add_mandatory_param("name of column with date");
         add_optional_param("sampling element of primary key");
         add_mandatory_param("primary key expression");

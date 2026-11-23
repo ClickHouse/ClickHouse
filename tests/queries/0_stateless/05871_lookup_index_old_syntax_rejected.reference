@@ -1,0 +1,6 @@
+CREATE TABLE default.lookup_old_syntax
+(
+    `d` Date,
+    `id` UInt64
+)
+ENGINE = MergeTree(d, id, 8192)
