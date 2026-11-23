@@ -20,6 +20,6 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
 String getStoredName(const QueryTreeNodePtr & node, const ContextPtr & context);
 
 /// runs scalar subqueries once and keeps their values in the stored query
-void storeValuesOfScalarSubqueries(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
+void storeValuesOfScalarSubqueries(ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context);
 
 }

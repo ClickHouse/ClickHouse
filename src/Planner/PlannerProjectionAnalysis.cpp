@@ -209,27 +209,22 @@ void collectScalarSubqueryValues(const QueryTreeNodePtr & node, ScalarSubqueryVa
             collectScalarSubqueryValues(child, values);
 }
 
-/// `analyzed_ast` is the analyzer's copy of `ast`, so both have the same shape
-size_t replaceScalarSubqueries(const ASTPtr & ast, const ASTPtr & analyzed_ast, const ScalarSubqueryValues & values)
+size_t replaceScalarSubqueries(const ASTPtr & ast, const ScalarSubqueryValues & values)
 {
-    if (ast->children.size() != analyzed_ast->children.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The analysis changed the structure of the query of a projection: {}", ast->formatForErrorMessage());
-
     size_t replaced = 0;
-    for (size_t i = 0; i < ast->children.size(); ++i)
+    for (auto & child : ast->children)
     {
-        auto & child = ast->children[i];
         if (!child)
             continue;
 
-        if (auto it = values.find(analyzed_ast->children[i].get()); it != values.end())
+        if (auto it = values.find(child.get()); it != values.end())
         {
             it->second->setAlias(child->tryGetAlias());
             child = it->second;
             ++replaced;
         }
         else
-            replaced += replaceScalarSubqueries(child, analyzed_ast->children[i], values);
+            replaced += replaceScalarSubqueries(child, values);
     }
 
     return replaced;
@@ -309,7 +304,7 @@ String getStoredName(const QueryTreeNodePtr & node, const ContextPtr & context)
     return makeStoredNameAST(node, context)->getColumnName();
 }
 
-void storeValuesOfScalarSubqueries(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+void storeValuesOfScalarSubqueries(ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
 {
     if (!hasSubquery(query_ast))
         return;
@@ -318,7 +313,9 @@ void storeValuesOfScalarSubqueries(const ASTPtr & query_ast, const StoragePtr & 
     ScalarSubqueryValues values;
     collectScalarSubqueryValues(query_tree, values);
 
-    if (replaceScalarSubqueries(query_ast, query_tree->getOriginalAST(), values) != values.size())
+    /// the tree points into the analyzer's copy of the query, so that copy becomes the stored query
+    query_ast = query_tree->getOriginalAST();
+    if (replaceScalarSubqueries(query_ast, values) != values.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A scalar subquery of a projection is not in the query {}", query_ast->formatForErrorMessage());
 }
 
