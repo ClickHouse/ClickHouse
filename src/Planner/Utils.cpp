@@ -310,11 +310,6 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
                     "Cannot ship IN predicates with different captured NULL modes in one distributed SQL query");
             mode = current_mode;
         }
-
-        static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
-        {
-            return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
-        }
     };
 
     if (const auto * query = query_node->as<QueryNode>())
