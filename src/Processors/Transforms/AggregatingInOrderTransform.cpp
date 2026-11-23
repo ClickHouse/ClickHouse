@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
@@ -96,18 +97,18 @@ bool AggregatingInOrderTransform::isLimitPrefixBoundary(const Columns & key_colu
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
 
+/// Includes the allocations not yet reported to the tracker, which moves in steps of `max_untracked_memory`.
 static Int64 getCurrentMemoryUsage()
 {
     Int64 current_memory_usage = 0;
     if (auto * memory_tracker = CurrentThread::getMemoryTracker())
-        current_memory_usage = memory_tracker->get();
+        current_memory_usage = memory_tracker->get() + current_thread->untracked_memory.load();
     return current_memory_usage;
 }
 
 void AggregatingInOrderTransform::consume(Chunk chunk)
 {
     const Columns & columns = chunk.getColumns();
-    Int64 initial_memory_usage = getCurrentMemoryUsage();
 
     size_t rows = chunk.getNumRows();
     if (rows == 0)
@@ -141,6 +142,20 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             columns, aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
     }
 
+    Aggregator::AggregateColumnsConstData aggregate_columns_data(params->params.aggregates_size);
+    if (params->params.only_merge)
+    {
+        for (size_t i = 0, j = 0; i < columns.size(); ++i)
+        {
+            if (!aggregates_mask[i])
+                continue;
+            aggregate_columns_data[j++] = &typeid_cast<const ColumnAggregateFunction &>(*columns[i]).getData();
+        }
+    }
+
+    /// After this call's scratch (the materialized input and the pointers into it), which is freed when it returns.
+    Int64 initial_memory_usage = getCurrentMemoryUsage();
+
     size_t key_end = 0;
     size_t key_begin = 0;
 
@@ -168,17 +183,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     }
 
     Int64 current_memory_usage = 0;
-
-    Aggregator::AggregateColumnsConstData aggregate_columns_data(params->params.aggregates_size);
-    if (params->params.only_merge)
-    {
-        for (size_t i = 0, j = 0; i < columns.size(); ++i)
-        {
-            if (!aggregates_mask[i])
-                continue;
-            aggregate_columns_data[j++] = &typeid_cast<const ColumnAggregateFunction &>(*columns[i]).getData();
-        }
-    }
 
     size_t interval_index = 0;
 
