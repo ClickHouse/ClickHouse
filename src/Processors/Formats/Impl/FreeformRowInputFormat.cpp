@@ -973,11 +973,11 @@ An inferred type is `Nullable` only where a null was seen in the sample, as with
 [`schema_inference_make_columns_nullable`](/operations/settings/formats#schema_inference_make_columns_nullable)
 set to `auto`; the values `0` (never `Nullable`) and `1` (always `Nullable`) are honored.
 
-:::note
+<Note>
 This format expects the input to be *tabular*: every row has to have the same structure. A file
 mixing many differently-shaped messages - the general log-parsing problem solved by algorithms such
 as Drain and Brain - has no single solution, and no schema is inferred for it.
-:::
+</Note>
 )DOCS_MD",
     });
 }
