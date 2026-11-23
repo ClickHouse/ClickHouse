@@ -205,7 +205,7 @@ private:
 
     // Quota, how many temporary locks can be taken in current round
     size_t tmp_locks_quota{};
-    // Consecutive rounds in which an active replica was below its permanent quota
+    // Consecutive rounds, in which this consumer polled its assignment, with an active replica below its permanent quota
     size_t rounds_with_replica_below_quota{};
 
     std::atomic<UInt64> last_poll_timestamp = 0;
@@ -226,7 +226,11 @@ private:
 
     LockedTopicPartitionInfo & getTopicPartitionLockLocked(const TopicPartition & topic_partition) TSA_REQUIRES(topic_partition_locks_mutex);
     void updatePermanentLocksLocked(const TopicPartitions & available_topic_partitions, size_t topic_partitions_count, size_t active_replica_count) TSA_REQUIRES(topic_partition_locks_mutex);
-    void lockTemporaryLocksLocked(const TopicPartitions & available_topic_partitions, bool has_replica_without_locks, bool has_replica_below_quota) TSA_REQUIRES(topic_partition_locks_mutex);
+    void lockTemporaryLocksLocked(
+        const TopicPartitions & available_topic_partitions,
+        bool has_replica_without_locks,
+        bool has_replica_below_quota,
+        bool polled_assignment) TSA_REQUIRES(topic_partition_locks_mutex);
 
     void rollbackToCommittedOffsets();
     /// Callable while an exception is propagating, where a throw would terminate the server.

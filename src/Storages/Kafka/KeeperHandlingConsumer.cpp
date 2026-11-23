@@ -31,7 +31,8 @@ const std::string lock_file_name{"lock"};
 const std::string commit_file_name{"committed"};
 const std::string intent_file_name{"intention"};
 /// A replica below its permanent quota only waits for free topic partitions. If it can't take them in this many rounds,
-/// it is probably not polling at all, so the free topic partitions mustn't stay unconsumed because of it.
+/// it is probably not polling at all, so the free topic partitions mustn't stay unconsumed because of it. Only the rounds
+/// in which the consumer polled its assignment count, see `lockTemporaryLocksLocked`.
 constexpr size_t MAX_ROUNDS_TO_YIELD_TO_REPLICA_BELOW_QUOTA = 8;
 
 std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
@@ -191,7 +192,8 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     if (!assigned_topic_partitions.empty() && poll_count <= locks_refresh_polls)
         return std::nullopt;
 
-    if (!assigned_topic_partitions.empty())
+    const bool polled_assignment = !assigned_topic_partitions.empty();
+    if (polled_assignment)
         LOG_DEBUG(
             log,
             "Consumer {} refreshing its Keeper locks after {} polls (stream_kafka_locks_refresh_polls = {})",
@@ -252,7 +254,8 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
             lockTemporaryLocksLocked(
                 available_topic_partitions,
                 active_replicas_info.has_replica_without_locks,
-                active_replicas_info.min_locks_of_replica_with_locks < node_quota);
+                active_replicas_info.min_locks_of_replica_with_locks < node_quota,
+                polled_assignment);
             poll_count = 0;
 
             assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
@@ -477,10 +480,17 @@ KeeperHandlingConsumer::createLocksInfoIfFree(const TopicPartition & partition_t
 }
 
 void KeeperHandlingConsumer::lockTemporaryLocksLocked(
-    const TopicPartitions & available_topic_partitions, const bool has_replica_without_locks, const bool has_replica_below_quota)
-    TSA_REQUIRES(topic_partition_locks_mutex)
+    const TopicPartitions & available_topic_partitions,
+    const bool has_replica_without_locks,
+    const bool has_replica_below_quota,
+    const bool polled_assignment) TSA_REQUIRES(topic_partition_locks_mutex)
 {
-    rounds_with_replica_below_quota = has_replica_below_quota ? rounds_with_replica_below_quota + 1 : 0;
+    /// A consumer without topic partitions refreshes its locks on every reschedule instead of every
+    /// `stream_kafka_locks_refresh_polls` polls, so its refreshes would end the yield rounds within seconds.
+    if (!has_replica_below_quota)
+        rounds_with_replica_below_quota = 0;
+    else if (polled_assignment)
+        ++rounds_with_replica_below_quota;
     scope_guard release_replica_tmp_lock;
 
     /// There are no available topic partitions, so drop the quota to 0
