@@ -2083,7 +2083,7 @@ Enables prefetching of JSON shared data substreams in Wide parts that are read b
     DECLARE(UInt64, object_shared_data_max_sub_object_paths_to_read_separately, 32, R"(
 The maximum number of `SHARED` typed paths under one sub-object of a JSON column that are read each from its own region of a Wide part written with `object_typed_shared_data_serialization_version = 'v2'`. A sub-object with more paths is read from the granule-major layout instead.
 )", 0, \
-        {"26.11", 32, 32, "New setting."}) \
+        {"26.12", 32, 32, "New setting."}) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Improve FINAL queries by avoiding merges across different partitions.
 
