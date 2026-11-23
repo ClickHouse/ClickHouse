@@ -49,10 +49,6 @@ public:
 
     [[nodiscard]] String getName() const override { return "Join"; }
 
-    /// Clone the step together with an independent JOIN instance (the hash table is empty until
-    /// execution), so an optimized plan containing a JOIN can be stored in the plan cache.
-    QueryPlanStepPtr clone() const override;
-
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     /// A JoinStep never reads, so it has no meaningful input-byte stats of its own;

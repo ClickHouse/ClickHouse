@@ -637,52 +637,6 @@ void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
     has_runtime_filters = logical_join_info.has_runtime_filters;
 }
 
-QueryPlanStepPtr JoinStep::clone() const
-{
-    if (!join)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone JoinStep: no JOIN algorithm");
-
-    const auto & input_headers = getInputHeaders();
-    if (input_headers.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expects two input steps");
-
-    /// `IJoin::clone` builds a fresh algorithm instance from `TableJoin`, independent of the
-    /// current runtime state, which is exactly what a cached plan needs. Algorithms that do not
-    /// support it throw and the caller falls back to rebuilding the plan.
-    auto new_join = join->clone(
-        std::make_shared<TableJoin>(join->getTableJoin()),
-        input_headers[0],
-        input_headers[1]);
-
-    auto result = std::make_unique<JoinStep>(
-        input_headers[0],
-        input_headers[1],
-        std::move(new_join),
-        max_block_size,
-        min_block_size_rows,
-        min_block_size_bytes,
-        max_streams,
-        required_output,
-        use_new_analyzer,
-        use_join_disjunctions_push_down);
-
-    result->join_algorithm_header = join_algorithm_header;
-    result->join_readable_relation_name = join_readable_relation_name;
-    result->estimation = estimation;
-    result->locality = locality;
-    result->left_pipeline_order = left_pipeline_order;
-    result->cluster_id = cluster_id;
-    result->columns_to_remove = columns_to_remove;
-    result->swap_streams = swap_streams;
-    result->swap_join_tables = swap_join_tables;
-    result->primary_key_sharding = primary_key_sharding;
-    result->seal_gate = seal_gate;
-    result->disjunctions_optimization_applied = disjunctions_optimization_applied;
-    result->optimized = optimized;
-
-    return result;
-}
-
 void JoinStep::updateOutputHeader()
 {
     if (join_algorithm_header && !join_algorithm_header->empty())
