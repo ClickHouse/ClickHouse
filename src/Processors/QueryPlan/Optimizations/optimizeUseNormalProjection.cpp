@@ -1,4 +1,6 @@
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
@@ -18,6 +20,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -31,6 +34,7 @@
 #include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -61,7 +65,7 @@ namespace DB::QueryPlanOptimizations
 
 /// Extract AND-connected conjuncts from an AST expression tree.
 /// For example, (a = 1 AND b = 2 AND c = 3) yields {a = 1, b = 2, c = 3}.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+static void extractConjunctsFromAST(const ASTPtr & expr, VectorWithMemoryTracking<ASTPtr> & result)
 {
     if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
@@ -266,7 +270,7 @@ static bool doesQueryFilterImplyProjectionWhere(
     }
 
     /// Extract projection's WHERE conjuncts from the AST.
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     /// Unwrap a leading ALIAS wrapper before splitting conjuncts. `QueryDAG::build` wraps the
@@ -315,7 +319,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     if (proj_header.columns() != num_columns)
         return {};
 
-    std::vector<size_t> const_positions;
+    VectorWithMemoryTracking<size_t> const_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto col_proj = proj_header.getByPosition(i).column;
@@ -358,7 +362,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
 
-    std::vector<const ProjectionDescription *> normal_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> normal_projections;
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Normal)
             normal_projections.push_back(&projection);
@@ -481,7 +485,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (!relax_projection_checks && helps_nothing)
         return reject_all("the query has neither a filter nor an ORDER BY a projection could serve");
 
-    std::list<NormalProjectionCandidate> candidates;
+    ListWithMemoryTracking<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();
@@ -510,6 +514,18 @@ UseProjectionsResult optimizeUseNormalProjections(
         }
 
         return true;
+    };
+
+    /// A lazy read reads more columns of the rows of the read by their part offsets. Read from a projection instead, the
+    /// rows of a part are addressed by the offsets in the parent part where the projection has them, and else by the
+    /// offsets in the projection part, which the lazy read then reads its columns from. See `LazyMaterializingRows`.
+    auto can_serve_lazy_read = [&](const ProjectionDescription * projection)
+    {
+        if (!reading->hasLazilyReadColumns() || (need_parent_part_offset && projection->with_parent_part_offset))
+            return true;
+
+        return std::ranges::all_of(
+            reading->getColumnsReadLazily(), [&](const auto & column) { return projection->sample_block.findColumnOrSubcolumnByName(column).has_value(); });
     };
 
     auto projection_sort_order_useful = [&](const ProjectionDescription * projection)
@@ -595,9 +611,13 @@ UseProjectionsResult optimizeUseNormalProjections(
             }
         }
 
-        if (!has_all_required_columns(projection))
+        const bool has_columns = has_all_required_columns(projection);
+        if (!has_columns || !can_serve_lazy_read(projection))
         {
-            result.projection_reject_reasons.try_emplace(projection->name, "the projection does not contain all columns required by the query");
+            result.projection_reject_reasons.try_emplace(projection->name,
+                has_columns ? "some columns of the read are read lazily by their part offsets, and the projection has neither those "
+                              "columns nor the offsets of the parent part"
+                            : "the projection does not contain all columns required by the query");
 
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
@@ -620,6 +640,11 @@ UseProjectionsResult optimizeUseNormalProjections(
         auto & candidate = candidates.emplace_back();
         candidate.projection = projection;
 
+        /// A lazy read made before reads its columns from the projection parts, unless it reads the parent parts by the
+        /// offsets the projection stores, see `can_serve_lazy_read`.
+        const bool lazy_read_from_projection_parts
+            = reading->hasLazilyReadColumns() && !(need_parent_part_offset && projection->with_parent_part_offset);
+
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
         bool analyzed = analyzeProjectionCandidate(
             candidate,
@@ -634,7 +659,8 @@ UseProjectionsResult optimizeUseNormalProjections(
             reading->isQueryConditionCacheAllowed(),
             reading->isTopKPrewhereQueryConditionCacheAllowed(),
             context,
-            hypothetical.get());
+            hypothetical.get(),
+            lazy_read_from_projection_parts ? reading->getColumnsReadLazily() : Names{});
 
         if (!analyzed)
         {
@@ -683,7 +709,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// ranking depends on the declaration order of the projections.
     auto refresh_candidate_costs = [&]
     {
-        std::unordered_map<const IMergeTreeDataPart *, size_t> parent_marks_by_part;
+        UnorderedMapWithMemoryTracking<const IMergeTreeDataPart *, size_t> parent_marks_by_part;
         for (const auto & part : parent_reading_select_result->parts_with_ranges)
             parent_marks_by_part[part.data_part.get()] = part.getMarksCount();
 
@@ -990,6 +1016,13 @@ UseProjectionsResult optimizeUseNormalProjections(
         {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
             projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
+            /// The projection parts keep the numbering of their parent parts, so the lazy read of the read reads their rows.
+            /// The lazy read made before addresses them by `_part_offset`, which the projection gives as the offsets of the
+            /// parent part where it stores them, see above. A lazy read made after this has the offsets of the projection.
+            projection_reading_step->shareLazyReadOf(*reading);
+            if (const auto & lazy_read_rows = reading->getLazyReadRows();
+                lazy_read_rows && need_parent_part_offset && best_candidate->projection->with_parent_part_offset)
+                lazy_read_rows->projection_parts_by_parent_part_offsets = true;
         }
     }
 
@@ -999,8 +1032,8 @@ UseProjectionsResult optimizeUseNormalProjections(
         [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
 
     /// Only the initiator should read the projection to avoid potential data duplication.
-    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
-        && has_parent_parts;
+    const bool is_local_plan_for_initiator = reading->isParallelReplicasLocalPlanForInitiator();
+    bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !is_local_plan_for_initiator && has_parent_parts;
     /// True when the projection read is replaced by a prepared source that does not announce the
     /// base-table stream itself. See the announcement call below.
     bool projection_replaced_with_prepared_source = false;
@@ -1024,7 +1057,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         projection_replaced_with_prepared_source = true;
     }
 
-    if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
+    if (has_parent_parts && is_local_plan_for_initiator)
         fallbackToLocalProjectionReading(projection_reading);
 
     /// `reading` is detached below without running initializePipeline(), so announce its empty read

@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/zh/_intro.mdx';
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <IntroClickPipe />
 
 ## 前提条件 {#pre-requisites}
@@ -24,11 +22,27 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="选择数据源" id="1-select-the-data-source">
     **1.** 在 ClickHouse Cloud 的主导航菜单中选择 **数据源**，然后点击 **创建 ClickPipe**。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** 点击 **BigQuery** 卡片。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="选择 BigQuery 卡片" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![选择 BigQuery 卡片](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 
   <Step title="配置 ClickPipe 连接" id="2-setup-your-clickpipe-connection">
@@ -36,11 +50,27 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     **1.** 上传为 ClickPipes 创建的服务账号的 `.json` 密钥。确保该服务账号具有[所需的最低权限](/zh/integrations/clickpipes/bigquery/overview#permissions)。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="上传服务账号密钥" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![上传服务账号密钥](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </Frame>
+
+    </div>
 
     **2.** 选择**复制模式**：[仅初始加载](/zh/integrations/clickpipes/bigquery/overview#initial-load)、**初始加载 + CDC** 或 **仅 CDC**。如果选择 CDC 模式，还需选择[基于查询或基于事件的方法](/zh/integrations/clickpipes/bigquery/overview#cdc)。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png" alt="BigQuery 复制模式选项：仅初始加载、初始加载 + CDC 和仅 CDC" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![BigQuery 复制模式选项：仅初始加载、初始加载 + CDC 和仅 CDC](/images/integrations/data-ingestion/clickpipes/bigquery/select-replication-mode.png)
+
+    </Frame>
+
+    </div>
 
     **3.** 如果要执行初始加载，请提供用于暂存数据的 GCS 存储桶路径。
 
@@ -50,7 +80,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="配置 ClickPipe" id="3-configure-your-clickpipe">
     为所选阶段设置以下配置值。初始加载设置仅在 ClickPipe 导入现有数据时生效；CDC 设置仅在 ClickPipe 继续复制变更时生效。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png" alt="BigQuery ClickPipe 的同步间隔、初始加载和 CDC 设置" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![BigQuery ClickPipe 的同步间隔、初始加载和 CDC 设置](/images/integrations/data-ingestion/clickpipes/bigquery/configure-pipe.png)
+
+    </Frame>
+
+    </div>
 
     | 设置                  | 控制内容                                                                                                                                                                                                     |
     | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +106,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     **2.** 选择源表。可以修改每个目标表的名称，并在 **列设置** 中选择要复制的列。列表中仅显示服务账号有权访问的数据集。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png" alt="选择 BigQuery 源表，并配置目标表名称、CDC 水位线、sorting key 和高级设置" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![选择 BigQuery 源表，并配置目标表名称、CDC 水位线、sorting key 和高级设置](/images/integrations/data-ingestion/clickpipes/bigquery/select-table-settings.png)
+
+    </Frame>
+
+    </div>
 
     **3.** 为每个表设置 CDC 选项。截图展示的是基于查询的设置。选择一个类型为 `TIMESTAMP` 的 **CDC 水位线列**，将其保留在要复制的列中，并在对应行发生变化时更新该列的值。如果使用基于事件的复制，则改为选择 [`APPENDS`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#appends) 或 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes)。使用 [`CHANGES`](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes) 时，源表必须设置 `enable_change_history = TRUE`。
 
@@ -89,6 +135,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="完成配置" id="7-complete-setup">
     点击 **Create ClickPipe** 完成设置。页面随后会跳转至概览页，您可以在这里查看初始数据加载进度，并点击查看 BigQuery ClickPipes 的详细信息。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="权限" size="lg" border />
+    <div className="ch-image-lg">
+
+    <Frame>
+
+    ![权限](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </Frame>
+
+    </div>
   </Step>
 </Steps>
