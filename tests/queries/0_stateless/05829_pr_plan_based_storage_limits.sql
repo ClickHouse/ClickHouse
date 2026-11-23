@@ -3,10 +3,13 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/132639
 
 DROP TABLE IF EXISTS t_pr_storage_limits;
+DROP TABLE IF EXISTS t_pr_storage_limits_small;
 
 CREATE TABLE t_pr_storage_limits (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128;
 -- 8 MB of `x`.
 INSERT INTO t_pr_storage_limits SELECT number FROM numbers(1000000);
+CREATE TABLE t_pr_storage_limits_small (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_pr_storage_limits_small SELECT number FROM numbers(100);
 
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_plan_based = 1;
@@ -24,4 +27,14 @@ SETTINGS parallel_replicas_local_plan = 0, max_bytes_to_read = 7500000; -- { ser
 SELECT count() FROM t_pr_storage_limits WHERE x % 7 = 1
 SETTINGS parallel_replicas_local_plan = 1, max_bytes_to_read = 7500000; -- { serverError TOO_MANY_BYTES }
 
+-- A limit set for one `UNION ALL` branch applies to the whole query, as without parallel replicas, even if that branch is small.
+SELECT count() FROM
+(
+    SELECT x FROM t_pr_storage_limits WHERE x % 7 = 1
+    UNION ALL
+    SELECT x FROM t_pr_storage_limits_small SETTINGS max_bytes_to_read = 7500000
+)
+SETTINGS parallel_replicas_local_plan = 0; -- { serverError TOO_MANY_BYTES }
+
+DROP TABLE t_pr_storage_limits_small;
 DROP TABLE t_pr_storage_limits;
