@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
@@ -45,6 +47,19 @@ StreamOrderUse getStreamOrderUse(const IQueryPlanStep & step)
 
     if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
         return sorting->getType() == SortingStep::Type::Full ? StreamOrderUse::Ignored : StreamOrderUse::Required;
+
+    /// Merges every branch into one stream and keeps a set of rows.
+    if (typeid_cast<const IntersectOrExceptStep *>(&step))
+        return StreamOrderUse::Ignored;
+
+    if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
+    {
+        if (!distinct->getSortDescription().empty())
+            return StreamOrderUse::Required;
+        if (distinct->isPreliminary())
+            return StreamOrderUse::PassedOn;
+        return distinct->preservesInputOrder() ? StreamOrderUse::Required : StreamOrderUse::Ignored;
+    }
 
     return StreamOrderUse::Required;
 }

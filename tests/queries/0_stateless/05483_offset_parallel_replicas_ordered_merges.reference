@@ -49,3 +49,13 @@ offset_pr_memory_bound	1
 offset_pr_plain_merge	3
 offset_pr_root	1
 offset_pr_union	6
+10000
+20000
+10000
+30000
+30000
+offset_pr_distinct	3
+offset_pr_distinct_subquery	3
+offset_pr_except	3
+offset_pr_intersect	3
+offset_pr_intersect_custom_key	6

@@ -100,5 +100,37 @@ GROUP BY initial.log_comment
 ORDER BY initial.log_comment
 SETTINGS enable_parallel_replicas = 0;
 
+-- INTERSECT, EXCEPT and a hash DISTINCT keep sets of rows, so the replicas still share the shard.
+SELECT count() FROM ((SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) INTERSECT DISTINCT (SELECT number FROM numbers(10000)))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_intersect';
+
+SELECT count() FROM ((SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)) EXCEPT ALL (SELECT number FROM numbers(10000)))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_except';
+
+SELECT count() FROM ((SELECT k FROM cluster('test_cluster_two_shard_three_replicas_localhost', currentDatabase(), t_offset_pr_key)) INTERSECT DISTINCT (SELECT number FROM numbers(10000)))
+SETTINGS parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'k', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_intersect_custom_key';
+
+SELECT count() FROM (SELECT DISTINCT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_distinct';
+
+-- The preliminary DISTINCT of an outer query is looked through.
+SELECT count() FROM (SELECT DISTINCT k FROM (SELECT k FROM remote('127.0.0.{1|2|3}', currentDatabase(), t_offset_pr_sample)))
+SETTINGS parallel_replicas_mode = 'sampling_key', use_hedged_requests = 0, log_queries = 1, log_comment = 'offset_pr_distinct_subquery';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT initial.log_comment, count()
+FROM system.query_log AS secondary
+INNER JOIN
+(
+    SELECT query_id, log_comment FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
+        AND log_comment IN ('offset_pr_intersect', 'offset_pr_except', 'offset_pr_intersect_custom_key', 'offset_pr_distinct', 'offset_pr_distinct_subquery')
+) AS initial ON secondary.initial_query_id = initial.query_id
+WHERE secondary.event_date >= yesterday() AND NOT secondary.is_initial_query AND secondary.type = 'QueryFinish'
+GROUP BY initial.log_comment
+ORDER BY initial.log_comment
+SETTINGS enable_parallel_replicas = 0;
+
 DROP TABLE t_offset_pr_sample;
 DROP TABLE t_offset_pr_key;
