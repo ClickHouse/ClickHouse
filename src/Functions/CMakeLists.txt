@@ -6,7 +6,6 @@ add_headers_and_sources(clickhouse_functions Kusto)
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
 set(DBMS_FUNCTIONS
-    CancellationBudget.cpp # makeCancellationCheck (Used by AggregateState.cpp, AggregateWindowFunctionCrossTab.cpp)
     ComparisonOrderDomain.cpp # ComparisonOrderDomain::operator== (Used by LogicalExpressionOptimizerPass.cpp)
     IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)

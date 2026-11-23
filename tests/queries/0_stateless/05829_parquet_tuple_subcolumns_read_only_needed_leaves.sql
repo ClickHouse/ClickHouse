@@ -3,8 +3,9 @@
 -- 100000-byte `heavy` strings beside them are not decompressed.
 
 SET engine_file_truncate_on_insert = 1;
--- A column served from the columns cache is not decompressed, see the checks at the end.
--- Random settings limits: use_columns_cache=(0, 0)
+-- A column served from the columns cache, or a `DataPageV2` that compression doesn't shrink, is not decompressed,
+-- see the checks at the end.
+-- Random settings limits: use_columns_cache=(0, 0); output_format_parquet_use_data_page_v2=(0, 0)
 
 INSERT INTO FUNCTION file(currentDatabase() || '_05829.parquet')
 SELECT

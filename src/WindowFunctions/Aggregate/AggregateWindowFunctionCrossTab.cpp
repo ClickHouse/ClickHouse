@@ -5,7 +5,7 @@
 #include <AggregateFunctions/AggregateFunctionTheilsU.h>
 #include <AggregateFunctions/CrossTab.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
-#include <Functions/CancellationBudget.h>
+#include <Interpreters/CancellationBudget.h>
 #include <Interpreters/WindowDescription.h>
 
 #include <Columns/ColumnsNumber.h>

@@ -1509,7 +1509,9 @@ try
                 "(it was introduced in Linux 4.18), a seccomp profile may block the rseq system call, or the C library "
                 "did not register the rseq area");
 
-        Silk::initializeFiberScheduler(config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE));
+        Silk::initialize(
+            config().getUInt("silk.fiber_stack_size", Silk::DEFAULT_FIBER_STACK_SIZE),
+            Poco::Logger::parseLevel(server_settings[ServerSetting::logger_level]));
     }
 #endif
 

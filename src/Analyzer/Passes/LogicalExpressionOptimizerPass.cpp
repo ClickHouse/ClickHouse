@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -26,6 +27,7 @@
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -896,6 +898,7 @@ static const QueryTreeNodePtr & getComparisonFilterExpressionNode(const QueryTre
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 /// `expression` is a precomputed key, or a node that is hashed only when `filter_map` is accessed.
 template <typename Expression>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const Expression & expression,
@@ -2914,6 +2917,13 @@ private:
 
             bool is_any_nullable = false;
             bool all_constants_convert_losslessly = true;
+            /// A `Field` does not keep the type of a `Dynamic` value or a `Variant` alternative, so the set may
+            /// put such a constant into a different type than the one `equals` compares.
+            const auto loses_type_in_field = [](const IDataType & type)
+            {
+                const auto * variant = typeid_cast<const DataTypeVariant *>(&type);
+                return isDynamic(type) || (variant && variant->getVariants().size() > 1);
+            };
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2940,6 +2950,9 @@ private:
                 /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+
+                if (anyInTypeTree(*literal->getResultType(), loses_type_in_field))
                     all_constants_convert_losslessly = false;
             }
 
