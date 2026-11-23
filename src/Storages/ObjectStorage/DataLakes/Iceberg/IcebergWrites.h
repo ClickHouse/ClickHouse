@@ -25,7 +25,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStatisticsNdv.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 
 #include <Common/randomSeed.h>
@@ -54,7 +53,6 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, Int64>> column_sizes;
     std::vector<std::pair<Int32, Int64>> value_counts;
     std::vector<std::pair<Int32, Int64>> null_value_counts;
-    std::vector<std::pair<Int32, Int64>> nan_value_counts;
     std::vector<std::pair<Int32, String>> lower_bounds;
     std::vector<std::pair<Int32, String>> upper_bounds;
 };
@@ -67,38 +65,10 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
-/// The manifest-list `partitions` field summary of one manifest, accumulated over the partition tuples of its entries.
-class ManifestPartitionSummary
-{
-public:
-    struct FieldSummary
-    {
-        DataTypePtr type;
-        bool contains_null = false;
-        bool contains_nan = false;
-        /// A value whose type has no Iceberg single-value serialization was seen, so no bounds can be published.
-        bool bounds_unavailable = false;
-        std::optional<Field> lower_bound;
-        std::optional<Field> upper_bound;
-    };
-
-    explicit ManifestPartitionSummary(const DataTypes & partition_types);
-
-    void add(const Row & partition_value);
-
-    [[nodiscard]] const std::vector<FieldSummary> & getFields() const { return fields; }
-
-private:
-    std::vector<FieldSummary> fields;
-};
-
-Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
-
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
-    /// One partition tuple per data file, parallel to `data_file_names`.
-    const std::vector<Row> & per_file_partition_values,
+    const std::vector<Field> & partition_values,
     const DataTypes & partition_types,
     const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
@@ -165,9 +135,8 @@ void generateManifestList(
     const std::vector<ManifestListEntryCounts> & entry_counts = {},
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    const std::vector<ManifestPartitionSummary> & entry_partition_summaries = {},
-    const std::vector<Int64> & entry_row_counts = {},
-    const std::vector<Int64> & entry_file_counts = {});
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {},
+    const std::vector<Int64> & entry_row_counts = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
@@ -195,18 +164,9 @@ public:
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
-    DataFileUploads data_file_uploads;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
-    /// The sorted chunks of a partition's next data file, merged when it is written.
-    struct SortedPendingFile
-    {
-        Chunks sorted_chunks;
-        size_t rows = 0;
-        size_t bytes = 0;
-    };
-    std::unordered_map<ChunkPartitioner::PartitionKey, SortedPendingFile, ChunkPartitioner::PartitionKeyHasher> sorted_pending_file_per_partition_key;
-    /// Bytes of all pending files; writing the largest early bounds it by `iceberg_insert_max_sort_buffer_bytes`.
-    size_t pending_bytes = 0;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
+    std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Int64 current_schema_id;
@@ -214,23 +174,12 @@ private:
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
     KeyDescription sort_description;
-    /// The order data is sorted in, NULLs placed as the table's sort order says.
-    SortDescription sort_order_description;
-    /// The sample block with the key columns `sortBlockByKeyDescription` appends.
-    SharedHeader header_with_sort_columns;
-    /// Recorded in the manifest entries of the sorted data files; unset for a key ClickHouse orders differently from Iceberg.
-    std::optional<Int32> data_file_sort_order_id;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
-    std::optional<IcebergColumnSketches> column_sketches;
 
-    MultipleFileWriter & getWriter(const ChunkPartitioner::PartitionKey & partition_key);
-    void writePendingFile(const ChunkPartitioner::PartitionKey & partition_key, SortedPendingFile & pending_file);
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    /// Best-effort removal of the written data files and manifests; never throws.
-    void removeDataFilesAndManifests();
     bool initializeMetadata();
 
     FileNamesGenerator filename_generator;
@@ -238,26 +187,11 @@ private:
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
 
-    /// Generated once per insert so the manifests stay valid across commit retries.
-    Int64 snapshot_id = 0;
-    /// The snapshot referencing the written files is committed, so they must never be removed.
-    bool committed = false;
-
-    /// The manifests are written once and reused on commit retries.
-    Strings manifest_entries_in_storage;
-    std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
-    std::vector<Int64> manifest_entry_sizes;
-    std::vector<Int64> manifest_entry_row_counts;
-    std::vector<Int64> manifest_entry_file_counts;
-    std::vector<ManifestPartitionSummary> entry_partition_summaries;
-
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
-    /// The catalog pointer `metadata` was read from, which the catalog commit must still find.
-    String base_catalog_metadata_location;
     Iceberg::PersistentTableComponents persistent_table_components;
-    const DataLakeStorageSettingsPtr data_lake_settings;
+    const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
 
 };

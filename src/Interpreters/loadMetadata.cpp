@@ -555,7 +555,6 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         executeTrivialBlockIO(res, context);
 
         /// Unlock UUID mapping, because it will be locked again on database reload.
-        /// It's safe to do during metadata loading, because cleanup task is not started yet.
         DatabaseCatalog::instance().removeUUIDMappingFinally(db_uuid);
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
@@ -615,11 +614,11 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     context->removeWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED);
 }
 
-LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database, bool persistent_system_database)
+LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)
 {
     auto component_guard = Coordination::setCurrentComponent("loadMetadataSystem");
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE,
-        context->getApplicationType() == Context::ApplicationType::SERVER || persistent_system_database ? "Atomic" : "Memory");
+        context->getApplicationType() == Context::ApplicationType::SERVER ? "Atomic" : "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
 

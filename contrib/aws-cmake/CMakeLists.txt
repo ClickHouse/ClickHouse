@@ -99,9 +99,6 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/net/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/smithy/client/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/smithy/client/schema/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/smithy/identity/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/smithy/tracing/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
@@ -111,10 +108,9 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/crt/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/factory/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/crypto/openssl/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/event/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/json/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/utils/local/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/utils/local/stream/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/logging/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/memory/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/memory/stl/*.cpp"
@@ -131,19 +127,13 @@ else()
     set(AWS_SDK_CORE_PLATFORM_SRC)
 endif()
 
-set(USE_AWS_MEMORY_MANAGEMENT ON)
+OPTION(USE_AWS_MEMORY_MANAGEMENT "Aws memory management" OFF)
 configure_file("${AWS_SDK_CORE_DIR}/include/aws/core/SDKConfig.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/aws/core/SDKConfig.h" @ONLY)
 
 aws_get_version(AWS_CRT_CPP_VERSION_MAJOR AWS_CRT_CPP_VERSION_MINOR AWS_CRT_CPP_VERSION_PATCH FULL_VERSION GIT_HASH)
 set(FULL_VERSION "${AWS_CRT_CPP_VERSION_MAJOR}.${AWS_CRT_CPP_VERSION_MINOR}.${AWS_CRT_CPP_VERSION_PATCH}-clickhouse")
-# Config.h.in takes the version from the project() of aws-crt-cpp, which is not used here.
-block()
-    set(PROJECT_VERSION_MAJOR ${AWS_CRT_CPP_VERSION_MAJOR})
-    set(PROJECT_VERSION_MINOR ${AWS_CRT_CPP_VERSION_MINOR})
-    set(PROJECT_VERSION_PATCH ${AWS_CRT_CPP_VERSION_PATCH})
-    configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
-endblock()
+configure_file("${AWS_CRT_DIR}/include/aws/crt/Config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/include/aws/crt/Config.h" @ONLY)
 
 list(APPEND AWS_SOURCES ${AWS_SDK_CORE_SRC} ${AWS_SDK_CORE_NET_SRC} ${AWS_SDK_CORE_PLATFORM_SRC})
 
@@ -319,13 +309,6 @@ endif()
 
 list(APPEND AWS_SOURCES ${AWS_IO_SRC} ${AWS_IO_OS_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_IO_DIR}/include/")
-
-# Since aws-c-io 0.27 the TLS channel handler installs a backend vtable at library init and aborts
-# ("No TLS implementation available.") when neither s2n, SecureTransport nor SChannel is compiled in.
-# ClickHouse does TLS through Poco (PocoHTTPClientFactory, tlsConnectionOptions_create_fn returns nullptr),
-# so build this one file in BYO_CRYPTO mode: init/cleanup become no-ops and the TLS context/handler
-# constructors are never reached. The remaining TLS symbols come from aws_stubs.cpp.
-set_source_files_properties("${AWS_IO_DIR}/source/tls_channel_handler.c" PROPERTIES COMPILE_DEFINITIONS BYO_CRYPTO)
 
 
 # aws-crt-cpp

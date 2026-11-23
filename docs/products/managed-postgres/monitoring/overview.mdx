@@ -7,13 +7,17 @@ keywords: ['managed postgres', 'monitoring', 'observability', 'metrics', 'dashbo
 doc_type: 'guide'
 ---
 
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-overview-beta" />
+
 You can monitor your ClickHouse Managed Postgres services with the following
 methods:
 
 | Section                                                                          | Description                                                                                | Setup required          |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------- |
 | [Dashboard](/products/managed-postgres/monitoring/dashboard)                        | Built-in cloud console charts for resource usage and database activity                     | None                    |
-| [Query Insights](/products/managed-postgres/monitoring/query-insights)              | Per-statement telemetry: every query pattern ranked by impact, with diagnostic counters, plus wait events and blocking queries | None; turn on collection for blocking queries |
+| [Query Insights](/products/managed-postgres/monitoring/query-insights)              | Per-statement telemetry: every query pattern ranked by impact, with diagnostic counters    | None                    |
 | [Prometheus endpoint](/products/managed-postgres/monitoring/prometheus)             | Scrape metrics into Prometheus, Grafana, Datadog, or any OpenMetrics-compatible collector  | API key + scraper config |
 | [Metrics reference](/products/managed-postgres/monitoring/metrics)                  | Full list of metrics exposed by the Prometheus endpoint, with types, labels, and meanings  | N/A                     |
 | [Notifications](/products/managed-postgres/monitoring/notifications)                | Console, email, and Slack alerts when a service needs attention, such as storage nearing capacity | None                    |
@@ -28,10 +32,6 @@ configuration required.
 For per-query telemetry — latency percentiles, cache vs. disk reads,
 temp spills, parallel worker utilization, and WAL volume — open the
 [Query Insights](/products/managed-postgres/monitoring/query-insights) tab
-on the same instance. Its [Waits](/products/managed-postgres/monitoring/query-insights#waits)
-tab shows what active sessions are waiting on and, once you turn on
-collection, which
-[sessions are blocking others](/products/managed-postgres/monitoring/query-insights#blocking-queries).
-To pipe host-level metrics into your own
+on the same instance. To pipe host-level metrics into your own
 observability stack, use the
 [Prometheus endpoint](/products/managed-postgres/monitoring/prometheus).

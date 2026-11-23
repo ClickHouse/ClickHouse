@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
@@ -319,20 +318,18 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         Exception::SuppressErrorCodesScope suppress_error_codes;
         bool read = true;
-        const auto & type = types[column_idx];
         if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
-            if (type->isDefaultInsertTrivial())
-                column.insertDefault();
-            else
-                type->insertDefaultInto(column);
+            column.insertDefault();
             read = false;
         }
         else
         {
+            const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, type.get());
+            /// Let Enum conversion functions handle the null value.
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
         }
@@ -346,8 +343,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
-        /// A throwing read cancels its buffer for good, and the recovery below reads it again.
-        if (!isParseError(e.code()) || decimal_overflow || buf->isCanceled())
+        if (!isParseError(e.code()) || decimal_overflow)
         {
             e.recordToSystemErrors();
             throw;
@@ -558,16 +554,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         /// Check if we can use fast streaming parser instead if using templates
         bool rollback_on_exception = false;
         bool ok = false;
-        bool read = true;
         try
         {
             Exception::SuppressErrorCodesScope suppress_error_codes;
             const auto & serialization = serializations[column_idx];
-            const auto & column_type = types[column_idx];
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(column_type))
-                read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, column_type.get());
-            else
-                serialization->deserializeTextQuoted(column, *buf, format_settings);
+            serialization->deserializeTextQuoted(column, *buf, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(*buf);
             if (checkDelimiterAfterValue(column_idx))
@@ -585,13 +576,11 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (ok)
         {
             parser_type_for_column[column_idx] = ParserType::Streaming;
-            return read;
+            return true;
         }
         if (rollback_on_exception)
             column.popBack(1);
     }
-
-    normalizeDivision(*ast, context);
 
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 
@@ -784,16 +773,20 @@ void ValuesBlockInputFormat::readSuffix()
 
 void ValuesBlockInputFormat::resetParser()
 {
-    for (size_t i = 0; i < num_columns; ++i)
+    if (got_exception)
     {
-        templates[i].reset();
-        parser_type_for_column[i] = ParserType::Streaming;
-        attempts_to_deduce_template[i] = 0;
-        attempts_to_deduce_template_cached[i] = 0;
-        rows_parsed_using_template[i] = 0;
+        /// In case of exception always reset the templates and parser type,
+        /// because they may be in the invalid state.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            templates[i].reset();
+            parser_type_for_column[i] = ParserType::Streaming;
+        }
     }
 
     IInputFormat::resetParser();
+    // I'm not resetting parser modes here.
+    // There is a good chance that all messages have the same format.
     total_rows = 0;
 }
 
@@ -896,7 +889,7 @@ void registerInputFormatValues(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
-    }, /*supports_reset_parser=*/ true);
+    });
 
     factory.setDocumentation("Values", Documentation{
         .description = R"DOCS_MD(

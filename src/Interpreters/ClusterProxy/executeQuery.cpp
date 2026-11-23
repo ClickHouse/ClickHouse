@@ -1,5 +1,4 @@
 #include <Core/ProtocolDefines.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>
@@ -11,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Cluster.h>
@@ -20,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
@@ -30,7 +29,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
-#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -68,8 +66,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool async_insert_select_as_async_insert;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
@@ -111,7 +109,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
-    extern const SettingsBool parallel_replicas_for_object_storage_tables;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool run_query_in_background;
     extern const SettingsBool skip_unavailable_shards;
@@ -124,7 +121,6 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsUInt64 distributed_group_by_top_k;
 }
 
 namespace DistributedSetting
@@ -175,15 +171,6 @@ void stripDatabaseSetting(Settings & settings)
 
 void stripInitiatorOnlySettings(Settings & settings)
 {
-    /// Not propagated to the next layer of distribution: it applies only to the servers the initiator queries directly,
-    /// which have the initiator's sort above them. The initiator sets it for those reads (`enableGroupByTopK`) after
-    /// this strip.
-    if (settings[Setting::distributed_group_by_top_k].changed || settings[Setting::distributed_group_by_top_k] != 0)
-    {
-        settings[Setting::distributed_group_by_top_k] = 0;
-        settings[Setting::distributed_group_by_top_k].changed = false;
-    }
-
     /// All of the settings below are interpreted only at the initiator: they either shape the
     /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
     /// `additional_result_filter`) or shape how the result is serialised to the user
@@ -297,27 +284,7 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::implicit_table_at_top_level].changed = false;
     }
 
-    /// `async_insert_select_as_async_insert` gates the initiator's local `INSERT ... SELECT` async-queue
-    /// route, which the `parallel_distributed_insert_select` path never reaches on the initiator. A shard
-    /// resolves its own value (including through the forwarded `compatibility`), so the initiator's copy is
-    /// redundant, and forwarding this name to an older shard on a rolling upgrade triggers `UNKNOWN_SETTING`.
-    /// Its default is `true`.
-    if (settings[Setting::async_insert_select_as_async_insert].changed
-        || !settings[Setting::async_insert_select_as_async_insert])
-    {
-        settings[Setting::async_insert_select_as_async_insert] = true;
-        settings[Setting::async_insert_select_as_async_insert].changed = false;
-    }
-
-    /// `parallel_replicas_for_object_storage_tables` is consulted only by the initiator's analysis. Its default is `true`.
-    if (settings[Setting::parallel_replicas_for_object_storage_tables].changed
-        || !settings[Setting::parallel_replicas_for_object_storage_tables])
-    {
-        settings[Setting::parallel_replicas_for_object_storage_tables] = true;
-        settings[Setting::parallel_replicas_for_object_storage_tables].changed = false;
-    }
-
-    /// `database` is an initiator-only setting as well: the query sent to a shard may leave the remote
+    /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
     stripDatabaseSetting(settings);
@@ -336,10 +303,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "format", "input_format", "output_format", "default_format", "compression",
     "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
     "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
-    "async_insert_select_as_async_insert",
-    "parallel_replicas_for_object_storage_tables",
     "database",
-    "distributed_group_by_top_k",
 };
 
 bool isInitiatorOnlySettingName(std::string_view name)
@@ -355,16 +319,6 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
     /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
     /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
     removeSettingsFromQuery(query, initiator_only_setting_names);
-}
-
-void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query)
-{
-    /// A stored view body keeps the setting that decides how the view reads its table.
-    std::vector<std::string_view> names;
-    for (std::string_view name : initiator_only_setting_names)
-        if (name != "parallel_replicas_for_object_storage_tables")
-            names.push_back(name);
-    removeSettingsFromQuery(query, names);
 }
 
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
@@ -486,26 +440,15 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         else
             new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
+    /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
+    /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
+    /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
+    /// that cannot declines on its own, see `canUseParallelReplicasOnInitiator`.
 
     /// `clusterAllReplicas` already reads every replica as a shard of its own, so there is nothing left
     /// for parallel replicas to split
     if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
         new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-
-    /// The body of a `SQL SECURITY DEFINER` / `NONE` view must not hand its reads to the replicas of a shard,
-    /// in any parallel replicas mode: a replica cannot run them with the privileges of the view definer.
-    /// With the setting cleared, `ReadFromRemote` does not fan the shard query out with `canUseOffsetParallelReplicas` either.
-    /// A `sampling_key` follower is the exception: it must keep the setting, so that the shard reads only the slice
-    /// that `parallel_replicas_count` / `parallel_replica_offset` assign to it, otherwise the result is multiplied
-    /// by the number of replicas. Its new fan-out is prevented by `disableOffsetParallelReplicas` below instead.
-    const bool keep_sampling_key_slice = context->isSQLSecurityOverriddenBody() && context->isSamplingKeyParallelReplicasFollower();
-    if (context->isSQLSecurityOverriddenBody() && !keep_sampling_key_slice)
-        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
-
-    /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
-    /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
-    /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
-    /// that cannot declines on its own, see `canUseParallelReplicasOnInitiator`.
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
@@ -531,7 +474,7 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     new_context->setSettings(new_settings);
     new_context->setClientInfo(new_client_info);
 
-    if (context->canUseParallelReplicasCustomKeyForCluster(cluster) || keep_sampling_key_slice)
+    if (context->canUseParallelReplicasCustomKeyForCluster(cluster))
         new_context->disableOffsetParallelReplicas();
 
     return new_context;
@@ -603,7 +546,7 @@ void executeQuery(
 
     const ClusterPtr & not_optimized_cluster = query_info.cluster;
 
-    QueryPlanPtrs plans;
+    std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
@@ -627,7 +570,6 @@ void executeQuery(
     /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
     /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
     /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
-    /// Needed even with no limit set: it is also what notices that every shard was skipped.
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     {
         const auto & new_settings_ref = new_context->getSettingsRef();
@@ -635,50 +577,89 @@ void executeQuery(
         {
             size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
             Float64 max_ratio = static_cast<double>(new_settings_ref[Setting::max_skip_unavailable_shards_ratio]);
-            unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+            if (max_num > 0 || max_ratio > 0)
+                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }
     }
 
-    /// All shards share the query tree, so that the query is planned once, unless it is rewritten for the shard.
-    const auto query_for_all_shards = query_info.query_tree->clone();
-
-    for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        const auto & shard_info = cluster->getShardsInfo()[i];
-
-        auto query_for_shard = query_for_all_shards;
-        if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
-            /// TODO: support composite sharding key
-            sharding_key_expr->getRequiredColumns().size() == 1)
+        for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
         {
-            query_for_shard = query_for_shard->clone();
+            const auto & shard_info = cluster->getShardsInfo()[i];
 
-            OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
-                sharding_key_expr,
-                sharding_key_column_name,
+            auto query_for_shard = query_info.query_tree->clone();
+            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
+                /// TODO: support composite sharding key
+                sharding_key_expr->getRequiredColumns().size() == 1)
+            {
+                OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
+                    sharding_key_expr,
+                    sharding_key_column_name,
+                    shard_info,
+                    not_optimized_cluster->getSlotToShard(),
+                };
+                optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), new_context);
+            }
+
+            // decide for each shard if parallel reading from replicas should be enabled
+            // according to settings and number of replicas declared per shard
+            const auto & addresses = cluster->getShardsAddresses().at(i);
+            const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
+
+            stream_factory.createForShard(
                 shard_info,
-                not_optimized_cluster->getSlotToShard(),
-            };
-            optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), query_info.table_expression->getAlias(), new_context);
+                query_for_shard,
+                main_table,
+                table_func_ptr,
+                new_context,
+                plans,
+                remote_shards,
+                static_cast<UInt32>(shards),
+                parallel_replicas_enabled,
+                shard_filter_generator,
+                unavailable_shard_tracker);
         }
+    }
+    else
+    {
+        for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
+        {
+            const auto & shard_info = cluster->getShardsInfo()[i];
 
-        // decide for each shard if parallel reading from replicas should be enabled
-        // according to settings and number of replicas declared per shard
-        const auto & addresses = cluster->getShardsAddresses().at(i);
-        const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
+            ASTPtr query_ast_for_shard = query_info.query->clone();
+            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
+                /// TODO: support composite sharding key
+                sharding_key_expr->getRequiredColumns().size() == 1)
+            {
+                OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
+                    sharding_key_expr,
+                    sharding_key_column_name,
+                    shard_info,
+                    not_optimized_cluster->getSlotToShard(),
+                };
+                OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
+                visitor.visit(query_ast_for_shard);
+            }
 
-        stream_factory.createForShard(
-            shard_info,
-            query_for_shard,
-            main_table,
-            table_func_ptr,
-            new_context,
-            plans,
-            remote_shards,
-            static_cast<UInt32>(shards),
-            parallel_replicas_enabled,
-            shard_filter_generator,
-            unavailable_shard_tracker);
+            // decide for each shard if parallel reading from replicas should be enabled
+            // according to settings and number of replicas declared per shard
+            const auto & addresses = cluster->getShardsAddresses().at(i);
+            bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
+
+            stream_factory.createForShard(
+                shard_info,
+                query_ast_for_shard,
+                main_table,
+                table_func_ptr,
+                new_context,
+                plans,
+                remote_shards,
+                static_cast<UInt32>(shards),
+                parallel_replicas_enabled,
+                shard_filter_generator,
+                unavailable_shard_tracker);
+        }
     }
 
     if (!remote_shards.empty())
@@ -703,7 +684,6 @@ void executeQuery(
             shards,
             query_info.storage_limits,
             not_optimized_cluster->getName(),
-            not_optimized_cluster->getShardScopeIdentity(),
             std::move(unavailable_shard_tracker));
 
         read_from_remote->setStepDescription("Read from remote replica");
@@ -730,92 +710,10 @@ void executeQuery(
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
-/// Second column of the `_shard_num` scalar block: which shard numbering the shard number belongs to.
-static constexpr auto SHARD_NUM_CLUSTER_COLUMN = "_cluster_for_parallel_replicas";
-
-Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity)
-{
-    return Block{
-        {DataTypeUInt32().createColumnConst(1, shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"},
-        {DataTypeString().createColumnConst(1, shard_scope_identity), std::make_shared<DataTypeString>(), SHARD_NUM_CLUSTER_COLUMN}};
-}
-
-/// The `_shard_num` scalar shipped by the initiator of a distributed query, or `nullopt` when this query is
-/// not running inside one.
-static std::optional<Block> getShardNumScalar(const ContextPtr & context)
-{
-    if (!context->hasQueryContext() || !context->getQueryContext()->hasScalar("_shard_num"))
-        return {};
-
-    return context->getQueryContext()->getScalar("_shard_num");
-}
-
-/// The shard number the initiator shipped, or 0 when none was. Says nothing about which numbering it
-/// indexes, so it resolves no cluster and cannot fail.
-static UInt64 getShippedShardNum(const ContextPtr & context)
-{
-    const auto block = getShardNumScalar(context);
-    if (!block)
-        return 0;
-
-    return block->safeGetByPosition(0).column->getUInt(0);
-}
-
-/// The shipped `_shard_num` and the `cluster_for_parallel_replicas` setting are not necessarily about the
-/// same cluster, and a shard number from one cluster indexes an unrelated shard of another. Honour the
-/// shard scope only when the scalar demonstrably belongs to `cluster`.
-ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & cluster)
-{
-    const auto block = getShardNumScalar(context);
-    if (!block)
-        return {};
-
-    ShardScope scope{ShardScopeKind::Scoped, block->safeGetByPosition(0).column->getUInt(0)};
-    if (scope.shard_num == 0)
-        return {};
-
-    /// An older initiator ships a single-column block; absent provenance means "trust the scalar".
-    if (!block->has(SHARD_NUM_CLUSTER_COLUMN))
-        return scope;
-
-    const std::string_view provenance = block->getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
-    /// Compare the numbering, not the name: a derived cluster keeps the name and may renumber the shards.
-    /// An empty identity authenticates nothing, so it must never compare equal.
-    if (provenance.empty() || provenance != cluster.getShardScopeIdentity())
-        scope.kind = ShardScopeKind::Foreign;
-
-    return scope;
-}
-
-bool hasForeignShardScope(const ContextPtr & context)
-{
-    const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
-    if (cluster_name.empty())
-        return false;
-
-    /// Not `getClusterForParallelReplicas`: it throws for an unknown cluster, and callers of this predicate
-    /// do not otherwise resolve one.
-    const ClusterPtr cluster = context->tryGetCluster(cluster_name);
-    if (!cluster)
-        return false;
-
-    const auto scope = getShardScopeForCluster(context, *cluster);
-    if (scope.kind != ShardScopeKind::Foreign)
-        return false;
-
-    LOG_DEBUG(
-        getLogger("ParallelReplicas"),
-        "Disabling parallel replicas: shard scope shard_num={} was produced for another cluster, not for cluster={}",
-        scope.shard_num,
-        cluster_name);
-    return true;
-}
-
 static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const UInt64 & shard_num)
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
-    context_mutable->increaseDistributedDepth();
 
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)
@@ -887,16 +785,16 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     /// check cluster for parallel replicas
     auto not_optimized_cluster = context->getClusterForParallelReplicas();
 
-    const auto scope = getShardScopeForCluster(context, *not_optimized_cluster);
-    const UInt64 shard_num = scope.kind == ShardScopeKind::Scoped ? scope.shard_num : 0;
+    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
-    /// Admission declines a foreign scalar, so reaching this point with one is an admission gap.
-    if (scope.kind == ShardScopeKind::Foreign)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Parallel replicas shard scope shard_num={} was produced for another cluster, cannot be applied to cluster={}",
-            scope.shard_num,
-            not_optimized_cluster->getName());
+    UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
+    const auto it = scalars.find("_shard_num");
+    if (it != scalars.end())
+    {
+        const Block & block = it->second;
+        const auto & column = block.safeGetByPosition(0).column;
+        shard_num = column->getUInt(0);
+    }
 
     ClusterPtr new_cluster = not_optimized_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
@@ -931,8 +829,13 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     return {new_cluster, shard_num};
 }
 
-std::vector<bool> getReplicasLiveness(const String & cluster_name, const ClusterPtr & cluster)
+/// Returns per-replica liveness for the parallel replicas cluster, aligned with the cluster's replica order
+/// (the same `is_active` signal that is reported in `system.clusters`). Returns an empty vector when the
+/// liveness is unknown - in that case all replicas are considered usable, which preserves the previous behaviour.
+static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
 {
+    const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
+
     ReplicasInfo replicas_info;
 #if CLICKHOUSE_CLOUD
     /// The shared catalog cluster is exposed in `system.clusters` both under its plain name and under the
@@ -963,11 +866,11 @@ std::vector<bool> getReplicasLiveness(const String & cluster_name, const Cluster
         if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
             if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
             {
-                /// The cluster name is resolved by `Context::getCluster`, which prefers a
+                /// `cluster_for_parallel_replicas` is resolved by `Context::getCluster`, which prefers a
                 /// configured or discovered cluster over a `Replicated` database of the same name. When such a
                 /// cluster shadows the database, the resolved `cluster` is not the database's own cluster: its
                 /// replica names do not match the database's ZooKeeper nodes, so `tryGetReplicasInfo` would
-                /// report every replica inactive and the caller would collapse onto the local replica.
+                /// report every replica inactive and the coordinator would collapse onto the local replica.
                 /// Only trust the database liveness when the resolved cluster really is this database's own
                 /// cluster (`system.clusters` likewise reports such configured clusters with unknown `is_active`).
                 const ClusterPtr database_cluster = all_groups ? replicated->tryGetAllGroupsCluster() : replicated->tryGetCluster();
@@ -983,9 +886,7 @@ std::vector<bool> getReplicasLiveness(const String & cluster_name, const Cluster
     return is_active;
 }
 
-/// Liveness of the replicas in cluster order, local replica forced active; empty when unknown.
-static std::vector<bool>
-getParallelReplicasLiveness(const ContextPtr & context, const ClusterPtr & cluster, std::optional<size_t> & local_replica_index)
+static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -995,7 +896,7 @@ getParallelReplicasLiveness(const ContextPtr & context, const ClusterPtr & clust
     /// The reading coordinator distributes mark segments by hashing over the number of replicas, so counting
     /// replicas that never participate leaves "phantom" segments that only the source replica picks up, which
     /// produces a severe work-distribution skew. See `is_active` in `system.clusters`.
-    std::vector<bool> is_active = getReplicasLiveness(settings[Setting::cluster_for_parallel_replicas], cluster);
+    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
     if (!is_active.empty() && is_active.size() != shard.getAllNodeCount())
         is_active.clear(); /// Liveness does not match the cluster definition; fall back to using all replicas.
 
@@ -1003,6 +904,7 @@ getParallelReplicasLiveness(const ContextPtr & context, const ClusterPtr & clust
     {
         /// Identify the local replica the same way `findLocalReplicaIndexAndUpdatePools` does (host name + port).
         const auto & addresses = cluster->getShardsAddresses().at(0);
+        std::optional<size_t> local_replica_index;
         for (size_t i = 0; i < is_active.size() && i < addresses.size(); ++i)
         {
             const auto & address = addresses[i];
@@ -1028,25 +930,11 @@ getParallelReplicasLiveness(const ContextPtr & context, const ClusterPtr & clust
                 is_active[*local_replica_index] = false;
         });
 
-        /// The local replica is running this query, so it is online by definition even
+        /// The local replica is the initiator - it is running this query, so it is online by definition even
         /// if its `active` znode is transiently missing. Force it active so liveness never filters it out.
         if (local_replica_index)
             is_active[*local_replica_index] = true;
-    }
 
-    return is_active;
-}
-
-static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
-{
-    const auto & settings = context->getSettingsRef();
-
-    const auto & shard = cluster->getShardsInfo().at(0);
-
-    std::optional<size_t> local_replica_index;
-    std::vector<bool> is_active = getParallelReplicasLiveness(context, cluster, local_replica_index);
-    if (!is_active.empty())
-    {
         /// Test-only: simulate liveness drifting between the two passes of an INSERT SELECT - drop one active
         /// non-local replica from this (first) snapshot so the coordinator is sized smaller than the cluster's
         /// current active set. The remote-pool pass must reuse this snapshot's pools; if it recomputed liveness
@@ -1111,7 +999,7 @@ static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareCon
         shuffled_pool = shard.pool->getShuffledPools(settings, priority_func);
     }
 
-    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
+    std::vector<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
     for (auto & pool : shuffled_pool)
     {
@@ -1124,17 +1012,7 @@ static std::pair<VectorWithMemoryTracking<ConnectionPoolPtr>, size_t> prepareCon
     return {pools_to_use, max_replicas_to_use};
 }
 
-size_t getReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
-{
-    std::optional<size_t> local_replica_index;
-    const std::vector<bool> is_active = getParallelReplicasLiveness(context, cluster, local_replica_index);
-    size_t available_replicas = std::count(is_active.begin(), is_active.end(), true);
-    if (available_replicas == 0)
-        available_replicas = cluster->getShardsInfo().at(0).getAllNodeCount();
-    return std::min<size_t>(available_replicas, context->getSettingsRef()[Setting::max_parallel_replicas]);
-}
-
-static size_t findLocalReplicaIndexAndUpdatePools(VectorWithMemoryTracking<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
+static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr> & pools, size_t max_replicas_to_use, const ClusterPtr & cluster)
 {
     const auto & shard = cluster->getShardsInfo().at(0);
 
@@ -1228,17 +1106,11 @@ void executeQueryWithParallelReplicas(
             return;
         }
 
-        /// The replicas read these CTEs by name, so their writer must be gated above both branches.
-        removeDelayedMaterializingCTEsStepFor(*local_plan, collectMaterializedCTEsFromQueryTree(query_tree));
-
         std::shared_ptr<const QueryPlan> remote_query_plan;
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
             remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
-            /// A null plan means the coordinated read could not be marked in it; fall back to sending the
-            /// query text, which every replica plans for itself (see `createRemotePlanForParallelReplicas`).
-            if (remote_query_plan)
-                remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
@@ -1250,18 +1122,7 @@ void executeQueryWithParallelReplicas(
         else if (const auto * union_node = query_tree->as<UnionNode>())
             local_context = union_node->getContext();
 
-        /// What of a condition pushed into the local copy of the fragment the replicas get as well is
-        /// decided by the splice into the query they are sent, on the context it answers to. A plan
-        /// sent instead carries nothing pushed into this copy.
-        ReadFromLocalParallelReplicaStep::LeftOutConjuncts left_out_conjuncts;
-        if (!remote_query_plan)
-            left_out_conjuncts = [forwarded_query_ast, query_tree, planner_context, local_context](const ActionsDAG::Node & condition)
-            {
-                return conjunctsLeftOutOfRemoteQuery(condition, forwarded_query_ast, query_tree, planner_context, local_context);
-            };
-
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
-            std::move(local_plan), local_context, std::move(left_out_conjuncts));
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
@@ -1277,7 +1138,6 @@ void executeQueryWithParallelReplicas(
             header,
             processed_stage,
             new_context,
-            std::move(local_context),
             getThrottler(new_context),
             std::move(scalars),
             std::move(external_tables),
@@ -1296,7 +1156,7 @@ void executeQueryWithParallelReplicas(
         input_headers.emplace_back(stub_local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        QueryPlanPtrs plans;
+        std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::move(stub_local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1317,8 +1177,6 @@ void executeQueryWithParallelReplicas(
             std::move(coordinator),
             header,
             processed_stage,
-            new_context,
-            /// No local copy of the fragment to agree with.
             new_context,
             getThrottler(new_context),
             std::move(scalars),
@@ -1371,7 +1229,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
         input_headers.emplace_back(local_plan->getCurrentHeader());
         input_headers.emplace_back(remote_plan->getCurrentHeader());
 
-        QueryPlanPtrs plans;
+        std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
@@ -1426,6 +1284,22 @@ void executeQueryWithParallelReplicas(
         std::move(analyzed_read_from_merge_tree));
 }
 
+void executeQueryWithParallelReplicas(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    std::shared_ptr<const StorageLimitsList> storage_limits)
+{
+    auto modified_query_ast = ClusterProxy::rewriteSelectQuery(
+        context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
+    auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+    executeQueryWithParallelReplicas(
+        query_plan, storage_id, header, processed_stage, modified_query_ast, nullptr, nullptr, context, storage_limits, nullptr);
+}
+
 void executeQueryWithParallelReplicasCustomKey(
     QueryPlan & query_plan,
     const StorageID & storage_id,
@@ -1438,7 +1312,16 @@ void executeQueryWithParallelReplicasCustomKey(
 {
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
+    {
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            return;
+
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
         return;
+    }
 
     ClusterProxy::SelectStreamFactory select_stream_factory
         = ClusterProxy::SelectStreamFactory(header, snapshot, processed_stage);
@@ -1494,6 +1377,22 @@ void executeQueryWithParallelReplicasCustomKey(
         query_plan, storage_id, modified_query_info, columns, snapshot, processed_stage, header, context);
 }
 
+void executeQueryWithParallelReplicasCustomKey(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    SelectQueryInfo query_info,
+    const ColumnsDescription & columns,
+    const StorageSnapshotPtr & snapshot,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context)
+{
+    auto header = InterpreterSelectQuery(query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    query_info.query = ClusterProxy::rewriteSelectQuery(
+        context, query_info.query, storage_id.getDatabaseName(), storage_id.getTableName(), /*table_function_ptr=*/nullptr);
+    executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
+}
+
 bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings)
 {
     const auto leaf_timeout = settings[Setting::max_execution_time_leaf].totalMicroseconds();
@@ -1516,25 +1415,19 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
         return false;
 
     auto cluster = context->getClusterForParallelReplicas();
-    const auto scope = getShardScopeForCluster(context, *cluster);
-
-    /// A shard number produced for another cluster cannot scope this read, so decline parallel replicas:
-    /// the caller then builds the plain local plan.
-    if (scope.kind == ShardScopeKind::Foreign)
-    {
-        LOG_DEBUG(
-            getLogger("canUseParallelReplicasOnInitiator"),
-            "Disabling parallel replicas: shard scope shard_num={} was produced for another cluster, not for cluster={}",
-            scope.shard_num,
-            cluster->getName());
-        return false;
-    }
-
     if (cluster->getShardCount() == 1)
         return cluster->getShardsInfo()[0].getAllNodeCount() > 1;
 
     /// parallel replicas with distributed table
-    const UInt64 shard_num = scope.shard_num;
+    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
+    const auto it = scalars.find("_shard_num");
+    if (it != scalars.end())
+    {
+        const Block & block = it->second;
+        const auto & column = block.safeGetByPosition(0).column;
+        shard_num = column->getUInt(0);
+    }
     if (shard_num > 0)
     {
         const auto shard_count = cluster->getShardCount();
@@ -1561,15 +1454,22 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::parallel_replicas_local_plan] || !settings[Setting::parallel_replicas_prefer_local_replica])
+    if (!settings[Setting::allow_experimental_analyzer]
+        || !settings[Setting::parallel_replicas_local_plan]
+        || !settings[Setting::parallel_replicas_prefer_local_replica])
         return false;
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
-    /// `executeQueryWithParallelReplicas`). Only whether a shard number was shipped matters here, which does
-    /// not depend on the numbering it indexes, so no cluster is resolved: this predicate is reached from
-    /// projection analysis on a follower (`ReadFromMergeTree::isParallelReplicasLocalPlanForFollower`), where
-    /// `getClusterForParallelReplicas` would turn an unset or unresolvable cluster name into an exception.
-    return getShippedShardNum(context) == 0;
+    /// `executeQueryWithParallelReplicas`).
+    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    if (auto it = scalars.find("_shard_num"); it != scalars.end())
+    {
+        const auto & column = it->second.safeGetByPosition(0).column;
+        if (column->getUInt(0) > 0)
+            return false;
+    }
+
+    return true;
 }
 
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
@@ -1585,10 +1485,6 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
-    /// Only the query-based step is looked for. The caller pins `parallel_replicas_plan_based` off
-    /// (`InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas`), and what is decided here is
-    /// whether the followers - which never run the plan-based implementation - can read this SELECT in a
-    /// coordinated way, so `ReadFromParallelReplicasStep` is not the right thing to look for either.
     auto is_reading_with_parallel_replicas = [](const QueryPlan::Node * node) -> bool
     {
         struct Frame
@@ -1634,7 +1530,7 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 /// find and remove ReadFromParallelRemoteReplicasStep in query plan,
 /// also returns the parallel replicas coordinator, connection pools and local replica index
 /// stored in ReadFromParallelRemoteReplicasStep, so the remote-pool pass can reuse them.
-std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan)
+LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -1657,10 +1553,6 @@ std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan 
             const auto * step = frame.node->step.get();
             if (const auto * read_from_remote = typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
             {
-                /// Without a local replica this step is the plan's only reading step.
-                if (!read_from_remote->getExcludePoolIndex())
-                    return {};
-
                 auto & children = frame.parent->children;
                 for (auto it = begin(children); it != end(children); ++it)
                 {
@@ -1701,7 +1593,7 @@ std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan 
 /// the context that travels with the sub-query; a query text carrying the original (outer) values in its top-level
 /// SETTINGS would re-apply them on top of the context on the remote replica and defeat the leaf timeout. Every
 /// other query-level setting is intentionally left in the query text: the remote replica relies on them
-/// (e.g. 'max_block_size'), and - unlike the SELECT path, which strips the whole clause - the
+/// (e.g. 'max_block_size'), and - unlike the SELECT path, where 'rewriteSelectQuery' strips the whole clause - the
 /// INSERT SELECT sub-query does not re-ship every setting via the context, so stripping the whole clause would
 /// drop such settings on the remote replica.
 /// Only the top-level carriers are stripped ('removeSettingsFromQueryTopLevel'): a SETTINGS clause the user wrote
@@ -1722,7 +1614,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> local_pipeline,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator,
-    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools,
+    std::vector<ConnectionPoolPtr> reused_connection_pools,
     std::optional<size_t> reused_local_replica_index)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
@@ -1733,7 +1625,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
 
-    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
+    std::vector<ConnectionPoolPtr> connection_pools;
     size_t max_replicas_to_use = 0;
     std::optional<size_t> local_replica_index;
 
@@ -1789,15 +1681,6 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.
         stripInitiatorOnlySettingsFromQuery(new_query_ast);
-
-        /// `InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas` pins these on the context shipped
-        /// to the replicas, so the query text must not re-apply the user's values over it. The parser copies the
-        /// SELECT's trailing `SETTINGS` into the INSERT's own clause, so both carriers are stripped. A replica that
-        /// re-applies a non-zero `automatic_parallel_replicas_mode` and does not ignore it as a follower reads the
-        /// whole source table instead of its share, and the insert writes every row once per replica.
-        static constexpr std::array settings_pinned_by_initiator{
-            std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
-        removeSettingsFromQueryTopLevel(new_query_ast, settings_pinned_by_initiator);
 
         /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
         /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf

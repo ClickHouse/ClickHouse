@@ -5,6 +5,8 @@
 -- and an enclosing Nullable can wrap the automatic subcolumn. Every query below must give the same
 -- answer with the optimization on and off.
 
+SET enable_analyzer = 1;
+
 -- A Tuple element named `<sibling>.<automatic name>` claims the sibling's automatic subcolumn.
 -- Memory, because the Map cases collide on file names in MergeTree.
 
@@ -225,7 +227,7 @@ DROP TABLE IF EXISTS t_json_array_plain;
 CREATE TABLE t_json_array_plain (j JSON) ENGINE = Memory;
 INSERT INTO t_json_array_plain SELECT CAST('{"arr":[{"b":"FROM_JSON"}]}', 'JSON');
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT j.arr[1].b FROM t_json_array_plain) WHERE explain LIKE '%Array(JSON)%';
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT distinctJSONPaths(j) FROM t_json_array_plain) WHERE explain LIKE '%groupUniqArrayArray%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT distinctJSONPaths(j) FROM t_json_array_plain) WHERE explain LIKE '%groupArrayDistinct%';
 
 DROP TABLE IF EXISTS t_nested_plain;
 CREATE TABLE t_nested_plain (n Nested(a Int64, b String)) ENGINE = Memory;

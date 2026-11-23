@@ -1,6 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`, which cannot parse the added `UUID`
-
 -- Conformance queries derived from the convention-based (Tempto) product tests
 -- of Presto and Trino (https://github.com/prestodb/presto and
 -- https://github.com/trinodb/trino, both Apache License 2.0), executed against

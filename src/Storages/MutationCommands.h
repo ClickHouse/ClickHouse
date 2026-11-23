@@ -60,7 +60,7 @@ struct MutationCommand
     /// const). The parsed AST is *not* cached on the `MutationCommand`, so
     /// callers that access several sub-trees of the same command should hoist
     /// the result into a local. Returns nullptr if `ast_text` is empty.
-    [[nodiscard]] boost::intrusive_ptr<const ASTAlterCommand> ast() const;
+    boost::intrusive_ptr<const ASTAlterCommand> ast() const;
 
     /// RAII handle for editing the AST of a `MutationCommand` in place. The
     /// constructor parses a mutable copy of `ast_text`. To publish edits, call
@@ -80,7 +80,7 @@ struct MutationCommand
 
         ASTAlterCommand & operator*() const { return *ast; }
         ASTAlterCommand * operator->() const { return ast.get(); }
-        [[nodiscard]] ASTAlterCommand * get() const { return ast.get(); }
+        ASTAlterCommand * get() const { return ast.get(); }
 
         /// Serialize the (possibly modified) AST back into `owner.ast_text`.
         /// May throw.
@@ -118,21 +118,6 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
-    /// Whether the command names specific partitions (`... IN PARTITION p`), which scopes it to those
-    /// partitions alone. Recorded at parse time so that a caller which has to respect the scope can
-    /// find the few commands that have one without re-parsing `ast_text` for every command.
-    bool has_partition = false;
-
-    /// The ids of the partitions the command is scoped to, resolved from the partition expression once,
-    /// when the mutation entry is created (see `MergeTreeData::resolvePartitionIdsOfScopedCommands`).
-    /// A partition expression is arbitrary user SQL, so it must not be evaluated on the read path. The
-    /// resolution also rewrites the expression in `ast_text` to `ID '...'`, so the persisted entry pins
-    /// the same partitions and resolving them again when the entry is read back evaluates nothing.
-    /// Stays `std::nullopt` for a command with no partition, and for a scoped command whose expression
-    /// could not be resolved - a consumer that has to respect the scope then applies the command to no
-    /// partition at all rather than to the ones it does not name.
-    std::optional<NameSet> partition_ids = {};
-
     /// If `parse_alter_commands` is true, more alter commands are accepted as
     /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
     /// captured into the returned command so subsequent on-demand re-parsing
@@ -145,17 +130,12 @@ struct MutationCommand
         UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     /// This command shouldn't stick with other commands
-    [[nodiscard]] bool isBarrierCommand() const;
-    [[nodiscard]] bool isPureMetadataCommand() const;
-    [[nodiscard]] bool isEmptyCommand() const;
-    [[nodiscard]] bool isDropOrRename() const;
-    [[nodiscard]] bool affectsAllColumns() const;
+    bool isBarrierCommand() const;
+    bool isPureMetadataCommand() const;
+    bool isEmptyCommand() const;
+    bool isDropOrRename() const;
+    bool affectsAllColumns() const;
 };
-
-/// Whether the command is scoped to specific partitions (`... IN PARTITION p`, or the multi-partition
-/// `... IN PARTITION p1, p2` of `DELETE`/`UPDATE`), so that it applies to the parts of those partitions
-/// alone. `IN PARTITION ALL` names no specific partition and is not a scope.
-bool isCommandScopedToPartitions(const ASTAlterCommand & command);
 
 /// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
 /// command into a `column -> expression` map. The returned `ASTPtr`s point
@@ -167,25 +147,21 @@ std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCom
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    [[nodiscard]] boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
     void readText(ReadBuffer & in, bool with_pure_metadata_commands);
-    [[nodiscard]] std::string toString(bool with_pure_metadata_commands) const;
-    [[nodiscard]] bool hasNonEmptyMutationCommands() const;
+    std::string toString(bool with_pure_metadata_commands) const;
+    bool hasNonEmptyMutationCommands() const;
 
-    [[nodiscard]] bool hasAnyUpdateCommand() const;
-    [[nodiscard]] bool hasOnlyUpdateCommands() const;
-
-    /// True if the set contains `ALTER TABLE ... REWRITE PARTS`, which rewrites every column of
-    /// the part from scratch and therefore may also change the part format.
-    [[nodiscard]] bool hasRewritePartsCommand() const;
+    bool hasAnyUpdateCommand() const;
+    bool hasOnlyUpdateCommands() const;
 
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
-    [[nodiscard]] bool containBarrierCommand() const;
-    [[nodiscard]] NameSet getAllUpdatedColumns() const;
+    bool containBarrierCommand() const;
+    NameSet getAllUpdatedColumns() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

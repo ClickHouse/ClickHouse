@@ -35,7 +35,6 @@ class _Environment(MetaClasses.Serializable):
     USER_LOGIN: str
     FORK_NAME: str
     COMMIT_MESSAGE: str = ""
-    RUN_ATTEMPT: int = 0
     EVENT_ACTION: str = ""
     # Unix timestamp resolved once by the config job (see
     # native_jobs._config_workflow) and inherited by every other job with this
@@ -43,8 +42,6 @@ class _Environment(MetaClasses.Serializable):
     WORKFLOW_START_TIME: float = 0.0
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
-    # "push" workflow: the branch head before the push (the event's `before`)
-    PUSH_BEFORE_SHA: str = ""
     LOCAL_RUN: bool = False
     PR_IS_DRAFT: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
@@ -101,7 +98,6 @@ class _Environment(MetaClasses.Serializable):
         PR_LABELS = []
         PR_IS_DRAFT = False
         LINKED_PR_NUMBER = 0
-        PUSH_BEFORE_SHA = ""
         EVENT_TIME = ""
         EVENT_ACTION = ""
         COMMIT_MESSAGE = ""
@@ -112,8 +108,6 @@ class _Environment(MetaClasses.Serializable):
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
             EVENT_ACTION = github_event.get("action", "")
-            # The triggering actor, present on every event; the pull_request branch overrides it with the PR author.
-            USER_LOGIN = github_event.get("sender", {}).get("login", "")
             if "pull_request" in github_event:
                 FORK_NAME = github_event["pull_request"]["head"]["repo"]["full_name"]
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
@@ -134,7 +128,6 @@ class _Environment(MetaClasses.Serializable):
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
-                PUSH_BEFORE_SHA = github_event.get("before", "")
                 CHANGE_URL = github_event["head_commit"]["url"]  # commit url
                 PR_NUMBER = 0
                 COMMIT_URL = CHANGE_URL
@@ -243,7 +236,6 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TIME=EVENT_TIME,
             PR_NUMBER=PR_NUMBER,
             RUN_ID=RUN_ID,
-            RUN_ATTEMPT=int(os.getenv("GITHUB_RUN_ATTEMPT", "0")),
             CHANGE_URL=CHANGE_URL,
             COMMIT_URL=COMMIT_URL,
             RUN_URL=RUN_URL,
@@ -261,7 +253,6 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_MESSAGES=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
-            PUSH_BEFORE_SHA=PUSH_BEFORE_SHA,
             # TODO: Find a better way to store and pass commit authors data through workflow
             JOB_KV_DATA={
                 "commit_authors": COMMIT_AUTHORS,
@@ -284,10 +275,6 @@ class _Environment(MetaClasses.Serializable):
         # CI engine environments serialised by `_build_ci_environment` are not wiped.
         JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "") or obj.get("JOB_OUTPUT_STREAM", "")
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
-        # A failed-job rerun inherits the config job's previous environment.
-        # Capture the current attempt on the host before serializing for Docker.
-        if "GITHUB_RUN_ATTEMPT" in os.environ:
-            obj["RUN_ATTEMPT"] = int(os.environ["GITHUB_RUN_ATTEMPT"])
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
         # Filter out unexpected arguments - only keep fields defined in the dataclass

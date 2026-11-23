@@ -7,13 +7,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/Prometheus/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
-
-#include <Poco/String.h>
 
 #include <unordered_set>
 
@@ -40,22 +37,9 @@ namespace
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
             case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
-            case ViewTarget::TimeRanges: return Keyword::TIME_RANGES; /// TIME RANGES mydb.mytimeranges
             case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
         }
         UNREACHABLE();
-    }
-
-    /// A target table without a database and with one of these names is parsed back as the beginning of an inner engine.
-    /// `tryParseViewTarget` in `ParserViewTargets.cpp` tries an inner target before a table name: `INNER UUID`,
-    /// `INNER COLUMNS`, and an optional `INNER` followed by a storage definition of `ParserStorage`, which can start
-    /// with `ENGINE`, `TTL` or `SETTINGS`. Its other clauses (`ORDER BY`, `PRIMARY KEY`, ...) take two words, and the
-    /// formatter never writes `BY` or `KEY` after a target. Keep this list in sync with those parsers.
-    bool isInnerEngineKeyword(const String & table_name)
-    {
-        String upper_name = Poco::toUpper(table_name);
-        return upper_name == toStringView(Keyword::INNER) || upper_name == toStringView(Keyword::ENGINE)
-            || upper_name == toStringView(Keyword::TTL) || upper_name == toStringView(Keyword::SETTINGS);
     }
 }
 
@@ -288,15 +272,9 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
 {
     if (target.table_id)
     {
-        const auto & database_name = target.table_id.database_name;
-        const auto & table_name = target.table_id.table_name;
-        /// Only the `TimeSeries` targets are parsed back by `ParserViewTargets`, which can read such a name as an inner
-        /// engine. A `TO` target is parsed elsewhere and keeps its name as it is.
-        const bool parsed_by_view_targets_parser = target.kind != ViewTarget::To && target.kind != ViewTarget::Inner;
-        const bool needs_back_quotes = parsed_by_view_targets_parser && database_name.empty() && isInnerEngineKeyword(table_name);
         ostr << s.nl_or_ws << toStringView(getKeyword(target.kind, time_series_version)) << " "
-             << (!database_name.empty() ? backQuoteIfNeed(database_name) + "." : "")
-             << (needs_back_quotes ? backQuote(table_name) : backQuoteIfNeed(table_name));
+             << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
+             << backQuoteIfNeed(target.table_id.table_name);
     }
 
     if (target.inner_uuid != UUIDHelpers::Nil)

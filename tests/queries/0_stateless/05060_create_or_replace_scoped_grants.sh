@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
-# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
 # `CREATE OR REPLACE` builds the new table under an internal `_tmp_replace_*` name and publishes it with a
 # RENAME/EXCHANGE. That name is random, so no grant can ever cover it: everything the user is authorized for
 # must be authorized against the user-visible names. Table-scoped grants on the final name (plus `SELECT` on

@@ -20,6 +20,8 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -33,6 +35,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
+    extern const int OFFSET_FETCH_WITHOUT_ORDER_BY;
 }
 
 
@@ -357,7 +360,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rows(Keyword::ROWS);
     ParserKeyword s_first(Keyword::FIRST);
     ParserKeyword s_next(Keyword::NEXT);
-    ParserKeyword s_shuffle(Keyword::SHUFFLE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -669,11 +671,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         select_query->order_by_all = order_by_all;
     }
-    /// SHUFFLE is used in place of ORDER BY
-    else if (s_shuffle.ignore(pos, expected))
-    {
-        select_query->shuffle = true;
-    }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
     bool limit_with_ties_occurred = false;
@@ -784,10 +781,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SQL standard FETCH. Only WITH TIES requires ORDER BY.
+    /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
     if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
         && s_fetch.ignore(pos, expected))
     {
+        /// FETCH clause must exist with "ORDER BY"
+        if (!order_expression_list)
+            throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
+
         if (s_first.ignore(pos, expected))
         {
             if (s_next.ignore(pos, expected))
@@ -906,11 +907,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-std::map<String, Documentation> ParserSelectQuery::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
+}
 
-    documentation["SELECT"] =
+namespace DB
+{
+
+void registerStatementSelect(StatementFactory & factory)
+{
+    factory.registerStatement("SELECT",
     {
         .description = R"DOCS_MD(
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](/reference/statements/insert-into) it can be forwarded to a different table.
@@ -930,7 +934,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -959,7 +963,6 @@ The expression list immediately after `SELECT` is required; all other clauses ar
 - [WINDOW clause](/reference/functions/window-functions/index)
 - [QUALIFY clause](/reference/statements/select/qualify)
 - [ORDER BY clause](/reference/statements/select/order-by)
-- [SHUFFLE clause](/reference/statements/select/shuffle)
 - [LIMIT BY clause](/reference/statements/select/limit-by)
 - [LIMIT clause](/reference/statements/select/limit)
 - [OFFSET clause](/reference/statements/select/offset)
@@ -1192,7 +1195,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [HAVING expr]
 [WINDOW window_expr_list]
 [QUALIFY expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]] | [SHUFFLE]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
@@ -1202,9 +1205,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 )",
         .related = {"FROM", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "JOIN", "UNION", "INSERT INTO", "FORMAT"},
-    };
+    });
 
-    documentation["DISTINCT"] =
+    factory.registerStatement("DISTINCT",
     {
         .description = R"DOCS_MD(
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus, only a single row will remain out of all the sets of fully matching rows in the result.
@@ -1359,9 +1362,9 @@ SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "ALL", "GROUP BY", "LIMIT BY"},
-    };
+    });
 
-    documentation["ALL"] =
+    factory.registerStatement("ALL",
     {
         .description = R"DOCS_MD(
 If there are multiple matching rows in a table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`. If both `ALL` and `DISTINCT` are specified, then an exception will be thrown.
@@ -1385,9 +1388,9 @@ SELECT ALL expr_list ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "DISTINCT"},
-    };
+    });
 
-    documentation["PREWHERE"] =
+    factory.registerStatement("PREWHERE",
     {
         .description = R"DOCS_MD(
 `PREWHERE` can make filtering more efficient by reducing the amount of data read. By default, ClickHouse applies this optimization, even when a query does not explicitly specify `PREWHERE`, by moving eligible conditions from [`WHERE`](/reference/statements/select/where) to `PREWHERE`. You can specify `PREWHERE` explicitly to control which conditions are applied at this stage.
@@ -1528,9 +1531,9 @@ SELECT ... PREWHERE expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "WHERE", "EXPLAIN"},
-    };
+    });
 
-    documentation["WHERE"] =
+    factory.registerStatement("WHERE",
     {
         .description = R"DOCS_MD(
 The `WHERE` clause allows you to filter the data that comes from the[`FROM`](/reference/statements/select/from) clause of `SELECT`.
@@ -1589,8 +1592,6 @@ The following [comparison operators](/reference/operators/index#comparison-opera
 | `a LIKE s` | `like(a, b)` | Pattern matching (case-sensitive) | `name LIKE '%top%'` |
 | `a NOT LIKE s` | `notLike(a, b)` | Pattern not matching (case-sensitive) | `name NOT LIKE '%top%'` |
 | `a ILIKE s` | `ilike(a, b)` | Pattern matching (case-insensitive) | `name ILIKE '%LAPTOP%'` |
-| `a SIMILAR TO s` | `similarTo(a, b)` | SQL-standard pattern matching (case-sensitive) | `name SIMILAR TO 'Lap(top)?'` |
-| `a NOT SIMILAR TO s` | `notSimilarTo(a, b)` | SQL-standard pattern not matching (case-sensitive) | `name NOT SIMILAR TO 'Lap(top)?'` |
 | `a BETWEEN b AND c` | `a >= b AND a <= c` | Range check (inclusive) | `price BETWEEN 100 AND 500` |
 | `a NOT BETWEEN b AND c` | `a < b OR a > c` | Outside range check | `price NOT BETWEEN 100 AND 500` |
 
@@ -1602,7 +1603,6 @@ Beyond comparison operators, you can use pattern matching and conditional expres
 | ----------- | ------------------------------ | -------------- | ----------- | ------------------------------ |
 | `LIKE`      | `col LIKE '%pattern%'`         | Yes            | Fast        | Exact case pattern matching    |
 | `ILIKE`     | `col ILIKE '%pattern%'`        | No             | Slower      | Case-insensitive searching     |
-| `SIMILAR TO`| `col SIMILAR TO 'p[ab]+%'`      | Yes            | Slower      | SQL-standard patterns with regular expression metacharacters |
 | `if()`      | `if(cond, a, b)`               | N/A            | Fast        | Simple binary conditions       |
 | `multiIf()` | `multiIf(c1, r1, c2, r2, def)` | N/A            | Fast        | Multiple conditions            |
 | `CASE`      | `CASE WHEN ... THEN ... END`   | N/A            | Fast        | SQL-standard conditional logic |
@@ -1903,38 +1903,6 @@ SELECT * FROM products WHERE name ILIKE 'l%';
 -- Result: Laptop, Lamp
 ```
 
-#### SIMILAR TO examples {#similar-to-examples}
-
-Unlike `LIKE`, a `SIMILAR TO` pattern also accepts the regular expression metacharacters `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` and `]`, and, like `LIKE`, it must match the whole value:
-
-```sql
--- Alternation: either of two names
-SELECT * FROM products WHERE name SIMILAR TO 'Desk|Lamp';
--- Result: Desk, Lamp
-
--- A bracket expression combined with the LIKE wildcard `%`
-SELECT * FROM products WHERE name SIMILAR TO '[LM]%';
--- Result: Laptop, Mouse, Monitor, Lamp
-
--- Repetition: a name of five or more characters
-SELECT * FROM products WHERE name SIMILAR TO '_{5,}';
--- Result: Laptop, Mouse, Chair, Monitor
-
--- Negation
-SELECT * FROM products WHERE name NOT SIMILAR TO '(Desk|Lamp)';
--- Result: Laptop, Mouse, Chair, Monitor
-```
-
-A custom escape character can be given with the `ESCAPE` clause, which also works for `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE` and `NOT SIMILAR TO`:
-
-```sql
--- `#%` denotes a literal `%`, so this matches names containing a percent sign
-SELECT * FROM products WHERE name SIMILAR TO '%#%%' ESCAPE '#';
--- Result: (none)
-```
-
-See the [`SIMILAR TO` operator documentation](/reference/operators/index#similarto-function) for the full pattern grammar.
-
 #### IF examples {#if-examples}
 
 ```sql
@@ -2007,9 +1975,9 @@ SELECT ... WHERE expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "PREWHERE", "HAVING", "QUALIFY"},
-    };
+    });
 
-    documentation["GROUP BY"] =
+    factory.registerStatement("GROUP BY",
     {
         .description = R"DOCS_MD(
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
@@ -2379,8 +2347,6 @@ You can enable dumping temporary data to the disk to restrict memory usage durin
 The [max_bytes_before_external_group_by](/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
 Alternatively, you can set [max_bytes_ratio_before_external_group_by](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by), which allows to use `GROUP BY` in external memory only once the query reaches certain threshold of used memory.
 
-If the query is over the threshold because of other operators, for example a hash join that holds a large table, each thread writes every block it aggregates to disk as a separate small file, and reading many small files back costs more memory than the writes saved. The [min_bytes_before_external_group_by](/reference/settings/session-settings/min-bytes#min_bytes_before_external_group_by) setting makes a thread keep aggregating until its own state reaches the given size before it is written out.
-
 When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high (or `max_bytes_ratio_before_external_group_by=0.5`). This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn't dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
 For example, if [max_memory_usage](/reference/settings/session-settings/max-memory-usage#max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
@@ -2399,9 +2365,9 @@ SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS (...) ..
 )",
         .parent = "SELECT",
         .related = {"SELECT", "HAVING", "DISTINCT", "ORDER BY"},
-    };
+    });
 
-    documentation["HAVING"] =
+    factory.registerStatement("HAVING",
     {
         .description = R"DOCS_MD(
 Allows filtering the aggregation results produced by [GROUP BY](/reference/statements/select/group-by). It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before aggregation, while `HAVING` is performed after it.
@@ -2443,9 +2409,9 @@ SELECT ... GROUP BY ... HAVING expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "GROUP BY", "WHERE", "QUALIFY"},
-    };
+    });
 
-    documentation["QUALIFY"] =
+    factory.registerStatement("QUALIFY",
     {
         .description = R"DOCS_MD(
 Allows filtering window functions results. It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before window functions evaluation, while `QUALIFY` is performed after it.
@@ -2481,9 +2447,9 @@ SELECT ... QUALIFY expr ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "WHERE", "HAVING"},
-    };
+    });
 
-    documentation["ORDER BY"] =
+    factory.registerStatement("ORDER BY",
     {
         .description = R"DOCS_MD(
 The `ORDER BY` clause contains
@@ -2728,7 +2694,7 @@ External sorting works much less effectively than sorting in RAM.
 
  When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](/reference/statements/select/limit). The same holds for a [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range without `ALL`, which stops reading once its range has ended. So queries on big data with small limit are processed faster.
 
-Optimization works with both `ASC` and `DESC` and does not work together with the [GROUP BY](/reference/statements/select/group-by) clause. With the [FINAL](/reference/statements/select/from#final-modifier) modifier, the optimization works in the direct order of the sorting key, and for [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables - as well as [Merge](/reference/engines/table-engines/special/merge) tables over them - also in the reverse order, controlled by the `optimize_read_in_reverse_order_final` setting.
+Optimization works with both `ASC` and `DESC` and does not work together with the [GROUP BY](/reference/statements/select/group-by) clause. With the [FINAL](/reference/statements/select/from#final-modifier) modifier, the optimization works in the direct order of the sorting key, and for [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables also in the reverse order, controlled by the `optimize_read_in_reverse_order_final` setting.
 
 When the `optimize_read_in_order` setting is disabled, the ClickHouse server does not use the table index while processing `SELECT` queries.
 
@@ -3116,71 +3082,9 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "GROUP BY", "ALTER TABLE ... MODIFY ORDER BY"},
-    };
+    });
 
-    documentation["SHUFFLE"] =
-    {
-        .description = R"DOCS_MD(
-The `SHUFFLE` clause returns the rows of the query result in a uniformly random order. It is used in place of the [ORDER BY](/reference/statements/select/order-by) clause and cannot be combined with it.
-
-It returns the same result as `ORDER BY rand()`, but works in O(n) time instead of O(n * log(n)).
-
-`SHUFFLE` can be used without `LIMIT`, to randomize the order of all rows, or with `LIMIT n`, to take a uniformly random sample of `n` rows (also returned in a random order). With `LIMIT n`, every stream keeps only `n` rows, so the memory usage is O(n) regardless of the number of rows in the query result. `OFFSET` and `LIMIT BY` can be used as with `ORDER BY`.
-
-<Note>
-This is an experimental feature. Enable it with the setting [`allow_experimental_shuffle_query`](/reference/settings/session-settings#allow_experimental_shuffle_query).
-</Note>
-
-## Implementation details {#implementation-details}
-
-The random choices are made just in time: no random values are generated or stored for the rows in advance. Without `LIMIT`, every row is sent to a random one of `max_threads` streams, every stream is shuffled in parallel with the Fisher-Yates algorithm (in parts that fit in the CPU cache), and the streams are concatenated. With `LIMIT n`, every stream keeps a uniformly random sample of `n` rows by reservoir sampling, which skips the rows that cannot get into the sample without looking at them, and the samples are merged: the number of rows taken from every stream is drawn as sampling without replacement from the numbers of rows of the streams. In a distributed query, the remote servers shuffle their data and attach sorted random keys to the rows, and the initiator merges the shuffled streams by the keys, which takes O(1) memory.
-
-Without `LIMIT`, `SHUFFLE` keeps all rows in memory. Unlike `ORDER BY`, it does not spill data to disk.
-
-`ORDER BY rand()` and `ORDER BY rand64()` can be executed the same way as `SHUFFLE` (the setting `query_plan_use_shuffle_for_order_by_rand`) when the random value is not used anywhere else in the query and external sorting is disabled. When external sorting is configured, this optimization is disabled even with a finite `LIMIT`, because the sample may still exceed memory and `SHUFFLE` cannot spill to disk. `ORDER BY rand64()` with a finite limit retains sorting to preserve all bits of the random values.
-
-## Examples {#examples}
-
-```sql
-SET allow_experimental_shuffle_query = 1;
-
-SELECT number FROM numbers(5) SHUFFLE;
-```
-
-```text
-┌─number─┐
-│      3 │
-│      0 │
-│      4 │
-│      1 │
-│      2 │
-└────────┘
-```
-
-A random sample of three rows:
-
-```sql
-SELECT number FROM numbers(1000000) SHUFFLE LIMIT 3;
-```
-
-```text
-┌─number─┐
-│ 493721 │
-│  20857 │
-│ 871324 │
-└────────┘
-```
-
-`SHUFFLE` is a keyword after the `FROM` clause. To use `shuffle` as a table alias, write `AS shuffle`.
-)DOCS_MD",
-        .syntax = R"(
-SELECT ... SHUFFLE [LIMIT [n, ]m] ...
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "ORDER BY", "LIMIT", "SAMPLE"},
-    };
-
-    documentation["LIMIT"] =
+    factory.registerStatement("LIMIT",
     {
         .description = R"DOCS_MD(
 The `LIMIT` clause controls how many rows are returned from your query results. Rows can be selected by count and offset, or by the conditions that open and close a range of rows with [`LIMIT ... AFTER ... UNTIL`](#limit-after-until).
@@ -3562,9 +3466,9 @@ SELECT TOP m ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "OFFSET FETCH", "LIMIT BY", "ORDER BY"},
-    };
+    });
 
-    documentation["LIMIT BY"] =
+    factory.registerStatement("LIMIT BY",
     {
         .description = R"DOCS_MD(
 A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](/reference/syntax#expressions).
@@ -3767,9 +3671,9 @@ SELECT ... LIMIT n OFFSET offset_value BY expressions ...
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "DISTINCT", "ORDER BY"},
-    };
+    });
 
-    documentation["OFFSET FETCH"] =
+    factory.registerStatement("OFFSET FETCH",
     {
         .description = R"DOCS_MD(
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
@@ -3800,8 +3704,6 @@ Example:
 > • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
-`FETCH ... ONLY` works without `ORDER BY`, like `LIMIT`, but the returned rows are not guaranteed to be deterministic.
-`FETCH ... WITH TIES` requires `ORDER BY` to identify rows tied with the last selected row.
 
 The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](/reference/statements/select/limit) clause. For example, the following query
 
@@ -3876,9 +3778,7 @@ SELECT ... [LIMIT [n, ]m] [OFFSET offset_row_count]
 )",
         .parent = "SELECT",
         .related = {"SELECT", "LIMIT", "ORDER BY"},
-    };
-
-    return documentation;
+    });
 }
 
 }

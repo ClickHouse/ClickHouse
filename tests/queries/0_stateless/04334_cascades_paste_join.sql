@@ -1,9 +1,12 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- `PASTE JOIN` pairs rows by position, and no exchange preserves that order: a gather
 -- over parallel reads interleaves worker streams arbitrarily. `make_distributed_plan`
 -- rejects such plans up front (with and without Cascades) instead of returning wrongly
 -- paired rows.
 
+SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
