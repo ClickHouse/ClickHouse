@@ -1189,21 +1189,13 @@ void MutationsInterpreter::prepare(bool dry_run)
     all_affected_materialized.insert(clear_affected_materialized.begin(), clear_affected_materialized.end());
     all_affected_materialized.insert(type_changed_affected_materialized.begin(), type_changed_affected_materialized.end());
 
-    if (settings.recalculate_dependencies_of_updated_columns)
+    /// getColumnDependencies compares an index's required columns by raw name, so a change of a parent
+    /// column (`t`) is not recognized as affecting an index on its subcolumn (`t.a`), and the index's other
+    /// inputs (e.g. `y` in `t.a + y`) never enter the read set. Resolve each index's required columns to
+    /// their storage columns; when @changed_columns contains any of them, read all of them, so the index
+    /// recalculation downstream has every input.
+    auto add_index_dependencies_of_changed_columns = [&](const NameSet & changed_columns)
     {
-        NameSet columns_for_dependencies = updated_columns;
-        columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
-        columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
-        /// A column read at another type changes data too, so a TTL over it has to be recalculated.
-        columns_for_dependencies.insert(type_changed_columns.begin(), type_changed_columns.end());
-        columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
-        dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
-
-        /// getColumnDependencies compares an index's required columns by raw name, so a mutation of a
-        /// parent column (`t`) is not recognized as affecting an index on its subcolumn (`t.a`), and the
-        /// index's other inputs (e.g. `y` in `t.a + y`) never enter the read set. Resolve each index's
-        /// required columns to their storage columns; when the mutation touches any of them, read all of
-        /// them, so the index recalculation downstream has every input.
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
         {
             if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
@@ -1213,14 +1205,14 @@ void MutationsInterpreter::prepare(bool dry_run)
             bool affected = std::any_of(
                 index_storage_columns.begin(),
                 index_storage_columns.end(),
-                [&](const auto & col) { return columns_for_dependencies.contains(col); });
+                [&](const auto & col) { return changed_columns.contains(col); });
 
             if (affected)
                 for (const auto & col : index_storage_columns)
                     dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
         }
 
-        /// The raw index inputs above can still name a subcolumn (`t.a`, reached through another input `y`).
+        /// The raw index inputs can still name a subcolumn (`t.a`, reached through another input `y`).
         /// Reading it from the source part would put a stale `t.a` next to the updated `t` in the stream, and
         /// the index recalculation takes a subcolumn present in the block as is. Read its storage column
         /// instead, so the subcolumn is extracted from the updated value.
@@ -1239,6 +1231,18 @@ void MutationsInterpreter::prepare(bool dry_run)
             normalized_dependencies.insert(dependency);
         }
         dependencies = std::move(normalized_dependencies);
+    };
+
+    if (settings.recalculate_dependencies_of_updated_columns)
+    {
+        NameSet columns_for_dependencies = updated_columns;
+        columns_for_dependencies.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+        columns_for_dependencies.insert(clear_column_names.begin(), clear_column_names.end());
+        /// A column read at another type changes data too, so a TTL over it has to be recalculated.
+        columns_for_dependencies.insert(type_changed_columns.begin(), type_changed_columns.end());
+        columns_for_dependencies.insert(all_affected_materialized.begin(), all_affected_materialized.end());
+        dependencies = getAllColumnDependencies(metadata_snapshot, columns_for_dependencies, has_dependency);
+        add_index_dependencies_of_changed_columns(columns_for_dependencies);
     }
 
     bool need_rebuild_indexes = false;
@@ -1714,6 +1718,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                         || dependency.kind == ColumnDependency::STATISTICS)
                         dependencies.insert(dependency);
                 }
+
+                /// The same for an index over a subcolumn of a column the TTL resets (`t.a + y` under a TTL on `t`).
+                add_index_dependencies_of_changed_columns(new_updated_columns);
             }
 
             if (dependencies.empty())
