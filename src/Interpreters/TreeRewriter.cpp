@@ -1726,7 +1726,7 @@ void TreeRewriter::normalize(
         ReplacePositionalArgumentsVisitor(data_replace_positional_arguments).visit(query);
     }
 
-    if (settings[Setting::transform_null_in])
+    if (settings[Setting::transform_null_in] && !settings[Setting::in_null_as_unknown])
     {
         CustomizeInVisitor::Data data_null_in{"nullIn"};
         CustomizeInVisitor(data_null_in).visit(query);

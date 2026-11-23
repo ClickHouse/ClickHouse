@@ -19,3 +19,11 @@ SELECT
 SELECT
     nullIn(CAST(NULL AS Nullable(UInt8)), (SELECT CAST(NULL AS Nullable(UInt8)))),
     notNullIn(CAST(NULL AS Nullable(UInt8)), (SELECT CAST(NULL AS Nullable(UInt8))));
+
+SET transform_null_in = 1;
+SELECT toTypeName(84 IN (63, NULL)), 84 IN (63, NULL), nullIn(84, (63, NULL)), toTypeName(nullIn(84, (63, NULL)));
+SELECT (1, NULL) IN ((1, NULL)); -- { serverError NOT_IMPLEMENTED }
+
+SET allow_experimental_analyzer = 0;
+SELECT toTypeName(84 IN (63, NULL)), 84 IN (63, NULL), nullIn(84, (63, NULL)), toTypeName(nullIn(84, (63, NULL)));
+SELECT (1, NULL) IN ((1, NULL)); -- { serverError NOT_IMPLEMENTED }

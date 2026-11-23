@@ -3460,7 +3460,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
         function_node.setUseNullAsUnknownSemanticsForIn(use_null_as_unknown_for_in);
-        if (scope.context->getSettingsRef()[Setting::transform_null_in])
+        if (scope.context->getSettingsRef()[Setting::transform_null_in] && !use_null_as_unknown_for_in)
             function_name = getNullInFunctionName(function_name);
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
