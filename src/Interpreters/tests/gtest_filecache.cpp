@@ -124,6 +124,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_threads;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_tasks_per_thread;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
@@ -5090,4 +5092,40 @@ TEST_F(FileCacheTest, ManyEmptiedKeysAreRemovedInBackground)
     for (const auto & key : keys)
         ASSERT_FALSE(fs::exists(getKeyDirectory(key))) << key.toString();
     ASSERT_EQ(countFilesInKeyDirectories(), 0);
+}
+
+TEST_F(FileCacheTest, EmptyKeyDirectoriesFromStartupStartHelperCleanupThreads)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_empty_keys = 100;
+    auto settings = getSettingsForLoadTests(/* max_size */ 1000);
+    settings[FileCacheSetting::background_cleanup_threads] = 4;
+    /// All the directories are queued before the cleanup thread starts, so its first task sees the others waiting.
+    settings[FileCacheSetting::background_cleanup_tasks_per_thread] = 1;
+
+    std::vector<fs::path> empty_key_directories;
+    for (size_t i = 0; i < num_empty_keys; ++i)
+    {
+        empty_key_directories.push_back(getKeyDirectory(FileCacheKey::fromPath("empty_" + std::to_string(i))));
+        fs::create_directories(empty_key_directories.back());
+    }
+
+    const auto delayed_cleanup_elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
+
+    /// The start of a helper thread is logged at the debug level.
+    setupLogs("debug");
+    std::string log_output;
+    testing::internal::CaptureStderr();
+    {
+        SCOPE_EXIT({ log_output = testing::internal::GetCapturedStderr(); });
+        auto cache = DB::FileCache("StartHelperCleanupThreads", settings);
+        cache.initialize();
+        waitForCleanupQueue(delayed_cleanup_elements_before);
+    }
+
+    ASSERT_TRUE(log_output.contains("Started a helper cleanup thread")) << log_output;
+    for (const auto & directory : empty_key_directories)
+        ASSERT_FALSE(fs::exists(directory)) << directory;
 }

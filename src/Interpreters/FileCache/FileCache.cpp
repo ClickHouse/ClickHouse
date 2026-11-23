@@ -114,6 +114,8 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsUInt64 background_download_queue_size_limit;
     extern const FileCacheSettingsUInt64 background_download_max_file_segment_size;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_threads;
+    extern const FileCacheSettingsNonZeroUInt64 background_cleanup_tasks_per_thread;
     extern const FileCacheSettingsDouble keep_free_space_size_ratio;
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsUInt64 keep_free_space_remove_batch;
@@ -328,7 +330,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , metadata(settings[FileCacheSetting::path],
                settings[FileCacheSetting::background_download_queue_size_limit],
                settings[FileCacheSetting::background_download_threads],
-               write_cache_per_user_directory, settings[FileCacheSetting::use_real_disk_size])
+               write_cache_per_user_directory, settings[FileCacheSetting::use_real_disk_size],
+               settings[FileCacheSetting::background_cleanup_threads],
+               settings[FileCacheSetting::background_cleanup_tasks_per_thread])
     , check_cache_probability(settings[FileCacheSetting::check_cache_probability])
 {
     CachePriorityCreatorFunction creator_function;

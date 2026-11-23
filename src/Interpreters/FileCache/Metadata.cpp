@@ -251,7 +251,9 @@ CacheMetadata::CacheMetadata(
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
     bool write_cache_per_user_directory_,
-    bool use_real_disk_size_)
+    bool use_real_disk_size_,
+    size_t background_cleanup_threads_,
+    size_t background_cleanup_tasks_per_thread_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
@@ -260,6 +262,8 @@ CacheMetadata::CacheMetadata(
     , log(getLogger("CacheMetadata"))
     , origins(ProfileEvents::FilesystemCacheLockOriginPoolMicroseconds)
     , download_threads_num(background_download_threads_)
+    , max_cleanup_threads(background_cleanup_threads_)
+    , cleanup_tasks_per_thread(background_cleanup_tasks_per_thread_)
 {
 
 }
@@ -869,7 +873,7 @@ private:
     /// Emptied keys go first, so directories from startup delay them by one directory removal at most.
     std::optional<CleanupTask> popUnlocked()
     {
-        if (cancelled || size == 0)
+        if (cancelled)
             return {};
 
         CleanupTask task;
@@ -877,7 +881,7 @@ private:
         {
             task.key = keys.extract(keys.begin()).value();
         }
-        else
+        else if (!empty_key_directories_from_startup.empty())
         {
             auto it = empty_key_directories_from_startup.begin();
             task.key = it->second.back();
@@ -885,6 +889,10 @@ private:
             it->second.pop_back();
             if (it->second.empty())
                 empty_key_directories_from_startup.erase(it);
+        }
+        else
+        {
+            return {};
         }
 
         --size;
@@ -947,18 +955,17 @@ void CacheMetadata::cleanupThreadFuncImpl()
 
 void CacheMetadata::cleanupThreadFunc()
 {
-    static constexpr size_t max_cleanup_threads = 8;
-    static constexpr size_t tasks_per_thread = 1000;
-
     /// Helper threads are started when cleanup tasks pile up; each exits once it finds none left.
     /// The queue is cancelled before this function returns, so joining them waits for one task at most.
+    /// This thread is one of `max_cleanup_threads`, and the pool needs room for one thread at least.
+    const size_t max_helper_threads = std::max<size_t>(1, max_cleanup_threads - 1);
     ThreadPool helper_threads(
         CurrentMetrics::FilesystemCacheCleanupHelperThreads,
         CurrentMetrics::FilesystemCacheCleanupHelperThreadsActive,
         CurrentMetrics::FilesystemCacheCleanupHelperThreadsScheduled,
-        /* max_threads */max_cleanup_threads - 1,
+        /* max_threads */max_helper_threads,
         /* max_free_threads */0,
-        /* queue_size */max_cleanup_threads - 1);
+        /* queue_size */max_helper_threads);
 
     while (true)
     {
@@ -972,7 +979,7 @@ void CacheMetadata::cleanupThreadFunc()
             /// This thread counts as the first one.
             const size_t running_threads = helper_threads.active() + 1;
             if (running_threads < max_cleanup_threads
-                && task->backlog >= running_threads * tasks_per_thread
+                && task->backlog >= running_threads * cleanup_tasks_per_thread
                 && helper_threads.trySchedule([this] { cleanupThreadFuncImpl(); }))
             {
                 LOG_DEBUG(log, "Started a helper cleanup thread: {} cleanup tasks are waiting", task->backlog);
