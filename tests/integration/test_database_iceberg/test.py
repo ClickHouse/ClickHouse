@@ -3181,9 +3181,11 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
 
         # a `Merge` table `default.M` (2 rows), while the catalog has a table `default.M` (1 row) too
         create_table(catalog, "default", M).append(pa.Table.from_pylist([generate_record()]))
-        node2.query(f"CREATE TABLE default.{L} (symbol Nullable(String)) ENGINE = MergeTree ORDER BY tuple()")
+        # the initiator plans the shard query, so the table exists there too, empty
+        for node in (node1, node2):
+            node.query(f"CREATE TABLE default.{L} (symbol Nullable(String)) ENGINE = MergeTree ORDER BY tuple()")
+            node.query(f"CREATE TABLE default.{M} (symbol Nullable(String)) ENGINE = Merge(default, '^{L}$')")
         node2.query(f"INSERT INTO default.{L} VALUES ('a'), ('b')")
-        node2.query(f"CREATE TABLE default.{M} (symbol Nullable(String)) ENGINE = Merge(default, '^{L}$')")
         for table in (f"default.{M}", f"default.{L}", f"{CATALOG_NAME}.`default.{M}`"):
             node2.query(f"GRANT SELECT ON {table} TO {worker}")
         node1.query(
@@ -3199,8 +3201,8 @@ def test_namespace_serialized_plan_reads_table_as_written(started_cluster):
         node1.query(f"DROP TABLE IF EXISTS default.{DM}")
         for node in (node1, node2):
             node.query(f"DROP TABLE IF EXISTS default.{S}")
-        node2.query(f"DROP TABLE IF EXISTS default.{M}")
-        node2.query(f"DROP TABLE IF EXISTS default.{L}")
+            node.query(f"DROP TABLE IF EXISTS default.{M}")
+            node.query(f"DROP TABLE IF EXISTS default.{L}")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{S}`")
         node1.query(f"DROP TABLE IF EXISTS {CATALOG_NAME}.`default.{M}`")
 
