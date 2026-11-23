@@ -1,7 +1,7 @@
 # coding: utf-8
 # Regression test: a malformed ArrowFlight prepared-statement parameter batch (a one-row String
 # whose offsets buffer is too small for the declared length) must be rejected with a clean error,
-# not read out of bounds by arrow::Array::GetScalar in buildQueryWithValues.
+# not read out of bounds when the parameters are decoded.
 #
 # The malformed batch cannot be produced by pyarrow's high-level writer (it validates buffers on
 # serialization), so the parameters are bound via a raw gRPC DoPut with hand-patched Arrow IPC
@@ -116,8 +116,12 @@ def _malformed_string_param_messages():
     body = bytes(batch_msg.body)[:4]
     # Buffer metadata for a one-row String batch: buffers[1] = offsets {offset, length=8},
     # buffers[2] = data {offset=8, length=1}. Shrink offsets to 4 bytes and empty the data buffer.
-    offsets_len_off, data_offset_off, data_len_off = 104, 112, 120
+    # Message.bodyLength is shrunk to the 4 bytes that are sent, so that the message itself is
+    # consistent and only the offsets buffer is too small for the row.
+    body_length_off, offsets_len_off, data_offset_off, data_len_off = 32, 104, 112, 120
+    assert struct.unpack_from("<q", metadata, body_length_off)[0] == 16, "unexpected IPC layout"
     assert struct.unpack_from("<q", metadata, offsets_len_off)[0] == 8, "unexpected IPC layout"
+    struct.pack_into("<q", metadata, body_length_off, 4)
     struct.pack_into("<q", metadata, offsets_len_off, 4)
     struct.pack_into("<q", metadata, data_offset_off, 4)
     struct.pack_into("<q", metadata, data_len_off, 0)
@@ -160,9 +164,7 @@ def test_prepared_statement_malformed_string_param_is_rejected():
         stmt.execute()
     message = str(exc_info.value)
     assert (
-        ("Offsets buffer" in message)
-        or ("isn't large enough" in message)
-        or ("Cannot read all data from the Arrow IPC message body" in message)
+        "offsets buffer is too small: have 4 bytes, need 8" in message
     ), f"expected an Arrow buffer validation error, got: {message}"
     lowered = message.lower()
     for unrelated in ("not bound", "session", "prepared statement handle", "does not exist"):
