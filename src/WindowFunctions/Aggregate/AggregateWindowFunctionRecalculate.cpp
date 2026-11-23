@@ -10,15 +10,6 @@ namespace DB
 namespace
 {
 
-Int64 equalFrameRun(const WindowBounds & bounds, Int64 from)
-{
-    for (Int64 to = from + 1; to < bounds.rows; ++to)
-        if (bounds.frame_start[to] != bounds.frame_start[from] || bounds.frame_end[to] != bounds.frame_end[from])
-            return to;
-
-    return bounds.rows;
-}
-
 class AggregateWindowFunctionRecalculate final : public IAggregateWindowFunction
 {
 public:
@@ -38,7 +29,7 @@ public:
     {
         for (Int64 from = 0; from < bounds.rows;)
         {
-            const Int64 to = equalFrameRun(bounds, from);
+            const Int64 to = findNextFrameChange(bounds, from, /*account_start=*/ true, /*account_end=*/ true);
             const Int64 frame_start = bounds.frame_start[from];
             const Int64 frame_end = bounds.frame_end[from];
             if (frame_start != covered_start)

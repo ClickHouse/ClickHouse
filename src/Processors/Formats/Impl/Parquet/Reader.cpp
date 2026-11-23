@@ -2576,8 +2576,9 @@ bool Reader::decodeDictionaryPage(
         /// fall back to a full scan; the dictionary is re-decoded later, unbounded and throttled, on the
         /// data-read path if the column is actually read.
         if (header.compressed_page_size < 0 || header.uncompressed_page_size < 0
-            || header.dictionary_page_header.num_values < 0)
-            return false; /// Malformed header sizes; the data-read path (unbounded) surfaces the error.
+            || header.dictionary_page_header.num_values < 0
+            || !isValidThriftEnum(column.meta->meta_data.codec, parq::_CompressionCodec_VALUES_TO_NAMES))
+            return false; /// Malformed header sizes or codec; the data-read path (unbounded) surfaces the error.
         /// The size of the payload `Dictionary::decode` will see, which is what the bound is about:
         /// `decodeDictionaryPageImpl` decompresses a compressed chunk into a `decompressed_buf` of
         /// exactly `uncompressed_page_size` bytes, while for an `UNCOMPRESSED` chunk it points the
