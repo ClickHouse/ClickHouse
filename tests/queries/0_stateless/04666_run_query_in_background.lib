@@ -36,9 +36,31 @@ function shared_native_and_http_tests()
     echo "=== $run ==="
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t"
 
+    local out
+    # These populate while the cases below run; their tables are checked at the end of the function.
+    echo '--- CREATE TABLE AS SELECT returns as soon as the SELECT has started'
+    local slow_select="SELECT number AS n FROM numbers(5) WHERE NOT ignore(sleepEachRow(1)) SETTINGS max_block_size = 1"
+    local ctas_id="ctas_${run}_${CLICKHOUSE_DATABASE}"
+    out=$($run "CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$ctas_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$ctas_id'"
+    echo "still populating after the client returned"
+
+    echo '--- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started'
+    local replace_id="replace_${run}_${CLICKHOUSE_DATABASE}"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE t_replace_slow_${run} (n UInt64) ENGINE = MergeTree ORDER BY n"
+    out=$($run "CREATE OR REPLACE TABLE t_replace_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$replace_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$replace_id'"
+    echo "still populating after the client returned"
+
+    echo '--- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started'
+    out=$($run "EXECUTE AS default CREATE TABLE t_execute_as_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "execute_as_$ctas_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = 'execute_as_$ctas_id'"
+
     echo '--- INSERT SELECT in background: no output, rows land, attributed in query_log'
     local insert_id="insert_${run}_${CLICKHOUSE_DATABASE}"
-    local out
     out=$($run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(30) WHERE NOT ignore(sleepEachRow(0.05))" "$insert_id")
     [[ -z "$out" ]] && echo "no output"
     wait_for_query_log "$(finished_in_query_log "$insert_id")"
@@ -59,35 +81,6 @@ function shared_native_and_http_tests()
     echo '--- SELECT in background discards the result'
     out=$($run "SELECT 1")
     [[ -z "$out" ]] && echo "no output"
-
-    echo '--- CREATE TABLE AS SELECT returns as soon as the SELECT has started'
-    local slow_select="SELECT number AS n FROM numbers(10) WHERE NOT ignore(sleepEachRow(1)) SETTINGS max_block_size = 1"
-    local ctas_id="ctas_${run}_${CLICKHOUSE_DATABASE}"
-    out=$($run "CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$ctas_id")
-    [[ -z "$out" ]] && echo "no output"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = '$ctas_id'"
-    echo "still populating after the client returned"
-
-    echo '--- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started'
-    local replace_id="replace_${run}_${CLICKHOUSE_DATABASE}"
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE t_replace_slow_${run} (n UInt64) ENGINE = MergeTree ORDER BY n"
-    out=$($run "CREATE OR REPLACE TABLE t_replace_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$replace_id")
-    [[ -z "$out" ]] && echo "no output"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = '$replace_id'"
-    echo "still populating after the client returned"
-
-    echo '--- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started'
-    out=$($run "EXECUTE AS default CREATE TABLE t_execute_as_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "execute_as_$ctas_id")
-    [[ -z "$out" ]] && echo "no output"
-    wait_for "count() = 1 FROM system.processes WHERE query_id = 'execute_as_$ctas_id'"
-
-    echo '--- the CREATE ... AS SELECT queries above fill their tables'
-    wait_for "count() = 10 FROM t_ctas_slow_${run}"
-    echo "created with rows"
-    wait_for "count() = 10 FROM t_replace_slow_${run}"
-    echo "replaced with rows"
-    wait_for "count() = 10 FROM t_execute_as_slow_${run}"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}; DROP TABLE t_replace_slow_${run}; DROP TABLE t_execute_as_slow_${run}"
 
     echo '--- enabling the setting for a whole session is rejected'
     $run "SET run_query_in_background = 1" "" 0 | grep -o -m1 "run_query_in_background cannot be changed with SET"
@@ -146,4 +139,12 @@ function shared_native_and_http_tests()
     out=$($run "OPTIMIZE TABLE t2 SETTINGS database = '$other_database'")
     [[ -z "$out" ]] && echo "no output"
     $CLICKHOUSE_CLIENT -q "DROP DATABASE $other_database"
+
+    echo '--- the CREATE ... AS SELECT queries above fill their tables'
+    wait_for "count() = 5 FROM t_ctas_slow_${run}"
+    echo "created with rows"
+    wait_for "count() = 5 FROM t_replace_slow_${run}"
+    echo "replaced with rows"
+    wait_for "count() = 5 FROM t_execute_as_slow_${run}"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}; DROP TABLE t_replace_slow_${run}; DROP TABLE t_execute_as_slow_${run}"
 }

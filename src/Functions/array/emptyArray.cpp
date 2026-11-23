@@ -22,18 +22,18 @@ public:
     explicit FunctionEmptyArray(const String & element_type_) : element_type(element_type_) {}
 
 private:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return getNameImpl(element_type);
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override { return "() -> Array(" + element_type + ")"; }
+    [[nodiscard]] String getSignatureString() const override { return "() -> Array(" + element_type + ")"; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnArray::create(
             DataTypeFactory::instance().get(element_type)->createColumn(),

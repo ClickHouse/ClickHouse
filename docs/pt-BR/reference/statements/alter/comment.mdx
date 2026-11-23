@@ -13,17 +13,13 @@ Adiciona, modifica ou remove um comentário da tabela, independentemente de ele 
 anteriormente ou não. A alteração no comentário é refletida tanto em [`system.tables`](/pt-BR/reference/system-tables/tables)
 quanto na consulta `SHOW CREATE TABLE`.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 Para criar uma tabela com comentário:
 
@@ -78,9 +74,7 @@ WHERE database = currentDatabase() AND name = 'table_with_comment';
 └─────────┘
 ```
 
-<div id="caveats">
-  ## Ressalvas
-</div>
+## Ressalvas {#caveats}
 
 Para tabelas Replicated, o comentário pode ser diferente entre as réplicas.
 A modificação do comentário se aplica a uma única réplica.
@@ -88,9 +82,7 @@ A modificação do comentário se aplica a uma única réplica.
 O recurso está disponível desde a versão 23.9. Ele não funciona em versões
 anteriores do ClickHouse.
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * cláusula [`COMMENT`](/pt-BR/reference/statements/create/table#comment-clause)
 * [`ALTER DATABASE ... MODIFY COMMENT`](/pt-BR/reference/statements/alter/database-comment)
