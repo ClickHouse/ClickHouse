@@ -9,6 +9,11 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Common/Exception.h>
 
+#include <fmt/ranges.h>
+
+#include <algorithm>
+#include <array>
+
 namespace DB
 {
 
@@ -94,8 +99,9 @@ void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def, boo
         {
             for (const auto & change : storage_def.settings->changes)
             {
-                if (!is_attach && change.name.starts_with("iceberg_") && change.name != "iceberg_timezone_for_timestamptz")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is used for storage. Please use the setting without `iceberg_` prefix", change.name);
+                /// Only on `CREATE`, so that an existing definition still loads.
+                if (!is_attach)
+                    checkCanBeSetForDatabase(change.name);
                 if (change.name == "disk")
                     DiskFromAST::ensureDiskIsNotInline(change.value);
             }
@@ -121,6 +127,42 @@ SettingsChanges DatabaseDataLakeSettings::allChanged() const
 bool DatabaseDataLakeSettings::hasBuiltin(std::string_view name)
 {
     return DatabaseDataLakeSettingsImpl::hasBuiltin(name);
+}
+
+/// The other settings of the Iceberg table engine tell where the metadata of a table is, which the catalog tells instead,
+/// or run background tasks that do not make sense for the tables that the database builds for every query.
+static constexpr auto iceberg_table_settings = std::to_array<std::string_view>({
+    "iceberg_format_version",
+    "iceberg_timezone_for_timestamptz",
+    "allow_experimental_iceberg_compaction",
+    "enable_cleanup_old_data_files_compaction",
+    "iceberg_compaction_lock_lease_seconds",
+    "iceberg_compaction_delay_bias",
+    "iceberg_compaction_data_cleanup",
+    "iceberg_read_with_snapshot_lease",
+    "iceberg_snapshot_lease_seconds",
+    "iceberg_outdated_snapshot_lifetime_seconds",
+    "iceberg_max_number_datafiles_to_compact",
+    "iceberg_data_file_size_lower_threshold_compaction",
+    "iceberg_compaction_max_bytes_to_merge",
+    "iceberg_compaction_max_rows_to_merge",
+});
+
+bool DatabaseDataLakeSettings::isIcebergTableSetting(std::string_view name)
+{
+    return std::ranges::find(iceberg_table_settings, DatabaseDataLakeSettingsTraits::resolveName(name)) != iceberg_table_settings.end();
+}
+
+void DatabaseDataLakeSettings::checkCanBeSetForDatabase(std::string_view name)
+{
+    /// The settings of the Iceberg table engine are told by the prefix. An unknown name is reported by `applyChanges`.
+    if (name.starts_with("iceberg_") && hasBuiltin(name) && !isIcebergTableSetting(name))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `{}` of the Iceberg table engine cannot be set for a `DataLakeCatalog` database. "
+            "The table settings that the database applies to all its Iceberg tables are: {}",
+            name,
+            fmt::join(iceberg_table_settings, ", "));
 }
 
 static const String & getSettingNameByOffset(size_t offset)

@@ -1,0 +1,2 @@
+CREATE DATABASE default_1\nENGINE = DataLakeCatalog(\'http://localhost:18181/v1\')\nSETTINGS catalog_type = \'rest\', warehouse = \'demo\', iceberg_format_version = 1, allow_experimental_iceberg_compaction = 1, iceberg_compaction_delay_bias = 1200, iceberg_max_number_datafiles_to_compact = 10
+CREATE DATABASE default_1\nENGINE = DataLakeCatalog(\'http://localhost:18181\')\nSETTINGS catalog_type = \'glue\', warehouse = \'demo\', region = \'us-east-1\', allow_experimental_iceberg_compaction = 1, iceberg_timezone_for_timestamptz = \'Asia/Tokyo\'

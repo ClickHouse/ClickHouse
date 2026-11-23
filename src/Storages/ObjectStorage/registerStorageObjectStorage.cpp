@@ -1,6 +1,7 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/DataLakeConstants.h>
+#include <Databases/DataLake/DatabaseDataLake.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -1147,6 +1148,24 @@ void registerStorageObjectStorage(StorageFactory & factory)
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
 
+/// A table created in a `DataLakeCatalog` database takes the settings of the database for new tables, unless the query
+/// sets them. For example, the storage factory creates the table when the location is in the engine arguments.
+static DataLakeStorageSettingsPtr getIcebergStorageSettings(const StorageFactory::Arguments & args)
+{
+    auto storage_settings = std::make_shared<DataLakeStorageSettings>();
+#if USE_PARQUET
+    if (args.mode == LoadingStrictnessLevel::CREATE)
+    {
+        const String database_name = args.table_id.hasDatabase() ? args.table_id.database_name : args.getLocalContext()->getCurrentDatabase();
+        if (const auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(DatabaseCatalog::instance().tryGetDatabase(database_name)))
+            storage_settings->loadFromSettingsChanges(datalake_database->getSettingsForNewTable());
+    }
+#endif
+    if (args.storage_def->settings)
+        storage_settings->loadFromQuery(*args.storage_def->settings);
+    return storage_settings;
+}
+
 void registerStorageIceberg(StorageFactory & factory);
 void registerStorageIceberg(StorageFactory & factory)
 {
@@ -1154,7 +1173,7 @@ void registerStorageIceberg(StorageFactory & factory)
         IcebergDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto storage_settings = getIcebergStorageSettings(args);
             const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
                 ? (*storage_settings)[DataLakeStorageSetting::disk].value
                 : "";
@@ -1619,7 +1638,7 @@ The settings which are stored only in the table definition, and not in the Icebe
 - the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
 - the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction` (or its alias `allow_experimental_cleanup_old_data_files_compaction`), `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_compaction_max_bytes_to_merge` and `iceberg_compaction_max_rows_to_merge`.
 
-The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
+The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings: set them for the database instead, see [table settings](/engines/database-engines/datalakecatalog#table-settings).
 
 ```sql
 ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
@@ -1639,7 +1658,7 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
         IcebergS3Definition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto storage_settings = getIcebergStorageSettings(args);
             const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
                 ? (*storage_settings)[DataLakeStorageSetting::disk].value
                 : "";
@@ -1679,7 +1698,7 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
         IcebergAzureDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto storage_settings = getIcebergStorageSettings(args);
             const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
                 ? (*storage_settings)[DataLakeStorageSetting::disk].value
                 : "";
@@ -1719,7 +1738,7 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
         IcebergHDFSDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto storage_settings = getIcebergStorageSettings(args);
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
@@ -1740,7 +1759,7 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
         IcebergLocalDefinition::storage_engine_name,
         [&](const StorageFactory::Arguments & args)
         {
-            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto storage_settings = getIcebergStorageSettings(args);
             const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
                 ? (*storage_settings)[DataLakeStorageSetting::disk].value
                 : "";

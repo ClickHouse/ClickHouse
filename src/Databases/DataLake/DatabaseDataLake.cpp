@@ -1164,6 +1164,21 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     return engine_args.args;
 }
 
+SettingsChanges DatabaseDataLake::getSettingsForNewTable() const
+{
+    /// Of the table settings, only the format version affects how a table is created. The others would only configure
+    /// the storage that `CREATE TABLE` builds, which the queries do not use: they get the table from the catalog with
+    /// the settings of the database, see `tryGetTableImpl`.
+    const auto settings = database_settings.get();
+    SettingsChanges changes;
+    for (auto & change : settings->allChanged())
+    {
+        if (change.name == "iceberg_format_version")
+            changes.push_back(std::move(change));
+    }
+    return changes;
+}
+
 /// Returns the storage type of an Iceberg table engine, or nullopt if the engine is not Iceberg.
 static std::optional<DatabaseDataLakeStorageType> getIcebergEngineStorageType(const String & engine_name)
 {
@@ -1559,12 +1574,24 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     {
         result_storage->startup();
         StoragePtr cached_storage;
+        bool settings_changed = false;
         {
             std::lock_guard lock(stateful_tables_mutex);
-            auto [it, inserted] = stateful_tables.emplace(
-                name, StatefulTable{result_storage, table_endpoint, table_uuid, settings_version});
-            if (!inserted)
-                cached_storage = it->second.storage;
+            /// `applySettingsChanges` publishes the new settings before it shuts down the cached tables under this lock,
+            /// so a table built with the previous settings is either shut down there or not cached here.
+            settings_changed = database_settings.get() != settings_version;
+            if (!settings_changed)
+            {
+                auto [it, inserted] = stateful_tables.emplace(
+                    name, StatefulTable{result_storage, table_endpoint, table_uuid, settings_version});
+                if (!inserted)
+                    cached_storage = it->second.storage;
+            }
+        }
+        if (settings_changed)
+        {
+            result_storage->shutdown(/*is_drop*/ false);
+            return tryGetTableImpl(name, context_, lightweight, ignore_if_not_iceberg, use_stateful_tables);
         }
         if (cached_storage)
         {
@@ -1877,10 +1904,24 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 {
     const auto current_settings = database_settings.get();
 
+    /// The database applies the table settings to its tables itself, so they can change for any catalog type, and the
+    /// catalog does not get them.
+    SettingsChanges catalog_settings_changes;
+    bool table_settings_changed = false;
+    for (const auto & change : settings_changes)
+    {
+        DatabaseDataLakeSettings::checkCanBeSetForDatabase(change.name);
+        if (DatabaseDataLakeSettings::isIcebergTableSetting(change.name))
+            table_settings_changed = true;
+        else
+            catalog_settings_changes.push_back(change);
+    }
+
     /// This check in some sense duplicate check in ICatalog, because it's a valid case when
     /// catalog can be unitilized here, and we actually use alter to "resurrect it". For example provide
     /// proper credentials with settings.
-    DataLake::CatalogSettingsAlterValidatorFactory::instance().validate(*current_settings, settings_changes);
+    if (!catalog_settings_changes.empty())
+        DataLake::CatalogSettingsAlterValidatorFactory::instance().validate(*current_settings, catalog_settings_changes);
 
     auto new_settings = std::make_unique<DatabaseDataLakeSettings>(*current_settings);
     new_settings->applyChanges(settings_changes);
@@ -1918,12 +1959,10 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 
     /// `use_unity_catalog_v2` is consumed by the database, not by the catalog object, so it is
     /// never handed to the catalog. Re-applying the current value is a metadata-only no-op.
-    SettingsChanges catalog_settings_changes;
-    for (const auto & change : settings_changes)
-    {
-        if (change.name != DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::use_unity_catalog_v2))
-            catalog_settings_changes.push_back(change);
-    }
+    std::erase_if(
+        catalog_settings_changes,
+        [](const auto & change)
+        { return change.name == DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::use_unity_catalog_v2); });
 
     std::shared_ptr<DataLake::ICatalog> local_catalog_snapshot;
     if (!implementation_changed)
@@ -1968,6 +2007,12 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
         std::lock_guard lock(catalog_mutex);
         resetCatalog(/* reason */ "");
     }
+
+    /// The cached tables with background compaction run with the previous table settings, and a query may not
+    /// look them up again, for example once the compaction is disabled. `tryGetTableImpl` does not cache a table
+    /// that it built with the previous settings after this.
+    if (table_settings_changed)
+        shutdownStatefulTables();
 }
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
@@ -2058,6 +2103,11 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 }
 
 void DatabaseDataLake::shutdown()
+{
+    shutdownStatefulTables();
+}
+
+void DatabaseDataLake::shutdownStatefulTables()
 {
     std::unordered_map<String, StatefulTable> tables;
     {
@@ -2439,7 +2489,21 @@ The following settings are supported:
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
 | `snapshot_loading_mode` | For Iceberg REST based catalogs: the `snapshots` query parameter of the load-table request. `all` loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. `auto` (the default) uses the `snapshot-loading-mode` that the catalog advertises in its configuration, or `all` if it advertises none. A `snapshot-loading-mode` in the catalog's `overrides` is used even when the setting is set. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response. |
+
+## Table settings {#table-settings}
+
+The catalog does not store ClickHouse settings, so they cannot be set for one table, except `iceberg_format_version` in `CREATE TABLE`.
+Some settings of the [Iceberg table engine](/engines/table-engines/integrations/iceberg) can be set for the database instead,
+which applies them to all its Iceberg tables. `ALTER DATABASE ... MODIFY SETTING` changes them for any catalog type:
+
+| Setting                 | Description                                                                             |
+|-------------------------|-----------------------------------------------------------------------------------------|
 | `iceberg_timezone_for_timestamptz` | The time zone of the `DateTime64` type that Iceberg `timestamptz` and `timestamptz_ns` columns of the tables in the database are mapped to. Default: `UTC`. |
+| `iceberg_format_version` | The format version of the new tables, unless `CREATE TABLE` sets it. Default: `2`. |
+| `allow_experimental_iceberg_compaction`, `enable_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_compaction_max_bytes_to_merge`, `iceberg_compaction_max_rows_to_merge` | The background compaction of the tables and the cleanup after it, the same as for an Iceberg table. Changing them stops the background compaction of the tables, and the next query to a table starts it again with the new values. |
+
+The other settings of the Iceberg table engine whose names start with `iceberg_` cannot be set for the database: they tell
+where the metadata file of a table is, which the catalog tells instead, or do not apply to the tables of the database.
 
 ## Examples {#examples}
 

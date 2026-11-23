@@ -1545,6 +1545,42 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_iceberg_format_version_of_database(started_cluster):
+    # The database sets the format version of its new tables unless `CREATE TABLE` sets it, whether the catalog or
+    # the storage factory writes the first metadata file, and `ALTER DATABASE` changes it for the tables created after.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_iceberg_format_version_of_database_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+
+    # The catalog places a table without engine arguments in its own warehouse bucket, so the endpoint must not name a bucket.
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"storage_endpoint": "http://minio1:9001", "iceberg_format_version": 1},
+    )
+
+    def create_at_catalog_location(table_name, table_settings=""):
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x Int32) ENGINE = IcebergS3 {table_settings}",
+            settings={"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+
+    create_at_catalog_location(f"{test_ref}_catalog_location")
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, f"{test_ref}_engine_arguments", "(x Int32)")
+    create_at_catalog_location(f"{test_ref}_query_setting", "SETTINGS iceberg_format_version = 2")
+    node.query(f"ALTER DATABASE {CATALOG_NAME} MODIFY SETTING iceberg_format_version = 2")
+    create_at_catalog_location(f"{test_ref}_after_alter")
+
+    catalog = load_catalog_impl(started_cluster)
+    format_versions = [
+        catalog.load_table(f"{root_namespace}.{test_ref}_{suffix}").metadata.format_version
+        for suffix in ["catalog_location", "engine_arguments", "query_setting", "after_alter"]
+    ]
+    assert format_versions == [1, 1, 2, 2], format_versions
+
+
 def test_create_without_engine_arguments_namespace_location_not_a_uri(started_cluster):
     # Databricks reports `not_used` as the location of a schema with managed tables.
     node = started_cluster.instances["node1"]

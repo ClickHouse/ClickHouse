@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Common/SecretString.h>
+#include <Common/SettingsChanges.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 namespace DB
@@ -98,6 +99,9 @@ public:
     StoragePtr maybeCreateTableInExternalCatalog(ContextPtr context_, const ASTCreateQuery & create, const ColumnsDescription & columns) const override;
 
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
+
+    /// The settings of the database that a new table takes unless the `CREATE TABLE` query sets them.
+    SettingsChanges getSettingsForNewTable() const;
 
     void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
 
@@ -207,6 +211,9 @@ private:
         const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables = true) const;
 
     void evictStatefulTable(const String & name) const;
+
+    /// Shuts down all the cached tables with background compaction. A query builds them again.
+    void shutdownStatefulTables();
 
     /// For tables which have merges.
     struct StatefulTable

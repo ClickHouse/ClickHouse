@@ -87,6 +87,14 @@ struct DatabaseDataLakeSettings
 
     static bool hasBuiltin(std::string_view name);
 
+    /// Whether `name` is one of the settings of the Iceberg table engine that can be set for the database, which applies
+    /// them to all its Iceberg tables. The database handles them itself, so `ALTER DATABASE ... MODIFY SETTING` can change
+    /// them for any catalog type.
+    static bool isIcebergTableSetting(std::string_view name);
+
+    /// Throws if `name` is a setting of the Iceberg table engine that cannot be set for the database.
+    static void checkCanBeSetForDatabase(std::string_view name);
+
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;
 };
