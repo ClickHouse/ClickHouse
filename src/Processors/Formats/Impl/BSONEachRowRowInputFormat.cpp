@@ -523,7 +523,10 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
                             "Cannot insert BSON Null value into non-nullable column with type {}",
                             data_type->getName());
 
-        column.insertDefault();
+        if (!data_type->isDefaultInsertTrivial())
+            data_type->insertDefaultInto(column);
+        else
+            column.insertDefault();
         return false;
     }
 
@@ -1085,7 +1088,8 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
         if (document_size < sizeof(document_size))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
-        if (min_bytes != 0 && document_size > 10 * min_bytes)
+        /// Same as `document_size > 10 * min_bytes`, but without overflow for huge `min_bytes`.
+        if (min_bytes != 0 && (document_size + 9ULL) / 10 > min_bytes)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
@@ -1111,7 +1115,8 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); },
+        /*supports_reset_parser=*/ true);
     factory.registerFileExtension("bson", "BSONEachRow");
 
     factory.setDocumentation("BSONEachRow", Documentation{

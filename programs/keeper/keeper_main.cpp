@@ -103,8 +103,13 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We do allow `dlopen()` in case of OpenSSL FIPS build,
 /// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
 ///
+/// `USE_GPU` lifts it for the same reason `programs/main.cpp` does - the CUDA runtime reaches a
+/// device only by `dlopen`.
+///
 /// Not on WebAssembly: see the comment in `programs/main.cpp`.
-#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
+/// Exported even under `-fvisibility=hidden`: otherwise libc would use its real `dlopen`.
+#pragma GCC visibility push(default)
 extern "C"
 {
     void * dlopen(const char *, int);
@@ -132,6 +137,7 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#pragma GCC visibility pop
 #endif
 
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
@@ -186,7 +192,7 @@ int main(int argc_, char ** argv_)
     updatePHDRCache();
 
 #if !defined(USE_MUSL)
-    checkHarmfulEnvironmentVariables(argv_);
+    checkHarmfulEnvironment(argv_);
 #endif
 
     /// This is used for testing. For example,

@@ -2,7 +2,6 @@
 -- Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not.
 -- So a text index whose expression compares to an empty string was never matched by name.
 
-SET enable_analyzer = 1; -- `optimize_empty_string_comparisons` is an analyzer pass
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_count_from_text_index = 0;
 

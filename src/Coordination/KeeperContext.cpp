@@ -40,6 +40,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool use_lsmt_storage;
     extern const CoordinationSettingsBool storage_memory_only;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
+    extern const CoordinationSettingsUInt64 write_log_entry_version;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
     extern const CoordinationSettingsMilliseconds container_gc_period_ms;
 }
@@ -89,10 +90,10 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
     for (const auto feature_flag : enabled_by_default_feature_flags)
         feature_flags.enableFeatureFlag(feature_flag);
 
-    system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+    system_nodes_with_data[String(keeper_api_feature_flags_path)] = feature_flags.getFeatureFlags();
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
-    system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
+    system_nodes_with_data[String(keeper_api_version_path)] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
@@ -102,13 +103,14 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     const auto keeper_az = PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
     if (!keeper_az.empty())
     {
-        system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
+        system_nodes_with_data[String(keeper_availability_zone_path)] = keeper_az;
         LOG_INFO(getLogger("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
     }
 
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    server_id = config.getInt("keeper_server.server_id", -1);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     remove_orphaned_nodes_on_startup = config.getBool("keeper_server.remove_orphaned_nodes_on_startup", false);
 
@@ -593,13 +595,14 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
         if (feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ))
             feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
         else
-            system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::ZOOKEEPER_COMPATIBLE));
+            system_nodes_with_data[String(keeper_api_version_path)] = toString(static_cast<uint8_t>(KeeperApiVersion::ZOOKEEPER_COMPATIBLE));
 
-        system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+        system_nodes_with_data[String(keeper_api_feature_flags_path)] = feature_flags.getFeatureFlags();
 
     }
 
     validateWriteSnapshotVersion(getCoordinationSettings());
+    validateWriteLogEntryVersion(getCoordinationSettings());
 
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
     {
@@ -646,6 +649,16 @@ void KeeperContext::validateWriteSnapshotVersion(const CoordinationSettings & se
             static_cast<int>(SnapshotVersion::V9), write_version);
 }
 
+void KeeperContext::validateWriteLogEntryVersion(const CoordinationSettings & settings) const
+{
+    const uint64_t write_version = settings[CoordinationSetting::write_log_entry_version];
+
+    if (write_version > MAX_SUPPORTED_LOG_ENTRY_VERSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported write log entry version {} (must be between 0 and {})",
+            write_version, MAX_SUPPORTED_LOG_ENTRY_VERSION);
+}
+
 static UInt64 calculateMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
@@ -681,6 +694,7 @@ void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
     /// The exception propagates to the config reloader, which logs it and keeps the
     /// previously applied settings.
     validateWriteSnapshotVersion(*merged);
+    validateWriteLogEntryVersion(*merged);
 
     std::lock_guard lock(settings_mutex);
     merged->version = next_coordination_settings_version++;
@@ -720,10 +734,13 @@ bool KeeperContext::localLogsPreprocessed() const
     return local_logs_preprocessed;
 }
 
-void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
+bool KeeperContext::waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms)
 {
     std::unique_lock lock(local_logs_preprocessed_cv_mutex);
-    local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
+    local_logs_preprocessed_cv.wait_for(
+        lock, saturatedWaitMilliseconds(wait_timeout_ms), [this] { return shutdown_called || local_logs_preprocessed; });
+    /// The wait also ends on shutdown, which is not the same thing as the logs being preprocessed.
+    return local_logs_preprocessed;
 }
 
 const CoordinationSettings & KeeperContext::getFixedCoordinationSettings() const

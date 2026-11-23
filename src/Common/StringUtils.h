@@ -147,6 +147,12 @@ inline std::string_view trimWhitespace(std::string_view str)
     return str;
 }
 
+/// The part of a URL before its query string or fragment, i.e. before the first '?' or '#'.
+inline std::string_view stripQueryAndFragment(std::string_view url)
+{
+    return url.substr(0, url.find_first_of("?#"));
+}
+
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;
@@ -414,7 +420,10 @@ inline void trimRight(std::string_view & str, char c = ' ')
 
 inline void trimRight(std::string & str, char c = ' ')
 {
-    str.erase(str.find_last_not_of(c) + 1);
+    /// `find_last_not_of` answers `npos` for a string that is entirely `c`, and `npos + 1` only
+    /// lands on the 0 this wants by wrapping.
+    const size_t last_kept = str.find_last_not_of(c);
+    str.erase(last_kept == std::string::npos ? 0 : last_kept + 1);
 }
 
 inline void trim(std::string_view & str, char c = ' ')
