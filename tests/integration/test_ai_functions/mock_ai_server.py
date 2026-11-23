@@ -94,6 +94,10 @@ Endpoints:
   POST /v2/rerank_no_score           — like `/v2/rerank` but omits `relevance_score` from every result.
   POST /v2/rerank_tokens_dup_index   — `/v2/rerank_tokens` with every result reusing `index` 0, so a
       billed response still fails validation.
+  POST /v2/rerank_flaky_body         — like `/v2/rerank`, but for the first N requests after
+      `/set-flaky?count=N` it sends `200 OK` with the full `Content-Length` and only the first half of
+      the JSON body, then closes the connection: a transport failure in the middle of the body, which
+      must be retried rather than surface as a parse error of the truncated body.
 """
 
 import http.server
@@ -111,7 +115,8 @@ DEFAULT_EMBED_DIM = 4
 _LOCK = threading.Lock()
 LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 
-# Number of upcoming requests to the flaky endpoints (`/v1/chat/flaky`, `/v1/embeddings_flaky`)
+# Number of upcoming requests to the flaky endpoints (`/v1/chat/flaky`, `/v1/embeddings_flaky`,
+# `/v2/rerank_flaky_body`)
 # that should fail with a simulated transient network error before they start succeeding.
 # Set via `GET /set-flaky?count=N`. Used to exercise the network-error retry path.
 FLAKY = {"fails_remaining": 0}
@@ -675,6 +680,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/v2/rerank_flaky_body":
+            with _LOCK:
+                should_fail = FLAKY["fails_remaining"] > 0
+                if should_fail:
+                    FLAKY["fails_remaining"] -= 1
+            if should_fail:
+                self._send_json_truncated(200, make_rerank_response(body))
+            else:
+                self._send_json(200, make_rerank_response(body))
+            return
+
         if parsed.path == "/v2/rerank_error":
             self._send_json(500, make_error_response("rerank failure"))
             return
@@ -708,6 +724,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_json_truncated(self, status, obj):
+        """Announce the whole body in `Content-Length`, send only its first half, and close the
+        connection, so the client fails while reading the body, after the status and the headers."""
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body[: len(body) // 2])
+        self.wfile.flush()
+        self.close_connection = True
 
     def _send_raw(self, status, body_bytes, content_type="text/plain"):
         self.send_response(status)

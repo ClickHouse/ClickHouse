@@ -388,6 +388,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_rerank_flaky_body AS "
+            f"provider = 'cohere', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v2/rerank_flaky_body', "
+            f"model = 'test-rerank-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_rerank_dup_index AS "
             f"provider = 'cohere', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v2/rerank_dup_index', "
@@ -2664,6 +2671,36 @@ def test_relevance_const_query_single_request(started_cluster):
     assert int(events["input_tokens"]) == 0
     assert int(events["output_tokens"]) == 0
     assert int(events["search_units"]) == 1
+
+
+def test_relevance_retries_on_truncated_body(started_cluster):
+    """A connection that fails in the middle of the response body, after `200 OK`, is a transport
+    error and is retried; it must not surface as a non-retriable parse error of the partial body."""
+    query = "capital of France"
+    fill_relevance_docs()
+    set_flaky(1)
+    qid = unique_query_id("relevance_truncated_body")
+    try:
+        result = instance.query(
+            f"SELECT id, aiRelevance('{query}', text, map('credentials', 'ai_rerank_flaky_body')) "
+            "FROM relevance_docs ORDER BY id",
+            settings={"ai_function_max_retries": 2, "ai_function_retry_initial_delay_ms": 1, "max_threads": 1},
+            query_id=qid,
+        )
+    finally:
+        set_flaky(0)
+    rows = [line.split("\t") for line in result.strip().splitlines()]
+    assert len(rows) == len(RELEVANCE_DOCUMENTS)
+    for id_, score in rows:
+        assert parse_nullable_float(score) == pytest.approx(
+            expected_rerank_score(query, RELEVANCE_DOCUMENTS[int(id_) - 1]), abs=1e-4
+        )
+    events = get_profile_events(qid)
+    # The truncated attempt and the successful retry of the single batch.
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == len(RELEVANCE_DOCUMENTS)
+    retried, failed, throttled = _request_outcome_events(qid)
+    assert (retried, failed, throttled) == (1, 0, 0)
 
 
 def test_relevance_batching(started_cluster):
