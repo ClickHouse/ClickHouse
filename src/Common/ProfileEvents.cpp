@@ -581,7 +581,6 @@
     M(QueryPipelineBuildMicroseconds, "Total time spent constructing the QueryPipeline from the optimized QueryPlan.", ValueType::Microseconds) \
     \
     M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \
-    M(DeltaLakeStatsPrunedFiles, "Number of files of DeltaLake tables skipped by the statistics in the log of the table, when the data files are taken from the Delta Lake metadata cache", ValueType::Number) \
     M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
     M(DeltaLakeScannedFiles, "Number of files scanned during DeltaLake scan callbacks", ValueType::Number) \
     \

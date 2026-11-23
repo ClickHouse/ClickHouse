@@ -28,23 +28,14 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeletionVector.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/StatsPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
-#include <arrow/array.h>
-#include <arrow/c/bridge.h>
-#include <arrow/record_batch.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 
 namespace DB::ErrorCodes
 {
@@ -64,7 +55,6 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
-    extern const Event DeltaLakeStatsPrunedFiles;
     extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
 }
@@ -85,124 +75,6 @@ namespace
 bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
 {
     return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
-}
-
-bool hasDeletionVector(const ScannedDataFile & file)
-{
-    return file.deletion_vector.has_value() || hasDeletionVector(file.dv_info.get());
-}
-
-template <typename ArrayType>
-std::shared_ptr<ArrayType> getArrowField(const std::shared_ptr<arrow::Array> & array, const std::string & name)
-{
-    auto typed = std::dynamic_pointer_cast<ArrayType>(array);
-    if (!typed)
-        throw DB::Exception(
-            DB::ErrorCodes::DELTA_KERNEL_ERROR,
-            "Column `{}` of the scan metadata has an unexpected type {}",
-            name, array ? array->type()->ToString() : "null");
-    return typed;
-}
-
-template <typename ArrayType>
-std::shared_ptr<ArrayType> getArrowColumn(const arrow::RecordBatch & batch, const std::string & name)
-{
-    return getArrowField<ArrayType>(batch.GetColumnByName(name), name);
-}
-
-template <typename ArrayType>
-std::shared_ptr<ArrayType> getArrowStructField(const arrow::StructArray & array, const std::string & name)
-{
-    return getArrowField<ArrayType>(array.GetFieldByName(name), name);
-}
-
-std::optional<UInt64> getNumRecords(const std::string & stats)
-{
-    Poco::JSON::Parser parser;
-    const auto object = parser.parse(stats).extract<Poco::JSON::Object::Ptr>();
-    if (!object || !object->has("numRecords"))
-        return std::nullopt;
-    const auto value = object->get("numRecords");
-    if (!value.isInteger())
-        return std::nullopt;
-    return value.convert<UInt64>();
-}
-
-template <typename OnFile>
-void forEachArrowScanFile(ffi::ScanMetadataArrowResult & result, OnFile && on_file)
-{
-    auto imported = arrow::ImportRecordBatch(
-        reinterpret_cast<ArrowArray *>(&result.arrow_data.array),
-        reinterpret_cast<ArrowSchema *>(&result.arrow_data.schema));
-    if (!imported.ok())
-        DB::throwFromArrowStatus(imported.status(), DB::ErrorCodes::DELTA_KERNEL_ERROR, "Failed to import the scan metadata");
-    const auto & batch = **imported;
-    DB::ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(batch);
-
-    if (result.selection_vector.len > static_cast<size_t>(batch.num_rows()))
-        throw DB::Exception(
-            DB::ErrorCodes::DELTA_KERNEL_ERROR,
-            "The selection vector of the scan metadata has {} rows, while the batch has {}",
-            result.selection_vector.len, batch.num_rows());
-
-    const auto paths = getArrowColumn<arrow::StringArray>(batch, "path");
-    const auto sizes = getArrowColumn<arrow::Int64Array>(batch, "size");
-    const auto stats = getArrowColumn<arrow::StringArray>(batch, "stats");
-    const auto deletion_vectors = getArrowColumn<arrow::StructArray>(batch, "deletionVector");
-    const auto storage_types = getArrowStructField<arrow::StringArray>(*deletion_vectors, "storageType");
-    const auto dv_paths = getArrowStructField<arrow::StringArray>(*deletion_vectors, "pathOrInlineDv");
-    const auto dv_offsets = getArrowStructField<arrow::Int32Array>(*deletion_vectors, "offset");
-    const auto dv_sizes = getArrowStructField<arrow::Int32Array>(*deletion_vectors, "sizeInBytes");
-    const auto dv_cardinalities = getArrowStructField<arrow::Int64Array>(*deletion_vectors, "cardinality");
-
-    for (size_t row = 0; row < result.selection_vector.len; ++row)
-    {
-        if (!result.selection_vector.ptr[row])
-            continue;
-
-        const auto i = static_cast<int64_t>(row);
-        if (paths->IsNull(i) || sizes->IsNull(i))
-            throw DB::Exception(DB::ErrorCodes::DELTA_KERNEL_ERROR, "A selected file of the scan metadata has no path or size");
-
-        auto file = std::make_shared<ScannedDataFile>();
-        file->path = paths->GetString(i);
-        file->size = sizes->Value(i);
-        if (!stats->IsNull(i))
-        {
-            file->stats = stats->GetString(i);
-            file->num_records = getNumRecords(*file->stats);
-        }
-
-        if (!deletion_vectors->IsNull(i) && !storage_types->IsNull(i))
-        {
-            const auto storage_type = storage_types->GetView(i);
-            if (storage_type.size() != 1 || dv_paths->IsNull(i) || dv_sizes->IsNull(i) || dv_cardinalities->IsNull(i))
-                throw DB::Exception(
-                    DB::ErrorCodes::DELTA_KERNEL_ERROR, "The deletion vector of file `{}` is incomplete", file->path);
-            file->deletion_vector.emplace(DeletionVectorDescriptor{
-                .storage_type = storage_type[0],
-                .path_or_inline_dv = dv_paths->GetString(i),
-                .offset = dv_offsets->IsNull(i) ? std::nullopt : std::optional<Int32>(dv_offsets->Value(i)),
-                .size_in_bytes = dv_sizes->Value(i),
-                .cardinality = dv_cardinalities->Value(i),
-            });
-        }
-
-        auto transform = ffi::get_transform_for_row(row, result.transforms);
-        if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
-            file->transform.emplace(transform.some._0);
-
-        on_file(std::move(file));
-    }
-}
-
-using KernelArrowScanMetadata = std::unique_ptr<ffi::ScanMetadataArrowResult, decltype(&ffi::free_scan_metadata_arrow_result)>;
-
-KernelArrowScanMetadata nextArrowScanMetadata(ffi::SharedScanMetadataIterator * iterator, ffi::SharedExternEngine * engine)
-{
-    return KernelArrowScanMetadata(
-        KernelUtils::unwrapResult(ffi::scan_metadata_next_arrow(iterator, engine), "scan_metadata_next_arrow"),
-        &ffi::free_scan_metadata_arrow_result);
 }
 
 /// A data file with the size its `add` action records.
@@ -236,7 +108,6 @@ public:
     Iterator(
         std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
         KernelHelperPtr helper_,
-        DB::ObjectStoragePtr object_storage_,
         const ReadSchema & read_schema_,
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
@@ -257,7 +128,6 @@ public:
         , kernel_snapshot_state(kernel_snapshot_state_)
         , captured_credentials_fingerprint(helper_->getCredentialsFingerprint())
         , helper(helper_)
-        , object_storage(std::move(object_storage_))
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
@@ -280,13 +150,6 @@ public:
                 partition_columns_,
                 physical_names_map_,
                 DB::Context::getGlobalContextInstance());
-            if (metadata_cache)
-                stats_pruner.emplace(
-                    *filter,
-                    table_schema_,
-                    partition_columns_,
-                    physical_names_map_,
-                    DB::Context::getGlobalContextInstance());
 
             LOG_TEST(log, "Using filter expression");
         }
@@ -457,13 +320,6 @@ public:
 
                     LOG_TEST(log, "Starting iterator loop (predicate exception: {})", bool(engine_predicate_exception));
 
-                    if (collector)
-                    {
-                        if (scanArrowScanMetadata())
-                            finishScan();
-                        return;
-                    }
-
                     while (!shutdown.load())
                     {
                         bool have_scan_data_res = KernelUtils::unwrapResult(
@@ -488,7 +344,37 @@ public:
                         }
                         else
                         {
-                            finishScan();
+                            bool scan_completed = false;
+                            {
+                                std::lock_guard lock(next_mutex);
+                                iterator_finished = true;
+                                scan_completed = !scan_exception && !shutdown;
+                                LOG_TEST(log, "Set finished");
+                            }
+                            data_files_cv.notify_all();
+
+                            if (collector && collector->isActive() && scan_completed)
+                                metadata_cache->set(metadata_cache_key, collector->release());
+
+                            LOG_TRACE(
+                                log, "All data files at version {} were listed "
+                                "(scan exception: {}, total data files: {}, total rows: {}, total bytes: {})",
+                                kernel_snapshot_state->snapshot_version,
+                                bool(scan_exception),
+                                total_data_files,
+                                total_rows ? DB::toString(*total_rows) : "Unknown",
+                                total_bytes);
+
+                            if (update_stats_func
+                                && !scan_exception
+                                && !use_engine_predicate)
+                            {
+                                update_stats_func(SnapshotStats{
+                                    .total_bytes = total_bytes,
+                                    /// total_rows is an optional statistic, but total_bytes is obligatory.
+                                    .total_rows = total_rows
+                                });
+                            }
                             return;
                         }
                     }
@@ -507,61 +393,6 @@ public:
             setScanException();
             data_files_cv.notify_all();
             LOG_DEBUG(log, "Exception during scan_metadata_next");
-        }
-    }
-
-    bool scanArrowScanMetadata()
-    {
-        while (!shutdown.load())
-        {
-            auto result = nextArrowScanMetadata(scan_data_iterator.get(), kernel_snapshot_state->engine.get());
-            if (!result)
-                return true;
-
-            bool keep_scanning = true;
-            forEachArrowScanFile(*result, [&](ScannedDataFilePtr file)
-            {
-                if (keep_scanning)
-                    keep_scanning = enqueueFile(std::move(file));
-            });
-            if (!keep_scanning)
-                return false;
-        }
-        return false;
-    }
-
-    void finishScan()
-    {
-        bool scan_completed = false;
-        {
-            std::lock_guard lock(next_mutex);
-            iterator_finished = true;
-            scan_completed = !scan_exception && !shutdown;
-            LOG_TEST(log, "Set finished");
-        }
-        data_files_cv.notify_all();
-
-        if (collector && collector->isActive() && scan_completed)
-            metadata_cache->set(metadata_cache_key, collector->release());
-
-        LOG_TRACE(
-            log, "All data files at version {} were listed "
-            "(scan exception: {}, total data files: {}, total rows: {}, total bytes: {})",
-            kernel_snapshot_state->snapshot_version,
-            bool(scan_exception),
-            total_data_files,
-            total_rows ? DB::toString(*total_rows) : "Unknown",
-            total_bytes);
-
-        if (update_stats_func
-            && !scan_exception
-            && !use_engine_predicate)
-        {
-            update_stats_func(SnapshotStats{
-                .total_bytes = total_bytes,
-                /// total_rows is an optional statistic, but total_bytes is obligatory.
-                .total_rows = total_rows
-            });
         }
     }
 
@@ -627,14 +458,6 @@ public:
                 continue;
             }
 
-            if (stats_pruner.has_value() && scan_item->stats && stats_pruner->canBePruned(*scan_item->stats))
-            {
-                ProfileEvents::increment(ProfileEvents::DeltaLakeStatsPrunedFiles);
-
-                LOG_TEST(log, "Skipping file {} according to the statistics", object->getPath());
-                continue;
-            }
-
             parseDVHandle(*scan_item, object);
 
             if (callback)
@@ -672,13 +495,7 @@ public:
         auto & metadata = object->data_lake_metadata;
         chassert(metadata.has_value());
 
-        if (scan_item.deletion_vector)
-        {
-            auto excluded_rows = readDeletionVector(*scan_item.deletion_vector, *helper, object_storage, getContext());
-            if (excluded_rows->size() > 0)
-                metadata->excluded_rows = std::move(excluded_rows);
-        }
-        else if (auto * dv_info_ptr = scan_item.dv_info.get(); dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr))
+        if (auto * dv_info_ptr = scan_item.dv_info.get(); dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr))
         {
             /// `row_indexes_from_dv` returns a vector of row indexes
             /// that should be *removed* from the result set
@@ -776,22 +593,10 @@ public:
         if (transform.tag == ffi::OptionalValue<ffi::SharedExpression *>::Tag::Some)
             transform_handle.emplace(transform.some._0);
 
+        /// Read before `dv_info_handle` is moved into `data_files` below.
+        const bool has_deletion_vector = hasDeletionVector(dv_info_handle.get());
+
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-
-        auto file = std::make_shared<ScannedDataFile>();
-        file->path = KernelUtils::fromDeltaString(path);
-        file->size = size;
-        if (stats)
-            file->num_records = stats->num_records;
-        file->dv_info = std::move(dv_info_handle);
-        file->transform = std::move(transform_handle);
-
-        return context->enqueueFile(std::move(file));
-    }
-
-    bool enqueueFile(ScannedDataFilePtr file)
-    {
-        auto * context = this;
         if (context->shutdown)
         {
             LOG_TEST(
@@ -831,14 +636,18 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        const bool has_deletion_vector = hasDeletionVector(*file);
-        const auto size = file->size;
-        const auto num_records = file->num_records;
+        auto file = std::make_shared<ScannedDataFile>();
+        file->path = KernelUtils::fromDeltaString(path);
+        file->size = size;
+        if (stats)
+            file->num_records = stats->num_records;
+        file->dv_info = std::move(dv_info_handle);
+        file->transform = std::move(transform_handle);
 
         LOG_TEST(
             context->log,
             "Scanned file: {}, size: {}, num records: {}",
-            file->path, size, num_records ? DB::toString(*num_records) : "Unknown");
+            file->path, size, stats ? DB::toString(stats->num_records) : "Unknown");
 
         if (context->collector)
             context->collector->add(file);
@@ -850,8 +659,8 @@ public:
 
         context->total_data_files += 1;
         context->total_bytes += size;
-        if (num_records && !has_deletion_vector && context->total_rows.has_value())
-            context->total_rows.value() += *num_records;
+        if (stats && !has_deletion_vector && context->total_rows.has_value())
+            context->total_rows.value() += stats->num_records;
         else
             context->total_rows = std::nullopt;
 
@@ -873,11 +682,9 @@ private:
     KernelScan scan;
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
-    std::optional<StatsPruner> stats_pruner;
     std::optional<DB::ActionsDAG> filter;
 
     KernelHelperPtr helper;
-    const DB::ObjectStoragePtr object_storage;
     DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
@@ -990,53 +797,25 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
     auto [metadata_cache, metadata_cache_key] = getMetadataCache(context, *state);
     if (metadata_cache)
     {
-        SnapshotStats stats{.total_bytes = 0, .total_rows = 0};
-        auto add_file = [&](const ScannedDataFile & file)
-        {
-            *stats.total_bytes += static_cast<size_t>(file.size);
-            if (file.num_records && !hasDeletionVector(file) && stats.total_rows)
-                *stats.total_rows += *file.num_records;
-            else
-                stats.total_rows = std::nullopt;
-        };
-
-        size_t total_data_files = 0;
         if (auto cached_data_files = metadata_cache->get(metadata_cache_key))
         {
+            SnapshotStats stats{.total_bytes = 0, .total_rows = 0};
             for (const auto & file : cached_data_files->files)
-                add_file(*file);
-            total_data_files = cached_data_files->files.size();
-        }
-        else
-        {
-            auto scan = KernelUtils::unwrapResult(
-                ffi::scan(state->snapshot.get(), state->engine.get(), /* predicate */nullptr, /* schema */nullptr), "scan");
-            KernelScan scan_handle(scan);
-            KernelScanMetadataIterator scan_data_iterator(KernelUtils::unwrapResult(
-                ffi::scan_metadata_iter_init(state->engine.get(), scan_handle.get()), "scan_metadata_iter_init"));
-
-            SnapshotDataFilesCollector collector(metadata_cache->maxSizeInBytes());
-            while (auto result = nextArrowScanMetadata(scan_data_iterator.get(), state->engine.get()))
             {
-                forEachArrowScanFile(*result, [&](ScannedDataFilePtr file)
-                {
-                    ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
-                    ++total_data_files;
-                    add_file(*file);
-                    collector.add(file);
-                });
+                *stats.total_bytes += static_cast<size_t>(file->size);
+                if (file->num_records && !hasDeletionVector(file->dv_info.get()) && stats.total_rows)
+                    *stats.total_rows += *file->num_records;
+                else
+                    stats.total_rows = std::nullopt;
             }
-            if (collector.isActive())
-                metadata_cache->set(metadata_cache_key, collector.release());
+            LOG_TEST(
+                log, "Snapshot at version {} data files from the metadata cache: {}, total rows: {}, total bytes: {}",
+                state->snapshot_version,
+                cached_data_files->files.size(),
+                stats.total_rows ? DB::toString(*stats.total_rows) : "Unknown",
+                *stats.total_bytes);
+            return stats;
         }
-
-        LOG_TEST(
-            log, "Snapshot at version {} data files with the metadata cache: {}, total rows: {}, total bytes: {}",
-            state->snapshot_version,
-            total_data_files,
-            stats.total_rows ? DB::toString(*stats.total_rows) : "Unknown",
-            *stats.total_bytes);
-        return stats;
     }
 
     KernelScan fallback_scan;
@@ -1056,9 +835,15 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 
     struct StatsVisitor
     {
-        explicit StatsVisitor(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+        StatsVisitor(ffi::SharedExternEngine * engine_, std::optional<size_t> max_cached_weight)
+            : engine(engine_)
+        {
+            if (max_cached_weight)
+                collector.emplace(*max_cached_weight);
+        }
 
         ffi::SharedExternEngine * const engine;
+        std::optional<SnapshotDataFilesCollector> collector;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -1069,7 +854,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
 
         static bool visit(
             ffi::NullableCvoid engine_context,
-            struct ffi::KernelStringSlice /* path */,
+            struct ffi::KernelStringSlice path,
             int64_t size,
             int64_t /* mod_time */,
             const ffi::Stats * stats,
@@ -1090,6 +875,18 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
                 visitor->total_rows.value() += stats->num_records;
             else
                 visitor->total_rows = std::nullopt;
+
+            if (visitor->collector && visitor->collector->isActive())
+            {
+                auto file = std::make_shared<ScannedDataFile>();
+                file->path = KernelUtils::fromDeltaString(path);
+                file->size = size;
+                if (stats)
+                    file->num_records = stats->num_records;
+                file->dv_info = std::move(dv_info_handle);
+                file->transform = std::move(transform_handle);
+                visitor->collector->add(file);
+            }
             return true;
         }
 
@@ -1119,7 +916,8 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         }
     };
 
-    StatsVisitor visitor(state->engine.get());
+    StatsVisitor visitor(
+        state->engine.get(), metadata_cache ? std::optional<size_t>(metadata_cache->maxSizeInBytes()) : std::nullopt);
 
     while (true)
     {
@@ -1137,6 +935,9 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl(const DB::Conte
         if (!have_scan_data)
             break;
     }
+
+    if (visitor.collector && visitor.collector->isActive())
+        metadata_cache->set(metadata_cache_key, visitor.collector->release());
 
     LOG_TEST(
         log, "Snapshot at version {} data files: {}, total rows: {}, total bytes: {}",
@@ -1319,7 +1120,6 @@ DB::ObjectIterator TableSnapshot::iterate(
     return std::make_shared<TableSnapshot::Iterator>(
         state,
         helper,
-        object_storage,
         schema->read_schema,
         schema->table_schema,
         schema->physical_names_map,
