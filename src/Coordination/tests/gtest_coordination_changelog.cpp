@@ -2779,8 +2779,6 @@ TYPED_TEST(CoordinationChangelogTest, CompressedEntriesStayCachedAcrossRestart)
     check_readable(changelog, 35);
 
     appendAndWaitDurable(changelog, 36, 45);
-    // flush() twice: the second one applies the locations of the uncompressed appends and evicts.
-    changelog.flush();
     changelog.flush();
     check_readable(changelog, 45);
 
@@ -2826,26 +2824,43 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadDoesNotPlanIntoCompressedFile)
     EXPECT_TRUE(fs::exists("./logs/changelog_11_20.bin.zstd"));
     EXPECT_TRUE(fs::exists("./logs/changelog_21_30.bin.zstd"));
 
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = false, .compress_logs = true, .rotate_interval = 10, .latest_logs_cache_entry_count_threshold = 5},
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024},
-        this->keeper_context);
-    changelog.init(0, 0);
+    const DB::LogFileSettings cache_settings{.force_sync = false, .compress_logs = true, .rotate_interval = 10, .latest_logs_cache_entry_count_threshold = 5};
+    const DB::ReadAheadSettings readahead_settings{.enabled = true, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024};
 
-    auto entry = changelog.entry_at_ext(1, /*for_commit=*/true);
-    ASSERT_NE(entry, nullptr);
-    EXPECT_EQ(entry->get_term(), 1u);
+    {
+        DB::KeeperLogStore changelog(cache_settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+        changelog.init(0, 0);
 
-    auto peer_entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
-    ASSERT_NE(peer_entries, nullptr);
-    ASSERT_EQ(peer_entries->size(), 5u);
-    for (uint64_t i = 0; i < 5; ++i)
-        EXPECT_EQ((*peer_entries)[i]->get_term(), i + 1);
+        auto entry = changelog.entry_at_ext(1, /*for_commit=*/true);
+        ASSERT_NE(entry, nullptr);
+        EXPECT_EQ(entry->get_term(), 1u);
 
-    auto entries = changelog.log_entries(1, 26);
-    ASSERT_NE(entries, nullptr);
-    EXPECT_EQ(entries->size(), 25u);
+        auto peer_entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
+        ASSERT_NE(peer_entries, nullptr);
+        ASSERT_EQ(peer_entries->size(), 5u);
+        for (uint64_t i = 0; i < 5; ++i)
+            EXPECT_EQ((*peer_entries)[i]->get_term(), i + 1);
+
+        auto entries = changelog.log_entries(1, 26);
+        ASSERT_NE(entries, nullptr);
+        EXPECT_EQ(entries->size(), 25u);
+    }
+
+    // Both read-ahead plans of the evicted uncompressed prefix cover changelog_1_10.bin and stop before the compressed file.
+    {
+        DB::Changelog changelog(this->log, cache_settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+        changelog.readChangelogAndInitWriter(0, 0);
+        const auto check_window = [](const DB::LogReadPlan & plan)
+        {
+            ASSERT_TRUE(plan.read_ahead_window.has_value());
+            ASSERT_EQ(plan.read_ahead_window->size(), 1u);
+            EXPECT_EQ(plan.read_ahead_window->front().first_index, 1u);
+            EXPECT_EQ(plan.read_ahead_window->front().count, 10u);
+            EXPECT_FALSE(plan.read_ahead_window->front().file_description->is_compressed);
+        };
+        check_window(changelog.getReadAheadPlan(1, 6, 0));
+        check_window(changelog.getCommitReadPlan(1));
+    }
 }
 
 // Tests: per-peer read-ahead

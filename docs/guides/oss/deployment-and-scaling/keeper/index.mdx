@@ -747,6 +747,8 @@ The limits for the latest logs cache are controlled by:
 
 Whichever limit is reached first caps the cache; setting one to `0` leaves only the other in force.
 
+Entries of compressed changelog files (`compress_logs = true`) are never evicted, because they cannot be read back from disk: they stay in the cache until log compaction, regardless of these limits.
+
 The size threshold counts the memory a cached entry really occupies, not just the size of the log
 entry itself: every cached entry also carries the objects that keep it reachable, and its allocation
 is rounded up to an allocator size class. For small entries that overhead is several times the
