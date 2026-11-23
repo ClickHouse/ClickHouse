@@ -1,7 +1,10 @@
 #include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Processors/Formats/Impl/ORC/RLE.h>
+#include <Processors/Formats/Impl/ORC/Timezone.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -51,7 +54,7 @@ struct WriterContext
     size_t block_size = 0;
     bool enable_index = false;
     double dictionary_key_size_threshold = 0;
-    const DateLUTImpl * timezone = nullptr;
+    std::optional<TimezoneOffset> timezone_offset;
     bool timezone_is_utc = true;
     /// 2015-01-01 00:00:00 in the time zone of the writer, as seconds since the epoch.
     Int64 epoch_offset = 0;
@@ -188,7 +191,7 @@ public:
         stripe_statistics.reset();
     }
 
-    virtual size_t estimateSize() const
+    [[nodiscard]] virtual size_t estimateSize() const
     {
         return present_stream.estimateSize();
     }
@@ -376,7 +379,7 @@ public:
             child->mergeStripeStatsIntoFileStats();
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         size_t size = ColumnWriter::estimateSize() + estimateOwnSize();
         for (const auto & child : children)
@@ -397,7 +400,7 @@ protected:
     {
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT, 0, {}});
     }
-    virtual size_t estimateOwnSize() const { return 0; }
+    [[nodiscard]] virtual size_t estimateOwnSize() const { return 0; }
 
     VectorWithMemoryTracking<std::unique_ptr<ColumnWriter>> children;
 };
@@ -519,7 +522,7 @@ protected:
         encodings.push_back({Proto::ColumnEncodingKind::DIRECT_V2, 0, {}});
     }
 
-    size_t estimateOwnSize() const override { return length_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateOwnSize() const override { return length_stream.estimateSize(); }
 
 private:
     OutputByteStream length_stream;
@@ -605,7 +608,7 @@ protected:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), tag_stream.getOutput()});
     }
 
-    size_t estimateOwnSize() const override { return tag_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateOwnSize() const override { return tag_stream.estimateSize(); }
 
 private:
     OutputByteStream tag_stream;
@@ -662,7 +665,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
@@ -707,7 +710,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
@@ -766,7 +769,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { encoder.recordPosition(positions); }
@@ -822,7 +825,7 @@ public:
         streams.push_back({Proto::StreamKind::DATA, static_cast<UInt32>(column_id), data_stream.getOutput()});
     }
 
-    size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
+    [[nodiscard]] size_t estimateSize() const override { return ColumnWriter::estimateSize() + data_stream.estimateSize(); }
 
 protected:
     void recordDataPositions(VectorWithMemoryTracking<UInt64> & positions) override { data_stream.recordPosition(positions); }
@@ -936,7 +939,7 @@ public:
         }
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + blob.size() + value_ends.size() * sizeof(UInt64);
     }
@@ -960,7 +963,7 @@ protected:
     }
 
 private:
-    std::string_view getValue(size_t i) const
+    [[nodiscard]] std::string_view getValue(size_t i) const
     {
         size_t begin = i ? value_ends[i - 1] : 0;
         return std::string_view(blob.data() + begin, value_ends[i] - begin);
@@ -1082,10 +1085,16 @@ public:
             Int64 nano = 0;
             if (scale)
             {
-                /// For the values before the epoch, the nanoseconds are negative (as in the Arrow ORC adapter).
+                /// The seconds are rounded down, so the nanoseconds are not negative.
                 Int64 value = unalignedLoad<Int64>(data + (offset + i) * sizeof(Int64));
                 secs = value / multiplier;
-                nano = (value % multiplier) * nanos_multiplier;
+                Int64 rest = value % multiplier;
+                if (rest < 0)
+                {
+                    rest += multiplier;
+                    --secs;
+                }
+                nano = rest * nanos_multiplier;
             }
             else
             {
@@ -1093,24 +1102,29 @@ public:
                 nano = 0;
             }
 
-            /// The statistics have the milliseconds rounded down and the rest of the nanoseconds, which is not negative.
-            Int64 nano_millis = nano / 1000000;
-            Int64 nano_rest = nano % 1000000;
-            if (nano_rest < 0)
+            /// As in the Apache ORC writers (Java `TimestampTreeWriter`, C++ `TimestampColumnWriter`), a negative
+            /// timestamp with more than 999999 nanoseconds is stored with one more second, which the readers subtract.
+            /// Between -1 and 0 seconds the stored seconds would be 0 and nothing is subtracted, so store the epoch,
+            /// which all readers read the same way (see the documentation of the format).
+            /// Keep in sync with `replaceTimestampsStoredAsEpoch`.
+            if (secs == -1 && nano > 999999)
             {
-                nano_rest += 1000000;
-                --nano_millis;
+                secs = 0;
+                nano = 0;
             }
+            const Int64 stored_secs = secs + (secs < 0 && nano > 999999);
+
+            /// The statistics have the milliseconds rounded down and the rest of the nanoseconds.
             Int64 utc_seconds = secs;
             Int64 millis = 0;
             Int64 encoded_seconds = 0;
-            if ((!is_utc && common::addOverflow(secs, static_cast<Int64>(context.timezone->timezoneOffset(secs)), utc_seconds))
+            if ((!is_utc && common::addOverflow(secs, (*context.timezone_offset)(secs), utc_seconds))
                 || common::mulOverflow(utc_seconds, Int64{1000}, millis)
-                || common::addOverflow(millis, nano_millis, millis)
-                || common::subOverflow(secs + (secs < 0 && nano > 999999), epoch_offset, encoded_seconds))
+                || common::addOverflow(millis, nano / 1000000, millis)
+                || common::subOverflow(stored_secs, epoch_offset, encoded_seconds))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Timestamp (seconds={}, nanoseconds={}) in ORC column {} is out of the range supported by the ORC format", secs, nano, column_id);
-            index_statistics.updateTimestamp(millis, static_cast<Int32>(nano_rest));
+            index_statistics.updateTimestamp(millis, static_cast<Int32>(nano % 1000000));
 
             seconds_encoder.write(encoded_seconds);
             nanos_encoder.write(formatNanos(nano));
@@ -1129,7 +1143,7 @@ public:
         streams.push_back({Proto::StreamKind::SECONDARY, static_cast<UInt32>(column_id), nanos_stream.getOutput()});
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + seconds_stream.estimateSize() + nanos_stream.estimateSize();
     }
@@ -1236,7 +1250,7 @@ public:
         streams.push_back({Proto::StreamKind::SECONDARY, static_cast<UInt32>(column_id), scale_stream.getOutput()});
     }
 
-    size_t estimateSize() const override
+    [[nodiscard]] size_t estimateSize() const override
     {
         return ColumnWriter::estimateSize() + value_stream.estimateSize() + scale_stream.estimateSize();
     }
@@ -1337,10 +1351,10 @@ Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStrea
     context->block_size = options.compression_block_size;
     context->enable_index = options.row_index_stride > 0;
     context->dictionary_key_size_threshold = options.dictionary_key_size_threshold;
-    context->timezone = &DateLUT::instance(options.timezone_name);
-    context->timezone_is_utc = options.timezone_name == "GMT" || options.timezone_name == "UTC";
+    context->timezone_offset.emplace(DateLUT::instance(options.timezone_name));
+    context->timezone_is_utc = context->timezone_offset->isUTC();
     static constexpr Int64 UTC_2015_01_01 = 1420070400;
-    context->epoch_offset = UTC_2015_01_01 - context->timezone->timezoneOffset(UTC_2015_01_01);
+    context->epoch_offset = UTC_2015_01_01 - (*context->timezone_offset)(UTC_2015_01_01);
 
     if (schema->getKind() != STRUCT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The root type of ORC file must be a struct");
@@ -1487,6 +1501,56 @@ void Writer::close()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC postscript is too large: {} bytes", postscript_data.size());
     write(postscript_data);
     write(std::string(1, static_cast<char>(postscript_data.size())));
+}
+
+ColumnPtr replaceTimestampsStoredAsEpoch(const ColumnPtr & column)
+{
+    if (const auto * const_column = checkAndGetColumn<ColumnConst>(column.get()))
+    {
+        auto data = replaceTimestampsStoredAsEpoch(const_column->getDataColumnPtr());
+        if (data == const_column->getDataColumnPtr())
+            return column;
+        return ColumnConst::create(data, const_column->size());
+    }
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+    {
+        auto nested = replaceTimestampsStoredAsEpoch(nullable->getNestedColumnPtr());
+        if (nested == nullable->getNestedColumnPtr())
+            return column;
+        return ColumnNullable::create(nested, nullable->getNullMapColumnPtr());
+    }
+    const auto * timestamps = checkAndGetColumn<ColumnDateTime64>(column.get());
+    if (!timestamps)
+        return column;
+
+    const Int64 multiplier = common::exp10_i64(static_cast<int>(timestamps->getScale()));
+    const Int64 nanos_multiplier = common::exp10_i64(9 - static_cast<int>(timestamps->getScale()));
+    /// The seconds are -1 and the nanoseconds are more than 999999, as in `TimestampColumnWriter::add`.
+    auto is_stored_as_epoch = [&](const DateTime64 & timestamp)
+    {
+        const Int64 value = timestamp.value;
+        return value < 0 && value > -multiplier && (value + multiplier) * nanos_multiplier > 999999;
+    };
+    const auto & data = timestamps->getData();
+    if (std::none_of(data.begin(), data.end(), is_stored_as_epoch))
+        return column;
+
+    auto result = IColumn::mutate(column);
+    for (auto & timestamp : assert_cast<ColumnDateTime64 &>(*result).getData())
+    {
+        if (is_stored_as_epoch(timestamp))
+            timestamp = 0;
+    }
+    return result;
+}
+
+void replaceTimestampsStoredAsEpoch(Chunk & chunk)
+{
+    const size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = replaceTimestampsStoredAsEpoch(column);
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }

@@ -270,7 +270,7 @@ bool tryWrapInLiterals(
     return wrapped;
 }
 
-const std::unordered_set<String> comparison_functions = {
+[[clang::no_destroy]] const std::unordered_set<String> comparison_functions = {
     "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
 };
 

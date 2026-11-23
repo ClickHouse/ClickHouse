@@ -7,12 +7,6 @@
 
 #include <base/defines.h>
 
-/// Not used directly anymore (the allocation machinery moved to the .cpp), but kept so
-/// the set of symbols this widely-included header transitively provides (e.g. config.h
-/// macros) does not change for downstream translation units.
-#include <Common/AllocationInterceptors.h>
-#include <Common/CurrentMemoryTracker.h>
-
 
 /// The throw is kept in a cold, never-inlined helper so that allocate() (which is
 /// inlined into hot allocation sites) does not carry exception-handling machinery.
