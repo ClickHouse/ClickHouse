@@ -50,6 +50,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             configuration.http_method,
             nullptr,
             /*distributed_processing=*/ true,
+            globCaller(),
             /*is_replayed_definition=*/ false,
             /*check_redirect_access=*/ !is_table_definition);
     }
