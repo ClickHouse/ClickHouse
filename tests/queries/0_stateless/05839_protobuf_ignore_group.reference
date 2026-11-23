@@ -1,7 +1,7 @@
 empty group
 7	ok
-varint in group
-bits64 in group
-length delimited in group
-nested group
-bits32 in group
+invalid wire type in group
+truncated varint in group
+truncated 64 bit field in group
+truncated length delimited field in group
+truncated 32 bit field in group
