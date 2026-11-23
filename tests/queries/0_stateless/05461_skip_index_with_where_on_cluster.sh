@@ -40,13 +40,8 @@ run -q "
 "
 $CLICKHOUSE_CLIENT -q "SELECT table, name FROM system.data_skipping_indices WHERE database = currentDatabase() ORDER BY ALL"
 
-echo '2. An index copied by CREATE AS is refused on the legacy entry format, where each host copies its own source.'
-for version in 2 8
-do
-    run --distributed_ddl_entry_format_version $version -q "
-        CREATE TABLE ${CLICKHOUSE_DATABASE}.copy_$version ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.dst
-    "
-done
+echo '2. An index copied by CREATE AS is checked on the initiator, which sends the hosts the copied definition.'
+run -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.copy ON CLUSTER test_shard_localhost AS ${CLICKHOUSE_DATABASE}.dst"
 $CLICKHOUSE_CLIENT -q "SELECT table, name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table LIKE 'copy%' ORDER BY ALL"
 
 echo '3. A condition the user may not run is refused.'
