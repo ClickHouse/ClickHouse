@@ -75,8 +75,9 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
+    /// The plan names a resolved table: `db`.`table` is read as written, not as a table path in the current database.
     auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(
-        identifier, context, /*allow_compound_table_identifier_qualification=*/ true);
+        identifier, context, /*allow_compound_table_identifier_qualification=*/ false);
     if (!resolve_result)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
 
