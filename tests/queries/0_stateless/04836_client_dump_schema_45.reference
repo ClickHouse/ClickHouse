@@ -1,0 +1,16 @@
+--- the local host in another letter case ---
+uppercase_host: dump rc=0
+uppercase_host: order zzz_src aaa_dict
+uppercase_host: replay rc=0
+--- a table that only a setting of the source query reads ---
+query_setting: dump rc=0
+query_setting: order zzz_src aaa_dict
+query_setting: replay rc=0
+--- another host is not a local dependency ---
+remote_host: dump rc=0
+remote_host: order aaa_dict zzz_src
+remote_host: replay rc=0
+--- the local host on a port that is not the server port is not a local dependency ---
+foreign_port: dump rc=0
+foreign_port: order aaa_dict zzz_src
+foreign_port: replay rc=0

@@ -1033,6 +1033,16 @@ const ASTFunction * asEvalCall(const IAST & node)
     return function && function->name == "eval" ? function : nullptr;
 }
 
+/// Parses a SELECT the way `executeQuery` does: settings such as `filter` become query text, so their reads are found too.
+ASTPtr parseSelectWithConstructionSettings(const String & text)
+{
+    ParserSelectWithUnionQuery parser;
+    ASTPtr query = parseQuery(parser, text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    wrapPerArmConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    wrapNestedConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return query;
+}
+
 /// The query an `eval` call generates, parsed like `TableFunctionEval::parseArguments` does, when its argument is a string
 /// literal or a constant expression that folds the same outside the server: it runs no subquery and reads neither the session
 /// nor the server. Null otherwise, or when the text is not a SELECT, which the server cannot analyze either.
@@ -1074,13 +1084,7 @@ ASTPtr tryParseEvalQuery(const ASTFunction & eval, const ContextPtr & context)
         return nullptr;
     try
     {
-        ParserSelectWithUnionQuery parser;
-        ASTPtr query
-            = parseQuery(parser, literal->value.safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        /// `eval` turns settings such as `filter` into query text the same way, so their reads are found too.
-        wrapPerArmConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        wrapNestedConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        return query;
+        return parseSelectWithConstructionSettings(literal->value.safeGet<String>());
     }
     catch (const Exception &)
     {
@@ -1332,7 +1336,8 @@ bool engineCanBind(ReferenceKind kind, const String & engine)
 }
 
 /// The query of a dictionary's local `CLICKHOUSE` source, which an eager dictionary runs at CREATE; null for any other source.
-ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary, const ASTExpressionList * attributes)
+ASTPtr localDictionarySourceQuery(
+    const ASTDictionary & dictionary, const ASTExpressionList * attributes, const ClusterLocality & clusters)
 {
     const auto * source = dictionary.source;
     if (!source || !source->elements || !equalsCaseInsensitive(source->name, "clickhouse"))
@@ -1341,16 +1346,31 @@ ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary, const ASTExp
     String database;
     String table;
     String where;
+    String host = "localhost";
+    std::optional<UInt64> port;
+    UInt64 secure = 0;
     for (const auto & element : source->elements->children)
     {
         const auto * pair = element->as<ASTPair>();
         const auto * literal = pair && pair->second ? pair->second->as<ASTLiteral>() : nullptr;
-        if (!literal || literal->value.getType() != Field::Types::String)
+        if (!literal)
+            continue;
+        if (equalsCaseInsensitive(pair->first, "port") || equalsCaseInsensitive(pair->first, "secure"))
+        {
+            /// A port or a flag that is not a plain number is not shown to be this server's.
+            if (literal->value.getType() != Field::Types::UInt64)
+                return nullptr;
+            if (equalsCaseInsensitive(pair->first, "port"))
+                port = literal->value.safeGet<UInt64>();
+            else
+                secure = literal->value.safeGet<UInt64>();
+        }
+        if (literal->value.getType() != Field::Types::String)
             continue;
         const String & value = literal->value.safeGet<String>();
-        if (equalsCaseInsensitive(pair->first, "host") && value != "localhost" && value != "127.0.0.1" && value != "::1")
-            return nullptr;
-        if (equalsCaseInsensitive(pair->first, "query"))
+        if (equalsCaseInsensitive(pair->first, "host"))
+            host = value;
+        else if (equalsCaseInsensitive(pair->first, "query"))
             query = value;
         else if (equalsCaseInsensitive(pair->first, "db"))
             database = value;
@@ -1372,11 +1392,15 @@ ASTPtr localDictionarySourceQuery(const ASTDictionary & dictionary, const ASTExp
     }
     if (query.empty())
         return nullptr;
+    /// Like the source itself, it is local when the host is this server and the port, if any, is the server's own.
+    if (port && *port != (secure ? clusters.tcp_port_secure() : clusters.tcp_port))
+        return nullptr;
+    if (remoteAddressLocality(host.contains(':') ? "[" + host + "]" : host, secure != 0, clusters) != Locality::Local)
+        return nullptr;
     try
     {
         /// The source replaces `{condition}` before it runs the query, so the query parses only without it.
-        ParserSelectWithUnionQuery parser;
-        return parseQuery(parser, removeWhereConditionPlaceholder(query), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        return parseSelectWithConstructionSettings(removeWhereConditionPlaceholder(query));
     }
     catch (const Exception &)
     {
@@ -2708,7 +2732,7 @@ std::vector<TableInfo> resolveTables(
             const auto * create = create_ast->as<ASTCreateQuery>();
             if (create && create->dictionary)
             {
-                select_ast = localDictionarySourceQuery(*create->dictionary, create->dictionary_attributes_list);
+                select_ast = localDictionarySourceQuery(*create->dictionary, create->dictionary_attributes_list, clusters);
                 if (!select_ast)
                     continue;
             }
