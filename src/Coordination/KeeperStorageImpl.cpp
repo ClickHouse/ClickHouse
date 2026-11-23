@@ -741,8 +741,7 @@ static Coordination::Error preprocess(
 
     KeeperNodeStats new_parent_stats = parent_node->stats;
 
-    /// Replicas visit the subtree in different orders, so do not stop at the first node without Delete permission:
-    /// the result may depend only on the subtree size and the set of its nodes.
+    /// The visit order differs between replicas, so the result must depend only on the subtree size and its set of nodes.
     bool has_node_without_delete_permission = false;
     std::deque<std::pair<std::string, typename Storage::UncommittedNodeRef>> nodes_to_remove;
     bool visited_all = storage.nodes.visitUncommittedRecursive(zk_request.path, zk_request.remove_nodes_limit,
