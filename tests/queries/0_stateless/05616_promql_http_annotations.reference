@@ -109,8 +109,8 @@ success 1 ,"warnings":["PromQL warning: quantile value should be between 0 and 1
 query_range: rate(foo[5m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
 --- the annotation probe is a helper of the query: public result limits and quotas do not apply to it
-query: count(rate({__name__=~"foo|baz"}[5m]))
-success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:12)"]
+query: count(rate({__name__=~"foo|total_requests"}[5m]))
+success 1 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:12)","PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"total_requests\" (1:12)"]
 query: rate(foo[5m])
 success 2 ,"infos":["PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"foo\" (1:6)"]
 query: rate(foo[5m])

@@ -33,7 +33,8 @@ OUT="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.out"
 function request()
 {
     ${CLICKHOUSE_CURL} -sS --get "${BASE}/query" --data-urlencode "query=rate(foo[5m])" --data-urlencode "time=1700000600" \
-        --data-urlencode "database=${CLICKHOUSE_DATABASE}" --data-urlencode "table=ts" "$@" > "$OUT"
+        --data-urlencode "database=${CLICKHOUSE_DATABASE}" --data-urlencode "table=ts" \
+        --data-urlencode "enable_time_series_aggregate_functions=1" "$@" > "$OUT"
 }
 
 # Prints the status of the response, whether its error has the expected text, and the type and the exception code

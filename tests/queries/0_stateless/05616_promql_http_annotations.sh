@@ -138,9 +138,9 @@ range 'quantile_over_time(2, baz[5m])'
 range 'rate(foo[5m])'
 
 echo "--- the annotation probe is a helper of the query: public result limits and quotas do not apply to it"
-# The probe of this query returns the two non-counter metric names (foo and baz), so it is limited
+# The probe of this query returns the two non-counter metric names (foo and total_requests), so it is limited
 # by max_result_rows=1 if it is not exempt from the request's public result limits.
-instant $T 'count(rate({__name__=~"foo|baz"}[5m]))' --data-urlencode 'max_result_rows=1'
+instant $T 'count(rate({__name__=~"foo|total_requests"}[5m]))' --data-urlencode 'max_result_rows=1'
 # The probe is a separate query if it is not exempt from the quota; with a quota of one query the
 # request succeeds only if the probe is not charged against the user's quota.
 $CLICKHOUSE_CLIENT -q "
