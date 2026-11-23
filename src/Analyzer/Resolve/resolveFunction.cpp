@@ -3095,7 +3095,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getColumn();
+            /// A deferred right side of `IN` needs no column: it becomes a set, unless the call is folded with a constant left side.
+            if (!(is_special_function_in && function_argument_index == 1 && !all_arguments_constants
+                  && constant_node->tryGetDeferredField()))
+                argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
