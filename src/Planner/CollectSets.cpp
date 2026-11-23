@@ -21,6 +21,7 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 
+#include <memory>
 #include <unordered_set>
 
 
@@ -84,10 +85,10 @@ public:
             || function_node->getFunctionOrThrow()->useNullAsUnknownSemanticsForIn();
 
         const auto & settings = planner_context.getQueryContext()->getSettingsRef();
-        std::optional<Settings> explicit_null_in_settings;
+        std::unique_ptr<Settings> explicit_null_in_settings;
         if (!use_null_as_unknown && settings[Setting::in_null_as_unknown])
         {
-            explicit_null_in_settings.emplace(settings);
+            explicit_null_in_settings = std::make_unique<Settings>(settings);
             explicit_null_in_settings->set("in_null_as_unknown", Field(0u));
         }
         const Settings & set_settings = explicit_null_in_settings ? *explicit_null_in_settings : settings;
