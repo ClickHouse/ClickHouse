@@ -49,7 +49,8 @@ StoragePtr TableFunctionURLCluster::getStorage(
             configuration.headers,
             configuration.storageHTTPMethod(),
             nullptr,
-            /*distributed_processing=*/ true);
+            /*distributed_processing=*/ true,
+            globCaller());
     }
 
     return std::make_shared<StorageURLCluster>(
