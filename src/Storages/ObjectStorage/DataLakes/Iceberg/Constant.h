@@ -183,6 +183,8 @@ DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_previous_versions_max, write.metadata.previous-versions-max);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_statistics, partition-statistics);
 DEFINE_ICEBERG_FIELD_ALIAS(statistics_path, statistics-path);
+DEFINE_ICEBERG_FIELD_ALIAS(metadata_file_size_in_bytes, file-size-in-bytes);
+DEFINE_ICEBERG_FIELD_ALIAS(file_footer_size_in_bytes, file-footer-size-in-bytes);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);
