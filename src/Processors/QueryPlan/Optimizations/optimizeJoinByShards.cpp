@@ -562,10 +562,11 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 TableJoin::JoinOnClause clause;
                 clause.key_names_left = multiway_join->getKeyNames(0);
                 clause.key_names_right = multiway_join->getKeyNames(i);
+                VectorWithMemoryTracking<size_t> matched_clause_keys;
                 auto sharding = findCommonPrimaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
                     frame.results[i]->joins.sources.front(), frame.results[i]->dag,
-                    clause);
+                    clause, matched_clause_keys);
 
                 can_split = !sharding.empty() && (shardings.empty() || sharding.is_reverse_order == shardings.front().is_reverse_order);
                 shardings.push_back(std::move(sharding));
