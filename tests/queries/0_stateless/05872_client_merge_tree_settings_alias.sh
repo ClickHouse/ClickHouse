@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The client adds the MergeTree settings from its command line to `CREATE TABLE` only if the query does not set them,
 # including by an alias. Otherwise the added canonical name would override the value set by the alias.
 
-$CLICKHOUSE_CLIENT \
+$CLICKHOUSE_CLIENT --allow_merge_tree_settings \
     --object_shared_data_serialization_version_for_small_parts map \
     --min_bytes_for_object_shared_data_main_serialization_version 12345 \
     -q "CREATE TABLE test (json JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS object_shared_data_serialization_version_for_zero_level_parts = 'advanced'"
