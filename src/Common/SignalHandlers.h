@@ -73,8 +73,7 @@ bool isCrashed();
 
 void blockSignals(const std::vector<int> & signals);
 
-/// The handled signals a sender directs at the whole process. A daemon blocks them in every thread but the signal
-/// listener, which takes them only while it waits for the next record (see `SignalListener::run`).
+/// The handled signals a sender directs at the whole process. In a daemon only the signal listener thread takes them.
 const std::vector<int> & processDirectedHandledSignals();
 
 /// The handled signals that are delivered asynchronously, as opposed to the deadly signals
