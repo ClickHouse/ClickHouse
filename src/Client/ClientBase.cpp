@@ -4248,7 +4248,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// being typed, judged by an opening bracket that is never closed. The parser
         /// may well stop before the end of input on such a statement, so the
         /// end-of-input test below cannot see it. Only opens trigger it; an excess
-        /// closing bracket is a real syntax error.
+        /// or a mismatched closing bracket is a real syntax error.
         ///
         /// A `;` anywhere in what remains of the buffer means the user has already
         /// terminated the statement, so it is a syntax error to report, not an
@@ -4299,16 +4299,16 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                     }
                     else if (token.type == KQLTokenType::ClosingRoundBracket || token.type == KQLTokenType::ClosingSquareBracket)
                     {
-                        /// An excess closing bracket is a real syntax error to submit; a
-                        /// closer that does not match the innermost opener ends the scan
-                        /// (like the SQL check), so an opener before it still counts.
+                        /// An excess closing bracket is a real syntax error to submit, and so
+                        /// is a closer that does not match the innermost opener (like in the
+                        /// SQL check below): no further input can repair `print ([1)]`.
                         if (openers.empty())
                             return false;
                         const KQLTokenType expected_opener = token.type == KQLTokenType::ClosingRoundBracket
                             ? KQLTokenType::OpeningRoundBracket
                             : KQLTokenType::OpeningSquareBracket;
                         if (openers.back() != expected_opener)
-                            break;
+                            return false;
                         openers.pop_back();
                     }
                 }
@@ -4338,16 +4338,17 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 }
                 else if (it->type == TokenType::ClosingRoundBracket || it->type == TokenType::ClosingSquareBracket)
                 {
-                    /// An excess closing bracket is a real syntax error to submit; a closer that
-                    /// does not match the innermost opener ends the scan, so an opener before it
-                    /// still counts.
+                    /// An excess closing bracket is a real syntax error to submit, and so is a
+                    /// closer that does not match the innermost opener: no further input can
+                    /// repair the bracket sequence of `SELECT ([1)]` or `SELECT (1]`, so keeping
+                    /// the buffer open would only swallow every <ENTER>.
                     if (openers.empty())
                         return false;
                     const TokenType expected_opener = it->type == TokenType::ClosingRoundBracket
                         ? TokenType::OpeningRoundBracket
                         : TokenType::OpeningSquareBracket;
                     if (openers.back() != expected_opener)
-                        break;
+                        return false;
                     openers.pop_back();
                 }
             }
@@ -4420,10 +4421,12 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// up to it instead is not reliable, because a SQL token can straddle the boundary: e.g.
         /// in the KQL `print @'\'; print (` the SQL lexer takes the closing quote of the verbatim
         /// string for an escaped one and swallows the rest of the buffer into one string token.
-        /// (The new position inherits the limits and counters; switching to the new tokens counts
-        /// as one backtrack.)
+        /// The new position inherits the limits. The backtracking counter starts from zero: it
+        /// is the beginning of a statement, which the executor parses with fresh counters (see
+        /// the statement loop below), and moving to the new tokens must not count against it.
         auto resume_at = [&](const char * resume_pos)
         {
+            token_iterator.backtracks = 0;
             resumed_tokens.emplace_back(resume_pos, end, 0, true);
             token_iterator = IParser::Pos(resumed_tokens.back(), token_iterator);
         };
@@ -4474,10 +4477,9 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
             /// The `SET` may also have changed the parser limits, and the
             /// current parse position still carries the old ones. Rebuild it
-            /// at the same token with the limits from the updated settings
-            /// (`Pos::operator=` keeps the accumulated backtrack count, so
-            /// a lowered `max_parser_backtracks` still applies to the whole
-            /// buffer, never less strictly than the executor's reparse).
+            /// at the same token with the limits from the updated settings.
+            /// (The backtracking counter is reset for the next statement by
+            /// the statement loop below.)
             max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
             max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
             token_iterator = IParser::Pos(token_iterator, max_parser_depth, max_parser_backtracks);
@@ -4546,6 +4548,13 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 ++token_iterator;
             if (token_iterator->isEnd())
                 return false;
+
+            /// `executeMultiQuery` parses every statement with a parse position of its own,
+            /// so each one gets the whole `max_parser_backtracks` budget. Give each statement
+            /// fresh counters here too: with one budget for the whole buffer, a long run of
+            /// complete statements would exhaust it, and the resulting exception would submit
+            /// the buffer without ever looking at its unfinished last statement.
+            token_iterator.backtracks = 0;
 
             const char * statement_begin = token_iterator->begin;
 

@@ -1,0 +1,71 @@
+#!/usr/bin/expect -f
+
+# Regression test: in single-line interactive mode the continuation probe
+# `ClientBase::queryNeedsContinuation` must judge the whole query after an explicit
+# line continuation (a trailing `\`). The lines before the `\` are kept by
+# `LineReader::readLine`, not in the edit buffer, so a probe that sees only the
+# buffer judges the last line without its beginning and under the wrong dialect:
+# `1 +` after `SELECT \` was submitted as a syntax error, and `print` after
+# `INSERT ...; SET dialect = 'kusto'; \` ran the `INSERT` and the `SET` while the
+# Kusto statement was still being typed.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --output-format PrettyCompact --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# `SELECT \` asks for the next line with the continuation prompt, as before.
+send -- "SELECT \\\r"
+expect ":-] "
+# `SELECT 1 +` is unfinished, so <ENTER> must fold the buffer instead of submitting.
+send -- "1 +\r"
+# Give the client time to react to the <ENTER> on its own: input that arrives in a
+# single read is inserted as one pasted block, which would fold the buffer
+# regardless of what the continuation probe decides.
+sleep 1
+send -- "1\r"
+expect {
+    "Syntax error" { exit 1 }
+    -re {│ +2 │} {}
+}
+expect ":) "
+
+send -- "CREATE TABLE t (x UInt8) ENGINE = Memory\r"
+expect ":) "
+
+# The statements before the `\` must not run while the Kusto `print` after it is
+# unfinished: the probe has to see the `SET dialect` to judge `print` as Kusto.
+send -- "INSERT INTO t VALUES (1); SET dialect = 'kusto'; \\\r"
+expect ":-] "
+send -- "print\r"
+sleep 1
+# Complete the statement on the folded line: the whole query now runs as one.
+send -- "7\r"
+expect {
+    "Syntax error" { exit 1 }
+    "found end of query" { exit 1 }
+    -re {│ +7 │} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof

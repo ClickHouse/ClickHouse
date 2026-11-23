@@ -684,8 +684,24 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                     break;
                 }
 
-            if (!ends_with_extender && query_needs_continuation(std::string(text)))
-                return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+            /// After an explicit line-extender, the earlier lines of the query are held by
+            /// `readLine` in `pending_line`, and this buffer only continues them. Probe the
+            /// whole query, exactly as `readLine` is going to assemble it: the buffer alone
+            /// would be judged without its beginning, and possibly as the wrong dialect, e.g.
+            /// `print` after `SET dialect = 'kusto'; \` is an unfinished Kusto statement.
+            /// An empty buffer is left alone: it ends the query, as before.
+            if (!ends_with_extender && !trimmed.empty())
+            {
+                std::string query;
+                if (!pending_line.empty())
+                {
+                    query = pending_line;
+                    query += '\n';
+                }
+                query += text;
+                if (query_needs_continuation(query))
+                    return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+            }
         }
 
         last_is_delimiter = false;

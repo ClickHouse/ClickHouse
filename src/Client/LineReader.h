@@ -103,6 +103,12 @@ protected:
 
     String input;
 
+    /// The lines of the query that `readLine` has already accumulated while it is reading
+    /// the next one: the lines before an explicit extender (`\`), without the extender.
+    /// The current line continues this text, so whoever judges the query being typed
+    /// (see `ReplxxLineReader`) has to look at both.
+    String pending_line;
+
     bool multiline;
 
     Patterns extenders;

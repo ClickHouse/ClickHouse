@@ -264,7 +264,9 @@ LineReader::LineReader
 
 String LineReader::readLine(const String & first_prompt, const String & second_prompt)
 {
-    String line;
+    /// The accumulated lines live in `pending_line`, so `readOneLine` can see them.
+    String & line = pending_line;
+    line.clear();
     bool need_next_line = false;
 
     while (auto status = readOneLine(need_next_line ? second_prompt : first_prompt))
@@ -325,7 +327,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         prev_line = line;
     }
 
-    return line;
+    return std::move(pending_line);
 }
 
 LineReader::InputStatus LineReader::readOneLine(const String & prompt)
