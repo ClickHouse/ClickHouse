@@ -1475,6 +1475,31 @@ def test_required_privileges():
     instance.query(f"RESTORE ALL FROM {backup_name}", user="u1")
 
 
+def test_definition_of_another_table():
+    create_and_fill_table(n=5)
+
+    instance.query("CREATE USER u1")
+    instance.query("GRANT READ ON DISK TO u1")
+    instance.query("GRANT INSERT, CREATE ON test.table TO u1")
+    instance.query("GRANT TABLE ENGINE ON MergeTree TO u1")
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+    instance.query("DROP TABLE test.table")
+
+    # The rights are checked for `test.table`, so a backup whose definition is of another table is refused.
+    path = os.path.join(get_path_to_backup(backup_name), "metadata/test/table.sql")
+    definition = open(path).read()
+    assert "test.`table`" in definition
+    with open(path, "w") as f:
+        f.write(definition.replace("test.`table`", "test.`tabl2`"))
+
+    assert "is of another object" in instance.query_and_get_error(
+        f"RESTORE TABLE test.table FROM {backup_name}", user="u1"
+    )
+    assert instance.query("EXISTS test.tabl2") == "0\n"
+
+
 def test_system_table():
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE system.numbers TO {backup_name}")
