@@ -515,11 +515,13 @@ struct GatherColumn
     bool in_row_store = false;
     size_t emit_bytes = 0;
     size_t emit_rows = 0;
+    size_t emit_dictionary_bytes = 0;
+    size_t emit_dictionary_values_bytes = 0;
 };
 
 /// `byteSize` of `column` once the join emits it: a `ColumnReplicated` or `ColumnConst`, also below another column, repeats
-/// the average row of its nested column and a `ColumnSparse` its default, where a `LowCardinality` costs its indexes per
-/// row and its non-shared dictionary once.
+/// the average row of its nested column and a `ColumnSparse` its default, where a `LowCardinality` costs its indexes and
+/// each dictionary value they point to once.
 size_t getMaterializedByteSize(const IColumn & column);
 
 /// One column an emit table is asked for. `position` is the column's position in the saved block
@@ -572,9 +574,13 @@ public:
         /// Owns the shape when no live block resolved one - see `resolveEmitColumns`.
         MutableColumnPtr shape_prototype;
         bool in_row_store = false;
-        /// Logical bytes of this column over the live rows of the stored blocks, and those rows.
+        /// Logical bytes of this column over the live rows of the stored blocks, and those rows. A `LowCardinality` counts its
+        /// indexes there; its dictionary values count in `emit_dictionary_bytes`, each value the stored rows can point
+        /// to once, and in `emit_dictionary_values_bytes`, one value per index.
         size_t emit_bytes = 0;
         size_t emit_rows = 0;
+        size_t emit_dictionary_bytes = 0;
+        size_t emit_dictionary_values_bytes = 0;
     };
 
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit

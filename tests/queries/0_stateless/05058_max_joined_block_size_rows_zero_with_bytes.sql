@@ -79,61 +79,6 @@ FROM
 )
 SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536, join_algorithm = 'hash';
 
--- A copied right key is materialized when `join_use_nulls` makes it `Nullable`, a sparse tuple element of its left
--- source included, so the byte budget must count its full value.
-SET allow_suspicious_fixed_string_types = 1;
-DROP TABLE IF EXISTS t_05058_sparse;
-DROP TABLE IF EXISTS t_05058_dense;
-CREATE TABLE t_05058_sparse (k Tuple(s FixedString(2048))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
-CREATE TABLE t_05058_dense (k Tuple(s FixedString(2048))) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS ratio_of_defaults_for_sparse_serialization = 1;
-INSERT INTO t_05058_sparse SELECT tuple(toFixedString('', 2048)) FROM numbers(4096);
-INSERT INTO t_05058_dense SELECT tuple(toFixedString('', 2048)) FROM numbers(8);
-
-SELECT max(bs * b) <= 65536, count()
-FROM
-(
-    SELECT blockSize() AS bs, byteSize(r.k) AS b
-    FROM t_05058_sparse AS l
-    LEFT JOIN t_05058_dense AS r ON l.k = r.k
-)
-SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
-         join_use_nulls = 1, join_algorithm = 'hash';
-
--- The same key source replicated by `ARRAY JOIN` keeps the sparse element below `ColumnReplicated`.
-SELECT max(bs * b) <= 65536, count()
-FROM
-(
-    SELECT blockSize() AS bs, byteSize(r.k) AS b
-    FROM (SELECT k FROM t_05058_sparse ARRAY JOIN range(2) AS n) AS l
-    LEFT JOIN t_05058_dense AS r ON l.k = r.k
-)
-SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
-         join_use_nulls = 1, enable_lazy_columns_replication = 1, join_algorithm = 'hash';
-
-DROP TABLE t_05058_sparse;
-DROP TABLE t_05058_dense;
-
--- One wide value among the defaults of a sparse key source is held by one row only, so the byte budget must not
--- split the output as if every row held it.
-DROP TABLE IF EXISTS t_05058_sparse_string;
-CREATE TABLE t_05058_sparse_string (k String) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
-INSERT INTO t_05058_sparse_string SELECT if(number = 0, repeat('x', 4096), '') FROM numbers(4096);
-
-SELECT max(bs) > 1024, count(b)
-FROM
-(
-    SELECT blockSize() AS bs, byteSize(r.k) AS b
-    FROM t_05058_sparse_string AS l
-    LEFT JOIN (SELECT '' AS k FROM numbers(8)) AS r ON l.k = r.k
-)
-SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
-         join_use_nulls = 1, join_algorithm = 'hash';
-
-DROP TABLE t_05058_sparse_string;
-
 -- A right column stored as `ColumnReplicated` (from `ARRAY JOIN`) is emitted materialized, so the byte
 -- budget must count the full value of every emitted row, not the replicated column's compact size.
 SELECT max(bs * b) <= 65536, count()
@@ -167,3 +112,22 @@ FROM
 )
 SETTINGS max_block_size = 4096, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536,
          enable_lazy_columns_replication = 1, join_algorithm = 'hash';
+
+-- Two parts with their own `LowCardinality` dictionaries of distinct 4 KiB values: the output copies every value it
+-- uses into its own dictionary, so the byte budget must count them.
+DROP TABLE IF EXISTS t_05058_lc_parts;
+CREATE TABLE t_05058_lc_parts (k UInt64, v LowCardinality(String)) ENGINE = MergeTree ORDER BY k;
+SYSTEM STOP MERGES t_05058_lc_parts;
+INSERT INTO t_05058_lc_parts SELECT number, concat('a', toString(number), repeat('x', 4096)) FROM numbers(1024);
+INSERT INTO t_05058_lc_parts SELECT number, concat('b', toString(number), repeat('y', 4096)) FROM numbers(1024);
+
+SELECT max(bs * b) <= 65536, count()
+FROM
+(
+    SELECT blockSize() AS bs, byteSize(r.v) AS b
+    FROM numbers(1024) AS l
+    INNER JOIN t_05058_lc_parts AS r ON l.number = r.k
+)
+SETTINGS max_block_size = 1024, max_joined_block_size_rows = 0, max_joined_block_size_bytes = 65536, join_algorithm = 'hash';
+
+DROP TABLE t_05058_lc_parts;

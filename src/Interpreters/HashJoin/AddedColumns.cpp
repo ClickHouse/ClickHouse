@@ -279,6 +279,7 @@ planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> posi
     plan.gather.assign(positions.size(), {});
     size_t emit_bytes = 0;
     size_t emit_rows = 0;
+    size_t emit_dictionary_values_bytes = 0;
     for (size_t dst_idx = 0; dst_idx < positions.size(); ++dst_idx)
     {
         const GatherColumn & gather = gather_by_position[positions[dst_idx]];
@@ -286,8 +287,11 @@ planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> posi
         chassert(dst_idx == 0 || gather.emit_rows == emit_rows);
         emit_bytes += gather.emit_bytes;
         emit_rows = gather.emit_rows;
+        plan.emit_dictionary_bytes += gather.emit_dictionary_bytes;
+        emit_dictionary_values_bytes += gather.emit_dictionary_values_bytes;
     }
     plan.emit_bytes_per_row = emit_rows ? (emit_bytes + emit_rows - 1) / emit_rows : 0;
+    plan.emit_dictionary_bytes_per_row = emit_rows ? (emit_dictionary_values_bytes + emit_rows - 1) / emit_rows : 0;
     return plan;
 }
 
