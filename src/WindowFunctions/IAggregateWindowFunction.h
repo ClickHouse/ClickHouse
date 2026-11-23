@@ -11,6 +11,7 @@ namespace DB
 
 struct WindowBounds;
 struct WindowDescription;
+struct WindowFunctionSettings;
 class WindowArguments;
 
 class IAggregateWindowFunction
@@ -24,6 +25,6 @@ public:
 
 using AggregateWindowFunctionPtr = std::shared_ptr<IAggregateWindowFunction>;
 
-AggregateWindowFunctionPtr createAggregateWindowFunction(AggregateFunctionPtr function, const WindowDescription & window);
+AggregateWindowFunctionPtr createAggregateWindowFunction(AggregateFunctionPtr function, const WindowDescription & window, const WindowFunctionSettings & settings);
 
 }

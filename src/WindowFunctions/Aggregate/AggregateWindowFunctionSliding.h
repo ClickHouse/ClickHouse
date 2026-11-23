@@ -5,6 +5,6 @@
 namespace DB
 {
 
-AggregateWindowFunctionPtr tryCreateAggregateWindowFunctionSliding(const AggregateFunctionPtr & function, const WindowDescription & window);
+AggregateWindowFunctionPtr tryCreateAggregateWindowFunctionSliding(const AggregateFunctionPtr & function, const WindowDescription & window, UInt64 min_frame_rows);
 
 }

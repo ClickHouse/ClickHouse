@@ -233,9 +233,8 @@ private:
 
 }
 
-AggregateWindowFunctionPtr tryCreateAggregateWindowFunctionSliding(const AggregateFunctionPtr & function, const WindowDescription & window)
+AggregateWindowFunctionPtr tryCreateAggregateWindowFunctionSliding(const AggregateFunctionPtr & function, const WindowDescription & window, UInt64 min_frame_rows)
 {
-    const Int64 min_frame_rows = static_cast<Int64>(std::min<UInt64>(window.sliding_aggregation_min_frame_rows, std::numeric_limits<Int64>::max()));
     if (min_frame_rows == 0)
         return nullptr;
 
@@ -248,7 +247,7 @@ AggregateWindowFunctionPtr tryCreateAggregateWindowFunctionSliding(const Aggrega
     if (!function->hasTrivialDestructor() || function->allocatesMemoryInArena())
         return nullptr;
 
-    return std::make_shared<AggregateWindowFunctionSliding>(function, min_frame_rows);
+    return std::make_shared<AggregateWindowFunctionSliding>(function, static_cast<Int64>(std::min<UInt64>(min_frame_rows, std::numeric_limits<Int64>::max())));
 }
 
 }
