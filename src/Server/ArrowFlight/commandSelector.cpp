@@ -442,6 +442,7 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
     {"File", "TABLE"},
     {"FileLog", "TABLE"},
     {"Filesystem", "TABLE"},
+    {"MaxMindDB", "TABLE"},
     {"GenerateRandom", "TABLE"},
     {"FuzzJSON", "TABLE"},
     {"FuzzQuery", "TABLE"},

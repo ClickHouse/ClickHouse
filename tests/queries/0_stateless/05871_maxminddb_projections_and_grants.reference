@@ -1,0 +1,35 @@
+Dotted map keys
+ip	IPv4
+x	Tuple(`a.b` String, a Tuple(b String), `c.d` Tuple(e String))
+w	Tuple(o Nullable(Tuple(t Tuple(s String))))
+o	Nullable(Tuple(t Tuple(s String), u String))
+('literal',('nested'),('single'))
+literal
+('nested')
+single	('single')
+literal	('nested')	single	('literal',('nested'),('single'))
+Optional parents
+1.1.1.1	\N
+8.8.8.8	(('present'),'u')
+1.1.1.1	\N
+8.8.8.8	('present')
+1.1.1.1	\N
+8.8.8.8	present
+1.1.1.1	\N	1
+8.8.8.8	u	0
+1.1.1.1	(NULL)
+8.8.8.8	((('deep')))
+1.1.1.1	\N	\N	\N
+8.8.8.8	(('deep'))	('deep')	deep
+1.1.1.1	\N
+8.8.8.8	deep
+Grants
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+0
+inferred	A
+declared	A
+attached	A
+after revoke	A
+after reattach	A
