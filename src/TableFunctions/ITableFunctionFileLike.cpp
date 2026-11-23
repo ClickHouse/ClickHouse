@@ -97,21 +97,10 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
 
     StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, is_insert_query);
 
-    /// Without a structure argument, the storage infers the columns of the data, and the stored columns of a table, given in
-    /// `CREATE` or inferred then, are read from it by name (see `StorageTableFunctionProxy`), so `(c2 String, c1 Int64)` of a CSV
-    /// file reads its second and first columns, and a query reads a stored column only if the storage has it. If a query can
-    /// reach none of the inferred columns, as for `id` and `s` of `CREATE TABLE t (id UInt32, s String) AS file('data.csv',
-    /// 'CSV')`, the table could not be read at all, so its storage is created with the ordinary stored columns instead, as the
-    /// object storage table functions do, except those that it has as virtual columns, such as `_file`, which stay virtual. The
-    /// storage does not support the other kinds of columns. It is created so only when it has the columns that their `DEFAULT`
-    /// expressions use, and it can parse the data with them: the format can read a subset of its columns, or there are as
-    /// many of them as inferred columns, not counting the columns of the hive-style partitions of the path, which are read
-    /// from the path in both cases, and the format is not `Distributed`, whose columns are always those of the data. Otherwise,
-    /// as for `(id UInt32)` of a CSV file with two columns, a query of only virtual columns, such as `_row_number`, reads the
-    /// data with the inferred columns, while the stored columns could not parse its rows. A table that can read some of the
-    /// inferred columns keeps reading them by name: a query names an ordinary or a `MATERIALIZED` stored column or a
-    /// subcolumn of one, also a dynamic one, and the storage has that name as a column or a subcolumn, such as `nested.value`
-    /// of `nested Tuple(value UInt32)` or `j.a` of `j JSON` for a `JSONEachRow` file with the key `nested.value` or `j.a`.
+    /// Without a structure argument, a table reads its stored columns by name from the inferred ones (see
+    /// `StorageTableFunctionProxy`). If it has none of them, as `CREATE TABLE t (id UInt32, s String) AS file('data.csv', 'CSV')`
+    /// with columns `c1` and `c2`, it could not read anything, so create the storage with the ordinary stored columns instead,
+    /// as the object storage table functions do, if it can evaluate their `DEFAULT`s and parse the data with them.
     if (columns.empty() && !cached_columns.empty())
     {
         const auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
