@@ -16,6 +16,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_time_split_read_buffer.csv', 'R
 SELECT '"12:34:56"\n"-01:02:03"\n"123:45:06"\n"5:06:07"\n"12:34"\n'
 SETTINGS engine_file_truncate_on_insert = 1;
 
+INSERT INTO FUNCTION file(currentDatabase() || '_time_split_read_buffer_custom.txt', 'RawBLOB')
+SELECT '12:34:56:7\n-01:02:03:8\n123:45:06:9\n5:06:07:1\n'
+SETTINGS engine_file_truncate_on_insert = 1;
+
 SELECT t FROM file(currentDatabase() || '_time_split_read_buffer.jsonl', 'JSONEachRow', 't Time')
 SETTINGS max_read_buffer_size = 8, storage_file_read_method = 'pread', input_format_parallel_parsing = 0;
 
@@ -33,3 +37,13 @@ SETTINGS max_read_buffer_size = 4, storage_file_read_method = 'pread', input_for
 
 SELECT t FROM file(currentDatabase() || '_time_split_read_buffer.csv', 'CSV', 't Time')
 SETTINGS max_read_buffer_size = 4, storage_file_read_method = 'pread', input_format_parallel_parsing = 0;
+
+-- A field delimiter equal to the time delimiter must not be read as part of the value.
+SET format_custom_escaping_rule = 'Escaped', format_custom_field_delimiter = ':', input_format_custom_detect_header = 0, input_format_parallel_parsing = 0;
+
+SELECT * FROM format(CustomSeparated, 't Time, n UInt8', '12:34:56:7') SETTINGS format_custom_row_after_delimiter = '';
+SELECT * FROM format(CustomSeparated, 't Time64(0), n UInt8', '5:06:07:8') SETTINGS format_custom_row_after_delimiter = '';
+SELECT * FROM format(CustomSeparated, 't Time64(3), n UInt8', '123:45:06.5:9') SETTINGS format_custom_row_after_delimiter = '';
+
+SELECT * FROM file(currentDatabase() || '_time_split_read_buffer_custom.txt', 'CustomSeparated', 't Time, n UInt8')
+SETTINGS max_read_buffer_size = 4, storage_file_read_method = 'pread';

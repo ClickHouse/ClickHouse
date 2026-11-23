@@ -1104,15 +1104,32 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     /// The value may continue in the next buffer, so copy it and parse the copy.
     if (token_end == buf_end && !buf.isMemoryBuffer())
     {
-        /// hhh:mm:ss
+        /// hhh:mm:ss. Copy at most this, so a field delimiter after the value (like ':' in CustomSeparated) is left unread.
         char token[9];
         size_t token_size = 0;
-        while (token_size < sizeof(token) && !buf.eof()
-               && (isNumericASCII(*buf.position()) || isSymbolIn(*buf.position(), allowed_time_delimiters)))
+        auto copy_digits = [&](size_t max_digits)
         {
-            token[token_size] = *buf.position();
+            for (size_t i = 0; i < max_digits && !buf.eof() && isNumericASCII(*buf.position()); ++i)
+            {
+                token[token_size] = *buf.position();
+                ++token_size;
+                ++buf.position();
+            }
+        };
+
+        copy_digits(3);
+        for (size_t group = 0; group < 2 && !buf.eof() && isSymbolIn(*buf.position(), allowed_time_delimiters); ++group)
+        {
+            /// Take the delimiter only if two digits follow it. If they are past the end of the buffer, assume they are digits.
+            const char * pos = buf.position();
+            const char * end = buf.buffer().end();
+            if ((pos + 1 < end && !isNumericASCII(pos[1])) || (pos + 2 < end && !isNumericASCII(pos[2])))
+                break;
+
+            token[token_size] = *pos;
             ++token_size;
             ++buf.position();
+            copy_digits(2);
         }
 
         ReadBufferFromMemory token_buf(token, token_size);
