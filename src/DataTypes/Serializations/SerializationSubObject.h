@@ -29,8 +29,6 @@ public:
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
 
-    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
-
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
