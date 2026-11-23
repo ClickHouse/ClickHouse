@@ -600,7 +600,8 @@ TEST(DeltaLakeAzureKernelHelper, EntrypointsRefuseRestrictedSessionWhateverTheSh
         expectAccessDenied([&]
         {
             return metadata->write(
-                std::make_shared<const DB::Block>(), table_id, object_storage, configuration, std::nullopt, restricted, nullptr);
+                std::make_shared<const DB::Block>(), /*metadata_snapshot=*/nullptr, table_id, object_storage, configuration, std::nullopt,
+                restricted, nullptr);
         });
         expectAccessDenied([&]
         {
