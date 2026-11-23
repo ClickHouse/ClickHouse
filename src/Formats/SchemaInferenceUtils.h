@@ -18,13 +18,13 @@ using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
 /// Struct with some additional information about inferred types for JSON formats.
 struct JSONInferenceInfo
 {
-    /// We store numbers that were parsed from strings.
-    /// It's used in types transformation to change such numbers back to string if needed.
-    std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
-    /// Store integer types that were inferred from negative numbers.
-    /// It's used to determine common type for Int64 and UInt64
-    /// TODO: check it not only in JSON formats.
-    std::unordered_set<const IDataType *> negative_integers;
+    /// Int64 inferred from a negative number and numbers parsed from JSON strings are marked by being one of
+    /// the instances owned below.
+    DataTypePtr getNegativeInt64();
+    /// number_type is Int64, UInt64 or Float64.
+    DataTypePtr getNumberParsedFromString(const DataTypePtr & number_type);
+    [[nodiscard]] bool isNegativeInteger(const IDataType & type) const;
+    [[nodiscard]] bool isNumberParsedFromString(const IDataType & type) const;
 
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;
@@ -33,6 +33,13 @@ struct JSONInferenceInfo
     /// because DataTypeJSONPaths was already finalized to named tuple. IN this case
     /// we can only merge named tuples from different files together.
     bool allow_merging_named_tuples = false;
+
+private:
+    DataTypePtr negative_int64;
+    DataTypePtr int64_from_string;
+    DataTypePtr negative_int64_from_string;
+    DataTypePtr uint64_from_string;
+    DataTypePtr float64_from_string;
 };
 
 /// Check whether a type can be wrapped into Nullable according to schema inference settings.
@@ -61,7 +68,7 @@ DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const Forma
 
 bool tryInferDateFromString(std::string_view field, DayNum & date);
 bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
-bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
+bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt32 scale = 9);
 
 /// Infer DateTime or DateTime64 from a string, running the invalid-datetime fast check only once (unlike calling
 /// tryInferDateTimeFromString and tryInferDateTime64FromString in turn). On success writes the parsed value into
@@ -136,6 +143,10 @@ DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & s
 /// Call makeNullableRecursively for all types
 /// in the block and return names and types.
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings);
+
+/// The key by which the readers that follow `input_format_column_name_matching_mode` match a field to a column
+/// of the inferred schema: the name in lowercase with `ignore_case`, the name itself otherwise.
+String getColumnMatchingKeyForSchemaInference(std::string_view name, const FormatSettings & settings);
 
 /// Check if type contains Nothing, like Array(Tuple(Nullable(Nothing), String))
 bool checkIfTypeIsComplete(const DataTypePtr & type);

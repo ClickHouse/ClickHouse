@@ -56,6 +56,7 @@ DATA_PARTS = {
     "/data/auth_failover/part1.tsv": "23\n",
     "/data/apache_sort/subdir/part1.tsv": "7\n",
     "/data/apache_sort/subdir/part2.tsv": "11\n",
+    "/data/dictionary/data.tsv": "1\tone\n",
 }
 
 SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
@@ -69,10 +70,12 @@ class RequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    @classmethod
-    def _record_request(cls, method, path):
+    def _record_request(self, method, path):
         key = f"{method} {path}"
-        cls.request_counts[key] = cls.request_counts.get(key, 0) + 1
+        self.request_counts[key] = self.request_counts.get(key, 0) + 1
+        # The requests that carry the header, for the tests of `http_forbid_headers`.
+        if "Authorization" in self.headers:
+            self.request_counts["Authorization"] = self.request_counts.get("Authorization", 0) + 1
 
     def _handle_control(self):
         if self.path == "/__stats__":
