@@ -1,4 +1,4 @@
-cases	141	423	12
+cases	93	279	12
 int	Runtime filter (bloom filter)
 decimal	Runtime filter (bloom filter)
 string	Runtime filter (bloom filter)
@@ -24,8 +24,22 @@ LowCardinality_FixedString	Runtime filter (bloom filter)
 LowCardinality_Int32	Runtime filter (bloom filter)
 0
 0
-230
-230
+23
+23
+05857_batch_a0_bloom	1
+05857_batch_a0_exact	1
+05857_batch_a0_off	0
+05857_batch_a1_bloom	1
+05857_batch_a1_exact	1
+05857_batch_a1_off	0
+05857_batch_b_bloom	1
+05857_batch_b_exact	1
+05857_batch_b_off	0
+05857_batch_c_bloom	1
+05857_batch_c_exact	1
+05857_batch_c_off	0
+05857_no_filter_0	0
+05857_no_filter_1	0
 05857_null_probe_int	1	0
 05857_null_probe_string	1	0
 05857_null_build_int	1	1
